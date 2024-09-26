@@ -8,7 +8,7 @@ sys.path.append(parent_dir)
 
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QLineEdit, QPushButton, QScrollArea, 
-                             QLabel, QFrame, QGridLayout)
+                             QLabel, QFrame, QGridLayout, QCompleter)
 from PyQt6.QtCore import Qt
 
 from warhammer40k_ai.waha_helper.waha_helper import WahaHelper
@@ -23,10 +23,17 @@ class ModelUI(QMainWindow):
         self.setCentralWidget(self.central_widget)
         self.layout = QVBoxLayout(self.central_widget)
 
+        self.waha_helper = WahaHelper()
+        self.datasheet_names = self.waha_helper.get_all_datasheet_names()  # Fetch all datasheet names
+
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("Enter a datasheet name...")
-        self.search_bar.returnPressed.connect(self.search_datasheet)  # Add this line
+        self.search_bar.returnPressed.connect(self.search_datasheet)
         self.layout.addWidget(self.search_bar)
+
+        completer = QCompleter(self.datasheet_names)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.search_bar.setCompleter(completer)  # Attach completer to the search bar
 
         self.search_button = QPushButton("Search")
         self.search_button.clicked.connect(self.search_datasheet)
