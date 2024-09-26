@@ -1,6 +1,8 @@
-# Waha Helper
+# Warhammer40k_AI
 
-Waha Helper is a Python library for processing and managing Wahapedia data. It provides an easy-to-use interface for loading, sanitizing, and retrieving information from various Wahapedia JSON files.
+Warhammer40k_AI is a Python library for processing and managing Wahapedia data. It provides an easy-to-use interface for loading, sanitizing, and retrieving information from various Wahapedia JSON files.
+
+Ultimate goal is to create a Warhammer 40k AI that can be used to play Warhammer 40k with AI opponents.
 
 ## Installation
 
