@@ -6,10 +6,10 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(os.path.dirname(current_dir))
 sys.path.append(parent_dir)
 
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QLineEdit, QPushButton, QScrollArea, 
                              QLabel, QFrame, QGridLayout)
-from PyQt5.QtCore import Qt
+from PyQt6.QtCore import Qt
 
 from warhammer40k_ai.waha_helper.waha_helper import WahaHelper
 
@@ -57,7 +57,8 @@ class ModelUI(QMainWindow):
 
     def display_datasheet(self, datasheet):
         frame = QFrame()
-        frame.setFrameStyle(QFrame.Box | QFrame.Raised)
+        frame.setFrameShape(QFrame.Shape.Box)
+        frame.setFrameShadow(QFrame.Shadow.Raised)
         layout = QVBoxLayout(frame)
 
         name_label = QLabel(f"<b>{datasheet['name']}</b>")
@@ -98,7 +99,7 @@ class ModelUI(QMainWindow):
         if isinstance(value, dict):
             for sub_key, sub_value in value.items():
                 key_label = QLabel(f"{sub_key}:")
-                key_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+                key_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
                 grid_layout.addWidget(key_label, row, 0)
                 
                 if isinstance(sub_value, dict):
@@ -127,7 +128,7 @@ class ModelUI(QMainWindow):
     def create_value_label(self, value):
         value_str = str(value).strip()  # Remove leading/trailing whitespace
         value_label = QLabel(value_str)
-        value_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        value_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         value_label.setWordWrap(True)  # Enable word wrapping for long text
         return value_label
 
@@ -163,4 +164,4 @@ if __name__ == '__main__':
     app = QApplication(sys.argv)
     ui = ModelUI()
     ui.show()
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
