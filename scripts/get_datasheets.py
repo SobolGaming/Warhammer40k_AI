@@ -147,4 +147,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-    # RUN: python get_datasheets.py -f -c -o ../wahapedia_data -s wahapedia_data
+    # RUN: python get_datasheets.py -f -c -o ../wahapedia_data -s ../wahapedia_data
