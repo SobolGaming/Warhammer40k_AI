@@ -25,6 +25,7 @@ class ModelUI(QMainWindow):
 
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("Enter a datasheet name...")
+        self.search_bar.returnPressed.connect(self.search_datasheet)  # Add this line
         self.layout.addWidget(self.search_bar)
 
         self.search_button = QPushButton("Search")
