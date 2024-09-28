@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
 from PyQt6.QtCore import Qt
 
 from warhammer40k_ai.waha_helper.waha_helper import WahaHelper
+from types import SimpleNamespace
 
 class ModelUI(QMainWindow):
     def __init__(self):
@@ -54,13 +55,13 @@ class ModelUI(QMainWindow):
             self.result_layout.itemAt(i).widget().setParent(None)
 
         datasheet_name = self.search_bar.text()
-        datasheet = self.waha_helper.get_datasheet(datasheet_name)
+        datasheet = self.waha_helper.get_full_datasheet_info_by_name(datasheet_name)
         
         if datasheet:
-            print(f"Found datasheet: {datasheet['name']}")
+            print(f"Found datasheet: {datasheet.name}")  # Use dot notation here
             self.display_datasheet(datasheet)
         else:
-            print("Datasheet not found")
+            print(f"Datasheet not found: {datasheet_name}")
             self.display_not_found()
 
     def display_datasheet(self, datasheet):
@@ -69,48 +70,29 @@ class ModelUI(QMainWindow):
         frame.setFrameShadow(QFrame.Shadow.Raised)
         layout = QVBoxLayout(frame)
 
-        name_label = QLabel(f"<b>{datasheet['name']}</b>")
+        name_label = QLabel(f"<b>{datasheet.name}</b>")
         layout.addWidget(name_label)
 
-        for key, value in datasheet.items():
+        for key in datasheet.__dict__.keys():
             if key != 'name':
-                if key == 'datasheets_keywords':
-                    collapsible_pane = CollapsiblePane("Datasheets_keywords", self)
-                    grid_layout = QGridLayout()
-                    keywords, faction_keywords = self.aggregate_keywords(value)
-                    grid_layout.addWidget(QLabel("Keywords:"), 0, 0)
-                    grid_layout.addWidget(self.create_value_label(", ".join(keywords)), 0, 1)
-                    grid_layout.addWidget(QLabel("Faction Keywords:"), 1, 0)
-                    grid_layout.addWidget(self.create_value_label(", ".join(faction_keywords)), 1, 1)
-                    collapsible_pane.setContentLayout(grid_layout)
-                else:
-                    collapsible_pane = CollapsiblePane(key.capitalize(), self)
-                    grid_layout = QGridLayout()
-                    self.populate_grid_layout(grid_layout, value)
-                    collapsible_pane.setContentLayout(grid_layout)
+                value = getattr(datasheet, key)
+                collapsible_pane = CollapsiblePane(key.capitalize(), self)
+                grid_layout = QGridLayout()
+                self.populate_grid_layout(grid_layout, value)
+                collapsible_pane.setContentLayout(grid_layout)
                 layout.addWidget(collapsible_pane)
 
         self.result_layout.addWidget(frame)
 
-    def aggregate_keywords(self, keywords_list):
-        keywords = []
-        faction_keywords = []
-        for keyword in keywords_list:
-            if isinstance(keyword, dict) and 'keyword' in keyword and 'is_faction_keyword' in keyword:
-                if keyword['is_faction_keyword'] == "true":
-                    faction_keywords.append(keyword['keyword'])
-                else:
-                    keywords.append(keyword['keyword'])
-        return keywords, faction_keywords
-
     def populate_grid_layout(self, grid_layout, value, row=0):
-        if isinstance(value, dict):
-            for sub_key, sub_value in value.items():
+        if isinstance(value, SimpleNamespace):
+            for sub_key in value.__dict__.keys():
                 key_label = QLabel(f"{sub_key}:")
                 key_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
                 grid_layout.addWidget(key_label, row, 0)
                 
-                if isinstance(sub_value, dict):
+                sub_value = getattr(value, sub_key)
+                if isinstance(sub_value, SimpleNamespace):
                     sub_grid = QGridLayout()
                     self.populate_grid_layout(sub_grid, sub_value)
                     grid_layout.addLayout(sub_grid, row, 1)
@@ -120,7 +102,7 @@ class ModelUI(QMainWindow):
                 row += 1
         elif isinstance(value, list):
             for item in value:
-                if isinstance(item, dict):
+                if isinstance(item, SimpleNamespace):
                     sub_grid = QGridLayout()
                     self.populate_grid_layout(sub_grid, item)
                     grid_layout.addLayout(sub_grid, row, 0, 1, 2)

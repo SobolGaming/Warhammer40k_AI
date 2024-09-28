@@ -6,3 +6,4 @@ numpy
 PyQt6
 openpyxl
 shapely
+simple-namespace

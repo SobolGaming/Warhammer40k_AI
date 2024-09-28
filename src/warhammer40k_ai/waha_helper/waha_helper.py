@@ -3,6 +3,7 @@ import os
 import re
 import unicodedata
 from bs4 import BeautifulSoup
+from types import SimpleNamespace
 
 class WahaHelper:
     def __init__(self, data_dir='wahapedia_data'):
@@ -143,6 +144,7 @@ class WahaHelper:
     def get_datasheet(self, name):
         """
         Returns a specific datasheet by name, using case-insensitive and partial matching.
+        Also aggregates keywords and faction keywords.
         """
         normalized_name = self.strip_special_chars(name)
         
@@ -150,10 +152,22 @@ class WahaHelper:
             if 'name' in datasheet:
                 normalized_datasheet_name = self.strip_special_chars(datasheet['name'])
                 if normalized_name in normalized_datasheet_name:
-                    return datasheet
+                    result = SimpleNamespace(**datasheet)
+                    if 'datasheets_keywords' in datasheet:
+                        keywords, faction_keywords = self.aggregate_keywords(datasheet['datasheets_keywords'])
+                        result.keywords = keywords
+                        result.faction_keywords = faction_keywords
+                    return result
         
         print(f"No matching datasheet found for '{name}'")
         return None
+
+    def get_full_datasheet_info_by_name(self, name):
+        """
+        Returns the full datasheet information for a given name.
+        This method is an alias for get_datasheet to match the expected method name in the test.
+        """
+        return self.get_datasheet(name)
 
     def search_datasheets(self, query):
         """
@@ -176,6 +190,17 @@ class WahaHelper:
         Returns all datasheets.
         """
         return self.datasheets
+
+    def aggregate_keywords(self, keywords_list):
+        keywords = []
+        faction_keywords = []
+        for keyword in keywords_list:
+            if isinstance(keyword, dict) and 'keyword' in keyword and 'is_faction_keyword' in keyword:
+                if keyword['is_faction_keyword'] == "true":
+                    faction_keywords.append(keyword['keyword'])
+                else:
+                    keywords.append(keyword['keyword'])
+        return keywords, faction_keywords
 
 # Add this function outside of the WahaHelper class
 def get_all_data():

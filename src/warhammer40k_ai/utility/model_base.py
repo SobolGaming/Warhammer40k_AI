@@ -11,6 +11,11 @@ logger = logging.getLogger(__name__)
 DEGREES_IN_CIRCLE = 360
 RADIANS_IN_CIRCLE = 2 * math.pi
 
+# Convert mm (as in base size of models) to inches
+def ConvertMMToInches(value: int) -> float:
+    return round(value / 25.4, 4)
+
+# Create a shapely ellipse
 def create_ellipse(center: typing.Tuple[float, float], lengths: typing.Tuple[float, float], bearing: float = 0) -> Poly:
     """
     Create a shapely ellipse.
@@ -24,6 +29,7 @@ def create_ellipse(center: typing.Tuple[float, float], lengths: typing.Tuple[flo
     ell = affinity.scale(circ, lengths[1], lengths[0])
     return affinity.rotate(ell, math.degrees(bearing))
 
+# Create a shapely rectangle
 def create_rectangle(center: typing.Tuple[float, float], lengths: typing.Tuple[float, float], bearing: float = 0) -> Poly:
     """
     Create a shapely rectangle.
@@ -44,11 +50,13 @@ def create_rectangle(center: typing.Tuple[float, float], lengths: typing.Tuple[f
     rect = Poly(points)
     return affinity.rotate(rect, math.degrees(bearing))
 
+# Base types
 class BaseType(Enum):
     CIRCULAR = 1
     ELLIPTICAL = 2
     HULL = 3
 
+# Base class
 class Base:
     def __init__(self, base_type: BaseType, radius: typing.Union[float, typing.Tuple[float, float]]) -> None:
         """
