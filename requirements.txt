@@ -5,3 +5,4 @@ pandas
 numpy
 PyQt6
 openpyxl
+shapely
