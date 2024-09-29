@@ -1,6 +1,7 @@
 from typing import List
 from .model import Model
 from ..utility.model_base import Base, BaseType, ConvertMMToInches
+from .wargear import Wargear
 
 class Unit:
     def __init__(self, datasheet):
@@ -77,7 +78,7 @@ class Unit:
         wargear = []
         if hasattr(datasheet, 'datasheets_wargear'):
             for wargear_data in datasheet.datasheets_wargear:
-                wargear.append(wargear_data['name'])
+                wargear.append(Wargear(wargear_data))
         return wargear
 
     def __str__(self):
