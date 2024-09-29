@@ -11,7 +11,7 @@ class Unit:
         self.faction_keywords = getattr(datasheet, 'faction_keywords', [])  # Use getattr with a default value
         self.composition = self._parse_composition(datasheet.datasheets_unit_composition)
         self.models = self._create_models(datasheet)
-        self.wargear = self._parse_wargear(datasheet)
+        self.wargear_options = self._parse_wargear(datasheet)
 
     def _parse_attribute(self, attribute_value: str) -> int:
         # Remove " and + from the attribute value
