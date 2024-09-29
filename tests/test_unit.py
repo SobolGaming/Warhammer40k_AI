@@ -44,8 +44,8 @@ class TestWahaHelper(unittest.TestCase):
 
         # Check weapons
         
-        self.assertGreater(len(bloodletters_unit.wargear_options), 0)
-        hellblade = next((wargear for wargear in bloodletters_unit.wargear_options if wargear.name == "Hellblade"), None)
+        self.assertGreater(len(bloodletters_unit.unit_wargear), 0)
+        hellblade = next((wargear for wargear in bloodletters_unit.unit_wargear if wargear.name == "Hellblade"), None)
         self.assertIsNotNone(hellblade)
         self.assertEqual(hellblade.range.min, 0)
         self.assertEqual(hellblade.range.max, 0)

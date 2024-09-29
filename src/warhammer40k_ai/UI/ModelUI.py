@@ -1,5 +1,12 @@
 import sys
 import os
+import warnings
+from bs4 import GuessedAtParserWarning, MarkupResemblesLocatorWarning
+
+# Suppress specific warnings
+warnings.filterwarnings("ignore", category=RuntimeWarning, message=".*found in sys.modules.*")
+warnings.filterwarnings("ignore", category=GuessedAtParserWarning)
+warnings.filterwarnings("ignore", category=MarkupResemblesLocatorWarning)
 
 # Add the parent directory to the Python path
 current_dir = os.path.dirname(os.path.abspath(__file__))
