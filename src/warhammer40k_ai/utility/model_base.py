@@ -164,6 +164,14 @@ class Base:
         else:
             return self.shortestDistance(other) == 0.0
 
+    def __repr__(self) -> str:
+        return f"Base(type={self.base_type.name}, radius={self.radius}, x={self.x}, y={self.y}, facing={self.facing})"
+
+    def __str__(self) -> str:
+        base_type_str = self.base_type.name.capitalize()
+        radius_str = f"{self.radius[0]}" if self.radius[0] == self.radius[1] else f"{self.radius[0]}x{self.radius[1]}"
+        return f"{base_type_str} base at ({self.x:.2f}, {self.y:.2f}), facing {math.degrees(self.facing):.1f}°, radius: {radius_str}"
+
 
 if __name__ == "__main__":
     b = Base(BaseType.CIRCULAR, 32)

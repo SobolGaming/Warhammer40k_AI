@@ -27,7 +27,7 @@ pip3 install -e .
 Here's a basic example of how to use Warhammer40k_AI:
 
 ```
-python3 -m warhammer40k_ai.UI.ModelUI
+python3 -m warhammer40k_ai.UI.wahapedia_ui
 ```
 
 ## License

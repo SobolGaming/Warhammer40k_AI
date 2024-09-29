@@ -30,7 +30,7 @@ class TestWahaHelper(unittest.TestCase):
         # Check the first model (Bloodreaper)
         self.assertEqual(bloodletters_unit.models[0].name, "Bloodreaper")
         for model in bloodletters_unit.models[1:]:
-            self.assertEqual(model.name, "Bloodletters")
+            self.assertEqual(model.name, "Bloodletter")
 
         # Check common attributes for all models
         for model in bloodletters_unit.models:
@@ -44,8 +44,8 @@ class TestWahaHelper(unittest.TestCase):
 
         # Check weapons
         
-        self.assertGreater(len(bloodletters_unit.unit_wargear), 0)
-        hellblade = next((wargear for wargear in bloodletters_unit.unit_wargear if wargear.name == "Hellblade"), None)
+        self.assertGreater(len(bloodletters_unit.default_wargear), 0)
+        hellblade = next((wargear for wargear in bloodletters_unit.default_wargear if wargear.name == "Hellblade"), None)
         self.assertIsNotNone(hellblade)
         self.assertEqual(hellblade.range.min, 0)
         self.assertEqual(hellblade.range.max, 0)
@@ -55,6 +55,16 @@ class TestWahaHelper(unittest.TestCase):
         self.assertEqual(hellblade.ap, -2)
         self.assertEqual(hellblade.damage, 2)
 
+        # Test wargear options
+        bloodletters_unit.apply_wargear_options(bloodletters_unit.wargear_options)
+
+        # Check if wargear options were applied correctly
+        models_with_instrument = [model for model in bloodletters_unit.models if "instrument of Chaos" in model.wargear]
+        models_with_icon = [model for model in bloodletters_unit.models if "daemonic icon" in model.wargear]
+
+        self.assertEqual(len(models_with_instrument), 1, "Expected 1 model with instrument of Chaos")
+        self.assertEqual(len(models_with_icon), 1, "Expected 1 model with daemonic icon")
+        self.assertNotEqual(models_with_instrument[0], models_with_icon[0], "Instrument and icon should be on different models")
 
 if __name__ == '__main__':
     unittest.main()

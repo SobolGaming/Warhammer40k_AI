@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Tuple
 from .model import Model
 from ..utility.model_base import Base, BaseType, ConvertMMToInches
 from .wargear import Wargear
@@ -11,7 +11,10 @@ class Unit:
         self.faction_keywords = getattr(datasheet, 'faction_keywords', [])  # Use getattr with a default value
         self.composition = self._parse_composition(datasheet.datasheets_unit_composition)
         self.models = self._create_models(datasheet)
-        self.unit_wargear = self._parse_wargear(datasheet)
+        self.default_wargear = self._parse_wargear(datasheet)
+        self.wargear_options = self._parse_wargear_options(datasheet)
+
+        self.add_default_wargear()
 
     def _parse_attribute(self, attribute_value: str) -> int:
         # Remove " and + from the attribute value
@@ -59,6 +62,9 @@ class Unit:
     def _create_models(self, datasheet) -> List[Model]:
         models = []
         for count, model_name in self.composition:
+            # Make model_name singular if it's plural
+            if model_name.endswith('s'):
+                model_name = model_name[:-1]
             for _ in range(count):
                 model = Model(
                     name=model_name,
@@ -75,11 +81,74 @@ class Unit:
         return models
 
     def _parse_wargear(self, datasheet):
-        wargear = []
+        default_wargear = []
         if hasattr(datasheet, 'datasheets_wargear'):
             for wargear_data in datasheet.datasheets_wargear:
-                wargear.append(Wargear(wargear_data))
-        return wargear
+                default_wargear.append(Wargear(wargear_data))
+        return default_wargear
+
+    def _parse_wargear_options(self, datasheet) -> List[str]:
+        wargear_options = []
+        if hasattr(datasheet, 'datasheets_options'):
+            for wargear_option_data in datasheet.datasheets_options:
+                wargear_options.append(wargear_option_data["description"])
+        return wargear_options
+
+    def apply_wargear_option(self, option: str):
+        # Parse the option string
+        parts = option.split(' can be equipped with ')
+        if len(parts) != 2:
+            raise ValueError(f"Invalid wargear option format: {option}")
+
+        model_description, item_description = parts
+        model_count = 1  # Default to 1 model
+        
+        # Extract model count if specified
+        if model_description.startswith(('1 ', '2 ', '3 ', '4 ', '5 ', '6 ', '7 ', '8 ', '9 ')):
+            model_count = int(model_description.split()[0])
+            model_description = ' '.join(model_description.split()[1:])
+
+        item_count = 1 # Default to 1 item
+        # Extract item count if specified
+        if item_description.startswith(('1 ', '2 ', '3 ', '4 ', '5 ', '6 ', '7 ', '8 ', '9 ')):
+            item_count = int(item_description.split()[0])
+            item_description = ' '.join(item_description.split()[1:]).strip().replace('.', '')
+
+        # Parse "not equipped with" condition
+        not_equipped_with = None
+        if "that is not equipped with" in model_description:
+            model_parts = model_description.split("that is not equipped with")
+            model_description = model_parts[0].strip()
+            not_equipped_with = model_parts[1].strip()
+            # Remove leading "a" or "an" from not_equipped_with
+            if not_equipped_with.startswith("a "):
+                not_equipped_with = not_equipped_with[2:].strip()
+            elif not_equipped_with.startswith("an "):
+                not_equipped_with = not_equipped_with[3:].strip()
+
+        # Find eligible models
+        eligible_models = [
+            model for model in self.models
+            if model.name in model_description and
+            item_description not in model.wargear and
+            (not_equipped_with is None or not_equipped_with not in model.wargear)
+        ]
+
+        if len(eligible_models) < model_count:
+            raise ValueError(f"Not enough eligible models for option: {option}")
+
+        # Apply wargear to eligible models
+        for model in eligible_models[:model_count]:
+            model.wargear.append(item_description)
+
+    def apply_wargear_options(self, options: List[str]):
+        for option in options:
+            self.apply_wargear_option(option)
+
+    def add_default_wargear(self):
+        for model in self.models:
+            for wargear in self.default_wargear:
+                model.wargear.append(wargear.name)
 
     def __str__(self):
         return f"{self.name} ({len(self.models)} models)"

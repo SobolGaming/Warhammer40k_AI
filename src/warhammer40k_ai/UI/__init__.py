@@ -1,1 +1,1 @@
-from .ModelUI import ModelUI
+from .wahapedia_ui import WahapediaUI

@@ -21,10 +21,10 @@ from PyQt6.QtCore import Qt
 from warhammer40k_ai.waha_helper.waha_helper import WahaHelper
 from types import SimpleNamespace
 
-class ModelUI(QMainWindow):
+class WahapediaUI(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Warhammer 40K Model Viewer")
+        self.setWindowTitle("Wahapedia Viewer")  # Updated window title
         self.setGeometry(100, 100, 800, 600)
 
         self.central_widget = QWidget()
@@ -159,6 +159,6 @@ class CollapsiblePane(QWidget):
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    ui = ModelUI()
+    ui = WahapediaUI()  # Updated class name
     ui.show()
     sys.exit(app.exec())
