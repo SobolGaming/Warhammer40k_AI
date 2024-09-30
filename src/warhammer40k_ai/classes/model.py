@@ -49,6 +49,11 @@ class Model:
         """Return whether the model is alive."""
         return self.wounds > 0
 
+    @property
+    def is_max_health(self) -> bool:
+        """Return whether the model is at full health."""
+        return self.wounds == self.base_wounds
+
     def add_wargear(self, wargear: Wargear) -> None:
         """Add wargear to the model."""
         self.wargear.append(wargear)

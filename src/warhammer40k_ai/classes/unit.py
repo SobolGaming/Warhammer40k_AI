@@ -1,5 +1,5 @@
 import logging
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from .model import Model
 from ..utility.model_base import Base, BaseType, convert_mm_to_inches
 from .wargear import Wargear
@@ -41,7 +41,7 @@ class Unit:
         self.models_lost = []
 
         # Initialize round-tracked variables
-        self.initializeRound()
+        self.initialize_round()
 
     def _parse_attribute(self, attribute_value: str) -> int:
         # Remove " and + from the attribute value
@@ -196,9 +196,23 @@ class Unit:
         #        self.callbacks[hook_events.ENEMY_UNIT_KILLED].append(logger.error(self))
         #    self.parent_detachment.removeUnit(self)
 
-    # Set round-tracked variables to default state
-    def initializeRound(self) -> None:
+    def initialize_round(self) -> None:
+        """Reset round-tracked variables to default state."""
         self.round_state = UnitRoundState()
+
+    def is_max_health(self) -> Tuple[bool, Optional[Model]]:
+        """
+        Check if the unit is at full health.
+
+        Returns:
+            Tuple[bool, Optional[Model]]: A tuple containing:
+                - A boolean indicating if the unit is at full health
+                - The first damaged model found, or None if all models are at full health
+        """
+        for model in self.models:
+            if not model.is_max_health():
+                return False, model
+        return True, None
 
     def print_unit(self):
         for model in self.models:
