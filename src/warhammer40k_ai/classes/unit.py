@@ -1,7 +1,20 @@
+import logging
 from typing import List, Tuple
 from .model import Model
 from ..utility.model_base import Base, BaseType, convert_mm_to_inches
 from .wargear import Wargear
+
+logging.basicConfig(format="%(asctime)s %(levelname)-8s %(message)s")
+logger = logging.getLogger(__name__)
+
+
+class UnitRoundState:
+    advanced_this_round: bool = False
+    shot_this_round: bool = False
+    fell_back_this_round: bool = False
+    reinforced_this_round: bool = False
+    num_lost_models_this_round: int = 0
+
 
 class Unit:
     def __init__(self, datasheet):
@@ -15,6 +28,12 @@ class Unit:
         self.wargear_options = self._parse_wargear_options(datasheet)
 
         self.add_default_wargear()
+
+        # Game State specific attributes
+        self.models_lost = []
+
+        # Initialize round-tracked variables
+        self.initializeRound()
 
     def _parse_attribute(self, attribute_value: str) -> int:
         # Remove " and + from the attribute value
@@ -150,6 +169,25 @@ class Unit:
         for model in self.models:
             for wargear in self.default_wargear:
                 model.wargear.append(wargear)
+
+    # Remove a Model from a Unit (e.g., when it dies)
+    def remove_model(self, model: Model, fleed: bool = False) -> None:
+        assert model in self.models
+
+        # Remove model itself
+        self.round_state.num_lost_models_this_round += 1
+        self.models_lost.append(model)
+        self.models.remove(model)
+
+        logger.info(f"Unit has {len(self.models)} models left!")
+        #if len(self.models) < 1:
+        #    if not fleed:
+        #        self.callbacks[hook_events.ENEMY_UNIT_KILLED].append(logger.error(self))
+        #    self.parent_detachment.removeUnit(self)
+
+    # Set round-tracked variables to default state
+    def initializeRound(self) -> None:
+        self.round_state = UnitRoundState()
 
     def print_unit(self):
         for model in self.models:

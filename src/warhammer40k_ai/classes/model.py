@@ -2,6 +2,11 @@ from typing import List, Optional
 from .wargear import Wargear
 from ..utility.model_base import Base
 import uuid
+import logging
+
+logging.basicConfig(format="%(asctime)s %(levelname)-8s %(message)s")
+logger = logging.getLogger(__name__)
+
 
 class Model:
     """Represents a Warhammer 40k model with its attributes and wargear."""
@@ -10,13 +15,22 @@ class Model:
                  wounds: int, leadership: int, objective_control: int, model_base: Base, 
                  inv_save: Optional[int] = None):
         self.name = name
+        # Model attributes have a base value, but can be modified by wargear, strategems, etc
+        # We need to track base value and current value separately
+        self.base_movement = movement
         self.movement = movement
+        self.base_toughness = toughness
         self.toughness = toughness
+        self.base_save = save
         self.save = save
-        self.inv_save = inv_save
+        self.inv_save = inv_save # nothing can modify this
+        self.base_wounds = wounds
         self.wounds = wounds
+        self.base_leadership = leadership
         self.leadership = leadership
+        self.base_objective_control = objective_control
         self.objective_control = objective_control
+
         self.model_base = model_base
         self.wargear: List[Wargear] = []
         self.optional_wargear: List[str] = []
@@ -24,12 +38,16 @@ class Model:
         # Gameplay related attributes
         self._id = str(uuid.uuid4())  # Generate a unique ID for each model
         self.parent_unit = None
-        self.is_alive = True
 
     @property
     def id(self) -> str:
         """Return the unique ID of the model."""
         return self._id
+
+    @property
+    def is_alive(self) -> bool:
+        """Return whether the model is alive."""
+        return self.wounds > 0
 
     def add_wargear(self, wargear: Wargear) -> None:
         """Add wargear to the model."""
@@ -50,6 +68,38 @@ class Model:
         self.model_base.z = z
         self.model_base.facing = facing
 
+    ################
+    ### Modifiers
+    ################
+    def take_damage(self, amount: int = 0, is_mortal: bool = False):
+        self.wounds -= amount
+        logger.info(f"{self.name} takes {amount} damage. It is {'Alive' if self.is_alive else 'Dead'}")
+        if not self.is_alive:
+            self.die()
+            if is_mortal and abs(self.wounds) > 0:
+                #overage = abs(self.wounds)
+                raise Exception("IMPLEMENT MORTAL WOUND DAMAGE OVERAGE HANDLING")
+        # TODO: some units/models have new stats when they reach a wound threshold
+
+    def die(self) -> None:
+        logger.info(f"{self.name} [{self.id}] has Died!!!")
+        #self.callbacks[hook_events.ENEMY_MODEL_KILLED].append(self)
+        self.parent_unit.remove_model(self, False)
+
+    # Fleeing is like dying but does not trigger any rules of when a "model is destroyed"
+    def flee(self) -> None:
+        logger.info(f"{self.name} [{self.id}] has Fled!!!")
+        self.parent_unit.remove_model(self, True)
+
+    def heal(self, amount: int = 0) -> None:
+        self.wounds += amount
+        self.wounds = min(self.base_wounds, self.wounds)
+        logger.info(f"{self.name} is healed for {amount} damage")
+        # TODO: some units/models have new stats when they reach a wound threshold
+
+    ################
+    ### String Representation
+    ################
     def __str__(self) -> str:
         return (f"{self.name} (M:{self.movement}\", T:{self.toughness}, Sv:{self.save}+, "
                 f"InvSv:{self.inv_save or '-'}+, W:{self.wounds}, Ld:{self.leadership}+, "

@@ -68,5 +68,20 @@ class TestWahaHelper(unittest.TestCase):
 
         bloodletters_unit.print_unit()
 
+        # New test for wounding and killing a model
+        self.assertEqual(len(bloodletters_unit.models), 10, "Unit should start with 10 models")
+
+        # Wound a model
+        bloodletters_unit.models[0].take_damage(1)
+        self.assertEqual(len(bloodletters_unit.models), 9, "Unit should have 9 models after one is killed")
+
+        # Check that the Bloodreaper (first model) was removed
+        self.assertNotEqual(bloodletters_unit.models[0].name, "Bloodreaper", "Bloodreaper should have been removed")
+
+        # Wound another model, but not enough to kill it
+        bloodletters_unit.models[0].take_damage(0)
+        self.assertEqual(len(bloodletters_unit.models), 9, "Unit should still have 9 models")
+        self.assertEqual(bloodletters_unit.models[0].wounds, 1, "Model should still have 1 wound")
+
 if __name__ == '__main__':
     unittest.main()
