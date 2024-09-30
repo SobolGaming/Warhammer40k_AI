@@ -10,10 +10,11 @@ logger = logging.getLogger(__name__)
 # Constants
 DEGREES_IN_CIRCLE = 360
 RADIANS_IN_CIRCLE = 2 * math.pi
+MM_TO_INCHES = 25.4
 
 # Convert mm (as in base size of models) to inches
-def ConvertMMToInches(value: int) -> float:
-    return round(value / 25.4, 4)
+def convert_mm_to_inches(value: float) -> float:
+    return round(value / MM_TO_INCHES, 4)
 
 # Create a shapely ellipse
 def create_ellipse(center: typing.Tuple[float, float], lengths: typing.Tuple[float, float], bearing: float = 0) -> Poly:
@@ -50,13 +51,11 @@ def create_rectangle(center: typing.Tuple[float, float], lengths: typing.Tuple[f
     rect = Poly(points)
     return affinity.rotate(rect, math.degrees(bearing))
 
-# Base types
 class BaseType(Enum):
     CIRCULAR = 1
     ELLIPTICAL = 2
     HULL = 3
 
-# Base class
 class Base:
     def __init__(self, base_type: BaseType, radius: typing.Union[float, typing.Tuple[float, float]]) -> None:
         """
@@ -71,6 +70,7 @@ class Base:
         self.facing: float = 0.0
         self.base_type = base_type
         self.radius: typing.Tuple[float, float] = self._normalize_radius(radius)
+        self.set_model_height()
 
     def _normalize_radius(self, radius: typing.Union[float, typing.Tuple[float, float]]) -> typing.Tuple[float, float]:
         if isinstance(radius, (float, int)):
@@ -80,54 +80,46 @@ class Base:
         else:
             raise ValueError("Invalid radius format. Expected float or tuple of two floats.")
 
-    # Note: Radius is in "inches"
-    # Note: Facing is assumed to be 0 degrees North, 90 degrees East, etc.
-    # Note: For ellipses, longer axis is assumed to be first number in tuple()
-    def __init__(self, base_type: BaseType, radius: typing.Union[float, typing.Tuple[float, float]]) -> None:
-        self.x = 0.0
-        self.y = 0.0
-        self.z = 0.0
-        self.facing = 0.0
-        self.base_type = base_type
-        if isinstance(radius, float) or isinstance(radius, int):
-            self.radius = (float(radius), float(radius))
-        else:
-            self.radius = radius
+    def set_model_height(self, height: float = None) -> None:
+        self.model_height = min(self.radius) * 2.0 if height is None else height
 
-    def setFacing(self, facing: float):
+    def set_facing(self, facing: float) -> None:
         self.facing = facing
 
-    # Note: angle is in radians
     def getRadius(self, angle: float = 0.0) -> float:
         if self.base_type == BaseType.CIRCULAR:
             return round(self.radius[0], 4)
         elif self.base_type == BaseType.ELLIPTICAL:
-            major_axis = self.radius[0]
-            minor_axis = self.radius[1]
-            full_angle = (math.pi - self.facing) + angle
-            part_1 = math.pow(major_axis, 2) * math.pow(math.sin(full_angle), 2)
-            part_2 = math.pow(minor_axis, 2) * math.pow(math.cos(full_angle), 2)
-            radius = major_axis * minor_axis / math.sqrt(part_1 + part_2)
-            return round(radius, 4)
+            return self._get_elliptical_radius(angle)
         elif self.base_type == BaseType.HULL:
-            major_axis = self.radius[1]
-            minor_axis = self.radius[0]
-            full_angle = (math.pi - self.facing) + angle
-            corner_angle = math.atan(major_axis/minor_axis)
-            radius = 0.0
-            if (full_angle >= -corner_angle and full_angle < corner_angle) or \
-               (full_angle >= (math.pi - corner_angle) and full_angle <(math.pi + corner_angle)):
-                dx = minor_axis
-                dy = dx * math.tan(full_angle)
-                radius = math.hypot(dx, dy)
-            else:
-                dx = major_axis / math.tan(full_angle)
-                dy = major_axis
-                radius = math.hypot(dx, dy)
-            assert radius > 0, "bad HULL radius calculation"
-            return round(radius, 4)
+            return self._get_hull_radius(angle)
         else:
-            raise Exception(f"Unknown base_type: {self.base_type}")
+            raise ValueError(f"Unknown base_type: {self.base_type}")
+
+    def _get_elliptical_radius(self, angle: float) -> float:
+        major_axis, minor_axis = self.radius
+        full_angle = (math.pi - self.facing) + angle
+        part_1 = math.pow(major_axis, 2) * math.pow(math.sin(full_angle), 2)
+        part_2 = math.pow(minor_axis, 2) * math.pow(math.cos(full_angle), 2)
+        radius = major_axis * minor_axis / math.sqrt(part_1 + part_2)
+        return round(radius, 4)
+
+    def _get_hull_radius(self, angle: float) -> float:
+        major_axis, minor_axis = self.radius[1], self.radius[0]
+        full_angle = (math.pi - self.facing) + angle
+        corner_angle = math.atan(major_axis/minor_axis)
+        
+        if (full_angle >= -corner_angle and full_angle < corner_angle) or \
+           (full_angle >= (math.pi - corner_angle) and full_angle <(math.pi + corner_angle)):
+            dx = minor_axis
+            dy = dx * math.tan(full_angle)
+        else:
+            dx = major_axis / math.tan(full_angle)
+            dy = major_axis
+        
+        radius = math.hypot(dx, dy)
+        assert radius > 0, "bad HULL radius calculation"
+        return round(radius, 4)
 
     # Determine the longest distance to parameter point of base
     def longestDistance(self) -> float:
@@ -136,35 +128,34 @@ class Base:
         elif self.base_type == BaseType.HULL:
             return math.hypot(self.radius[0], self.radius[1])
         else:
-            raise Exception(f"Unknown base_type: {self.base_type}")
+            raise ValueError(f"Unknown base_type: {self.base_type}")
 
     # Get the geometric shape of the base
-    def getShape(self) -> any:
+    def getShape(self) -> Poly:
         if self.base_type in [BaseType.CIRCULAR, BaseType.ELLIPTICAL]:
-            return create_ellipse((self.x, self.y), (self.radius[0], self.radius[1]), self.facing)
+            return create_ellipse((self.x, self.y), self.radius, self.facing)
         elif self.base_type == BaseType.HULL:
-            return create_rectangle((self.x, self.y), (self.radius[0], self.radius[1]), self.facing)
+            return create_rectangle((self.x, self.y), self.radius, self.facing)
         else:
-            raise Exception(f"Unknown BaseType geometry: {self.base_type}")
+            raise ValueError(f"Unknown BaseType geometry: {self.base_type}")
 
-    # Determine shortest distance between two geometries (bases)
     def shortestDistance(self, other: "Base") -> float:
-        shape1 = self.getShape()
-        shape2 = other.getShape()
-        return round(shape1.distance(shape2), 4)
+        return round(self.getShape().distance(other.getShape()), 4)
 
     # Determine collision with another Base
     def collidesWithBase(self, other: "Base") -> bool:
-        dx = other.x - self.x
-        dy = other.y - self.y
-        # try to see if we can skip complex math
+        dx, dy, dz = other.x - self.x, other.y - self.y, other.z - self.z
+        # try to see if we can skip complex math due to height difference
+        if dz > self.model_height:
+            logger.debug(f"Quick Non-Collision Decision :: Delta Z: {dz}, Model Height: {self.model_height}")
+            return False
+        # try to see if we can skip complex math due to distance
         max_dist = self.longestDistance() + other.longestDistance()
         dist = math.hypot(dx, dy)
         if max_dist < dist:
             logger.debug(f"Quick Non-Collision Decision :: Max D: {max_dist}, D: {dist}")
             return False
-        else:
-            return self.shortestDistance(other) == 0.0
+        return self.shortestDistance(other) == 0.0
 
     def __repr__(self) -> str:
         return f"Base(type={self.base_type.name}, radius={self.radius}, x={self.x}, y={self.y}, z={self.z}, facing={self.facing})"
@@ -173,7 +164,6 @@ class Base:
         base_type_str = self.base_type.name.capitalize()
         radius_str = f"{self.radius[0]}" if self.radius[0] == self.radius[1] else f"{self.radius[0]}x{self.radius[1]}"
         return f"{base_type_str} base at ({self.x:.2f}, {self.y:.2f}, {self.z:.2f}), facing {math.degrees(self.facing):.1f}°, radius: {radius_str}"
-
 
 if __name__ == "__main__":
     b = Base(BaseType.CIRCULAR, 32)
@@ -190,22 +180,22 @@ if __name__ == "__main__":
     print(f"Radius: {val}")
     assert val == 42.7549
 
-    b.setFacing(math.radians(90))
+    b.set_facing(math.radians(90))
     val = b.getRadius(math.radians(90))
     print(f"Radius: {val}")
     assert val == 60.0
 
-    b.setFacing(math.radians(315))
+    b.set_facing(math.radians(315))
     val = b.getRadius(math.radians(45))
     print(f"Radius: {val}")
     assert val == 35.0
 
-    b.setFacing(math.radians(135))
+    b.set_facing(math.radians(135))
     val = b.getRadius(math.radians(45))
     print(f"Radius: {val}")
     assert val == 35.0
 
-    b.setFacing(math.radians(315))
+    b.set_facing(math.radians(315))
     val = b.getRadius(math.radians(0))
     print(f"Radius: {val}")
     assert val == 42.7549

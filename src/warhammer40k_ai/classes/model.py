@@ -25,7 +25,6 @@ class Model:
         self._id = str(uuid.uuid4())  # Generate a unique ID for each model
         self.parent_unit = None
         self.is_alive = True
-        self.model_height = min(self.model_base.radius) * 2.0  # Assumes typical model height is twice the shortest radius
 
     @property
     def id(self) -> str:

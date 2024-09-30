@@ -1,7 +1,7 @@
 import unittest
 from src.warhammer40k_ai.waha_helper import WahaHelper
 from src.warhammer40k_ai.classes.unit import Unit
-from src.warhammer40k_ai.utility.model_base import ConvertMMToInches
+from src.warhammer40k_ai.utility.model_base import convert_mm_to_inches
 
 class TestWahaHelper(unittest.TestCase):
     def setUp(self):
@@ -40,7 +40,7 @@ class TestWahaHelper(unittest.TestCase):
             self.assertEqual(model.wounds, 1)
             self.assertEqual(model.leadership, 7)
             self.assertEqual(model.objective_control, 2)
-            self.assertEqual(model.model_base.getRadius(), ConvertMMToInches(32 / 2))
+            self.assertEqual(model.model_base.getRadius(), convert_mm_to_inches(32 / 2))
 
         # Check weapons
         

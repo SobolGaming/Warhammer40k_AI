@@ -1,6 +1,6 @@
 from typing import List, Tuple
 from .model import Model
-from ..utility.model_base import Base, BaseType, ConvertMMToInches
+from ..utility.model_base import Base, BaseType, convert_mm_to_inches
 from .wargear import Wargear
 
 class Unit:
@@ -29,12 +29,12 @@ class Unit:
         if 'x' in base_size:
             # This handles the elliptical example: "32 x 16mm"
             major, minor = base_size.split("x")
-            major = ConvertMMToInches(int(major.strip()) / 2.0)
-            minor = ConvertMMToInches(int(minor.strip()) / 2.0)
+            major = convert_mm_to_inches(int(major.strip()) / 2.0)
+            minor = convert_mm_to_inches(int(minor.strip()) / 2.0)
             return Base(BaseType.ELLIPTICAL, (major, minor))
         else:
             # This handles the standard example: "32mm"
-            return Base(BaseType.CIRCULAR, ConvertMMToInches(int(base_size.strip()) / 2.0))
+            return Base(BaseType.CIRCULAR, convert_mm_to_inches(int(base_size.strip()) / 2.0))
 
     def _parse_composition(self, unit_composition) -> List[tuple]:
         # Parse the composition from multiple dictionaries
