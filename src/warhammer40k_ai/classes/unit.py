@@ -130,8 +130,8 @@ class Unit:
         eligible_models = [
             model for model in self.models
             if model.name in model_description and
-            item_description not in model.wargear and
-            (not_equipped_with is None or not_equipped_with not in model.wargear)
+            item_description not in model.optional_wargear and
+            (not_equipped_with is None or not_equipped_with not in model.optional_wargear)
         ]
 
         if len(eligible_models) < model_count:
@@ -139,7 +139,7 @@ class Unit:
 
         # Apply wargear to eligible models
         for model in eligible_models[:model_count]:
-            model.wargear.append(item_description)
+            model.optional_wargear.append(item_description)
 
     def apply_wargear_options(self, options: List[str]):
         for option in options:
@@ -148,7 +148,11 @@ class Unit:
     def add_default_wargear(self):
         for model in self.models:
             for wargear in self.default_wargear:
-                model.wargear.append(wargear.name)
+                model.wargear.append(wargear)
+
+    def print_unit(self):
+        for model in self.models:
+            print(model)
 
     def __str__(self):
         return f"{self.name} ({len(self.models)} models)"
