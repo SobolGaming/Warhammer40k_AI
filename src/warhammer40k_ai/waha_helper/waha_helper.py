@@ -2,8 +2,12 @@ import json
 import os
 import re
 import unicodedata
-from bs4 import BeautifulSoup
+import warnings
+from bs4 import BeautifulSoup, MarkupResemblesLocatorWarning
 from types import SimpleNamespace
+
+# Suppress the specific warnings at the module level
+warnings.filterwarnings("ignore", category=MarkupResemblesLocatorWarning)
 
 class WahaHelper:
     def __init__(self, data_dir='wahapedia_data'):
