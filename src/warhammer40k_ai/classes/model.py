@@ -79,7 +79,7 @@ class Model:
             if is_mortal and abs(self.wounds) > 0:
                 #overage = abs(self.wounds)
                 raise Exception("IMPLEMENT MORTAL WOUND DAMAGE OVERAGE HANDLING")
-        # TODO: some units/models have new stats when they reach a wound threshold
+        self._check_damaged_profile()
 
     def die(self) -> None:
         logger.info(f"{self.name} [{self.id}] has Died!!!")
@@ -92,10 +92,20 @@ class Model:
         self.parent_unit.remove_model(self, True)
 
     def heal(self, amount: int = 0) -> None:
-        self.wounds += amount
-        self.wounds = min(self.base_wounds, self.wounds)
+        self.wounds = min(self.base_wounds, self.wounds + amount)
         logger.info(f"{self.name} is healed for {amount} damage")
-        # TODO: some units/models have new stats when they reach a wound threshold
+        self._check_damaged_profile()
+
+    def _check_damaged_profile(self) -> None:
+        if self.parent_unit and self.parent_unit.damaged_profile and self.parent_unit.damaged_profile_desc:
+            if self.is_alive and self.wounds in self.parent_unit.damaged_profile:
+                self._apply_damaged_profile(self.parent_unit.damaged_profile_desc)
+
+    def _apply_damaged_profile(self, profile: str) -> None:
+        # Implement the logic to apply the damaged profile
+        # This could involve updating various attributes of the model
+        logger.info(f"Applying damaged profile to {self.name}: {profile}")
+        # Need string parsing to handle the profile
 
     ################
     ### String Representation

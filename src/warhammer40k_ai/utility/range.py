@@ -32,3 +32,6 @@ class Range:
 
     def __str__(self) -> str:
         return f"{self.min}-{self.max}" if self.min != self.max else str(self.min)
+
+    def is_above(self, value: int) -> bool:
+        return value > self.max

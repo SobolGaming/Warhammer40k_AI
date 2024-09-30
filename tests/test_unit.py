@@ -2,6 +2,14 @@ import unittest
 from src.warhammer40k_ai.waha_helper import WahaHelper
 from src.warhammer40k_ai.classes.unit import Unit
 from src.warhammer40k_ai.utility.model_base import convert_mm_to_inches
+import pytest
+import logging
+
+# Add this at the beginning of your test file
+@pytest.fixture(autouse=True)
+def set_log_level():
+    logging.getLogger().setLevel(logging.INFO)
+    # You can change INFO to DEBUG, WARNING, ERROR, or CRITICAL
 
 class TestWahaHelper(unittest.TestCase):
     def setUp(self):

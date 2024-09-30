@@ -1,4 +1,5 @@
 import unittest
+import logging
 from src.warhammer40k_ai.waha_helper import WahaHelper
 from types import SimpleNamespace
 
@@ -30,6 +31,9 @@ class TestWahaHelper(unittest.TestCase):
                 result = self.waha_helper.get_full_datasheet_info_by_name(datasheet_name)
                 self.assertIsNotNone(result)
                 self.assertIsInstance(result, SimpleNamespace)
+
+                if hasattr(result, 'damaged_w') and result.damaged_w:
+                    logging.info(f"{result.name} Damaged Profile: {result.damaged_w}, {result.damaged_description}")
 
 
 if __name__ == '__main__':

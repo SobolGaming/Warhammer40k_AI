@@ -3,6 +3,7 @@ from typing import List, Tuple
 from .model import Model
 from ..utility.model_base import Base, BaseType, convert_mm_to_inches
 from .wargear import Wargear
+from ..utility.range import Range
 
 logging.basicConfig(format="%(asctime)s %(levelname)-8s %(message)s")
 logger = logging.getLogger(__name__)
@@ -27,6 +28,13 @@ class Unit:
         self.default_wargear = self._parse_wargear(datasheet)
         self.wargear_options = self._parse_wargear_options(datasheet)
 
+        if hasattr(datasheet, 'damaged_w') and datasheet.damaged_w:
+            self.damaged_profile = self._parse_range(datasheet.damaged_w)
+            self.damaged_profile_desc = getattr(datasheet, 'damaged_description', None)
+        else:
+            self.damaged_profile = None
+            self.damaged_profile_desc = None
+
         self.add_default_wargear()
 
         # Game State specific attributes
@@ -41,7 +49,10 @@ class Unit:
         if "-" in attribute_value:
             return 0
         return int(attribute_value)
-    
+
+    def _parse_range(self, range_string: str) -> Range:
+        return Range.from_string(range_string)
+
     def _parse_base_size(self, base_size: str) -> Base:
         base_size = base_size.replace("mm", "")
         # Parse the base size from the datasheet

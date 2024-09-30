@@ -162,8 +162,6 @@ class WahaHelper:
                         result.keywords = keywords
                         result.faction_keywords = faction_keywords
                     return result
-        
-        print(f"No matching datasheet found for '{name}'")
         return None
 
     def get_full_datasheet_info_by_name(self, name):
