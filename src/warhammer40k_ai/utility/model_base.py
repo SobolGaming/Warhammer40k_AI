@@ -67,6 +67,7 @@ class Base:
         """
         self.x: float = 0.0
         self.y: float = 0.0
+        self.z: float = 0.0
         self.facing: float = 0.0
         self.base_type = base_type
         self.radius: typing.Tuple[float, float] = self._normalize_radius(radius)
@@ -85,6 +86,7 @@ class Base:
     def __init__(self, base_type: BaseType, radius: typing.Union[float, typing.Tuple[float, float]]) -> None:
         self.x = 0.0
         self.y = 0.0
+        self.z = 0.0
         self.facing = 0.0
         self.base_type = base_type
         if isinstance(radius, float) or isinstance(radius, int):
@@ -165,12 +167,12 @@ class Base:
             return self.shortestDistance(other) == 0.0
 
     def __repr__(self) -> str:
-        return f"Base(type={self.base_type.name}, radius={self.radius}, x={self.x}, y={self.y}, facing={self.facing})"
+        return f"Base(type={self.base_type.name}, radius={self.radius}, x={self.x}, y={self.y}, z={self.z}, facing={self.facing})"
 
     def __str__(self) -> str:
         base_type_str = self.base_type.name.capitalize()
         radius_str = f"{self.radius[0]}" if self.radius[0] == self.radius[1] else f"{self.radius[0]}x{self.radius[1]}"
-        return f"{base_type_str} base at ({self.x:.2f}, {self.y:.2f}), facing {math.degrees(self.facing):.1f}°, radius: {radius_str}"
+        return f"{base_type_str} base at ({self.x:.2f}, {self.y:.2f}, {self.z:.2f}), facing {math.degrees(self.facing):.1f}°, radius: {radius_str}"
 
 
 if __name__ == "__main__":

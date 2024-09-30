@@ -75,8 +75,9 @@ class Unit:
                     wounds=self._parse_attribute(datasheet.datasheets_models[0]["W"]),
                     leadership=self._parse_attribute(datasheet.datasheets_models[0]["Ld"]),
                     objective_control=self._parse_attribute(datasheet.datasheets_models[0]["OC"]),
-                    base_size=self._parse_base_size(datasheet.datasheets_models[0]["base_size"])
+                    model_base=self._parse_base_size(datasheet.datasheets_models[0]["base_size"])
                 )
+                model.set_parent_unit(self)
                 models.append(model)
         return models
 

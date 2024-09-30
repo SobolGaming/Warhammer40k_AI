@@ -40,7 +40,7 @@ class TestWahaHelper(unittest.TestCase):
             self.assertEqual(model.wounds, 1)
             self.assertEqual(model.leadership, 7)
             self.assertEqual(model.objective_control, 2)
-            self.assertEqual(model.base_size.getRadius(), ConvertMMToInches(32 / 2))
+            self.assertEqual(model.model_base.getRadius(), ConvertMMToInches(32 / 2))
 
         # Check weapons
         

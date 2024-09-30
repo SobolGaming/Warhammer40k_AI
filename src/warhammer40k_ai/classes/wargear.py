@@ -36,7 +36,13 @@ class Wargear:
         return []
 
     def __str__(self):
-        return f"{self.name} ({self.type})"
+        return (f"{self.name} ({self.type}): "
+                f"Range {self.range}, A {self.attacks}, "
+                f"BS/WS {self.skill}, S {self.strength}, "
+                f"AP {self.ap}, D {self.damage}")
 
     def __repr__(self):
-        return f"Wargear(name='{self.name}', type='{self.type}')"
+        return (f"Wargear(name='{self.name}', type='{self.type}', "
+                f"range={self.range!r}, attacks={self.attacks!r}, "
+                f"skill={self.skill!r}, strength={self.strength!r}, "
+                f"ap={self.ap!r}, damage={self.damage!r})")
