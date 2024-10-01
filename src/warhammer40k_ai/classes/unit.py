@@ -18,13 +18,14 @@ class UnitRoundState:
 
 
 class Unit:
-    def __init__(self, datasheet):
+    def __init__(self, datasheet, points=None):
         self.name = datasheet.name
         self.faction = datasheet.faction_data["name"]
         self.keywords = getattr(datasheet, 'keywords', [])  # Use getattr with a default value
         self.faction_keywords = getattr(datasheet, 'faction_keywords', [])  # Use getattr with a default value
-        self.composition = self._parse_composition(datasheet.datasheets_unit_composition)
-        self.models = self._create_models(datasheet)
+        self.unit_composition = self._parse_unit_composition(datasheet.datasheets_unit_composition)
+        self.models_cost = self._parse_models_cost(datasheet.datasheets_models_cost)
+        self.models = self._create_models(datasheet, points)
         self.default_wargear = self._parse_wargear(datasheet)
         self.wargear_options = self._parse_wargear_options(datasheet)
 
@@ -66,39 +67,37 @@ class Unit:
             # This handles the standard example: "32mm"
             return Base(BaseType.CIRCULAR, convert_mm_to_inches(int(base_size.strip()) / 2.0))
 
-    def _parse_composition(self, unit_composition) -> List[tuple]:
-        # Parse the composition from multiple dictionaries
-        parsed = []
-        for composition_dict in unit_composition:
-            description = composition_dict.get('description', '')
-            parsed.extend(self._parse_description(description))
-        return parsed
-
-    def _parse_description(self, description: str) -> List[tuple]:
-        # Parse a single description and return a list of (count, model_name) tuples
-        components = description.split(' and ')
-        parsed = []
-        for component in components:
-            parts = component.strip().split(' ', 1)
-            if parts[0].isdigit():
-                count = int(parts[0])
-                model_name = parts[1]
+    def _parse_unit_composition(self, unit_composition):
+        result = {}
+        for comp in unit_composition:
+            parts = comp['description'].split()
+            count = parts[0]
+            model_name = ' '.join(parts[1:])  # Everything after the number
+            if '-' in count:
+                min_size, max_size = map(int, count.split('-'))
             else:
-                count = 1
-                model_name = component.strip()
-            parsed.append((count, model_name))
-        return parsed
+                min_size = max_size = int(count)
+            result[model_name] = (min_size, max_size)
+        return result
 
-    def _create_models(self, datasheet) -> List[Model]:
+    def _create_models(self, datasheet, points=None):
         models = []
-        for count, model_name in self.composition:
-            # Make model_name singular if it's plural
+        total_models = 0
+
+        if points is not None:
+            max_models = self.max_models_for_points(points)
+        else:
+            max_models = sum(max_size if isinstance(max_size, int) else max_size[1] for _, max_size in self.unit_composition.items())
+
+        for model_name, (min_size, max_size) in self.unit_composition.items():
+            model_count = min(max_size, max(min_size, max_models - total_models))
+            # Remove 's' from the end of model_name if it's plural
             if model_name.endswith('s'):
                 model_name = model_name[:-1]
-            for _ in range(count):
+            for _ in range(model_count):
                 model = Model(
                     name=model_name,
-                    movement= self._parse_attribute(datasheet.datasheets_models[0]["M"]),
+                    movement=self._parse_attribute(datasheet.datasheets_models[0]["M"]),
                     toughness=self._parse_attribute(datasheet.datasheets_models[0]["T"]),
                     save=self._parse_attribute(datasheet.datasheets_models[0]["Sv"]),
                     inv_save=self._parse_attribute(datasheet.datasheets_models[0]["inv_sv"]),
@@ -109,6 +108,9 @@ class Unit:
                 )
                 model.set_parent_unit(self)
                 models.append(model)
+                total_models += 1
+            if total_models >= max_models:
+                break
         return models
 
     def _parse_wargear(self, datasheet):
@@ -214,12 +216,57 @@ class Unit:
                 return False, model
         return True, None
 
+    @property
+    def is_epic_hero(self) -> bool:
+        return "Epic Hero" in self.keywords
+
+    @property
+    def is_battleline(self) -> bool:
+        return "Battleline" in self.keywords
+
+    @property
+    def is_dedicated_transport(self) -> bool:
+        return "Dedicated Transport" in self.keywords
+
     def print_unit(self):
         for model in self.models:
-            print(model)
+            print(f"\n{model}")
 
     def __str__(self):
         return f"{self.name} ({len(self.models)} models)"
 
     def __repr__(self):
         return f"Unit(name='{self.name}', models={len(self.models)})"
+
+    def _parse_models_cost(self, models_cost):
+        result = {}
+        for cost_entry in models_cost:
+            num_models = int(cost_entry['description'].split()[0])
+            cost = int(cost_entry['cost'])
+            result[num_models] = cost
+        return result
+
+    def calculate_points(self, num_models):
+        for threshold, cost in sorted(self.models_cost.items(), reverse=True):
+            if num_models >= threshold:
+                return cost
+        return 0
+
+    def max_models_for_points(self, max_points):
+        max_models = 0
+        for num_models, cost in sorted(self.models_cost.items()):
+            if cost <= max_points:
+                max_models = num_models
+            else:
+                break
+        return max_models
+
+    def get_unit_cost(self) -> int:
+        """
+        Calculate the cost of the unit based on the number of models.
+        
+        Returns:
+            int: The cost of the unit in points.
+        """
+        num_models = len(self.models)
+        return self.calculate_points(num_models)

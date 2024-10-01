@@ -28,9 +28,9 @@ class TestWahaHelper(unittest.TestCase):
         self.assertIn("Legiones Daemonica", bloodletters_unit.faction_keywords)
 
         # Check unit composition
-        self.assertEqual(len(bloodletters_unit.composition), 2)
-        self.assertEqual(bloodletters_unit.composition[0], (1, "Bloodreaper"))
-        self.assertEqual(bloodletters_unit.composition[1], (9, "Bloodletters"))
+        self.assertEqual(len(bloodletters_unit.unit_composition), 2)
+        self.assertEqual(bloodletters_unit.unit_composition["Bloodreaper"][1], 1)
+        self.assertEqual(bloodletters_unit.unit_composition["Bloodletters"][1], 9)
 
         # Check models
         self.assertEqual(len(bloodletters_unit.models), 10)
