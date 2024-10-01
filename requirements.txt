@@ -8,3 +8,4 @@ openpyxl
 shapely
 simple-namespace
 pytest
+gym
