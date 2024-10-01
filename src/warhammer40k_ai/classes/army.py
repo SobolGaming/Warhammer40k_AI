@@ -14,12 +14,6 @@ class Army:
         if not self._check_faction_consistency(unit):
             return False
         
-        if not self._check_unit_limits(unit):
-            return False
-        
-        if self.get_total_points() + unit.get_unit_cost() > self.points_limit:
-            return False
-        
         self.units.append(unit)
         return True
     
@@ -27,9 +21,7 @@ class Army:
         return sum(unit.get_unit_cost() for unit in self.units)
     
     def _check_faction_consistency(self, unit: Unit) -> bool:
-        # Simplified check - in a real implementation, you'd check if the unit's
-        # keywords include the army's faction_keyword
-        return True
+        return unit.faction_keywords[0].lower() == self.faction_keyword.lower()
     
     def _check_unit_limits(self, unit: Unit) -> bool:
         unit_counts = self._get_unit_counts()
@@ -57,9 +49,33 @@ class Army:
             counts[unit.name] = counts.get(unit.name, 0) + 1
         return counts
 
+    def validate_army(self) -> List[str]:
+        errors = []
+        
+        if self.get_total_points() > self.points_limit:
+            errors.append(f"Army exceeds points limit of {self.points_limit}")
+        
+        unit_counts = self._get_unit_counts()
+        for unit in self.units:
+            if unit.is_epic_hero and unit_counts[unit.name] > 1:
+                errors.append(f"Only one {unit.name} (Epic Hero) is allowed")
+            
+            if unit.is_battleline and unit_counts[unit.name] > 6:
+                errors.append(f"Maximum of 6 {unit.name} (Battleline) units allowed")
+            
+            if not unit.is_battleline and not unit.is_dedicated_transport and unit_counts[unit.name] > 3:
+                errors.append(f"Maximum of 3 {unit.name} units allowed")
+        
+        infantry_count = sum(1 for u in self.units if not u.is_dedicated_transport)
+        transport_count = sum(unit_counts[u.name] for u in self.units if u.is_dedicated_transport)
+        if transport_count > infantry_count:
+            errors.append("Too many Dedicated Transports")
+        
+        return errors
+
 # Example usage:
 if __name__ == "__main__":
-    army = Army(faction_keyword="CHAOS", detachment_type="Daemonic Incursion")
+    army = Army(faction_keyword="Legiones Daemonica", detachment_type="Daemonic Incursion")
 
     from src.warhammer40k_ai.waha_helper import WahaHelper
     waha_helper = WahaHelper()
