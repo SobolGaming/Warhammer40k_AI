@@ -20,6 +20,7 @@ class WahaHelper:
         self.sources = {}
         self.factions = {}
         self.detachment_abilities = {}
+        self.datasheets_leaders = {}
         self.load_data()
 
     def clean_data(self, data):
@@ -41,13 +42,13 @@ class WahaHelper:
             print(f"Error: Directory '{self.data_dir}' does not exist.")
             return
 
-        self.load_json_file('Abilities.json', self.abilities)
-        self.load_json_file('Stratagems.json', self.stratagems)
-        self.load_json_file('Enhancements.json', self.enhancements)
-        self.load_json_file('Source.json', self.sources)
-        self.load_json_file('Factions.json', self.factions)
-        self.load_json_file('Detachment_abilities.json', self.detachment_abilities)
-
+        self.load_json_file('Abilities.json', self.abilities, 'id')
+        self.load_json_file('Stratagems.json', self.stratagems, 'id')
+        self.load_json_file('Enhancements.json', self.enhancements, 'id')
+        self.load_json_file('Source.json', self.sources, 'id')
+        self.load_json_file('Factions.json', self.factions, 'id')
+        self.load_json_file('Detachment_abilities.json', self.detachment_abilities, 'id')
+        self.load_json_file('Datasheets_leader.json', self.datasheets_leaders, 'leader_id')
         self.load_datasheets_enhancements()
 
         datasheets_path = os.path.join(self.data_dir, 'Datasheets.json')
@@ -63,12 +64,12 @@ class WahaHelper:
         except Exception as e:
             print(f"Error loading data: {str(e)}")
 
-    def load_json_file(self, filename, target_dict):
+    def load_json_file(self, filename, target_dict, key):
         file_path = os.path.join(self.data_dir, filename)
         if os.path.exists(file_path):
             with open(file_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-            target_dict.update({item['id']: self.clean_data(item) for item in data})
+            target_dict.update({item[key]: self.clean_data(item) for item in data})
         else:
             print(f"Warning: {filename} not found in {self.data_dir}")
 
@@ -125,15 +126,14 @@ class WahaHelper:
                     if enhancement_id in self.enhancements:
                         datasheet['enhancements'].append(self.enhancements[enhancement_id])
 
-        # Add source data
+        # Add source and faction data
         for datasheet in self.datasheets.values():
             if 'source_id' in datasheet and datasheet['source_id'] in self.sources:
                 datasheet['source_data'] = self.sources[datasheet['source_id']]
-
-        # Add faction data
-        for datasheet in self.datasheets.values():
             if 'faction_id' in datasheet and datasheet['faction_id'] in self.factions:
                 datasheet['faction_data'] = self.factions[datasheet['faction_id']]
+            if 'id' in datasheet and datasheet['id'] in self.datasheets_leaders:
+                datasheet['attached_to'] = self.datasheets_leaders[datasheet['id']]
 
     def strip_special_chars(self, text):
         # Normalize unicode characters

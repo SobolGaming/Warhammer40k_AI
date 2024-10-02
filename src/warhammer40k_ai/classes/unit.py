@@ -19,6 +19,7 @@ class UnitRoundState:
 
 class Unit:
     def __init__(self, datasheet, points=None, enhancement=None):
+        self._datasheet = datasheet
         self.name = datasheet.name
         self.faction = datasheet.faction_data["name"]
         self.keywords = getattr(datasheet, 'keywords', [])  # Use getattr with a default value
@@ -28,6 +29,7 @@ class Unit:
         self.models = self._create_models(datasheet, points)
         self.default_wargear = self._parse_wargear(datasheet)
         self.wargear_options = self._parse_wargear_options(datasheet)
+        self.can_be_attached_to = getattr(datasheet, 'attached_to', [])
 
         if hasattr(datasheet, 'damaged_w') and datasheet.damaged_w:
             self.damaged_profile = self._parse_range(datasheet.damaged_w)
@@ -234,6 +236,14 @@ class Unit:
     @property
     def is_infantry(self) -> bool:
         return "Infantry" in self.keywords
+
+    @property
+    def is_character(self) -> bool:
+        return "Character" in self.keywords
+
+    @property
+    def is_leader(self) -> bool:
+        return len(self.can_be_attached_to) > 0
 
     @property
     def is_supreme_commander(self) -> bool:
