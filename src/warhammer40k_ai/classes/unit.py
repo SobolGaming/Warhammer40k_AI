@@ -18,7 +18,7 @@ class UnitRoundState:
 
 
 class Unit:
-    def __init__(self, datasheet, points=None):
+    def __init__(self, datasheet, points=None, enhancement=None):
         self.name = datasheet.name
         self.faction = datasheet.faction_data["name"]
         self.keywords = getattr(datasheet, 'keywords', [])  # Use getattr with a default value
@@ -35,8 +35,11 @@ class Unit:
         else:
             self.damaged_profile = None
             self.damaged_profile_desc = None
-
         self.add_default_wargear()
+
+        self.attached_to = None  # For Leaders, to track which unit they are attached to
+        self.enhancement = enhancement  # The Enhancement assigned to this unit (if any)
+        self.is_warlord = False
 
         # Game State specific attributes
         self.models_lost = []
@@ -228,6 +231,15 @@ class Unit:
     def is_dedicated_transport(self) -> bool:
         return "Dedicated Transport" in self.keywords
 
+    @property
+    def is_infantry(self) -> bool:
+        return "Infantry" in self.keywords
+
+    @property
+    def is_supreme_commander(self) -> bool:
+        # TODO: Implement this
+        return False
+
     def print_unit(self):
         for model in self.models:
             print(f"\n{model}")
@@ -264,9 +276,10 @@ class Unit:
     def get_unit_cost(self) -> int:
         """
         Calculate the cost of the unit based on the number of models.
-        
+        If the unit has an enhancement, add the enhancement cost to the unit cost.
+
         Returns:
-            int: The cost of the unit in points.
+            int: The cost of the unit in points (including enhancement cost if applicable)
         """
         num_models = len(self.models)
-        return self.calculate_points(num_models)
+        return self.calculate_points(num_models) + (self.enhancement.points if self.enhancement else 0)

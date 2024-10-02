@@ -9,6 +9,7 @@ class Army:
     detachment_type: str
     points_limit: int = 2000
     units: List[Unit] = field(default_factory=list)
+    warlord: Unit = None
     
     def add_unit(self, unit: Unit) -> bool:
         if not self._check_faction_consistency(unit):
