@@ -220,7 +220,7 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
         elif line.startswith('•'):
             # This is additional unit data (warlord status, wargear, enhancements)
             data = line[1:].strip()
-            print(f"Evaluating data: {data}")
+            #print(f"Evaluating data: {data}")
             if data.lower() == 'warlord':
                 current_unit.is_warlord = True
             elif data.startswith('Enhancement:'):
@@ -242,7 +242,7 @@ def add_unit_to_army(army: Army, unit: Unit, wargear_names: List[str], enhanceme
     # Add wargear to the unit
     for wargear_name in wargear_names:
         gear_name = wargear_name[0].lower()
-        print(f"Evaluating wargear: {gear_name}")
+        #print(f"Evaluating wargear: {gear_name}")
         if gear_name in [gear.name.lower() for gear in unit.possible_wargear]:
             unit.add_wargear([gear if gear.name.lower() == gear_name else None for gear in unit.possible_wargear])
         else:
