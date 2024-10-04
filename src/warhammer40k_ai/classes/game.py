@@ -1,14 +1,69 @@
 from typing import List, Dict, Any
 from .unit import Unit
 from .player import Player
+from enum import Enum
+
+
+class BattlefieldSize(Enum):
+    COMBAT_PATROL = "Combat Patrol"
+    INCURSION = "Incursion"
+    STRIKE_FORCE = "Strike Force"
+    ONSLAUGHT = "Onslaught"
+
+
+class Battlefield:
+    SIZES: Dict[BattlefieldSize, Dict[str, Any]] = {
+        BattlefieldSize.COMBAT_PATROL: {
+            "PointLimit": 500,
+            "CommandPoints": 6,
+            "DetachmentLimit": 1,
+            "Width": 44,
+            "Height": 30,
+        },
+        BattlefieldSize.INCURSION: {
+            "PointLimit": 1000,
+            "CommandPoints": 6,
+            "DetachmentLimit": 1,
+            "Width": 44,
+            "Height": 30,
+        },
+        BattlefieldSize.STRIKE_FORCE: {
+            "PointLimit": 2000,
+            "CommandPoints": 6,
+            "DetachmentLimit": 1,
+            "Width": 44,
+            "Height": 60,
+        },
+        BattlefieldSize.ONSLAUGHT: {
+            "PointLimit": 3000,
+            "CommandPoints": 6,
+            "DetachmentLimit": 1,
+            "Width": 44,
+            "Height": 90,
+        },
+    }
+
+    def __init__(self, size: BattlefieldSize):
+        self.config = self.SIZES[size]
+
+    def __str__(self):
+        ret = f"{self.config}"
+        return ret
+
 
 class Game:
-    def __init__(self, players: List[Player], battlefield_size: tuple[int, int]):
-        self.players = players
-        self.battlefield_size = battlefield_size
+    def __init__(self, battlefield: Battlefield):
+        self.battlefield_size = (battlefield.config.Width, battlefield.config.Height)
+        self.battle_point_limit = battlefield.config.PointLimit
+        self.starting_command_points_per_player = battlefield.config.CommandPoints
+        self.detachment_limit_per_player = battlefield.config.DetachmentLimit
         self.current_player_index = 0
         self.turn = 1
         self.battlefield = self._initialize_battlefield()
+        self.players: List[Player] = []
+
+    def add_player(self, player: Player):
+        self.players.append(player)
 
     def _initialize_battlefield(self) -> List[List[Any]]:
         # Initialize an empty battlefield based on battlefield_size
