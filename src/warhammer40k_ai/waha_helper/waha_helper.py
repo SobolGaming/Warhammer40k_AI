@@ -5,6 +5,7 @@ import unicodedata
 import warnings
 from bs4 import BeautifulSoup, MarkupResemblesLocatorWarning
 from types import SimpleNamespace
+from warhammer40k_ai.classes.enhancement import Enhancement
 
 # Suppress the specific warnings at the module level
 warnings.filterwarnings("ignore", category=MarkupResemblesLocatorWarning)
@@ -82,7 +83,7 @@ class WahaHelper:
                 datasheet_id = item['datasheet_id']
                 if datasheet_id not in self.datasheets_enhancements:
                     self.datasheets_enhancements[datasheet_id] = []
-                self.datasheets_enhancements[datasheet_id].append(item['enhancement_id'])
+                self.datasheets_enhancements[datasheet_id].append(self.clean_data(item['enhancement_id']))
         else:
             print(f"Warning: Datasheets_enhancements.json not found in {self.data_dir}")
 
@@ -203,6 +204,34 @@ class WahaHelper:
                 else:
                     keywords.append(keyword['keyword'])
         return keywords, faction_keywords
+
+    def get_enhancement(self, enhancement_id: str) -> Enhancement:
+        """
+        Returns an Enhancement object for the given enhancement name.
+        """
+        if enhancement_id in self.enhancements:
+            enhancement_data = self.enhancements[enhancement_id]
+            return Enhancement(
+                name=enhancement_data['name'],
+                eligible_keywords=enhancement_data.get('keywords', []),
+                points=int(enhancement_data.get('cost', 0)),
+                description=enhancement_data.get('description', '')
+            )
+        return None
+
+    def get_enhancement_by_name(self, name: str) -> Enhancement:
+        """
+        Returns an Enhancement object for the given enhancement name.
+        """
+        for enhancement in self.enhancements.values():
+            if self.strip_special_chars(enhancement['name']) == self.strip_special_chars(name):
+                return Enhancement(
+                    name=enhancement['name'],
+                    eligible_keywords=enhancement.get('keywords', []),
+                    points=int(enhancement.get('cost', 0)),
+                    description=enhancement.get('description', '')
+                )
+        return None
 
 # Add this function outside of the WahaHelper class
 def get_all_data():

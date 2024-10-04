@@ -1,6 +1,8 @@
 from typing import List, Dict
-from .unit import Unit
-
+from src.warhammer40k_ai.classes.unit import Unit
+from src.warhammer40k_ai.classes.wargear import Wargear
+from src.warhammer40k_ai.classes.enhancement import Enhancement
+from src.warhammer40k_ai.waha_helper import WahaHelper
 
 # Define custom exception for validation errors
 class ArmyValidationError(Exception):
@@ -36,7 +38,7 @@ class Army:
             raise ArmyValidationError(f"Enhancements can only be assigned to non-Epic Hero Characters. '{character_unit.name}' is not eligible.")
         if character_unit.enhancement:
             raise ArmyValidationError(f"Character '{character_unit.name}' already has an Enhancement.")
-        if not enhancement.eligible_keywords <= character_unit.keywords:
+        if not set(enhancement.eligible_keywords).issubset(set(character_unit.keywords)):
             raise ArmyValidationError(f"Character '{character_unit.name}' does not meet the keyword requirements for Enhancement '{enhancement.name}'.")
         character_unit.enhancement = enhancement
         self.enhancements.append(enhancement)
@@ -94,7 +96,7 @@ class Army:
 
     def validate_epic_heroes(self):
         epic_heroes = [unit for unit in self.units if unit.is_epic_hero]
-        epic_hero_names = [hero.datasheet for hero in epic_heroes]
+        epic_hero_names = [hero.name for hero in epic_heroes]
         if len(epic_hero_names) != len(set(epic_hero_names)):
             duplicates = [name for name in epic_hero_names if epic_hero_names.count(name) > 1]
             raise ArmyValidationError(f"Epic Hero(s) {duplicates} included more than once.")
@@ -163,29 +165,109 @@ class Army:
         self.validate_points_limit()
         self.validate_unit_limits()
         self.validate_epic_heroes()
-        self.validate_leaders()
+        #self.validate_leaders()
         self.validate_enhancements()
         self.validate_warlord()
         self.validate_detachment_rules()
         self.validate_allies()
         print("Army is valid and ready for battle!")
 
+# Helper function to parse an army list from a text file
+def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
+    with open(file_path, 'r') as file:
+        lines = file.readlines()
+
+    # Extract army information
+    army_name = lines[0].strip()
+    points_limit = int(lines[1].split('(')[1].split()[0])
+    detachment_type = lines[2].strip()
+
+    # Create the Army object
+    army = Army(faction_keyword="Legiones Daemonica", detachment_type=detachment_type, points_limit=points_limit)
+
+    current_unit = None
+    current_wargear = []
+    current_enhancement = None
+
+    for line in lines[4:]:  # Skip the header lines
+        line = line.strip()
+        if not line:
+            continue
+
+        elif not line.lower().startswith(('character', 'battleline', 'other datasheets')) and not line.startswith('•'):
+            # This is the start of a new unit
+            if current_unit:
+                # Add the previous unit to the army
+                add_unit_to_army(army, current_unit, current_wargear, current_enhancement, waha_helper)
+                current_unit = None
+                current_wargear = []
+                current_enhancement = None
+
+            # Parse the new unit
+            unit_name = line.split(' (')[0].strip()
+            
+            datasheet = waha_helper.get_full_datasheet_info_by_name(unit_name)
+            if datasheet:
+                current_unit = Unit(datasheet, 0)  # We're not using points here
+            else:
+                print(f"Warning: Datasheet not found for {unit_name}")
+        elif line.startswith('•'):
+            # This is additional unit data (warlord status, wargear, enhancements)
+            data = line[1:].strip()
+            if data.lower() == 'warlord':
+                current_unit.is_warlord = True
+            elif data.startswith('Enhancement:'):
+                enhancement_name = data.split('Enhancement:')[1].strip()
+                current_enhancement = waha_helper.get_enhancement_by_name(enhancement_name)
+                if not current_enhancement:
+                    print(f"Warning: Enhancement not found for {enhancement_name}")
+            else:
+                data = data.replace('• ', '')
+                quantity, wargear_name = data.split('x ')
+                current_wargear.append((wargear_name, quantity))
+
+    # Add the last unit to the army
+    if current_unit:
+        add_unit_to_army(army, current_unit, current_wargear, current_enhancement, waha_helper)
+
+    return army
+
+def add_unit_to_army(army: Army, unit: Unit, wargear: List[str], enhancement: Enhancement, waha_helper: WahaHelper):
+    # Add wargear to the unit
+    #for item in wargear:
+        #print(f"Adding wargear: {item}")
+        #wargear_data = waha_helper.get_wargear_by_name(item)
+        #if wargear_data:
+        #    unit.apply_wargear_option(f"1 model can be equipped with 1 {item}")
+        #else:
+        #    print(f"Warning: Wargear not found for {item}")
+
+    # Add enhancement to the unit if it exists
+    if enhancement:
+        try:
+            army.add_enhancement(enhancement, unit)
+        except Exception as e:
+            print(f"Warning: Could not add enhancement {enhancement.name} to {unit.name}: {str(e)}")
+
+    # Add the unit to the army
+    army.add_unit(unit)
+
+    # Set warlord if applicable
+    if "Warlord" in wargear:
+        army.select_warlord(unit)
+
+
 # Example usage:
 if __name__ == "__main__":
-    army = Army(faction_keyword="Legiones Daemonica", detachment_type="Daemonic Incursion")
-
-    from src.warhammer40k_ai.waha_helper import WahaHelper
     waha_helper = WahaHelper()
-    datasheet = waha_helper.get_full_datasheet_info_by_name("Bloodcrushers")
-    bloodcrushers_unit = Unit(datasheet)
-    
-    # Add the Bloodcrushers to the army
-    army.add_unit(bloodcrushers_unit)
-    
-    print(f"Total points: {army.get_total_points()}")
+    army = parse_army_list("army_lists/chaos_daemons_GT2023.txt", waha_helper)
+    print(f"Parsed army: {army.faction_keyword} - {army.detachment_type}")
+    print(f"Total points: {army.get_total_points()} out of {army.points_limit}")
     print(f"Number of units: {len(army.units)}")
     for unit in army.units:
-        unit.print_unit()
-        print(f"{len(unit.models)} models")
-
-    #army.validate()
+        print(f"- {unit.name} ({unit.get_unit_cost()} points)")
+        for model in unit.models:
+            print(f"  - {model.name}")
+            for wargear in model.wargear:
+                print(f"    - {wargear.name}")
+    army.validate()

@@ -28,7 +28,10 @@ class Wargear:
         attribute_value = attribute_value.replace("\"", "").replace("+", "")
         if "D" in attribute_value:
             return DiceCollection.from_string(attribute_value)
-        return int(attribute_value)
+        elif 'N/A' == attribute_value:
+            return 0
+        else:
+            return int(attribute_value)
 
     def _parse_keywords(self, keywords_string):
         if keywords_string:

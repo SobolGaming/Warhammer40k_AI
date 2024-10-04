@@ -51,9 +51,9 @@ class TestWahaHelper(unittest.TestCase):
             self.assertEqual(model.model_base.getRadius(), convert_mm_to_inches(32 / 2))
 
         # Check weapons
-        
-        self.assertGreater(len(bloodletters_unit.default_wargear), 0)
-        hellblade = next((wargear for wargear in bloodletters_unit.default_wargear if wargear.name == "Hellblade"), None)
+        bloodletters_unit.add_wargear()
+        self.assertGreater(len(bloodletters_unit.possible_wargear), 0)
+        hellblade = next((wargear for wargear in bloodletters_unit.possible_wargear if wargear.name == "Hellblade"), None)
         self.assertIsNotNone(hellblade)
         self.assertEqual(hellblade.range.min, 0)
         self.assertEqual(hellblade.range.max, 0)

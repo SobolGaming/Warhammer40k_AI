@@ -27,7 +27,7 @@ class Unit:
         self.unit_composition = self._parse_unit_composition(datasheet.datasheets_unit_composition)
         self.models_cost = self._parse_models_cost(datasheet.datasheets_models_cost)
         self.models = self._create_models(datasheet, points)
-        self.default_wargear = self._parse_wargear(datasheet)
+        self.possible_wargear = self._parse_wargear(datasheet)
         self.wargear_options = self._parse_wargear_options(datasheet)
         self.can_be_attached_to = getattr(datasheet, 'attached_to', [])
 
@@ -37,7 +37,6 @@ class Unit:
         else:
             self.damaged_profile = None
             self.damaged_profile_desc = None
-        self.add_default_wargear()
 
         self.attached_to = None  # For Leaders, to track which unit they are attached to
         self.enhancement = enhancement  # The Enhancement assigned to this unit (if any)
@@ -119,11 +118,11 @@ class Unit:
         return models
 
     def _parse_wargear(self, datasheet):
-        default_wargear = []
+        possible_wargear = []
         if hasattr(datasheet, 'datasheets_wargear'):
             for wargear_data in datasheet.datasheets_wargear:
-                default_wargear.append(Wargear(wargear_data))
-        return default_wargear
+                possible_wargear.append(Wargear(wargear_data))
+        return possible_wargear
 
     def _parse_wargear_options(self, datasheet) -> List[str]:
         wargear_options = []
@@ -183,10 +182,19 @@ class Unit:
         for option in options:
             self.apply_wargear_option(option)
 
-    def add_default_wargear(self):
-        for model in self.models:
-            for wargear in self.default_wargear:
-                model.wargear.append(wargear)
+    def add_wargear(self, wargear: List[Wargear]=[], model: Model=None) -> None:
+        for model_instance in self.models:
+            wargear_to_add = []
+            if not wargear:
+                for wargear_instance in self.possible_wargear:
+                    wargear_to_add.append(wargear_instance)
+            else:
+                wargear_to_add.extend(wargear)
+            for wargear_instance in wargear_to_add:
+                if model and model_instance == model:
+                    model_instance.wargear.append(wargear_instance)
+            else:
+                model_instance.wargear.append(wargear_instance)
 
     # Remove a Model from a Unit (e.g., when it dies)
     def remove_model(self, model: Model, fleed: bool = False) -> None:
@@ -293,3 +301,14 @@ class Unit:
         """
         num_models = len(self.models)
         return self.calculate_points(num_models) + (self.enhancement.points if self.enhancement else 0)
+
+    def configure_models(self, count, wargear):
+        # Adjust the number of models if necessary
+        while len(self.models) < count:
+            # Create a new model (you might need to adjust this based on your Model class)
+            new_model = Model(name=self.name, **self._datasheet.datasheets_models[0])
+            self.models.append(new_model)
+
+        # Apply wargear to the specified number of models
+        for model in self.models[:count]:
+            model.add_wargear(wargear)
