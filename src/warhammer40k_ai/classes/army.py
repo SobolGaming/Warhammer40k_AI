@@ -3,6 +3,8 @@ from src.warhammer40k_ai.classes.unit import Unit
 from src.warhammer40k_ai.classes.wargear import Wargear
 from src.warhammer40k_ai.classes.enhancement import Enhancement
 from src.warhammer40k_ai.waha_helper import WahaHelper
+import codecs
+
 
 # Define custom exception for validation errors
 class ArmyValidationError(Exception):
@@ -174,8 +176,12 @@ class Army:
 
 # Helper function to parse an army list from a text file
 def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
-    with open(file_path, 'r') as file:
-        lines = file.readlines()
+    with codecs.open(file_path, 'r', encoding='utf-8-sig') as f:
+        lines = f.readlines()
+        
+        # Remove BOM if present
+        if lines and lines[0].startswith('\ufeff'):
+            lines[0] = lines[0][1:]
 
     # Extract army information
     army_name = lines[0].strip()
@@ -214,6 +220,7 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
         elif line.startswith('•'):
             # This is additional unit data (warlord status, wargear, enhancements)
             data = line[1:].strip()
+            print(f"Evaluating data: {data}")
             if data.lower() == 'warlord':
                 current_unit.is_warlord = True
             elif data.startswith('Enhancement:'):
@@ -222,7 +229,6 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
                 if not current_enhancement:
                     print(f"Warning: Enhancement not found for {enhancement_name}")
             else:
-                data = data.replace('• ', '')
                 quantity, wargear_name = data.split('x ')
                 current_wargear.append((wargear_name, quantity))
 
@@ -232,15 +238,17 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
 
     return army
 
-def add_unit_to_army(army: Army, unit: Unit, wargear: List[str], enhancement: Enhancement, waha_helper: WahaHelper):
+def add_unit_to_army(army: Army, unit: Unit, wargear_names: List[str], enhancement: Enhancement, waha_helper: WahaHelper):
     # Add wargear to the unit
-    #for item in wargear:
-        #print(f"Adding wargear: {item}")
-        #wargear_data = waha_helper.get_wargear_by_name(item)
-        #if wargear_data:
-        #    unit.apply_wargear_option(f"1 model can be equipped with 1 {item}")
-        #else:
-        #    print(f"Warning: Wargear not found for {item}")
+    for wargear_name in wargear_names:
+        gear_name = wargear_name[0].lower()
+        print(f"Evaluating wargear: {gear_name}")
+        if gear_name in [gear.name.lower() for gear in unit.possible_wargear]:
+            unit.add_wargear([gear if gear.name.lower() == gear_name else None for gear in unit.possible_wargear])
+        else:
+            print(f"Warning: {gear_name} not found in {unit.name}'s possible wargear.")
+            for gear in unit.possible_wargear:
+                print(f"  - {gear.name.lower()}")
 
     # Add enhancement to the unit if it exists
     if enhancement:
@@ -253,7 +261,7 @@ def add_unit_to_army(army: Army, unit: Unit, wargear: List[str], enhancement: En
     army.add_unit(unit)
 
     # Set warlord if applicable
-    if "Warlord" in wargear:
+    if "Warlord" in wargear_names:
         army.select_warlord(unit)
 
 
@@ -269,5 +277,6 @@ if __name__ == "__main__":
         for model in unit.models:
             print(f"  - {model.name}")
             for wargear in model.wargear:
-                print(f"    - {wargear.name}")
+                if wargear:
+                    print(f"    - {wargear.name}")
     army.validate()

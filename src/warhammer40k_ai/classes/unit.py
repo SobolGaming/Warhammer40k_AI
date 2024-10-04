@@ -121,7 +121,21 @@ class Unit:
         possible_wargear = []
         if hasattr(datasheet, 'datasheets_wargear'):
             for wargear_data in datasheet.datasheets_wargear:
-                possible_wargear.append(Wargear(wargear_data))
+                print(f"Parsing wargear {wargear_data['name']}")
+                if ' – ' in wargear_data['name']:
+                    name, profile = wargear_data['name'].split(' – ')
+                    if name not in [wargear.name for wargear in possible_wargear]:
+                        print(f"Adding wargear {name} with profile {profile}")
+                        possible_wargear.append(Wargear(wargear_data))
+                    else:
+                        for wargear in possible_wargear:
+                            if wargear.name == name:
+                                print(f"Adding profile {profile} to wargear {name}")
+                                wargear.add_profile(profile, wargear_data)
+                                break
+                else:
+                    print(f"Adding wargear {wargear_data['name']}")
+                    possible_wargear.append(Wargear(wargear_data))
         return possible_wargear
 
     def _parse_wargear_options(self, datasheet) -> List[str]:
@@ -191,10 +205,11 @@ class Unit:
             else:
                 wargear_to_add.extend(wargear)
             for wargear_instance in wargear_to_add:
-                if model and model_instance == model:
+                if model:
+                    if model_instance == model:
+                        model_instance.wargear.append(wargear_instance)
+                else:
                     model_instance.wargear.append(wargear_instance)
-            else:
-                model_instance.wargear.append(wargear_instance)
 
     # Remove a Model from a Unit (e.g., when it dies)
     def remove_model(self, model: Model, fleed: bool = False) -> None:

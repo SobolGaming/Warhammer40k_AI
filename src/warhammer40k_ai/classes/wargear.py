@@ -1,12 +1,12 @@
-from typing import Union
+from typing import Union, Dict, Optional, List
 from src.warhammer40k_ai.utility.dice import DiceCollection
 from src.warhammer40k_ai.utility.range import Range
 from src.warhammer40k_ai.utility.count import Count
 
-class Wargear:
-    def __init__(self, wargear_data):
-        self.name = wargear_data.get('name', '')
-        self.type = wargear_data.get('type', '')
+
+class WargearProfile:
+    def __init__(self, profile_name: str, wargear_data: Dict):
+        self.name = profile_name
         self.range = self._parse_range(wargear_data.get('range', ''))
         self.attacks = self._parse_attacks(wargear_data.get('A', ''))
         self.skill = self._parse_attribute(wargear_data.get('BS_WS', ''))
@@ -14,7 +14,7 @@ class Wargear:
         self.ap = self._parse_attribute(wargear_data.get('AP', ''))
         self.damage = self._parse_attribute(wargear_data.get('D', ''))
         self.keywords = self._parse_keywords(wargear_data.get('description', ''))
-
+    
     def _parse_range(self, range_string: str) -> Range:
         if "Melee" == range_string:
             return Range.from_string("0")
@@ -38,14 +38,58 @@ class Wargear:
             return [keyword.strip() for keyword in keywords_string.split(',')]
         return []
 
+
+class Wargear:
+    def __init__(self, wargear_data: Dict):
+        self.name = wargear_data.get('name', '').replace('’', "'")
+        if ' – ' in self.name:
+            self.name, profile_name = self.name.split(' – ')
+        else:
+            profile_name = 'default'
+        self.type = wargear_data.get('type', '')
+        self.profiles = [WargearProfile(profile_name, wargear_data)]
+
+    def add_profile(self, profile_name: str, wargear_data: Dict):
+        self.profiles.append(WargearProfile(profile_name, wargear_data))
+
     def __str__(self):
-        return (f"{self.name} ({self.type}): "
-                f"Range {self.range}, A {self.attacks}, "
-                f"BS/WS {self.skill}, S {self.strength}, "
-                f"AP {self.ap}, D {self.damage}")
+        str = f"{self.name} ({self.type}): "
+        for profile in self.profiles:
+            str += f"[{profile.name}: "
+            str += f"Range {self.get_range(profile.name)}, A {self.get_attacks(profile.name)}, "
+            str += f"BS/WS {self.get_skill(profile.name)}, S {self.get_strength(profile.name)}, "
+            str += f"AP {self.get_ap(profile.name)}, D {self.get_damage(profile.name)}]"
+        return str
 
     def __repr__(self):
-        return (f"Wargear(name='{self.name}', type='{self.type}', "
-                f"range={self.range!r}, attacks={self.attacks!r}, "
-                f"skill={self.skill!r}, strength={self.strength!r}, "
-                f"ap={self.ap!r}, damage={self.damage!r})")
+        str = f"Wargear(name='{self.name}', type='{self.type}', "
+        for profile in self.profiles:
+            str += f"[{profile.name}: "
+            str += f"range={self.get_range(profile.name)!r}, attacks={self.get_attacks(profile.name)!r}, "
+            str += f"skill={self.get_skill(profile.name)!r}, strength={self.get_strength(profile.name)!r}, "
+            str += f"ap={self.get_ap(profile.name)!r}, damage={self.get_damage(profile.name)!r}]"
+        return str
+
+    def get_type(self) -> str:
+        return self.type
+
+    def get_range(self, profile_name: Optional[str] = 'default') -> Range:
+        return self.profiles[profile_name].range
+
+    def get_attacks(self, profile_name: Optional[str] = 'default') -> Count:
+        return self.profiles[profile_name].attacks
+
+    def get_skill(self, profile_name: Optional[str] = 'default') -> int:
+        return self.profiles[profile_name].skill
+
+    def get_strength(self, profile_name: Optional[str] = 'default') -> int:
+        return self.profiles[profile_name].strength
+
+    def get_ap(self, profile_name: Optional[str] = 'default') -> int:
+        return self.profiles[profile_name].ap
+
+    def get_damage(self, profile_name: Optional[str] = 'default') -> int:
+        return self.profiles[profile_name].damage
+
+    def get_keywords(self, profile_name: Optional[str] = 'default') -> List[str]:
+        return self.profiles[profile_name].keywords
