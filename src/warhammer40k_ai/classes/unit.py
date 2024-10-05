@@ -18,7 +18,7 @@ class UnitRoundState:
 
 
 class Unit:
-    def __init__(self, datasheet, points=None, enhancement=None):
+    def __init__(self, datasheet, quantity=None, enhancement=None):
         self._datasheet = datasheet
         self.name = datasheet.name
         self.faction = datasheet.faction_data["name"]
@@ -26,7 +26,7 @@ class Unit:
         self.faction_keywords = getattr(datasheet, 'faction_keywords', [])  # Use getattr with a default value
         self.unit_composition = self._parse_unit_composition(datasheet.datasheets_unit_composition)
         self.models_cost = self._parse_models_cost(datasheet.datasheets_models_cost)
-        self.models = self._create_models(datasheet, points)
+        self.models = self._create_models(datasheet, quantity)
         self.possible_wargear = self._parse_wargear(datasheet)
         self.wargear_options = self._parse_wargear_options(datasheet)
         self.can_be_attached_to = getattr(datasheet, 'attached_to', [])
@@ -84,17 +84,18 @@ class Unit:
             result[model_name] = (min_size, max_size)
         return result
 
-    def _create_models(self, datasheet, points=None):
+    def _create_models(self, datasheet, quantity=None):
         models = []
         total_models = 0
 
-        if points is not None:
-            max_models = self.max_models_for_points(points)
-        else:
-            max_models = sum(max_size if isinstance(max_size, int) else max_size[1] for _, max_size in self.unit_composition.items())
+        if quantity is None:
+            # If no quantity is specified, use the minimum number of models
+            quantity = sum(min_size for _, (min_size, _) in self.unit_composition.items())
 
         for model_name, (min_size, max_size) in self.unit_composition.items():
-            model_count = min(max_size, max(min_size, max_models - total_models))
+            if isinstance(max_size, tuple):
+                max_size = max_size[1]  # Use the second value if it's a tuple
+            model_count = min(max_size, max(min_size, quantity - total_models))
             # Remove 's' from the end of model_name if it's plural
             if model_name.endswith('s'):
                 model_name = model_name[:-1]
@@ -113,7 +114,7 @@ class Unit:
                 model.set_parent_unit(self)
                 models.append(model)
                 total_models += 1
-            if total_models >= max_models:
+            if total_models >= quantity:
                 break
         return models
 
@@ -196,7 +197,7 @@ class Unit:
         for option in options:
             self.apply_wargear_option(option)
 
-    def add_wargear(self, wargear: List[Wargear]=[], model: Model=None) -> None:
+    def add_wargear(self, wargear: List[Wargear]=[], model_name: str=None) -> None:
         for model_instance in self.models:
             wargear_to_add = []
             if not wargear:
@@ -205,8 +206,8 @@ class Unit:
             else:
                 wargear_to_add.extend(wargear)
             for wargear_instance in wargear_to_add:
-                if model:
-                    if model_instance == model:
+                if model_name:
+                    if model_instance.name == model_name:
                         model_instance.wargear.append(wargear_instance)
                 else:
                     model_instance.wargear.append(wargear_instance)
@@ -318,12 +319,9 @@ class Unit:
         return self.calculate_points(num_models) + (self.enhancement.points if self.enhancement else 0)
 
     def configure_models(self, count, wargear):
-        # Adjust the number of models if necessary
-        while len(self.models) < count:
-            # Create a new model (you might need to adjust this based on your Model class)
-            new_model = Model(name=self.name, **self._datasheet.datasheets_models[0])
-            self.models.append(new_model)
+        # Recreate the models with the specified count
+        self.models = self._create_models(self._datasheet, count)
 
-        # Apply wargear to the specified number of models
-        for model in self.models[:count]:
+        # Apply wargear to all models
+        for model in self.models:
             model.add_wargear(wargear)

@@ -14,7 +14,7 @@ class Model:
     def __init__(self, name: str, movement: int, toughness: int, save: int, 
                  wounds: int, leadership: int, objective_control: int, model_base: Base, 
                  inv_save: Optional[int] = None):
-        self.name = name
+        self.name = name.split(' – ')[0]
         # Model attributes have a base value, but can be modified by wargear, strategems, etc
         # We need to track base value and current value separately
         self.base_movement = movement

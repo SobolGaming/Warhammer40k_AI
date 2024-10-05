@@ -1,4 +1,4 @@
-from typing import List, Tuple
+from typing import Tuple, Dict, Set
 from src.warhammer40k_ai.classes.unit import Unit
 from src.warhammer40k_ai.classes.wargear import Wargear
 from src.warhammer40k_ai.classes.enhancement import Enhancement
@@ -204,7 +204,9 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
     army = Army(faction=faction_keyword, detachment_type=detachment_type, points_limit=points_limit)
 
     current_unit = None
-    current_wargear = []
+    current_model_count = 0
+    current_model_name = None
+    current_wargear = {}
     current_enhancement = None
     is_warlord = False
 
@@ -212,8 +214,6 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
         line = line.strip()
         if not line:
             continue
-
-        #print(f"Processing line: {line}")
 
         if line.upper() in ['CHARACTER', 'CHARACTERS', 'BATTLELINE', 'OTHER DATASHEETS']:
             continue
@@ -223,67 +223,78 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
 
         if not line.startswith('•') and not line.startswith('◦'):
             if current_unit:
-                #print(f"Adding unit to army: {current_unit.name}")
-                add_unit_to_army(army, current_unit, current_wargear, current_enhancement, waha_helper, is_warlord)
+                add_unit_to_army(army, current_unit, current_model_count, current_wargear, current_enhancement, waha_helper, is_warlord)
                 current_unit = None
-                current_wargear = []
+                current_model_name = None
+                current_model_count = 0
+                current_wargear = {}
                 current_enhancement = None
                 is_warlord = False
 
             unit_info = line.split(' (')
             unit_name = unit_info[0].strip()
-            unit_points = int(unit_info[1].split()[0]) if len(unit_info) > 1 else 0
             
-            #print(f"Creating new unit: {unit_name} ({unit_points} points)")
             datasheet = waha_helper.get_full_datasheet_info_by_name(unit_name)
             if datasheet:
-                current_unit = Unit(datasheet, unit_points)
+                current_unit = Unit(datasheet)
             else:
                 print(f"Warning: Datasheet not found for {unit_name}")
 
         elif line.startswith('•') or line.startswith('◦'):
             data = line[1:].strip()
-            #print(f"Evaluating data: {data}")
             if data.lower() == 'warlord':
                 is_warlord = True
-                #print(f"Setting {current_unit.name} as Warlord")
             elif data.lower().startswith('enhancement'):
                 enhancement_name = data.split(':', 1)[1].strip()
                 current_enhancement = waha_helper.get_enhancement_by_name(enhancement_name)
                 if not current_enhancement:
                     print(f"Warning: Enhancement not found for {enhancement_name}")
             elif data.startswith('Daemonic Allegiance:'):
-                # Handle Daemonic Allegiance for Soul Grinder
                 allegiance = data.split(':', 1)[1].strip()
                 current_unit.daemonic_allegiance = allegiance
             else:
-                # Handle wargear
+                # This could be either a model count or wargear
                 if 'x ' in data:
-                    quantity, wargear_name = data.split('x ', 1)
+                    quantity, item_name = data.split('x ', 1)
                     quantity = int(quantity)
                 else:
                     quantity = 1
-                    wargear_name = data
-                current_wargear.append((wargear_name.strip(), quantity))
+                    item_name = data
+
+                # Check if it's a model count or wargear
+                if current_unit and any(item_name.strip() in model_name.rstrip('s') for model_name in current_unit.unit_composition.keys()):
+                    current_model_count += quantity
+                    current_model_name = item_name.strip()
+                    current_wargear[current_model_name] = set()
+                else:
+                    if current_model_name:
+                        current_wargear.setdefault(current_model_name, set()).add((item_name.strip(), quantity))
+                    else:
+                        print(f"Name: {current_unit.name} :: {item_name.strip()}")
+                        current_wargear.setdefault(current_unit.name, set()).add((item_name.strip(), quantity))
 
     # Don't forget to add the last unit if there is one
     if current_unit:
-        add_unit_to_army(army, current_unit, current_wargear, current_enhancement, waha_helper, is_warlord)
+        add_unit_to_army(army, current_unit, current_model_count, current_wargear, current_enhancement, waha_helper, is_warlord)
 
     print(f"Finished parsing. Total units: {len(army.units)}")
     return army
 
-def add_unit_to_army(army: Army, unit: Unit, wargear_list: List[Tuple[str, int]], enhancement: Enhancement, waha_helper: WahaHelper, is_warlord: bool):
+def add_unit_to_army(army: Army, unit: Unit, model_count: int, wargear_dict: Dict[str, Set[Tuple[str, int]]], enhancement: Enhancement, waha_helper: WahaHelper, is_warlord: bool):
+    # Configure the unit with the correct number of models
+    unit.configure_models(model_count, [])
+
     # Add wargear to the unit
-    for wargear_name, quantity in wargear_list:
-        gear_name = wargear_name.lower().replace("’", "'")
-        if gear_name in [gear.name.lower() for gear in unit.possible_wargear]:
-            #for _ in range(quantity):
-            unit.add_wargear([gear if gear.name.lower() == gear_name else None for gear in unit.possible_wargear])
-        else:
-            print(f"Warning: {gear_name} not found in {unit.name}'s possible wargear.")
-            for gear in unit.possible_wargear:
-                print(f"  - {gear.name.lower()}")
+    for model_name, wargear_list in wargear_dict.items():
+        for wargear_name, _ in wargear_list:
+            gear_name = wargear_name.lower().replace("’", "'")
+            matching_gear = next((gear for gear in unit.possible_wargear if gear.name.lower() == gear_name), None)
+            if matching_gear:
+                unit.add_wargear([matching_gear if gear.name.lower() == gear_name else None for gear in unit.possible_wargear], model_name)
+            else:
+                print(f"Warning: {gear_name} not found in {unit.name}'s possible wargear.")
+                for gear in unit.possible_wargear:
+                    print(f"  - {gear.name}")
 
     # Add enhancement to the unit if it exists
     if enhancement:
@@ -303,7 +314,7 @@ def add_unit_to_army(army: Army, unit: Unit, wargear_list: List[Tuple[str, int]]
 # Example usage:
 if __name__ == "__main__":
     waha_helper = WahaHelper()
-    army = parse_army_list("army_lists/chaos_daemons_GT2023.txt", waha_helper)
+    army = parse_army_list("army_lists/warhammer_app_dump.txt", waha_helper)
     print(f"Parsed army: {army.faction_keyword} - {army.detachment_type}")
     print(f"Total points: {army.get_total_points()} out of {army.points_limit}")
     print(f"Number of units: {len(army.units)}")
