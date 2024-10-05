@@ -1,4 +1,4 @@
-from typing import List, Dict
+from typing import List, Tuple
 from src.warhammer40k_ai.classes.unit import Unit
 from src.warhammer40k_ai.classes.wargear import Wargear
 from src.warhammer40k_ai.classes.enhancement import Enhancement
@@ -12,8 +12,9 @@ class ArmyValidationError(Exception):
 
 
 class Army:
-    def __init__(self, faction_keyword: str, detachment_type: str, points_limit: int = 2000):
-        self.faction_keyword = faction_keyword
+    def __init__(self, faction: str, detachment_type: str, points_limit: int = 2000):
+        self.faction = faction
+        self.faction_keyword = []
         self.detachment_type = detachment_type
         self.points_limit = points_limit
         self.units = []
@@ -22,17 +23,16 @@ class Army:
         self.detachment_rules = {}  # Placeholder for detachment-specific rules
     
     def add_unit(self, unit: Unit) -> bool:
-        if not self._check_faction_consistency(unit):
-            return False
+        if not self.faction_keyword:
+            self.faction_keyword = unit.faction_keywords
+        elif unit.faction_keywords != self.faction_keyword:
+            raise ArmyValidationError(f"Unit {unit.name} does not match army faction {self.faction}.")
         
         self.units.append(unit)
         return True
     
     def get_total_points(self) -> int:
         return sum(unit.get_unit_cost() for unit in self.units)
-    
-    def _check_faction_consistency(self, unit: Unit) -> bool:
-        return unit.faction_keywords[0].lower() == self.faction_keyword.lower()
 
     def add_enhancement(self, enhancement, character_unit):
         # Assign an Enhancement to a Character unit
@@ -183,67 +183,102 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
         if lines and lines[0].startswith('\ufeff'):
             lines[0] = lines[0][1:]
 
+    # Determine the format
+    is_app_format = any("Exported with App Version:" in line for line in lines)
+
     # Extract army information
-    army_name = lines[0].strip()
-    points_limit = int(lines[1].split('(')[1].split()[0])
-    detachment_type = lines[2].strip()
+    if is_app_format:
+        points_limit = int(lines[0].split('(')[1].split()[0])
+        faction_keyword = lines[2].strip()
+        detachment_type = lines[3].strip()
+        start_index = 5
+    else:
+        points_limit = int(lines[1].split('(')[1].split()[0])
+        faction_keyword = lines[0].split(' – ')[-1]
+        detachment_type = lines[2].strip()
+        start_index = 4
+
+    print(f"Parsing army: {faction_keyword} - {detachment_type} ({points_limit} points)")
 
     # Create the Army object
-    army = Army(faction_keyword="Legiones Daemonica", detachment_type=detachment_type, points_limit=points_limit)
+    army = Army(faction=faction_keyword, detachment_type=detachment_type, points_limit=points_limit)
 
     current_unit = None
     current_wargear = []
     current_enhancement = None
+    is_warlord = False
 
-    for line in lines[4:]:  # Skip the header lines
+    for line in lines[start_index:]:
         line = line.strip()
         if not line:
             continue
 
-        elif not line.lower().startswith(('character', 'battleline', 'other datasheets')) and not line.startswith('•'):
-            # This is the start of a new unit
+        #print(f"Processing line: {line}")
+
+        if line.upper() in ['CHARACTER', 'CHARACTERS', 'BATTLELINE', 'OTHER DATASHEETS']:
+            continue
+
+        if line.startswith('Exported with'):
+            break
+
+        if not line.startswith('•') and not line.startswith('◦'):
             if current_unit:
-                # Add the previous unit to the army
-                add_unit_to_army(army, current_unit, current_wargear, current_enhancement, waha_helper)
+                #print(f"Adding unit to army: {current_unit.name}")
+                add_unit_to_army(army, current_unit, current_wargear, current_enhancement, waha_helper, is_warlord)
                 current_unit = None
                 current_wargear = []
                 current_enhancement = None
+                is_warlord = False
 
-            # Parse the new unit
-            unit_name = line.split(' (')[0].strip()
+            unit_info = line.split(' (')
+            unit_name = unit_info[0].strip()
+            unit_points = int(unit_info[1].split()[0]) if len(unit_info) > 1 else 0
             
+            #print(f"Creating new unit: {unit_name} ({unit_points} points)")
             datasheet = waha_helper.get_full_datasheet_info_by_name(unit_name)
             if datasheet:
-                current_unit = Unit(datasheet, 0)  # We're not using points here
+                current_unit = Unit(datasheet, unit_points)
             else:
                 print(f"Warning: Datasheet not found for {unit_name}")
-        elif line.startswith('•'):
-            # This is additional unit data (warlord status, wargear, enhancements)
+
+        elif line.startswith('•') or line.startswith('◦'):
             data = line[1:].strip()
             #print(f"Evaluating data: {data}")
             if data.lower() == 'warlord':
-                current_unit.is_warlord = True
-            elif data.startswith('Enhancement:'):
-                enhancement_name = data.split('Enhancement:')[1].strip()
+                is_warlord = True
+                #print(f"Setting {current_unit.name} as Warlord")
+            elif data.lower().startswith('enhancement'):
+                enhancement_name = data.split(':', 1)[1].strip()
                 current_enhancement = waha_helper.get_enhancement_by_name(enhancement_name)
                 if not current_enhancement:
                     print(f"Warning: Enhancement not found for {enhancement_name}")
+            elif data.startswith('Daemonic Allegiance:'):
+                # Handle Daemonic Allegiance for Soul Grinder
+                allegiance = data.split(':', 1)[1].strip()
+                current_unit.daemonic_allegiance = allegiance
             else:
-                quantity, wargear_name = data.split('x ')
-                current_wargear.append((wargear_name, quantity))
+                # Handle wargear
+                if 'x ' in data:
+                    quantity, wargear_name = data.split('x ', 1)
+                    quantity = int(quantity)
+                else:
+                    quantity = 1
+                    wargear_name = data
+                current_wargear.append((wargear_name.strip(), quantity))
 
-    # Add the last unit to the army
+    # Don't forget to add the last unit if there is one
     if current_unit:
-        add_unit_to_army(army, current_unit, current_wargear, current_enhancement, waha_helper)
+        add_unit_to_army(army, current_unit, current_wargear, current_enhancement, waha_helper, is_warlord)
 
+    print(f"Finished parsing. Total units: {len(army.units)}")
     return army
 
-def add_unit_to_army(army: Army, unit: Unit, wargear_names: List[str], enhancement: Enhancement, waha_helper: WahaHelper):
+def add_unit_to_army(army: Army, unit: Unit, wargear_list: List[Tuple[str, int]], enhancement: Enhancement, waha_helper: WahaHelper, is_warlord: bool):
     # Add wargear to the unit
-    for wargear_name in wargear_names:
-        gear_name = wargear_name[0].lower()
-        #print(f"Evaluating wargear: {gear_name}")
+    for wargear_name, quantity in wargear_list:
+        gear_name = wargear_name.lower().replace("’", "'")
         if gear_name in [gear.name.lower() for gear in unit.possible_wargear]:
+            #for _ in range(quantity):
             unit.add_wargear([gear if gear.name.lower() == gear_name else None for gear in unit.possible_wargear])
         else:
             print(f"Warning: {gear_name} not found in {unit.name}'s possible wargear.")
@@ -261,7 +296,7 @@ def add_unit_to_army(army: Army, unit: Unit, wargear_names: List[str], enhanceme
     army.add_unit(unit)
 
     # Set warlord if applicable
-    if "Warlord" in wargear_names:
+    if is_warlord:
         army.select_warlord(unit)
 
 

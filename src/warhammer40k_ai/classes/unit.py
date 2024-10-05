@@ -121,20 +121,20 @@ class Unit:
         possible_wargear = []
         if hasattr(datasheet, 'datasheets_wargear'):
             for wargear_data in datasheet.datasheets_wargear:
-                print(f"Parsing wargear {wargear_data['name']}")
+                #print(f"Parsing wargear {wargear_data['name']}")
                 if ' – ' in wargear_data['name']:
                     name, profile = wargear_data['name'].split(' – ')
                     if name not in [wargear.name for wargear in possible_wargear]:
-                        print(f"Adding wargear {name} with profile {profile}")
+                        #print(f"Adding wargear {name} with profile {profile}")
                         possible_wargear.append(Wargear(wargear_data))
                     else:
                         for wargear in possible_wargear:
                             if wargear.name == name:
-                                print(f"Adding profile {profile} to wargear {name}")
+                                #print(f"Adding profile {profile} to wargear {name}")
                                 wargear.add_profile(profile, wargear_data)
                                 break
                 else:
-                    print(f"Adding wargear {wargear_data['name']}")
+                    #print(f"Adding wargear {wargear_data['name']}")
                     possible_wargear.append(Wargear(wargear_data))
         return possible_wargear
 
