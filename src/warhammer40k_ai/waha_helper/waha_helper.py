@@ -6,6 +6,7 @@ import warnings
 from bs4 import BeautifulSoup, MarkupResemblesLocatorWarning
 from types import SimpleNamespace
 from warhammer40k_ai.classes.enhancement import Enhancement
+from warhammer40k_ai.classes.ability import Ability
 
 # Suppress the specific warnings at the module level
 warnings.filterwarnings("ignore", category=MarkupResemblesLocatorWarning)
@@ -231,6 +232,21 @@ class WahaHelper:
                     points=int(enhancement.get('cost', 0)),
                     description=enhancement.get('description', '')
                 )
+        return None
+
+    def get_ability(self, ability_id: str) -> Ability:
+        """
+        Returns an Ability object for the given ability name.
+        """
+        if ability_id in self.abilities:
+            ability_data = self.abilities[ability_id]
+            return Ability(
+                name=ability_data['name'],
+                legend=ability_data.get('legend', ''),
+                description=ability_data.get('description', ''),
+                type=ability_data.get('type', ''),
+                parameter=ability_data.get('parameter', '')
+            )
         return None
 
 # Add this function outside of the WahaHelper class

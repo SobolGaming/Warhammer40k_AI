@@ -270,7 +270,6 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
                     if current_model_name:
                         current_wargear.setdefault(current_model_name, set()).add((item_name.strip(), quantity))
                     else:
-                        print(f"Name: {current_unit.name} :: {item_name.strip()}")
                         current_wargear.setdefault(current_unit.name, set()).add((item_name.strip(), quantity))
 
     # Don't forget to add the last unit if there is one
@@ -292,9 +291,15 @@ def add_unit_to_army(army: Army, unit: Unit, model_count: int, wargear_dict: Dic
             if matching_gear:
                 unit.add_wargear([matching_gear if gear.name.lower() == gear_name else None for gear in unit.possible_wargear], model_name)
             else:
-                print(f"Warning: {gear_name} not found in {unit.name}'s possible wargear.")
-                for gear in unit.possible_wargear:
-                    print(f"  - {gear.name}")
+                matching_ability = next((ability for ability in unit.possible_abilities if ability.name.lower() == gear_name and ability.type == 'Wargear'), None)
+                if matching_ability:
+                    unit.add_ability(matching_ability, model_name)
+                else:
+                    print(f"Warning: {gear_name} not found in {unit.name}'s possible wargear or abilities.")
+                    for gear in unit.possible_wargear:
+                        print(f"  - {gear.name}")
+                    for ability in unit.possible_abilities:
+                        print(f"  - {ability.name}")
 
     # Add enhancement to the unit if it exists
     if enhancement:
@@ -325,4 +330,7 @@ if __name__ == "__main__":
             for wargear in model.wargear:
                 if wargear:
                     print(f"    - {wargear.name}")
+            for ability in model.abilities:
+                if ability:
+                    print(f"    - {ability.name}")
     army.validate()

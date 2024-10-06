@@ -3,6 +3,7 @@ from typing import List, Tuple, Optional
 from .model import Model
 from ..utility.model_base import Base, BaseType, convert_mm_to_inches
 from .wargear import Wargear
+from .ability import Ability
 from ..utility.range import Range
 
 logging.basicConfig(format="%(asctime)s %(levelname)-8s %(message)s")
@@ -29,6 +30,7 @@ class Unit:
         self.models = self._create_models(datasheet, quantity)
         self.possible_wargear = self._parse_wargear(datasheet)
         self.wargear_options = self._parse_wargear_options(datasheet)
+        self.possible_abilities = self._parse_abilities(datasheet)
         self.can_be_attached_to = getattr(datasheet, 'attached_to', [])
 
         if hasattr(datasheet, 'damaged_w') and datasheet.damaged_w:
@@ -146,6 +148,25 @@ class Unit:
                 wargear_options.append(wargear_option_data["description"])
         return wargear_options
 
+    def _parse_abilities(self, datasheet) -> List[Ability]:
+        abilities = []
+        if hasattr(datasheet, 'datasheets_abilities'):
+            for ability in datasheet.datasheets_abilities:
+                if 'ability_data' in ability.keys():
+                    abilities.append(Ability(ability["ability_data"]["name"],
+                                            ability["ability_data"]["faction_id"],
+                                            ability["ability_data"]["description"],
+                                            ability["type"],
+                                            ability["parameter"],
+                                            ability["ability_data"]["legend"]))
+                else:
+                    abilities.append(Ability(ability["name"],
+                                            "",
+                                            ability["description"],
+                                            ability["type"],
+                                            ability["parameter"]))
+        return abilities
+
     def apply_wargear_option(self, option: str):
         # Parse the option string
         parts = option.split(' can be equipped with ')
@@ -211,6 +232,15 @@ class Unit:
                         model_instance.wargear.append(wargear_instance)
                 else:
                     model_instance.wargear.append(wargear_instance)
+
+    def add_ability(self, ability: Ability, model_name: str=None) -> None:
+        """Add ability to the unit."""
+        for model in self.models:
+            if model_name:
+                if model.name == model_name:
+                    model.add_ability(ability)
+            else:
+                model.add_ability(ability)
 
     # Remove a Model from a Unit (e.g., when it dies)
     def remove_model(self, model: Model, fleed: bool = False) -> None:
@@ -325,3 +355,10 @@ class Unit:
         # Apply wargear to all models
         for model in self.models:
             model.add_wargear(wargear)
+
+    @property
+    def abilities(self):
+        abilities = []
+        for model in self.models:
+            abilities.extend(model.abilities)
+        return abilities
