@@ -299,7 +299,7 @@ def add_unit_to_army(army: Army, unit: Unit, model_count: int, wargear_dict: Dic
                     for gear in unit.possible_wargear:
                         print(f"  - {gear.name}")
                     for ability in unit.possible_abilities:
-                        print(f"  - {ability.name}")
+                        print(f"  - {ability.name} (Ability Wargear)")
 
     # Add enhancement to the unit if it exists
     if enhancement:
@@ -332,7 +332,7 @@ if __name__ == "__main__":
                     print(f"    - {wargear.name}")
             for ability in model.abilities:
                 if ability:
-                    print(f"    - {ability.name}")
+                    print(f"    - {ability.name} (Ability Wargear)")
             if unit.enhancement:
                 print(f"    - Enhancement: {unit.enhancement.name}")
     army.validate()
