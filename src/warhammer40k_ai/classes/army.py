@@ -330,9 +330,9 @@ if __name__ == "__main__":
             for wargear in model.wargear:
                 if wargear:
                     print(f"    - {wargear.name}")
-            for ability in model.abilities:
+            for ability in model.abilities.keys():
                 if ability:
-                    print(f"    - {ability.name} (Ability Wargear)")
+                    print(f"    - {ability} (Ability Wargear)")
             if unit.enhancement:
                 print(f"    - Enhancement: {unit.enhancement.name}")
     army.validate()

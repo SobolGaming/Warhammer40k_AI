@@ -1,8 +1,8 @@
 import logging
-from typing import List, Tuple, Optional
+from typing import List, Dict, Tuple, Optional
 from .model import Model
 from ..utility.model_base import Base, BaseType, convert_mm_to_inches
-from .wargear import Wargear
+from .wargear import Wargear, WargearOption
 from .ability import Ability
 from ..utility.range import Range
 
@@ -167,7 +167,7 @@ class Unit:
                                             ability["parameter"]))
         return abilities
 
-    def apply_wargear_option(self, option: str):
+    def parse_wargear_option(self, option: str, result: Dict[str, List[WargearOption]]):
         # Parse the option string
         parts = option.split(' can be equipped with ')
         if len(parts) != 2:
@@ -199,24 +199,37 @@ class Unit:
             elif not_equipped_with.startswith("an "):
                 not_equipped_with = not_equipped_with[3:].strip()
 
+        if item_description.lower() not in result.keys():
+            result[item_description.lower()] = WargearOption(item_description, model_description, model_count, item_count, not_equipped_with)
+
+    def parse_wargear_options(self, options: List[str]):
+        result = {}
+        for option in options:
+            self.parse_wargear_option(option, result)
+        self.wargear_options = result
+
+    def apply_wargear_option(self, wargear_option: WargearOption):
         # Find eligible models
         eligible_models = [
             model for model in self.models
-            if model.name in model_description and
-            item_description not in model.optional_wargear and
-            (not_equipped_with is None or not_equipped_with not in model.optional_wargear)
+            if model.name in wargear_option.model_name and
+            wargear_option.wargear_name not in model.optional_wargear and
+            (wargear_option.exclude_name is None or wargear_option.exclude_name.lower() not in model.optional_wargear)
         ]
 
-        if len(eligible_models) < model_count:
-            raise ValueError(f"Not enough eligible models for option: {option}")
+        if len(eligible_models) < wargear_option.model_quantity:
+            raise ValueError(f"Not enough eligible models for option: {wargear_option.name}")
 
-        # Apply wargear to eligible models
-        for model in eligible_models[:model_count]:
-            model.optional_wargear.append(item_description)
+        count = 0
+        for model in eligible_models:
+            if count >= wargear_option.item_quantity:
+                break
+            model.optional_wargear.append(wargear_option.wargear_name)
+            count += 1
 
-    def apply_wargear_options(self, options: List[str]):
-        for option in options:
-            self.apply_wargear_option(option)
+    def apply_wargear_options(self):
+        for optional_wargear_name in self.wargear_options.keys():
+            self.apply_wargear_option(self.wargear_options[optional_wargear_name])
 
     def add_wargear(self, wargear: List[Wargear]=[], model_name: str=None) -> None:
         for model_instance in self.models:
@@ -233,14 +246,18 @@ class Unit:
                 else:
                     model_instance.wargear.append(wargear_instance)
 
-    def add_ability(self, ability: Ability, model_name: str=None) -> None:
+    def add_ability(self, ability: Ability, model_name: str=None, quantity: int=1000) -> None:
         """Add ability to the unit."""
+        count = 0
         for model in self.models:
+            if count >= quantity:
+                break
             if model_name:
                 if model.name == model_name:
                     model.add_ability(ability)
             else:
                 model.add_ability(ability)
+            count += 1
 
     # Remove a Model from a Unit (e.g., when it dies)
     def remove_model(self, model: Model, fleed: bool = False) -> None:

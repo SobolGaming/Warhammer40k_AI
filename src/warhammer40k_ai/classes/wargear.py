@@ -1,4 +1,4 @@
-from typing import Union, Dict, List
+from typing import Union, Dict, List, Optional
 from src.warhammer40k_ai.utility.dice import DiceCollection
 from src.warhammer40k_ai.utility.range import Range
 from src.warhammer40k_ai.utility.count import Count
@@ -93,3 +93,18 @@ class Wargear:
 
     def get_keywords(self, profile_name: str = 'default') -> List[str]:
         return self.profiles[profile_name].keywords
+
+
+class WargearOption:
+    def __init__(self, wargear_name: str, model_name: str, model_quantity: int, item_quantity: int, exclude_name: Optional[str] = None):
+        self.wargear_name = wargear_name.lower()
+        self.model_name = model_name
+        self.model_quantity = model_quantity
+        self.item_quantity = item_quantity
+        self.exclude_name = exclude_name.lower() if exclude_name else None
+
+    def __str__(self):
+        return f"{self.item_quantity}x {self.wargear_name} ({self.model_quantity}x {self.model_name})"
+
+    def __repr__(self):
+        return f"WargearOption(wargear_name='{self.wargear_name}', model_name='{self.model_name}', model_quantity={self.model_quantity}, item_quantity={self.item_quantity}, exclude_name='{self.exclude_name}')"

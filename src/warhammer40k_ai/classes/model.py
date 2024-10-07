@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Dict,Optional
 from .wargear import Wargear
 from .ability import Ability
 from ..utility.model_base import Base
@@ -34,7 +34,7 @@ class Model:
 
         self.model_base = model_base
         self.wargear: List[Wargear] = []
-        self.abilities: List[Ability] = []
+        self.abilities: Dict[Ability] = {}
         self.optional_wargear: List[str] = []
 
         # Gameplay related attributes
@@ -66,7 +66,7 @@ class Model:
 
     def add_ability(self, ability: Ability) -> None:
         """Add ability to the model."""
-        self.abilities.append(ability)
+        self.abilities[ability.name] = ability
 
     def set_parent_unit(self, unit_ptr) -> None:
         """Set the parent unit of the model."""
@@ -126,7 +126,7 @@ class Model:
                 f"InvSv:{self.inv_save or '-'}+, W:{self.wounds}, Ld:{self.leadership}+, "
                 f"OC:{self.objective_control}\nbase_size:{self.model_base}\n"
                 f"wargear:{self.wargear}\noptional_wargear:{self.optional_wargear}\n"
-                f"abilities:{self.abilities}\nid:{self.id})")
+                f"abilities:{self.abilities.keys()}\nid:{self.id})")
 
     def __repr__(self) -> str:
         return (f"Model(id='{self.id}', name='{self.name}', M={self.movement}, "
@@ -134,4 +134,4 @@ class Model:
                 f"W={self.wounds}, Ld={self.leadership}, OC={self.objective_control}\n"
                 f"base_size={self.model_base}\nwargear={self.wargear}\n"
                 f"optional_wargear={self.optional_wargear})\n"
-                f"abilities={self.abilities})")
+                f"abilities={self.abilities.keys()})")

@@ -64,13 +64,14 @@ class TestWahaHelper(unittest.TestCase):
         self.assertEqual(hellblade.get_damage(), 2)
 
         # Test wargear options
-        bloodletters_unit.apply_wargear_options(bloodletters_unit.wargear_options)
+        bloodletters_unit.parse_wargear_options(bloodletters_unit.wargear_options)
+        bloodletters_unit.apply_wargear_options()
 
         # Check if wargear options were applied correctly
-        models_with_instrument = [model for model in bloodletters_unit.models if "instrument of Chaos" in model.optional_wargear]
+        models_with_instrument = [model for model in bloodletters_unit.models if "instrument of chaos" in model.optional_wargear]
         models_with_icon = [model for model in bloodletters_unit.models if "daemonic icon" in model.optional_wargear]
 
-        self.assertEqual(len(models_with_instrument), 1, "Expected 1 model with instrument of Chaos")
+        self.assertEqual(len(models_with_instrument), 1, "Expected 1 model with instrument of chaos")
         self.assertEqual(len(models_with_icon), 1, "Expected 1 model with daemonic icon")
         self.assertNotEqual(models_with_instrument[0], models_with_icon[0], "Instrument and icon should be on different models")
 
