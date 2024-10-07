@@ -109,8 +109,8 @@ class Army:
         leader_units = [unit for unit in self.units if unit.is_leader]
 
         for leader in leader_units:
-            if not leader.attached_to:
-                raise ArmyValidationError(f"Leader '{leader.name}' is not attached to any unit.")
+            #if not leader.attached_to:
+            #    raise ArmyValidationError(f"Leader '{leader.name}' is not attached to any unit.")
             if leader.attached_to not in self.units:
                 raise ArmyValidationError(f"Leader '{leader.name}' is attached to an invalid unit.")
             if leader.attached_to in unit_leader_map:
@@ -167,7 +167,7 @@ class Army:
         self.validate_points_limit()
         self.validate_unit_limits()
         self.validate_epic_heroes()
-        #self.validate_leaders()
+        self.validate_leaders()
         self.validate_enhancements()
         self.validate_warlord()
         self.validate_detachment_rules()
@@ -326,11 +326,13 @@ if __name__ == "__main__":
     for unit in army.units:
         print(f"- {unit.name} ({unit.get_unit_cost()} points)")
         for model in unit.models:
-            print(f"  - {model.name}")
+            print(f"  - {model.name} {'(Warlord)' if unit.is_warlord else ''}")
             for wargear in model.wargear:
                 if wargear:
                     print(f"    - {wargear.name}")
             for ability in model.abilities:
                 if ability:
                     print(f"    - {ability.name}")
+            if unit.enhancement:
+                print(f"    - Enhancement: {unit.enhancement.name}")
     army.validate()
