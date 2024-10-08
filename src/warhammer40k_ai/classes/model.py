@@ -64,6 +64,14 @@ class Model:
         """Add optional wargear to the model."""
         self.optional_wargear.append(wargear)
 
+    def get_optional_wargear_by_name(self, wargear_name: str) -> Optional[Ability]:
+        for wargear in self.optional_wargear:
+            if wargear.lower() == wargear_name.lower():
+                for ability in self.parent_unit.possible_abilities:
+                    if ability.name.lower() == wargear_name.lower():
+                        return ability
+        return None
+
     def add_ability(self, ability: Ability) -> None:
         """Add ability to the model."""
         self.abilities[ability.name] = ability

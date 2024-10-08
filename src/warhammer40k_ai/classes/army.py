@@ -336,7 +336,7 @@ if __name__ == "__main__":
                     print(f"    - {wargear.name}")
             if hasattr(model, 'optional_wargear'):
                 for wargear_option in model.optional_wargear:
-                    print(f"    - {wargear_option}")
+                    print(f"    - {model.get_optional_wargear_by_name(wargear_option).name}")
             for ability in model.abilities.keys():
                 if ability:
                     print(f"    - {ability} (Ability Wargear)")
