@@ -29,7 +29,8 @@ class Unit:
         self.models_cost = self._parse_models_cost(datasheet.datasheets_models_cost)
         self.models = self._create_models(datasheet, quantity)
         self.possible_wargear = self._parse_wargear(datasheet)
-        self.wargear_options = self._parse_wargear_options(datasheet)
+        self.wargear_options = None
+        self._parse_wargear_options(datasheet) # this needs to here, sets above variable
         self.possible_abilities = self._parse_abilities(datasheet)
         self.can_be_attached_to = getattr(datasheet, 'attached_to', [])
 
@@ -141,12 +142,12 @@ class Unit:
                     possible_wargear.append(Wargear(wargear_data))
         return possible_wargear
 
-    def _parse_wargear_options(self, datasheet) -> List[str]:
+    def _parse_wargear_options(self, datasheet) -> None:
         wargear_options = []
         if hasattr(datasheet, 'datasheets_options'):
             for wargear_option_data in datasheet.datasheets_options:
                 wargear_options.append(wargear_option_data["description"])
-        return wargear_options
+        self.parse_wargear_options(wargear_options)
 
     def _parse_abilities(self, datasheet) -> List[Ability]:
         abilities = []
@@ -171,7 +172,8 @@ class Unit:
         # Parse the option string
         parts = option.split(' can be equipped with ')
         if len(parts) != 2:
-            raise ValueError(f"Invalid wargear option format: {option}")
+            print(f"Invalid wargear option format: {option}")
+            return
 
         model_description, item_description = parts
         model_count = 1  # Default to 1 model
@@ -204,6 +206,9 @@ class Unit:
 
     def parse_wargear_options(self, options: List[str]):
         result = {}
+        if len(options) == 1 and options[0].lower() == "none":
+            self.wargear_options = {}
+            return
         for option in options:
             self.parse_wargear_option(option, result)
         self.wargear_options = result
@@ -218,7 +223,7 @@ class Unit:
         ]
 
         if len(eligible_models) < wargear_option.model_quantity:
-            raise ValueError(f"Not enough eligible models for option: {wargear_option.name}")
+            raise ValueError(f"Not enough eligible models for option: {wargear_option.wargear_name}")
 
         count = 0
         for model in eligible_models:
@@ -227,9 +232,14 @@ class Unit:
             model.optional_wargear.append(wargear_option.wargear_name)
             count += 1
 
-    def apply_wargear_options(self):
+    def apply_wargear_options(self, wargear_name: Optional[str] = None) -> None:
         for optional_wargear_name in self.wargear_options.keys():
-            self.apply_wargear_option(self.wargear_options[optional_wargear_name])
+            if wargear_name:
+                if optional_wargear_name == wargear_name:
+                    self.apply_wargear_option(self.wargear_options[optional_wargear_name])
+                    break
+            else:
+                self.apply_wargear_option(self.wargear_options[optional_wargear_name])
 
     def add_wargear(self, wargear: List[Wargear]=[], model_name: str=None) -> None:
         for model_instance in self.models:

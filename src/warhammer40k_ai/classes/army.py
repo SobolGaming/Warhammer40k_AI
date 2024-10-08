@@ -291,15 +291,19 @@ def add_unit_to_army(army: Army, unit: Unit, model_count: int, wargear_dict: Dic
             if matching_gear:
                 unit.add_wargear([matching_gear if gear.name.lower() == gear_name else None for gear in unit.possible_wargear], model_name)
             else:
-                matching_ability = next((ability for ability in unit.possible_abilities if ability.name.lower() == gear_name and ability.type == 'Wargear'), None)
-                if matching_ability:
-                    unit.add_ability(matching_ability, model_name)
+                matching_gear = next((gear for gear in unit.wargear_options.values() if gear.wargear_name == gear_name), None)
+                if matching_gear:
+                    unit.apply_wargear_options(gear_name)
                 else:
-                    print(f"Warning: {gear_name} not found in {unit.name}'s possible wargear or abilities.")
-                    for gear in unit.possible_wargear:
-                        print(f"  - {gear.name}")
-                    for ability in unit.possible_abilities:
-                        print(f"  - {ability.name} (Ability Wargear)")
+                    matching_ability = next((ability for ability in unit.possible_abilities if ability.name.lower() == gear_name and ability.type == 'Wargear'), None)
+                    if matching_ability:
+                        unit.add_ability(matching_ability, model_name)
+                    else:
+                        print(f"Warning: {gear_name} not found in {unit.name}'s possible wargear or abilities.")
+                        for gear in unit.possible_wargear:
+                            print(f"  - {gear.name}")
+                        for ability in unit.possible_abilities:
+                            print(f"  - {ability.name} (Ability Wargear)")
 
     # Add enhancement to the unit if it exists
     if enhancement:
@@ -330,6 +334,9 @@ if __name__ == "__main__":
             for wargear in model.wargear:
                 if wargear:
                     print(f"    - {wargear.name}")
+            if hasattr(model, 'optional_wargear'):
+                for wargear_option in model.optional_wargear:
+                    print(f"    - {wargear_option}")
             for ability in model.abilities.keys():
                 if ability:
                     print(f"    - {ability} (Ability Wargear)")

@@ -64,7 +64,6 @@ class TestWahaHelper(unittest.TestCase):
         self.assertEqual(hellblade.get_damage(), 2)
 
         # Test wargear options
-        bloodletters_unit.parse_wargear_options(bloodletters_unit.wargear_options)
         bloodletters_unit.apply_wargear_options()
 
         # Check if wargear options were applied correctly
