@@ -1,10 +1,15 @@
 import logging
 from typing import List, Dict, Tuple, Optional
+from typing import TYPE_CHECKING
 from .model import Model
 from ..utility.model_base import Base, BaseType, convert_mm_to_inches
 from .wargear import Wargear, WargearOption
 from .ability import Ability
 from ..utility.range import Range
+from .status_effects import StatusEffect
+
+if TYPE_CHECKING:
+    from .map import Map
 
 logging.basicConfig(format="%(asctime)s %(levelname)-8s %(message)s")
 logger = logging.getLogger(__name__)
@@ -389,3 +394,32 @@ class Unit:
         for model in self.models:
             abilities.extend(model.abilities)
         return abilities
+
+    # Core Methods
+    def move(self, destination: Tuple[int, int], game_map: 'Map'):
+        from .map import Map  # Import inside the function
+        assert isinstance(game_map, Map)
+        pass
+    
+    def attack(self, target_unit: 'Unit', game_map: 'Map'):
+        from .map import Map  # Import inside the function
+        assert isinstance(game_map, Map)
+        # Rest of the attack logic
+        pass
+    
+    def use_ability(self, ability: Ability, target: 'Unit', game_map: 'Map'):
+        from .map import Map  # Import inside the function
+        assert isinstance(game_map, Map)
+        pass
+    
+    def take_damage(self, amount: int):
+        pass
+    
+    def apply_status_effect(self, status_effect: StatusEffect):
+        pass
+    
+    def remove_status_effect(self, status_effect: StatusEffect):
+        pass
+    
+    def is_alive(self) -> bool:
+        return len(self.models) > 0

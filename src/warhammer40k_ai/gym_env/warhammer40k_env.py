@@ -21,10 +21,56 @@ class WarhammerEnv(gym.Env):
     def define_observation_space(self):
         # Define the observation space using gym.spaces
         pass
+        '''
+        max_units = self.config.get('max_units', 50)
+        observation_space = spaces.Dict({
+            'friendly_units': spaces.Box(
+                low=0,
+            high=1,
+            shape=(max_units, self.unit_state_size),
+            dtype=np.float32
+            ),
+            'enemy_units': spaces.Box(
+                low=0,
+                high=1,
+                shape=(max_units, self.unit_state_size),
+                dtype=np.float32
+            ),
+            'map_features': spaces.Box(
+                low=0,
+                high=1,
+                shape=(self.game.map_width, self.game.map_height, self.map_feature_channels),
+                dtype=np.float32
+            ),
+            'game_state': spaces.Box(
+                low=0,
+                high=1,
+                shape=(self.game_state_size,),
+                dtype=np.float32
+            ),
+        })
+        return observation_space
+        '''
     
     def define_action_space(self):
         # Define the action space using gym.spaces
         pass
+        '''
+        max_units = self.config.get('max_units', 50)
+        action_space = spaces.Dict({
+            'action_type': spaces.Discrete(4),  # Move, Attack, Use Ability, Pass
+            'unit_id': spaces.Discrete(max_units),
+            'target_id': spaces.Discrete(max_units),
+            'target_position': spaces.Box(
+                low=0,
+                high=self.game.map_size,
+                shape=(2,),
+                dtype=np.int32
+            ),
+            'ability_id': spaces.Discrete(num_abilities),
+        })
+        return action_space
+        '''
 
     def reset(self):
         self.game.reset()
