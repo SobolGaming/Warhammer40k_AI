@@ -63,6 +63,7 @@ class Game:
         self.players: List[Player] = []
 
     def add_player(self, player: Player):
+        player.command_points = self.starting_command_points_per_player
         self.players.append(player)
 
     def _initialize_battlefield(self) -> List[List[Any]]:

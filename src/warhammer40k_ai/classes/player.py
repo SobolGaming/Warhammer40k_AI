@@ -22,6 +22,7 @@ class Player:
             raise ValueError(f"Invalid player type: {player_type}")
         self.type = player_type
         self.round: int = 0
+        self.command_points: int = 0
         self.army: Army = army
 
     def __str__(self):
