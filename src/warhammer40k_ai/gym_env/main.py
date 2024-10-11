@@ -9,6 +9,9 @@ from warhammer40k_ai.classes.map import Map
 from warhammer40k_ai.classes.unit import Unit
 from warhammer40k_ai.waha_helper import WahaHelper
 from warhammer40k_ai.utility.model_base import Base, BaseType
+from warhammer40k_ai.classes.player import Player, PlayerType
+from warhammer40k_ai.classes.army import Army, parse_army_list
+import textwrap
 
 # Constants
 TILE_SIZE = 20  # 20 pixels per inch
@@ -19,9 +22,11 @@ BATTLEFIELD_HEIGHT = BATTLEFIELD_HEIGHT_INCHES * TILE_SIZE
 
 # Colors
 WHITE = (255, 255, 255)
+BLACK = (0, 0, 0)
 GREY = (50, 50, 50)
 GREEN = (0, 255, 0)
 BLUE = (0, 0, 255)
+RED = (255, 0, 0)
 
 # Helper
 waha_helper = WahaHelper()
@@ -38,26 +43,176 @@ MAX_ZOOM = 2.0
 ZOOM_SPEED = 0.1
 PAN_SPEED = 5
 
-def initialize_game() -> Tuple[pygame.Surface, WarhammerEnv, Game, Map, float, int, int]:
+# New constants for the roster panes
+ROSTER_PANE_WIDTH = 300
+ROSTER_PANE_BUTTON_HEIGHT = 30
+ROSTER_FONT_SIZE = 18
+ROSTER_LINE_HEIGHT = 20
+
+# Add these new classes
+class RosterPane(pygame.sprite.Sprite):
+    def __init__(self, left, bottom, width, height, roster):
+        super().__init__()
+        self.rect = pygame.Rect(left, bottom, width, height)
+        self.roster = roster
+        self.selected_unit = None
+        self.background_color = pygame.Color('lightgray')
+        self.font = pygame.font.Font(None, 20)
+        self.button_height = 50
+        self.button_width = width - 20  # 10px padding on each side
+        self.buttons = []
+        self.create_buttons()
+
+    def create_buttons(self):
+        for i, unit in enumerate(self.roster):
+            button_rect = pygame.Rect(
+                self.rect.left + 10,
+                self.rect.top + 10 + i * (self.button_height + 5),
+                self.button_width,
+                self.button_height
+            )
+            self.buttons.append((button_rect, unit))
+
+    def on_mouse_press(self, x, y, button):
+        if button == 1:  # Left mouse button
+            for button_rect, unit in self.buttons:
+                if button_rect.collidepoint(x, y):
+                    self.selected_unit = unit
+                    return
+            self.selected_unit = None
+
+    def draw(self, surface):
+        pygame.draw.rect(surface, self.background_color, self.rect)
+        
+        for button_rect, unit in self.buttons:
+            # Draw button background
+            pygame.draw.rect(surface, pygame.Color('white'), button_rect, border_radius=5)
+            
+            # Draw unit name (wrapped)
+            wrapped_text = textwrap.wrap(unit.name, width=20)
+            for i, line in enumerate(wrapped_text):
+                text = self.font.render(line, True, pygame.Color('black'))
+                text_rect = text.get_rect(center=(button_rect.centerx, button_rect.top + 15 + i * 20))
+                surface.blit(text, text_rect)
+
+        # Highlight the selected unit
+        if self.selected_unit:
+            for button_rect, unit in self.buttons:
+                if unit == self.selected_unit:
+                    pygame.draw.rect(surface, pygame.Color('yellow'), button_rect, 3, border_radius=5)
+                    break
+
+class GameView:
+    def __init__(self, screen, env, game, game_map, player1, player2):
+        self.screen = screen
+        self.env = env
+        self.game = game
+        self.game_map = game_map
+        self.player1 = player1
+        self.player2 = player2
+        self.zoom_level = 1.0
+        self.offset_x = 0
+        self.offset_y = 0
+        self.selected_unit = None
+        
+        # Create RosterPane instances
+        self.player1_roster = RosterPane(0, 0, ROSTER_PANE_WIDTH, BATTLEFIELD_HEIGHT, player1.get_army().units)
+        self.player2_roster = RosterPane(BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH, 0, ROSTER_PANE_WIDTH, BATTLEFIELD_HEIGHT, player2.get_army().units)
+
+    def on_mouse_press(self, x, y, button):
+        if button == 1:  # Left mouse button
+            # Check if click is in player1's roster pane
+            if self.player1_roster.rect.collidepoint(x, y):
+                self.player1_roster.on_mouse_press(x, y, button)
+                self.selected_unit = self.player1_roster.selected_unit
+            # Check if click is in player2's roster pane
+            elif self.player2_roster.rect.collidepoint(x, y):
+                self.player2_roster.on_mouse_press(x, y, button)
+                self.selected_unit = self.player2_roster.selected_unit
+            # Check if click is on the battlefield and a unit is selected
+            elif self.selected_unit and ROSTER_PANE_WIDTH < x < BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH:
+                # Calculate the battlefield coordinates
+                battlefield_x = (x - ROSTER_PANE_WIDTH) / TILE_SIZE
+                battlefield_y = y / TILE_SIZE
+                
+                # Create a new unit using the datasheet of the selected unit
+                new_unit = self.selected_unit #Unit(waha_helper.get_full_datasheet_info_by_name(self.selected_unit.name))
+                
+                # Calculate positions for all models in the unit
+                model_positions = calculate_model_positions(battlefield_x, battlefield_y, len(new_unit.models), new_unit.models[0].model_base.getRadius())
+                
+                if len(model_positions) > 0:
+                    # Set the position of each model in the unit
+                    for model, (model_x, model_y) in zip(new_unit.models, model_positions):
+                        model.set_location(model_x, model_y, 0, 0)
+                    
+                    # Set the unit's position to the centroid of all model positions
+                    unit_x = sum(pos[0] for pos in model_positions) / len(model_positions)
+                    unit_y = sum(pos[1] for pos in model_positions) / len(model_positions)
+                    new_unit.set_position(unit_x, unit_y)
+                    
+                    # Attempt to place the unit on the game map
+                    if self.game_map.place_unit(new_unit):
+                        print(f"Unit placed with centroid at ({unit_x}, {unit_y})")
+                    else:
+                        print("Failed to place unit")
+                
+                # Reset selection
+                self.selected_unit = None
+                self.player1_roster.selected_unit = None
+                self.player2_roster.selected_unit = None
+
+    def draw(self):
+        self.screen.fill(WHITE)
+        
+        # Draw debug rectangles for roster panes
+        pygame.draw.rect(self.screen, (255, 0, 0), self.player1_roster.rect, 2)
+        pygame.draw.rect(self.screen, (0, 0, 255), self.player2_roster.rect, 2)
+        
+        # Draw roster panes first
+        self.player1_roster.draw(self.screen)
+        self.player2_roster.draw(self.screen)
+        
+        # Draw the battlefield
+        battlefield_surface = pygame.Surface((BATTLEFIELD_WIDTH, BATTLEFIELD_HEIGHT))
+        draw_battlefield(battlefield_surface, self.zoom_level, self.offset_x, self.offset_y)
+        
+        # Draw units on the battlefield
+        for unit in self.game_map.units:
+            place_unit(battlefield_surface, unit, self.zoom_level, self.offset_x, self.offset_y, pygame.mouse.get_pos(), self.player1, self.player2)
+        
+        self.screen.blit(battlefield_surface, (ROSTER_PANE_WIDTH, 0))
+
+        pygame.display.update()
+
+def initialize_game() -> Tuple[pygame.Surface, WarhammerEnv, Game, Map, float, int, int, Player, Player]:
     pygame.init()
-    screen = pygame.display.set_mode((BATTLEFIELD_WIDTH, BATTLEFIELD_HEIGHT))
+    screen = pygame.display.set_mode((BATTLEFIELD_WIDTH + 2 * ROSTER_PANE_WIDTH, BATTLEFIELD_HEIGHT))
     pygame.display.set_caption('Warhammer 40,000 Battlefield')
 
     env = WarhammerEnv()
     game = env.game
-    game_map = Map(BATTLEFIELD_WIDTH_INCHES, BATTLEFIELD_HEIGHT_INCHES)
+    game_map = Map(*game.get_battlefield_size())
 
     zoom_level = 1.0
-    offset_x, offset_y = 0, 0  # Offset for panning
-    return screen, env, game, game_map, zoom_level, offset_x, offset_y
+    offset_x, offset_y = ROSTER_PANE_WIDTH, 0  # Adjust initial offset to account for left pane
+
+    # Create players with armies
+    player1 = Player("Player 1", PlayerType.HUMAN, parse_army_list("army_lists/warhammer_app_dump.txt", waha_helper))
+    player2 = Player("Player 2", PlayerType.HUMAN, parse_army_list("army_lists/chaos_daemons_GT2023.txt", waha_helper))
+
+    print(f"Player 1 army created with {len(player1.get_army().units)} units")
+    print(f"Player 2 army created with {len(player2.get_army().units)} units")
+
+    return screen, env, game, game_map, zoom_level, offset_x, offset_y, player1, player2
 
 def draw_battlefield(screen: pygame.Surface, zoom_level: float, offset_x: int, offset_y: int) -> None:
     screen.fill(WHITE)
     tile_size = int(TILE_SIZE * zoom_level)
     
     # Calculate the visible area
-    visible_width = screen.get_width()
-    visible_height = screen.get_height()
+    visible_width = BATTLEFIELD_WIDTH
+    visible_height = BATTLEFIELD_HEIGHT
     
     # Calculate the range of tiles to draw
     start_x = max(0, int(-offset_x / tile_size))
@@ -78,20 +233,45 @@ def draw_battlefield(screen: pygame.Surface, zoom_level: float, offset_x: int, o
             pygame.draw.line(screen, GREY, (0, screen_y), (visible_width, screen_y))
     
     # Draw battlefield border
-    border_left = max(0, min(offset_x, visible_width))
-    border_top = max(0, min(offset_y, visible_height))
-    border_right = min(visible_width, max(0, int(BATTLEFIELD_WIDTH_INCHES * tile_size + offset_x)))
-    border_bottom = min(visible_height, max(0, int(BATTLEFIELD_HEIGHT_INCHES * tile_size + offset_y)))
-    
-    pygame.draw.rect(screen, (255, 0, 0), (border_left, border_top, border_right - border_left, border_bottom - border_top), 2)
+    pygame.draw.rect(screen, (255, 0, 0), (0, 0, visible_width, visible_height), 2)
 
-def place_unit(screen: pygame.Surface, unit: Unit, color: Tuple[int, int, int], zoom_level: float, offset_x: int, offset_y: int, mouse_pos: Tuple[int, int]) -> None:
+def place_unit(screen: pygame.Surface, unit: Unit, zoom_level: float, offset_x: int, offset_y: int, mouse_pos: Tuple[int, int], player1: Player, player2: Player) -> None:
+    # Determine the color based on which player the unit belongs to
+    if unit in player1.get_army().units:
+        color = GREEN
+    elif unit in player2.get_army().units:
+        color = RED
+    else:
+        color = BLUE  # Default color if the unit doesn't belong to either player
+
     for model in unit.models:
         x, y = model.get_location()[:2]
-        screen_x = int(x * TILE_SIZE * zoom_level + offset_x)
-        screen_y = int(y * TILE_SIZE * zoom_level + offset_y)
+        screen_x = int((x * TILE_SIZE) * zoom_level + offset_x)
+        screen_y = int((y * TILE_SIZE) * zoom_level + offset_y)
         radius = int(model.model_base.getRadius() * TILE_SIZE * zoom_level)
+        
+        # Draw the base
         pygame.draw.circle(screen, color, (screen_x, screen_y), radius)
+        
+        # Draw a smaller inner circle to make the base more visible
+        inner_radius = max(1, int(radius * 0.8))
+        pygame.draw.circle(screen, (255, 255, 255), (screen_x, screen_y), inner_radius)
+    
+    # Calculate unit bounding box
+    min_x = min(model.get_location()[0] for model in unit.models)
+    max_x = max(model.get_location()[0] for model in unit.models)
+    min_y = min(model.get_location()[1] for model in unit.models)
+    max_y = max(model.get_location()[1] for model in unit.models)
+    
+    # Highlight the unit if the mouse is over it
+    unit_rect = pygame.Rect(
+        int((min_x * TILE_SIZE + offset_x) * zoom_level),
+        int((min_y * TILE_SIZE + offset_y) * zoom_level),
+        int((max_x - min_x) * TILE_SIZE * zoom_level),
+        int((max_y - min_y) * TILE_SIZE * zoom_level)
+    )
+    if unit_rect.collidepoint(mouse_pos):
+        pygame.draw.rect(screen, (255, 255, 0), unit_rect, 2)  # Yellow highlight
 
 def display_unit_info(screen: pygame.Surface, unit: Unit, x: int, y: int) -> None:
     font = pygame.font.SysFont(None, 24)
@@ -192,12 +372,12 @@ def calculate_model_positions(start_x: float, start_y: float, num_models: int, b
             positions.append((new_x, new_y))
         else:
             print(f"Warning: Could not place model {len(positions) + 1} after {max_attempts} attempts")
-            break  # Stop placing models if we can't find a valid position
+            return []
 
     return positions
 
 def handle_zoom(zoom_level: float, event: pygame.event.Event) -> float:
-    zoom_direction = 1 if event.button == 4 else -1  # 4 is scroll up, 5 is scroll down
+    zoom_direction = event.y  # Positive for scroll up, negative for scroll down
     new_zoom = zoom_level + (ZOOM_SPEED * zoom_direction)
     return max(MIN_ZOOM, min(MAX_ZOOM, new_zoom))
 
@@ -222,53 +402,31 @@ def handle_pan(keys_pressed: Dict[int, bool], offset_x: int, offset_y: int, zoom
     return new_offset_x, new_offset_y
 
 def main_game_loop() -> None:
-    screen, env, game, game_map, zoom_level, offset_x, offset_y = initialize_game()
-    army_units: Dict[str, Unit] = {}
+    screen, env, game, game_map, _, _, _, player1, player2 = initialize_game()
+    game_view = GameView(screen, env, game, game_map, player1, player2)
     game_state = GameState.SETUP
+
+    print("Starting main game loop")
 
     running = True
     while running:
-        mouse_pos = pygame.mouse.get_pos()
-        keys_pressed = pygame.key.get_pressed()
-        
-        # Pan the battlefield based on keypresses
-        offset_x, offset_y = handle_pan(keys_pressed, offset_x, offset_y, zoom_level)
-
-        draw_battlefield(screen, zoom_level, offset_x, offset_y)
-
-        for unit in army_units.values():
-            place_unit(screen, unit, GREEN, zoom_level, offset_x, offset_y, mouse_pos)
-
-        # Display unit info in a separate loop to ensure it's drawn on top
-        for unit in army_units.values():
-            for model in unit.models:
-                x, y = model.get_location()[:2]
-                screen_x = int(x * TILE_SIZE * zoom_level + offset_x)
-                screen_y = int(y * TILE_SIZE * zoom_level + offset_y)
-                radius = int(model.model_base.getRadius() * TILE_SIZE * zoom_level)
-                if math.hypot(mouse_pos[0] - screen_x, mouse_pos[1] - screen_y) < radius:
-                    display_unit_info(screen, unit, screen_x, screen_y)
-                    break  # Only display info once per unit
-
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button == 1:  # Left click
-                    if game_state == GameState.SETUP:
-                        mouse_pos = pygame.mouse.get_pos()
-                        if handle_unit_placement(game_map, army_units, mouse_pos, zoom_level):
-                            print(f"Unit placed successfully. Total units: {len(army_units)}")
-                        else:
-                            print("Failed to place unit")
-                elif event.button in [4, 5]:  # Mouse wheel scroll
-                    zoom_level = handle_zoom(zoom_level, event)
+                game_view.on_mouse_press(*event.pos, event.button)
+            elif event.type == pygame.MOUSEWHEEL:
+                game_view.zoom_level = handle_zoom(game_view.zoom_level, event)
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE and game_state == GameState.SETUP:
                     game_state = GameState.PLAYING
                     print("Game started!")
 
-        pygame.display.update()
+        keys_pressed = pygame.key.get_pressed()
+        game_view.offset_x, game_view.offset_y = handle_pan(keys_pressed, game_view.offset_x, game_view.offset_y, game_view.zoom_level)
+
+        game_view.draw()
+        pygame.display.flip()
 
     pygame.quit()
     sys.exit()

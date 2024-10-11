@@ -30,6 +30,20 @@ class Map:
         return (0 <= x < self.width and 0 <= y < self.height and
                 (int(x), int(y)) not in self.occupied_positions)
 
+    def debug_print_map(self) -> str:
+        """
+        Returns a string representation of the map for debugging purposes.
+        """
+        map_str = ""
+        for y in range(self.height):
+            for x in range(self.width):
+                if self.grid[y][x]:
+                    map_str += "X"
+                else:
+                    map_str += "."
+            map_str += "\n"
+        return map_str
+
 class TerrainType(Enum):
     OPEN = auto()
     FOREST = auto()

@@ -1,8 +1,8 @@
 from typing import Tuple, Dict, Set
-from src.warhammer40k_ai.classes.unit import Unit
-from src.warhammer40k_ai.classes.wargear import Wargear
-from src.warhammer40k_ai.classes.enhancement import Enhancement
-from src.warhammer40k_ai.waha_helper import WahaHelper
+from warhammer40k_ai.classes.unit import Unit
+from warhammer40k_ai.classes.wargear import Wargear
+from warhammer40k_ai.classes.enhancement import Enhancement
+from warhammer40k_ai.waha_helper import WahaHelper
 import codecs
 
 

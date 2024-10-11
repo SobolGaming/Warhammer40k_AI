@@ -1,7 +1,7 @@
 from typing import Union, Dict, List, Optional
-from src.warhammer40k_ai.utility.dice import DiceCollection
-from src.warhammer40k_ai.utility.range import Range
-from src.warhammer40k_ai.utility.count import Count
+from warhammer40k_ai.utility.dice import DiceCollection
+from warhammer40k_ai.utility.range import Range
+from warhammer40k_ai.utility.count import Count
 
 
 class WargearProfile:

@@ -8,6 +8,7 @@ from .ability import Ability
 from ..utility.range import Range
 from .status_effects import StatusEffect
 import math
+import uuid
 
 if TYPE_CHECKING:
     from .map import Map
@@ -26,6 +27,7 @@ class UnitRoundState:
 
 class Unit:
     def __init__(self, datasheet, quantity=None, enhancement=None):
+        self._id = str(uuid.uuid4())
         self._datasheet = datasheet
         self.name = datasheet.name
         self.faction = datasheet.faction_data["name"]
@@ -348,6 +350,14 @@ class Unit:
 
     def __repr__(self):
         return f"Unit(name='{self.name}', models={len(self.models)})"
+
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, Unit):
+            return NotImplemented
+        return self._id == other._id
+
+    def __hash__(self) -> int:
+        return hash(self._id)
 
     def _parse_models_cost(self, models_cost):
         result = {}

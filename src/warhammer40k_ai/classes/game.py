@@ -75,6 +75,9 @@ class Game:
     def get_current_player(self) -> Player:
         return self.players[self.current_player_index]
 
+    def get_battlefield_size(self) -> tuple[int, int]:
+        return self.battlefield_size
+
     def next_turn(self):
         self.current_player_index = (self.current_player_index + 1) % len(self.players)
         if self.current_player_index == 0:
