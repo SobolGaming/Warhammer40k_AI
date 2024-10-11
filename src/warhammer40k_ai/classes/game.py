@@ -53,7 +53,7 @@ class Battlefield:
 
 class Game:
     def __init__(self, battlefield: Battlefield, players: List[Player]):
-        self.battlefield_size = (battlefield.config["Width"], battlefield.config["Height"])
+        self.battlefield_size = (battlefield.config["Height"], battlefield.config["Width"])
         self.battle_point_limit = battlefield.config["PointLimit"]
         self.starting_command_points_per_player = battlefield.config["CommandPoints"]
         self.detachment_limit_per_player = battlefield.config["DetachmentLimit"]

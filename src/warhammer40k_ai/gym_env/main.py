@@ -139,7 +139,7 @@ class GameView:
                 new_unit = self.selected_unit #Unit(waha_helper.get_full_datasheet_info_by_name(self.selected_unit.name))
                 
                 # Calculate positions for all models in the unit
-                model_positions = calculate_model_positions(battlefield_x, battlefield_y, len(new_unit.models), new_unit.models[0].model_base.getRadius())
+                model_positions = calculate_model_positions(battlefield_x, battlefield_y, len(new_unit.models), new_unit.models[0].model_base.longestDistance())
                 
                 if len(model_positions) > 0:
                     # Set the position of each model in the unit
@@ -248,14 +248,36 @@ def place_unit(screen: pygame.Surface, unit: Unit, zoom_level: float, offset_x: 
         x, y = model.get_location()[:2]
         screen_x = int((x * TILE_SIZE) * zoom_level + offset_x)
         screen_y = int((y * TILE_SIZE) * zoom_level + offset_y)
-        radius = int(model.model_base.getRadius() * TILE_SIZE * zoom_level)
+        base = model.model_base
         
-        # Draw the base
-        pygame.draw.circle(screen, color, (screen_x, screen_y), radius)
+        if base.base_type == BaseType.CIRCULAR:
+            radius = int(base.getRadius() * TILE_SIZE * zoom_level)
+            pygame.draw.circle(screen, color, (screen_x, screen_y), radius)
+            # Draw a smaller inner circle to make the base more visible
+            inner_radius = max(1, int(radius * 0.8))
+            pygame.draw.circle(screen, (255, 255, 255), (screen_x, screen_y), inner_radius)
         
-        # Draw a smaller inner circle to make the base more visible
-        inner_radius = max(1, int(radius * 0.8))
-        pygame.draw.circle(screen, (255, 255, 255), (screen_x, screen_y), inner_radius)
+        elif base.base_type == BaseType.ELLIPTICAL:
+            width = int(base.radius[0] * 2 * TILE_SIZE * zoom_level)
+            height = int(base.radius[1] * 2 * TILE_SIZE * zoom_level)
+            ellipse_rect = pygame.Rect(screen_x - width // 2, screen_y - height // 2, width, height)
+            pygame.draw.ellipse(screen, color, ellipse_rect)
+            # Draw a smaller inner ellipse
+            inner_width = max(1, int(width * 0.8))
+            inner_height = max(1, int(height * 0.8))
+            inner_rect = pygame.Rect(screen_x - inner_width // 2, screen_y - inner_height // 2, inner_width, inner_height)
+            pygame.draw.ellipse(screen, (255, 255, 255), inner_rect)
+        
+        elif base.base_type == BaseType.HULL:
+            width = int(base.radius[0] * 2 * TILE_SIZE * zoom_level)
+            height = int(base.radius[1] * 2 * TILE_SIZE * zoom_level)
+            rect = pygame.Rect(screen_x - width // 2, screen_y - height // 2, width, height)
+            pygame.draw.rect(screen, color, rect)
+            # Draw a smaller inner rectangle
+            inner_width = max(1, int(width * 0.8))
+            inner_height = max(1, int(height * 0.8))
+            inner_rect = pygame.Rect(screen_x - inner_width // 2, screen_y - inner_height // 2, inner_width, inner_height)
+            pygame.draw.rect(screen, (255, 255, 255), inner_rect)
     
     # Calculate unit bounding box
     min_x = min(model.get_location()[0] for model in unit.models)
@@ -295,40 +317,6 @@ def display_unit_info(screen: pygame.Surface, unit: Unit, x: int, y: int) -> Non
     # Draw the text
     screen.blit(text_surface, text_rect)
 
-def handle_unit_placement(game_map: Map, army_units: Dict[str, Unit], mouse_pos: Tuple[int, int], zoom_level: float) -> bool:
-    # Convert mouse position to grid position
-    grid_x = mouse_pos[0] / (TILE_SIZE * zoom_level)
-    grid_y = mouse_pos[1] / (TILE_SIZE * zoom_level)
-    print(f"Attempting to place unit at grid position: ({grid_x}, {grid_y})")
-
-    new_unit = Unit(waha_helper.get_full_datasheet_info_by_name("Bloodletters"))
-    print(f"Created new unit with {len(new_unit.models)} models")
-    new_unit.set_position(grid_x, grid_y)
-
-    base_radius = new_unit.models[0].model_base.getRadius()
-    model_positions = calculate_model_positions(grid_x, grid_y, len(new_unit.models), base_radius)
-    print(f"Calculated model positions: {model_positions}")
-
-    # Check if all model positions are within the map boundaries
-    if all(0 <= pos[0] < BATTLEFIELD_WIDTH_INCHES and 0 <= pos[1] < BATTLEFIELD_HEIGHT_INCHES for pos in model_positions):
-        for model, (model_x, model_y) in zip(new_unit.models, model_positions):
-            model.set_location(model_x, model_y, 0, 0)
-        
-        print(f"Attempting to place unit on game map at position: ({grid_x}, {grid_y})")
-        if game_map.place_unit(new_unit):
-            unit_key = f"unit_{len(army_units)}"
-            army_units[unit_key] = new_unit
-            print(f"Unit placed successfully with key: {unit_key}")
-            print(f"Unit location: {new_unit.position}")
-            return True
-        else:
-            print(f"Failed to place unit on game map. Current map state:")
-            print(game_map.debug_print_map())
-    else:
-        print("Invalid position for unit placement: Some models would be outside the map boundaries")
-
-    return False
-
 def calculate_model_positions(start_x: float, start_y: float, num_models: int, base_radius: float) -> List[Tuple[float, float]]:
     """
     Calculate model positions starting from the clicked location.
@@ -342,7 +330,7 @@ def calculate_model_positions(start_x: float, start_y: float, num_models: int, b
     Returns:
     List of tuple coordinates for model positions.
     """
-    coherency_distance = 2.0  # Max distance between models for coherency in inches
+    coherency_distance = 2.0 + 2 * base_radius  # Max distance between model edges for coherency in inches
     total_spacing = base_radius * 2 + coherency_distance
 
     positions = [(start_x, start_y)]  # First model at clicked position
