@@ -26,8 +26,14 @@ pip3 install -e .
 
 Here's a basic example of how to use Warhammer40k_AI:
 
+For the Wahapedia UI:
 ```
 python3 -m warhammer40k_ai.UI.wahapedia_ui
+```
+
+For the Gym Environment:
+```
+python3 -m warhammer40k_ai.gym_env.main
 ```
 
 ## License
