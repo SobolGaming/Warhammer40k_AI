@@ -52,15 +52,17 @@ class Battlefield:
 
 
 class Game:
-    def __init__(self, battlefield: Battlefield):
-        self.battlefield_size = (battlefield.config.Width, battlefield.config.Height)
-        self.battle_point_limit = battlefield.config.PointLimit
-        self.starting_command_points_per_player = battlefield.config.CommandPoints
-        self.detachment_limit_per_player = battlefield.config.DetachmentLimit
+    def __init__(self, battlefield: Battlefield, players: List[Player]):
+        self.battlefield_size = (battlefield.config["Width"], battlefield.config["Height"])
+        self.battle_point_limit = battlefield.config["PointLimit"]
+        self.starting_command_points_per_player = battlefield.config["CommandPoints"]
+        self.detachment_limit_per_player = battlefield.config["DetachmentLimit"]
         self.current_player_index = 0
         self.turn = 1
         self.battlefield = self._initialize_battlefield()
         self.players: List[Player] = []
+        for player in players:
+            self.add_player(player)
 
     def add_player(self, player: Player):
         player.command_points = self.starting_command_points_per_player

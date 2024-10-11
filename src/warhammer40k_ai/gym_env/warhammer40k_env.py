@@ -1,7 +1,9 @@
 import gym
 from gym import spaces
 import numpy as np
-from warhammer40k_ai.classes.game import Game
+from warhammer40k_ai.classes.game import Game, BattlefieldSize, Battlefield
+from warhammer40k_ai.classes.player import Player, PlayerType
+
 from warhammer40k_ai.classes.unit import Unit
 # Additional imports as needed
 
@@ -11,10 +13,13 @@ class WarhammerEnv(gym.Env):
     def __init__(self, config=None):
         super(WarhammerEnv, self).__init__()
         self.config = config or {}
-        self.game = Game(config=self.config)
+        player1 = Player("Player 1", PlayerType.HUMAN)
+        player2 = Player("Player 2", PlayerType.AI)
+
+        self.game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), [player1, player2])
         self.observation_space = self.define_observation_space()
         self.action_space = self.define_action_space()
-        self.current_player = self.game.current_player
+        self.current_player = self.game.get_current_player()
         self.done = False
         self.info = {}
     
@@ -74,7 +79,7 @@ class WarhammerEnv(gym.Env):
 
     def reset(self):
         self.game.reset()
-        self.current_player = self.game.current_player
+        self.current_player = self.game.get_current_player()
         self.done = False
         initial_observation = self.get_observation()
         return initial_observation

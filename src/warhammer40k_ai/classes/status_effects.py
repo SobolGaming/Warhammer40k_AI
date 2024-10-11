@@ -1,6 +1,7 @@
-from typing import Callable
-from .unit import Unit
+from typing import Callable, TYPE_CHECKING
 
+if TYPE_CHECKING:
+    from .unit import Unit
 
 class StatusEffect:
     def __init__(self, name: str, duration: int, apply_effect: Callable, remove_effect: Callable):
@@ -10,7 +11,7 @@ class StatusEffect:
         self.apply_effect = apply_effect  # Function to apply effect
         self.remove_effect = remove_effect  # Function to remove effect
     
-    def tick(self, unit: Unit):
+    def tick(self, unit: 'Unit'):
         self.remaining_duration -= 1
         if self.remaining_duration <= 0:
             self.remove_effect(unit)

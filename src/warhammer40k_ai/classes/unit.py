@@ -7,6 +7,7 @@ from .wargear import Wargear, WargearOption
 from .ability import Ability
 from ..utility.range import Range
 from .status_effects import StatusEffect
+import math
 
 if TYPE_CHECKING:
     from .map import Map
@@ -55,6 +56,8 @@ class Unit:
 
         # Initialize round-tracked variables
         self.initialize_round()
+
+        self.position = None  # Initialize position as None
 
     def _parse_attribute(self, attribute_value: str) -> int:
         # Remove " and + from the attribute value
@@ -423,3 +426,25 @@ class Unit:
     
     def is_alive(self) -> bool:
         return len(self.models) > 0
+
+    def set_position(self, x: int, y: int):
+        """Set the position of the unit on the map."""
+        self.position = (x, y)
+
+    def get_model_positions(self):
+        if self.position is None:
+            raise ValueError("Unit position has not been set.")
+        
+        center_x, center_y = self.position
+        positions = [(center_x, center_y)]  # Center position
+
+        if len(self.models) > 1:
+            radius = 0.5  # Adjust this value to change the spread of models
+            angle_step = 2 * math.pi / (len(self.models) - 1)
+            for i in range(1, len(self.models)):
+                angle = i * angle_step
+                x = center_x + radius * math.cos(angle)
+                y = center_y + radius * math.sin(angle)
+                positions.append((x, y))
+
+        return positions

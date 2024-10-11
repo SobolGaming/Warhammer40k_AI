@@ -1,4 +1,4 @@
-from typing import List, Dict,Optional
+from typing import List, Dict, Optional, Tuple
 from .wargear import Wargear
 from .ability import Ability
 from ..utility.model_base import Base
@@ -86,6 +86,10 @@ class Model:
         self.model_base.y = y
         self.model_base.z = z
         self.model_base.facing = facing
+
+    def get_location(self) -> Tuple[float, float, float, float]:
+        """Get the location and facing of the model."""
+        return self.model_base.x, self.model_base.y, self.model_base.z, self.model_base.facing
 
     ################
     ### Modifiers
