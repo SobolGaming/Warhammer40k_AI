@@ -467,9 +467,15 @@ class Unit:
         distance = math.sqrt((x - center_x)**2 + (y - center_y)**2)
         return distance <= radius
 
-    def calculate_model_positions(self, start_x: float, start_y: float, battlefield_size: Tuple[float, float], all_models: List['Model']) -> List[Tuple[float, float, float, float]]:
+    def calculate_model_positions(self, start_x: float, start_y: float, battlefield_size: Tuple[float, float], all_models: List['Model'], zoom_level: float = 1.0) -> List[Tuple[float, float, float, float]]:
         positions = []
         max_attempts = 100  # Maximum number of attempts to place each model
+
+        # Convert start position (mouse position) to game coordinates
+        start_x_game = start_x / zoom_level
+        start_y_game = start_y / zoom_level
+
+        # Battlefield size is already in game coordinates, so we don't need to adjust it
 
         for model in self.models:
             placed = False
@@ -477,7 +483,7 @@ class Unit:
             
             while not placed and attempts < max_attempts:
                 if not positions:  # First model
-                    x, y = start_x, start_y
+                    x, y = start_x_game, start_y_game
                 else:
                     # Generate a random position within coherency distance of the last placed model
                     last_x, last_y, _, _ = positions[-1]
@@ -491,8 +497,8 @@ class Unit:
 
                 # Check if the model's base is entirely within the battlefield
                 if self._is_base_within_battlefield(model.model_base, x, y, battlefield_size):
-                    # Create a list of all existing bases plus potential bases for already placed models
-                    all_bases = [m.model_base for m in all_models] + [self._create_potential_base(m[0], m[1], m[2], m[3]) for m in positions]
+                    # Create a list of all existing bases except for the current unit's models
+                    all_bases = [m.model_base for m in all_models if m.parent_unit != self] + [self._create_potential_base(m[0], m[1], m[2], m[3]) for m in positions]
                     
                     # Check for collisions with all other bases
                     if not self._collides_with_any_base(model.model_base, x, y, z, facing, all_bases):
@@ -504,6 +510,7 @@ class Unit:
             if not placed:
                 return []  # Unable to place all models
 
+        # We return game coordinates, not screen coordinates
         return positions
 
     def _is_base_within_battlefield(self, base, x: float, y: float, battlefield_size: Tuple[float, float]) -> bool:

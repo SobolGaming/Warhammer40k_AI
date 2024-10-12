@@ -149,7 +149,7 @@ class GameView:
                 original_model_positions = [model.get_location() for model in self.selected_unit.models] if self.selected_unit else []
                 
                 all_models = self.game_map.get_all_models()
-                model_positions = self.selected_unit.calculate_model_positions(battlefield_x, battlefield_y, (BATTLEFIELD_WIDTH_INCHES, BATTLEFIELD_HEIGHT_INCHES), all_models)
+                model_positions = self.selected_unit.calculate_model_positions(battlefield_x, battlefield_y, (BATTLEFIELD_WIDTH_INCHES, BATTLEFIELD_HEIGHT_INCHES), all_models, self.zoom_level)
                 
                 if model_positions:
                     for model, position in zip(self.selected_unit.models, model_positions):
