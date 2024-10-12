@@ -33,7 +33,7 @@ python3 -m warhammer40k_ai.UI.wahapedia_ui
 
 For the Gym Environment:
 ```
-python3 -m warhammer40k_ai.gym_env.main
+python3 scripts/main.py
 ```
 
 ## License
