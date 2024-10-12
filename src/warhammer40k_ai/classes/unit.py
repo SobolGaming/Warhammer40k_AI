@@ -6,6 +6,8 @@ from ..utility.model_base import Base, BaseType, convert_mm_to_inches
 from .wargear import Wargear, WargearOption
 from .ability import Ability
 from ..utility.range import Range
+from ..utility.calcs import getDist
+from ..utility.dice import get_roll
 from .status_effects import StatusEffect
 import math
 import uuid
@@ -412,10 +414,60 @@ class Unit:
         return abilities
 
     # Core Methods
-    def move(self, destination: Tuple[int, int], game_map: 'Map'):
+    def move(self, destination: Tuple[int, int], game_map: 'Map', advance: bool = False) -> bool:
         from .map import Map  # Import inside the function
         assert isinstance(game_map, Map)
-        pass
+
+        current_position = self.get_position()
+        if current_position is None:
+            logger.error(f"Cannot move unit {self.name}: current position is None")
+            return False
+
+        # Get the movement range from the first model (assuming all models have the same movement)
+        movement_range = self.models[0].movement if self.models else 0
+
+        # If advancing, add D6 to the movement range
+        if advance:
+            advance_roll = get_roll("D6")
+            print(f"Advance roll: {advance_roll}")
+            if advance_roll is None:
+                logger.error(f"Failed to roll dice for advancing unit {self.name}")
+                return False
+            movement_range += advance_roll
+
+        # Calculate the distance to the destination using getDist()
+        dx = destination[0] - current_position[0]
+        dy = destination[1] - current_position[1]
+        distance = getDist(dx, dy)
+
+        # Check if the destination is within the movement range
+        if distance > movement_range:
+            logger.warning(f"Destination is out of movement range for unit {self.name} :: {distance} > {movement_range}")
+            return False
+
+        # Check if the path is clear (you may want to implement more sophisticated pathfinding)
+        if not game_map.is_path_clear(current_position, destination, self):
+            logger.warning(f"Path is not clear for unit {self.name}")
+            return False
+
+        # Move the unit
+        self.set_position(*destination)
+        
+        # Update positions of all models in the unit
+        battlefield_size = (game_map.width, game_map.height)
+        all_models = game_map.get_all_models(units=[self])
+        new_model_positions = self.calculate_model_positions(destination[0], destination[1], battlefield_size, all_models)
+        
+        if not new_model_positions:
+            logger.error(f"Failed to calculate new positions for models in unit {self.name}")
+            return False
+
+        for model, new_position in zip(self.models, new_model_positions):
+            model.set_location(*new_position)  # Set x, y, z, facing
+
+        logger.info(f"Unit {self.name} moved to {destination}")
+        self.round_state.advanced_this_round = advance
+        return True
     
     def attack(self, target_unit: 'Unit', game_map: 'Map'):
         from .map import Map  # Import inside the function
@@ -464,7 +516,7 @@ class Unit:
         radius = self.coherency_distance  # Assuming this is defined elsewhere in the class
         
         # Check if the point is within the circular area defined by the unit's position and coherency distance
-        distance = math.sqrt((x - center_x)**2 + (y - center_y)**2)
+        distance = getDist(x - center_x, y - center_y)
         return distance <= radius
 
     def calculate_model_positions(self, start_x: float, start_y: float, battlefield_size: Tuple[float, float], all_models: List['Model'], zoom_level: float = 1.0) -> List[Tuple[float, float, float, float]]:

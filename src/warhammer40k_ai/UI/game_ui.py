@@ -1,6 +1,6 @@
 import pygame
 import textwrap
-from typing import Dict, Tuple
+from typing import Optional, Tuple, Dict
 from warhammer40k_ai.classes.unit import Unit
 from warhammer40k_ai.utility.model_base import Base, BaseType
 from warhammer40k_ai.classes.player import Player
@@ -196,6 +196,27 @@ class GameView:
                         return unit, self.player2_roster
         
         return None, None
+
+    def get_unit_at_position(self, x: float, y: float) -> Optional[Unit]:
+        # Convert screen coordinates to game coordinates
+        game_x = (x - ROSTER_PANE_WIDTH - self.offset_x) / (TILE_SIZE * self.zoom_level)
+        game_y = (y - self.offset_y) / (TILE_SIZE * self.zoom_level)
+        
+        print(f"Checking for unit at game coordinates: ({game_x}, {game_y})")
+
+        for player in [self.player1, self.player2]:
+            for unit in player.get_army().units:
+                print(f"Checking unit: {unit.name}")
+                print(f"Unit position: {unit.get_position()}")
+                print(f"Unit coherency distance: {unit.coherency_distance}")
+                if unit.is_point_inside(game_x, game_y):
+                    print(f"Unit {unit.name} found at position")
+                    return unit
+                else:
+                    print(f"Point not inside unit {unit.name}")
+        
+        print("No unit found at position")
+        return None
 
     def draw(self):
         self.screen.fill(WHITE)

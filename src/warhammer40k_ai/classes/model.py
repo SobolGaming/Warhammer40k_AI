@@ -21,19 +21,19 @@ class Model:
         self.name = name.split(' – ')[0]
         # Model attributes have a base value, but can be modified by wargear, strategems, etc
         # We need to track base value and current value separately
-        self.base_movement = movement
-        self.movement = movement
-        self.base_toughness = toughness
-        self.toughness = toughness
-        self.base_save = save
-        self.save = save
-        self.inv_save = inv_save # nothing can modify this
-        self.base_wounds = wounds
-        self.wounds = wounds
-        self.base_leadership = leadership
-        self.leadership = leadership
-        self.base_objective_control = objective_control
-        self.objective_control = objective_control
+        self._base_movement = movement
+        self._movement = movement
+        self._base_toughness = toughness
+        self._toughness = toughness
+        self._base_save = save
+        self._save = save
+        self._inv_save = inv_save # nothing can modify this
+        self._base_wounds = wounds
+        self._wounds = wounds
+        self._base_leadership = leadership
+        self._leadership = leadership
+        self._base_objective_control = objective_control
+        self._objective_control = objective_control
 
         self.model_base = model_base
         self.wargear: List[Wargear] = []
@@ -118,7 +118,7 @@ class Model:
         self.parent_unit.remove_model(self, True)
 
     def heal(self, amount: int = 0) -> None:
-        self.wounds = min(self.base_wounds, self.wounds + amount)
+        self.wounds = min(self._base_wounds, self.wounds + amount)
         logger.info(f"{self.name} is healed for {amount} damage")
         self._check_damaged_profile()
 
@@ -181,6 +181,58 @@ class Model:
             return round(self.model_base.z - other.model_base.z - other.model_base.model_height, 2)
         else:
             return 0.0
+
+    @property
+    def movement(self) -> int:
+        return self._movement
+
+    @movement.setter
+    def movement(self, value: int) -> None:
+        self._movement = value
+
+    @property
+    def toughness(self) -> int:
+        return self._toughness
+
+    @toughness.setter
+    def toughness(self, value: int) -> None:
+        self._toughness = value
+
+    @property
+    def save(self) -> int:
+        return self._save
+
+    @save.setter
+    def save(self, value: int) -> None:
+        self._save = value
+
+    @property
+    def inv_save(self) -> Optional[int]:
+        return self._inv_save
+
+    @property
+    def wounds(self) -> int:
+        return self._wounds
+
+    @wounds.setter
+    def wounds(self, value: int) -> None:
+        self._wounds = value
+
+    @property
+    def leadership(self) -> int:
+        return self._leadership
+
+    @leadership.setter
+    def leadership(self, value: int) -> None:
+        self._leadership = value
+
+    @property
+    def objective_control(self) -> int:
+        return self._objective_control
+
+    @objective_control.setter
+    def objective_control(self, value: int) -> None:
+        self._objective_control = value
 
     ################
     ### String Representation

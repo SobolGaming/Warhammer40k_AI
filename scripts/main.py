@@ -6,7 +6,7 @@ from warhammer40k_ai.classes.game import Game
 from warhammer40k_ai.classes.map import Map
 from warhammer40k_ai.classes.player import Player, PlayerType
 from warhammer40k_ai.classes.army import parse_army_list
-from warhammer40k_ai.UI.game_ui import GameView, GameState, ROSTER_PANE_WIDTH, BATTLEFIELD_WIDTH, BATTLEFIELD_HEIGHT, handle_zoom, handle_pan
+from warhammer40k_ai.UI.game_ui import GameView, GameState, ROSTER_PANE_WIDTH, BATTLEFIELD_WIDTH, BATTLEFIELD_HEIGHT, handle_zoom, handle_pan, TILE_SIZE
 from warhammer40k_ai.waha_helper import WahaHelper
 
 # Helper
@@ -47,7 +47,25 @@ def main_game_loop() -> None:
             if event.type == pygame.QUIT:
                 running = False
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                game_view.on_mouse_press(*event.pos, event.button)
+                if game_state == GameState.PLAYING:
+                    if event.button == 1:  # Left mouse button
+                        if not game_view.selected_unit:
+                            clicked_unit = game_view.get_unit_at_position(*event.pos)
+                            if clicked_unit:
+                                game_view.selected_unit = clicked_unit
+                                print(f"Selected unit: {clicked_unit.name}")
+                        elif game_view.selected_unit:
+                            # Convert screen coordinates to game coordinates
+                            game_x = (event.pos[0] - ROSTER_PANE_WIDTH - game_view.offset_x) / (TILE_SIZE * game_view.zoom_level)
+                            game_y = (event.pos[1] - game_view.offset_y) / (TILE_SIZE * game_view.zoom_level)
+                            # Move the selected unit
+                            game_view.selected_unit.move((game_x, game_y), game_view.game_map)
+                            print(f"Moved {game_view.selected_unit.name} to ({game_x}, {game_y})")
+                            game_view.selected_unit = None  # Deselect the unit after moving
+                        else:
+                            print("No unit at this position")
+                else:
+                    game_view.on_mouse_press(*event.pos, event.button)
             elif event.type == pygame.MOUSEWHEEL:
                 game_view.zoom_level = handle_zoom(game_view.zoom_level, event)
             elif event.type == pygame.KEYDOWN:
