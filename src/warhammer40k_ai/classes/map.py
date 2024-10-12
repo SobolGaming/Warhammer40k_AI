@@ -18,10 +18,9 @@ class Map:
         return [[None for _ in range(self.width)] for _ in range(self.height)]
 
     def place_unit(self, unit: Unit) -> bool:
-        positions = unit.get_model_positions()
-        if all(self.is_position_valid(x, y) for x, y in positions):
-            for x, y in positions:
-                self.occupied_positions.add((int(x), int(y)))
+        position = unit.get_position()
+        if position and self.is_position_valid(position[0], position[1]):
+            self.occupied_positions.add((int(position[0]), int(position[1])))
             self.units.append(unit)
             return True
         return False
@@ -44,6 +43,13 @@ class Map:
             map_str += "\n"
         return map_str
 
+    def get_all_models(self):
+        all_models = []
+        for unit in self.units:
+            all_models.extend(unit.models)
+        return all_models
+
+
 class TerrainType(Enum):
     OPEN = auto()
     FOREST = auto()
@@ -51,6 +57,7 @@ class TerrainType(Enum):
     WATER = auto()
     HILL = auto()
     OBSTACLE = auto()
+
 
 class Tile:
     def __init__(self, x: int, y: int, terrain_type: TerrainType):

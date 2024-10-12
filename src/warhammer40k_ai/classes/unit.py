@@ -9,6 +9,8 @@ from ..utility.range import Range
 from .status_effects import StatusEffect
 import math
 import uuid
+import random
+import copy
 
 if TYPE_CHECKING:
     from .map import Map
@@ -60,6 +62,7 @@ class Unit:
         self.initialize_round()
 
         self.position = None  # Initialize position as None
+        self.coherency_distance = 2 + (2 * self.models[0].model_base.getRadius())
 
     def _parse_attribute(self, attribute_value: str) -> int:
         # Remove " and + from the attribute value
@@ -441,49 +444,89 @@ class Unit:
         """Set the position of the unit on the map."""
         self.position = (x, y)
 
-    def get_model_positions(self):
-        if self.position is None:
-            raise ValueError("Unit position has not been set.")
-        
-        center_x, center_y = self.position
-        positions = [(center_x, center_y)]  # Center position
+    def get_position(self):
+        if self.position is not None:
+            return self.position
+        elif self.models:
+            # Calculate the centroid of all model positions
+            x_sum = sum(model.get_location()[0] for model in self.models)
+            y_sum = sum(model.get_location()[1] for model in self.models)
+            return (x_sum / len(self.models), y_sum / len(self.models))
+        else:
+            return None
 
-        if len(self.models) > 1:
-            radius = 0.5  # Adjust this value to change the spread of models
-            angle_step = 2 * math.pi / (len(self.models) - 1)
-            for i in range(1, len(self.models)):
-                angle = i * angle_step
-                x = center_x + radius * math.cos(angle)
-                y = center_y + radius * math.sin(angle)
-                positions.append((x, y))
+    def is_point_inside(self, x, y):
+        position = self.get_position()
+        if position is None:
+            return False
+        
+        center_x, center_y = position
+        radius = self.coherency_distance  # Assuming this is defined elsewhere in the class
+        
+        # Check if the point is within the circular area defined by the unit's position and coherency distance
+        distance = math.sqrt((x - center_x)**2 + (y - center_y)**2)
+        return distance <= radius
+
+    def calculate_model_positions(self, start_x: float, start_y: float, battlefield_size: Tuple[float, float], all_models: List['Model']) -> List[Tuple[float, float, float, float]]:
+        positions = []
+        max_attempts = 100  # Maximum number of attempts to place each model
+
+        for model in self.models:
+            placed = False
+            attempts = 0
+            
+            while not placed and attempts < max_attempts:
+                if not positions:  # First model
+                    x, y = start_x, start_y
+                else:
+                    # Generate a random position within coherency distance of the last placed model
+                    last_x, last_y, _, _ = positions[-1]
+                    angle = random.uniform(0, 2 * math.pi)
+                    distance = random.uniform(0, self.coherency_distance)
+                    x = last_x + distance * math.cos(angle)
+                    y = last_y + distance * math.sin(angle)
+
+                z = 0  # Assume all models are placed on the ground for simplicity
+                facing = random.uniform(0, 2 * math.pi)  # Random facing
+
+                # Check if the model's base is entirely within the battlefield
+                if self._is_base_within_battlefield(model.model_base, x, y, battlefield_size):
+                    # Create a list of all existing bases plus potential bases for already placed models
+                    all_bases = [m.model_base for m in all_models] + [self._create_potential_base(m[0], m[1], m[2], m[3]) for m in positions]
+                    
+                    # Check for collisions with all other bases
+                    if not self._collides_with_any_base(model.model_base, x, y, z, facing, all_bases):
+                        positions.append((x, y, z, facing))
+                        placed = True
+                
+                attempts += 1
+
+            if not placed:
+                return []  # Unable to place all models
 
         return positions
 
-    def is_point_inside(self, x: float, y: float) -> bool:
-        """
-        Check if a point is inside the unit's bounding box.
+    def _is_base_within_battlefield(self, base, x: float, y: float, battlefield_size: Tuple[float, float]) -> bool:
+        """Check if the entire base is within the battlefield boundaries."""
+        max_radius = base.longestDistance()
+        return (x - max_radius >= 0 and 
+                x + max_radius <= battlefield_size[0] and 
+                y - max_radius >= 0 and 
+                y + max_radius <= battlefield_size[1])
 
-        Args:
-            x (float): The x-coordinate of the point.
-            y (float): The y-coordinate of the point.
+    def _create_potential_base(self, x: float, y: float, z: float, facing: float):
+        # Create a new base with the same properties as the model's base
+        new_base = copy.deepcopy(self.models[0].model_base)
+        new_base.x, new_base.y, new_base.z = x, y, z
+        new_base.set_facing(facing)
+        return new_base
 
-        Returns:
-            bool: True if the point is inside the unit's bounding box, False otherwise.
-        """
-        if self.position is None:
-            return False
-
-        # Get all model positions
-        model_positions = self.get_model_positions()
-
-        # Calculate the bounding box of the unit
-        min_x = min(pos[0] for pos in model_positions)
-        max_x = max(pos[0] for pos in model_positions)
-        min_y = min(pos[1] for pos in model_positions)
-        max_y = max(pos[1] for pos in model_positions)
-
-        # Add a small buffer around the bounding box for easier selection
-        buffer = 1.0  # Adjust this value as needed
+    def _collides_with_any_base(self, base, x: float, y: float, z: float, facing: float, all_bases: List[Base]) -> bool:
+        """Check if the base at the given position collides with any other base."""
+        base.x, base.y, base.z = x, y, z
+        base.set_facing(facing)
         
-        # Check if the point is inside the bounding box (with buffer)
-        return (min_x - buffer <= x <= max_x + buffer) and (min_y - buffer <= y <= max_y + buffer)
+        for other_base in all_bases:
+            if base.collidesWithBase(other_base):
+                return True
+        return False
