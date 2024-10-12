@@ -458,3 +458,32 @@ class Unit:
                 positions.append((x, y))
 
         return positions
+
+    def is_point_inside(self, x: float, y: float) -> bool:
+        """
+        Check if a point is inside the unit's bounding box.
+
+        Args:
+            x (float): The x-coordinate of the point.
+            y (float): The y-coordinate of the point.
+
+        Returns:
+            bool: True if the point is inside the unit's bounding box, False otherwise.
+        """
+        if self.position is None:
+            return False
+
+        # Get all model positions
+        model_positions = self.get_model_positions()
+
+        # Calculate the bounding box of the unit
+        min_x = min(pos[0] for pos in model_positions)
+        max_x = max(pos[0] for pos in model_positions)
+        min_y = min(pos[1] for pos in model_positions)
+        max_y = max(pos[1] for pos in model_positions)
+
+        # Add a small buffer around the bounding box for easier selection
+        buffer = 1.0  # Adjust this value as needed
+        
+        # Check if the point is inside the bounding box (with buffer)
+        return (min_x - buffer <= x <= max_x + buffer) and (min_y - buffer <= y <= max_y + buffer)

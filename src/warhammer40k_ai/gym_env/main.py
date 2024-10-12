@@ -102,6 +102,12 @@ class RosterPane(pygame.sprite.Sprite):
                     pygame.draw.rect(surface, pygame.Color('yellow'), button_rect, 3, border_radius=5)
                     break
 
+    def get_hovered_unit(self, x, y):
+        for button_rect, unit in self.buttons:
+            if button_rect.collidepoint(x, y):
+                return unit
+        return None
+
 class GameView:
     def __init__(self, screen, env, game, game_map, player1, player2):
         self.screen = screen
@@ -139,7 +145,7 @@ class GameView:
                 new_unit = self.selected_unit #Unit(waha_helper.get_full_datasheet_info_by_name(self.selected_unit.name))
                 
                 # Calculate positions for all models in the unit
-                model_positions = calculate_model_positions(battlefield_x, battlefield_y, len(new_unit.models), new_unit.models[0].model_base.longestDistance())
+                model_positions = calculate_model_positions(battlefield_x, battlefield_y, len(new_unit.models), new_unit.models[0].model_base.getRadius())
                 
                 if len(model_positions) > 0:
                     # Set the position of each model in the unit
@@ -162,6 +168,31 @@ class GameView:
                 self.player1_roster.selected_unit = None
                 self.player2_roster.selected_unit = None
 
+    def get_hovered_unit(self, x, y):
+        # Check if hovering over a unit in the roster panes
+        hovered_unit = self.player1_roster.get_hovered_unit(x, y)
+        if hovered_unit:
+            return hovered_unit, self.player1_roster
+        
+        hovered_unit = self.player2_roster.get_hovered_unit(x, y)
+        if hovered_unit:
+            return hovered_unit, self.player2_roster
+        
+        # Check if hovering over a unit on the battlefield
+        if ROSTER_PANE_WIDTH < x < BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH:
+            battlefield_x = (x - ROSTER_PANE_WIDTH) / TILE_SIZE / self.zoom_level - self.offset_x / TILE_SIZE
+            battlefield_y = y / TILE_SIZE / self.zoom_level - self.offset_y / TILE_SIZE
+            
+            for unit in self.game_map.units:
+                if unit.is_point_inside(battlefield_x, battlefield_y):
+                    # Determine which roster the unit belongs to
+                    if unit in self.player1.get_army().units:
+                        return unit, self.player1_roster
+                    elif unit in self.player2.get_army().units:
+                        return unit, self.player2_roster
+        
+        return None, None
+
     def draw(self):
         self.screen.fill(WHITE)
         
@@ -183,7 +214,46 @@ class GameView:
         
         self.screen.blit(battlefield_surface, (ROSTER_PANE_WIDTH, 0))
 
+        # Display unit info for hovered unit
+        mouse_pos = pygame.mouse.get_pos()
+        hovered_unit, roster_pane = self.get_hovered_unit(*mouse_pos)
+        if hovered_unit:
+            self.display_unit_info(hovered_unit, roster_pane)
+
         pygame.display.update()
+
+    def display_unit_info(self, unit, roster_pane):
+        font = pygame.font.SysFont(None, 24)
+        info_text = f"{unit.name} - {len(unit.models)} models"
+        text_surface = font.render(info_text, True, (255, 255, 255))  # White text
+        text_rect = text_surface.get_rect()
+        
+        # Find the button for this unit in the roster pane
+        for button_rect, roster_unit in roster_pane.buttons:
+            if roster_unit == unit:
+                # Position the info box above the button
+                x = button_rect.left
+                y = button_rect.top - text_rect.height - 10
+                break
+        else:
+            # If not found (shouldn't happen), use default position
+            x, y = pygame.mouse.get_pos()
+
+        # Adjust position to keep the box within the screen
+        padding = 10
+        x = max(padding, min(x, self.screen.get_width() - text_rect.width - padding))
+        y = max(padding, min(y, self.screen.get_height() - text_rect.height - padding))
+        
+        text_rect.topleft = (x, y)
+        
+        # Draw a semi-transparent background
+        background_rect = text_rect.inflate(20, 10)
+        background = pygame.Surface(background_rect.size, pygame.SRCALPHA)
+        background.fill((0, 0, 0, 180))  # Semi-transparent black
+        self.screen.blit(background, background_rect.topleft)
+        
+        # Draw the text
+        self.screen.blit(text_surface, text_rect)
 
 def initialize_game() -> Tuple[pygame.Surface, WarhammerEnv, Game, Map, float, int, int, Player, Player]:
     pygame.init()
@@ -237,12 +307,7 @@ def draw_battlefield(screen: pygame.Surface, zoom_level: float, offset_x: int, o
 
 def place_unit(screen: pygame.Surface, unit: Unit, zoom_level: float, offset_x: int, offset_y: int, mouse_pos: Tuple[int, int], player1: Player, player2: Player) -> None:
     # Determine the color based on which player the unit belongs to
-    if unit in player1.get_army().units:
-        color = GREEN
-    elif unit in player2.get_army().units:
-        color = RED
-    else:
-        color = BLUE  # Default color if the unit doesn't belong to either player
+    color = GREEN if unit in player1.get_army().units else RED if unit in player2.get_army().units else BLUE
 
     for model in unit.models:
         x, y = model.get_location()[:2]
@@ -250,42 +315,49 @@ def place_unit(screen: pygame.Surface, unit: Unit, zoom_level: float, offset_x: 
         screen_y = int((y * TILE_SIZE) * zoom_level + offset_y)
         base = model.model_base
         
-        if base.base_type == BaseType.CIRCULAR:
-            radius = int(base.getRadius() * TILE_SIZE * zoom_level)
-            pygame.draw.circle(screen, color, (screen_x, screen_y), radius)
-            # Draw a smaller inner circle to make the base more visible
-            inner_radius = max(1, int(radius * 0.8))
-            pygame.draw.circle(screen, (255, 255, 255), (screen_x, screen_y), inner_radius)
-        
-        elif base.base_type == BaseType.ELLIPTICAL:
-            width = int(base.radius[0] * 2 * TILE_SIZE * zoom_level)
-            height = int(base.radius[1] * 2 * TILE_SIZE * zoom_level)
-            ellipse_rect = pygame.Rect(screen_x - width // 2, screen_y - height // 2, width, height)
-            pygame.draw.ellipse(screen, color, ellipse_rect)
-            # Draw a smaller inner ellipse
-            inner_width = max(1, int(width * 0.8))
-            inner_height = max(1, int(height * 0.8))
-            inner_rect = pygame.Rect(screen_x - inner_width // 2, screen_y - inner_height // 2, inner_width, inner_height)
-            pygame.draw.ellipse(screen, (255, 255, 255), inner_rect)
-        
-        elif base.base_type == BaseType.HULL:
-            width = int(base.radius[0] * 2 * TILE_SIZE * zoom_level)
-            height = int(base.radius[1] * 2 * TILE_SIZE * zoom_level)
-            rect = pygame.Rect(screen_x - width // 2, screen_y - height // 2, width, height)
-            pygame.draw.rect(screen, color, rect)
-            # Draw a smaller inner rectangle
-            inner_width = max(1, int(width * 0.8))
-            inner_height = max(1, int(height * 0.8))
-            inner_rect = pygame.Rect(screen_x - inner_width // 2, screen_y - inner_height // 2, inner_width, inner_height)
-            pygame.draw.rect(screen, (255, 255, 255), inner_rect)
+        draw_base(screen, base, screen_x, screen_y, zoom_level, color)
     
-    # Calculate unit bounding box
+    # Calculate and draw unit bounding box
+    draw_unit_bounding_box(screen, unit, zoom_level, offset_x, offset_y, mouse_pos)
+
+def draw_base(screen: pygame.Surface, base: Base, screen_x: int, screen_y: int, zoom_level: float, color: Tuple[int, int, int]) -> None:
+    if base.base_type == BaseType.CIRCULAR:
+        draw_circular_base(screen, base, screen_x, screen_y, zoom_level, color)
+    elif base.base_type == BaseType.ELLIPTICAL:
+        draw_elliptical_base(screen, base, screen_x, screen_y, zoom_level, color)
+    elif base.base_type == BaseType.HULL:
+        draw_hull_base(screen, base, screen_x, screen_y, zoom_level, color)
+
+def draw_circular_base(screen: pygame.Surface, base: Base, screen_x: int, screen_y: int, zoom_level: float, color: Tuple[int, int, int]) -> None:
+    radius = int(base.getRadius() * TILE_SIZE * zoom_level)
+    pygame.draw.circle(screen, color, (screen_x, screen_y), radius)
+    inner_radius = max(1, int(radius * 0.8))
+    pygame.draw.circle(screen, (255, 255, 255), (screen_x, screen_y), inner_radius)
+
+def draw_elliptical_base(screen: pygame.Surface, base: Base, screen_x: int, screen_y: int, zoom_level: float, color: Tuple[int, int, int]) -> None:
+    width = int(base.radius[0] * 2 * TILE_SIZE * zoom_level)
+    height = int(base.radius[1] * 2 * TILE_SIZE * zoom_level)
+    ellipse_rect = pygame.Rect(screen_x - width // 2, screen_y - height // 2, width, height)
+    pygame.draw.ellipse(screen, color, ellipse_rect)
+    inner_width, inner_height = max(1, int(width * 0.8)), max(1, int(height * 0.8))
+    inner_rect = pygame.Rect(screen_x - inner_width // 2, screen_y - inner_height // 2, inner_width, inner_height)
+    pygame.draw.ellipse(screen, (255, 255, 255), inner_rect)
+
+def draw_hull_base(screen: pygame.Surface, base: Base, screen_x: int, screen_y: int, zoom_level: float, color: Tuple[int, int, int]) -> None:
+    width = int(base.radius[0] * 2 * TILE_SIZE * zoom_level)
+    height = int(base.radius[1] * 2 * TILE_SIZE * zoom_level)
+    rect = pygame.Rect(screen_x - width // 2, screen_y - height // 2, width, height)
+    pygame.draw.rect(screen, color, rect)
+    inner_width, inner_height = max(1, int(width * 0.8)), max(1, int(height * 0.8))
+    inner_rect = pygame.Rect(screen_x - inner_width // 2, screen_y - inner_height // 2, inner_width, inner_height)
+    pygame.draw.rect(screen, (255, 255, 255), inner_rect)
+
+def draw_unit_bounding_box(screen: pygame.Surface, unit: Unit, zoom_level: float, offset_x: int, offset_y: int, mouse_pos: Tuple[int, int]) -> None:
     min_x = min(model.get_location()[0] for model in unit.models)
     max_x = max(model.get_location()[0] for model in unit.models)
     min_y = min(model.get_location()[1] for model in unit.models)
     max_y = max(model.get_location()[1] for model in unit.models)
     
-    # Highlight the unit if the mouse is over it
     unit_rect = pygame.Rect(
         int((min_x * TILE_SIZE + offset_x) * zoom_level),
         int((min_y * TILE_SIZE + offset_y) * zoom_level),
@@ -294,28 +366,6 @@ def place_unit(screen: pygame.Surface, unit: Unit, zoom_level: float, offset_x: 
     )
     if unit_rect.collidepoint(mouse_pos):
         pygame.draw.rect(screen, (255, 255, 0), unit_rect, 2)  # Yellow highlight
-
-def display_unit_info(screen: pygame.Surface, unit: Unit, x: int, y: int) -> None:
-    font = pygame.font.SysFont(None, 24)
-    info_text = f"{unit.name} - {len(unit.models)} models"
-    text_surface = font.render(info_text, True, (255, 255, 255))  # White text
-    text_rect = text_surface.get_rect()
-    
-    # Adjust position to keep the box within the screen
-    padding = 10
-    x = max(padding, min(x, screen.get_width() - text_rect.width - padding))
-    y = max(padding, min(y, screen.get_height() - text_rect.height - padding))
-    
-    text_rect.topleft = (x, y)
-    
-    # Draw a semi-transparent background
-    background_rect = text_rect.inflate(20, 10)
-    background = pygame.Surface(background_rect.size, pygame.SRCALPHA)
-    background.fill((0, 0, 0, 180))  # Semi-transparent black
-    screen.blit(background, background_rect.topleft)
-    
-    # Draw the text
-    screen.blit(text_surface, text_rect)
 
 def calculate_model_positions(start_x: float, start_y: float, num_models: int, base_radius: float) -> List[Tuple[float, float]]:
     """
