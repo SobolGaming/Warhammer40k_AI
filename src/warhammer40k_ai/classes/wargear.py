@@ -3,6 +3,10 @@ from warhammer40k_ai.utility.dice import DiceCollection
 from warhammer40k_ai.utility.range import Range
 from warhammer40k_ai.utility.count import Count
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from .model import Model
+    from .unit import Unit
 
 class WargearProfile:
     def __init__(self, profile_name: str, wargear_data: Dict):
@@ -93,6 +97,63 @@ class Wargear:
 
     def get_keywords(self, profile_name: str = 'default') -> List[str]:
         return self.profiles[profile_name].keywords
+
+    def is_melee(self) -> bool:
+        return self.type.lower() == 'melee'
+
+    def is_ranged(self) -> bool:
+        return self.type.lower() == 'ranged'
+
+    def is_pistol(self) -> bool:
+        return 'pistol' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def is_heavy(self) -> bool:
+        return 'heavy' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def is_hazardous(self) -> bool:
+        return 'hazardous' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def is_explosive(self) -> bool:
+        return 'explosive' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def is_precision(self) -> bool:
+        return 'precision' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def is_psychic(self) -> bool:
+        return 'psychic' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def is_assault(self) -> bool:
+        return 'assault' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def is_torrent(self) -> bool:
+        return 'torrent' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def is_devastating_wounds(self) -> bool:
+        return 'devastating wounds' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def is_ignores_cover(self) -> bool:
+        return 'ignores cover' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def is_sustained_hits(self) -> int:
+        for keyword in self.get_keywords():
+            if keyword.lower().startswith('sustained hits'):
+                parts = keyword.split()
+                if len(parts) > 2 and parts[2].isdigit():
+                    return int(parts[2])
+                return 1  # Default to 1 if no number is specified
+        return 0
+
+    def is_rapid_fire(self) -> int:
+        for keyword in self.get_keywords():
+            if keyword.lower().startswith('rapid fire'):
+                parts = keyword.split()
+                if len(parts) > 2 and parts[2].isdigit():
+                    return int(parts[2])
+                return 1  # Default to 1 if no number is specified
+        return 0
+
+    def attack(self, model: 'Model', target: 'Unit') -> None:
+        pass
 
 
 class WargearOption:

@@ -22,10 +22,12 @@ logger = logging.getLogger(__name__)
 
 
 class UnitRoundState:
+    remained_stationary_this_round: bool = False
     advanced_this_round: bool = False
     shot_this_round: bool = False
     fell_back_this_round: bool = False
     reinforced_this_round: bool = False
+    declared_charge_this_round: bool = False
     num_lost_models_this_round: int = 0
 
 
@@ -59,6 +61,7 @@ class Unit:
 
         # Game State specific attributes
         self.models_lost = []
+        self.status_effects = []  # List of active status effects
 
         # Initialize round-tracked variables
         self.initialize_round()
@@ -413,8 +416,47 @@ class Unit:
             abilities.extend(model.abilities)
         return abilities
 
-    # Core Methods
+    ###########################################################################
+    ### Properties
+    ###########################################################################
+    @property
+    def movement(self) -> int:
+        return self.models[0].movement
+
+    @property
+    def toughness(self) -> int:
+        return self.models[0].toughness
+
+    @property
+    def save(self) -> int:
+        return self.models[0].save
+
+    @property
+    def inv_save(self) -> Optional[int]:
+        return self.models[0].inv_save
+
+    @property
+    def leadership(self) -> int:
+        return self.models[0].leadership
+
+    @property
+    def objective_control(self) -> int:
+        return self.models[0].objective_control
+
+    ###########################################################################
+    ### Core Actions
+    ###########################################################################
+
+    def apply_command_abilities(self) -> None:
+        """Applies command abilities during the Command phase."""
+        for ability in self.abilities.get('command_phase', []):
+            ability.activate(self)
+
+    def remain_stationary(self) -> None:
+        self.round_state.remained_stationary_this_round = True
+
     def move(self, destination: Tuple[int, int], game_map: 'Map', advance: bool = False) -> bool:
+        """Moves the unit towards the destination up to its movement characteristic or Advance."""
         from .map import Map  # Import inside the function
         assert isinstance(game_map, Map)
 
@@ -424,7 +466,7 @@ class Unit:
             return False
 
         # Get the movement range from the first model (assuming all models have the same movement)
-        movement_range = self.models[0].movement if self.models else 0
+        movement_range = self.movement if self.models else 0
 
         # If advancing, add D6 to the movement range
         if advance:
@@ -452,12 +494,12 @@ class Unit:
 
         # Move the unit
         self.set_position(*destination)
-        
+
         # Update positions of all models in the unit
         battlefield_size = (game_map.width, game_map.height)
         all_models = game_map.get_all_models(units=[self])
         new_model_positions = self.calculate_model_positions(destination[0], destination[1], battlefield_size, all_models)
-        
+
         if not new_model_positions:
             logger.error(f"Failed to calculate new positions for models in unit {self.name}")
             return False
@@ -468,26 +510,118 @@ class Unit:
         logger.info(f"Unit {self.name} moved to {destination}")
         self.round_state.advanced_this_round = advance
         return True
-    
-    def attack(self, target_unit: 'Unit', game_map: 'Map'):
-        from .map import Map  # Import inside the function
-        assert isinstance(game_map, Map)
-        # Rest of the attack logic
-        pass
-    
+
+    def fallback(self) -> None:
+        """Falls back from close combat."""
+        # Logic to move the unit out of engagement range
+        print(f"{self.name} falls back from combat.")
+        self.round_state.fell_back_this_round = True
+
+    # Shooting Phase Actions
+    def shoot(self, target_unit: 'Unit') -> None:
+        if self.round_state.advanced_this_round:
+            print(f"{self.name} cannot shoot after advancing.")
+            return
+        if self.round_state.fell_back_this_round:
+            print(f"{self.name} cannot shoot after falling back.")
+            return
+
+        """Shoots at the target unit."""
+        if self.check_line_of_sight(target_unit):
+            for weapon in self.weapons:
+                weapon.fire(self, target_unit)
+            print(f"{self.name} fired at {target_unit.name}.")
+            self.round_state.shot_this_round = True
+        else:
+            print(f"{self.name} cannot see {target_unit.name}.")
+
+    # Charge Phase Actions
+    def declare_charge(self, target_units: List['Unit']) -> None:
+        if self.round_state.advanced_this_round:
+            print(f"{self.name} cannot charge after advancing.")
+            return
+        if self.round_state.fell_back_this_round:
+            print(f"{self.name} cannot charge after falling back.")
+            return
+
+        """Declares a charge against target units."""
+        self.charge_targets = target_units
+        print(f"{self.name} declares a charge against {[unit.name for unit in target_units]}.")
+        self.round_state.declared_charge_this_round = True
+
+    def charge_move(self) -> None:
+        if not self.round_state.declared_charge_this_round:
+            print(f"{self.name} cannot charge move without a declared charge.")
+            return
+
+        """Moves the unit towards the enemy after a successful charge roll."""
+        charge_distance = get_roll("2D6")  # 2D6 roll
+        # Logic to move towards the closest enemy within declared targets
+        print(f"{self.name} charges forward {charge_distance} inches.")
+
+    # Fight Phase Actions
+    def pile_in(self, target_units: List['Unit']) -> None:
+        """Moves up to 3 inches towards the nearest enemy unit."""
+        # Logic to move closer
+        print(f"{self.name} piles in.")
+
+    def fight(self, target_unit: 'Unit') -> None:
+        """Engages in close combat with the target unit."""
+        for model in self.models:
+            for weapon in model.wargear:
+                if weapon.is_melee():
+                    weapon.attack(model, target_unit)
+        print(f"{self.name} fights {target_unit.name} in close combat.")
+
+    def consolidate(self):
+        """Moves up to 3 inches after fighting."""
+        # Logic to move further into enemy lines
+        print(f"{self.name} consolidates after combat.")
+
+    # Battle-shock Phase Actions
+    def take_battle_shock_test(self):
+        """Takes a battle shock test."""
+        test_result = get_roll("2D6")  # 2D6 roll
+        leadership = self.models[0].leadership
+        if test_result > leadership:
+            self.status_effects.append('battle_shocked')
+            print(f"{self.name} has failed the battle shock test and is battle shocked.")
+        else:
+            print(f"{self.name} passes the battle shock test.")
+
     def use_ability(self, ability: Ability, target: 'Unit', game_map: 'Map'):
+        """Uses a special ability."""
         from .map import Map  # Import inside the function
         assert isinstance(game_map, Map)
-        pass
-    
+        if ability:
+            ability.activate(self)
+            print(f"{self.name} uses ability: {ability.name}.")
+        else:
+            print(f"{self.name} does not have ability: {ability.name}.")
+
+    def embark(self, transport_unit: 'Unit') -> None:
+        """Embarks onto a transport unit."""
+        if transport_unit.can_transport(self):
+            transport_unit.add_passenger(self)
+            print(f"{self.name} embarks onto {transport_unit.name}.")
+        else:
+            print(f"{self.name} cannot embark onto {transport_unit.name}.")
+
+    def disembark(self) -> None:
+        """Disembarks from a transport unit."""
+        # Logic to disembark
+        print(f"{self.name} disembarks from transport.")
+
     def take_damage(self, amount: int):
         pass
     
-    def apply_status_effect(self, status_effect: StatusEffect):
-        pass
+    def apply_status_effect(self, status_effect: StatusEffect) -> None:
+        status_effect.apply_effect(self)
+        self.status_effects.append(status_effect)
     
-    def remove_status_effect(self, status_effect: StatusEffect):
-        pass
+    def remove_status_effect(self, status_effect: StatusEffect) -> None:
+        status_effect.remove_effect(self)
+        self.status_effects.remove(status_effect)
     
     def is_alive(self) -> bool:
         return len(self.models) > 0
