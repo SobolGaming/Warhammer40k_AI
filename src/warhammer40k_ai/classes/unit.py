@@ -8,7 +8,7 @@ from .ability import Ability
 from ..utility.range import Range
 from ..utility.calcs import getDist, convert_mm_to_inches
 from ..utility.dice import get_roll
-from .status_effects import StatusEffect
+from .status_effects import StatusEffect, UnitStatsModifier
 import math
 import uuid
 import random
@@ -74,6 +74,8 @@ class Unit:
         # Game State specific attributes
         self.models_lost = []
         self.status_effects = []  # List of active status effects
+        self.special_rules = {}  # Dictionary of special rules
+        self.stats = {}  # Dictionary of stats modifiers
 
         # Initialize round-tracked variables
         self.initialize_round()
@@ -450,16 +452,31 @@ class Unit:
     ### Properties
     ###########################################################################
     @property
-    def movement(self) -> int:
-        return self.models[0].movement
+    def movement(self) -> int:  
+        if self.stats['movement'][0] == UnitStatsModifier.OVERRIDE:
+            return self.stats['movement'][1]
+        elif self.stats['movement'][0] == UnitStatsModifier.ADDITIVE:
+            return self.models[0].movement + self.stats['movement'][1]
+        else:
+            return self.models[0].movement
 
     @property
     def toughness(self) -> int:
-        return self.models[0].toughness
+        if self.stats['toughness'][0] == UnitStatsModifier.OVERRIDE:
+            return self.stats['toughness'][1]
+        elif self.stats['toughness'][0] == UnitStatsModifier.ADDITIVE:
+            return self.models[0].toughness + self.stats['toughness'][1]
+        else:
+            return self.models[0].toughness
 
     @property
     def save(self) -> int:
-        return self.models[0].save
+        if self.stats['save'][0] == UnitStatsModifier.OVERRIDE:
+            return self.stats['save'][1]
+        elif self.stats['save'][0] == UnitStatsModifier.ADDITIVE:
+            return self.models[0].save + self.stats['save'][1]
+        else:
+            return self.models[0].save
 
     @property
     def inv_save(self) -> Optional[int]:
@@ -467,11 +484,21 @@ class Unit:
 
     @property
     def leadership(self) -> int:
-        return self.models[0].leadership
+        if self.stats['leadership'][0] == UnitStatsModifier.OVERRIDE:
+            return self.stats['leadership'][1]
+        elif self.stats['leadership'][0] == UnitStatsModifier.ADDITIVE:
+            return self.models[0].leadership + self.stats['leadership'][1]
+        else:
+            return self.models[0].leadership
 
     @property
     def objective_control(self) -> int:
-        return self.models[0].objective_control
+        if self.stats['objective_control'][0] == UnitStatsModifier.OVERRIDE:
+            return self.stats['objective_control'][1]
+        elif self.stats['objective_control'][0] == UnitStatsModifier.ADDITIVE:
+            return self.models[0].objective_control + self.stats['objective_control'][1]
+        else:
+            return self.models[0].objective_control
 
     ###########################################################################
     ###########################################################################
