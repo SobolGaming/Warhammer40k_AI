@@ -395,20 +395,68 @@ def draw_circular_base(screen: pygame.Surface, base: Base, screen_x: int, screen
 def draw_elliptical_base(screen: pygame.Surface, base: Base, screen_x: int, screen_y: int, zoom_level: float, color: Tuple[int, int, int]) -> None:
     width = int(base.radius[0] * 2 * TILE_SIZE * zoom_level)
     height = int(base.radius[1] * 2 * TILE_SIZE * zoom_level)
-    ellipse_rect = pygame.Rect(screen_x - width // 2, screen_y - height // 2, width, height)
-    pygame.draw.ellipse(screen, color, ellipse_rect)
+    
+    # Create a surface for the ellipse
+    ellipse_surface = pygame.Surface((width, height), pygame.SRCALPHA)
+    ellipse_surface.fill((0, 0, 0, 0))  # Transparent background
+    
+    # Draw the outer ellipse
+    pygame.draw.ellipse(ellipse_surface, color, (0, 0, width, height))
+    
+    # Draw the inner ellipse
     inner_width, inner_height = max(1, int(width * 0.8)), max(1, int(height * 0.8))
-    inner_rect = pygame.Rect(screen_x - inner_width // 2, screen_y - inner_height // 2, inner_width, inner_height)
-    pygame.draw.ellipse(screen, (255, 255, 255), inner_rect)
+    inner_rect = pygame.Rect((width - inner_width) // 2, (height - inner_height) // 2, inner_width, inner_height)
+    pygame.draw.ellipse(ellipse_surface, (255, 255, 255), inner_rect)
+    
+    # Rotate the surface
+    angle_degrees = math.degrees(base.facing)
+    rotated_surface = pygame.transform.rotate(ellipse_surface, -angle_degrees)
+    
+    # Calculate the position to blit the rotated surface
+    blit_pos = (screen_x - rotated_surface.get_width() // 2, 
+                screen_y - rotated_surface.get_height() // 2)
+    
+    # Blit the rotated surface onto the screen
+    screen.blit(rotated_surface, blit_pos)
+    
+    # Draw the facing line on the screen after rotation
+    facing_line_length = max(width, height) // 2
+    end_x = screen_x + int(facing_line_length * math.cos(base.facing))
+    end_y = screen_y + int(facing_line_length * math.sin(base.facing))
+    pygame.draw.line(screen, (0, 0, 0), (screen_x, screen_y), (end_x, end_y), 2)
 
 def draw_hull_base(screen: pygame.Surface, base: Base, screen_x: int, screen_y: int, zoom_level: float, color: Tuple[int, int, int]) -> None:
     width = int(base.radius[0] * 2 * TILE_SIZE * zoom_level)
     height = int(base.radius[1] * 2 * TILE_SIZE * zoom_level)
-    rect = pygame.Rect(screen_x - width // 2, screen_y - height // 2, width, height)
-    pygame.draw.rect(screen, color, rect)
+    
+    # Create a surface for the hull
+    hull_surface = pygame.Surface((width, height), pygame.SRCALPHA)
+    hull_surface.fill((0, 0, 0, 0))  # Transparent background
+    
+    # Draw the outer hull
+    pygame.draw.rect(hull_surface, color, (0, 0, width, height))
+    
+    # Draw the inner hull
     inner_width, inner_height = max(1, int(width * 0.8)), max(1, int(height * 0.8))
-    inner_rect = pygame.Rect(screen_x - inner_width // 2, screen_y - inner_height // 2, inner_width, inner_height)
-    pygame.draw.rect(screen, (255, 255, 255), inner_rect)
+    inner_rect = pygame.Rect((width - inner_width) // 2, (height - inner_height) // 2, inner_width, inner_height)
+    pygame.draw.rect(hull_surface, (255, 255, 255), inner_rect)
+    
+    # Rotate the surface
+    angle_degrees = math.degrees(base.facing)
+    rotated_surface = pygame.transform.rotate(hull_surface, -angle_degrees)
+    
+    # Calculate the position to blit the rotated surface
+    blit_pos = (screen_x - rotated_surface.get_width() // 2, 
+                screen_y - rotated_surface.get_height() // 2)
+    
+    # Blit the rotated surface onto the screen
+    screen.blit(rotated_surface, blit_pos)
+    
+    # Draw the facing line on the screen after rotation
+    facing_line_length = max(width, height) // 2
+    end_x = screen_x + int(facing_line_length * math.cos(base.facing))
+    end_y = screen_y + int(facing_line_length * math.sin(base.facing))
+    pygame.draw.line(screen, (0, 0, 0), (screen_x, screen_y), (end_x, end_y), 2)
 
 def draw_unit_bounding_box(screen: pygame.Surface, unit: Unit, zoom_level: float, offset_x: int, offset_y: int, mouse_pos: Tuple[int, int]) -> None:
     position = unit.get_position()
