@@ -85,7 +85,6 @@ class Game:
 
     def get_current_player(self) -> Player:
         player = self.players[self.current_player_index]
-        print(f"Current player: {player}")
         return player
 
     def get_battlefield_size(self) -> tuple[int, int]:

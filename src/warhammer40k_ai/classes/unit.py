@@ -849,6 +849,9 @@ class Unit:
                 return True
         return False
 
+    def print_unit(self) -> str:
+        return f"{self.name} :: M: {self.movement}\", T: {self.toughness}, Sv: {self.save}, InvSv: {self.inv_save}, OC: {self.objective_control}"
+
     ###########################################################################
     ### Dunder Methods
     ###########################################################################

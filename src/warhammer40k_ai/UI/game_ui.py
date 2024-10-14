@@ -4,6 +4,7 @@ from typing import Optional, Tuple, Dict
 from warhammer40k_ai.classes.unit import Unit
 from warhammer40k_ai.utility.model_base import Base, BaseType
 from warhammer40k_ai.classes.player import Player
+from warhammer40k_ai.classes.game import Game
 
 # Constants
 TILE_SIZE = 20  # 20 pixels per inch
@@ -37,6 +38,7 @@ ROSTER_PANE_WIDTH = 300
 ROSTER_PANE_BUTTON_HEIGHT = 30
 ROSTER_FONT_SIZE = 18
 ROSTER_LINE_HEIGHT = 20
+INFO_PANE_HEIGHT = 100
 
 # Add these new classes
 class RosterPane(pygame.sprite.Sprite):
@@ -101,6 +103,33 @@ class RosterPane(pygame.sprite.Sprite):
         return None
 
 
+class InfoPane(pygame.sprite.Sprite):
+    def __init__(self, left: int, bottom: int, width: int, height: int, selected_unit: Unit):
+        super().__init__()
+        self.rect = pygame.Rect(left, bottom, width, height)
+        self.font = pygame.font.Font(None, 24)
+        self.background_color = (200, 200, 200)
+        self.text_color = pygame.Color('black')
+        self.selected_unit = selected_unit
+
+    def draw(self, surface: pygame.Surface, game: Game):
+        # Draw background
+        pygame.draw.rect(surface, self.background_color, self.rect)
+
+        # Get game information
+        current_player = game.get_current_player()
+
+        # Render text
+        player_text = self.font.render(f"Player: {current_player.name}, Turn: {game.turn}, Phase: {game.phase.name}", True, self.text_color)
+        text_rect = player_text.get_rect(center=(self.rect.centerx, BATTLEFIELD_HEIGHT + 10))
+        surface.blit(player_text, text_rect)
+
+        if self.selected_unit:
+            unit_text = self.font.render(f"{self.selected_unit.print_unit()}", True, self.text_color)
+            unit_text_rect = unit_text.get_rect(center=(self.rect.centerx, BATTLEFIELD_HEIGHT + 40))
+            surface.blit(unit_text, unit_text_rect)
+
+
 class GameView:
     def __init__(self, screen, env, game, game_map, player1, player2):
         self.screen = screen
@@ -115,10 +144,13 @@ class GameView:
         self.selected_unit = None
         
         # Create RosterPane instances and set their game_map
-        self.player1_roster = RosterPane(0, 0, ROSTER_PANE_WIDTH, BATTLEFIELD_HEIGHT, player1.get_army().units)
-        self.player2_roster = RosterPane(BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH, 0, ROSTER_PANE_WIDTH, BATTLEFIELD_HEIGHT, player2.get_army().units)
+        self.player1_roster = RosterPane(0, 0, ROSTER_PANE_WIDTH, BATTLEFIELD_HEIGHT + INFO_PANE_HEIGHT, player1.get_army().units)
+        self.player2_roster = RosterPane(BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH, 0, ROSTER_PANE_WIDTH, BATTLEFIELD_HEIGHT + INFO_PANE_HEIGHT, player2.get_army().units)
         self.player1_roster.game_map = game_map
         self.player2_roster.game_map = game_map
+
+        # Create InfoPane
+        self.info_pane = InfoPane(ROSTER_PANE_WIDTH, BATTLEFIELD_HEIGHT, BATTLEFIELD_WIDTH, INFO_PANE_HEIGHT, self.selected_unit)
 
     def on_mouse_press(self, x, y, button):
         if button == 1:  # Left mouse button
@@ -206,29 +238,27 @@ class GameView:
 
         for player in [self.player1, self.player2]:
             for unit in player.get_army().units:
-                print(f"Checking unit: {unit.name}")
-                print(f"Unit position: {unit.get_position()}")
-                print(f"Unit coherency distance: {unit.coherency_distance}")
+                #print(f"Checking unit: {unit.name}")
+                #print(f"Unit position: {unit.get_position()}")
+                #print(f"Unit coherency distance: {unit.coherency_distance}")
                 if unit.is_point_inside(game_x, game_y):
-                    print(f"Unit {unit.name} found at position")
+                    #print(f"Unit {unit.name} found at position")
                     return unit
-                else:
-                    print(f"Point not inside unit {unit.name}")
         
         print("No unit found at position")
         return None
 
     def draw(self):
         self.screen.fill(WHITE)
-        
+    
         # Draw debug rectangles for roster panes
         pygame.draw.rect(self.screen, (255, 0, 0), self.player1_roster.rect, 2)
         pygame.draw.rect(self.screen, (0, 0, 255), self.player2_roster.rect, 2)
         
-        # Draw roster panes first
+        # Draw roster panes
         self.player1_roster.draw(self.screen)
         self.player2_roster.draw(self.screen)
-        
+
         # Draw the battlefield
         battlefield_surface = pygame.Surface((BATTLEFIELD_WIDTH, BATTLEFIELD_HEIGHT))
         draw_battlefield(battlefield_surface, self.zoom_level, self.offset_x, self.offset_y)
@@ -238,6 +268,12 @@ class GameView:
             place_unit(battlefield_surface, unit, self.zoom_level, self.offset_x, self.offset_y, pygame.mouse.get_pos(), self.player1, self.player2)
         
         self.screen.blit(battlefield_surface, (ROSTER_PANE_WIDTH, 0))
+
+        # Draw InfoPane
+        pygame.draw.rect(self.screen, (200, 200, 200), self.info_pane.rect)
+
+        # Draw actual InfoPane content
+        self.info_pane.draw(self.screen, self.game)
 
         # Display unit info for hovered unit
         mouse_pos = pygame.mouse.get_pos()
