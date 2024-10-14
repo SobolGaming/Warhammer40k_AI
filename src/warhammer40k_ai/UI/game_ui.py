@@ -163,7 +163,7 @@ class GameView:
                 self.player2_roster.on_mouse_press(x, y, button)
                 self.selected_unit = self.player2_roster.selected_unit
             # Check if click is on the battlefield and a unit is selected
-            elif self.selected_unit and ROSTER_PANE_WIDTH < x < BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH:
+            elif self.selected_unit and not self.selected_unit.deployed and ROSTER_PANE_WIDTH < x < BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH:
                 battlefield_x = (x - ROSTER_PANE_WIDTH) / TILE_SIZE
                 battlefield_y = y / TILE_SIZE
                 
@@ -185,6 +185,7 @@ class GameView:
                     
                     if self.game_map.place_unit(self.selected_unit):
                         print(f"Unit placed with centroid at ({unit_x}, {unit_y})")
+                        self.selected_unit.deployed = True
                     else:
                         print("Failed to place unit")
                         self.reset_unit_position(self.selected_unit, original_unit_position, original_model_positions)

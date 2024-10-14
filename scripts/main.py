@@ -26,6 +26,7 @@ def initialize_game() -> Tuple[pygame.Surface, WarhammerEnv, Game, Map, float, i
     env = WarhammerEnv(players=[player1, player2])
     game = env.game
     game_map = Map(*game.get_battlefield_size())
+    game.map = game_map
 
     zoom_level = 1.0
     offset_x, offset_y = ROSTER_PANE_WIDTH, 0  # Adjust initial offset to account for left pane
@@ -84,10 +85,10 @@ def main_game_loop() -> None:
                 if event.key == pygame.K_SPACE and game_state == GameState.SETUP:
                     game_state = GameState.PLAYING
                     print("Game started!")
-                    print(f"Player {game.current_player_index}: turn: {game.turn}, Current phase: {game.phase}")
                 elif event.key == pygame.K_SPACE and game_state == GameState.PLAYING:
                     game.next_turn()
-                    print(f"Player {game.current_player_index}: turn: {game.turn}, Current phase: {game.phase}")
+                elif event.key == pygame.K_a and game_state == GameState.PLAYING:
+                    game.do_phase_action()
 
         keys_pressed = pygame.key.get_pressed()
         game_view.offset_x, game_view.offset_y = handle_pan(keys_pressed, game_view.offset_x, game_view.offset_y, game_view.zoom_level)

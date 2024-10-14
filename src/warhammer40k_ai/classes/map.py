@@ -3,6 +3,7 @@ from enum import Enum, auto
 from .unit import Unit
 from .model import Model
 from ..utility.calcs import getDist, getAngle, VIEWING_ANGLE, convert_mm_to_inches
+from .game import ENGAGEMENT_RANGE
 
 
 class Map:
@@ -79,7 +80,12 @@ class Map:
         return enemy_units
 
     def is_within_engagement_range(self, position: Tuple[float, float, float], target: Unit) -> bool:
-        pass
+        for model in target.models:
+            target_position = model.get_location()
+            distance = getDist(position[0] - target_position[0], position[1] - target_position[1])
+            if distance <= ENGAGEMENT_RANGE:
+                return True
+        return False
 
     def is_path_clear(self, unit: Unit, start: Tuple[float, float, float], end: Tuple[float, float, float]) -> bool:
         """

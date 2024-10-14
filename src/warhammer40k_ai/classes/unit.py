@@ -76,6 +76,7 @@ class Unit:
         self.status_effects = []  # List of active status effects
         self.special_rules = {}  # Dictionary of special rules
         self.stats = {}  # Dictionary of stats modifiers
+        self.deployed = False
 
         # Initialize round-tracked variables
         self.initialize_round()
@@ -516,7 +517,7 @@ class Unit:
     ###########################################################################
     ### Movement
     ###########################################################################
-    def do_move_action(self, destination: Tuple[float, float, float], game_map: 'Map') -> bool:
+    def do_move_action(self, game_map: 'Map') -> bool:
         from .map import Map  # Import inside the function
         assert isinstance(game_map, Map)
 
@@ -527,7 +528,7 @@ class Unit:
         available_actions = self._get_available_actions(state)
 
         # Choose an action (this is where the RL agent would make a decision)
-        chosen_action = self._choose_action(available_actions)
+        chosen_action, destination = self._choose_action(available_actions)
 
         # Execute the chosen action
         return self._execute_action(chosen_action, destination, game_map)
@@ -550,20 +551,47 @@ class Unit:
         else:
             return [MovementAction.REMAIN_STATIONARY, MovementAction.MOVE, MovementAction.ADVANCE]
 
-    def _choose_action(self, available_actions: List[int]) -> int:
+    def _choose_action(self, available_actions: List[int]) -> Tuple[int, Tuple[float, float, float]]:
         """Choose an action from the available actions."""
         # For now, we'll choose randomly. In a real RL setup, this would be where the agent makes a decision.
-        return random.choice(available_actions)
+        current_position = self.get_position()
+
+        chosen_action = random.choice(available_actions)
+
+        if chosen_action == MovementAction.REMAIN_STATIONARY:
+            return chosen_action, current_position
+
+        # Determine movement range based on the chosen action
+        if chosen_action == MovementAction.ADVANCE:
+            movement_range = self.movement + get_roll("D6")  # Advance adds 1D6 to movement
+        else:
+            movement_range = self.movement
+
+        # Generate a random destination within the movement range
+        angle = random.uniform(0, 2 * math.pi)
+        distance = random.uniform(0, movement_range)
+
+        new_x = current_position[0] + distance * math.cos(angle)
+        new_y = current_position[1] + distance * math.sin(angle)
+        new_z = current_position[2]
+
+        destination = (new_x, new_y, new_z)
+
+        return chosen_action, destination
 
     def _execute_action(self, action: int, destination: Tuple[float, float, float], game_map: 'Map') -> bool:
         """Execute the chosen action."""
         if action == MovementAction.REMAIN_STATIONARY:
+            print(f"{self.name} remains stationary")
             return self.remain_stationary()
         elif action == MovementAction.MOVE:
+            print(f"{self.name} moves to {destination}")
             return self.move(destination, game_map)
         elif action == MovementAction.ADVANCE:
+            print(f"{self.name} advances to {destination}")
             return self.advance(destination, game_map)
         elif action == MovementAction.FALL_BACK:
+            print(f"{self.name} falls back")
             return self.fall_back()
         else:
             raise ValueError(f"Invalid action: {action}")

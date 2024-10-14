@@ -2,7 +2,11 @@ from typing import List, Dict, Any
 from .unit import Unit
 from .player import Player
 from enum import Enum
+from .event_system import EventSystem
 
+
+# Constants
+ENGAGEMENT_RANGE = 3  # inches
 
 class BattleRoundPhases(Enum):
     """
@@ -73,6 +77,8 @@ class Game:
         self.phase = BattleRoundPhases.COMMAND_PHASE
         self.battlefield = self._initialize_battlefield()
         self.players: List[Player] = players
+        self.event_system = EventSystem()
+        self.map = None
 
     def add_player(self, player: Player):
         player.command_points = self.starting_command_points_per_player
@@ -152,7 +158,27 @@ class Game:
         return {
             "players": self.players,
             "battlefield": self.battlefield,
+            "map": self.map,
             "current_player": self.get_current_player(),
             "turn": self.turn,
             "phase": self.phase,
         }
+
+    def do_phase_action(self):
+        player = self.get_current_player()
+        if self.phase == BattleRoundPhases.COMMAND_PHASE:
+            self.event_system.publish("command_phase_start", game_state=self.get_state())
+        elif self.phase == BattleRoundPhases.MOVEMENT_PHASE:
+            for unit in player.get_army().units:
+                if unit.deployed:
+                    self.event_system.publish("unit_move_start", unit=unit, game_state=self.get_state())
+                    unit.do_move_action(self.map)
+                    self.event_system.publish("unit_move_end", unit=unit, game_state=self.get_state())
+                else:
+                    print(f"Unit {unit.name} is not deployed")
+        elif self.phase == BattleRoundPhases.SHOOTING_PHASE:
+            self.event_system.publish("shooting_phase_start", game_state=self.get_state())
+        elif self.phase == BattleRoundPhases.CHARGE_PHASE:
+            self.event_system.publish("charge_phase_start", game_state=self.get_state())
+        elif self.phase == BattleRoundPhases.FIGHT_PHASE:
+            self.event_system.publish("fight_phase_start", game_state=self.get_state())
