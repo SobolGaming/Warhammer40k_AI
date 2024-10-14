@@ -354,17 +354,12 @@ class Unit:
         return "Infantry" in self.keywords
 
     @property
-    def is_character(self) -> bool:
-        return "Character" in self.keywords
-
-    @property
     def is_leader(self) -> bool:
         return len(self.can_be_attached_to) > 0
 
     @property
     def is_supreme_commander(self) -> bool:
-        # TODO: Implement this
-        return False
+        return "Supreme Commander" in [ability.name for ability in self.possible_abilities]
 
     @property
     def is_monster(self) -> bool:
@@ -387,8 +382,8 @@ class Unit:
         return "Character" in self.keywords
 
     @property
-    def is_infantry(self) -> bool:
-        return "Infantry" in self.keywords
+    def is_psyker(self) -> bool:
+        return "Psyker" in self.keywords
 
     @property
     def has_circular_base(self) -> bool:
