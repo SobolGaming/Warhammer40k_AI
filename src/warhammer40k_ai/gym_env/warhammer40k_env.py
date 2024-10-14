@@ -2,7 +2,8 @@ import gym
 from gym import spaces
 import numpy as np
 from warhammer40k_ai.classes.game import Game, BattlefieldSize, Battlefield
-from warhammer40k_ai.classes.player import Player, PlayerType
+from warhammer40k_ai.classes.player import Player
+from typing import List
 
 from warhammer40k_ai.classes.unit import Unit
 # Additional imports as needed
@@ -10,13 +11,10 @@ from warhammer40k_ai.classes.unit import Unit
 class WarhammerEnv(gym.Env):
     metadata = {'render.modes': ['human', 'rgb_array']}
     
-    def __init__(self, config=None):
+    def __init__(self, config=None, players: List[Player] = []):
         super(WarhammerEnv, self).__init__()
         self.config = config or {}
-        player1 = Player("Player 1", PlayerType.HUMAN)
-        player2 = Player("Player 2", PlayerType.AI)
-
-        self.game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), [player1, player2])
+        self.game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players)
         self.observation_space = self.define_observation_space()
         self.action_space = self.define_action_space()
         self.current_player = self.game.get_current_player()

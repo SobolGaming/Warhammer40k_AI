@@ -319,6 +319,8 @@ class Unit:
     def initialize_round(self) -> None:
         """Reset round-tracked variables to default state."""
         self.round_state = UnitRoundState()
+        for status_effect in self.status_effects:
+            status_effect.check_expiration(self)
 
     def is_max_health(self) -> Tuple[bool, Optional[Model]]:
         """
@@ -452,31 +454,31 @@ class Unit:
     ### Properties
     ###########################################################################
     @property
-    def movement(self) -> int:  
-        if self.stats['movement'][0] == UnitStatsModifier.OVERRIDE:
-            return self.stats['movement'][1]
-        elif self.stats['movement'][0] == UnitStatsModifier.ADDITIVE:
-            return self.models[0].movement + self.stats['movement'][1]
-        else:
-            return self.models[0].movement
+    def movement(self) -> int:
+        if hasattr(self.stats, 'movement'):
+            if self.stats['movement'][0] == UnitStatsModifier.OVERRIDE:
+                return self.stats['movement'][1]
+            elif self.stats['movement'][0] == UnitStatsModifier.ADDITIVE:
+                return self.models[0].movement + self.stats['movement'][1]
+        return self.models[0].movement
 
     @property
     def toughness(self) -> int:
-        if self.stats['toughness'][0] == UnitStatsModifier.OVERRIDE:
-            return self.stats['toughness'][1]
-        elif self.stats['toughness'][0] == UnitStatsModifier.ADDITIVE:
-            return self.models[0].toughness + self.stats['toughness'][1]
-        else:
-            return self.models[0].toughness
+        if hasattr(self.stats, 'toughness'):
+            if self.stats['toughness'][0] == UnitStatsModifier.OVERRIDE:
+                return self.stats['toughness'][1]
+            elif self.stats['toughness'][0] == UnitStatsModifier.ADDITIVE:
+                return self.models[0].toughness + self.stats['toughness'][1]
+        return self.models[0].toughness
 
     @property
     def save(self) -> int:
-        if self.stats['save'][0] == UnitStatsModifier.OVERRIDE:
-            return self.stats['save'][1]
-        elif self.stats['save'][0] == UnitStatsModifier.ADDITIVE:
-            return self.models[0].save + self.stats['save'][1]
-        else:
-            return self.models[0].save
+        if hasattr(self.stats, 'save'):
+            if self.stats['save'][0] == UnitStatsModifier.OVERRIDE:
+                return self.stats['save'][1]
+            elif self.stats['save'][0] == UnitStatsModifier.ADDITIVE:
+                return self.models[0].save + self.stats['save'][1]
+        return self.models[0].save
 
     @property
     def inv_save(self) -> Optional[int]:
@@ -484,21 +486,21 @@ class Unit:
 
     @property
     def leadership(self) -> int:
-        if self.stats['leadership'][0] == UnitStatsModifier.OVERRIDE:
-            return self.stats['leadership'][1]
-        elif self.stats['leadership'][0] == UnitStatsModifier.ADDITIVE:
-            return self.models[0].leadership + self.stats['leadership'][1]
-        else:
-            return self.models[0].leadership
+        if hasattr(self.stats, 'leadership'):
+            if self.stats['leadership'][0] == UnitStatsModifier.OVERRIDE:
+                return self.stats['leadership'][1]
+            elif self.stats['leadership'][0] == UnitStatsModifier.ADDITIVE:
+                return self.models[0].leadership + self.stats['leadership'][1]
+        return self.models[0].leadership
 
     @property
     def objective_control(self) -> int:
-        if self.stats['objective_control'][0] == UnitStatsModifier.OVERRIDE:
-            return self.stats['objective_control'][1]
-        elif self.stats['objective_control'][0] == UnitStatsModifier.ADDITIVE:
-            return self.models[0].objective_control + self.stats['objective_control'][1]
-        else:
-            return self.models[0].objective_control
+        if hasattr(self.stats, 'objective_control'):
+            if self.stats['objective_control'][0] == UnitStatsModifier.OVERRIDE:
+                return self.stats['objective_control'][1]
+            elif self.stats['objective_control'][0] == UnitStatsModifier.ADDITIVE:
+                return self.models[0].objective_control + self.stats['objective_control'][1]
+        return self.models[0].objective_control
 
     ###########################################################################
     ###########################################################################

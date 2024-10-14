@@ -174,6 +174,9 @@ class Army:
         self.validate_allies()
         print("Army is valid and ready for battle!")
 
+    def __str__(self):
+        return f"Army: {self.faction} - {self.detachment_type}\n{self.units}"
+
 # Helper function to parse an army list from a text file
 def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
     with codecs.open(file_path, 'r', encoding='utf-8-sig') as f:

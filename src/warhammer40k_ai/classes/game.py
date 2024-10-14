@@ -63,20 +63,20 @@ class Battlefield:
 
 
 class Game:
-    def __init__(self, battlefield: Battlefield, players: List[Player]):
+    def __init__(self, battlefield: Battlefield, players: List[Player] = []):
         self.battlefield_size = (battlefield.config["Height"], battlefield.config["Width"])
         self.battle_point_limit = battlefield.config["PointLimit"]
         self.starting_command_points_per_player = battlefield.config["CommandPoints"]
         self.detachment_limit_per_player = battlefield.config["DetachmentLimit"]
         self.current_player_index = 0
         self.turn = 1
+        self.phase = BattleRoundPhases.COMMAND_PHASE
         self.battlefield = self._initialize_battlefield()
-        self.players: List[Player] = []
-        for player in players:
-            self.add_player(player)
+        self.players: List[Player] = players
 
     def add_player(self, player: Player):
         player.command_points = self.starting_command_points_per_player
+        print(f"Player {player.name} added with {player.command_points} command points and army: {player.army}")
         self.players.append(player)
 
     def _initialize_battlefield(self) -> List[List[Any]]:
@@ -84,7 +84,9 @@ class Game:
         return [[None for _ in range(self.battlefield_size[1])] for _ in range(self.battlefield_size[0])]
 
     def get_current_player(self) -> Player:
-        return self.players[self.current_player_index]
+        player = self.players[self.current_player_index]
+        print(f"Current player: {player}")
+        return player
 
     def get_battlefield_size(self) -> tuple[int, int]:
         return self.battlefield_size
@@ -92,7 +94,23 @@ class Game:
     def next_turn(self):
         self.current_player_index = (self.current_player_index + 1) % len(self.players)
         if self.current_player_index == 0:
-            self.turn += 1
+            if self.phase == BattleRoundPhases.FIGHT_PHASE:
+                self.turn += 1
+                self.phase = BattleRoundPhases.COMMAND_PHASE
+            else:
+                self.phase = BattleRoundPhases(self.phase.value + 1)
+
+    def is_movement_phase(self) -> bool:
+        return self.phase == BattleRoundPhases.MOVEMENT_PHASE
+
+    def is_shooting_phase(self) -> bool:
+        return self.phase == BattleRoundPhases.SHOOTING_PHASE
+
+    def is_charge_phase(self) -> bool:
+        return self.phase == BattleRoundPhases.CHARGE_PHASE
+
+    def is_fight_phase(self) -> bool:
+        return self.phase == BattleRoundPhases.FIGHT_PHASE
 
     def place_unit(self, unit: Unit, position: tuple[int, int]):
         # Place a unit on the battlefield
@@ -137,4 +155,5 @@ class Game:
             "battlefield": self.battlefield,
             "current_player": self.get_current_player(),
             "turn": self.turn,
+            "phase": self.phase,
         }

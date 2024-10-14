@@ -17,19 +17,18 @@ def initialize_game() -> Tuple[pygame.Surface, WarhammerEnv, Game, Map, float, i
     screen = pygame.display.set_mode((BATTLEFIELD_WIDTH + 2 * ROSTER_PANE_WIDTH, BATTLEFIELD_HEIGHT))
     pygame.display.set_caption('Warhammer 40,000 Battlefield')
 
-    env = WarhammerEnv()
+    # Create players with armies
+    player1 = Player("Player 1", PlayerType.HUMAN, parse_army_list("army_lists/warhammer_app_dump.txt", waha_helper))
+    player2 = Player("Player 2", PlayerType.HUMAN, parse_army_list("army_lists/chaos_daemons_GT2023.txt", waha_helper))
+    print(f"Player 1 army created with {len(player1.get_army().units)} units")
+    print(f"Player 2 army created with {len(player2.get_army().units)} units")
+
+    env = WarhammerEnv(players=[player1, player2])
     game = env.game
     game_map = Map(*game.get_battlefield_size())
 
     zoom_level = 1.0
     offset_x, offset_y = ROSTER_PANE_WIDTH, 0  # Adjust initial offset to account for left pane
-
-    # Create players with armies
-    player1 = Player("Player 1", PlayerType.HUMAN, parse_army_list("army_lists/warhammer_app_dump.txt", waha_helper))
-    player2 = Player("Player 2", PlayerType.HUMAN, parse_army_list("army_lists/chaos_daemons_GT2023.txt", waha_helper))
-
-    print(f"Player 1 army created with {len(player1.get_army().units)} units")
-    print(f"Player 2 army created with {len(player2.get_army().units)} units")
 
     return screen, env, game, game_map, zoom_level, offset_x, offset_y, player1, player2
 
@@ -47,13 +46,17 @@ def main_game_loop() -> None:
             if event.type == pygame.QUIT:
                 running = False
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                if game_state == GameState.PLAYING:
+                if game_state == GameState.PLAYING and game.is_movement_phase():
                     if event.button == 1:  # Left mouse button
                         if not game_view.selected_unit:
                             clicked_unit = game_view.get_unit_at_position(*event.pos)
                             if clicked_unit:
-                                game_view.selected_unit = clicked_unit
-                                print(f"Selected unit: {clicked_unit.name}")
+                                if game.get_current_player().has_unit(clicked_unit):
+                                    game_view.selected_unit = clicked_unit
+                                    print(f"Selected unit: {clicked_unit.name}")
+                                else:
+                                    print("Unit not found in current player's army")
+                                    clicked_unit = None
                         elif game_view.selected_unit:
                             # Convert screen coordinates to game coordinates
                             game_x = (event.pos[0] - ROSTER_PANE_WIDTH - game_view.offset_x) / (TILE_SIZE * game_view.zoom_level)
@@ -76,6 +79,10 @@ def main_game_loop() -> None:
                 if event.key == pygame.K_SPACE and game_state == GameState.SETUP:
                     game_state = GameState.PLAYING
                     print("Game started!")
+                    print(f"Player {game.current_player_index}: turn: {game.turn}, Current phase: {game.phase}")
+                elif event.key == pygame.K_SPACE and game_state == GameState.PLAYING:
+                    game.next_turn()
+                    print(f"Player {game.current_player_index}: turn: {game.turn}, Current phase: {game.phase}")
 
         keys_pressed = pygame.key.get_pressed()
         game_view.offset_x, game_view.offset_y = handle_pan(keys_pressed, game_view.offset_x, game_view.offset_y, game_view.zoom_level)
