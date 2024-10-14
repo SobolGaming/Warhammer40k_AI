@@ -229,6 +229,7 @@ class Tile:
         # Return True if terrain provides cover
         pass
 
+
 class ObjectivePoint:
     def __init__(self, x: int, y: int, control_radius: int = 3):
         self.x = x

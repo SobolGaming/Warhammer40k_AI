@@ -1,5 +1,6 @@
 import pygame
 import textwrap
+import math
 from typing import Optional, Tuple, Dict
 from warhammer40k_ai.classes.unit import Unit
 from warhammer40k_ai.utility.model_base import Base, BaseType
@@ -358,6 +359,21 @@ def place_unit(screen: pygame.Surface, unit: Unit, zoom_level: float, offset_x: 
         base = model.model_base
         
         draw_base(screen, base, screen_x, screen_y, zoom_level, color)
+        
+        # Draw facing direction
+        if base.base_type == BaseType.CIRCULAR:
+            radius = int(base.getRadius() * TILE_SIZE * zoom_level)
+            end_x = screen_x + int(radius * math.cos(base.facing))
+            end_y = screen_y + int(radius * math.sin(base.facing))
+        elif base.base_type in [BaseType.ELLIPTICAL, BaseType.HULL]:
+            width = int(base.longestDistance() * TILE_SIZE * zoom_level)
+            height = int(base.longestDistance() * TILE_SIZE * zoom_level)
+            end_x = screen_x + int(width * math.cos(base.facing))
+            end_y = screen_y + int(height * math.sin(base.facing))
+        else:
+            continue  # Skip if base type is unknown
+        
+        pygame.draw.line(screen, BLACK, (screen_x, screen_y), (end_x, end_y), 2)
     
     # Calculate and draw unit bounding box
     draw_unit_bounding_box(screen, unit, zoom_level, offset_x, offset_y, mouse_pos)
