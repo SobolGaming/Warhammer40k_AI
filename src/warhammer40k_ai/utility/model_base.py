@@ -10,11 +10,6 @@ logger = logging.getLogger(__name__)
 # Constants
 DEGREES_IN_CIRCLE = 360
 RADIANS_IN_CIRCLE = 2 * math.pi
-MM_TO_INCHES = 25.4
-
-# Convert mm (as in base size of models) to inches
-def convert_mm_to_inches(value: float) -> float:
-    return round(value / MM_TO_INCHES, 4)
 
 # Create a shapely ellipse
 def create_ellipse(center: typing.Tuple[float, float], lengths: typing.Tuple[float, float], bearing: float = 0) -> Poly:
@@ -85,6 +80,14 @@ class Base:
 
     def set_facing(self, facing: float) -> None:
         self.facing = facing
+
+    @property
+    def has_circular_base(self) -> bool:
+        return self.base_type == BaseType.CIRCULAR
+
+    @property
+    def base_size(self) -> float:
+        return self.radius[0]
 
     def getRadius(self, angle: float = 0.0) -> float:
         if self.base_type == BaseType.CIRCULAR:

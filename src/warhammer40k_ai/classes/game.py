@@ -4,6 +4,17 @@ from .player import Player
 from enum import Enum
 
 
+class BattleRoundPhases(Enum):
+    """
+    The phases of a battle round.
+    """
+    COMMAND_PHASE = 0
+    MOVEMENT_PHASE = 1
+    SHOOTING_PHASE = 2
+    CHARGE_PHASE = 3
+    FIGHT_PHASE = 4
+
+
 class BattlefieldSize(Enum):
     COMBAT_PATROL = "Combat Patrol"
     INCURSION = "Incursion"

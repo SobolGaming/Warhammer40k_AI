@@ -55,6 +55,16 @@ class Model:
         return self.wounds > 0
 
     @property
+    def has_circular_base(self) -> bool:
+        """Return whether the model has a circular base."""
+        return self.model_base.has_circular_base
+
+    @property
+    def base_size(self) -> float:
+        """Return the base size of the model."""
+        return self.model_base.base_size
+
+    @property
     def is_max_health(self) -> bool:
         """Return whether the model is at full health."""
         return self.wounds == self.base_wounds

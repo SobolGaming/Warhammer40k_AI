@@ -2,11 +2,11 @@ import logging
 from typing import List, Dict, Tuple, Optional
 from typing import TYPE_CHECKING
 from .model import Model
-from ..utility.model_base import Base, BaseType, convert_mm_to_inches
+from ..utility.model_base import Base, BaseType
 from .wargear import Wargear, WargearOption
 from .ability import Ability
 from ..utility.range import Range
-from ..utility.calcs import getDist
+from ..utility.calcs import getDist, convert_mm_to_inches
 from ..utility.dice import get_roll
 from .status_effects import StatusEffect
 import math
@@ -29,6 +29,18 @@ class UnitRoundState:
     reinforced_this_round: bool = False
     declared_charge_this_round: bool = False
     num_lost_models_this_round: int = 0
+
+
+class MovementAction:
+    REMAIN_STATIONARY = 0
+    MOVE = 1
+    ADVANCE = 2
+    FALL_BACK = 3
+
+
+class MovementState:
+    IN_ENGAGEMENT_RANGE = 0
+    OUT_OF_ENGAGEMENT_RANGE = 1
 
 
 class Unit:
@@ -349,23 +361,41 @@ class Unit:
         # TODO: Implement this
         return False
 
+    @property
+    def is_monster(self) -> bool:
+        return "Monster" in self.keywords
+
+    @property
+    def is_vehicle(self) -> bool:
+        return "Vehicle" in self.keywords
+
+    @property
+    def is_aircraft(self) -> bool:
+        return "Aircraft" in self.keywords
+
+    @property
+    def is_fortification(self) -> bool:
+        return "Fortification" in self.keywords
+
+    @property
+    def is_character(self) -> bool:
+        return "Character" in self.keywords
+
+    @property
+    def is_infantry(self) -> bool:
+        return "Infantry" in self.keywords
+
+    @property
+    def has_circular_base(self) -> bool:
+        return self.models[0].has_circular_base
+
+    @property
+    def base_size(self) -> float:
+        return self.models[0].base_size
+
     def print_unit(self):
         for model in self.models:
             print(f"\n{model}")
-
-    def __str__(self):
-        return f"{self.name} ({len(self.models)} models)"
-
-    def __repr__(self):
-        return f"Unit(name='{self.name}', models={len(self.models)})"
-
-    def __eq__(self, other) -> bool:
-        if not isinstance(other, Unit):
-            return NotImplemented
-        return self._id == other._id
-
-    def __hash__(self) -> int:
-        return hash(self._id)
 
     def _parse_models_cost(self, models_cost):
         result = {}
@@ -444,7 +474,9 @@ class Unit:
         return self.models[0].objective_control
 
     ###########################################################################
+    ###########################################################################
     ### Core Actions
+    ###########################################################################
     ###########################################################################
 
     def apply_command_abilities(self) -> None:
@@ -452,13 +484,70 @@ class Unit:
         for ability in self.abilities.get('command_phase', []):
             ability.activate(self)
 
-    def remain_stationary(self) -> None:
-        self.round_state.remained_stationary_this_round = True
-
-    def move(self, destination: Tuple[int, int], game_map: 'Map', advance: bool = False) -> bool:
-        """Moves the unit towards the destination up to its movement characteristic or Advance."""
+    ###########################################################################
+    ### Movement
+    ###########################################################################
+    def do_move_action(self, destination: Tuple[float, float, float], game_map: 'Map') -> bool:
         from .map import Map  # Import inside the function
         assert isinstance(game_map, Map)
+
+        # Determine the current state
+        state = self._get_movement_state(game_map)
+
+        # Get available actions based on the state
+        available_actions = self._get_available_actions(state)
+
+        # Choose an action (this is where the RL agent would make a decision)
+        chosen_action = self._choose_action(available_actions)
+
+        # Execute the chosen action
+        return self._execute_action(chosen_action, destination, game_map)
+
+    def _get_movement_state(self, game_map: 'Map') -> int:
+        """Determine if the unit is in engagement range of any enemy model."""
+        current_position = self.get_position()
+        enemy_units = game_map.get_enemy_units(self.faction)
+        
+        for enemy_unit in enemy_units:
+            if game_map.is_within_engagement_range(current_position, enemy_unit):
+                return MovementState.IN_ENGAGEMENT_RANGE
+        
+        return MovementState.OUT_OF_ENGAGEMENT_RANGE
+
+    def _get_available_actions(self, state: int) -> List[int]:
+        """Get the list of available actions based on the current state."""
+        if state == MovementState.IN_ENGAGEMENT_RANGE:
+            return [MovementAction.REMAIN_STATIONARY, MovementAction.FALL_BACK]
+        else:
+            return [MovementAction.REMAIN_STATIONARY, MovementAction.MOVE, MovementAction.ADVANCE]
+
+    def _choose_action(self, available_actions: List[int]) -> int:
+        """Choose an action from the available actions."""
+        # For now, we'll choose randomly. In a real RL setup, this would be where the agent makes a decision.
+        return random.choice(available_actions)
+
+    def _execute_action(self, action: int, destination: Tuple[float, float, float], game_map: 'Map') -> bool:
+        """Execute the chosen action."""
+        if action == MovementAction.REMAIN_STATIONARY:
+            return self.remain_stationary()
+        elif action == MovementAction.MOVE:
+            return self.move(destination, game_map)
+        elif action == MovementAction.ADVANCE:
+            return self.advance(destination, game_map)
+        elif action == MovementAction.FALL_BACK:
+            return self.fall_back()
+        else:
+            raise ValueError(f"Invalid action: {action}")
+
+    def remain_stationary(self) -> bool:
+        self.round_state.remained_stationary_this_round = True
+        return True
+
+    def advance(self, destination: Tuple[float, float, float], game_map: 'Map') -> bool:
+        return self.move(destination, game_map, advance=True)
+
+    def move(self, destination: Tuple[float, float, float], game_map: 'Map', advance: bool = False) -> bool:
+        """Moves the unit towards the destination up to its movement characteristic or Advance."""
 
         current_position = self.get_position()
         if current_position is None:
@@ -488,7 +577,7 @@ class Unit:
             return False
 
         # Check if the path is clear (you may want to implement more sophisticated pathfinding)
-        if not game_map.is_path_clear(current_position, destination, self):
+        if not game_map.is_path_clear(self, current_position, destination):
             logger.warning(f"Path is not clear for unit {self.name}")
             return False
 
@@ -511,13 +600,17 @@ class Unit:
         self.round_state.advanced_this_round = advance
         return True
 
-    def fallback(self) -> None:
+    def fall_back(self) -> bool:
         """Falls back from close combat."""
         # Logic to move the unit out of engagement range
         print(f"{self.name} falls back from combat.")
         self.round_state.fell_back_this_round = True
+        return True
 
-    # Shooting Phase Actions
+
+    ###########################################################################
+    ### Shooting Phase Actions
+    ###########################################################################
     def shoot(self, target_unit: 'Unit') -> None:
         if self.round_state.advanced_this_round:
             print(f"{self.name} cannot shoot after advancing.")
@@ -626,9 +719,9 @@ class Unit:
     def is_alive(self) -> bool:
         return len(self.models) > 0
 
-    def set_position(self, x: int, y: int):
+    def set_position(self, x: float, y: float, z: float = 0.0):
         """Set the position of the unit on the map."""
-        self.position = (x, y)
+        self.position = (x, y, z)
 
     def get_position(self):
         if self.position is not None:
@@ -637,7 +730,8 @@ class Unit:
             # Calculate the centroid of all model positions
             x_sum = sum(model.get_location()[0] for model in self.models)
             y_sum = sum(model.get_location()[1] for model in self.models)
-            return (x_sum / len(self.models), y_sum / len(self.models))
+            z_sum = sum(model.get_location()[2] for model in self.models)
+            return (x_sum / len(self.models), y_sum / len(self.models), z_sum / len(self.models))
         else:
             return None
 
@@ -646,7 +740,7 @@ class Unit:
         if position is None:
             return False
         
-        center_x, center_y = position
+        center_x, center_y, _ = position
         radius = self.coherency_distance  # Assuming this is defined elsewhere in the class
         
         # Check if the point is within the circular area defined by the unit's position and coherency distance
@@ -723,3 +817,20 @@ class Unit:
             if base.collidesWithBase(other_base):
                 return True
         return False
+
+    ###########################################################################
+    ### Dunder Methods
+    ###########################################################################
+    def __str__(self):
+        return f"{self.name} ({len(self.models)} models)"
+
+    def __repr__(self):
+        return f"Unit(name='{self.name}', models={len(self.models)})"
+
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, Unit):
+            return NotImplemented
+        return self._id == other._id
+
+    def __hash__(self) -> int:
+        return hash(self._id)

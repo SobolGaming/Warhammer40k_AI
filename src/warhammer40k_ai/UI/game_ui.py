@@ -166,7 +166,7 @@ class GameView:
 
     def reset_unit_position(self, unit, original_unit_position, original_model_positions):
         if original_unit_position:
-            unit.set_position(original_unit_position[0], original_unit_position[1])
+            unit.set_position(original_unit_position[0], original_unit_position[1], original_unit_position[2])
             for model, original_position in zip(unit.models, original_model_positions):
                 model.set_location(*original_position)
         else:
@@ -362,7 +362,7 @@ def draw_unit_bounding_box(screen: pygame.Surface, unit: Unit, zoom_level: float
     if position is None:
         return
 
-    center_x, center_y = position
+    center_x, center_y, _ = position
     radius = unit.coherency_distance  # Assuming this is defined in the Unit class
 
     bounding_box_rect = pygame.Rect(

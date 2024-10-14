@@ -58,9 +58,13 @@ def main_game_loop() -> None:
                             # Convert screen coordinates to game coordinates
                             game_x = (event.pos[0] - ROSTER_PANE_WIDTH - game_view.offset_x) / (TILE_SIZE * game_view.zoom_level)
                             game_y = (event.pos[1] - game_view.offset_y) / (TILE_SIZE * game_view.zoom_level)
+                            game_z = 0.0
                             # Move the selected unit
-                            game_view.selected_unit.move((game_x, game_y), game_view.game_map)
-                            print(f"Moved {game_view.selected_unit.name} to ({game_x}, {game_y})")
+                            success = game_view.selected_unit.move((game_x, game_y, game_z), game_view.game_map)
+                            if success: 
+                                print(f"Moved {game_view.selected_unit.name} to ({game_x}, {game_y})")
+                            else:
+                                print(f"Failed to move {game_view.selected_unit.name} to ({game_x}, {game_y})")
                             game_view.selected_unit = None  # Deselect the unit after moving
                         else:
                             print("No unit at this position")
