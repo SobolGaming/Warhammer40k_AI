@@ -591,6 +591,8 @@ class Unit:
 
         if not new_model_positions:
             logger.error(f"Failed to calculate new positions for models in unit {self.name}")
+            # Reset to old position
+            self.set_position(*current_position)
             return False
 
         for model, new_position in zip(self.models, new_model_positions):
