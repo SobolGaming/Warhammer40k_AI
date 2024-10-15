@@ -54,6 +54,44 @@ def main_game_loop() -> None:
 
     running = True
     while running:
+        '''
+        if game_state == GameState.PLAYING:
+            if game.get_current_player() == player1:
+                if game.is_command_phase():
+                    high_level_agent_player1.command_phase()
+                elif game.is_movement_phase():
+                    objective = high_level_agent_player1.choose_objective()
+                    for unit in player1.army.units:
+                        path = tactical_agent_player1.movement_phase(unit, objective)
+                        low_level_agent_player1.execute_movement(unit, path)
+                elif game.is_shooting_phase():
+                    for unit in player1.army.units:
+                        tactical_agent_player1.shooting_phase(unit)
+                elif game.is_charge_phase():
+                    for unit in player1.army.units:
+                        tactical_agent_player1.charge_phase(unit)
+                elif game.is_fight_phase():
+                    for unit in player1.army.units:
+                        tactical_agent_player1.fight_phase(unit)
+            else:
+                if game.is_command_phase():
+                    high_level_agent_player2.command_phase()
+                elif game.is_movement_phase():
+                    objective = high_level_agent_player2.choose_objective()
+                    for unit in player2.army.units:
+                        path = tactical_agent_player2.movement_phase(unit, objective)
+                        low_level_agent_player2.execute_movement(unit, path)
+                elif game.is_shooting_phase():
+                    for unit in player2.army.units:
+                        tactical_agent_player2.shooting_phase(unit)
+                elif game.is_charge_phase():
+                    for unit in player2.army.units: 
+                        tactical_agent_player2.charge_phase(unit)
+                elif game.is_fight_phase():
+                    for unit in player2.army.units:
+                        tactical_agent_player2.fight_phase(unit)
+        '''
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
