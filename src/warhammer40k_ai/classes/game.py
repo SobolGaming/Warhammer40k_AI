@@ -92,6 +92,7 @@ class Game:
         self.battlefield = self._initialize_battlefield()
         self.players: List[Player] = players
         self.event_system = EventSystem()
+        self.do_ai_action = False
         self.map = None
 
     def add_player(self, player: Player):
@@ -118,6 +119,9 @@ class Game:
                 self.phase = BattleRoundPhases.COMMAND_PHASE
             else:
                 self.phase = BattleRoundPhases(self.phase.value + 1)
+
+    def is_command_phase(self) -> bool:
+        return self.phase == BattleRoundPhases.COMMAND_PHASE
 
     def is_movement_phase(self) -> bool:
         return self.phase == BattleRoundPhases.MOVEMENT_PHASE
@@ -179,22 +183,3 @@ class Game:
             "turn": self.turn,
             "phase": self.phase,
         }
-
-    def do_phase_action(self):
-        player = self.get_current_player()
-        if self.phase == BattleRoundPhases.COMMAND_PHASE:
-            self.event_system.publish("command_phase_start", game_state=self.get_state())
-        elif self.phase == BattleRoundPhases.MOVEMENT_PHASE:
-            for unit in player.get_army().units:
-                if unit.deployed:
-                    self.event_system.publish("unit_move_start", unit=unit, game_state=self.get_state())
-                    unit.do_move_action(self.map)
-                    self.event_system.publish("unit_move_end", unit=unit, game_state=self.get_state())
-                else:
-                    print(f"Unit {unit.name} is not deployed")
-        elif self.phase == BattleRoundPhases.SHOOTING_PHASE:
-            self.event_system.publish("shooting_phase_start", game_state=self.get_state())
-        elif self.phase == BattleRoundPhases.CHARGE_PHASE:
-            self.event_system.publish("charge_phase_start", game_state=self.get_state())
-        elif self.phase == BattleRoundPhases.FIGHT_PHASE:
-            self.event_system.publish("fight_phase_start", game_state=self.get_state())

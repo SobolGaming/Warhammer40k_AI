@@ -54,8 +54,7 @@ def main_game_loop() -> None:
 
     running = True
     while running:
-        '''
-        if game_state == GameState.PLAYING:
+        if game_state == GameState.PLAYING and game.do_ai_action:
             if game.get_current_player() == player1:
                 if game.is_command_phase():
                     high_level_agent_player1.command_phase()
@@ -90,7 +89,7 @@ def main_game_loop() -> None:
                 elif game.is_fight_phase():
                     for unit in player2.army.units:
                         tactical_agent_player2.fight_phase(unit)
-        '''
+            game.do_ai_action = False
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -136,7 +135,7 @@ def main_game_loop() -> None:
                 elif event.key == pygame.K_SPACE and game_state == GameState.PLAYING:
                     game.next_turn()
                 elif event.key == pygame.K_a and game_state == GameState.PLAYING:
-                    game.do_phase_action()
+                    game.do_ai_action = True
 
         keys_pressed = pygame.key.get_pressed()
         game_view.offset_x, game_view.offset_y = handle_pan(keys_pressed, game_view.offset_x, game_view.offset_y, game_view.zoom_level)
