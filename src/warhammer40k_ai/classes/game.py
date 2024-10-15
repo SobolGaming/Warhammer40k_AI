@@ -6,7 +6,21 @@ from .event_system import EventSystem
 
 
 # Constants
-ENGAGEMENT_RANGE = 3  # inches
+ENGAGEMENT_RANGE = 3.0  # inches
+
+
+class SetupPhase(Enum):
+    """
+    The phases of the setup phase.
+    """
+    MUSTER_ARMIES = 0
+    SELECT_MISSION_OBJECTIVES = 1
+    CREATE_BATTLEFIELD = 2  # Place terrain, objectives, etc.
+    DETERMINE_ATTACKER_AND_DEFENDER = 3
+    DECLARE_BATTLE_FORMATIONS = 4  # Attach leaders to units if you want; declare reserve; declare embarked unts
+    DEPLOY_ARMIES = 5
+    DETERMINE_FIRST_TURN_ORDER = 6
+
 
 class BattleRoundPhases(Enum):
     """

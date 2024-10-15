@@ -337,6 +337,9 @@ class Unit:
                 return False, model
         return True, None
 
+    def make_leadership_check(self) -> bool:
+        return get_roll("2D6") < self.leadership
+
     @property
     def is_epic_hero(self) -> bool:
         return "Epic Hero" in self.keywords
