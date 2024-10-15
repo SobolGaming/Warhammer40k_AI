@@ -147,6 +147,7 @@ class Game:
         else:
             raise ValueError("Invalid position")
 
+    '''
     def move_unit(self, from_pos: tuple[int, int], to_pos: tuple[int, int]):
         # Move a unit from one position to another
         unit = self.get_unit_at(from_pos)
@@ -155,6 +156,7 @@ class Game:
             self.battlefield[from_pos[0]][from_pos[1]] = None
         else:
             raise ValueError("No unit at the given position")
+    '''
 
     def is_game_over(self) -> bool:
         # Implement game-over conditions

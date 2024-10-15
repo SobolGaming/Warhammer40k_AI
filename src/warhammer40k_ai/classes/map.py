@@ -231,9 +231,10 @@ class Tile:
 
 
 class ObjectivePoint:
-    def __init__(self, x: int, y: int, control_radius: int = 3):
+    def __init__(self, x: float, y: float, z: float = 0.0, control_radius: float = 3.0) -> None:
         self.x = x
         self.y = y
+        self.z = z
         self.control_radius = control_radius
         self.controlling_player = None
 

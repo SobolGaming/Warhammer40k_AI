@@ -8,6 +8,8 @@ from warhammer40k_ai.classes.player import Player, PlayerType
 from warhammer40k_ai.classes.army import parse_army_list
 from warhammer40k_ai.UI.game_ui import GameView, GameState, ROSTER_PANE_WIDTH, BATTLEFIELD_WIDTH, BATTLEFIELD_HEIGHT, INFO_PANE_HEIGHT, handle_zoom, handle_pan, TILE_SIZE
 from warhammer40k_ai.waha_helper import WahaHelper
+from warhammer40k_ai.agents.hrl_agent import HighLevelAgent, TacticalAgent, LowLevelAgent
+
 
 # Helper
 waha_helper = WahaHelper()
@@ -39,6 +41,14 @@ def main_game_loop() -> None:
     game_view = GameView(screen, env, game, game_map, player1, player2)
     game_state = GameState.SETUP
     clicked_unit = None
+
+    # Initialize agents
+    high_level_agent_player1 = HighLevelAgent(game, player1)
+    tactical_agent_player1 = TacticalAgent(game, player1)
+    low_level_agent_player1 = LowLevelAgent(game, player1)
+    high_level_agent_player2 = HighLevelAgent(game, player2)
+    tactical_agent_player2 = TacticalAgent(game, player2)
+    low_level_agent_player2 = LowLevelAgent(game, player2)
 
     print("Starting main game loop")
 
