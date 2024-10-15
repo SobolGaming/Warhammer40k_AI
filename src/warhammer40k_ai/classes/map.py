@@ -3,7 +3,10 @@ from enum import Enum, auto
 from .unit import Unit
 from .model import Model
 from ..utility.calcs import getDist, getAngle, VIEWING_ANGLE, convert_mm_to_inches
-from .game import ENGAGEMENT_RANGE
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from .game import Game, ENGAGEMENT_RANGE
 
 
 class Map:
@@ -242,3 +245,122 @@ class ObjectivePoint:
         # Determine which player controls the objective based on nearby units
         pass
 
+
+class ObjectiveCategory(Enum):
+    PRIMARY = auto()
+    SECONDARY = auto()
+    SECRET = auto()
+
+
+class Objective:
+    def __init__(self, name: str, category: ObjectiveCategory, points: int, description: str, conditions: callable, location: Optional[Tuple[float, float]] = None) -> None:
+        """
+        Represents an objective in Warhammer 40,000.
+        
+        Parameters:
+        - name (str): Name of the objective.
+        - category (ObjectiveCategory): Primary, Secondary, or Secret.
+        - points (int): Points rewarded upon completion.
+        - description (str): Explanation of the objective's goal.
+        - conditions (callable): A function or lambda to check if the objective is achieved.
+        - location (tuple): (x, y) coordinates for objectives on the map (optional).
+        """
+        self.name = name
+        self.category = category
+        self.points = points
+        self.description = description
+        self.conditions = conditions
+        self.location = location
+        self.completed = False
+
+    def check_completion(self, game_state: 'Game') -> bool:
+        """Evaluate if the objective is completed based on game state."""
+        self.completed = self.conditions(game_state)
+        return self.completed
+
+    def __repr__(self):
+        status = "Completed" if self.completed else "Incomplete"
+        return f"{self.name} ({self.category.name}): {status} - {self.points} points"
+
+
+########################################################
+### EXAMPLE OBJECTIVES
+########################################################
+# Primary Objective: Terraform (perform an action on objectives)
+terraform_condition = lambda game_state: (
+    game_state.unit_performed_action_on_objective("Terraform")
+)
+
+terraform_objective = Objective(
+    name="Terraform Objective",
+    category=ObjectiveCategory.PRIMARY,
+    points=10,
+    description="Perform a Terraform action on an objective to score points.",
+    conditions=terraform_condition,
+    location=(12, 8)  # Example objective location on the map
+)
+
+# Primary Objective: Take and Hold
+take_and_hold_condition = lambda game_state: (
+    game_state.player_controls_more_objectives()
+)
+
+take_and_hold = Objective(
+    name="Take and Hold",
+    category=ObjectiveCategory.PRIMARY,
+    points=5,
+    description="Control more objectives than your opponent at the end of the turn.",
+    conditions=take_and_hold_condition
+)
+
+# Secondary Objective: Sabotage Terrain
+sabotage_condition = lambda game_state: (
+    game_state.unit_sabotaged_terrain("Enemy Terrain")
+)
+
+sabotage_objective = Objective(
+    name="Sabotage Terrain",
+    category=ObjectiveCategory.SECONDARY,
+    points=5,
+    description="Sabotage a terrain feature controlled by the opponent.",
+    conditions=sabotage_condition
+)
+
+# Secondary Objective: Containment (units near battlefield edges)
+containment_condition = lambda game_state: (
+    game_state.has_units_near_edges()
+)
+
+containment_objective = Objective(
+    name="Containment",
+    category=ObjectiveCategory.SECONDARY,
+    points=5,
+    description="Maintain units within 9 inches of a battlefield edge.",
+    conditions=containment_condition
+)
+
+# Secret Mission: Command Insertion (Warlord in enemy deployment)
+command_insertion_condition = lambda game_state: (
+    game_state.warlord_in_enemy_deployment_zone()
+)
+
+command_insertion = Objective(
+    name="Command Insertion",
+    category=ObjectiveCategory.SECRET,
+    points=20,
+    description="Move your Warlord into the enemy deployment zone.",
+    conditions=command_insertion_condition
+)
+
+# Secret Mission: War of Attrition (weaken enemy forces)
+war_of_attrition_condition = lambda game_state: (
+    game_state.enemy_units_reduced_to_half_strength()
+)
+
+war_of_attrition = Objective(
+    name="War of Attrition",
+    category=ObjectiveCategory.SECRET,
+    points=20,
+    description="Reduce most of the enemy units to below half strength.",
+    conditions=war_of_attrition_condition
+)

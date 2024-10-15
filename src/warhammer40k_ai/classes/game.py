@@ -3,6 +3,7 @@ from .unit import Unit
 from .player import Player
 from enum import Enum
 from .event_system import EventSystem
+from .map import Objective
 
 
 # Constants
@@ -94,11 +95,15 @@ class Game:
         self.event_system = EventSystem()
         self.do_ai_action = False
         self.map = None
+        self.objectives: List[Objective] = []
 
-    def add_player(self, player: Player):
+    def add_player(self, player: Player) -> None:
         player.command_points = self.starting_command_points_per_player
         print(f"Player {player.name} added with {player.command_points} command points and army: {player.army}")
         self.players.append(player)
+
+    def add_objective(self, objective: Objective) -> None:
+        self.objectives.append(objective)
 
     def _initialize_battlefield(self) -> List[List[Any]]:
         # Initialize an empty battlefield based on battlefield_size

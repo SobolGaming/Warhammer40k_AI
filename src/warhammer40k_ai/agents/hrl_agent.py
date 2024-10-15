@@ -1,16 +1,20 @@
 import random
 from typing import List, Tuple
 from warhammer40k_ai.classes.game import Game
-from warhammer40k_ai.classes.map import ObjectivePoint
+from warhammer40k_ai.classes.map import Objective
 from warhammer40k_ai.classes.unit import Unit
 from warhammer40k_ai.classes.player import Player
 
 
 class HighLevelAgent:
     """Strategic Layer: Coordinates phases and sets objectives."""
-    def __init__(self, game: Game, player: Player) -> None:
+    def __init__(self, game: Game, player: Player, objectives: List[Objective] = []) -> None:
         self.game = game
         self.player = player
+        self.objectives = objectives
+
+    def add_objective(self, objective: Objective) -> None:
+        self.objectives.append(objective)
 
     def command_phase(self) -> None:
         """Execute high-level commands or stratagems."""
@@ -20,9 +24,11 @@ class HighLevelAgent:
             print(f"Commanding {unit.name}")
         self.game.event_system.publish("command_phase_end", game_state=self.game.get_state())
 
-    def choose_objective(self) -> ObjectivePoint:
+    def choose_objective(self) -> Objective:
         """Select strategic objectives."""
-        return random.choice(self.game.map.get_objectives())
+        # Prioritize incomplete objectives that yield the highest points.
+        available = [obj for obj in self.objectives if not obj.completed]
+        return max(available, key=lambda o: o.points, default=None)
 
 
 class TacticalAgent:
@@ -31,11 +37,13 @@ class TacticalAgent:
         self.game = game
         self.player = player
 
-    def movement_phase(self, unit: Unit, objective: ObjectivePoint) -> List[Tuple[float, float, float]]:
+    def movement_phase(self, unit: Unit, objective: Objective) -> List[Tuple[float, float, float]]:
         """Handle unit pathing towards objectives."""
-        self.game.event_system.publish("movement_phase_start", unit=unit, game_state=self.game.get_state())
-        path = self.game.map.find_path(unit.position, objective.position)
-        return path
+        if objective and objective.location:
+            self.game.event_system.publish("movement_phase_start", unit=unit, game_state=self.game.get_state())
+            path = self.game.map.find_path(unit.position, objective.location)
+            return path
+        return []
 
     def shooting_phase(self, unit: Unit) -> None:
         """Select targets and resolve shooting attacks."""
@@ -80,6 +88,9 @@ class LowLevelAgent:
             self.game.map.move_unit(unit, step)
             self.game.event_system.publish("movement_phase_step", unit=unit, game_state=self.game.get_state())
         self.game.event_system.publish("movement_phase_end", unit=unit, game_state=self.game.get_state())
+        # Check if objective was achieved post-move.
+        for obj in self.game.objectives:
+            obj.check_completion(self.game.get_state())
 
     def resolve_combat(self, unit: Unit, target: Unit) -> None:
         """Perform combat calculations and apply damage."""
