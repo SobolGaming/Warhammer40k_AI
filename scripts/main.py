@@ -57,10 +57,11 @@ def main_game_loop() -> None:
         if game_state == GameState.PLAYING and game.do_ai_action:
             while not game.is_game_over():
                 if game.get_current_player() == player1:
-                    objective = high_level_agent_player1.choose_objective(game_state=game)
+                    objective, command = high_level_agent_player1.choose_objective_and_command(game_state=game)
+                    print(f"{player1.name} chose Objective: {objective.name}, Command: {command}")
                     if game.is_command_phase():
                         turn_started = True
-                        high_level_agent_player1.command_phase()
+                        tactical_agent_player1.command_phase(command)
                     elif game.is_movement_phase():
                         for unit in player1.army.units:
                             path = tactical_agent_player1.movement_phase(unit, objective)
@@ -81,10 +82,11 @@ def main_game_loop() -> None:
                         high_level_agent_player1.store_reward(reward)
                         turn_started = False
                 else:
-                    objective = high_level_agent_player2.choose_objective(game_state=game)
+                    objective, command = high_level_agent_player2.choose_objective_and_command(game_state=game)
+                    print(f"{player2.name} chose Objective: {objective.name}, Command: {command}")
                     if game.is_command_phase():
                         turn_started = True
-                        high_level_agent_player2.command_phase()
+                        tactical_agent_player2.command_phase(command)
                     elif game.is_movement_phase():
                         for unit in player2.army.units:
                             path = tactical_agent_player2.movement_phase(unit, objective)

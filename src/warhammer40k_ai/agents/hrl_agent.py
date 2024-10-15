@@ -23,42 +23,43 @@ class PolicyNetwork(nn.Module):
 
 class HighLevelAgent:
     """Strategic Layer: Coordinates phases and sets objectives."""
-    def __init__(self, game: Game, player: Player, objectives: List[Objective] = [], learning_rate=0.01) -> None:
+    def __init__(self, game: Game, player: Player, objectives: List[Objective] = [], commands: List[str] = [], learning_rate=0.01) -> None:
         self.game = game
         self.player = player
         self.objectives = objectives
         self.num_objectives = len(objectives)
+        self.commands = commands
+        self.num_commands = len(commands)
 
         # Initialize Policy Network and Optimizer
-        self.policy_net = PolicyNetwork(input_size=1, output_size=self.num_objectives)
+        self.policy_net = PolicyNetwork(input_size=1, output_size=self.num_objectives + self.num_commands)
         self.optimizer = optim.Adam(self.policy_net.parameters(), lr=learning_rate)
 
         # Store rewards and log probabilities for training
         self.rewards = []
         self.log_probs = []
 
-    def add_objective(self, objective: Objective) -> None:
-        self.objectives.append(objective)
-
-    def command_phase(self) -> None:
-        """Execute high-level commands or stratagems."""
-        self.game.event_system.publish("command_phase_start", game_state=self.game.get_state())
-        for unit in self.player.army.get_active_units():
-            # Apply abilities or buffs here (e.g., stratagems)
-            print(f"Commanding {unit.name}")
-        self.game.event_system.publish("command_phase_end", game_state=self.game.get_state())
-
-    def choose_objective(self, game_state: Game) -> Objective:
-        """Select an objective using the policy network."""
-        state = torch.tensor([1.0])  # Example: Simple state input
+    def choose_objective_and_command(self, game_state: Game) -> Tuple[Objective, str]:
+        """Select both an objective and a command action."""
+        state = torch.tensor([1.0])  # Example input state
         probs = self.policy_net(state)
 
-        # Sample an objective from the probability distribution
-        m = torch.distributions.Categorical(probs)
-        objective_idx = m.sample()
-        self.log_probs.append(m.log_prob(objective_idx))
+        # Split the probabilities for objectives and commands
+        obj_probs = probs[:self.num_objectives]
+        cmd_probs = probs[self.num_objectives:]
 
-        return self.objectives[objective_idx.item()]
+        # Sample from both distributions
+        obj_dist = torch.distributions.Categorical(obj_probs)
+        cmd_dist = torch.distributions.Categorical(cmd_probs)
+
+        obj_idx = obj_dist.sample()
+        cmd_idx = cmd_dist.sample()
+
+        # Store log probabilities for learning
+        self.log_probs.append(obj_dist.log_prob(obj_idx))
+        self.log_probs.append(cmd_dist.log_prob(cmd_idx))
+
+        return self.objectives[obj_idx.item()], self.commands[cmd_idx.item()]
 
     def store_reward(self, reward: float) -> None:
         """Store the reward for later policy update."""
@@ -98,6 +99,14 @@ class TacticalAgent:
     def __init__(self, game: Game, player: Player) -> None:
         self.game = game
         self.player = player
+
+    def command_phase(self, command: str) -> None:
+        """Execute high-level commands or stratagems."""
+        self.game.event_system.publish("command_phase_start", game_state=self.game.get_state())
+        for unit in self.player.army.get_active_units():
+            # Apply abilities or buffs here (e.g., stratagems)
+            print(f"Commanding {unit.name}")
+        self.game.event_system.publish("command_phase_end", game_state=self.game.get_state())
 
     def movement_phase(self, unit: Unit, objective: Objective) -> List[Tuple[float, float, float]]:
         """Handle unit pathing towards objectives."""
