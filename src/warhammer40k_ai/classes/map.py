@@ -2,7 +2,7 @@ from typing import List, Optional, Tuple
 from enum import Enum, auto
 from .unit import Unit
 from .model import Model
-from ..utility.calcs import getDist, getAngle, VIEWING_ANGLE, convert_mm_to_inches
+from ..utility.calcs import get_dist, get_angle, VIEWING_ANGLE, convert_mm_to_inches
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -21,8 +21,30 @@ class Map:
 
     def initialize_grid(self, terrain_grid: Optional[List[List[str]]] = None):
         # Initialize the grid with default or provided terrain
-        # TODO - implement terrain grid
-        return [[None for _ in range(self.width)] for _ in range(self.height)]
+        if terrain_grid is None:
+            return [[Tile(x, y) for y in range(self.width)] for x in range(self.height)]
+        else:
+            return [[Tile(x, y, terrain_grid[y][x]) for y in range(self.width)] for x in range(self.height)]
+
+    def get_tile(self, x: int, y: int):
+        # Returns the Tile at position (x, y)
+        if 0 <= x < self.width and 0 <= y < self.height:
+            return self.grid[x][y]
+        return None  # Out of bounds
+
+    def get_neighbors(self, tile):
+        # Returns a list of neighboring tiles
+        neighbors = []
+        directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]  # Up, Down, Left, Right
+        for dx, dy in directions:
+            neighbor = self.get_tile(tile.x + dx, tile.y + dy)
+            if neighbor and neighbor.get_movement_cost() != float('inf'):
+                neighbors.append(neighbor)
+        return neighbors
+
+    def get_movement_cost(self, current_tile, neighbor_tile):
+        # Movement cost from current_tile to neighbor_tile
+        return neighbor_tile.get_movement_cost()
 
     def place_unit(self, unit: Unit) -> bool:
         position = unit.get_position()
@@ -85,7 +107,7 @@ class Map:
     def is_within_engagement_range(self, position: Tuple[float, float, float], target: Unit) -> bool:
         for model in target.models:
             target_position = model.get_location()
-            distance = getDist(position[0] - target_position[0], position[1] - target_position[1])
+            distance = get_dist(position[0] - target_position[0], position[1] - target_position[1])
             if distance <= ENGAGEMENT_RANGE:
                 return True
         return False
@@ -108,7 +130,7 @@ class Map:
         
         # Check if pivot is needed
         current_facing = unit.models[0].model_base.facing
-        target_facing = getAngle(end[1] - start[1], end[0] - start[0])
+        target_facing = get_angle(end[1] - start[1], end[0] - start[0])
         pivot_needed = abs(current_facing - target_facing) > VIEWING_ANGLE
         if pivot_needed:
             pivot_cost = self.calculate_pivot_cost(unit)
@@ -204,7 +226,7 @@ class Map:
         """
         Calculate the Euclidean distance between two points.
         """
-        return getDist(point2[0] - point1[0], point2[1] - point1[1])
+        return get_dist(point2[0] - point1[0], point2[1] - point1[1])
 
 
 class TerrainType(Enum):
@@ -217,20 +239,63 @@ class TerrainType(Enum):
 
 
 class Tile:
-    def __init__(self, x: int, y: int, terrain_type: TerrainType):
+    # Define movement costs based on terrain type
+    terrain_costs = {
+        'open': 1,
+        'forest': 2,
+        'difficult': 3,
+        'impassable': float('inf')  # Impassable terrain
+    }
+
+    def __init__(self, x: int, y: int, terrain_type: TerrainType = TerrainType.OPEN):
         self.x = x
         self.y = y
         self.terrain_type = terrain_type
         self.is_occupied = False
         self.unit = None
 
-    def get_movement_cost(self) -> int:
-        # Return movement cost based on terrain_type
-        pass
+    def __eq__(self, other):
+        return isinstance(other, Tile) and self.x == other.x and self.y == other.y
+
+    def __hash__(self):
+        return hash((self.x, self.y))
+
+    def get_movement_cost(self, enemy_units: List[Unit] = None) -> float:
+        base_cost = self.terrain_costs.get(self.terrain, 1)
+        if enemy_units and self.is_engaged(enemy_units):
+            return float('inf')  # Cannot move into engagement range directly
+        return base_cost
 
     def provides_cover(self) -> bool:
         # Return True if terrain provides cover
         pass
+
+    def is_engaged(self, enemy_units: List[Unit]) -> bool:
+        # Check if any enemy units are within engagement range
+        for unit in enemy_units:
+            if abs(self.x - unit.x) + abs(self.y - unit.y) <= unit.engagement_range:
+                return True
+        return False
+
+
+class ObstacleType(Enum):
+    OBSTACLE = auto()
+    BUILDING = auto()
+    AREA_TERRAIN = auto()
+    IMPASSABLE = auto()
+    DIFFICULT = auto()
+
+
+class Obstacle:
+    def __init__(self, vertices: List[Tuple[float, float]], terrain_type: ObstacleType, height: float):
+        """
+        vertices: List of (x, y) tuples defining the obstacle's shape.
+        terrain_type: ObstacleType indicating the type (e.g., 'obstacle', 'building', 'area terrain').
+        height: Numeric value indicating the obstacle's height.
+        """
+        self.vertices = vertices
+        self.terrain_type = terrain_type
+        self.height = height
 
 
 class ObjectivePoint:

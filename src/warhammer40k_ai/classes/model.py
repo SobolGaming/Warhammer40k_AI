@@ -5,7 +5,7 @@ from ..utility.model_base import Base
 import uuid
 import logging
 from math import degrees
-from ..utility.calcs import getDist, getAngle
+from ..utility.calcs import get_dist, get_angle
 
 
 logging.basicConfig(format="%(asctime)s %(levelname)-8s %(message)s")
@@ -153,32 +153,32 @@ class Model:
         logger.debug(f"Delta X: {delta_x}")
         delta_y = other.model_base.y - self.model_base.y
         logger.debug(f"Delta Y: {delta_y}")
-        angle = getAngle(delta_x, delta_y)
+        angle = get_angle(delta_x, delta_y)
         logger.debug(f"Angle (in Degrees): {degrees(angle)}, (in Radians): {angle}")
         if self.model_base.z == other.model_base.z:
             return round(
-                getDist(delta_x, delta_y)
-                - self.model_base.getRadius(angle)
-                - other.model_base.getRadius(angle)
+                get_dist(delta_x, delta_y)
+                - self.model_base.get_radius(angle)
+                - other.model_base.get_radius(angle)
             , 2)
         elif self.model_base.z + self.model_base.model_height < other.model_base.z:
             xy_dist = round(
-                getDist(delta_x, delta_y)
-                - self.model_base.getRadius(angle)
-                - other.model_base.getRadius(angle)
+                get_dist(delta_x, delta_y)
+                - self.model_base.get_radius(angle)
+                - other.model_base.get_radius(angle)
             , 2)
-            return getDist(xy_dist, other.model_base.z - self.model_base.z - self.model_base.model_height)
+            return get_dist(xy_dist, other.model_base.z - self.model_base.z - self.model_base.model_height)
         elif other.model_base.z + other.model_base.model_height < self.model_base.z:
             xy_dist = round(
-                getDist(delta_x, delta_y)
-                - self.model_base.getRadius(angle)
-                - other.model_base.getRadius(angle)
+                get_dist(delta_x, delta_y)
+                - self.model_base.get_radius(angle)
+                - other.model_base.get_radius(angle)
             , 2)
-            return getDist(xy_dist, self.model_base.z - other.model_base.z - other.model_base.model_height)
+            return get_dist(xy_dist, self.model_base.z - other.model_base.z - other.model_base.model_height)
         # otherwise treat it the same as if on the same z-axis since parts of the model overlap in the z-space
         else:
             return round(
-                getDist(delta_x, delta_y)
+                get_dist(delta_x, delta_y)
                 - self.model_base.getRadius(angle)
                 - other.model_base.getRadius(angle)
             , 2)

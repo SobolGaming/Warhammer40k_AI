@@ -6,7 +6,7 @@ from ..utility.model_base import Base, BaseType
 from .wargear import Wargear, WargearOption
 from .ability import Ability
 from ..utility.range import Range
-from ..utility.calcs import getDist, convert_mm_to_inches
+from ..utility.calcs import get_dist, convert_mm_to_inches
 from ..utility.dice import get_roll
 from .status_effects import StatusEffect, UnitStatsModifier
 import math
@@ -621,10 +621,10 @@ class Unit:
                 return False
             movement_range += advance_roll
 
-        # Calculate the distance to the destination using getDist()
+        # Calculate the distance to the destination
         dx = destination[0] - current_position[0]
         dy = destination[1] - current_position[1]
-        distance = getDist(dx, dy)
+        distance = get_dist(dx, dy)
 
         # Check if the destination is within the movement range
         if distance > movement_range:
@@ -801,7 +801,7 @@ class Unit:
         radius = self.coherency_distance  # Assuming this is defined elsewhere in the class
         
         # Check if the point is within the circular area defined by the unit's position and coherency distance
-        distance = getDist(x - center_x, y - center_y)
+        distance = get_dist(x - center_x, y - center_y)
         return distance <= radius
 
     def calculate_model_positions(self, start_x: float, start_y: float, battlefield_size: Tuple[float, float], all_models: List['Model'], zoom_level: float = 1.0) -> List[Tuple[float, float, float, float]]:
