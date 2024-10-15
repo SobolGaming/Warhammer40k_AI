@@ -1,4 +1,4 @@
-from typing import Tuple, Dict, Set
+from typing import Tuple, Dict, Set, List
 from warhammer40k_ai.classes.unit import Unit
 from warhammer40k_ai.classes.wargear import Wargear
 from warhammer40k_ai.classes.enhancement import Enhancement
