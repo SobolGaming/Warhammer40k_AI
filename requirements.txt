@@ -10,3 +10,4 @@ simple-namespace
 pytest
 gym
 pygame
+torch

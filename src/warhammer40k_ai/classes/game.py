@@ -170,7 +170,11 @@ class Game:
     def is_game_over(self) -> bool:
         # Implement game-over conditions
         # For example, check if only one player has units left
-        return sum(1 for player in self.players if player.has_units()) <= 1
+        if sum(1 for player in self.players if player.has_units()) <= 1:
+            return True
+        if self.turn > 5:
+            return True
+        return False
 
     def get_winner(self) -> Player | None:
         # Return the winning player or None if the game is not over

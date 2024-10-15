@@ -55,40 +55,56 @@ def main_game_loop() -> None:
     running = True
     while running:
         if game_state == GameState.PLAYING and game.do_ai_action:
-            if game.get_current_player() == player1:
-                if game.is_command_phase():
-                    high_level_agent_player1.command_phase()
-                elif game.is_movement_phase():
-                    objective = high_level_agent_player1.choose_objective()
-                    for unit in player1.army.units:
-                        path = tactical_agent_player1.movement_phase(unit, objective)
-                        low_level_agent_player1.execute_movement(unit, path)
-                elif game.is_shooting_phase():
-                    for unit in player1.army.units:
-                        tactical_agent_player1.shooting_phase(unit)
-                elif game.is_charge_phase():
-                    for unit in player1.army.units:
-                        tactical_agent_player1.charge_phase(unit)
-                elif game.is_fight_phase():
-                    for unit in player1.army.units:
-                        tactical_agent_player1.fight_phase(unit)
-            else:
-                if game.is_command_phase():
-                    high_level_agent_player2.command_phase()
-                elif game.is_movement_phase():
-                    objective = high_level_agent_player2.choose_objective()
-                    for unit in player2.army.units:
-                        path = tactical_agent_player2.movement_phase(unit, objective)
-                        low_level_agent_player2.execute_movement(unit, path)
-                elif game.is_shooting_phase():
-                    for unit in player2.army.units:
-                        tactical_agent_player2.shooting_phase(unit)
-                elif game.is_charge_phase():
-                    for unit in player2.army.units: 
-                        tactical_agent_player2.charge_phase(unit)
-                elif game.is_fight_phase():
-                    for unit in player2.army.units:
-                        tactical_agent_player2.fight_phase(unit)
+            while not game.is_game_over():
+                if game.get_current_player() == player1:
+                    objective = high_level_agent_player1.choose_objective(game_state=game)
+                    if game.is_command_phase():
+                        turn_started = True
+                        high_level_agent_player1.command_phase()
+                    elif game.is_movement_phase():
+                        for unit in player1.army.units:
+                            path = tactical_agent_player1.movement_phase(unit, objective)
+                            low_level_agent_player1.execute_movement(unit, path)
+                    elif game.is_shooting_phase():
+                        for unit in player1.army.units:
+                            tactical_agent_player1.shooting_phase(unit)
+                    elif game.is_charge_phase():
+                        for unit in player1.army.units:
+                            tactical_agent_player1.charge_phase(unit)
+                    elif game.is_fight_phase():
+                        for unit in player1.army.units:
+                            tactical_agent_player1.fight_phase(unit)
+                    if turn_started and game.is_fight_phase():
+                        # Attempt the objective and store the reward
+                        success = objective.check_completion(game)
+                        reward = objective.points if success else -5  # Penalize failed attempts
+                        high_level_agent_player1.store_reward(reward)
+                        turn_started = False
+                else:
+                    objective = high_level_agent_player2.choose_objective(game_state=game)
+                    if game.is_command_phase():
+                        turn_started = True
+                        high_level_agent_player2.command_phase()
+                    elif game.is_movement_phase():
+                        for unit in player2.army.units:
+                            path = tactical_agent_player2.movement_phase(unit, objective)
+                            low_level_agent_player2.execute_movement(unit, path)
+                    elif game.is_shooting_phase():
+                        for unit in player2.army.units:
+                            tactical_agent_player2.shooting_phase(unit)
+                    elif game.is_charge_phase():
+                        for unit in player2.army.units: 
+                            tactical_agent_player2.charge_phase(unit)
+                    elif game.is_fight_phase():
+                        for unit in player2.army.units:
+                            tactical_agent_player2.fight_phase(unit)
+                    if turn_started and game.is_fight_phase():
+                        # Attempt the objective and store the reward
+                        success = objective.check_completion(game)
+                        reward = objective.points if success else -5  # Penalize failed attempts
+                        high_level_agent_player2.store_reward(reward)
+                        turn_started = False
+                game.next_turn()
             game.do_ai_action = False
 
         for event in pygame.event.get():

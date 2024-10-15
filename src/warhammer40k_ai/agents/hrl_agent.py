@@ -4,14 +4,38 @@ from warhammer40k_ai.classes.game import Game
 from warhammer40k_ai.classes.map import Objective
 from warhammer40k_ai.classes.unit import Unit
 from warhammer40k_ai.classes.player import Player
+import torch
+import torch.nn as nn
+import torch.optim as optim
+
+
+class PolicyNetwork(nn.Module):
+    """A simple neural network to output probabilities for objectives."""
+    def __init__(self, input_size, output_size):
+        super(PolicyNetwork, self).__init__()
+        self.fc1 = nn.Linear(input_size, 128)
+        self.fc2 = nn.Linear(128, output_size)
+
+    def forward(self, x):
+        x = torch.relu(self.fc1(x))
+        return torch.softmax(self.fc2(x), dim=-1)
 
 
 class HighLevelAgent:
     """Strategic Layer: Coordinates phases and sets objectives."""
-    def __init__(self, game: Game, player: Player, objectives: List[Objective] = []) -> None:
+    def __init__(self, game: Game, player: Player, objectives: List[Objective] = [], learning_rate=0.01) -> None:
         self.game = game
         self.player = player
         self.objectives = objectives
+        self.num_objectives = len(objectives)
+
+        # Initialize Policy Network and Optimizer
+        self.policy_net = PolicyNetwork(input_size=1, output_size=self.num_objectives)
+        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=learning_rate)
+
+        # Store rewards and log probabilities for training
+        self.rewards = []
+        self.log_probs = []
 
     def add_objective(self, objective: Objective) -> None:
         self.objectives.append(objective)
@@ -24,11 +48,49 @@ class HighLevelAgent:
             print(f"Commanding {unit.name}")
         self.game.event_system.publish("command_phase_end", game_state=self.game.get_state())
 
-    def choose_objective(self) -> Objective:
-        """Select strategic objectives."""
-        # Prioritize incomplete objectives that yield the highest points.
-        available = [obj for obj in self.objectives if not obj.completed]
-        return max(available, key=lambda o: o.points, default=None)
+    def choose_objective(self, game_state: Game) -> Objective:
+        """Select an objective using the policy network."""
+        state = torch.tensor([1.0])  # Example: Simple state input
+        probs = self.policy_net(state)
+
+        # Sample an objective from the probability distribution
+        m = torch.distributions.Categorical(probs)
+        objective_idx = m.sample()
+        self.log_probs.append(m.log_prob(objective_idx))
+
+        return self.objectives[objective_idx.item()]
+
+    def store_reward(self, reward: float) -> None:
+        """Store the reward for later policy update."""
+        self.rewards.append(reward)
+
+    def update_policy(self) -> None:
+        """Update the policy network using the REINFORCE algorithm."""
+        R = 0
+        policy_loss = []
+        returns = []
+
+        # Calculate the discounted rewards (returns)
+        for r in self.rewards[::-1]:
+            R = r + 0.99 * R  # Discount factor gamma = 0.99
+            returns.insert(0, R)
+
+        returns = torch.tensor(returns)
+        returns = (returns - returns.mean()) / (returns.std() + 1e-9)  # Normalize returns
+
+        # Calculate policy loss
+        for log_prob, R in zip(self.log_probs, returns):
+            policy_loss.append(-log_prob * R)
+
+        # Update policy network
+        self.optimizer.zero_grad()
+        policy_loss = torch.cat(policy_loss).sum()
+        policy_loss.backward()
+        self.optimizer.step()
+
+        # Clear rewards and log probabilities for the next episode
+        self.rewards = []
+        self.log_probs = []
 
 
 class TacticalAgent:
