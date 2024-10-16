@@ -138,6 +138,9 @@ class Wargear:
     def is_ignores_cover(self) -> bool:
         return 'ignores cover' in [keyword.lower() for keyword in self.get_keywords()]
 
+    def is_indirect_fire(self) -> bool:
+        return 'indirect fire' in [keyword.lower() for keyword in self.get_keywords()]
+
     def is_lethal_hits(self) -> bool:
         return 'lethal hits' in [keyword.lower() for keyword in self.get_keywords()]
 
