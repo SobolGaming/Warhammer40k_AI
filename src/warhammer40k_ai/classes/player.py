@@ -36,5 +36,8 @@ class Player:
     def has_unit(self, unit: Unit) -> bool:
         return unit in self.army.units
 
+    def has_units(self) -> bool:
+        return len(self.army.units) > 0
+
     def __str__(self):
         return f"Name: {self.name}\nType: {self.type.name}\nCommand Points: {self.command_points}\nArmy: {self.army}"

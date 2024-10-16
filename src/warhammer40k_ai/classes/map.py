@@ -2,31 +2,26 @@ from typing import List, Optional, Tuple
 from enum import Enum, auto
 from .unit import Unit
 from .model import Model
-from ..utility.calcs import get_dist, get_angle, VIEWING_ANGLE, convert_mm_to_inches
+from ..utility.calcs import get_dist, get_angle, convert_mm_to_inches
+from ..utility.constants import VIEWING_ANGLE, ENGAGEMENT_RANGE
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from .game import Game, ENGAGEMENT_RANGE
+    from .game import Game
 
 
 class Map:
     def __init__(self, width: int, height: int):
         self.width = width
         self.height = height
+        self.obstacles = []
         self.objectives = []
         self.deployment_zones = {}
         self.units = []
         self.occupied_positions = set()
 
-    def get_neighbors(self, tile):
-        # Returns a list of neighboring tiles
-        neighbors = []
-        directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]  # Up, Down, Left, Right
-        for dx, dy in directions:
-            neighbor = self.get_tile(tile.x + dx, tile.y + dy)
-            if neighbor and neighbor.get_movement_cost() != float('inf'):
-                neighbors.append(neighbor)
-        return neighbors
+    def add_obstacle(self, obstacle: 'Obstacle') -> None:
+        self.obstacles.append(obstacle)
 
     def get_movement_cost(self, current_tile, neighbor_tile):
         # Movement cost from current_tile to neighbor_tile

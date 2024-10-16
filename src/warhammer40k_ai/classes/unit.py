@@ -14,8 +14,11 @@ import uuid
 import random
 import copy
 
+
+# Forward declarations
 if TYPE_CHECKING:
     from .map import Map
+
 
 logging.basicConfig(format="%(asctime)s %(levelname)-8s %(message)s")
 logger = logging.getLogger(__name__)

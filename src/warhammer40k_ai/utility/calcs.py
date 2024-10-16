@@ -1,14 +1,13 @@
 from math import sqrt, atan2
 from typing import Tuple, List
 import heapq
+from ..utility.constants import MM_TO_INCHES, ENGAGEMENT_RANGE, FREELY_CLIMBABLE_RANGE
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ..classes.map import Obstacle
     from ..classes.unit import Unit
 
-MM_TO_INCHES = 25.4
-VIEWING_ANGLE = 1.57 / 3 # 30 degrees
 
 # Convert mm (as in base size of models) to inches
 def convert_mm_to_inches(value: float) -> float:
@@ -71,7 +70,7 @@ def can_traverse_freely(unit: 'Unit', obstacle: 'Obstacle') -> bool:
     if 'Fly' in unit.abilities:
         return True  # Units with Fly can move over obstacles
     # Additional checks based on terrain type and unit abilities
-    if obstacle.height > 2.0:
+    if obstacle.height > FREELY_CLIMBABLE_RANGE:
         return False
     if obstacle.terrain_type.name == 'RUINS' and (unit.is_infantry or unit.is_beast or unit.is_belisarius_cawl or unit.is_imperium_primarch):
         return True  # Infantry, beasts, Belisarius Cawl and Imperium Primarch can traverse into ruins

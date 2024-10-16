@@ -6,6 +6,7 @@ from warhammer40k_ai.classes.unit import Unit
 from warhammer40k_ai.utility.model_base import Base, BaseType
 from warhammer40k_ai.classes.player import Player
 from warhammer40k_ai.classes.game import Game
+from warhammer40k_ai.classes.map import Obstacle, ObstacleType
 
 # Constants
 TILE_SIZE = 20  # 20 pixels per inch
@@ -264,7 +265,11 @@ class GameView:
         # Draw the battlefield
         battlefield_surface = pygame.Surface((BATTLEFIELD_WIDTH, BATTLEFIELD_HEIGHT))
         draw_battlefield(battlefield_surface, self.zoom_level, self.offset_x, self.offset_y)
-        
+
+        # Draw obstacles on the battlefield
+        for obstacle in self.game_map.obstacles:
+            draw_obstacle(battlefield_surface, obstacle, self.zoom_level, self.offset_x, self.offset_y)
+
         # Draw units on the battlefield
         for unit in self.game_map.units:
             place_unit(battlefield_surface, unit, self.zoom_level, self.offset_x, self.offset_y, pygame.mouse.get_pos(), self.player1, self.player2)
@@ -319,6 +324,7 @@ class GameView:
         self.screen.blit(text_surface, text_rect)
 
 
+### Battlefield drawing functions
 def draw_battlefield(screen: pygame.Surface, zoom_level: float, offset_x: int, offset_y: int) -> None:
     screen.fill(WHITE)
     tile_size = int(TILE_SIZE * zoom_level)
@@ -346,7 +352,35 @@ def draw_battlefield(screen: pygame.Surface, zoom_level: float, offset_x: int, o
             pygame.draw.line(screen, GREY, (0, screen_y), (visible_width, screen_y))
     
     # Draw battlefield border
-    pygame.draw.rect(screen, (255, 0, 0), (0, 0, visible_width, visible_height), 2)
+    pygame.draw.rect(screen, RED, (0, 0, visible_width, visible_height), 2)
+
+def draw_obstacle(screen: pygame.Surface, obstacle: Obstacle, zoom_level: float, offset_x: int, offset_y: int) -> None:
+    # Determine the color based on the obstacle type
+    if obstacle.terrain_type == ObstacleType.CRATER_AND_RUBBLE:
+        color = (128, 0, 0, 180)  # Dark red for craters
+    elif obstacle.terrain_type == ObstacleType.DEBRIS_AND_STATUARY:
+        color = (192, 192, 192, 180)  # Gray for debris and statuary
+    elif obstacle.terrain_type == ObstacleType.HILLS_AND_SEALED_BUILDINGS:
+        color = (128, 64, 0, 180)  # Brown for hills and sealed buildings
+    elif obstacle.terrain_type == ObstacleType.WOODS:
+        color = (0, 128, 0, 180)  # Green for woods
+    elif obstacle.terrain_type == ObstacleType.RUINS:
+        color = (128, 128, 128, 180)  # Gray for ruins
+    else:
+        color = (255, 255, 255, 180)  # Default white
+
+    # Convert vertices to screen coordinates
+    screen_vertices = [
+        (int((vertex[0] * TILE_SIZE) * zoom_level + offset_x),
+         int((vertex[1] * TILE_SIZE) * zoom_level + offset_y))
+        for vertex in obstacle.vertices
+    ]
+
+    # Draw the filled polygon
+    pygame.draw.polygon(screen, color, screen_vertices)
+
+    # Draw the outline of the polygon
+    pygame.draw.polygon(screen, (0, 0, 0), screen_vertices, 2)  # Black outline with 2px width
 
 def place_unit(screen: pygame.Surface, unit: Unit, zoom_level: float, offset_x: int, offset_y: int, mouse_pos: Tuple[int, int], player1: Player, player2: Player) -> None:
     # Determine the color based on which player the unit belongs to

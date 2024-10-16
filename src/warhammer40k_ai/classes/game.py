@@ -1,13 +1,8 @@
 from typing import List, Dict, Any
-from .unit import Unit
-from .player import Player
 from enum import Enum
 from .event_system import EventSystem
 from .map import Objective
-
-
-# Constants
-ENGAGEMENT_RANGE = 3.0  # inches
+from .player import Player
 
 
 class SetupPhase(Enum):
@@ -139,33 +134,6 @@ class Game:
 
     def is_fight_phase(self) -> bool:
         return self.phase == BattleRoundPhases.FIGHT_PHASE
-
-    def place_unit(self, unit: Unit, position: tuple[int, int]):
-        # Place a unit on the battlefield
-        x, y = position
-        if 0 <= x < self.battlefield_size[0] and 0 <= y < self.battlefield_size[1]:
-            self.battlefield[x][y] = unit
-        else:
-            raise ValueError("Invalid position")
-
-    def get_unit_at(self, position: tuple[int, int]) -> Unit | None:
-        # Get the unit at a specific position
-        x, y = position
-        if 0 <= x < self.battlefield_size[0] and 0 <= y < self.battlefield_size[1]:
-            return self.battlefield[x][y]
-        else:
-            raise ValueError("Invalid position")
-
-    '''
-    def move_unit(self, from_pos: tuple[int, int], to_pos: tuple[int, int]):
-        # Move a unit from one position to another
-        unit = self.get_unit_at(from_pos)
-        if unit:
-            self.place_unit(unit, to_pos)
-            self.battlefield[from_pos[0]][from_pos[1]] = None
-        else:
-            raise ValueError("No unit at the given position")
-    '''
 
     def is_game_over(self) -> bool:
         # Implement game-over conditions
