@@ -10,27 +10,13 @@ if TYPE_CHECKING:
 
 
 class Map:
-    def __init__(self, width: int, height: int, terrain_grid: Optional[List[List[str]]] = None):
+    def __init__(self, width: int, height: int):
         self.width = width
         self.height = height
-        self.grid = self.initialize_grid(terrain_grid)
         self.objectives = []
         self.deployment_zones = {}
         self.units = []
         self.occupied_positions = set()
-
-    def initialize_grid(self, terrain_grid: Optional[List[List[str]]] = None):
-        # Initialize the grid with default or provided terrain
-        if terrain_grid is None:
-            return [[Tile(x, y) for y in range(self.width)] for x in range(self.height)]
-        else:
-            return [[Tile(x, y, terrain_grid[y][x]) for y in range(self.width)] for x in range(self.height)]
-
-    def get_tile(self, x: int, y: int):
-        # Returns the Tile at position (x, y)
-        if 0 <= x < self.width and 0 <= y < self.height:
-            return self.grid[x][y]
-        return None  # Out of bounds
 
     def get_neighbors(self, tile):
         # Returns a list of neighboring tiles
@@ -74,20 +60,6 @@ class Map:
                 if unit_pos and (int(unit_pos[0]), int(unit_pos[1])) == (x, y):
                     return False
         return True
-
-    def debug_print_map(self) -> str:
-        """
-        Returns a string representation of the map for debugging purposes.
-        """
-        map_str = ""
-        for y in range(self.height):
-            for x in range(self.width):
-                if self.grid[y][x]:
-                    map_str += "X"
-                else:
-                    map_str += "."
-            map_str += "\n"
-        return map_str
 
     def get_all_models(self, units: Optional[List[Unit]] = None) -> List[Model] :
         if units is None:
@@ -229,61 +201,12 @@ class Map:
         return get_dist(point2[0] - point1[0], point2[1] - point1[1])
 
 
-class TerrainType(Enum):
-    OPEN = auto()
-    FOREST = auto()
-    BUILDING = auto()
-    WATER = auto()
-    HILL = auto()
-    OBSTACLE = auto()
-
-
-class Tile:
-    # Define movement costs based on terrain type
-    terrain_costs = {
-        'open': 1,
-        'forest': 2,
-        'difficult': 3,
-        'impassable': float('inf')  # Impassable terrain
-    }
-
-    def __init__(self, x: int, y: int, terrain_type: TerrainType = TerrainType.OPEN):
-        self.x = x
-        self.y = y
-        self.terrain_type = terrain_type
-        self.is_occupied = False
-        self.unit = None
-
-    def __eq__(self, other):
-        return isinstance(other, Tile) and self.x == other.x and self.y == other.y
-
-    def __hash__(self):
-        return hash((self.x, self.y))
-
-    def get_movement_cost(self, enemy_units: List[Unit] = None) -> float:
-        base_cost = self.terrain_costs.get(self.terrain, 1)
-        if enemy_units and self.is_engaged(enemy_units):
-            return float('inf')  # Cannot move into engagement range directly
-        return base_cost
-
-    def provides_cover(self) -> bool:
-        # Return True if terrain provides cover
-        pass
-
-    def is_engaged(self, enemy_units: List[Unit]) -> bool:
-        # Check if any enemy units are within engagement range
-        for unit in enemy_units:
-            if abs(self.x - unit.x) + abs(self.y - unit.y) <= unit.engagement_range:
-                return True
-        return False
-
-
 class ObstacleType(Enum):
-    OBSTACLE = auto()
-    BUILDING = auto()
-    AREA_TERRAIN = auto()
-    IMPASSABLE = auto()
-    DIFFICULT = auto()
+    CRATER_AND_RUBBLE = auto()
+    DEBRIS_AND_STATUARY = auto()
+    HILLS_AND_SEALED_BUILDINGS = auto()
+    WOODS = auto()
+    RUINS = auto()
 
 
 class Obstacle:

@@ -353,10 +353,6 @@ class Unit:
         return "Dedicated Transport" in self.keywords
 
     @property
-    def is_infantry(self) -> bool:
-        return "Infantry" in self.keywords
-
-    @property
     def is_leader(self) -> bool:
         return len(self.can_be_attached_to) > 0
 
@@ -387,6 +383,30 @@ class Unit:
     @property
     def is_psyker(self) -> bool:
         return "Psyker" in self.keywords
+
+    @property
+    def is_infantry(self) -> bool:
+        return "Infantry" in self.keywords
+
+    @property
+    def is_beast(self) -> bool:
+        return "Beast" in self.keywords
+
+    @property
+    def is_titanic(self) -> bool:
+        return "Titanic" in self.keywords
+
+    @property
+    def is_towering(self) -> bool:
+        return "Towering" in self.keywords
+
+    @property
+    def is_belisarius_cawl(self) -> bool:
+        return "Belisarius Cawl" in self.keywords
+
+    @property
+    def is_imperium_primarch(self) -> bool:
+        return "Imperium" in self.keywords and "Primarch" in self.keywords
 
     @property
     def has_circular_base(self) -> bool:

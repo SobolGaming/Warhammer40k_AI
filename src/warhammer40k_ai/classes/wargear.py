@@ -98,6 +98,7 @@ class Wargear:
     def get_keywords(self, profile_name: str = 'default') -> List[str]:
         return self.profiles[profile_name].keywords
 
+    ### Wargear type checks
     def is_melee(self) -> bool:
         return self.type.lower() == 'melee'
 
@@ -115,6 +116,9 @@ class Wargear:
 
     def is_explosive(self) -> bool:
         return 'explosive' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def is_blast(self) -> bool:
+        return 'blast' in [keyword.lower() for keyword in self.get_keywords()]
 
     def is_precision(self) -> bool:
         return 'precision' in [keyword.lower() for keyword in self.get_keywords()]
@@ -134,6 +138,12 @@ class Wargear:
     def is_ignores_cover(self) -> bool:
         return 'ignores cover' in [keyword.lower() for keyword in self.get_keywords()]
 
+    def is_lethal_hits(self) -> bool:
+        return 'lethal hits' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def is_extra_attacks(self) -> int:
+        return 'extra attacks' in [keyword.lower() for keyword in self.get_keywords()]
+
     def is_sustained_hits(self) -> int:
         for keyword in self.get_keywords():
             if keyword.lower().startswith('sustained hits'):
@@ -152,6 +162,23 @@ class Wargear:
                 return 1  # Default to 1 if no number is specified
         return 0
 
+    def is_melta(self) -> bool:
+        for keyword in self.get_keywords():
+            if keyword.lower().startswith('melta'):
+                parts = keyword.split()
+                assert len(parts) == 2
+                return parts[2]
+        return "0"
+
+    def is_anti(self):
+        for keyword in self.get_keywords():
+            if keyword.lower().startswith('anti-'):
+                parts = keyword[4:].replace('+', '').split(' ')
+                if len(parts) == 2 and parts[2].isdigit():
+                    return parts[1].lower(), int(parts[2])
+        return "", 0
+
+    ### Wargear actions
     def attack(self, model: 'Model', target: 'Unit') -> None:
         pass
 
