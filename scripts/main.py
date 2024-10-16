@@ -3,7 +3,7 @@ import sys
 from typing import Tuple
 from warhammer40k_ai.gym_env.warhammer40k_env import WarhammerEnv
 from warhammer40k_ai.classes.game import Game
-from warhammer40k_ai.classes.map import Map
+from warhammer40k_ai.classes.map import Map, Obstacle, ObstacleType
 from warhammer40k_ai.classes.player import Player, PlayerType
 from warhammer40k_ai.classes.army import parse_army_list
 from warhammer40k_ai.UI.game_ui import GameView, GameState, ROSTER_PANE_WIDTH, BATTLEFIELD_WIDTH, BATTLEFIELD_HEIGHT, INFO_PANE_HEIGHT, handle_zoom, handle_pan, TILE_SIZE
@@ -25,10 +25,17 @@ def initialize_game() -> Tuple[pygame.Surface, WarhammerEnv, Game, Map, float, i
     print(f"Player 1 army created with {len(player1.get_army().units)} units")
     print(f"Player 2 army created with {len(player2.get_army().units)} units")
 
+    # Define obstacles
+    obstacles = [
+        Obstacle(vertices=[(3, 3), (3, 5), (5, 5), (5, 3)], terrain_type=ObstacleType.CRATER_AND_RUBBLE, height=3.0),  # Square obstacle
+        Obstacle(vertices=[(7, 7), (7, 9), (9, 9), (9, 7)], terrain_type=ObstacleType.DEBRIS_AND_STATUARY, height=6.0)
+    ]
+
     env = WarhammerEnv(players=[player1, player2])
     game = env.game
     game_map = Map(*game.get_battlefield_size())
     game.map = game_map
+    game.map.add_obstacles(obstacles)
 
     zoom_level = 1.0
     offset_x, offset_y = ROSTER_PANE_WIDTH, 0  # Adjust initial offset to account for left pane

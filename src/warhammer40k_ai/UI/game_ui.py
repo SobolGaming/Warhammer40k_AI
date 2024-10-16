@@ -240,9 +240,9 @@ class GameView:
         print(f"Checking for unit at game coordinates: ({game_x}, {game_y})")
 
         for player in [self.player1, self.player2]:
-            for unit in player.get_army().units:
-                #print(f"Checking unit: {unit.name}")
-                #print(f"Unit position: {unit.get_position()}")
+            for unit in [unit for unit in player.get_army().units if unit.deployed]:
+                print(f"Checking unit: {unit.name}")
+                print(f"Unit position: {unit.get_position()}")
                 #print(f"Unit coherency distance: {unit.coherency_distance}")
                 if unit.is_point_inside(game_x, game_y):
                     #print(f"Unit {unit.name} found at position")

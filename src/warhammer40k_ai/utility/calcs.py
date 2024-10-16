@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ..classes.map import Obstacle
     from ..classes.unit import Unit
+    from ..classes.model import Model
 
 
 # Convert mm (as in base size of models) to inches
@@ -84,21 +85,21 @@ def line_of_sight(unit: 'Unit', point_a: Tuple[float, float], point_b: Tuple[flo
                 return False  # Line is obstructed
     return True  # Line is clear
 
-def get_movement_cost(unit: 'Unit', point_a: Tuple[float, float], point_b: Tuple[float, float], obstacles: List[Tuple[float, float]]) -> float:
+def get_movement_cost(model: 'Model', point_a: Tuple[float, float], point_b: Tuple[float, float], obstacles: List[Tuple[float, float]]) -> float:
     # Base cost is the Euclidean distance
     base_cost = get_dist(point_a[0] - point_b[0], point_a[1] - point_b[1])
     
     # Check for terrain effects
     for obstacle in obstacles:
         if line_intersects_polygon(point_a, point_b, obstacle.vertices):
-            if not can_traverse_freely(unit, obstacle):
+            if not can_traverse_freely(model.parent_unit, obstacle):
                 # Increase movement cost
                 base_cost += obstacle.height
-                if obstacle.height > (unit.movement + 6.0):  # Best movement is "advance with 6 roll on die"
+                if obstacle.height > (model.movement + 6.0):  # Best movement is "advance with 6 roll on die"
                     return float('inf')  # Cannot traverse
     return base_cost
 
-def build_visibility_graph(unit: 'Unit', start: Tuple[float, float], goal: Tuple[float, float], obstacles: List[Tuple[float, float]]):
+def build_visibility_graph(model: 'Model', start: Tuple[float, float], goal: Tuple[float, float], obstacles: List[Tuple[float, float]]):
     nodes = [start, goal]
     for obstacle in obstacles:
         nodes.extend(obstacle.vertices)
@@ -106,8 +107,8 @@ def build_visibility_graph(unit: 'Unit', start: Tuple[float, float], goal: Tuple
     edges = []
     for i, node_a in enumerate(nodes):
         for node_b in nodes[i+1:]:
-            if line_of_sight(unit, node_a, node_b, obstacles):
-                distance = get_movement_cost(unit, node_a, node_b, obstacles)
+            if line_of_sight(model.parent_unit, node_a, node_b, obstacles):
+                distance = get_movement_cost(model, node_a, node_b, obstacles)
                 if distance != float('inf'):
                     edges.append((node_a, node_b, distance))
                     edges.append((node_b, node_a, distance))

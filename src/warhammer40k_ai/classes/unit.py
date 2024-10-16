@@ -6,9 +6,9 @@ from ..utility.model_base import Base, BaseType
 from .wargear import Wargear, WargearOption
 from .ability import Ability
 from ..utility.range import Range
-from ..utility.calcs import get_dist, convert_mm_to_inches
+from ..utility.calcs import get_dist, get_angle,convert_mm_to_inches, build_visibility_graph, astar_visibility_graph
 from ..utility.dice import get_roll
-from .status_effects import StatusEffect, UnitStatsModifier
+from .status_effects import StatusEffect
 import math
 import uuid
 import random
@@ -477,29 +477,14 @@ class Unit:
     ###########################################################################
     @property
     def movement(self) -> int:
-        if hasattr(self.stats, 'movement'):
-            if self.stats['movement'][0] == UnitStatsModifier.OVERRIDE:
-                return self.stats['movement'][1]
-            elif self.stats['movement'][0] == UnitStatsModifier.ADDITIVE:
-                return self.models[0].movement + self.stats['movement'][1]
         return self.models[0].movement
 
     @property
     def toughness(self) -> int:
-        if hasattr(self.stats, 'toughness'):
-            if self.stats['toughness'][0] == UnitStatsModifier.OVERRIDE:
-                return self.stats['toughness'][1]
-            elif self.stats['toughness'][0] == UnitStatsModifier.ADDITIVE:
-                return self.models[0].toughness + self.stats['toughness'][1]
         return self.models[0].toughness
 
     @property
     def save(self) -> int:
-        if hasattr(self.stats, 'save'):
-            if self.stats['save'][0] == UnitStatsModifier.OVERRIDE:
-                return self.stats['save'][1]
-            elif self.stats['save'][0] == UnitStatsModifier.ADDITIVE:
-                return self.models[0].save + self.stats['save'][1]
         return self.models[0].save
 
     @property
@@ -508,20 +493,10 @@ class Unit:
 
     @property
     def leadership(self) -> int:
-        if hasattr(self.stats, 'leadership'):
-            if self.stats['leadership'][0] == UnitStatsModifier.OVERRIDE:
-                return self.stats['leadership'][1]
-            elif self.stats['leadership'][0] == UnitStatsModifier.ADDITIVE:
-                return self.models[0].leadership + self.stats['leadership'][1]
         return self.models[0].leadership
 
     @property
     def objective_control(self) -> int:
-        if hasattr(self.stats, 'objective_control'):
-            if self.stats['objective_control'][0] == UnitStatsModifier.OVERRIDE:
-                return self.stats['objective_control'][1]
-            elif self.stats['objective_control'][0] == UnitStatsModifier.ADDITIVE:
-                return self.models[0].objective_control + self.stats['objective_control'][1]
         return self.models[0].objective_control
 
     ###########################################################################
@@ -536,25 +511,30 @@ class Unit:
             ability.activate(self)
 
     ###########################################################################
+    ### Command
+    ###########################################################################
+    def do_command_action(self, game_map: 'Map') -> bool:
+        """Executes the command action for the unit."""
+        self.initialize_round()
+        return True
+
+    ###########################################################################
     ### Movement
     ###########################################################################
     def do_move_action(self, game_map: 'Map') -> bool:
-        from .map import Map  # Import inside the function
-        assert isinstance(game_map, Map)
-
         # Determine the current state
-        state = self._get_movement_state(game_map)
+        state = self._get_engagement_state(game_map)
 
         # Get available actions based on the state
-        available_actions = self._get_available_actions(state)
+        available_actions = self._get_available_move_actions(state)
 
         # Choose an action (this is where the RL agent would make a decision)
-        chosen_action, destination = self._choose_action(available_actions)
+        chosen_action, destination = self._choose_action(available_actions, game_map)
 
         # Execute the chosen action
         return self._execute_action(chosen_action, destination, game_map)
 
-    def _get_movement_state(self, game_map: 'Map') -> int:
+    def _get_engagement_state(self, game_map: 'Map') -> int:
         """Determine if the unit is in engagement range of any enemy model."""
         current_position = self.get_position()
         enemy_units = game_map.get_enemy_units(self.faction)
@@ -565,18 +545,17 @@ class Unit:
         
         return MovementState.OUT_OF_ENGAGEMENT_RANGE
 
-    def _get_available_actions(self, state: int) -> List[int]:
+    def _get_available_move_actions(self, state: int) -> List[int]:
         """Get the list of available actions based on the current state."""
         if state == MovementState.IN_ENGAGEMENT_RANGE:
             return [MovementAction.REMAIN_STATIONARY, MovementAction.FALL_BACK]
         else:
             return [MovementAction.REMAIN_STATIONARY, MovementAction.MOVE, MovementAction.ADVANCE]
 
-    def _choose_action(self, available_actions: List[int]) -> Tuple[int, Tuple[float, float, float]]:
+    def _choose_action(self, available_actions: List[int], game_map: 'Map') -> Tuple[int, Tuple[float, float, float]]:
         """Choose an action from the available actions."""
         # For now, we'll choose randomly. In a real RL setup, this would be where the agent makes a decision.
         current_position = self.get_position()
-
         chosen_action = random.choice(available_actions)
 
         if chosen_action == MovementAction.REMAIN_STATIONARY:
@@ -584,7 +563,7 @@ class Unit:
 
         # Determine movement range based on the chosen action
         if chosen_action == MovementAction.ADVANCE:
-            movement_range = self.movement + get_roll("D6")  # Advance adds 1D6 to movement
+            movement_range = self.movement + 6  # this is suspect as we would need to roll a 6 on a D6
         else:
             movement_range = self.movement
 
@@ -613,7 +592,7 @@ class Unit:
             return self.advance(destination, game_map)
         elif action == MovementAction.FALL_BACK:
             print(f"{self.name} falls back")
-            return self.fall_back()
+            return self.fall_back(destination, game_map)
         else:
             raise ValueError(f"Invalid action: {action}")
 
@@ -626,7 +605,6 @@ class Unit:
 
     def move(self, destination: Tuple[float, float, float], game_map: 'Map', advance: bool = False) -> bool:
         """Moves the unit towards the destination up to its movement characteristic or Advance."""
-
         current_position = self.get_position()
         if current_position is None:
             logger.error(f"Cannot move unit {self.name}: current position is None")
@@ -644,43 +622,38 @@ class Unit:
                 return False
             movement_range += advance_roll
 
-        # Calculate the distance to the destination
-        dx = destination[0] - current_position[0]
-        dy = destination[1] - current_position[1]
-        distance = get_dist(dx, dy)
+        for model in self.models:
+            nodes, edges = build_visibility_graph(model, model.get_location(), destination, game_map.obstacles)
+            path = astar_visibility_graph(model.get_location(), destination, nodes, edges)
+            if path is None:
+                logger.error(f"Cannot move unit {self.name} - model {model} path is None")
+                continue
 
-        # Check if the destination is within the movement range
-        if distance > movement_range:
-            logger.warning(f"Destination is out of movement range for unit {self.name} :: {distance} > {movement_range}")
-            return False
+            # Calculate the distance to the destination
+            distance = 0
+            last_node = model.get_location()[:3]
+            new_facing = model.get_location()[3]
+            for node in path:
+                dx = node[0] - last_node[0]
+                dy = node[1] - last_node[1]
+                distance += get_dist(dx, dy)
+                # Check if the destination is within the movement range
+                if distance > movement_range:
+                    logger.warning(f"Destination is out of movement range for {model} :: {distance} > {movement_range}")
+                    break
+                last_node = node
+                new_facing = get_angle(dy, dx)
 
-        # Check if the path is clear (you may want to implement more sophisticated pathfinding)
-        if not game_map.is_path_clear(self, current_position, destination):
-            logger.warning(f"Path is not clear for unit {self.name}")
-            return False
+            model.set_location(last_node[0], last_node[1], last_node[2], new_facing)
 
-        # Move the unit
-        self.set_position(*destination)
-
-        # Update positions of all models in the unit
-        battlefield_size = (game_map.width, game_map.height)
-        all_models = game_map.get_all_models(units=[self])
-        new_model_positions = self.calculate_model_positions(destination[0], destination[1], battlefield_size, all_models)
-
-        if not new_model_positions:
-            logger.error(f"Failed to calculate new positions for models in unit {self.name}")
-            # Reset to old position
-            self.set_position(*current_position)
-            return False
-
-        for model, new_position in zip(self.models, new_model_positions):
-            model.set_location(*new_position)  # Set x, y, z, facing
+        # Move the unit centroid
+        self.reset_position()
 
         logger.info(f"Unit {self.name} moved to {destination}")
         self.round_state.advanced_this_round = advance
         return True
 
-    def fall_back(self) -> bool:
+    def fall_back(self, destination: Tuple[float, float, float], path: List[Tuple[float, float, float]], game_map: 'Map') -> bool:
         """Falls back from close combat."""
         # Logic to move the unit out of engagement range
         print(f"{self.name} falls back from combat.")
@@ -814,6 +787,16 @@ class Unit:
             return (x_sum / len(self.models), y_sum / len(self.models), z_sum / len(self.models))
         else:
             return None
+
+    def reset_position(self):
+        if self.models:
+            # Calculate the centroid of all model positions
+            x_sum = sum(model.get_location()[0] for model in self.models)
+            y_sum = sum(model.get_location()[1] for model in self.models)
+            z_sum = sum(model.get_location()[2] for model in self.models)
+            self.set_position(x_sum / len(self.models), y_sum / len(self.models), z_sum / len(self.models))
+        else:
+            self.position = None
 
     def is_point_inside(self, x, y):
         position = self.get_position()

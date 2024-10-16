@@ -114,7 +114,7 @@ class Game:
     def next_turn(self):
         self.current_player_index = (self.current_player_index + 1) % len(self.players)
         if self.current_player_index == 0:
-            if self.phase == BattleRoundPhases.FIGHT_PHASE:
+            if self.is_fight_phase():
                 self.turn += 1
                 self.phase = BattleRoundPhases.COMMAND_PHASE
             else:

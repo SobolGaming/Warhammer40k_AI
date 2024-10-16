@@ -20,6 +20,9 @@ class Map:
         self.units = []
         self.occupied_positions = set()
 
+    def add_obstacles(self, obstacles: List['Obstacle']) -> None:
+        self.obstacles.extend(obstacles)
+
     def add_obstacle(self, obstacle: 'Obstacle') -> None:
         self.obstacles.append(obstacle)
 
