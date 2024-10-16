@@ -3,7 +3,7 @@ from enum import Enum
 from .event_system import EventSystem
 from .map import Objective
 from .player import Player
-
+from ..utility.constants import TOTAL_ROUNDS
 
 class SetupPhase(Enum):
     """
@@ -140,7 +140,7 @@ class Game:
         # For example, check if only one player has units left
         if sum(1 for player in self.players if player.has_units()) <= 1:
             return True
-        if self.turn > 5:
+        if self.turn > TOTAL_ROUNDS:
             return True
         return False
 

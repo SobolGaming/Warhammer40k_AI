@@ -7,6 +7,16 @@ from warhammer40k_ai.classes.player import Player
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from warhammer40k_ai.utility.constants import TOTAL_ROUNDS
+
+
+# Constants
+PRIMARY_OBJECTIVE_REWARD = 10
+SECONDARY_OBJECTIVE_REWARD = 5
+OPPONENT_PRIMARY_OBJECTIVE_PENALTY = 10
+OPPONENT_SECONDARY_OBJECTIVE_PENALTY = 5
+DESTROY_UNIT_REWARD = 2
+LOSE_UNIT_PENALTY = 2
 
 
 class PolicyNetwork(nn.Module):
@@ -21,15 +31,30 @@ class PolicyNetwork(nn.Module):
         return torch.softmax(self.fc2(x), dim=-1)
 
 
+class State:
+    def __init__(self, player: Player, opponent: Player, objectives: List[Objective] = []):
+        # Existing state attributes
+        self.player_score = 0
+        self.opponent_score = 0
+        self.remaining_rounds = TOTAL_ROUNDS
+        self.objectives = objectives
+        self.player = player
+        self.opponent = opponent
+
+
 class HighLevelAgent:
     """Strategic Layer: Coordinates phases and sets objectives."""
-    def __init__(self, game: Game, player: Player, objectives: List[Objective] = [], commands: List[str] = [], learning_rate=0.01) -> None:
+    def __init__(self, game: Game, player: Player, opponent: Player, objectives: List[Objective] = [], commands: List[str] = [], learning_rate=0.01) -> None:
         self.game = game
         self.player = player
+        self.opponent = opponent
         self.objectives = objectives
         self.num_objectives = len(objectives)
         self.commands = commands
         self.num_commands = len(commands)
+
+        # State attributes
+        self.state = State(player, opponent, objectives)
 
         # Initialize Policy Network and Optimizer
         self.policy_net = PolicyNetwork(input_size=1, output_size=self.num_objectives + self.num_commands)
@@ -64,6 +89,42 @@ class HighLevelAgent:
     def store_reward(self, reward: float) -> None:
         """Store the reward for later policy update."""
         self.rewards.append(reward)
+
+    def compute_reward(self, previous_state: State, current_state: State, action: Tuple[Objective, str]) -> float:
+        reward = 0
+
+        # Reward for capturing an objective
+        for obj in current_state.objectives:
+            if obj.controlled_by == 'player' and obj.controlled_by != previous_state.get_objective_control(obj):
+                if obj.objective_type == 'primary':
+                    reward += PRIMARY_OBJECTIVE_REWARD
+                elif obj.objective_type == 'secondary':
+                    reward += SECONDARY_OBJECTIVE_REWARD
+
+        # Penalty for opponent capturing an objective
+        for obj in current_state.objectives:
+            if obj.controlled_by == 'opponent' and obj.controlled_by != previous_state.get_objective_control(obj):
+                if obj.objective_type == 'primary':
+                    reward -= OPPONENT_PRIMARY_OBJECTIVE_PENALTY
+                elif obj.objective_type == 'secondary':
+                    reward -= OPPONENT_SECONDARY_OBJECTIVE_PENALTY
+
+        # Reward for destroying an opponent unit
+        if len(current_state.opponent_units) < len(previous_state.opponent_units):
+            for unit in [unit for unit in previous_state.opponent.army.units if unit not in current_state.opponent.army.units]:
+                #unit_value = unit.get_unit_cost() / 10.0
+                reward += DESTROY_UNIT_REWARD
+
+        # Penalty for losing a unit
+        if len(current_state.player_units) < len(previous_state.player_units):
+            for unit in [unit for unit in previous_state.player.army.units if unit not in current_state.player.army.units]:
+                #unit_value = unit.get_unit_cost() / 10.0
+                reward -= LOSE_UNIT_PENALTY
+
+        # Additional rewards or penalties based on game state
+        # ...
+
+        return reward
 
     def update_policy(self) -> None:
         """Update the policy network using the REINFORCE algorithm."""

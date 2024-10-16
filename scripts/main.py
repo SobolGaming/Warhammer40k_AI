@@ -43,10 +43,10 @@ def main_game_loop() -> None:
     clicked_unit = None
 
     # Initialize agents
-    high_level_agent_player1 = HighLevelAgent(game, player1)
+    high_level_agent_player1 = HighLevelAgent(game, player1, player2)
     tactical_agent_player1 = TacticalAgent(game, player1)
     low_level_agent_player1 = LowLevelAgent(game, player1)
-    high_level_agent_player2 = HighLevelAgent(game, player2)
+    high_level_agent_player2 = HighLevelAgent(game, player2, player1)
     tactical_agent_player2 = TacticalAgent(game, player2)
     low_level_agent_player2 = LowLevelAgent(game, player2)
 

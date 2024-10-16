@@ -23,6 +23,12 @@ class Map:
     def add_obstacle(self, obstacle: 'Obstacle') -> None:
         self.obstacles.append(obstacle)
 
+    def add_objective(self, objective: 'Objective') -> None:
+        self.objectives.append(objective)
+
+    def get_objectives(self, is_secret: bool = False) -> List['Objective']:
+        return [objective for objective in self.objectives if objective.category == ObjectiveCategory.SECRET]
+
     def get_movement_cost(self, current_tile, neighbor_tile):
         # Movement cost from current_tile to neighbor_tile
         return neighbor_tile.get_movement_cost()
@@ -224,9 +230,18 @@ class ObjectivePoint:
         self.control_radius = control_radius
         self.controlling_player = None
 
-    def update_control(self, units: List[Unit]):
+    def update_control(self, game_state: 'Game') -> None:
         # Determine which player controls the objective based on nearby units
-        pass
+        player_oc = {}
+        for player in game_state.players:
+            for unit in player.army.units:
+                player_oc[player] = sum([model.objective_control for model in unit.models if get_dist(self.x - model.x, self.y - model.y) <= self.control_radius])
+        if player_oc:
+            max_oc = max(player_oc.values())
+            max_players = [player for player, oc in player_oc.items() if oc == max_oc]
+            self.controlling_player = max_players[0] if len(max_players) == 1 else None
+        else:
+            self.controlling_player = None
 
 
 class ObjectiveCategory(Enum):
