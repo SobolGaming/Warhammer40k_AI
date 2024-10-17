@@ -3,8 +3,9 @@ from enum import Enum, auto
 from .unit import Unit
 from .model import Model
 from ..utility.calcs import get_dist, convert_mm_to_inches
-from ..utility.constants import VIEWING_ANGLE, ENGAGEMENT_RANGE
+from ..utility.constants import ENGAGEMENT_RANGE
 from shapely.geometry import Polygon
+from shapely.geometry.base import BaseGeometry    
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -15,11 +16,32 @@ class Map:
     def __init__(self, width: int, height: int):
         self.width = width
         self.height = height
+        self.boundary = self.create_boundary_polygon()
         self.obstacles = []
         self.objectives = []
         self.deployment_zones = {}
         self.units = []
         self.occupied_positions = set()
+
+    def create_boundary_polygon(self) -> Polygon:
+        """
+        Creates a Shapely Polygon representing the battlefield boundaries.
+        """
+        # Assuming the battlefield starts at (0, 0)
+        vertices = [
+            (0, 0),  # Bottom-left corner
+            (self.width, 0),  # Bottom-right corner
+            (self.width, self.height),  # Top-right corner
+            (0, self.height),  # Top-left corner
+            (0, 0)  # Closing the polygon
+        ]
+        return Polygon(vertices)
+
+    def is_within_boundary(self, shape: BaseGeometry) -> bool:
+        """
+        Checks if a given Shapely geometry is fully contained within the battlefield boundary.
+        """
+        return self.boundary.contains(shape)
 
     def add_obstacles(self, obstacles: List['Obstacle']) -> None:
         self.obstacles.extend(obstacles)

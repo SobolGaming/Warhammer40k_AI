@@ -1,14 +1,16 @@
-from math import sqrt, atan2, pi
+from math import sqrt, atan2, pi, cos, sin
 from typing import Tuple, List
 import heapq
 from ..utility.constants import MM_TO_INCHES, FREELY_CLIMBABLE_RANGE
-from shapely.geometry import LineString
+from shapely.geometry import LineString, Point
+import itertools
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ..classes.map import Obstacle
     from ..classes.unit import Unit
     from ..classes.model import Model
+    from ..classes.map import Map
 
 
 # Convert mm (as in base size of models) to inches
@@ -165,3 +167,50 @@ def astar_visibility_graph(start: Tuple[float, float, float], goal: Tuple[float,
                 heapq.heappush(open_set, (priority, neighbor))
                 came_from[neighbor] = current
     return None  # No path found within movement range
+
+def generate_coherency_positions(model: 'Model', moved_positions: List[Tuple[float, float, float]], coherency_distance: float, game_map: 'Map', required_neighbors: int) -> List[Tuple[float, float, float]]:
+    potential_positions = []
+    # Generate positions around combinations of moved models
+    if len(moved_positions) >= required_neighbors:
+        # Generate positions that are within coherency distance of required_neighbors models
+        for combination in itertools.combinations(moved_positions, required_neighbors):
+            # Calculate average position
+            avg_x = sum(pos[0] for pos in combination) / required_neighbors
+            avg_y = sum(pos[1] for pos in combination) / required_neighbors
+            avg_z = sum(pos[2] for pos in combination) / required_neighbors
+            # Generate positions around the average point
+            num_points = 8
+            for i in range(num_points):
+                angle = 2 * pi * i / num_points
+                x = avg_x + coherency_distance * cos(angle)
+                y = avg_y + coherency_distance * sin(angle)
+                z = avg_z  # Adjust if necessary
+
+                # Collision checking as before
+                model_base = Point(x, y).buffer(model.base_size)
+                collision = False
+
+                # Check if position is within battlefield boundaries
+                if not game_map.is_within_boundary(model_base):
+                    continue  # Skip positions outside the battlefield
+
+                for obstacle in game_map.obstacles:
+                    if model_base.intersects(obstacle.polygon):
+                        collision = True
+                        break
+                for other_model in game_map.get_all_models():
+                    if other_model != model and model_base.intersects(other_model.model_base.get_base_shape()):
+                        collision = True
+                        break
+                if collision:
+                    continue  # Skip positions that collide
+
+                potential_positions.append((x, y, z))
+    else:
+        # Not enough moved models to satisfy required_neighbors
+        # Fallback to positions around existing models
+        return generate_coherency_positions(model, moved_positions, coherency_distance, game_map, required_neighbors=1)
+
+    # Sort positions by proximity to the destination
+    potential_positions.sort(key=lambda p: get_dist(p[0] - model.model_base.x, p[1] - model.model_base.y))
+    return potential_positions

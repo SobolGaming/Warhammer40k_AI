@@ -134,7 +134,7 @@ class Base:
             raise ValueError(f"Unknown base_type: {self.base_type}")
 
     # Get the geometric shape of the base
-    def getShape(self) -> Poly:
+    def get_base_shape(self) -> Poly:
         if self.base_type in [BaseType.CIRCULAR, BaseType.ELLIPTICAL]:
             return create_ellipse((self.x, self.y), self.radius, self.facing)
         elif self.base_type == BaseType.HULL:
@@ -142,8 +142,16 @@ class Base:
         else:
             raise ValueError(f"Unknown BaseType geometry: {self.base_type}")
 
+    def get_base_shape_at(self, x: float, y: float) -> Poly:
+        if self.base_type in [BaseType.CIRCULAR, BaseType.ELLIPTICAL]:
+            return create_ellipse((x, y), self.radius, self.facing)
+        elif self.base_type == BaseType.HULL:
+            return create_rectangle((x, y), self.radius, self.facing)
+        else:
+            raise ValueError(f"Unknown BaseType geometry: {self.base_type}")
+
     def shortestDistance(self, other: "Base") -> float:
-        return round(self.getShape().distance(other.getShape()), 4)
+        return round(self.get_base_shape().distance(other.get_base_shape()), 4)
 
     # Determine collision with another Base
     def collidesWithBase(self, other: "Base") -> bool:

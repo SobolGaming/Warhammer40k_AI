@@ -6,9 +6,10 @@ from ..utility.model_base import Base, BaseType
 from .wargear import Wargear, WargearOption
 from .ability import Ability
 from ..utility.range import Range
-from ..utility.calcs import get_dist, get_angle, convert_mm_to_inches, build_visibility_graph, astar_visibility_graph, get_pivot_cost, angle_difference
+from ..utility.calcs import get_dist, get_angle, convert_mm_to_inches, build_visibility_graph, astar_visibility_graph, get_pivot_cost, angle_difference, generate_coherency_positions
 from ..utility.dice import get_roll
 from .status_effects import StatusEffect
+from ..utility.constants import VIEWING_ANGLE
 import math
 import uuid
 import random
@@ -609,13 +610,17 @@ class Unit:
 
     def move(self, destination: Tuple[float, float, float], game_map: 'Map', advance: bool = False) -> bool:
         """Moves the unit towards the destination up to its movement characteristic or Advance."""
+        if not self.models:
+            logger.error(f"Cannot move unit {self.name}: no models in unit")
+            return False
+
         current_position = self.get_position()
         if current_position is None:
             logger.error(f"Cannot move unit {self.name}: current position is None")
             return False
 
         # Get the movement range from the first model (assuming all models have the same movement)
-        movement_range = self.movement if self.models else 0
+        movement_range = self.movement
 
         # If advancing, add D6 to the movement range
         if advance:
@@ -626,14 +631,31 @@ class Unit:
                 return False
             movement_range += advance_roll
 
-        # Calculate pivot cost if the unit needs to pivot
-        pivot_cost = 0
-        initial_facing = self.models[0].facing  # Assuming all models have the same facing
-        direction_to_destination = get_angle(destination[1] - current_position[1], destination[0] - current_position[0])
+        # Determine unit coherency requirements
+        num_models = len(self.models)
+        if num_models <= 5:
+            coherency_distance = 2.0  # inches
+            required_neighbors = 1
+        else:
+            coherency_distance = 2.0  # inches
+            required_neighbors = 2
+
+        # Select the leader model as the one closest to the destination
+        leader_model = min(self.models, key=lambda m: get_dist(m.model_base.x - destination[0], m.model_base.y - destination[1]))
+        other_models = [model for model in self.models if model != leader_model]
+
+        # Calculate pivot cost for the leader model if needed
+        initial_facing = leader_model.facing  # Assuming facing is in degrees
+        direction_to_destination = get_angle(
+            destination[1] - leader_model.model_base.y,
+            destination[0] - leader_model.model_base.x
+        )
+
+        # Calculate the angular difference
         angular_diff = angle_difference(initial_facing, direction_to_destination)
 
-        # Determine if the unit needs to pivot
-        if abs(angular_diff) > math.pi / 6:  # 30 degrees
+        # Determine if the leader needs to pivot
+        if abs(angular_diff) > VIEWING_ANGLE:  # 30 degrees in radians
             pivot_cost = get_pivot_cost(self)
             logger.info(f"Unit {self.name} needs to pivot. Pivot cost: {pivot_cost}")
         else:
@@ -643,72 +665,141 @@ class Unit:
         # Adjust movement range if pivot is needed
         adjusted_movement_range = movement_range - pivot_cost
         if adjusted_movement_range <= 0:
-            logger.error(f"Unit {self.name} does not have enough movement to pivot.")
+            logger.error(f"Unit {self.name} does not have enough movement after pivoting.")
             return False
 
-        num_models = len(self.models)
-        formation_type = 'circle'  # You can have different formation types
+        # List to keep track of moved models and their positions
+        moved_models = []
+        moved_positions = []
 
-        # Calculate model destinations based on the formation
-        model_destinations = []
-        if formation_type == 'circle':
-            formation_radius = self.models[0].base_size * 1.5  # Adjust as needed
-            angle_increment = 2 * math.pi / num_models
-            for i, model in enumerate(self.models):
-                angle = i * angle_increment
-                offset_x = formation_radius * math.cos(angle)
-                offset_y = formation_radius * math.sin(angle)
-                model_destination = (
-                    destination[0] + offset_x,
-                    destination[1] + offset_y,
-                    destination[2]
+        # Move the leader model first
+        nodes, edges = build_visibility_graph(
+            leader_model,
+            (leader_model.model_base.x, leader_model.model_base.y, leader_model.model_base.z),
+            (destination[0], destination[1], destination[2]),
+            game_map.obstacles
+        )
+        path = astar_visibility_graph(
+            (leader_model.model_base.x, leader_model.model_base.y, leader_model.model_base.z),
+            (destination[0], destination[1], destination[2]),
+            nodes,
+            edges,
+            adjusted_movement_range
+        )
+        if path is None:
+            logger.error(f"Cannot move unit {self.name} - leader model {leader_model} path is None")
+            return False  # Leader cannot reach destination
+
+        # Move the leader along the path
+        distance = pivot_cost  # Start with pivot cost if any
+        last_node = (leader_model.model_base.x, leader_model.model_base.y, leader_model.model_base.z)
+        new_facing = initial_facing
+
+        for node in path[1:]:
+            dx = node[0] - last_node[0]
+            dy = node[1] - last_node[1]
+            dz = node[2] - last_node[2] if len(node) > 2 else 0
+            segment_distance = get_dist(dx, dy, dz)
+            if distance + segment_distance > movement_range:
+                logger.warning(f"Destination is out of movement range for leader model {leader_model}")
+                break
+            distance += segment_distance
+            new_facing = direction_to_destination
+            last_node = (node[0], node[1], node[2])
+
+        # Before setting the leader's new location, check boundary
+        base_shape = leader_model.model_base.get_base_shape_at(last_node[0], last_node[1])
+        if not game_map.is_within_boundary(base_shape):
+            logger.error(f"Leader model {leader_model} cannot move outside the battlefield boundaries.")
+            return False  # Movement is invalid
+
+        leader_model.set_location(last_node[0], last_node[1], last_node[2], new_facing)
+        moved_models.append(leader_model)
+        moved_positions.append((leader_model.model_base.x, leader_model.model_base.y, leader_model.model_base.z))
+
+        # Now move the other models
+        for model in other_models:
+            # Calculate pivot cost for each model if needed
+            initial_facing = model.facing
+            # Find the closest moved model to maintain coherency
+            '''
+            closest_moved_pos = min(
+                moved_positions,
+                key=lambda pos: get_dist(model.model_base.x - pos[0], model.model_base.y - pos[1])
+            )
+            '''
+            # Generate potential positions within coherency of moved models
+            potential_positions = generate_coherency_positions(
+                model,
+                moved_positions,
+                coherency_distance,
+                game_map,
+                required_neighbors
+            )
+            found_path = False
+            for position in potential_positions:
+                direction_to_position = get_angle(
+                    position[1] - model.model_base.y,
+                    position[0] - model.model_base.x
                 )
-                model_destinations.append(model_destination)
-        elif formation_type == 'line':
-            # Implement other formations if needed
-            pass
+                angular_diff = angle_difference(initial_facing, direction_to_position)
+                if abs(angular_diff) > 30:
+                    pivot_cost_model = get_pivot_cost(self)
+                else:
+                    pivot_cost_model = 0
 
-        # Now move each model to its assigned destination
-        for i, model in enumerate(self.models):
-            # Get the model's current position (x, y, z )
-            model_position = (model.model_base.x, model.model_base.y, model.model_base.z)
-            # Get the model's destination position (x, y, z)
-            model_destination = (model_destinations[i][0], model_destinations[i][1], model_destinations[i][2])
+                adjusted_movement_range_model = movement_range - pivot_cost_model
+                if adjusted_movement_range_model <= 0:
+                    continue  # Cannot move this model after pivoting
 
-            nodes, edges = build_visibility_graph(model, model_position, model_destination, game_map.obstacles)
-            path = astar_visibility_graph(model_position, model_destination, nodes, edges, adjusted_movement_range)
-            if path is None:
-                logger.error(f"Cannot move unit {self.name} - model {model} path is None")
-                continue
+                nodes, edges = build_visibility_graph(
+                    model,
+                    (model.model_base.x, model.model_base.y, model.model_base.z),
+                    position,
+                    game_map.obstacles
+                )
+                path = astar_visibility_graph(
+                    (model.model_base.x, model.model_base.y, model.model_base.z),
+                    position,
+                    nodes,
+                    edges,
+                    adjusted_movement_range_model
+                )
+                if path is not None:
+                    # Move the model along the path
+                    distance = pivot_cost_model  # Start with pivot cost if any
+                    last_node = (model.model_base.x, model.model_base.y, model.model_base.z)
+                    new_facing = initial_facing
 
-            # Move the model along the path
-            distance = 0
-            last_node = model.get_location()[:3]
-            new_facing = model.get_location()[3]
+                    for node in path[1:]:
+                        dx = node[0] - last_node[0]
+                        dy = node[1] - last_node[1]
+                        dz = node[2] - last_node[2] if len(node) > 2 else 0
+                        segment_distance = get_dist(dx, dy, dz)
+                        if distance + segment_distance > movement_range:
+                            break
+                        distance += segment_distance
+                        new_facing = direction_to_position
+                        last_node = (node[0], node[1], node[2])
+                    
+                    # Before setting the model's new location, check boundary
+                    base_shape = model.model_base.get_base_shape_at(last_node[0], last_node[1])
+                    if not game_map.is_within_boundary(base_shape):
+                        logger.warning(f"Model {model} cannot move outside the battlefield boundaries.")
+                        continue  # Skip this position and try the next potential position
 
-            # Apply pivot cost if needed
-            if pivot_cost > 0 and i == 0:
-                distance += pivot_cost
-                new_facing = direction_to_destination  # Update facing after pivot
-
-            for node in path:
-                dx = node[0] - last_node[0]
-                dy = node[1] - last_node[1]
-                dz = node[2] - last_node[2] if len(node) > 2 else 0
-                segment_distance = get_dist(dx, dy, dz)
-                if distance + segment_distance > movement_range:
-                    logger.warning(f"Destination is out of movement range for {model} :: {distance + segment_distance} > {movement_range}")
-                    break
-                distance += segment_distance
-                last_node = node
-                new_facing = get_angle(dy, dx)
-
-            model.set_location(last_node[0], last_node[1], last_node[2] if len(last_node) > 2 else 0, new_facing)
+                    model.set_location(last_node[0], last_node[1], last_node[2], new_facing)
+                    moved_models.append(model)
+                    moved_positions.append((model.model_base.x, model.model_base.y, model.model_base.z))
+                    found_path = True
+                    break  # Exit loop once a valid position is found
+            if not found_path:
+                logger.warning(f"Model {model} could not find a valid position within coherency.")
 
         # Update unit centroid
         self.reset_position()
 
-        logger.info(f"Unit {self.name} moved to {destination}")
+        print(f"Unit {self.name} {'advanced' if advance else 'moved'} towards {destination} : Distance {distance}")
         self.round_state.advanced_this_round = advance
         return True
 

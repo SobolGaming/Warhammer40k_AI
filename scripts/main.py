@@ -135,10 +135,6 @@ def main_game_loop() -> None:
                                 game_z = 0.0
                                 # Move the selected unit
                                 success = game_view.selected_unit.move((game_x, game_y, game_z), game_view.game_map)
-                                if success: 
-                                    print(f"Moved {game_view.selected_unit.name} to ({game_x}, {game_y})")
-                                else:
-                                    print(f"Failed to move {game_view.selected_unit.name} to ({game_x}, {game_y})")
                                 game_view.selected_unit = None  # Deselect the unit after moving
                         clicked_unit = None
                         game_view.info_pane.selected_unit = clicked_unit
