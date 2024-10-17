@@ -28,7 +28,7 @@ def initialize_game() -> Tuple[pygame.Surface, WarhammerEnv, Game, Map, float, i
     # Define obstacles
     obstacles = [
         Obstacle(vertices=[(3, 3), (3, 5), (5, 5), (5, 3)], terrain_type=ObstacleType.CRATER_AND_RUBBLE, height=3.0),  # Square obstacle
-        Obstacle(vertices=[(7, 7), (7, 9), (9, 9), (9, 7)], terrain_type=ObstacleType.DEBRIS_AND_STATUARY, height=6.0)
+        Obstacle(vertices=[(20, 7), (27, 9), (29, 9), (29, 7)], terrain_type=ObstacleType.DEBRIS_AND_STATUARY, height=6.0)
     ]
 
     env = WarhammerEnv(players=[player1, player2])

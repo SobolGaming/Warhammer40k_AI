@@ -66,6 +66,11 @@ class Model:
         return self.model_base.base_size
 
     @property
+    def facing(self) -> float:
+        """Return the facing of the model."""
+        return self.model_base.facing
+
+    @property
     def is_max_health(self) -> bool:
         """Return whether the model is at full health."""
         return self.wounds == self.base_wounds

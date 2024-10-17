@@ -11,3 +11,4 @@ pytest
 gym
 pygame
 torch
+shapely

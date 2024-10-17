@@ -6,7 +6,7 @@ from ..utility.model_base import Base, BaseType
 from .wargear import Wargear, WargearOption
 from .ability import Ability
 from ..utility.range import Range
-from ..utility.calcs import get_dist, get_angle,convert_mm_to_inches, build_visibility_graph, astar_visibility_graph
+from ..utility.calcs import get_dist, get_angle, convert_mm_to_inches, build_visibility_graph, astar_visibility_graph, get_pivot_cost, angle_difference
 from ..utility.dice import get_roll
 from .status_effects import StatusEffect
 import math
@@ -404,6 +404,10 @@ class Unit:
         return "Towering" in self.keywords
 
     @property
+    def is_fly(self) -> bool:
+        return "Fly" in self.keywords
+
+    @property
     def is_belisarius_cawl(self) -> bool:
         return "Belisarius Cawl" in self.keywords
 
@@ -622,31 +626,86 @@ class Unit:
                 return False
             movement_range += advance_roll
 
-        for model in self.models:
-            nodes, edges = build_visibility_graph(model, model.get_location(), destination, game_map.obstacles)
-            path = astar_visibility_graph(model.get_location(), destination, nodes, edges)
+        # Calculate pivot cost if the unit needs to pivot
+        pivot_cost = 0
+        initial_facing = self.models[0].facing  # Assuming all models have the same facing
+        direction_to_destination = get_angle(destination[1] - current_position[1], destination[0] - current_position[0])
+        angular_diff = angle_difference(initial_facing, direction_to_destination)
+
+        # Determine if the unit needs to pivot
+        if abs(angular_diff) > math.pi / 6:  # 30 degrees
+            pivot_cost = get_pivot_cost(self)
+            logger.info(f"Unit {self.name} needs to pivot. Pivot cost: {pivot_cost}")
+        else:
+            pivot_cost = 0  # No pivot cost needed
+            logger.info(f"Unit {self.name} does not need to pivot.")
+
+        # Adjust movement range if pivot is needed
+        adjusted_movement_range = movement_range - pivot_cost
+        if adjusted_movement_range <= 0:
+            logger.error(f"Unit {self.name} does not have enough movement to pivot.")
+            return False
+
+        num_models = len(self.models)
+        formation_type = 'circle'  # You can have different formation types
+
+        # Calculate model destinations based on the formation
+        model_destinations = []
+        if formation_type == 'circle':
+            formation_radius = self.models[0].base_size * 1.5  # Adjust as needed
+            angle_increment = 2 * math.pi / num_models
+            for i, model in enumerate(self.models):
+                angle = i * angle_increment
+                offset_x = formation_radius * math.cos(angle)
+                offset_y = formation_radius * math.sin(angle)
+                model_destination = (
+                    destination[0] + offset_x,
+                    destination[1] + offset_y,
+                    destination[2]
+                )
+                model_destinations.append(model_destination)
+        elif formation_type == 'line':
+            # Implement other formations if needed
+            pass
+
+        # Now move each model to its assigned destination
+        for i, model in enumerate(self.models):
+            # Get the model's current position (x, y, z )
+            model_position = (model.model_base.x, model.model_base.y, model.model_base.z)
+            # Get the model's destination position (x, y, z)
+            model_destination = (model_destinations[i][0], model_destinations[i][1], model_destinations[i][2])
+
+            nodes, edges = build_visibility_graph(model, model_position, model_destination, game_map.obstacles)
+            path = astar_visibility_graph(model_position, model_destination, nodes, edges, adjusted_movement_range)
             if path is None:
                 logger.error(f"Cannot move unit {self.name} - model {model} path is None")
                 continue
 
-            # Calculate the distance to the destination
+            # Move the model along the path
             distance = 0
             last_node = model.get_location()[:3]
             new_facing = model.get_location()[3]
+
+            # Apply pivot cost if needed
+            if pivot_cost > 0 and i == 0:
+                distance += pivot_cost
+                new_facing = direction_to_destination  # Update facing after pivot
+
             for node in path:
                 dx = node[0] - last_node[0]
                 dy = node[1] - last_node[1]
-                distance += get_dist(dx, dy)
-                # Check if the destination is within the movement range
-                if distance > movement_range:
-                    logger.warning(f"Destination is out of movement range for {model} :: {distance} > {movement_range}")
+                dz = node[2] - last_node[2] if len(node) > 2 else 0
+                segment_distance = get_dist(dx, dy, dz)
+                if distance + segment_distance > movement_range:
+                    logger.warning(f"Destination is out of movement range for {model} :: {distance + segment_distance} > {movement_range}")
                     break
+                distance += segment_distance
                 last_node = node
                 new_facing = get_angle(dy, dx)
 
-            model.set_location(last_node[0], last_node[1], last_node[2], new_facing)
+            model.set_location(last_node[0], last_node[1], last_node[2] if len(last_node) > 2 else 0, new_facing)
 
-        # Move the unit centroid
+        # Update unit centroid
         self.reset_position()
 
         logger.info(f"Unit {self.name} moved to {destination}")

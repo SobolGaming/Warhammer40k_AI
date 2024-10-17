@@ -2,8 +2,9 @@ from typing import List, Optional, Tuple
 from enum import Enum, auto
 from .unit import Unit
 from .model import Model
-from ..utility.calcs import get_dist, get_angle, convert_mm_to_inches
+from ..utility.calcs import get_dist, convert_mm_to_inches
 from ..utility.constants import VIEWING_ANGLE, ENGAGEMENT_RANGE
+from shapely.geometry import Polygon
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -31,10 +32,6 @@ class Map:
 
     def get_objectives(self, is_secret: bool = False) -> List['Objective']:
         return [objective for objective in self.objectives if objective.category == ObjectiveCategory.SECRET]
-
-    def get_movement_cost(self, current_tile, neighbor_tile):
-        # Movement cost from current_tile to neighbor_tile
-        return neighbor_tile.get_movement_cost()
 
     def place_unit(self, unit: Unit) -> bool:
         position = unit.get_position()
@@ -88,102 +85,6 @@ class Map:
                 return True
         return False
 
-    def is_path_clear(self, unit: Unit, start: Tuple[float, float, float], end: Tuple[float, float, float]) -> bool:
-        """
-        Check if there's a clear path for a unit to move from start to end.
-        
-        Args:
-            unit (Unit): The unit that is being moved.
-            start (Tuple[float, float, float]): Starting position (x, y, z).
-            end (Tuple[float, float, float]): Ending position (x, y, z).
-        
-        Returns:
-            bool: True if the path is clear, False otherwise.
-        """
-        print(f"Checking path for unit {unit.name} from {start} to {end}")  # Debug print
-
-        remaining_move = unit.movement
-        
-        # Check if pivot is needed
-        current_facing = unit.models[0].model_base.facing
-        target_facing = get_angle(end[1] - start[1], end[0] - start[0])
-        pivot_needed = abs(current_facing - target_facing) > VIEWING_ANGLE
-        if pivot_needed:
-            pivot_cost = self.calculate_pivot_cost(unit)
-            remaining_move -= pivot_cost
-        
-        if remaining_move < 0:
-            print(f"Insufficient movement for unit {unit.name}")
-            return False
-        
-        if not self.is_straight_path_clear(unit, start, end):
-            return False
-        
-        distance = self.calculate_distance(start, end)
-        remaining_move -= distance
-
-        return remaining_move >= 0
-
-    def is_straight_path_clear(self, unit: Unit, start: Tuple[float, float, float], 
-                               end: Tuple[float, float, float]) -> bool:
-        """
-        Check if there's a clear straight path between two points for a unit.
-        """
-        x0, y0, _ = start
-        x1, y1, _ = end
-        dx = abs(x1 - x0)
-        dy = abs(y1 - y0)
-        x, y = x0, y0
-        increment = 0.2
-        sx = increment if x0 < x1 else -increment
-        sy = increment if y0 < y1 else -increment
-        err = dx - dy
-
-        print(f"Checking straight path from ({x0}, {y0}) to ({x1}, {y1})")  # Debug print
-
-        while True:
-            #print(f"Checking position ({x}, {y})")
-            if not self.is_position_valid_for_unit(x, y, unit):
-                print(f"Path blocked at ({x}, {y})")  # Debug print
-                return False
-            if abs(x - x1) < increment and abs(y - y1) < increment:
-                print(f"Path is clear from ({x0}, {y0}) to ({x1}, {y1})")  # Debug print
-                return True
-            e2 = 2 * err
-            if e2 > -dy:
-                err -= dy
-                x += sx
-            if e2 < dx:
-                err += dx
-                y += sy
-
-    def is_position_valid_for_unit(self, x: float, y: float, moving_unit: Unit) -> bool:
-        """
-        Check if a position is valid for a unit to move through or end on.
-        """
-        if not (0 <= x < self.width and 0 <= y < self.height):
-            return False
-
-        for other_unit in self.units:
-            if other_unit == moving_unit:
-                continue
-            
-            if self.units_collide(moving_unit, (x, y), other_unit):
-                if other_unit.faction != moving_unit.faction:
-                    return False
-                if (moving_unit.is_monster or moving_unit.is_vehicle) and \
-                   (other_unit.is_monster or other_unit.is_vehicle):
-                    return False
-        
-        return True
-
-    def units_collide(self, unit1: Unit, position: Tuple[float, float], unit2: Unit) -> bool:
-        """
-        Check if two units' bases collide.
-        """
-        # Implement collision detection based on unit base sizes and shapes
-        pass
-
     def calculate_pivot_cost(self, unit: Unit) -> float:
         """
         Calculate the pivot cost for a unit based on its characteristics.
@@ -197,13 +98,6 @@ class Map:
             return 1
         return 0
 
-    def calculate_distance(self, point1: Tuple[float, float, float], 
-                           point2: Tuple[float, float, float]) -> float:
-        """
-        Calculate the Euclidean distance between two points.
-        """
-        return get_dist(point2[0] - point1[0], point2[1] - point1[1])
-
 
 class ObstacleType(Enum):
     CRATER_AND_RUBBLE = auto()
@@ -215,14 +109,11 @@ class ObstacleType(Enum):
 
 class Obstacle:
     def __init__(self, vertices: List[Tuple[float, float]], terrain_type: ObstacleType, height: float):
-        """
-        vertices: List of (x, y) tuples defining the obstacle's shape.
-        terrain_type: ObstacleType indicating the type (e.g., 'obstacle', 'building', 'area terrain').
-        height: Numeric value indicating the obstacle's height.
-        """
         self.vertices = vertices
         self.terrain_type = terrain_type
         self.height = height
+        self.polygon = Polygon(vertices)
+        self.center = (self.polygon.centroid.x, self.polygon.centroid.y)
 
 
 class ObjectivePoint:

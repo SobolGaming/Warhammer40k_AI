@@ -1,7 +1,8 @@
-from math import sqrt, atan2
+from math import sqrt, atan2, pi
 from typing import Tuple, List
 import heapq
-from ..utility.constants import MM_TO_INCHES, ENGAGEMENT_RANGE, FREELY_CLIMBABLE_RANGE
+from ..utility.constants import MM_TO_INCHES, FREELY_CLIMBABLE_RANGE
+from shapely.geometry import LineString
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -22,100 +23,115 @@ def get_dist(x_delta: float, y_delta: float, z_delta: float = 0) -> float:
 def get_angle(x_delta: float, y_delta: float) -> float:
     return atan2(x_delta, y_delta)
 
-def lines_intersect(a1: Tuple[float, float], a2: Tuple[float, float], b1: Tuple[float, float], b2: Tuple[float, float]) -> bool:
-    def ccw(A: Tuple[float, float], B: Tuple[float, float], C: Tuple[float, float]) -> bool:
-        return (C[1] - A[1]) * (B[0] - A[0]) - (B[1] - A[1]) * (C[0] - A[0])
-
-    def on_segment(A: Tuple[float, float], B: Tuple[float, float], C: Tuple[float, float]) -> bool:
-        return min(A[0], B[0]) <= C[0] <= max(A[0], B[0]) and \
-               min(A[1], B[1]) <= C[1] <= max(A[1], B[1])
-
-    ccw1 = ccw(a1, a2, b1)
-    ccw2 = ccw(a1, a2, b2)
-    ccw3 = ccw(b1, b2, a1)
-    ccw4 = ccw(b1, b2, a2)
-
-    if ccw1 == ccw2 == ccw3 == ccw4 == 0:
-        # Lines are colinear
-        return on_segment(a1, a2, b1) or on_segment(a1, a2, b2) or \
-               on_segment(b1, b2, a1) or on_segment(b1, b2, a2)
-    else:
-        return (ccw1 * ccw2 <= 0) and (ccw3 * ccw4 <= 0)
-
-def line_intersects_polygon(line_start: Tuple[float, float], line_end: Tuple[float, float], polygon_vertices: List[Tuple[float, float]]) -> bool:
+def angle_difference(angle1: float, angle2: float) -> float:
     """
-    Determines if a line segment intersects with any edge of a polygon.
-
-    Parameters:
-    - line_start: Tuple (x, y) representing the starting point of the line segment.
-    - line_end: Tuple (x, y) representing the ending point of the line segment.
-    - polygon_vertices: List of tuples [(x1, y1), (x2, y2), ...] representing the vertices of the polygon in order.
-
-    Returns:
-    - True if the line intersects any edge of the polygon.
-    - False if the line does not intersect the polygon.
+    Calculate the smallest difference between two angles in radians.
+    The result is in the range [-π, π].
     """
-    num_vertices = len(polygon_vertices)
-    for i in range(num_vertices):
-        # Get the current edge of the polygon
-        vertex_a = polygon_vertices[i]
-        vertex_b = polygon_vertices[(i + 1) % num_vertices]  # Wrap around to the first vertex
-
-        # Check if the line segment intersects with the edge
-        if lines_intersect(line_start, line_end, vertex_a, vertex_b):
-            return True  # Intersection found
-    return False  # No intersection with any edge
+    diff = (angle2 - angle1 + pi) % (2 * pi) - pi
+    return diff
 
 def can_traverse_freely(unit: 'Unit', obstacle: 'Obstacle') -> bool:
     # Check if the unit can ignore the obstacle based on abilities
-    if 'Fly' in unit.abilities:
+    if unit.is_fly:
         return True  # Units with Fly can move over obstacles
     # Additional checks based on terrain type and unit abilities
-    if obstacle.height > FREELY_CLIMBABLE_RANGE:
-        return False
+    if obstacle.height <= FREELY_CLIMBABLE_RANGE:
+        return True
     if obstacle.terrain_type.name == 'RUINS' and (unit.is_infantry or unit.is_beast or unit.is_belisarius_cawl or unit.is_imperium_primarch):
         return True  # Infantry, beasts, Belisarius Cawl and Imperium Primarch can traverse into ruins
     # Add more rules as needed
     return False
 
-def line_of_sight(unit: 'Unit', point_a: Tuple[float, float], point_b: Tuple[float, float], obstacles: List[Tuple[float, float]]) -> bool:
-    for obstacle in obstacles:
-        if not can_traverse_freely(unit, obstacle):
-            if line_intersects_polygon(point_a, point_b, obstacle.vertices):
-                return False  # Line is obstructed
-    return True  # Line is clear
+def line_of_sight(model: 'Model', point_a: Tuple[float, float, float], point_b: Tuple[float, float, float], obstacles: List['Obstacle']) -> bool:
+    base_radius = model.base_size
+    movement_corridor = LineString([(point_a[0], point_a[1]), (point_b[0], point_b[1])]).buffer(base_radius)
 
-def get_movement_cost(model: 'Model', point_a: Tuple[float, float], point_b: Tuple[float, float], obstacles: List[Tuple[float, float]]) -> float:
-    # Base cost is the Euclidean distance
-    base_cost = get_dist(point_a[0] - point_b[0], point_a[1] - point_b[1])
-    
-    # Check for terrain effects
     for obstacle in obstacles:
-        if line_intersects_polygon(point_a, point_b, obstacle.vertices):
+        if movement_corridor.intersects(obstacle.polygon):
+            # Check if the unit can traverse over the obstacle
             if not can_traverse_freely(model.parent_unit, obstacle):
-                # Increase movement cost
-                base_cost += obstacle.height
-                if obstacle.height > (model.movement + 6.0):  # Best movement is "advance with 6 roll on die"
-                    return float('inf')  # Cannot traverse
-    return base_cost
+                return False  # Movement path is obstructed
 
-def build_visibility_graph(model: 'Model', start: Tuple[float, float], goal: Tuple[float, float], obstacles: List[Tuple[float, float]]):
-    nodes = [start, goal]
+    # Check for collisions with enemy models
+    #for other_model in other_models:
+    #    if movement_corridor.intersects(other_model.get_base_shape()):
+    #        return False
+    return True  # Path is clear
+
+def get_pivot_cost(unit: 'Unit') -> float:
+    """
+    Calculate the pivot cost for a unit based on its characteristics.
+    """
+    if unit.is_aircraft:
+        return 0
+    if unit.is_monster or unit.is_vehicle:
+        if not unit.has_circular_base or unit.base_size > convert_mm_to_inches(32 / 2):
+            return 2
+    if not unit.has_circular_base:
+        return 1
+    return 0
+
+def get_movement_cost(model: 'Model', point_a: Tuple[float, float], point_b: Tuple[float, float], obstacles: List['Obstacle']) -> float:
+    dx = point_b[0] - point_a[0]
+    dy = point_b[1] - point_a[1]
+    dz = 0  # Initialize vertical distance
+
+    # Create a line representing the movement path
+    movement_line = LineString([point_a, point_b])
+
+    # Find obstacles that intersect the movement path
+    intersecting_obstacles = []
     for obstacle in obstacles:
-        nodes.extend(obstacle.vertices)
-    
+        if movement_line.intersects(obstacle.polygon):
+            intersecting_obstacles.append(obstacle)
+
+    # Determine the maximum obstacle height along the path
+    max_obstacle_height = 0
+    for obstacle in intersecting_obstacles:
+        if not can_traverse_freely(model.parent_unit, obstacle):
+            if obstacle.height > max_obstacle_height:
+                max_obstacle_height = obstacle.height
+
+    # Set vertical distance based on the highest obstacle if it's greater than the freely climbable range
+    dz = max_obstacle_height if max_obstacle_height > FREELY_CLIMBABLE_RANGE else 0
+
+    # For units with 'Fly', they pay vertical movement cost but can traverse over obstacles
+    if model.parent_unit.is_fly:
+        pass  # They can fly over obstacles but must pay vertical cost
+    else:
+        # For non-flying units, check if they can climb over the obstacle
+        if dz > model.movement:
+            return float('inf')  # Cannot traverse over the obstacle
+
+    # Calculate total movement cost including vertical distance
+    total_distance = get_dist(dx, dy, dz)
+    return total_distance
+
+def build_visibility_graph(model: 'Model', start: Tuple[float, float, float], goal: Tuple[float, float, float], obstacles: List['Obstacle']):
+    nodes = [start, goal]
+
+    # List of obstacles the unit cannot traverse freely
+    obstacles_to_consider = []
+    for obstacle in obstacles:
+        if not can_traverse_freely(model.parent_unit, obstacle):
+            obstacles_to_consider.append(obstacle)
+
+    # Add vertices of obstacles to nodes to improve pathfinding around obstacles
+    for obstacle in obstacles_to_consider:
+        nodes.extend(list(obstacle.polygon.exterior.coords)[:-1])  # Exclude duplicate starting point
+
     edges = []
     for i, node_a in enumerate(nodes):
         for node_b in nodes[i+1:]:
-            if line_of_sight(model.parent_unit, node_a, node_b, obstacles):
+            if line_of_sight(model, node_a, node_b, obstacles_to_consider):
                 distance = get_movement_cost(model, node_a, node_b, obstacles)
-                if distance != float('inf'):
-                    edges.append((node_a, node_b, distance))
-                    edges.append((node_b, node_a, distance))
+                edges.append((node_a, node_b, distance))
+                edges.append((node_b, node_a, distance))
     return nodes, edges
 
 # A* pathfinding algorithm
-def astar_visibility_graph(start: Tuple[float, float], goal: Tuple[float, float], nodes: List[Tuple[float, float]], edges: List[Tuple[Tuple[float, float], Tuple[float, float], float]]):
+def astar_visibility_graph(start: Tuple[float, float, float], goal: Tuple[float, float, float], nodes: List[Tuple[float, float, float]], edges: List[Tuple[Tuple[float, float, float], Tuple[float, float, float], float]], max_movement_range: float):
     graph = {node: [] for node in nodes}
     for edge in edges:
         node_a, node_b, cost = edge
@@ -141,9 +157,11 @@ def astar_visibility_graph(start: Tuple[float, float], goal: Tuple[float, float]
         
         for neighbor, cost in graph[current]:
             new_cost = cost_so_far[current] + cost
+            if new_cost > max_movement_range:
+                continue  # Skip paths that exceed movement range
             if neighbor not in cost_so_far or new_cost < cost_so_far[neighbor]:
                 cost_so_far[neighbor] = new_cost
                 priority = new_cost + get_dist(neighbor[0] - goal[0], neighbor[1] - goal[1])
                 heapq.heappush(open_set, (priority, neighbor))
                 came_from[neighbor] = current
-    return None  # No path found
+    return None  # No path found within movement range
