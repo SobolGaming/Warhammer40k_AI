@@ -142,11 +142,11 @@ class Base:
         else:
             raise ValueError(f"Unknown BaseType geometry: {self.base_type}")
 
-    def get_base_shape_at(self, x: float, y: float) -> Poly:
+    def get_base_shape_at(self, x: float, y: float, facing: float) -> Poly:
         if self.base_type in [BaseType.CIRCULAR, BaseType.ELLIPTICAL]:
-            return create_ellipse((x, y), self.radius, self.facing)
+            return create_ellipse((x, y), self.radius, facing)
         elif self.base_type == BaseType.HULL:
-            return create_rectangle((x, y), self.radius, self.facing)
+            return create_rectangle((x, y), self.radius, facing)
         else:
             raise ValueError(f"Unknown BaseType geometry: {self.base_type}")
 

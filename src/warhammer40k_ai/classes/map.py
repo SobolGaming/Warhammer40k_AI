@@ -33,7 +33,6 @@ class Map:
             (self.width, 0),  # Bottom-right corner
             (self.width, self.height),  # Top-right corner
             (0, self.height),  # Top-left corner
-            (0, 0)  # Closing the polygon
         ]
         return Polygon(vertices)
 

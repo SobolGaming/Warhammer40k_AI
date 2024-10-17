@@ -6,7 +6,7 @@ from ..utility.model_base import Base, BaseType
 from .wargear import Wargear, WargearOption
 from .ability import Ability
 from ..utility.range import Range
-from ..utility.calcs import get_dist, get_angle, convert_mm_to_inches, build_visibility_graph, astar_visibility_graph, get_pivot_cost, angle_difference, generate_coherency_positions
+from ..utility.calcs import get_dist, get_angle, convert_mm_to_inches, build_visibility_graph, astar_visibility_graph, get_pivot_cost, angle_difference, generate_coherency_positions, can_end_move_on_terrain
 from ..utility.dice import get_roll
 from .status_effects import StatusEffect
 from ..utility.constants import VIEWING_ANGLE
@@ -634,10 +634,10 @@ class Unit:
         # Determine unit coherency requirements
         num_models = len(self.models)
         if num_models <= 5:
-            coherency_distance = 2.0  # inches
+            coherency_distance = 2.0 + 2 * self.models[0].model_base.longestDistance()  # inches
             required_neighbors = 1
         else:
-            coherency_distance = 2.0  # inches
+            coherency_distance = 2.0 + 2 * self.models[0].model_base.longestDistance()  # inches
             required_neighbors = 2
 
         # Select the leader model as the one closest to the destination
@@ -708,7 +708,7 @@ class Unit:
             last_node = (node[0], node[1], node[2])
 
         # Before setting the leader's new location, check boundary
-        base_shape = leader_model.model_base.get_base_shape_at(last_node[0], last_node[1])
+        base_shape = leader_model.model_base.get_base_shape_at(last_node[0], last_node[1], new_facing)
         if not game_map.is_within_boundary(base_shape):
             logger.error(f"Leader model {leader_model} cannot move outside the battlefield boundaries.")
             return False  # Movement is invalid
@@ -783,10 +783,21 @@ class Unit:
                         last_node = (node[0], node[1], node[2])
                     
                     # Before setting the model's new location, check boundary
-                    base_shape = model.model_base.get_base_shape_at(last_node[0], last_node[1])
+                    base_shape = model.model_base.get_base_shape_at(last_node[0], last_node[1], new_facing)
                     if not game_map.is_within_boundary(base_shape):
                         logger.warning(f"Model {model} cannot move outside the battlefield boundaries.")
                         continue  # Skip this position and try the next potential position
+
+                    ending_terrain = None
+                    for obstacle in game_map.obstacles:
+                        if base_shape.intersects(obstacle.polygon):
+                            ending_terrain = obstacle
+                            break
+
+                    if ending_terrain:
+                        if not can_end_move_on_terrain(model, ending_terrain):
+                            logger.warning(f"Model {model} cannot end move on terrain {ending_terrain.terrain_type}.")
+                            continue  # Try next potential position
 
                     model.set_location(last_node[0], last_node[1], last_node[2], new_facing)
                     moved_models.append(model)

@@ -2,12 +2,13 @@ from math import sqrt, atan2, pi, cos, sin
 from typing import Tuple, List
 import heapq
 from ..utility.constants import MM_TO_INCHES, FREELY_CLIMBABLE_RANGE
-from shapely.geometry import LineString, Point
+from shapely.geometry import LineString
 import itertools
+import random
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from ..classes.map import Obstacle
+    from ..classes.map import Obstacle, ObstacleType
     from ..classes.unit import Unit
     from ..classes.model import Model
     from ..classes.map import Map
@@ -178,34 +179,39 @@ def generate_coherency_positions(model: 'Model', moved_positions: List[Tuple[flo
             avg_x = sum(pos[0] for pos in combination) / required_neighbors
             avg_y = sum(pos[1] for pos in combination) / required_neighbors
             avg_z = sum(pos[2] for pos in combination) / required_neighbors
-            # Generate positions around the average point
-            num_points = 8
-            for i in range(num_points):
-                angle = 2 * pi * i / num_points
-                x = avg_x + coherency_distance * cos(angle)
-                y = avg_y + coherency_distance * sin(angle)
-                z = avg_z  # Adjust if necessary
+
+            num_samples = 50  # Number of random samples
+            for _ in range(num_samples):
+                # Generate random point within the coherency circle
+                r = coherency_distance * sqrt(random.random())
+                theta = random.uniform(0, 2 * pi)
+                x = avg_x + r * cos(theta)
+                y = avg_y + r * sin(theta)
+                z = avg_z
 
                 # Collision checking as before
-                model_base = Point(x, y).buffer(model.base_size)
+                base_shape = model.model_base.get_base_shape_at(x, y, model.model_base.facing)
                 collision = False
 
                 # Check if position is within battlefield boundaries
-                if not game_map.is_within_boundary(model_base):
+                if not game_map.is_within_boundary(base_shape):
                     continue  # Skip positions outside the battlefield
 
                 for obstacle in game_map.obstacles:
-                    if model_base.intersects(obstacle.polygon):
+                    if base_shape.intersects(obstacle.polygon):
                         collision = True
                         break
                 for other_model in game_map.get_all_models():
-                    if other_model != model and model_base.intersects(other_model.model_base.get_base_shape()):
+                    if other_model != model and model.collidesWithBase(other_model.model_base):
                         collision = True
                         break
                 if collision:
                     continue  # Skip positions that collide
 
-                potential_positions.append((x, y, z))
+                # Ensure position is within coherency distance of all models in the combination
+                in_coherency = all(get_dist(x - pos[0], y - pos[1]) <= coherency_distance for pos in combination)
+                if in_coherency:
+                    potential_positions.append((x, y, z))
     else:
         # Not enough moved models to satisfy required_neighbors
         # Fallback to positions around existing models
@@ -214,3 +220,28 @@ def generate_coherency_positions(model: 'Model', moved_positions: List[Tuple[flo
     # Sort positions by proximity to the destination
     potential_positions.sort(key=lambda p: get_dist(p[0] - model.model_base.x, p[1] - model.model_base.y))
     return potential_positions
+
+def can_end_move_on_terrain(model: 'Model', obstacle: 'Obstacle') -> bool:
+    from ..classes.map import ObstacleType
+    terrain = obstacle.terrain_type
+    base_overhang = base_overhangs_obstacle(model, obstacle)
+    if terrain in [ObstacleType.CRATER_AND_RUBBLE, ObstacleType.DEBRIS_AND_STATUARY]:
+        return False  # Cannot end move on this terrain
+    elif terrain == ObstacleType.HILLS_AND_SEALED_BUILDINGS:
+        return not base_overhang  # Can end move if base does not overhang
+    elif terrain == ObstacleType.WOODS:
+        return True  # Can end move on this terrain
+    elif terrain == ObstacleType.RUINS:
+        unit = model.parent_unit
+        # TODO - not accurate, need to account for floors. All units can end move on ruins base floor
+        if unit.is_infantry or unit.is_beast or unit.is_belisarius_cawl or unit.is_imperium_primarch:
+            return not base_overhang
+        else:
+            return False  # Other units cannot end move on RUINS
+    else:
+        # Default behavior
+        return True
+
+def base_overhangs_obstacle(model: 'Model', obstacle: 'Obstacle') -> bool:
+    base_shape = model.model_base.get_base_shape_at(model.model_base.x, model.model_base.y, model.model_base.facing)
+    return not obstacle.polygon.contains(base_shape)
