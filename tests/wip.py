@@ -1,320 +1,303 @@
-import random
-import math
-from shapely.geometry import Point, box
-from shapely.affinity import scale, rotate, translate
-from shapely.strtree import STRtree
+from enum import Enum, auto
+from typing import List, Tuple
+import matplotlib.pyplot as plt
+from shapely.affinity import translate, scale
+from shapely.geometry import Point, Polygon, LineString
+from math import atan2, cos, sin, pi, sqrt
+import heapq
 
-def arrange_ellipses(ellipses, center_x, center_y, target_x, target_y, coherency_distance, required_neighbors, tightness, obstacles=None):
-    """
-    Arrange ellipses around the specified center, satisfying the constraints and avoiding obstacles.
-    Each ellipse faces towards the target location.
 
-    Parameters:
-    - ellipses: list of tuples [(a1, b1), (a2, b2), ..., (aN, bN)], major and minor radii
-    - center_x, center_y: center coordinates
-    - target_x, target_y: target location coordinates that ellipses should face
-    - coherency_distance: the maximum allowed edge-to-edge distance for coherency
-    - required_neighbors: the number of neighbors each ellipse must be within coherency distance
-    - tightness: parameter controlling the overall spread of the formation (0 < tightness <= 1)
-    - obstacles: list of Shapely polygons that the ellipses must avoid
+class ObstacleType(Enum):
+    CRATER_AND_RUBBLE = auto()
+    DEBRIS_AND_STATUARY = auto()
+    HILLS_AND_SEALED_BUILDINGS = auto()
+    WOODS = auto()
+    RUINS = auto()
 
-    Returns:
-    - positions: list of (x_i, y_i)
-    - orientations: list of theta_i (in degrees)
-    """
-    if obstacles is None:
-        obstacles = []
 
-    N = len(ellipses)
+class Obstacle:
+    def __init__(self, vertices: List[Tuple[float, float]], terrain_type: ObstacleType, height: float) -> None:
+        self.vertices = vertices
+        self.terrain_type = terrain_type
+        self.height = height
+        if len(vertices) == 2:
+            self.polygon = Point(vertices[0]).buffer(1, resolution=64)
+            self.polygon = scale(self.polygon, vertices[1][0], vertices[1][1])
+        else:
+            self.polygon = Polygon(vertices)
+        self.center = (self.polygon.centroid.x, self.polygon.centroid.y)
+        self.color = 'red'
 
-    # Compute average sizes
-    avg_a = sum(a for a, b in ellipses) / N
-    avg_b = sum(b for a, b in ellipses) / N
 
-    # Determine initial spacing based on tightness
-    default_spacing = (avg_a + avg_b) * 2
-    spacing = default_spacing * tightness
+def move_object(obj, obstacles, dx, dy, step):
+    """Moves an object by (dx, dy), attempting to path around obstacles."""
+    new_obj = translate(obj, dx, dy)
 
-    # Initialize positions in a grid around the center
-    grid_cols = grid_rows = int(math.ceil(math.sqrt(N)))
+    # Check for collisions
+    for obstacle in obstacles:
+        if new_obj.intersects(obstacle.polygon):
+            # Attempt to path around the obstacle
+            alternative_directions = [
+                (cos(angle) * dx - sin(angle) * dy, sin(angle) * dx + cos(angle) * dy)
+                for angle in [
+                    pi/6,  # 30 degrees clockwise
+                    -pi/6,  # 30 degrees counterclockwise
+                    pi/3,  # 60 degrees clockwise
+                    -pi/3,  # 60 degrees counterclockwise
+                    pi/2,  # 90 degrees clockwise
+                    -pi/2,  # 90 degrees counterclockwise
+                    2*pi/3,  # 120 degrees clockwise
+                    -2*pi/3,  # 120 degrees counterclockwise
+                    pi,  # 180 degrees (reverse)
+                ]
+            ]
+            
+            for alt_dx, alt_dy in alternative_directions:
+                alt_obj = translate(obj, alt_dx, alt_dy)
+                if not any(alt_obj.intersects(obs.polygon) for obs in obstacles):
+                    print(f"Collision avoided at step {step}")
+                    return alt_obj, False  # Return the alternative movement
 
-    # Compute starting point of the grid to center it at (center_x, center_y)
-    grid_width = (grid_cols - 1) * spacing
-    grid_height = (grid_rows - 1) * spacing
+            # If no alternative direction works, stay in place
+            print(f"Collision at step {step}, no alternative path found")
+            return obj, True  # Return the original object and collision flag
 
-    start_x = center_x - grid_width / 2.0
-    start_y = center_y - grid_height / 2.0
+    return new_obj, False
 
-    positions = []
-    orientations = []
+# Determine the distance of a 3D position delta
+def get_dist(x_delta: float, y_delta: float, z_delta: float = 0) -> float:
+    return sqrt(x_delta**2 + y_delta**2 + z_delta**2)
 
-    # Place ellipses in grid
-    idx = 0
-    for i in range(grid_rows):
-        for j in range(grid_cols):
-            if idx >= N:
-                break
-            x = start_x + j * spacing + random.uniform(-spacing * 0.1, spacing * 0.1)
-            y = start_y + i * spacing + random.uniform(-spacing * 0.1, spacing * 0.1)
-            positions.append([x, y])
-            # Orientation towards the target location
-            dx = target_x - x
-            dy = target_y - y
-            theta = math.degrees(math.atan2(dy, dx))  # Angle in degrees
-            orientations.append(theta)
-            idx += 1
+# Determine the angle between two X,Y points
+def get_angle(x_delta: float, y_delta: float) -> float:
+    return atan2(x_delta, y_delta)
 
-    # Precompute static obstacle STRtree
-    obstacle_geoms = obstacles
-    obstacle_tree = STRtree(obstacle_geoms) if obstacle_geoms else None
-
-    # Now, adjust positions and orientations iteratively
-    max_iterations = 200
-    for iteration in range(max_iterations):
-        # Create shapely polygons for ellipses
-        ellipses_polygons = []
-        for idx in range(N):
-            a, b = ellipses[idx]
-            x, y = positions[idx]
-            theta = orientations[idx]
-            # Create ellipse
-            ellipse = Point(0, 0).buffer(1.0, resolution=32)  # unit circle
-            ellipse = scale(ellipse, a, b)
-            ellipse = rotate(ellipse, theta, use_radians=False)
-            ellipse = translate(ellipse, x, y)
-            ellipses_polygons.append(ellipse)
-
-        # Build spatial index for ellipses
-        ellipse_tree = STRtree(ellipses_polygons)
-
-        overlaps = False
-
-        # Check overlaps with obstacles and adjust positions
-        for idx, ellipse in enumerate(ellipses_polygons):
-            x, y = positions[idx]
-
-            # Check for overlap with obstacles
-            if obstacle_tree:
-                possible_obstacle_indices = obstacle_tree.query(ellipse)
-                for obstacle_idx in possible_obstacle_indices:
-                    obstacle = obstacle_geoms[obstacle_idx]
-                    if ellipse.intersects(obstacle):
-                        overlaps = True
-                        # Move the ellipse away from the obstacle
-                        dx = x - obstacle.centroid.x
-                        dy = y - obstacle.centroid.y
-                        distance = math.hypot(dx, dy)
-                        if distance == 0:
-                            dx = random.uniform(-1, 1)
-                            dy = random.uniform(-1, 1)
-                            distance = math.hypot(dx, dy)
-                        dx /= distance
-                        dy /= distance
-                        move_distance = (avg_a + avg_b) * 0.2
-                        positions[idx][0] += dx * move_distance
-                        positions[idx][1] += dy * move_distance
-                        # Update orientation to face target
-                        dx_to_target = target_x - positions[idx][0]
-                        dy_to_target = target_y - positions[idx][1]
-                        orientations[idx] = math.degrees(math.atan2(dy_to_target, dx_to_target))
-                        # Update ellipse polygon
-                        a_i, b_i = ellipses[idx]
-                        theta_i = orientations[idx]
-                        ellipse = Point(0, 0).buffer(1.0, resolution=32)
-                        ellipse = scale(ellipse, a_i, b_i)
-                        ellipse = rotate(ellipse, theta_i, use_radians=False)
-                        ellipse = translate(ellipse, positions[idx][0], positions[idx][1])
-                        ellipses_polygons[idx] = ellipse
-
-        # Check overlaps between ellipses and adjust positions
-        for idx, ellipse in enumerate(ellipses_polygons):
-            x, y = positions[idx]
-            # Query potential overlaps
-            possible_overlap_indices = ellipse_tree.query(ellipse)
-            for other_idx in possible_overlap_indices:
-                if other_idx == idx:
-                    continue
-                other_ellipse = ellipses_polygons[other_idx]
-                if ellipse.intersects(other_ellipse):
-                    overlaps = True
-                    # Adjust positions to eliminate overlap
-                    x1, y1 = positions[idx]
-                    x2, y2 = positions[other_idx]
-                    dx = x2 - x1
-                    dy = y2 - y1
-                    distance = math.hypot(dx, dy)
-                    if distance == 0:
-                        dx = random.uniform(-1, 1)
-                        dy = random.uniform(-1, 1)
-                        distance = math.hypot(dx, dy)
-                    dx /= distance
-                    dy /= distance
-                    move_distance = (avg_a + avg_b) * 0.1
-                    positions[idx][0] -= dx * move_distance / 2
-                    positions[idx][1] -= dy * move_distance / 2
-                    positions[other_idx][0] += dx * move_distance / 2
-                    positions[other_idx][1] += dy * move_distance / 2
-                    # Update orientations to face target
-                    for i in [idx, other_idx]:
-                        dx_to_target = target_x - positions[i][0]
-                        dy_to_target = target_y - positions[i][1]
-                        orientations[i] = math.degrees(math.atan2(dy_to_target, dx_to_target))
-                        # Update ellipse polygons
-                        a_i, b_i = ellipses[i]
-                        theta_i = orientations[i]
-                        ellipse_i = Point(0, 0).buffer(1.0, resolution=32)
-                        ellipse_i = scale(ellipse_i, a_i, b_i)
-                        ellipse_i = rotate(ellipse_i, theta_i, use_radians=False)
-                        ellipse_i = translate(ellipse_i, positions[i][0], positions[i][1])
-                        ellipses_polygons[i] = ellipse_i
-
-        # Rebuild spatial index after adjustments
-        ellipse_tree = STRtree(ellipses_polygons)
-
-        # Check for coherency
-        all_coherent = True
-        for idx, ellipse in enumerate(ellipses_polygons):
-            x, y = positions[idx]
-            # Query ellipses within coherency distance
-            search_area = ellipse.buffer(coherency_distance)
-            possible_neighbor_indices = ellipse_tree.query(search_area)
-            neighbors = 0
-            for neighbor_idx in possible_neighbor_indices:
-                if neighbor_idx == idx:
-                    continue
-                neighbor_ellipse = ellipses_polygons[neighbor_idx]
-                if ellipse.distance(neighbor_ellipse) <= coherency_distance:
-                    neighbors += 1
-            if neighbors < required_neighbors:
-                all_coherent = False
-                # Adjust position towards center
-                dx = center_x - x
-                dy = center_y - y
-                distance_to_center = math.hypot(dx, dy)
-                if distance_to_center > 0:
-                    move_distance = (avg_a + avg_b) * 0.1
-                    dx /= distance_to_center
-                    dy /= distance_to_center
-                    positions[idx][0] += dx * move_distance
-                    positions[idx][1] += dy * move_distance
-                    # Update orientation to face target
-                    dx_to_target = target_x - positions[idx][0]
-                    dy_to_target = target_y - positions[idx][1]
-                    orientations[idx] = math.degrees(math.atan2(dy_to_target, dx_to_target))
-                    # Update ellipse polygon
-                    a_i, b_i = ellipses[idx]
-                    theta_i = orientations[idx]
-                    ellipse = Point(0, 0).buffer(1.0, resolution=32)
-                    ellipse = scale(ellipse, a_i, b_i)
-                    ellipse = rotate(ellipse, theta_i, use_radians=False)
-                    ellipse = translate(ellipse, positions[idx][0], positions[idx][1])
-                    ellipses_polygons[idx] = ellipse
-                    # Check overlap with obstacles after moving
-                    if obstacle_tree:
-                        possible_obstacle_indices = obstacle_tree.query(ellipse)
-                        for obstacle_idx in possible_obstacle_indices:
-                            obstacle = obstacle_geoms[obstacle_idx]
-                            if ellipse.intersects(obstacle):
-                                # Move away from obstacle
-                                dx = positions[idx][0] - obstacle.centroid.x
-                                dy = positions[idx][1] - obstacle.centroid.y
-                                distance = math.hypot(dx, dy)
-                                if distance == 0:
-                                    dx = random.uniform(-1, 1)
-                                    dy = random.uniform(-1, 1)
-                                    distance = math.hypot(dx, dy)
-                                dx /= distance
-                                dy /= distance
-                                move_distance = (avg_a + avg_b) * 0.2
-                                positions[idx][0] += dx * move_distance
-                                positions[idx][1] += dy * move_distance
-                                # Update orientation to face target
-                                dx_to_target = target_x - positions[idx][0]
-                                dy_to_target = target_y - positions[idx][1]
-                                orientations[idx] = math.degrees(math.atan2(dy_to_target, dx_to_target))
-                                # Update ellipse polygon
-                                a_i, b_i = ellipses[idx]
-                                theta_i = orientations[idx]
-                                ellipse = Point(0, 0).buffer(1.0, resolution=32)
-                                ellipse = scale(ellipse, a_i, b_i)
-                                ellipse = rotate(ellipse, theta_i, use_radians=False)
-                                ellipse = translate(ellipse, positions[idx][0], positions[idx][1])
-                                ellipses_polygons[idx] = ellipse
-
-        # Rebuild spatial index after adjustments
-        ellipse_tree = STRtree(ellipses_polygons)
-
-        # If no overlaps and all coherent, break
-        if not overlaps and all_coherent:
-            break
-
+def plot_geometry(ax, geom, **kwargs):
+    """Helper function to plot Shapely geometries."""
+    if isinstance(geom, Obstacle):
+        # For custom Obstacle objects
+        x, y = geom.polygon.exterior.xy
+    elif isinstance(geom, (Polygon, Point)):
+        # For Polygon and Point objects
+        x, y = geom.exterior.xy
     else:
-        print("Warning: Maximum iterations reached without satisfying all constraints.")
+        # For other geometries
+        x, y = geom.xy
+    ax.fill(x, y, **kwargs)
 
-    return positions, orientations
+def heuristic(a, b):
+    """Calculate the heuristic (estimated distance) between two points."""
+    return get_dist(a[0] - b[0], a[1] - b[1])
 
-# Example usage:
-def test_with_target_orientation():
-    import matplotlib.pyplot as plt
+def distance_to_nearest_obstacle(point, obstacles, target):
+    return min(obstacle.polygon.distance(Point(point)) for obstacle in obstacles)
 
-    # Define ellipses with major and minor radii
-    ellipses = [(1.7717, 1.0236)] * 6
+def adaptive_step_size(point, obstacles, target, min_step=0.1, max_step=6.0, safety_factor=0.5):
+    dist = distance_to_nearest_obstacle(point, obstacles, target)
+    return max(min_step, min(max_step, dist * safety_factor))
 
-    # Define obstacles (e.g., two rectangles)
-    obstacle1 = box(-10, -10, -8, 10)
-    obstacle2 = box(8, -10, 10, 10)
-    obstacles = [obstacle1, obstacle2]
+def get_neighbors(current, obstacles, ellipse, goal):
+    """Get valid neighboring points with adaptive step size and direct path to goal."""
+    x, y = current
+    step_size = adaptive_step_size(current, obstacles, ellipse)
+    
+    # Add direct path to goal
+    goal_direction = (goal[0] - x, goal[1] - y)
+    goal_distance = get_dist(goal_direction[0], goal_direction[1])
+    if goal_distance <= step_size:
+        neighbors = [goal]
+    else:
+        goal_step = (goal_direction[0] / goal_distance * step_size,
+                     goal_direction[1] / goal_distance * step_size)
+        neighbors = [
+            (x + goal_step[0], y + goal_step[1]),
+            (x + step_size, y),
+            (x - step_size, y),
+            (x, y + step_size),
+            (x, y - step_size),
+            (x + step_size * 0.707, y + step_size * 0.707),
+            (x - step_size * 0.707, y - step_size * 0.707),
+            (x + step_size * 0.707, y - step_size * 0.707),
+            (x - step_size * 0.707, y + step_size * 0.707),
+        ]
+    
+    valid_neighbors = []
+    for n in neighbors:
+        moved_ellipse = translate(ellipse, n[0] - ellipse.centroid.x, n[1] - ellipse.centroid.y)
+        if not any(moved_ellipse.intersects(obs.polygon) for obs in obstacles):
+            valid_neighbors.append(n)
+    return valid_neighbors
 
-    center_x, center_y = 10, 10
-    target_x, target_y = 20, 20  # Target location that ellipses should face
-    coherency_distance = 2.0
-    required_neighbors = 2
-    tightness = 1.5
+def a_star(start, goal, obstacles, ellipse, target, max_iterations=50000):
+    """A* pathfinding algorithm with adaptive step size and iteration limit."""
+    start = (start.x, start.y)
+    goal = (goal.x, goal.y)
+    
+    open_set = []
+    heapq.heappush(open_set, (0, start))
+    came_from = {}
+    g_score = {start: 0}
+    f_score = {start: heuristic(start, goal)}
+    
+    iterations = 0
+    while open_set and iterations < max_iterations:
+        current = heapq.heappop(open_set)[1]
+        
+        current_ellipse = translate(ellipse, current[0] - ellipse.centroid.x, current[1] - ellipse.centroid.y)
+        if current_ellipse.intersects(target) or heuristic(current, goal) < 0.1:  # Changed goal condition
+            path = []
+            while current in came_from:
+                path.append(current)
+                current = came_from[current]
+            path.append(start)
+            print(f"Path found after {iterations} iterations")
+            return path[::-1] + [goal]  # Add the exact goal point to the end of the path
+        
+        for neighbor in get_neighbors(current, obstacles, current_ellipse, goal):
+            tentative_g_score = g_score[current] + heuristic(current, neighbor)
+            
+            if neighbor not in g_score or tentative_g_score < g_score[neighbor]:
+                came_from[neighbor] = current
+                g_score[neighbor] = tentative_g_score
+                f_score[neighbor] = g_score[neighbor] + heuristic(neighbor, goal)
+                heapq.heappush(open_set, (f_score[neighbor], neighbor))
+        
+        iterations += 1
+    
+    print(f"No path found after {iterations} iterations")
+    return None  # No path found
 
-    positions, orientations = arrange_ellipses(
-        ellipses,
-        center_x,
-        center_y,
-        target_x,
-        target_y,
-        coherency_distance,
-        required_neighbors,
-        tightness,
-        obstacles=obstacles
-    )
+def simplify_path(path, obstacles, ellipse, tolerance=0.1):
+    """Simplify the path using the Ramer-Douglas-Peucker algorithm and additional collision checks."""
+    line = LineString(path)
+    simplified = list(line.simplify(tolerance).coords)
+    
+    i = 0
+    while i < len(simplified) - 2:
+        start = simplified[i]
+        end = simplified[i + 2]
+        
+        # Check if the direct path between start and end collides with any obstacles
+        test_line = LineString([start, end])
+        collision = any(test_line.intersects(obs.polygon) for obs in obstacles)
+        
+        if not collision:
+            # Check if the ellipse moving along this path collides with any obstacles
+            test_ellipse = translate(ellipse, start[0] - ellipse.centroid.x, start[1] - ellipse.centroid.y)
+            dx, dy = end[0] - start[0], end[1] - start[1]
+            moved_ellipse, collision = move_object(test_ellipse, obstacles, dx, dy, i)
+            
+            if not collision:
+                # If no collision, remove the intermediate point
+                simplified.pop(i + 1)
+            else:
+                i += 1
+        else:
+            i += 1
+    
+    return simplified
 
-    # Plotting the ellipses and obstacles
+if __name__ == "__main__":
+    # Define the agent's shape as an ellipse
+    unit_circle = Point(0, 0).buffer(1, resolution=64)
+    a, b = 0.5, 0.4  # semi-major and semi-minor axis lengths
+    ellipse = scale(unit_circle, a, b)
+    starting_ellipse = ellipse
+
+    # Define the target
+    target = Point(10, 10).buffer(1, resolution=64)
+
+    # Define obstacles
+    obstacles_1 = Obstacle([(5, 5), (1, 1)], ObstacleType.CRATER_AND_RUBBLE, 0.5)
+    obstacles_2 = Obstacle([(6, 4), (7, 4), (7, 3), (6, 3)], ObstacleType.RUINS, 0.5)
+    obstacles_3 = Obstacle([(2, 7), (3, 8), (4, 7), (3, 6)], ObstacleType.WOODS, 0.5)
+    obstacles = [obstacles_1, obstacles_2, obstacles_3]
+
+    # Visualization setup
     fig, ax = plt.subplots(figsize=(10, 10))
+    ax.set_aspect('equal')
+    ax.set_xlim(-2, 12)
+    ax.set_ylim(-2, 12)
+    ax.set_title('Object Path Visualization')
 
     # Plot obstacles
     for obstacle in obstacles:
-        x, y = obstacle.exterior.xy
-        ax.fill(x, y, fc='grey', ec='black', alpha=0.5)
+        plot_geometry(ax, obstacle, color=obstacle.color, alpha=0.5, label='Obstacle')
 
-    # Plot ellipses
-    for idx, (pos, orient) in enumerate(zip(positions, orientations)):
-        a, b = ellipses[idx]
-        ellipse = Point(0, 0).buffer(1.0, resolution=32)
-        ellipse = scale(ellipse, a, b)
-        ellipse = rotate(ellipse, orient, use_radians=False)
-        ellipse = translate(ellipse, pos[0], pos[1])
-        x, y = ellipse.exterior.xy
-        ax.fill(x, y, fc='blue', ec='black', alpha=0.7)
-        # Draw a line from ellipse center to target to show orientation
-        ax.arrow(pos[0], pos[1],
-                 math.cos(math.radians(orient)) * a,
-                 math.sin(math.radians(orient)) * a,
-                 head_width=0.2, head_length=0.4, fc='red', ec='red')
-        # Annotate ellipse number
-        ax.text(pos[0], pos[1], str(idx+1), ha='center', va='center', fontsize=12, color='white')
+    # Plot target
+    plot_geometry(ax, target, color='green', alpha=0.5, label='Target')
 
-    ax.plot(target_x, target_y, 'ro', markersize=8, label='Target')
-    ax.legend()
-    ax.set_xlim(0, 30)
-    ax.set_ylim(0, 30)
-    ax.set_aspect('equal')
-    plt.title('Ellipses Facing Target Location with Obstacles')
+    # Find the shortest path using A* with adaptive step size
+    start_point = Point(starting_ellipse.centroid.x, starting_ellipse.centroid.y)
+    goal_point = Point(target.centroid.x, target.centroid.y)
+    print("Starting A* pathfinding...")
+    shortest_path = a_star(start_point, goal_point, obstacles, starting_ellipse, target)
+
+    if shortest_path:
+        # Simplify the path with the new collision-aware function
+        simplified_path = simplify_path(shortest_path, obstacles, starting_ellipse)
+        
+        # Plot the original shortest path
+        path_x, path_y = zip(*shortest_path)
+        ax.plot(path_x, path_y, color='green', linewidth=2, alpha=0.5, label='Original A* Path')
+
+        # Calculate the distance of the original path
+        path_distance = sum(get_dist(shortest_path[i][0] - shortest_path[i-1][0], shortest_path[i][1] - shortest_path[i-1][1]) for i in range(1, len(shortest_path)))
+
+        # Plot the simplified path
+        simplified_x, simplified_y = zip(*simplified_path)
+        ax.plot(simplified_x, simplified_y, color='blue', linewidth=2, label='Simplified Path')
+
+        # Calculate and print the distance of the simplified path
+        simplified_distance = sum(get_dist(simplified_path[i][0] - simplified_path[i-1][0], simplified_path[i][1] - simplified_path[i-1][1]) for i in range(1, len(simplified_path)))
+        print(f"Original path: {len(shortest_path)} points, distance: {path_distance:.2f}")
+        print(f"Simplified path: {len(simplified_path)} points, distance: {simplified_distance:.2f}")
+
+        # Move the ellipse along the simplified path
+        path_ellipses = []
+        total_distance = 0
+        collision_steps = []
+
+        for i, point in enumerate(simplified_path):
+            new_ellipse = translate(starting_ellipse, point[0] - starting_ellipse.centroid.x, point[1] - starting_ellipse.centroid.y)
+            
+            # Check for collisions
+            collision = any(new_ellipse.intersects(obs.polygon) for obs in obstacles)
+            if collision:
+                collision_steps.append(i)
+                print(f"Collision detected at step {i}")
+                break
+
+            path_ellipses.append(new_ellipse)
+
+            if i > 0:
+                distance_moved = get_dist(point[0] - simplified_path[i-1][0], point[1] - simplified_path[i-1][1])
+                total_distance += distance_moved
+
+            if new_ellipse.intersects(target):
+                print(f"Reached target at step {i}")
+                break
+
+        # Plot the ellipse path
+        for step, ellipse in enumerate(path_ellipses):
+            alpha = 0.1 if step < len(path_ellipses) - 1 else 0.7
+            plot_geometry(ax, ellipse, color='blue', alpha=alpha, edgecolor='none')
+
+        # Connect centroids with a line to show the ellipse path
+        ellipse_path_x = [e.centroid.x for e in path_ellipses]
+        ellipse_path_y = [e.centroid.y for e in path_ellipses]
+        ax.plot(ellipse_path_x, ellipse_path_y, color='blue', linewidth=2, linestyle='--', label='Ellipse Path')
+
+        # Mark collision points, if any
+        for step in collision_steps:
+            ax.plot(ellipse_path_x[step], ellipse_path_y[step], marker='x', color='black', markersize=10, label='Collision')
+
+        print(f"Total distance of the ellipse path: {total_distance:.2f}")
+        print(f"Final ellipse position: ({path_ellipses[-1].centroid.x:.2f}, {path_ellipses[-1].centroid.y:.2f})")
+
+    else:
+        print("No path found")
+
+    plt.legend()
+    plt.grid(True)
     plt.show()
-
-if __name__ == "__main__":
-    test_with_target_orientation()
