@@ -4,8 +4,9 @@ from .unit import Unit
 from .model import Model
 from ..utility.calcs import get_dist, convert_mm_to_inches
 from ..utility.constants import ENGAGEMENT_RANGE
-from shapely.geometry import Polygon
+from shapely.geometry import Polygon, Point
 from shapely.geometry.base import BaseGeometry    
+from shapely.affinity import scale
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -129,12 +130,17 @@ class ObstacleType(Enum):
 
 
 class Obstacle:
-    def __init__(self, vertices: List[Tuple[float, float]], terrain_type: ObstacleType, height: float):
+    def __init__(self, vertices: List[Tuple[float, float]], terrain_type: ObstacleType, height: float) -> None:
         self.vertices = vertices
         self.terrain_type = terrain_type
         self.height = height
-        self.polygon = Polygon(vertices)
+        if len(vertices) == 2:
+            self.polygon = Point(vertices[0]).buffer(1, resolution=64)
+            self.polygon = scale(self.polygon, vertices[1][0], vertices[1][1])
+        else:
+            self.polygon = Polygon(vertices)
         self.center = (self.polygon.centroid.x, self.polygon.centroid.y)
+        self.color = 'red'
 
 
 class ObjectivePoint:

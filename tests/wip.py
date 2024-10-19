@@ -128,10 +128,10 @@ def get_neighbors(current, obstacles, ellipse, goal):
             valid_neighbors.append(n)
     return valid_neighbors
 
-def a_star(start, goal, obstacles, ellipse, target, max_iterations=50000):
+def a_star(start, obstacles, ellipse, target, max_iterations=50000):
     """A* pathfinding algorithm with adaptive step size and iteration limit."""
     start = (start.x, start.y)
-    goal = (goal.x, goal.y)
+    goal = (target.centroid.x, target.centroid.y)
     
     open_set = []
     heapq.heappush(open_set, (0, start))
@@ -231,7 +231,7 @@ if __name__ == "__main__":
     start_point = Point(starting_ellipse.centroid.x, starting_ellipse.centroid.y)
     goal_point = Point(target.centroid.x, target.centroid.y)
     print("Starting A* pathfinding...")
-    shortest_path = a_star(start_point, goal_point, obstacles, starting_ellipse, target)
+    shortest_path = a_star(start_point, obstacles, starting_ellipse, target)
 
     if shortest_path:
         # Simplify the path with the new collision-aware function

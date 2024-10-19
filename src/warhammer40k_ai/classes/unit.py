@@ -6,7 +6,7 @@ from ..utility.model_base import Base, BaseType
 from .wargear import Wargear, WargearOption
 from .ability import Ability
 from ..utility.range import Range
-from ..utility.calcs import get_dist, get_angle, convert_mm_to_inches, build_visibility_graph, astar_visibility_graph, get_pivot_cost, angle_difference, generate_coherency_positions, can_end_move_on_terrain
+from ..utility.calcs import get_dist, get_angle, convert_mm_to_inches, a_star, get_pivot_cost, angle_difference, can_end_move_on_terrain
 from ..utility.dice import get_roll
 from .status_effects import StatusEffect
 from ..utility.constants import VIEWING_ANGLE
@@ -87,6 +87,7 @@ class Unit:
 
         self.position = None  # Initialize position as None
         self.coherency_distance = 2 + (2 * self.models[0].model_base.getRadius())
+        self.last_move_path = []  # Add this line
 
     def _parse_attribute(self, attribute_value: str) -> int:
         # Remove " and + from the attribute value
@@ -633,7 +634,10 @@ class Unit:
 
         # Determine unit coherency requirements
         num_models = len(self.models)
-        if num_models <= 5:
+        if num_models == 1:
+            coherency_distance = 0.0
+            required_neighbors = 0
+        elif num_models <= 5:
             coherency_distance = 2.0 + 2 * self.models[0].model_base.longestDistance()  # inches
             required_neighbors = 1
         else:
@@ -673,19 +677,7 @@ class Unit:
         moved_positions = []
 
         # Move the leader model first
-        nodes, edges = build_visibility_graph(
-            leader_model,
-            (leader_model.model_base.x, leader_model.model_base.y, leader_model.model_base.z),
-            (destination[0], destination[1], destination[2]),
-            game_map.obstacles
-        )
-        path = astar_visibility_graph(
-            (leader_model.model_base.x, leader_model.model_base.y, leader_model.model_base.z),
-            (destination[0], destination[1], destination[2]),
-            nodes,
-            edges,
-            adjusted_movement_range
-        )
+        path = a_star(leader_model, game_map.obstacles, destination)
         if path is None:
             logger.error(f"Cannot move unit {self.name} - leader model {leader_model} path is None")
             return False  # Leader cannot reach destination
@@ -694,6 +686,7 @@ class Unit:
         distance = pivot_cost  # Start with pivot cost if any
         last_node = (leader_model.model_base.x, leader_model.model_base.y, leader_model.model_base.z)
         new_facing = initial_facing
+        self.last_move_path = [last_node]  # Initialize the path with the starting position
 
         for node in path[1:]:
             dx = node[0] - last_node[0]
@@ -701,11 +694,11 @@ class Unit:
             dz = node[2] - last_node[2] if len(node) > 2 else 0
             segment_distance = get_dist(dx, dy, dz)
             if distance + segment_distance > movement_range:
-                logger.warning(f"Destination is out of movement range for leader model {leader_model}")
                 break
             distance += segment_distance
             new_facing = direction_to_destination
-            last_node = (node[0], node[1], node[2])
+            last_node = (node[0], node[1], node[2] if len(node) > 2 else 0)
+            self.last_move_path.append(last_node)  # Add each node to the path
 
         # Before setting the leader's new location, check boundary
         base_shape = leader_model.model_base.get_base_shape_at(last_node[0], last_node[1], new_facing)
@@ -716,28 +709,14 @@ class Unit:
         leader_model.set_location(last_node[0], last_node[1], last_node[2], new_facing)
         moved_models.append(leader_model)
         moved_positions.append((leader_model.model_base.x, leader_model.model_base.y, leader_model.model_base.z))
+        '''
+        potential_positions, potential_orientations = generate_coherency_positions(self.models, leader_model, destination[0], destination[1], coherency_distance, game_map, required_neighbors)
 
         # Now move the other models
         for model in other_models:
-            # Calculate pivot cost for each model if needed
-            initial_facing = model.facing
-            # Find the closest moved model to maintain coherency
-            '''
-            closest_moved_pos = min(
-                moved_positions,
-                key=lambda pos: get_dist(model.model_base.x - pos[0], model.model_base.y - pos[1])
-            )
-            '''
-            # Generate potential positions within coherency of moved models
-            potential_positions = generate_coherency_positions(
-                model,
-                moved_positions,
-                coherency_distance,
-                game_map,
-                required_neighbors
-            )
             found_path = False
-            for position in potential_positions:
+            for idx in range(len(potential_positions)):
+                position = (potential_positions[idx][0], potential_positions[idx][1], leader_model.model_base.z)
                 direction_to_position = get_angle(
                     position[1] - model.model_base.y,
                     position[0] - model.model_base.x
@@ -751,25 +730,11 @@ class Unit:
                 adjusted_movement_range_model = movement_range - pivot_cost_model
                 if adjusted_movement_range_model <= 0:
                     continue  # Cannot move this model after pivoting
-
-                nodes, edges = build_visibility_graph(
-                    model,
-                    (model.model_base.x, model.model_base.y, model.model_base.z),
-                    position,
-                    game_map.obstacles
-                )
-                path = astar_visibility_graph(
-                    (model.model_base.x, model.model_base.y, model.model_base.z),
-                    position,
-                    nodes,
-                    edges,
-                    adjusted_movement_range_model
-                )
+                path = a_star(model, game_map.obstacles, position)
                 if path is not None:
                     # Move the model along the path
                     distance = pivot_cost_model  # Start with pivot cost if any
                     last_node = (model.model_base.x, model.model_base.y, model.model_base.z)
-                    new_facing = initial_facing
 
                     for node in path[1:]:
                         dx = node[0] - last_node[0]
@@ -779,7 +744,7 @@ class Unit:
                         if distance + segment_distance > movement_range:
                             break
                         distance += segment_distance
-                        new_facing = direction_to_position
+                        new_facing = potential_orientations[idx]
                         last_node = (node[0], node[1], node[2])
                     
                     # Before setting the model's new location, check boundary
@@ -806,7 +771,7 @@ class Unit:
                     break  # Exit loop once a valid position is found
             if not found_path:
                 logger.warning(f"Model {model} could not find a valid position within coherency.")
-
+        '''
         # Update unit centroid
         self.reset_position()
 

@@ -2,9 +2,8 @@ from math import sqrt, atan2, pi, cos, sin
 from typing import Tuple, List
 import heapq
 from ..utility.constants import MM_TO_INCHES, FREELY_CLIMBABLE_RANGE
-from shapely.geometry import LineString
-import itertools
-import random
+from shapely.geometry import LineString, Point
+from shapely.affinity import translate
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -46,22 +45,6 @@ def can_traverse_freely(unit: 'Unit', obstacle: 'Obstacle') -> bool:
     # Add more rules as needed
     return False
 
-def line_of_sight(model: 'Model', point_a: Tuple[float, float, float], point_b: Tuple[float, float, float], obstacles: List['Obstacle']) -> bool:
-    base_radius = model.base_size
-    movement_corridor = LineString([(point_a[0], point_a[1]), (point_b[0], point_b[1])]).buffer(base_radius)
-
-    for obstacle in obstacles:
-        if movement_corridor.intersects(obstacle.polygon):
-            # Check if the unit can traverse over the obstacle
-            if not can_traverse_freely(model.parent_unit, obstacle):
-                return False  # Movement path is obstructed
-
-    # Check for collisions with enemy models
-    #for other_model in other_models:
-    #    if movement_corridor.intersects(other_model.get_base_shape()):
-    #        return False
-    return True  # Path is clear
-
 def get_pivot_cost(unit: 'Unit') -> float:
     """
     Calculate the pivot cost for a unit based on its characteristics.
@@ -81,6 +64,7 @@ def get_movement_cost(model: 'Model', point_a: Tuple[float, float], point_b: Tup
     dz = 0  # Initialize vertical distance
 
     # Create a line representing the movement path
+    print(f"A: {point_a}, B: {point_b}")
     movement_line = LineString([point_a, point_b])
 
     # Find obstacles that intersect the movement path
@@ -111,115 +95,153 @@ def get_movement_cost(model: 'Model', point_a: Tuple[float, float], point_b: Tup
     total_distance = get_dist(dx, dy, dz)
     return total_distance
 
-def build_visibility_graph(model: 'Model', start: Tuple[float, float, float], goal: Tuple[float, float, float], obstacles: List['Obstacle']):
-    nodes = [start, goal]
+def heuristic(a, b):
+    """Calculate the heuristic (estimated distance) between two points."""
+    return get_dist(a[0] - b[0], a[1] - b[1])
 
-    # List of obstacles the unit cannot traverse freely
-    obstacles_to_consider = []
+def distance_to_nearest_obstacle(point, obstacles, target):
+    return min(obstacle.polygon.distance(Point(point)) for obstacle in obstacles)
+
+def adaptive_step_size(point, obstacles, target, min_step=0.1, max_step=6.0, safety_factor=0.5):
+    dist = distance_to_nearest_obstacle(point, obstacles, target)
+    return max(min_step, min(max_step, dist * safety_factor))
+
+def move_object(obj, obstacles, dx, dy, step):
+    """Moves an object by (dx, dy), attempting to path around obstacles."""
+    new_obj = translate(obj, dx, dy)
+
+    # Check for collisions
     for obstacle in obstacles:
-        if not can_traverse_freely(model.parent_unit, obstacle):
-            obstacles_to_consider.append(obstacle)
+        if new_obj.intersects(obstacle.polygon):
+            # Attempt to path around the obstacle
+            alternative_directions = [
+                (cos(angle) * dx - sin(angle) * dy, sin(angle) * dx + cos(angle) * dy)
+                for angle in [
+                    pi/6,  # 30 degrees clockwise
+                    -pi/6,  # 30 degrees counterclockwise
+                    pi/3,  # 60 degrees clockwise
+                    -pi/3,  # 60 degrees counterclockwise
+                    pi/2,  # 90 degrees clockwise
+                    -pi/2,  # 90 degrees counterclockwise
+                    2*pi/3,  # 120 degrees clockwise
+                    -2*pi/3,  # 120 degrees counterclockwise
+                    pi,  # 180 degrees (reverse)
+                ]
+            ]
+            
+            for alt_dx, alt_dy in alternative_directions:
+                alt_obj = translate(obj, alt_dx, alt_dy)
+                if not any(alt_obj.intersects(obs.polygon) for obs in obstacles):
+                    print(f"Collision avoided at step {step}")
+                    return alt_obj, False  # Return the alternative movement
 
-    # Add vertices of obstacles to nodes to improve pathfinding around obstacles
-    for obstacle in obstacles_to_consider:
-        nodes.extend(list(obstacle.polygon.exterior.coords)[:-1])  # Exclude duplicate starting point
+            # If no alternative direction works, stay in place
+            print(f"Collision at step {step}, no alternative path found")
+            return obj, True  # Return the original object and collision flag
 
-    edges = []
-    for i, node_a in enumerate(nodes):
-        for node_b in nodes[i+1:]:
-            if line_of_sight(model, node_a, node_b, obstacles_to_consider):
-                distance = get_movement_cost(model, node_a, node_b, obstacles)
-                edges.append((node_a, node_b, distance))
-                edges.append((node_b, node_a, distance))
-    return nodes, edges
+    return new_obj, False
 
-# A* pathfinding algorithm
-def astar_visibility_graph(start: Tuple[float, float, float], goal: Tuple[float, float, float], nodes: List[Tuple[float, float, float]], edges: List[Tuple[Tuple[float, float, float], Tuple[float, float, float], float]], max_movement_range: float):
-    graph = {node: [] for node in nodes}
-    for edge in edges:
-        node_a, node_b, cost = edge
-        graph[node_a].append((node_b, cost))
+def get_neighbors(current, obstacles, ellipse, goal):
+    """Get valid neighboring points with adaptive step size and direct path to goal."""
+    x, y = current
+    step_size = adaptive_step_size(current, obstacles, ellipse)
+    
+    # Add direct path to goal
+    goal_direction = (goal[0] - x, goal[1] - y)
+    goal_distance = get_dist(goal_direction[0], goal_direction[1])
+    if goal_distance <= step_size:
+        neighbors = [goal]
+    else:
+        goal_step = (goal_direction[0] / goal_distance * step_size,
+                     goal_direction[1] / goal_distance * step_size)
+        neighbors = [
+            (x + goal_step[0], y + goal_step[1]),
+            (x + step_size, y),
+            (x - step_size, y),
+            (x, y + step_size),
+            (x, y - step_size),
+            (x + step_size * 0.707, y + step_size * 0.707),
+            (x - step_size * 0.707, y - step_size * 0.707),
+            (x + step_size * 0.707, y - step_size * 0.707),
+            (x - step_size * 0.707, y + step_size * 0.707),
+        ]
+    
+    valid_neighbors = []
+    for n in neighbors:
+        moved_ellipse = translate(ellipse, n[0] - ellipse.centroid.x, n[1] - ellipse.centroid.y)
+        if not any(moved_ellipse.intersects(obs.polygon) for obs in obstacles):
+            valid_neighbors.append(n)
+    return valid_neighbors
+
+def a_star(model: 'Model', obstacles, target, max_iterations=50000):
+    """A* pathfinding algorithm with adaptive step size and iteration limit."""
+    start = (model.model_base.x, model.model_base.y)
+    goal = target[:2]
+    ellipse = model.model_base.get_base_shape()
     
     open_set = []
     heapq.heappush(open_set, (0, start))
     came_from = {}
-    cost_so_far = {start: 0}
+    g_score = {start: 0}
+    f_score = {start: heuristic(start, goal)}
     
-    while open_set:
-        _, current = heapq.heappop(open_set)
+    iterations = 0
+    while open_set and iterations < max_iterations:
+        current = heapq.heappop(open_set)[1]
         
-        if current == goal:
-            # Reconstruct path
+        current_ellipse = translate(ellipse, current[0] - ellipse.centroid.x, current[1] - ellipse.centroid.y)
+        if current_ellipse.intersects(Point(target[:2])) or heuristic(current, goal) < 0.1:  # Changed goal condition
             path = []
-            while current != start:
+            while current in came_from:
                 path.append(current)
                 current = came_from[current]
             path.append(start)
-            path.reverse()
-            return path
+            print(f"Path found after {iterations} iterations")
+            return path[::-1] + [goal]  # Add the exact goal point to the end of the path
         
-        for neighbor, cost in graph[current]:
-            new_cost = cost_so_far[current] + cost
-            if new_cost > max_movement_range:
-                continue  # Skip paths that exceed movement range
-            if neighbor not in cost_so_far or new_cost < cost_so_far[neighbor]:
-                cost_so_far[neighbor] = new_cost
-                priority = new_cost + get_dist(neighbor[0] - goal[0], neighbor[1] - goal[1])
-                heapq.heappush(open_set, (priority, neighbor))
+        for neighbor in get_neighbors(current, obstacles, current_ellipse, goal):
+            tentative_g_score = g_score[current] + heuristic(current, neighbor)
+            
+            if neighbor not in g_score or tentative_g_score < g_score[neighbor]:
                 came_from[neighbor] = current
-    return None  # No path found within movement range
+                g_score[neighbor] = tentative_g_score
+                f_score[neighbor] = g_score[neighbor] + heuristic(neighbor, goal)
+                heapq.heappush(open_set, (f_score[neighbor], neighbor))
+        
+        iterations += 1
+    
+    print(f"No path found after {iterations} iterations")
+    return None  # No path found
 
-def generate_coherency_positions(model: 'Model', moved_positions: List[Tuple[float, float, float]], coherency_distance: float, game_map: 'Map', required_neighbors: int) -> List[Tuple[float, float, float]]:
-    potential_positions = []
-    # Generate positions around combinations of moved models
-    if len(moved_positions) >= required_neighbors:
-        # Generate positions that are within coherency distance of required_neighbors models
-        for combination in itertools.combinations(moved_positions, required_neighbors):
-            # Calculate average position
-            avg_x = sum(pos[0] for pos in combination) / required_neighbors
-            avg_y = sum(pos[1] for pos in combination) / required_neighbors
-            avg_z = sum(pos[2] for pos in combination) / required_neighbors
-
-            num_samples = 50  # Number of random samples
-            for _ in range(num_samples):
-                # Generate random point within the coherency circle
-                r = coherency_distance * sqrt(random.random())
-                theta = random.uniform(0, 2 * pi)
-                x = avg_x + r * cos(theta)
-                y = avg_y + r * sin(theta)
-                z = avg_z
-
-                # Collision checking as before
-                base_shape = model.model_base.get_base_shape_at(x, y, model.model_base.facing)
-                collision = False
-
-                # Check if position is within battlefield boundaries
-                if not game_map.is_within_boundary(base_shape):
-                    continue  # Skip positions outside the battlefield
-
-                for obstacle in game_map.obstacles:
-                    if base_shape.intersects(obstacle.polygon):
-                        collision = True
-                        break
-                for other_model in game_map.get_all_models():
-                    if other_model != model and model.collidesWithBase(other_model.model_base):
-                        collision = True
-                        break
-                if collision:
-                    continue  # Skip positions that collide
-
-                # Ensure position is within coherency distance of all models in the combination
-                in_coherency = all(get_dist(x - pos[0], y - pos[1]) <= coherency_distance for pos in combination)
-                if in_coherency:
-                    potential_positions.append((x, y, z))
-    else:
-        # Not enough moved models to satisfy required_neighbors
-        # Fallback to positions around existing models
-        return generate_coherency_positions(model, moved_positions, coherency_distance, game_map, required_neighbors=1)
-
-    # Sort positions by proximity to the destination
-    potential_positions.sort(key=lambda p: get_dist(p[0] - model.model_base.x, p[1] - model.model_base.y))
-    return potential_positions
+def simplify_path(path, obstacles, ellipse, tolerance=0.1):
+    """Simplify the path using the Ramer-Douglas-Peucker algorithm and additional collision checks."""
+    line = LineString(path)
+    simplified = list(line.simplify(tolerance).coords)
+    
+    i = 0
+    while i < len(simplified) - 2:
+        start = simplified[i]
+        end = simplified[i + 2]
+        
+        # Check if the direct path between start and end collides with any obstacles
+        test_line = LineString([start, end])
+        collision = any(test_line.intersects(obs.polygon) for obs in obstacles)
+        
+        if not collision:
+            # Check if the ellipse moving along this path collides with any obstacles
+            test_ellipse = translate(ellipse, start[0] - ellipse.centroid.x, start[1] - ellipse.centroid.y)
+            dx, dy = end[0] - start[0], end[1] - start[1]
+            moved_ellipse, collision = move_object(test_ellipse, obstacles, dx, dy, i)
+            
+            if not collision:
+                # If no collision, remove the intermediate point
+                simplified.pop(i + 1)
+            else:
+                i += 1
+        else:
+            i += 1
+    
+    return simplified
 
 def can_end_move_on_terrain(model: 'Model', obstacle: 'Obstacle') -> bool:
     from ..classes.map import ObstacleType
