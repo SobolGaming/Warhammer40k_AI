@@ -50,32 +50,14 @@ class Map:
         return [objective for objective in self.objectives if objective.category == ObjectiveCategory.SECRET]
 
     def place_unit(self, unit: Unit) -> bool:
-        position = unit.get_position()
-        if position and self.is_position_valid(position[0], position[1]):
-            self.occupied_positions.add((int(position[0]), int(position[1])))
-            self.units.append(unit)
-            return True
-        return False
-
-    def is_position_valid(self, x: float, y: float, moving_unit: Optional[Unit] = None) -> bool:
-        int_x, int_y = int(x), int(y)
-        is_valid = (0 <= int_x < self.width and 0 <= int_y < self.height)
-        
-        if is_valid:
-            if moving_unit:
-                is_valid = self.is_position_unoccupied(int_x, int_y, moving_unit)
-            else:
-                is_valid = (int_x, int_y) not in self.occupied_positions
-        
-        print(f"Checking position validity: ({x}, {y}) -> {is_valid}")  # Debug print
-        return is_valid
-
-    def is_position_unoccupied(self, x: int, y: int, moving_unit: Unit) -> bool:
-        for unit in self.units:
-            if unit != moving_unit:
-                unit_pos = unit.get_position()
-                if unit_pos and (int(unit_pos[0]), int(unit_pos[1])) == (x, y):
-                    return False
+        for model in unit.models:
+            if not self.is_within_boundary(model):
+                return False
+            if self.check_collision_with_obstacles(model):
+                return False
+            if self.check_collision_with_other_units(model):
+                return False
+        self.units.append(unit)
         return True
 
     def get_all_models(self, units: Optional[List[Unit]] = None) -> List[Model] :
@@ -128,8 +110,20 @@ class Map:
         if destination:
             shape = translate(shape, destination[0] - model.model_base.x, destination[1] - model.model_base.y)
         for obstacle in self.obstacles:
-            if obstacle.polygon.intersects(shape):
+            #print(f"{model.parent_unit.name} checking collision with obstacles :: {obstacle.polygon}")
+            if shape.intersects(obstacle.polygon):
                 return True
+        return False
+
+    def check_collision_with_other_units(self, model: Model, destination: Tuple[float, float] = None) -> bool:
+        for unit in self.units:
+            if unit != model.parent_unit:  #  inter-unit collisions check done elsewhere
+                test_shape = model.model_base.get_base_shape()
+                if destination:
+                    test_shape = translate(test_shape, destination[0] - model.model_base.x, destination[1] - model.model_base.y)
+                for other_model in unit.models:
+                    if test_shape.intersects(other_model.model_base.get_base_shape()):
+                        return True
         return False
 
 

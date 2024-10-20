@@ -406,7 +406,7 @@ class Unit:
         return "Towering" in self.keywords
 
     @property
-    def is_fly(self) -> bool:
+    def is_flying(self) -> bool:
         return "Fly" in self.keywords
 
     @property
@@ -648,12 +648,16 @@ class Unit:
         leader_model = min(self.models, key=lambda m: get_dist(m.model_base.x - destination[0], m.model_base.y - destination[1]))
         other_models = [model for model in self.models if model != leader_model]
 
-        if not game_map.is_within_boundary(leader_model):
+        if not game_map.is_within_boundary(leader_model, destination):
             logger.error(f"Cannot move unit {self.name} to {destination}: out of boundary")
             return False
         
-        if game_map.check_collision_with_obstacles(leader_model):
+        if game_map.check_collision_with_obstacles(leader_model, destination):
             logger.error(f"Cannot move unit {self.name} to {destination}: obstacle collision at destination")
+            return False
+
+        if game_map.check_collision_with_other_units(leader_model, destination):
+            logger.error(f"Cannot move unit {self.name} to {destination}: other unit collision at destination")
             return False
 
         # Calculate pivot cost for the leader model if needed

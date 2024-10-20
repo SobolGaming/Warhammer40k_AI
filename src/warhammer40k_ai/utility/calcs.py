@@ -35,7 +35,7 @@ def angle_difference(angle1: float, angle2: float) -> float:
 
 def can_traverse_freely(unit: 'Unit', obstacle: 'Obstacle') -> bool:
     # Check if the unit can ignore the obstacle based on abilities
-    if unit.is_fly:
+    if unit.is_flying:
         return True  # Units with Fly can move over obstacles
     # Additional checks based on terrain type and unit abilities
     if obstacle.height <= FREELY_CLIMBABLE_RANGE:
@@ -84,7 +84,7 @@ def get_movement_cost(model: 'Model', point_a: Tuple[float, float], point_b: Tup
     dz = max_obstacle_height if max_obstacle_height > FREELY_CLIMBABLE_RANGE else 0
 
     # For units with 'Fly', they pay vertical movement cost but can traverse over obstacles
-    if model.parent_unit.is_fly:
+    if model.parent_unit.is_flying:
         pass  # They can fly over obstacles but must pay vertical cost
     else:
         # For non-flying units, check if they can climb over the obstacle
@@ -266,4 +266,4 @@ def can_end_move_on_terrain(model: 'Model', obstacle: 'Obstacle') -> bool:
 
 def base_overhangs_obstacle(model: 'Model', obstacle: 'Obstacle') -> bool:
     base_shape = model.model_base.get_base_shape_at(model.model_base.x, model.model_base.y, model.model_base.facing)
-    return not obstacle.polygon.contains(base_shape)
+    return not obstacle.polygon.contains(base_shape) and obstacle.polygon.intersects(base_shape)
