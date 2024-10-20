@@ -648,6 +648,14 @@ class Unit:
         leader_model = min(self.models, key=lambda m: get_dist(m.model_base.x - destination[0], m.model_base.y - destination[1]))
         other_models = [model for model in self.models if model != leader_model]
 
+        if not game_map.is_within_boundary(leader_model):
+            logger.error(f"Cannot move unit {self.name} to {destination}: out of boundary")
+            return False
+        
+        if game_map.check_collision_with_obstacles(leader_model):
+            logger.error(f"Cannot move unit {self.name} to {destination}: obstacle collision at destination")
+            return False
+
         # Calculate pivot cost for the leader model if needed
         initial_facing = leader_model.facing  # Assuming facing is in degrees
         direction_to_destination = get_angle(
@@ -701,8 +709,7 @@ class Unit:
             self.last_move_path.append(last_node)  # Add each node to the path
 
         # Before setting the leader's new location, check boundary
-        base_shape = leader_model.model_base.get_base_shape_at(last_node[0], last_node[1], new_facing)
-        if not game_map.is_within_boundary(base_shape):
+        if not game_map.is_within_boundary(leader_model):
             logger.error(f"Leader model {leader_model} cannot move outside the battlefield boundaries.")
             return False  # Movement is invalid
 
@@ -936,15 +943,13 @@ class Unit:
         distance = get_dist(x - center_x, y - center_y)
         return distance <= radius
 
-    def calculate_model_positions(self, start_x: float, start_y: float, battlefield_size: Tuple[float, float], all_models: List['Model'], zoom_level: float = 1.0) -> List[Tuple[float, float, float, float]]:
+    def calculate_model_positions(self, start_x: float, start_y: float, game_map: 'Map', zoom_level: float = 1.0) -> List[Tuple[float, float, float, float]]:
         positions = []
         max_attempts = 100  # Maximum number of attempts to place each model
 
         # Convert start position (mouse position) to game coordinates
         start_x_game = start_x / zoom_level
         start_y_game = start_y / zoom_level
-
-        # Battlefield size is already in game coordinates, so we don't need to adjust it
 
         for model in self.models:
             placed = False
@@ -965,14 +970,18 @@ class Unit:
                 facing = random.uniform(0, 2 * math.pi)  # Random facing
 
                 # Check if the model's base is entirely within the battlefield
-                if self._is_base_within_battlefield(model.model_base, x, y, battlefield_size):
+                within_boundary = game_map.is_within_boundary(model, (x, y))
+                if within_boundary:
                     # Create a list of all existing bases except for the current unit's models
-                    all_bases = [m.model_base for m in all_models if m.parent_unit != self] + [self._create_potential_base(m[0], m[1], m[2], m[3]) for m in positions]
+                    all_bases = [m.model_base for m in game_map.get_all_models() if m.parent_unit != self] + [self._create_potential_base(m[0], m[1], m[2], m[3]) for m in positions]
                     
                     # Check for collisions with all other bases
                     if not self._collides_with_any_base(model.model_base, x, y, z, facing, all_bases):
                         positions.append((x, y, z, facing))
                         placed = True
+                if not within_boundary and not positions:
+                    print(f"Model {model} cannot be mouse-placed at ({x}, {y}); outside battlefield boundary.")
+                    return []
                 
                 attempts += 1
 
@@ -981,14 +990,6 @@ class Unit:
 
         # We return game coordinates, not screen coordinates
         return positions
-
-    def _is_base_within_battlefield(self, base, x: float, y: float, battlefield_size: Tuple[float, float]) -> bool:
-        """Check if the entire base is within the battlefield boundaries."""
-        max_radius = base.longestDistance()
-        return (x - max_radius >= 0 and 
-                x + max_radius <= battlefield_size[0] and 
-                y - max_radius >= 0 and 
-                y + max_radius <= battlefield_size[1])
 
     def _create_potential_base(self, x: float, y: float, z: float, facing: float):
         # Create a new base with the same properties as the model's base

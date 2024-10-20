@@ -6,7 +6,7 @@ from ..utility.calcs import get_dist, convert_mm_to_inches
 from ..utility.constants import ENGAGEMENT_RANGE
 from shapely.geometry import Polygon, Point
 from shapely.geometry.base import BaseGeometry    
-from shapely.affinity import scale
+from shapely.affinity import scale, translate
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -36,12 +36,6 @@ class Map:
             (0, self.height),  # Top-left corner
         ]
         return Polygon(vertices)
-
-    def is_within_boundary(self, shape: BaseGeometry) -> bool:
-        """
-        Checks if a given Shapely geometry is fully contained within the battlefield boundary.
-        """
-        return self.boundary.contains(shape)
 
     def add_obstacles(self, obstacles: List['Obstacle']) -> None:
         self.obstacles.extend(obstacles)
@@ -99,6 +93,15 @@ class Map:
                 enemy_units.append(unit)
         return enemy_units
 
+    def is_within_boundary(self, model: Model, destination: Tuple[float, float] = None) -> bool:
+        """
+        Checks if a given Shapely geometry is fully contained within the battlefield boundary.
+        """
+        test_shape = model.model_base.get_base_shape()
+        if destination:
+            test_shape = translate(test_shape, destination[0] - model.model_base.x, destination[1] - model.model_base.y)
+        return self.boundary.contains(test_shape)
+
     def is_within_engagement_range(self, position: Tuple[float, float, float], target: Unit) -> bool:
         for model in target.models:
             target_position = model.get_location()
@@ -119,6 +122,15 @@ class Map:
         if not unit.has_circular_base:
             return 1
         return 0
+
+    def check_collision_with_obstacles(self, model: Model, destination: Tuple[float, float] = None) -> bool:
+        shape = model.model_base.get_base_shape()
+        if destination:
+            shape = translate(shape, destination[0] - model.model_base.x, destination[1] - model.model_base.y)
+        for obstacle in self.obstacles:
+            if obstacle.polygon.intersects(shape):
+                return True
+        return False
 
 
 class ObstacleType(Enum):
