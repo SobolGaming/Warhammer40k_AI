@@ -976,13 +976,12 @@ class Unit:
                 # Check if the model's base is entirely within the battlefield
                 within_boundary = game_map.is_within_boundary(model, (x, y))
                 if within_boundary:
-                    # Create a list of all existing bases except for the current unit's models
-                    all_bases = [m.model_base for m in game_map.get_all_models() if m.parent_unit != self] + [self._create_potential_base(m[0], m[1], m[2], m[3]) for m in positions]
-                    
-                    # Check for collisions with all other bases
-                    if not self._collides_with_any_base(model.model_base, x, y, z, facing, all_bases):
-                        positions.append((x, y, z, facing))
-                        placed = True
+                    if not game_map.check_collision_with_obstacles(model, (x, y)):
+                        if not game_map.check_collision_with_other_units(model, (x, y)):
+                            # Check collision with all models in the unit, including the current one
+                            if not self._collides_with_unit_models(model, x, y, z, facing, positions):
+                                positions.append((x, y, z, facing))
+                                placed = True
                 if not within_boundary and not positions:
                     print(f"Model {model} cannot be mouse-placed at ({x}, {y}); outside battlefield boundary.")
                     return []
@@ -1002,14 +1001,24 @@ class Unit:
         new_base.set_facing(facing)
         return new_base
 
-    def _collides_with_any_base(self, base, x: float, y: float, z: float, facing: float, all_bases: List[Base]) -> bool:
-        """Check if the base at the given position collides with any other base."""
-        base.x, base.y, base.z = x, y, z
-        base.set_facing(facing)
-        
-        for other_base in all_bases:
-            if base.collidesWithBase(other_base):
+    def _collides_with_unit_models(self, model: Model, x: float, y: float, z: float, facing: float, positions: List[Tuple[float, float, float, float]]) -> bool:
+        """Check if the model at the given position collides with any other model in the unit."""
+        new_base = self._create_potential_base(x, y, z, facing)
+        new_base_shape = new_base.get_base_shape()
+
+        # Check against already placed models
+        for pos in positions:
+            other_base = self._create_potential_base(pos[0], pos[1], pos[2], pos[3])
+            if new_base_shape.intersects(other_base.get_base_shape()):
                 return True
+
+        # Check against all other models in the unit
+        for other_model in self.models:
+            if other_model != model:
+                other_base = other_model.model_base
+                if new_base_shape.intersects(other_base.get_base_shape()):
+                    return True
+
         return False
 
     def print_unit(self) -> str:
@@ -1031,3 +1040,4 @@ class Unit:
 
     def __hash__(self) -> int:
         return hash(self._id)
+

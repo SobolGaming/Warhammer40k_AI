@@ -185,7 +185,7 @@ class GameView:
                     self.selected_unit.set_position(unit_x, unit_y)
                     
                     if self.game_map.place_unit(self.selected_unit):
-                        print(f"Unit placed with centroid at ({unit_x}, {unit_y})")
+                        print(f"Unit {self.selected_unit.name} placed with centroid at ({unit_x}, {unit_y})")
                         self.selected_unit.deployed = True
                     else:
                         print("Failed to place unit")
@@ -297,7 +297,7 @@ class GameView:
 
         # Draw units on the battlefield
         for unit in self.game_map.units:
-            place_unit(battlefield_surface, unit, self.zoom_level, self.offset_x, self.offset_y, pygame.mouse.get_pos(), self.player1, self.player2)
+            draw_units(battlefield_surface, unit, self.zoom_level, self.offset_x, self.offset_y, pygame.mouse.get_pos(), self.player1, self.player2)
         
         self.screen.blit(battlefield_surface, (ROSTER_PANE_WIDTH, 0))
 
@@ -411,7 +411,7 @@ def draw_obstacle(screen: pygame.Surface, obstacle: Obstacle, zoom_level: float,
     # Draw the outline of the polygon
     pygame.draw.polygon(screen, (0, 0, 0), screen_vertices, 2)  # Black outline with 2px width
 
-def place_unit(screen: pygame.Surface, unit: Unit, zoom_level: float, offset_x: int, offset_y: int, mouse_pos: Tuple[int, int], player1: Player, player2: Player) -> None:
+def draw_units(screen: pygame.Surface, unit: Unit, zoom_level: float, offset_x: int, offset_y: int, mouse_pos: Tuple[int, int], player1: Player, player2: Player) -> None:
     # Determine the color based on which player the unit belongs to
     color = GREEN if unit in player1.get_army().units else RED if unit in player2.get_army().units else BLUE
 
