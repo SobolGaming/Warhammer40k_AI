@@ -14,6 +14,7 @@ import math
 import uuid
 import random
 import copy
+import numpy as np
 
 
 # Forward declarations
@@ -86,7 +87,8 @@ class Unit:
         self.initialize_round()
 
         self.position = None  # Initialize position as None
-        self.coherency_distance = 2 + (2 * self.models[0].model_base.getRadius())
+        self.coherency_distance = 2.0
+        self.required_neighbors = 0
         self.last_move_path = []  # Add this line
 
     def _parse_attribute(self, attribute_value: str) -> int:
@@ -321,6 +323,24 @@ class Unit:
         #    if not fleed:
         #        self.callbacks[hook_events.ENEMY_UNIT_KILLED].append(logger.error(self))
         #    self.parent_detachment.removeUnit(self)
+        self.update_coherency()
+
+    def add_model(self, model: Model) -> None:
+        assert model not in self.models
+        model.set_parent_unit(self)
+        self.models.append(model)
+        self.update_coherency()
+
+    def update_coherency(self) -> None:
+        if len(self.models) == 1:
+            self.coherency_distance = 2.0
+            self.required_neighbors = 0
+        elif len(self.models) > 5:
+            self.coherency_distance = 2.0
+            self.required_neighbors = 2
+        else:
+            self.coherency_distance = 2.0
+            self.required_neighbors = 1
 
     def initialize_round(self) -> None:
         """Reset round-tracked variables to default state."""
@@ -631,18 +651,6 @@ class Unit:
                 logger.error(f"Failed to roll dice for advancing unit {self.name}")
                 return False
             movement_range += advance_roll
-
-        # Determine unit coherency requirements
-        num_models = len(self.models)
-        if num_models == 1:
-            coherency_distance = 0.0
-            required_neighbors = 0
-        elif num_models <= 5:
-            coherency_distance = 2.0 + 2 * self.models[0].model_base.longestDistance()  # inches
-            required_neighbors = 1
-        else:
-            coherency_distance = 2.0 + 2 * self.models[0].model_base.longestDistance()  # inches
-            required_neighbors = 2
 
         # Select the leader model as the one closest to the destination
         leader_model = min(self.models, key=lambda m: get_dist(m.model_base.x - destination[0], m.model_base.y - destination[1]))
@@ -955,37 +963,32 @@ class Unit:
         start_x_game = start_x / zoom_level
         start_y_game = start_y / zoom_level
 
-        for model in self.models:
+        for i, model in enumerate(self.models):
             placed = False
             attempts = 0
             
             while not placed and attempts < max_attempts:
                 if not positions:  # First model
                     x, y = start_x_game, start_y_game
+                    z = 0.0
+                    positions.append((x, y, z, random.uniform(0, 2 * math.pi)))
+                    placed = True
+                    break
                 else:
-                    # Generate a random position within coherency distance of the last placed model
-                    last_x, last_y, _, _ = positions[-1]
-                    angle = random.uniform(0, 2 * math.pi)
-                    distance = random.uniform(0, self.coherency_distance)
-                    x = last_x + distance * math.cos(angle)
-                    y = last_y + distance * math.sin(angle)
-
-                z = 0  # Assume all models are placed on the ground for simplicity
-                facing = random.uniform(0, 2 * math.pi)  # Random facing
-
-                # Check if the model's base is entirely within the battlefield
-                within_boundary = game_map.is_within_boundary(model, (x, y))
-                if within_boundary:
-                    if not game_map.check_collision_with_obstacles(model, (x, y)):
-                        if not game_map.check_collision_with_other_units(model, (x, y)):
-                            # Check collision with all models in the unit, including the current one
-                            if not self._collides_with_unit_models(model, x, y, z, facing, positions):
+                    # Try to find a strategic position within coherency distance
+                    valid_positions = self._find_strategic_position(model, positions[-1], game_map)
+                    if not valid_positions:
+                        attempts += 1
+                        continue
+                    # Check collision with all models in the unit, including the current one
+                    for x, y in valid_positions:
+                        z = 0.0
+                        facing = positions[-1][3]
+                        if not self._collides_with_unit_models(model, x, y, z, facing, positions):
+                            if self._is_coherent_within_unit(model, x, y, z, facing, positions):
                                 positions.append((x, y, z, facing))
                                 placed = True
-                if not within_boundary and not positions:
-                    print(f"Model {model} cannot be mouse-placed at ({x}, {y}); outside battlefield boundary.")
-                    return []
-                
+                                break
                 attempts += 1
 
             if not placed:
@@ -1003,6 +1006,10 @@ class Unit:
 
     def _collides_with_unit_models(self, model: Model, x: float, y: float, z: float, facing: float, positions: List[Tuple[float, float, float, float]]) -> bool:
         """Check if the model at the given position collides with any other model in the unit."""
+        # If there are no positions yet, there can't be a collision
+        if not positions:
+            return False
+
         new_base = self._create_potential_base(x, y, z, facing)
         new_base_shape = new_base.get_base_shape()
 
@@ -1012,13 +1019,29 @@ class Unit:
             if new_base_shape.intersects(other_base.get_base_shape()):
                 return True
 
-        # Check against all other models in the unit
-        for other_model in self.models:
-            if other_model != model:
-                other_base = other_model.model_base
-                if new_base_shape.intersects(other_base.get_base_shape()):
-                    return True
+        return False
 
+    def _is_coherent_within_unit(self, model: Model, x: float, y: float, z: float, facing: float, positions: List[Tuple[float, float, float, float]]) -> bool:
+        """Check if the model at the given position is within coherency with the unit."""
+        new_base = self._create_potential_base(x, y, z, facing)
+        new_base_shape = new_base.get_base_shape()
+
+        if self.required_neighbors == 0:
+            return True
+
+        # Check against already placed models
+        found_neighbors = 0
+        current_neighbors_needed = 0 if len(positions) == 0 else 1 if len(positions) <= 5 else 2
+
+        if current_neighbors_needed == 0:
+            return True
+
+        for pos in positions:
+            other_base = self._create_potential_base(pos[0], pos[1], pos[2], pos[3])
+            if new_base_shape.distance(other_base.get_base_shape()) <= self.coherency_distance:
+                found_neighbors += 1
+                if found_neighbors >= current_neighbors_needed:
+                    return True
         return False
 
     def print_unit(self) -> str:
@@ -1041,3 +1064,31 @@ class Unit:
     def __hash__(self) -> int:
         return hash(self._id)
 
+    def _find_strategic_position(self, model: Model, last_position: Tuple[float, float, float, float], game_map: 'Map') -> Tuple[float, float]:
+        last_x, last_y, _, _ = last_position
+        directions = [
+            (0, 1), (1, 1), (1, 0), (1, -1),
+            (0, -1), (-1, -1), (-1, 0), (-1, 1)
+        ]
+
+        valid_positions = []
+        for dx, dy in directions:
+            radius_at_facing = model.model_base.getRadius(angle=get_angle(dx, dy))
+            for distance in np.arange(radius_at_facing + 0.5, radius_at_facing + self.coherency_distance, 0.5):
+                x = last_x + distance * dx
+                y = last_y + distance * dy
+                
+                if self._is_valid_position(x, y, game_map):
+                    valid_positions.append((x, y))
+        
+        return valid_positions
+
+    def _is_valid_position(self, x: float, y: float, game_map: 'Map') -> bool:
+        model = self.models[0]  # Use the first model as a reference
+        if not game_map.is_within_boundary(model, (x, y)):
+            return False
+        if game_map.check_collision_with_obstacles(model, (x, y)):
+            return False
+        if game_map.check_collision_with_other_units(model, (x, y)):
+            return False
+        return True
