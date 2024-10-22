@@ -981,11 +981,10 @@ class Unit:
                         attempts += 1
                         continue
                     # Check collision with all models in the unit, including the current one
-                    for x, y in valid_positions:
-                        z = 0.0
+                    for x, y, z in valid_positions:
                         facing = positions[-1][3]
                         if not self._collides_with_unit_models(model, x, y, z, facing, positions):
-                            if self._is_coherent_within_unit(model, x, y, z, facing, positions):
+                            if self._is_coherent_within_unit(x, y, z, facing, positions):
                                 positions.append((x, y, z, facing))
                                 placed = True
                                 break
@@ -1021,24 +1020,23 @@ class Unit:
 
         return False
 
-    def _is_coherent_within_unit(self, model: Model, x: float, y: float, z: float, facing: float, positions: List[Tuple[float, float, float, float]]) -> bool:
+    def _is_coherent_within_unit(self, x: float, y: float, z: float, facing: float, positions: List[Tuple[float, float, float, float]]) -> bool:
         """Check if the model at the given position is within coherency with the unit."""
         new_base = self._create_potential_base(x, y, z, facing)
         new_base_shape = new_base.get_base_shape()
 
-        if self.required_neighbors == 0:
-            return True
-
         # Check against already placed models
         found_neighbors = 0
         current_neighbors_needed = 0 if len(positions) == 0 else 1 if len(positions) <= 5 else 2
+        print(f"Current neighbors needed: {current_neighbors_needed}")
 
         if current_neighbors_needed == 0:
             return True
 
         for pos in positions:
-            other_base = self._create_potential_base(pos[0], pos[1], pos[2], pos[3])
+            other_base = self._create_potential_base(pos[0], pos[1], pos[2] if len(pos) > 2 else 0.0, pos[3] if len(pos) > 3 else facing)
             if new_base_shape.distance(other_base.get_base_shape()) <= self.coherency_distance:
+                print(f"Shape at {new_base_shape.exterior.coords} is within {self.coherency_distance} of shape at {other_base.get_base_shape().exterior.coords}")
                 found_neighbors += 1
                 if found_neighbors >= current_neighbors_needed:
                     return True
@@ -1064,8 +1062,8 @@ class Unit:
     def __hash__(self) -> int:
         return hash(self._id)
 
-    def _find_strategic_position(self, model: Model, last_position: Tuple[float, float, float, float], game_map: 'Map') -> Tuple[float, float]:
-        last_x, last_y, _, _ = last_position
+    def _find_strategic_position(self, model: Model, last_position: Tuple[float, float, float, float], game_map: 'Map') -> Tuple[float, float, float, float]:
+        last_x, last_y, _, facing = last_position
         directions = [
             (0, 1), (1, 1), (1, 0), (1, -1),
             (0, -1), (-1, -1), (-1, 0), (-1, 1)
@@ -1077,9 +1075,10 @@ class Unit:
             for distance in np.arange(radius_at_facing + 0.5, radius_at_facing + self.coherency_distance, 0.5):
                 x = last_x + distance * dx
                 y = last_y + distance * dy
+                z = 0.0
                 
                 if self._is_valid_position(x, y, game_map):
-                    valid_positions.append((x, y))
+                    valid_positions.append((x, y, z, facing))
         
         return valid_positions
 
