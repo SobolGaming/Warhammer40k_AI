@@ -240,7 +240,6 @@ def simplify_path(path, obstacles, ellipse, tolerance=0.1):
                 i += 1
         else:
             i += 1
-    
     return simplified
 
 def can_end_move_on_terrain(model: 'Model', obstacle: 'Obstacle') -> bool:

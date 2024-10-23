@@ -79,7 +79,12 @@ class Base:
         self.model_height = min(self.radius) * 2.0 if height is None else height
 
     def set_facing(self, facing: float) -> None:
-        self.facing = facing
+        # Normalize facing to be between 0 and 2π radians
+        self.facing = facing % RADIANS_IN_CIRCLE
+        #if self.base_type == BaseType.ELLIPTICAL:
+        #    # Swap major and minor axes if necessary to keep major axis aligned with facing
+        #    if abs(math.cos(facing)) < abs(math.sin(facing)):
+        #        self.radius = (self.radius[1], self.radius[0])
 
     @property
     def has_circular_base(self) -> bool:
@@ -100,12 +105,10 @@ class Base:
             raise ValueError(f"Unknown base_type: {self.base_type}")
 
     def _get_elliptical_radius(self, angle: float) -> float:
-        major_axis, minor_axis = self.radius
-        full_angle = (math.pi - self.facing) + angle
-        part_1 = math.pow(major_axis, 2) * math.pow(math.sin(full_angle), 2)
-        part_2 = math.pow(minor_axis, 2) * math.pow(math.cos(full_angle), 2)
-        radius = major_axis * minor_axis / math.sqrt(part_1 + part_2)
-        return round(radius, 4)
+        # Ensure angle is relative to the major axis
+        relative_angle = angle - self.facing
+        a, b = self.radius  # a is the semi-major axis, b is the semi-minor axis
+        return round((a * b) / math.sqrt((b * math.cos(relative_angle))**2 + (a * math.sin(relative_angle))**2), 4)
 
     def _get_hull_radius(self, angle: float) -> float:
         major_axis, minor_axis = self.radius[1], self.radius[0]
@@ -150,24 +153,6 @@ class Base:
         else:
             raise ValueError(f"Unknown BaseType geometry: {self.base_type}")
 
-    def shortestDistance(self, other: "Base") -> float:
-        return round(self.get_base_shape().distance(other.get_base_shape()), 4)
-
-    # Determine collision with another Base
-    def collidesWithBase(self, other: "Base") -> bool:
-        dx, dy, dz = other.x - self.x, other.y - self.y, other.z - self.z
-        # try to see if we can skip complex math due to height difference
-        if dz > self.model_height:
-            logger.debug(f"Quick Non-Collision Decision :: Delta Z: {dz}, Model Height: {self.model_height}")
-            return False
-        # try to see if we can skip complex math due to distance
-        max_dist = self.longestDistance() + other.longestDistance()
-        dist = math.hypot(dx, dy)
-        if max_dist < dist:
-            logger.debug(f"Quick Non-Collision Decision :: Max D: {max_dist}, D: {dist}")
-            return False
-        return self.shortestDistance(other) == 0.0
-
     def __repr__(self) -> str:
         return f"Base(type={self.base_type.name}, radius={self.radius}, x={self.x}, y={self.y}, z={self.z}, facing={self.facing})"
 
@@ -210,3 +195,4 @@ if __name__ == "__main__":
     val = b.getRadius(math.radians(0))
     print(f"Radius: {val}")
     assert val == 42.7549
+

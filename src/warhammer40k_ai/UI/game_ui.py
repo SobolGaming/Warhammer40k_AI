@@ -176,9 +176,8 @@ class GameView:
                 
                 if model_positions:
                     for model, position in zip(self.selected_unit.models, model_positions):
-                        model_x, model_y = position[:2]
-                        model_z = 0
-                        model.set_location(model_x, model_y, model_z, 0)
+                        model_x, model_y, model_z, model_facing = position
+                        model.set_location(model_x, model_y, model_z, model_facing)
                     
                     unit_x = sum(pos[0] for pos in model_positions) / len(model_positions)
                     unit_y = sum(pos[1] for pos in model_positions) / len(model_positions)
@@ -249,26 +248,27 @@ class GameView:
         return None
 
     def draw_move_path(self, unit: Unit):
-        if not unit.last_move_path:
-            return
+        for model in unit.models:
+            if not model.last_move_path:
+                return
 
-        # Convert game coordinates to screen coordinates
-        screen_path = [self.game_to_screen_coords(*point[:2]) for point in unit.last_move_path]
+            # Convert game coordinates to screen coordinates
+            screen_path = [self.game_to_screen_coords(*point[:2]) for point in model.last_move_path]
 
-        # Draw the path
-        pygame.draw.lines(self.screen, (0, 0, 255), False, screen_path, 2)
+            # Draw the path
+            pygame.draw.lines(self.screen, (0, 0, 255), False, screen_path, 2)
 
-        # Draw start and end points
-        start_point = screen_path[0]
-        end_point = screen_path[-1]
-        pygame.draw.circle(self.screen, (0, 255, 0), start_point, 5)  # Start point in green
-        pygame.draw.circle(self.screen, (255, 0, 0), end_point, 5)  # End point in red
+            # Draw start and end points
+            start_point = screen_path[0]
+            end_point = screen_path[-1]
+            pygame.draw.circle(self.screen, (0, 255, 0), start_point, 5)  # Start point in green
+            pygame.draw.circle(self.screen, (255, 0, 0), end_point, 5)  # End point in red
 
-        # Draw direction arrows
-        for i in range(len(screen_path) - 1):
-            mid_point = ((screen_path[i][0] + screen_path[i+1][0]) // 2,
-                         (screen_path[i][1] + screen_path[i+1][1]) // 2)
-            pygame.draw.circle(self.screen, (255, 0, 0), mid_point, 3)  # Small red dot for direction
+            # Draw direction arrows
+            for i in range(len(screen_path) - 1):
+                mid_point = ((screen_path[i][0] + screen_path[i+1][0]) // 2,
+                            (screen_path[i][1] + screen_path[i+1][1]) // 2)
+                pygame.draw.circle(self.screen, (255, 0, 0), mid_point, 3)  # Small red dot for direction
 
     def game_to_screen_coords(self, x: float, y: float) -> Tuple[int, int]:
         # Convert game coordinates to screen coordinates

@@ -44,6 +44,7 @@ class Model:
         # Gameplay related attributes
         self._id = str(uuid.uuid4())  # Generate a unique ID for each model
         self.parent_unit = None
+        self.last_move_path = []
 
     @property
     def id(self) -> str:
@@ -104,7 +105,7 @@ class Model:
         self.model_base.x = x
         self.model_base.y = y
         self.model_base.z = z
-        self.model_base.facing = facing
+        self.model_base.set_facing(facing)
 
     def get_location(self) -> Tuple[float, float, float, float]:
         """Get the location and facing of the model."""
@@ -292,3 +293,9 @@ class Model:
                 f"base_size={self.model_base}\nwargear={self.wargear}\n"
                 f"optional_wargear={self.optional_wargear})\n"
                 f"abilities={self.abilities.keys()})")
+
+    def __eq__(self, other: "Model") -> bool:
+        return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)

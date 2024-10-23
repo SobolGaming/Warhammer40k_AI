@@ -6,7 +6,7 @@ from ..utility.model_base import Base, BaseType
 from .wargear import Wargear, WargearOption
 from .ability import Ability
 from ..utility.range import Range
-from ..utility.calcs import get_dist, get_angle, convert_mm_to_inches, a_star, get_pivot_cost, angle_difference, can_end_move_on_terrain
+from ..utility.calcs import get_dist, get_angle, convert_mm_to_inches, a_star, simplify_path, get_pivot_cost, angle_difference, can_end_move_on_terrain
 from ..utility.dice import get_roll
 from .status_effects import StatusEffect
 from ..utility.constants import VIEWING_ANGLE
@@ -87,9 +87,7 @@ class Unit:
         self.initialize_round()
 
         self.position = None  # Initialize position as None
-        self.coherency_distance = 2.0
-        self.required_neighbors = 0
-        self.last_move_path = []  # Add this line
+        self.update_coherency()  # Sets coherency_distance and required_neighbors
 
     def _parse_attribute(self, attribute_value: str) -> int:
         # Remove " and + from the attribute value
@@ -486,6 +484,7 @@ class Unit:
     def configure_models(self, count, wargear):
         # Recreate the models with the specified count
         self.models = self._create_models(self._datasheet, count)
+        self.update_coherency()
 
         # Apply wargear to all models
         for model in self.models:
@@ -497,6 +496,10 @@ class Unit:
         for model in self.models:
             abilities.extend(model.abilities)
         return abilities
+
+    @property
+    def model_height(self) -> float:
+        return max(model.model_base.model_height for model in self.models)
 
     ###########################################################################
     ### Properties
@@ -652,6 +655,7 @@ class Unit:
                 return False
             movement_range += advance_roll
 
+        '''
         # Select the leader model as the one closest to the destination
         leader_model = min(self.models, key=lambda m: get_dist(m.model_base.x - destination[0], m.model_base.y - destination[1]))
         other_models = [model for model in self.models if model != leader_model]
@@ -669,31 +673,12 @@ class Unit:
             return False
 
         # Calculate pivot cost for the leader model if needed
-        initial_facing = leader_model.facing  # Assuming facing is in degrees
         direction_to_destination = get_angle(
             destination[1] - leader_model.model_base.y,
             destination[0] - leader_model.model_base.x
         )
 
-        # Calculate the angular difference
-        angular_diff = angle_difference(initial_facing, direction_to_destination)
-
-        # Determine if the leader needs to pivot
-        if abs(angular_diff) > VIEWING_ANGLE:  # 30 degrees in radians
-            pivot_cost = get_pivot_cost(self)
-            logger.info(f"Unit {self.name} needs to pivot. Pivot cost: {pivot_cost}")
-        else:
-            pivot_cost = 0  # No pivot cost needed
-            logger.info(f"Unit {self.name} does not need to pivot.")
-
-        # Adjust movement range if pivot is needed
-        adjusted_movement_range = movement_range - pivot_cost
-        if adjusted_movement_range <= 0:
-            logger.error(f"Unit {self.name} does not have enough movement after pivoting.")
-            return False
-
         # List to keep track of moved models and their positions
-        moved_models = []
         moved_positions = []
 
         # Move the leader model first
@@ -701,13 +686,14 @@ class Unit:
         if path is None:
             logger.error(f"Cannot move unit {self.name} - leader model {leader_model} path is None")
             return False  # Leader cannot reach destination
+        #path = simplify_path(path, game_map.obstacles, leader_model.model_base.get_base_shape())
 
         # Move the leader along the path
-        distance = pivot_cost  # Start with pivot cost if any
-        last_node = (leader_model.model_base.x, leader_model.model_base.y, leader_model.model_base.z)
-        new_facing = initial_facing
-        self.last_move_path = [last_node]  # Initialize the path with the starting position
+        distance = 0
+        last_node = leader_model.get_location()
+        leader_model.last_move_path = [last_node]  # Initialize the path with the starting position
 
+        print(f"Model {leader_model._id} {leader_model.name} moving to {destination}")
         for node in path[1:]:
             dx = node[0] - last_node[0]
             dy = node[1] - last_node[1]
@@ -716,81 +702,53 @@ class Unit:
             if distance + segment_distance > movement_range:
                 break
             distance += segment_distance
-            new_facing = direction_to_destination
-            last_node = (node[0], node[1], node[2] if len(node) > 2 else 0)
-            self.last_move_path.append(last_node)  # Add each node to the path
+            last_node = (node[0], node[1], node[2] if len(node) > 2 else 0, direction_to_destination)
+            leader_model.last_move_path.append(last_node)  # Add each node to the path
 
         # Before setting the leader's new location, check boundary
         if not game_map.is_within_boundary(leader_model):
             logger.error(f"Leader model {leader_model} cannot move outside the battlefield boundaries.")
             return False  # Movement is invalid
 
-        leader_model.set_location(last_node[0], last_node[1], last_node[2], new_facing)
-        moved_models.append(leader_model)
-        moved_positions.append((leader_model.model_base.x, leader_model.model_base.y, leader_model.model_base.z))
+        leader_model.set_location(*last_node)
+        print(f"Model {leader_model._id} {leader_model.name} moved to {destination} travelling {distance} inches")
+        print(f"Model {leader_model._id} path: {leader_model.last_move_path}")
+        moved_positions.append(leader_model.get_location())
         '''
-        potential_positions, potential_orientations = generate_coherency_positions(self.models, leader_model, destination[0], destination[1], coherency_distance, game_map, required_neighbors)
 
         # Now move the other models
-        for model in other_models:
-            found_path = False
-            for idx in range(len(potential_positions)):
-                position = (potential_positions[idx][0], potential_positions[idx][1], leader_model.model_base.z)
-                direction_to_position = get_angle(
-                    position[1] - model.model_base.y,
-                    position[0] - model.model_base.x
-                )
-                angular_diff = angle_difference(initial_facing, direction_to_position)
-                if abs(angular_diff) > 30:
-                    pivot_cost_model = get_pivot_cost(self)
-                else:
-                    pivot_cost_model = 0
 
-                adjusted_movement_range_model = movement_range - pivot_cost_model
-                if adjusted_movement_range_model <= 0:
-                    continue  # Cannot move this model after pivoting
-                path = a_star(model, game_map.obstacles, position)
-                if path is not None:
-                    # Move the model along the path
-                    distance = pivot_cost_model  # Start with pivot cost if any
-                    last_node = (model.model_base.x, model.model_base.y, model.model_base.z)
+        # Generate potential positions for the other models
+        potential_positions = self.calculate_model_positions(destination[0], destination[1], game_map) #, seeded_positions=moved_positions)
 
-                    for node in path[1:]:
-                        dx = node[0] - last_node[0]
-                        dy = node[1] - last_node[1]
-                        dz = node[2] - last_node[2] if len(node) > 2 else 0
-                        segment_distance = get_dist(dx, dy, dz)
-                        if distance + segment_distance > movement_range:
-                            break
-                        distance += segment_distance
-                        new_facing = potential_orientations[idx]
-                        last_node = (node[0], node[1], node[2])
-                    
-                    # Before setting the model's new location, check boundary
-                    base_shape = model.model_base.get_base_shape_at(last_node[0], last_node[1], new_facing)
-                    if not game_map.is_within_boundary(base_shape):
-                        logger.warning(f"Model {model} cannot move outside the battlefield boundaries.")
-                        continue  # Skip this position and try the next potential position
+        for model, destination in zip(self.models, potential_positions):
+            print(f"Model {model._id} {model.name} moving to {destination}")
+            shortest_path = a_star(model, game_map.obstacles, destination)
+            if not shortest_path:
+                print(f"Cannot move unit {self.name} - model {model._id} path is None")
+                continue  # Model cannot reach destination
+            path_distance = sum(get_dist(shortest_path[i][0] - shortest_path[i-1][0], shortest_path[i][1] - shortest_path[i-1][1]) for i in range(1, len(shortest_path)))
+            if path_distance > model.movement:
+                print(f"Cannot move unit {self.name} - model {model._id} path distance {path_distance} is greater than movement {model.movement}")
+                continue  # Model cannot reach destination
+            last_node = model.get_location()
+            model.last_move_path = [last_node]
+            direction_to_destination = get_angle(destination[0] - model.model_base.x, destination[1] - model.model_base.y)
+            distance = 0.0
+            for node in shortest_path[1:]:
+                    dx = node[0] - last_node[0]
+                    dy = node[1] - last_node[1]
+                    dz = node[2] - last_node[2] if len(node) > 2 else 0
+                    segment_distance = get_dist(dx, dy, dz)
+                    if distance + segment_distance > movement_range:
+                        break
+                    distance += segment_distance
+                    last_node = (node[0], node[1], node[2] if len(node) > 2 else 0, direction_to_destination)
+                    model.last_move_path.append(last_node)
+            model.set_location(*destination)
+            print(f"Model {model._id} {model.name} moved to {destination} travelling {distance} inches")
+            print(f"Model {model._id} path: {model.last_move_path}")
 
-                    ending_terrain = None
-                    for obstacle in game_map.obstacles:
-                        if base_shape.intersects(obstacle.polygon):
-                            ending_terrain = obstacle
-                            break
-
-                    if ending_terrain:
-                        if not can_end_move_on_terrain(model, ending_terrain):
-                            logger.warning(f"Model {model} cannot end move on terrain {ending_terrain.terrain_type}.")
-                            continue  # Try next potential position
-
-                    model.set_location(last_node[0], last_node[1], last_node[2], new_facing)
-                    moved_models.append(model)
-                    moved_positions.append((model.model_base.x, model.model_base.y, model.model_base.z))
-                    found_path = True
-                    break  # Exit loop once a valid position is found
-            if not found_path:
-                logger.warning(f"Model {model} could not find a valid position within coherency.")
-        '''
         # Update unit centroid
         self.reset_position()
 
@@ -955,8 +913,8 @@ class Unit:
         distance = get_dist(x - center_x, y - center_y)
         return distance <= radius
 
-    def calculate_model_positions(self, start_x: float, start_y: float, game_map: 'Map', zoom_level: float = 1.0) -> List[Tuple[float, float, float, float]]:
-        positions = []
+    def calculate_model_positions(self, start_x: float, start_y: float, game_map: 'Map', zoom_level: float = 1.0, seeded_positions: List[Tuple[float, float, float, float]] = []) -> List[Tuple[float, float, float, float]]:
+        positions = seeded_positions.copy()
         max_attempts = 100  # Maximum number of attempts to place each model
 
         # Convert start position (mouse position) to game coordinates
@@ -970,20 +928,20 @@ class Unit:
             while not placed and attempts < max_attempts:
                 if not positions:  # First model
                     x, y = start_x_game, start_y_game
-                    z = 0.0
-                    positions.append((x, y, z, random.uniform(0, 2 * math.pi)))
+                    z = 0.0  # TODO - should be game_map.get_height_at(x, y)
+                    facing = 0.0
+                    positions.append((x, y, z, facing))
                     placed = True
                     break
                 else:
                     # Try to find a strategic position within coherency distance
-                    valid_positions = self._find_strategic_position(model, positions[-1], game_map)
+                    valid_positions = self._find_strategic_position(model, positions, game_map)
                     if not valid_positions:
                         attempts += 1
                         continue
                     # Check collision with all models in the unit, including the current one
-                    for x, y, z in valid_positions:
-                        facing = positions[-1][3]
-                        if not self._collides_with_unit_models(model, x, y, z, facing, positions):
+                    for x, y, z, facing in valid_positions:
+                        if not self._collides_with_unit_models(x, y, z, facing, positions):
                             if self._is_coherent_within_unit(x, y, z, facing, positions):
                                 positions.append((x, y, z, facing))
                                 placed = True
@@ -1003,21 +961,32 @@ class Unit:
         new_base.set_facing(facing)
         return new_base
 
-    def _collides_with_unit_models(self, model: Model, x: float, y: float, z: float, facing: float, positions: List[Tuple[float, float, float, float]]) -> bool:
+    def _collides_with_unit_models(self, x: float, y: float, z: float, facing: float, positions: List[Tuple[float, float, float, float]]) -> bool:
         """Check if the model at the given position collides with any other model in the unit."""
-        # If there are no positions yet, there can't be a collision
         if not positions:
             return False
 
         new_base = self._create_potential_base(x, y, z, facing)
-        new_base_shape = new_base.get_base_shape()
 
-        # Check against already placed models
         for pos in positions:
-            other_base = self._create_potential_base(pos[0], pos[1], pos[2], pos[3])
-            if new_base_shape.intersects(other_base.get_base_shape()):
-                return True
+            print(f"Checking collision: New base at ({x:.4f}, {y:.4f}, {z:.4f}) facing {facing:.2f}")
+            print(f"Against existing base at ({pos[0]:.4f}, {pos[1]:.4f}, {pos[2]:.4f}) facing {pos[3]:.2f}")
 
+            if (z - pos[2]) > self.model_height:
+                print(f"Quick Non-Collision Decision :: Delta Z: {z - pos[2]}, Model Height: {self.model_height}")
+                return False
+            
+            other_base = self._create_potential_base(pos[0], pos[1], pos[2], pos[3])
+            
+            distance = math.sqrt((x - pos[0])**2 + (y - pos[1])**2)
+            angle = get_angle(y - pos[1], x - pos[0])
+            combined_radius = new_base.getRadius(angle) + other_base.getRadius(angle)
+            print(f"Distance between bases: {distance:.4f}")
+            print(f"Combined radius: {combined_radius:.4f}")
+
+            if distance <= combined_radius:
+                print(f"Collision detected!")
+                return True
         return False
 
     def _is_coherent_within_unit(self, x: float, y: float, z: float, facing: float, positions: List[Tuple[float, float, float, float]]) -> bool:
@@ -1027,8 +996,7 @@ class Unit:
 
         # Check against already placed models
         found_neighbors = 0
-        current_neighbors_needed = 0 if len(positions) == 0 else 1 if len(positions) <= 5 else 2
-        print(f"Current neighbors needed: {current_neighbors_needed}")
+        current_neighbors_needed = 0 if len(positions) == 0 else 1 if len(positions) == 1 else self.required_neighbors
 
         if current_neighbors_needed == 0:
             return True
@@ -1036,10 +1004,43 @@ class Unit:
         for pos in positions:
             other_base = self._create_potential_base(pos[0], pos[1], pos[2] if len(pos) > 2 else 0.0, pos[3] if len(pos) > 3 else facing)
             if new_base_shape.distance(other_base.get_base_shape()) <= self.coherency_distance:
-                print(f"Shape at {new_base_shape.exterior.coords} is within {self.coherency_distance} of shape at {other_base.get_base_shape().exterior.coords}")
                 found_neighbors += 1
                 if found_neighbors >= current_neighbors_needed:
                     return True
+        return False
+
+    def _find_strategic_position(self, model: Model, placed_positions: List[Tuple[float, float, float, float]], game_map: 'Map') -> List[Tuple[float, float, float, float]]:
+        last_x, last_y, last_z, facing = placed_positions[-1]
+        directions = [
+            (0, 1), (1, 1), (1, 0), (1, -1),
+            (0, -1), (-1, -1), (-1, 0), (-1, 1)
+        ]
+
+        valid_positions = []
+        for dx, dy in directions:
+            radius_at_facing = model.model_base.getRadius(angle=get_angle(dy, dx))
+            print(f"{model._id} {model.name} X: {last_x}, Y: {last_y}, Facing: {round(math.degrees(facing), 2)} :: {radius_at_facing} :: {dx} :: {dy}")
+            for distance in np.arange(radius_at_facing + 0.1, radius_at_facing + self.coherency_distance, 0.1):
+                x = last_x + distance * dx
+                y = last_y + distance * dy
+                z = last_z  # TODO - should be game_map.get_height_at(x, y)
+                
+                if self._is_valid_position(x, y, z, facing, game_map, placed_positions):
+                    valid_positions.append((x, y, z, facing))
+        return valid_positions
+
+    def _is_valid_position(self, x: float, y: float, z: float, facing: float, game_map: 'Map', placed_positions: List[Tuple[float, float, float, float]]) -> bool:
+        model = self.models[0]  # Use the first model as a reference
+        if not game_map.is_within_boundary(model, (x, y)):
+            return False
+        if game_map.check_collision_with_obstacles(model, (x, y)):
+            return False
+        if game_map.check_collision_with_other_units(model, (x, y)):
+            return False
+        if self._collides_with_unit_models(x, y, z, facing, placed_positions):
+            return False
+        if self._is_coherent_within_unit(x, y, z, facing, placed_positions):
+            return True
         return False
 
     def print_unit(self) -> str:
@@ -1062,32 +1063,5 @@ class Unit:
     def __hash__(self) -> int:
         return hash(self._id)
 
-    def _find_strategic_position(self, model: Model, last_position: Tuple[float, float, float, float], game_map: 'Map') -> Tuple[float, float, float, float]:
-        last_x, last_y, _, facing = last_position
-        directions = [
-            (0, 1), (1, 1), (1, 0), (1, -1),
-            (0, -1), (-1, -1), (-1, 0), (-1, 1)
-        ]
 
-        valid_positions = []
-        for dx, dy in directions:
-            radius_at_facing = model.model_base.getRadius(angle=get_angle(dx, dy))
-            for distance in np.arange(radius_at_facing + 0.5, radius_at_facing + self.coherency_distance, 0.5):
-                x = last_x + distance * dx
-                y = last_y + distance * dy
-                z = 0.0
-                
-                if self._is_valid_position(x, y, game_map):
-                    valid_positions.append((x, y, z, facing))
-        
-        return valid_positions
 
-    def _is_valid_position(self, x: float, y: float, game_map: 'Map') -> bool:
-        model = self.models[0]  # Use the first model as a reference
-        if not game_map.is_within_boundary(model, (x, y)):
-            return False
-        if game_map.check_collision_with_obstacles(model, (x, y)):
-            return False
-        if game_map.check_collision_with_other_units(model, (x, y)):
-            return False
-        return True
