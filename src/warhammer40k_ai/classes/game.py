@@ -112,13 +112,13 @@ class Game:
         return self.battlefield_size
 
     def next_turn(self):
-        self.current_player_index = (self.current_player_index + 1) % len(self.players)
-        if self.current_player_index == 0:
-            if self.is_fight_phase():
+        if self.is_fight_phase():
+            if self.current_player_index == 1:
                 self.turn += 1
-                self.phase = BattleRoundPhases.COMMAND_PHASE
-            else:
-                self.phase = BattleRoundPhases(self.phase.value + 1)
+            self.current_player_index = (self.current_player_index + 1) % len(self.players)
+            self.phase = BattleRoundPhases.COMMAND_PHASE
+        else:
+            self.phase = BattleRoundPhases(self.phase.value + 1)
 
     def is_command_phase(self) -> bool:
         return self.phase == BattleRoundPhases.COMMAND_PHASE
