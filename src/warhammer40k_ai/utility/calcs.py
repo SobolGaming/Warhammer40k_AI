@@ -97,7 +97,7 @@ def get_movement_cost(model: 'Model', point_a: Tuple[float, float], point_b: Tup
 
 def heuristic(a, b):
     """Calculate the heuristic (estimated distance) between two points."""
-    return get_dist(a[0] - b[0], a[1] - b[1])
+    return get_dist(a[0] - b[0], a[1] - b[1], a[2] - b[2])
 
 def distance_to_nearest_obstacle(point, obstacles, target):
     return min(obstacle.polygon.distance(Point(point)) for obstacle in obstacles)
@@ -143,7 +143,7 @@ def move_object(obj, obstacles, dx, dy, step):
 
 def get_neighbors(current, obstacles, ellipse, goal):
     """Get valid neighboring points with adaptive step size and direct path to goal."""
-    x, y = current
+    x, y, z = current
     step_size = adaptive_step_size(current, obstacles, ellipse)
     
     # Add direct path to goal
@@ -170,13 +170,13 @@ def get_neighbors(current, obstacles, ellipse, goal):
     for n in neighbors:
         moved_ellipse = translate(ellipse, n[0] - ellipse.centroid.x, n[1] - ellipse.centroid.y)
         if not any(moved_ellipse.intersects(obs.polygon) for obs in obstacles):
-            valid_neighbors.append(n)
+            valid_neighbors.append((n[0], n[1], z))
     return valid_neighbors
 
-def a_star(model: 'Model', obstacles, target, max_iterations=50000):
+def a_star(model: 'Model', obstacles, target, max_iterations=10000):
     """A* pathfinding algorithm with adaptive step size and iteration limit."""
-    start = (model.model_base.x, model.model_base.y)
-    goal = target[:2]
+    start = (model.model_base.x, model.model_base.y, model.model_base.z)
+    goal = target[:3]
     ellipse = model.model_base.get_base_shape()
     
     open_set = []

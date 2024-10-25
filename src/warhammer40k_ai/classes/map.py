@@ -126,6 +126,28 @@ class Map:
                         return True
         return False
 
+    def get_height_at_point(self, x: float, y: float) -> float:
+        """
+        Check if a given X,Y coordinate has an obstacle and return its height (Z coordinate).
+        If multiple obstacles overlap, return the maximum height.
+
+        Args:
+            x (float): X coordinate to check
+            y (float): Y coordinate to check
+
+        Returns:
+            float: Maximum height of obstacles at the given point, or 0 if no obstacles are present
+        """
+        point = Point(x, y)
+        max_height = 0.0
+
+        for obstacle in self.obstacles:
+            if obstacle.polygon.contains(point):
+                max_height = max(max_height, obstacle.height)
+
+        return max_height
+
+
 
 class ObstacleType(Enum):
     CRATER_AND_RUBBLE = auto()

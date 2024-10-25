@@ -655,71 +655,9 @@ class Unit:
                 return False
             movement_range += advance_roll
 
-        '''
-        # Select the leader model as the one closest to the destination
-        leader_model = min(self.models, key=lambda m: get_dist(m.model_base.x - destination[0], m.model_base.y - destination[1]))
-        other_models = [model for model in self.models if model != leader_model]
-
-        if not game_map.is_within_boundary(leader_model, destination):
-            logger.error(f"Cannot move unit {self.name} to {destination}: out of boundary")
-            return False
-        
-        if game_map.check_collision_with_obstacles(leader_model, destination):
-            logger.error(f"Cannot move unit {self.name} to {destination}: obstacle collision at destination")
-            return False
-
-        if game_map.check_collision_with_other_units(leader_model, destination):
-            logger.error(f"Cannot move unit {self.name} to {destination}: other unit collision at destination")
-            return False
-
-        # Calculate pivot cost for the leader model if needed
-        direction_to_destination = get_angle(
-            destination[1] - leader_model.model_base.y,
-            destination[0] - leader_model.model_base.x
-        )
-
-        # List to keep track of moved models and their positions
-        moved_positions = []
-
-        # Move the leader model first
-        path = a_star(leader_model, game_map.obstacles, destination)
-        if path is None:
-            logger.error(f"Cannot move unit {self.name} - leader model {leader_model} path is None")
-            return False  # Leader cannot reach destination
-        #path = simplify_path(path, game_map.obstacles, leader_model.model_base.get_base_shape())
-
-        # Move the leader along the path
-        distance = 0
-        last_node = leader_model.get_location()
-        leader_model.last_move_path = [last_node]  # Initialize the path with the starting position
-
-        print(f"Model {leader_model._id} {leader_model.name} moving to {destination}")
-        for node in path[1:]:
-            dx = node[0] - last_node[0]
-            dy = node[1] - last_node[1]
-            dz = node[2] - last_node[2] if len(node) > 2 else 0
-            segment_distance = get_dist(dx, dy, dz)
-            if distance + segment_distance > movement_range:
-                break
-            distance += segment_distance
-            last_node = (node[0], node[1], node[2] if len(node) > 2 else 0, direction_to_destination)
-            leader_model.last_move_path.append(last_node)  # Add each node to the path
-
-        # Before setting the leader's new location, check boundary
-        if not game_map.is_within_boundary(leader_model):
-            logger.error(f"Leader model {leader_model} cannot move outside the battlefield boundaries.")
-            return False  # Movement is invalid
-
-        leader_model.set_location(*last_node)
-        print(f"Model {leader_model._id} {leader_model.name} moved to {destination} travelling {distance} inches")
-        print(f"Model {leader_model._id} path: {leader_model.last_move_path}")
-        moved_positions.append(leader_model.get_location())
-        '''
-
-        # Now move the other models
-
         # Generate potential positions for the other models
-        potential_positions = self.calculate_model_positions(destination[0], destination[1], game_map) #, seeded_positions=moved_positions)
+        potential_positions = self.calculate_model_positions(destination[0], destination[1], game_map)
+        distance = 0.0
 
         for model, destination in zip(self.models, potential_positions):
             print(f"Model {model._id} {model.name} moving to {destination}")
@@ -928,7 +866,7 @@ class Unit:
             while not placed and attempts < max_attempts:
                 if not positions:  # First model
                     x, y = start_x_game, start_y_game
-                    z = 0.0  # TODO - should be game_map.get_height_at(x, y)
+                    z = game_map.get_height_at_point(x, y)
                     facing = 0.0
                     positions.append((x, y, z, facing))
                     placed = True
@@ -979,8 +917,13 @@ class Unit:
             other_base = self._create_potential_base(pos[0], pos[1], pos[2], pos[3])
             
             distance = math.sqrt((x - pos[0])**2 + (y - pos[1])**2)
-            angle = get_angle(y - pos[1], x - pos[0])
-            combined_radius = new_base.getRadius(angle) + other_base.getRadius(angle)
+            angle_between = get_angle(y - pos[1], x - pos[0])
+            
+            # Calculate the angle difference for each base
+            angle_diff_new = angle_difference(facing, angle_between)
+            angle_diff_other = angle_difference(pos[3], angle_between + math.pi)  # Add pi to get the opposite direction
+            
+            combined_radius = new_base.getRadius(angle_diff_new) + other_base.getRadius(angle_diff_other)
             print(f"Distance between bases: {distance:.4f}")
             print(f"Combined radius: {combined_radius:.4f}")
 
@@ -1023,7 +966,7 @@ class Unit:
             for distance in np.arange(radius_at_facing + 0.1, radius_at_facing + self.coherency_distance, 0.1):
                 x = last_x + distance * dx
                 y = last_y + distance * dy
-                z = last_z  # TODO - should be game_map.get_height_at(x, y)
+                z = game_map.get_height_at_point(x, y)
                 
                 if self._is_valid_position(x, y, z, facing, game_map, placed_positions):
                     valid_positions.append((x, y, z, facing))
