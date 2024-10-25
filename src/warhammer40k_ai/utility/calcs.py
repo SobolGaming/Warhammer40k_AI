@@ -12,6 +12,9 @@ if TYPE_CHECKING:
     from ..classes.model import Model
     from ..classes.map import Map
 
+import logging
+logging.basicConfig(format="%(asctime)s %(levelname)-8s %(message)s")
+logger = logging.getLogger(__name__)
 
 # Convert mm (as in base size of models) to inches
 def convert_mm_to_inches(value: float) -> float:
@@ -64,7 +67,7 @@ def get_movement_cost(model: 'Model', point_a: Tuple[float, float], point_b: Tup
     dz = 0  # Initialize vertical distance
 
     # Create a line representing the movement path
-    print(f"A: {point_a}, B: {point_b}")
+    #print(f"A: {point_a}, B: {point_b}")
     movement_line = LineString([point_a, point_b])
 
     # Find obstacles that intersect the movement path
@@ -132,11 +135,11 @@ def move_object(obj, obstacles, dx, dy, step):
             for alt_dx, alt_dy in alternative_directions:
                 alt_obj = translate(obj, alt_dx, alt_dy)
                 if not any(alt_obj.intersects(obs.polygon) for obs in obstacles):
-                    print(f"Collision avoided at step {step}")
+                    logger.debug(f"Collision avoided at step {step}")
                     return alt_obj, False  # Return the alternative movement
 
             # If no alternative direction works, stay in place
-            print(f"Collision at step {step}, no alternative path found")
+            logger.debug(f"Collision at step {step}, no alternative path found")
             return obj, True  # Return the original object and collision flag
 
     return new_obj, False
@@ -196,7 +199,7 @@ def a_star(model: 'Model', obstacles, target, max_iterations=10000):
                 path.append(current)
                 current = came_from[current]
             path.append(start)
-            print(f"Path found after {iterations} iterations")
+            logging.debug(f"Path found after {iterations} iterations")
             return path[::-1] + [goal]  # Add the exact goal point to the end of the path
         
         for neighbor in get_neighbors(current, obstacles, current_ellipse, goal):
@@ -210,7 +213,7 @@ def a_star(model: 'Model', obstacles, target, max_iterations=10000):
         
         iterations += 1
     
-    print(f"No path found after {iterations} iterations")
+    logger.debug(f"No path found after {iterations} iterations")
     return None  # No path found
 
 def simplify_path(path, obstacles, ellipse, tolerance=0.1):

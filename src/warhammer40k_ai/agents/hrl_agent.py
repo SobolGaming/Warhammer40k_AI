@@ -2,13 +2,13 @@ import random
 from typing import List, Tuple
 from warhammer40k_ai.classes.game import Game
 from warhammer40k_ai.classes.map import Objective
-from warhammer40k_ai.classes.unit import Unit
+from warhammer40k_ai.classes.unit import Unit, MovementAction
 from warhammer40k_ai.classes.player import Player
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from warhammer40k_ai.utility.constants import TOTAL_ROUNDS
-from warhammer40k_ai.utility.calcs import a_star
+from warhammer40k_ai.utility.calcs import get_dist
 
 # Constants
 PRIMARY_OBJECTIVE_REWARD = 10
@@ -173,44 +173,94 @@ class TacticalAgent:
             print(f"Commanding {unit.name}")
         self.game.event_system.publish("command_phase_end", game_state=self.game.get_state())
 
-    def movement_phase(self, unit: Unit, objective: Objective) -> List[List[Tuple[float, float, float]]]:
-        """Handle unit pathing towards objectives."""
-        model_paths = []
-        if objective and objective.location:
-            self.game.event_system.publish("movement_phase_start", unit=unit, game_state=self.game.get_state())
-            for model in unit.models:
-                path = a_star(model, self.game.map.obstacles, objective.location)
-                model_paths.append(path)
-        return model_paths
+    def movement_phase(self, unit: Unit, objective: Objective) -> None:
+        """Decide on movement actions for the unit and execute them."""
+        if not unit.deployed or not unit.is_alive():
+            return
+
+        # Determine the unit's engagement state
+        state = unit.get_engagement_state(self.game.map)
+        available_actions = unit.get_available_move_actions(state)
+        # Agent decides on the action
+        chosen_action = self.choose_movement_action(unit, available_actions, objective)
+        # Decide on the destination
+        destination = self.calculate_destination(unit, chosen_action, objective)
+        # Execute the movement
+        unit.do_move_action(chosen_action, destination, self.game.map)
+
+    def choose_movement_action(self, unit: Unit, available_actions: List[int], objective: Objective) -> int:
+        # Simple logic: if MOVE is available, choose MOVE; else REMAIN_STATIONARY
+        if MovementAction.MOVE in available_actions:
+            return MovementAction.MOVE
+        else:
+            return MovementAction.REMAIN_STATIONARY
+
+    def calculate_destination(self, unit: Unit, action: int, objective: Objective) -> Tuple[float, float, float]:
+        if action == MovementAction.REMAIN_STATIONARY:
+            return unit.get_position()
+        elif action in [MovementAction.MOVE, MovementAction.ADVANCE]:
+            # Move towards the objective
+            unit_position = unit.get_position()
+            obj_position = (objective.location.x, objective.location.y, objective.location.z)
+            # Calculate direction vector
+            dx = obj_position[0] - unit_position[0]
+            dy = obj_position[1] - unit_position[1]
+            dz = self.game.map.get_height_at_point(obj_position[0], obj_position[1]) - unit_position[2]
+            distance = get_dist(dx, dy, dz)
+            # Determine movement range
+            movement_range = unit.movement
+            if action == MovementAction.ADVANCE:
+                # For simplicity, assume maximum advance roll
+                movement_range += 6
+            # Calculate new position
+            if distance <= movement_range:
+                return obj_position
+            else:
+                scale = movement_range / distance
+                new_x = unit_position[0] + dx * scale
+                new_y = unit_position[1] + dy * scale
+                new_z = self.game.map.get_height_at_point(new_x, new_y)
+                return (new_x, new_y, new_z)
+        else:
+            return unit.get_position()
 
     def shooting_phase(self, unit: Unit) -> None:
         """Select targets and resolve shooting attacks."""
+        if not unit.deployed or not unit.is_alive():
+            return
+
         self.game.event_system.publish("shooting_phase_start", unit=unit, game_state=self.game.get_state())
-        targets = self.game.find_enemies_in_shooting_range(unit)
-        target = random.choice(targets)
-        if target:
-            print(f"{unit.name} shoots at {target.name}")
-            self.game.attack(unit, target)
+        #targets = self.game.find_enemies_in_shooting_range(unit)
+        #target = random.choice(targets)
+        #if target:
+        #    print(f"{unit.name} shoots at {target.name}")
+        #    self.game.attack(unit, target)
         self.game.event_system.publish("shooting_phase_end", unit=unit, game_state=self.game.get_state())
 
     def charge_phase(self, unit: Unit) -> None:
         """Identify nearby targets and charge."""
+        if not unit.deployed or not unit.is_alive():
+            return
+
         self.game.event_system.publish("charge_phase_start", unit=unit, game_state=self.game.get_state())
-        targets = self.game.find_enemies_in_charge_range(unit)
-        target = random.choice(targets)
-        if target:
-            print(f"{unit.name} charges {target.name}")
-            self.game.charge(unit, target)
+        #targets = self.game.find_enemies_in_charge_range(unit)
+        #target = random.choice(targets)
+        #if target:
+        #    print(f"{unit.name} charges {target.name}")
+        #    self.game.charge(unit, target)
         self.game.event_system.publish("charge_phase_end", unit=unit, game_state=self.game.get_state())
 
     def fight_phase(self, unit: Unit) -> None:
         """Resolve melee combat."""
+        if not unit.deployed or not unit.is_alive():
+            return
+
         self.game.event_system.publish("fight_phase_start", unit=unit, game_state=self.game.get_state())
-        targets = self.game.find_enemies_in_melee_range(unit)
-        target = random.choice(targets)
-        if target:
-            print(f"{unit.name} fights {target.name}")
-            self.game.fight(unit, target)
+        #targets = self.game.find_enemies_in_melee_range(unit)
+        #target = random.choice(targets)
+        #if target:
+        #    print(f"{unit.name} fights {target.name}")
+        #    self.game.fight(unit, target)
         self.game.event_system.publish("fight_phase_end", unit=unit, game_state=self.game.get_state())
 
 

@@ -550,20 +550,11 @@ class Unit:
     ###########################################################################
     ### Movement
     ###########################################################################
-    def do_move_action(self, game_map: 'Map') -> bool:
-        # Determine the current state
-        state = self._get_engagement_state(game_map)
+    def do_move_action(self, action: int, destination: Tuple[float, float, float], game_map: 'Map') -> bool:
+        """Executes the given movement action."""
+        return self._execute_action(action, destination, game_map)
 
-        # Get available actions based on the state
-        available_actions = self._get_available_move_actions(state)
-
-        # Choose an action (this is where the RL agent would make a decision)
-        chosen_action, destination = self._choose_action(available_actions, game_map)
-
-        # Execute the chosen action
-        return self._execute_action(chosen_action, destination, game_map)
-
-    def _get_engagement_state(self, game_map: 'Map') -> int:
+    def get_engagement_state(self, game_map: 'Map') -> int:
         """Determine if the unit is in engagement range of any enemy model."""
         current_position = self.get_position()
         enemy_units = game_map.get_enemy_units(self.faction)
@@ -574,43 +565,15 @@ class Unit:
         
         return MovementState.OUT_OF_ENGAGEMENT_RANGE
 
-    def _get_available_move_actions(self, state: int) -> List[int]:
+    def get_available_move_actions(self, state: int) -> List[int]:
         """Get the list of available actions based on the current state."""
         if state == MovementState.IN_ENGAGEMENT_RANGE:
             return [MovementAction.REMAIN_STATIONARY, MovementAction.FALL_BACK]
         else:
             return [MovementAction.REMAIN_STATIONARY, MovementAction.MOVE, MovementAction.ADVANCE]
 
-    def _choose_action(self, available_actions: List[int], game_map: 'Map') -> Tuple[int, Tuple[float, float, float]]:
-        """Choose an action from the available actions."""
-        # For now, we'll choose randomly. In a real RL setup, this would be where the agent makes a decision.
-        current_position = self.get_position()
-        chosen_action = random.choice(available_actions)
-
-        if chosen_action == MovementAction.REMAIN_STATIONARY:
-            return chosen_action, current_position
-
-        # Determine movement range based on the chosen action
-        if chosen_action == MovementAction.ADVANCE:
-            movement_range = self.movement + 6  # this is suspect as we would need to roll a 6 on a D6
-        else:
-            movement_range = self.movement
-
-        # Generate a random destination within the movement range
-        angle = random.uniform(0, 2 * math.pi)
-        distance = random.uniform(0, movement_range)
-
-        new_x = current_position[0] + distance * math.cos(angle)
-        new_y = current_position[1] + distance * math.sin(angle)
-        new_z = current_position[2]
-
-        destination = (new_x, new_y, new_z)
-
-        return chosen_action, destination
-
     def _execute_action(self, action: int, destination: Tuple[float, float, float], game_map: 'Map') -> bool:
         """Execute the chosen action."""
-        #self.game.event_system.publish("movement_phase_step", unit=self, game_state=self.game.get_state())
         if action == MovementAction.REMAIN_STATIONARY:
             print(f"{self.name} remains stationary")
             return self.remain_stationary()
@@ -661,14 +624,14 @@ class Unit:
         distance = 0.0
 
         for model, destination in zip(self.models, potential_positions):
-            print(f"Model {model._id} {model.name} moving to {destination}")
+            logging.debug(f"Model {model._id} {model.name} moving to {destination}")
             shortest_path = a_star(model, game_map.obstacles, destination)
             if not shortest_path:
-                print(f"Cannot move unit {self.name} - model {model._id} path is None")
+                logger.debug(f"Cannot move unit {self.name} - model {model._id} path is None")
                 continue  # Model cannot reach destination
             path_distance = sum(get_dist(shortest_path[i][0] - shortest_path[i-1][0], shortest_path[i][1] - shortest_path[i-1][1]) for i in range(1, len(shortest_path)))
             if path_distance > model.movement:
-                print(f"Cannot move unit {self.name} - model {model._id} path distance {path_distance} is greater than movement {model.movement}")
+                logger.debug(f"Cannot move unit {self.name} - model {model._id} path distance {path_distance} is greater than movement {model.movement}")
                 continue  # Model cannot reach destination
             last_node = model.get_location()
             model.last_move_path = [last_node]
@@ -685,20 +648,20 @@ class Unit:
                     last_node = (node[0], node[1], node[2] if len(node) > 2 else 0, direction_to_destination)
                     model.last_move_path.append(last_node)
             model.set_location(*destination)
-            print(f"Model {model._id} {model.name} moved to {destination} travelling {distance} inches")
-            print(f"Model {model._id} path: {model.last_move_path}")
+            logger.debug(f"Model {model._id} {model.name} moved to {destination} travelling {distance} inches")
+            logger.debug(f"Model {model._id} path: {model.last_move_path}")
 
         # Update unit centroid
         self.reset_position()
 
-        print(f"Unit {self.name} {'advanced' if advance else 'moved'} towards {destination} : Distance {distance}")
+        logger.info(f"Unit {self.name} {'advanced' if advance else 'moved'} towards {destination} : Distance {distance}")
         self.round_state.advanced_this_round = advance
         return True
 
     def fall_back(self, destination: Tuple[float, float, float], path: List[Tuple[float, float, float]], game_map: 'Map') -> bool:
         """Falls back from close combat."""
         # Logic to move the unit out of engagement range
-        print(f"{self.name} falls back from combat.")
+        logger.debug(f"{self.name} falls back from combat.")
         self.round_state.fell_back_this_round = True
         return True
 
@@ -908,11 +871,11 @@ class Unit:
         new_base = self._create_potential_base(x, y, z, facing)
 
         for pos in positions:
-            print(f"Checking collision: New base at ({x:.4f}, {y:.4f}, {z:.4f}) facing {facing:.2f}")
-            print(f"Against existing base at ({pos[0]:.4f}, {pos[1]:.4f}, {pos[2]:.4f}) facing {pos[3]:.2f}")
+            logger.debug(f"Checking collision: New base at ({x:.4f}, {y:.4f}, {z:.4f}) facing {facing:.2f}")
+            logger.debug(f"Against existing base at ({pos[0]:.4f}, {pos[1]:.4f}, {pos[2]:.4f}) facing {pos[3]:.2f}")
 
             if (z - pos[2]) > self.model_height:
-                print(f"Quick Non-Collision Decision :: Delta Z: {z - pos[2]}, Model Height: {self.model_height}")
+                logger.debug(f"Quick Non-Collision Decision :: Delta Z: {z - pos[2]}, Model Height: {self.model_height}")
                 return False
             
             other_base = self._create_potential_base(pos[0], pos[1], pos[2], pos[3])
@@ -925,11 +888,11 @@ class Unit:
             angle_diff_other = angle_difference(pos[3], angle_between + math.pi)  # Add pi to get the opposite direction
             
             combined_radius = new_base.getRadius(angle_diff_new) + other_base.getRadius(angle_diff_other)
-            print(f"Distance between bases: {distance:.4f}")
-            print(f"Combined radius: {combined_radius:.4f}")
+            logger.debug(f"Distance between bases: {distance:.4f}")
+            logger.debug(f"Combined radius: {combined_radius:.4f}")
 
             if distance <= combined_radius:
-                print(f"Collision detected!")
+                logger.debug(f"Collision detected!")
                 return True
         return False
 
@@ -963,7 +926,7 @@ class Unit:
         valid_positions = []
         for dx, dy in directions:
             radius_at_facing = model.model_base.getRadius(angle=get_angle(dy, dx))
-            print(f"{model._id} {model.name} X: {last_x}, Y: {last_y}, Facing: {round(math.degrees(facing), 2)} :: {radius_at_facing} :: {dx} :: {dy}")
+            logger.debug(f"{model._id} {model.name} X: {last_x}, Y: {last_y}, Facing: {round(math.degrees(facing), 2)} :: {radius_at_facing} :: {dx} :: {dy}")
             for distance in np.arange(radius_at_facing + 0.1, radius_at_facing + self.coherency_distance, 0.1):
                 x = last_x + distance * dx
                 y = last_y + distance * dy

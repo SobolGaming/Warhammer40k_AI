@@ -75,14 +75,13 @@ def main_game_loop() -> None:
             while not game.is_game_over():
                 if game.get_current_player() == player1:
                     objective, command = high_level_agent_player1.choose_objective_and_command(game_state=game)
-                    print(f"{player1.name} chose Objective: {objective.name}, Command: {command}")
+                    print(f"TURN [{game.turn}] PHASE: {game.phase.value} :: {player1.name} chose Objective: {objective.name}, Command: {command}")
                     if game.is_command_phase():
                         turn_started = True
                         tactical_agent_player1.command_phase(command)
                     elif game.is_movement_phase():
                         for unit in player1.army.units:
-                            model_paths = tactical_agent_player1.movement_phase(unit, objective)
-                            low_level_agent_player1.execute_movement(unit, model_paths)
+                            tactical_agent_player1.movement_phase(unit, objective)
                     elif game.is_shooting_phase():
                         for unit in player1.army.units:
                             tactical_agent_player1.shooting_phase(unit)
@@ -100,14 +99,13 @@ def main_game_loop() -> None:
                         turn_started = False
                 else:
                     objective, command = high_level_agent_player2.choose_objective_and_command(game_state=game)
-                    print(f"{player2.name} chose Objective: {objective.name}, Command: {command}")
+                    print(f"TURN [{game.turn}] PHASE: {game.phase.value} :: {player2.name} chose Objective: {objective.name}, Command: {command}")
                     if game.is_command_phase():
                         turn_started = True
                         tactical_agent_player2.command_phase(command)
                     elif game.is_movement_phase():
                         for unit in player2.army.units:
-                            path = tactical_agent_player2.movement_phase(unit, objective)
-                            low_level_agent_player2.execute_movement(unit, path)
+                            tactical_agent_player2.movement_phase(unit, objective)
                     elif game.is_shooting_phase():
                         for unit in player2.army.units:
                             tactical_agent_player2.shooting_phase(unit)
