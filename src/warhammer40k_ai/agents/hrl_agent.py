@@ -1,7 +1,7 @@
 import random
 from typing import List, Tuple
 from warhammer40k_ai.classes.game import Game
-from warhammer40k_ai.classes.map import Objective
+from warhammer40k_ai.classes.map import Objective, ObjectivePoint
 from warhammer40k_ai.classes.unit import Unit, MovementAction
 from warhammer40k_ai.classes.player import Player
 import torch
@@ -57,16 +57,68 @@ class HighLevelAgent:
         self.state = State(player, opponent, objectives)
 
         # Initialize Policy Network and Optimizer
-        self.policy_net = PolicyNetwork(input_size=1, output_size=self.num_objectives + self.num_commands)
+        self.policy_net = PolicyNetwork(input_size=8, output_size=self.num_objectives + self.num_commands)
         self.optimizer = optim.Adam(self.policy_net.parameters(), lr=learning_rate)
 
         # Store rewards and log probabilities for training
         self.rewards = []
         self.log_probs = []
 
-    def choose_objective_and_command(self, game_state: Game) -> Tuple[Objective, str]:
+    def extract_state_features(self) -> torch.Tensor:
+        """Extract features from the game state for the policy network."""
+        features = []
+
+        # Player's score
+        player_score = self.game.get_current_player().get_score()
+        features.append(player_score)
+
+        # Opponent's score
+        opponent_score = self.game.get_opponent().get_score()
+        features.append(opponent_score)
+
+        # Number of player's units
+        num_player_units = len([unit for unit in self.game.get_current_player().get_army().units if unit.is_alive()])
+        features.append(num_player_units)
+
+        # Number of opponent's units
+        num_opponent_units = len([unit for unit in self.game.get_opponent().get_army().units if unit.is_alive()])
+        features.append(num_opponent_units)
+
+        # Average distance to objectives
+        total_distance = 0
+        for obj in self.objectives:
+            for unit in self.game.get_current_player().get_army().units:
+                if unit.is_alive():
+                    unit_pos = unit.get_position()
+                    obj_pos = (obj.location.x, obj.location.y, obj.location.z)
+                    distance = get_dist(unit_pos[0] - obj_pos[0], unit_pos[1] - obj_pos[1], unit_pos[2] - obj_pos[2])
+                    total_distance += distance
+        avg_distance = total_distance / (num_player_units * len(self.objectives)) if num_player_units > 0 else 0
+        features.append(avg_distance)
+
+        # Control status of objectives
+        for obj in [obj for obj in self.objectives if isinstance(obj.location, ObjectivePoint)]:
+            if obj.location.controlling_player == self.game.get_current_player():
+                features.append(1)
+            elif obj.location.controlling_player == self.game.get_opponent():
+                features.append(-1)
+            else:
+                features.append(0)
+
+        # Current turn number
+        features.append(self.game.turn)
+
+        # Remaining turns
+        features.append(TOTAL_ROUNDS - self.game.turn)
+
+        # Convert features to tensor
+        state = torch.tensor(features, dtype=torch.float32)
+
+        return state
+
+    def choose_objective_and_command(self) -> Tuple[Objective, str]:
         """Select both an objective and a command action."""
-        state = torch.tensor([1.0])  # Example input state
+        state = self.extract_state_features()
         probs = self.policy_net(state)
 
         # Check if we have both objectives and commands
@@ -147,6 +199,8 @@ class HighLevelAgent:
         # Calculate policy loss
         for log_prob, R in zip(self.log_probs, returns):
             policy_loss.append(-log_prob * R)
+
+        print(f"Updating policy. policy_loss length: {len(policy_loss)}")
 
         # Update policy network
         self.optimizer.zero_grad()

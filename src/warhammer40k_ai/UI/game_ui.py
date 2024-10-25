@@ -6,7 +6,7 @@ from warhammer40k_ai.classes.unit import Unit
 from warhammer40k_ai.utility.model_base import Base, BaseType
 from warhammer40k_ai.classes.player import Player
 from warhammer40k_ai.classes.game import Game
-from warhammer40k_ai.classes.map import Obstacle, ObstacleType
+from warhammer40k_ai.classes.map import Obstacle, ObstacleType, Objective, ObjectivePoint
 
 # Constants
 TILE_SIZE = 20  # 20 pixels per inch
@@ -22,6 +22,7 @@ GREY = (50, 50, 50)
 GREEN = (0, 255, 0)
 BLUE = (0, 0, 255)
 RED = (255, 0, 0)
+PURPLE = (128, 0, 128)
 
 # Game states
 class GameState:
@@ -295,6 +296,10 @@ class GameView:
         for obstacle in self.game_map.obstacles:
             draw_obstacle(battlefield_surface, obstacle, self.zoom_level, self.offset_x, self.offset_y)
 
+        # Draw objectives on the battlefield
+        for objective in self.game_map.objectives:
+            draw_objective(battlefield_surface, objective, self.zoom_level, self.offset_x, self.offset_y)
+
         # Draw units on the battlefield
         for unit in self.game_map.units:
             draw_units(battlefield_surface, unit, self.zoom_level, self.offset_x, self.offset_y, pygame.mouse.get_pos(), self.player1, self.player2)
@@ -410,6 +415,10 @@ def draw_obstacle(screen: pygame.Surface, obstacle: Obstacle, zoom_level: float,
 
     # Draw the outline of the polygon
     pygame.draw.polygon(screen, (0, 0, 0), screen_vertices, 2)  # Black outline with 2px width
+
+def draw_objective(screen: pygame.Surface, objective: Objective, zoom_level: float, offset_x: int, offset_y: int) -> None:
+    if isinstance(objective.location, ObjectivePoint):
+        pygame.draw.circle(screen, PURPLE, (int(objective.location.x * TILE_SIZE * zoom_level + offset_x), int(objective.location.y * TILE_SIZE * zoom_level + offset_y)), int(objective.location.control_radius * TILE_SIZE * zoom_level))
 
 def draw_units(screen: pygame.Surface, unit: Unit, zoom_level: float, offset_x: int, offset_y: int, mouse_pos: Tuple[int, int], player1: Player, player2: Player) -> None:
     # Determine the color based on which player the unit belongs to

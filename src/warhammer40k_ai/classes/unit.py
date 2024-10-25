@@ -501,6 +501,48 @@ class Unit:
     def model_height(self) -> float:
         return max(model.model_base.model_height for model in self.models)
 
+    @property
+    def health_percent(self) -> float:
+        """Calculate the percentage of remaining health."""
+        total_wounds = sum(model.wounds for model in self.models)
+        max_wounds = sum(model._base_wounds for model in self.models)
+        if max_wounds == 0:
+            return 0
+        return (total_wounds / max_wounds) * 100
+
+    @property
+    def is_ranged_unit(self) -> bool:
+        """Determine if the unit is primarily a ranged unit."""
+        # For simplicity, if the unit has more ranged weapons than melee weapons
+        ranged_weapons = 0
+        melee_weapons = 0
+        for model in self.models:
+            for weapon in model.wargear:
+                if weapon.is_ranged():
+                    ranged_weapons += 1
+                elif weapon.is_melee():
+                    melee_weapons += 1
+        return ranged_weapons >= melee_weapons
+
+    @property
+    def is_melee_unit(self) -> bool:
+        """Determine if the unit is primarily a melee unit."""
+        return not self.is_ranged_unit()
+
+    @property
+    def max_charge_distance(self) -> float:
+        """Calculate the maximum possible charge distance."""
+        return 12.0  # 2D6 maximum roll
+
+    def get_threat_level(self) -> float:
+        """Calculate the threat level of the unit based on offensive capabilities."""
+        threat = 0
+        for model in self.models:
+            for weapon in model.wargear:
+                if weapon.is_ranged() or weapon.is_melee():
+                    threat += weapon.get_damage_potential()
+        return threat
+
     ###########################################################################
     ### Properties
     ###########################################################################
@@ -773,7 +815,10 @@ class Unit:
     def remove_status_effect(self, status_effect: StatusEffect) -> None:
         status_effect.remove_effect(self)
         self.status_effects.remove(status_effect)
-    
+
+    ###########################################################################
+    ### Position and Coherency
+    ###########################################################################
     def is_alive(self) -> bool:
         return len(self.models) > 0
 

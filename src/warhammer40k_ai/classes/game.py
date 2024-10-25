@@ -112,6 +112,10 @@ class Game:
         player = self.players[self.current_player_index]
         return player
 
+    def get_opponent(self) -> Player:
+        opponent_index = (self.current_player_index + 1) % len(self.players)
+        return self.players[opponent_index]
+
     def get_battlefield_size(self) -> tuple[int, int]:
         return self.battlefield_size
 
@@ -140,10 +144,6 @@ class Game:
         return self.phase == BattleRoundPhases.FIGHT_PHASE
 
     def is_game_over(self) -> bool:
-        # Implement game-over conditions
-        # For example, check if only one player has units left
-        if sum(1 for player in self.players if player.has_units()) <= 1:
-            return True
         if self.turn > TOTAL_ROUNDS:
             return True
         return False
@@ -151,11 +151,17 @@ class Game:
     def get_winner(self) -> Player | None:
         # Return the winning player or None if the game is not over
         if self.is_game_over():
-            return next((player for player in self.players if player.has_units()), None)
+            return max(self.players, key=lambda player: player.get_score(), default=None)
+        return None
+
+    def get_loser(self) -> Player | None:
+        if self.is_game_over():
+            return min(self.players, key=lambda player: player.get_score(), default=None)
         return None
 
     def get_state(self) -> Dict[str, Any]:
         # Return the current game state as a dictionary
+        # TODO - might be overcome by the implementation of "extract_state_features()" in hrl_agent.py
         return {
             "players": self.players,
             "battlefield": self.battlefield,

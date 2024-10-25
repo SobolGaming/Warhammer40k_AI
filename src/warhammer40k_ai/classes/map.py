@@ -46,6 +46,9 @@ class Map:
     def add_objective(self, objective: 'Objective') -> None:
         self.objectives.append(objective)
 
+    def add_objectives(self, objectives: List['Objective']) -> None:
+        self.objectives.extend(objectives)
+
     def get_objectives(self, is_secret: bool = False) -> List['Objective']:
         return [objective for objective in self.objectives if objective.category == ObjectiveCategory.SECRET]
 
@@ -181,16 +184,22 @@ class ObjectivePoint:
 
     def update_control(self, game_state: 'Game') -> None:
         # Determine which player controls the objective based on nearby units
-        player_oc = {}
+        player_oc = {player: 0 for player in game_state.players}  # Initialize all players with 0 OC
         for player in game_state.players:
             for unit in player.army.units:
-                player_oc[player] = sum([model.objective_control for model in unit.models if get_dist(self.x - model.x, self.y - model.y) <= self.control_radius])
-        if player_oc:
+                for model in unit.models:
+                    if get_dist(self.x - model.model_base.x, self.y - model.model_base.y) <= self.control_radius:
+                        player_oc[player] += model.objective_control
+
+        if any(oc > 0 for oc in player_oc.values()):
             max_oc = max(player_oc.values())
             max_players = [player for player, oc in player_oc.items() if oc == max_oc]
             self.controlling_player = max_players[0] if len(max_players) == 1 else None
         else:
             self.controlling_player = None
+        
+        print(f"ObjectivePoint {self.x}, {self.y} controlled by {self.controlling_player}")
+        #print(f"Player OC values: {player_oc}")  # Debug print
 
 
 class ObjectiveCategory(Enum):

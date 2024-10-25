@@ -45,7 +45,7 @@ def initialize_game() -> Tuple[pygame.Surface, WarhammerEnv, Game, Map, float, i
     game_map = Map(*game.get_battlefield_size())
     game.map = game_map
     game.map.add_obstacles(obstacles)
-    game.objectives = objectives
+    game.map.add_objectives(objectives)
     game.commands = commands
     zoom_level = 1.0
     offset_x, offset_y = ROSTER_PANE_WIDTH, 0  # Adjust initial offset to account for left pane
@@ -60,10 +60,10 @@ def main_game_loop() -> None:
     clicked_unit = None
 
     # Initialize agents with objectives
-    high_level_agent_player1 = HighLevelAgent(game, player1, player2, objectives=game.objectives, commands=game.commands)
+    high_level_agent_player1 = HighLevelAgent(game, player1, player2, objectives=game.map.objectives, commands=game.commands)
     tactical_agent_player1 = TacticalAgent(game, player1)
     low_level_agent_player1 = LowLevelAgent(game, player1)
-    high_level_agent_player2 = HighLevelAgent(game, player2, player1, objectives=game.objectives, commands=game.commands)
+    high_level_agent_player2 = HighLevelAgent(game, player2, player1, objectives=game.map.objectives, commands=game.commands)
     tactical_agent_player2 = TacticalAgent(game, player2)
     low_level_agent_player2 = LowLevelAgent(game, player2)
 
@@ -73,59 +73,61 @@ def main_game_loop() -> None:
     while running:
         if game_state == GameState.PLAYING and game.do_ai_action:
             while not game.is_game_over():
-                if game.get_current_player() == player1:
-                    objective, command = high_level_agent_player1.choose_objective_and_command(game_state=game)
-                    print(f"TURN [{game.turn}] PHASE: {game.phase.value} :: {player1.name} chose Objective: {objective.name}, Command: {command}")
-                    if game.is_command_phase():
-                        turn_started = True
-                        tactical_agent_player1.command_phase(command)
-                    elif game.is_movement_phase():
-                        for unit in player1.army.units:
-                            tactical_agent_player1.movement_phase(unit, objective)
-                    elif game.is_shooting_phase():
-                        for unit in player1.army.units:
-                            tactical_agent_player1.shooting_phase(unit)
-                    elif game.is_charge_phase():
-                        for unit in player1.army.units:
-                            tactical_agent_player1.charge_phase(unit)
-                    elif game.is_fight_phase():
-                        for unit in player1.army.units:
-                            tactical_agent_player1.fight_phase(unit)
-                    if turn_started and game.is_fight_phase():
-                        # Attempt the objective and store the reward
-                        success = objective.check_completion(game)
-                        reward = objective.points if success else -5  # Penalize failed attempts
-                        high_level_agent_player1.store_reward(reward)
-                        turn_started = False
+                current_player = game.get_current_player()
+                if current_player == player1:
+                    high_level_agent = high_level_agent_player1
+                    tactical_agent = tactical_agent_player1
+                    low_level_agent = low_level_agent_player1
                 else:
-                    objective, command = high_level_agent_player2.choose_objective_and_command(game_state=game)
-                    print(f"TURN [{game.turn}] PHASE: {game.phase.value} :: {player2.name} chose Objective: {objective.name}, Command: {command}")
-                    if game.is_command_phase():
-                        turn_started = True
-                        tactical_agent_player2.command_phase(command)
-                    elif game.is_movement_phase():
-                        for unit in player2.army.units:
-                            tactical_agent_player2.movement_phase(unit, objective)
-                    elif game.is_shooting_phase():
-                        for unit in player2.army.units:
-                            tactical_agent_player2.shooting_phase(unit)
-                    elif game.is_charge_phase():
-                        for unit in player2.army.units: 
-                            tactical_agent_player2.charge_phase(unit)
-                    elif game.is_fight_phase():
-                        for unit in player2.army.units:
-                            tactical_agent_player2.fight_phase(unit)
-                    if turn_started and game.is_fight_phase():
-                        # Attempt the objective and store the reward
-                        success = objective.check_completion(game)
-                        reward = objective.points if success else -5  # Penalize failed attempts
-                        high_level_agent_player2.store_reward(reward)
-                        turn_started = False
-                # Update objective control at the end of each turn
-                for objective in game.objectives:
-                    if isinstance(objective, ObjectivePoint):
-                        objective.update_control(game)
+                    high_level_agent = high_level_agent_player2
+                    tactical_agent = tactical_agent_player2
+                    low_level_agent = low_level_agent_player2
+
+                print(f"TURN [{game.turn}] PHASE: {game.phase.name} :: {current_player.name} choosing objective and command")
+
+                objective, command = high_level_agent.choose_objective_and_command()
+                print(f"{current_player.name} chose Objective: {objective.name}, Command: {command}")
+                if game.is_command_phase():
+                    # Update objective control at the end of each turn
+                    for obj in game.map.objectives:
+                        if isinstance(obj.location, ObjectivePoint):
+                            obj.location.update_control(game)
+                        if obj.check_completion(game):
+                            print(f"Objective {obj.name} completed!")
+                            current_player.add_score(obj.points)
+                    
+                    tactical_agent.command_phase(command)
+                elif game.is_movement_phase():
+                    for unit in current_player.army.units:
+                        tactical_agent.movement_phase(unit, objective)
+                elif game.is_shooting_phase():
+                    for unit in current_player.army.units:
+                        tactical_agent.shooting_phase(unit)
+                elif game.is_charge_phase():
+                    for unit in current_player.army.units:
+                        tactical_agent.charge_phase(unit)
+                elif game.is_fight_phase():
+                    for unit in current_player.army.units:
+                        tactical_agent.fight_phase(unit)
+                
                 game.next_turn()
+
+                # Update the display
+                game_view.draw()
+                pygame.display.flip()
+
+                if game.is_game_over():
+                    print(f"Game over! Winner: {game.get_winner().name} with score: {game.get_winner().get_score()} vs {game.get_loser().get_score()}")
+                    if game.get_winner() == player1:
+                        high_level_agent_player1.store_reward(100)
+                        high_level_agent_player1.update_policy()
+                        high_level_agent_player2.store_reward(-100)
+                        high_level_agent_player2.update_policy()
+                    else:
+                        high_level_agent_player2.store_reward(100)
+                        high_level_agent_player2.update_policy()
+                        high_level_agent_player1.store_reward(-100)
+                        high_level_agent_player1.update_policy()
             game.do_ai_action = False
 
         for event in pygame.event.get():

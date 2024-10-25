@@ -42,69 +42,52 @@ class WargearProfile:
             return [keyword.strip() for keyword in keywords_string.split(',')]
         return []
 
-
-class Wargear:
-    def __init__(self, wargear_data: Dict):
-        self.name = wargear_data.get('name', '').replace('’', "'")
-        if ' – ' in self.name:
-            self.name, profile_name = self.name.split(' – ')
+    ###########################################################################
+    ### Wargear profile damage potential
+    ###########################################################################
+    def get_damage_potential(self) -> float:
+        """Estimate the damage potential of this weapon profile."""
+        # Average number of attacks
+        if isinstance(self.attacks, Count):
+            avg_attacks = self.attacks.stat_average()
         else:
-            profile_name = 'default'
-        self.type = wargear_data.get('type', '')
-        self.profiles = { profile_name: WargearProfile(profile_name, wargear_data) }
+            avg_attacks = self.attacks or 0
 
-    def add_profile(self, profile_name: str, wargear_data: Dict):
-        self.profiles[profile_name] = WargearProfile(profile_name, wargear_data)
+        # Chance to hit
+        if self.is_torrent():
+            chance_to_hit = 1.0
+        elif isinstance(self.skill, int) and self.skill > 0:
+            chance_to_hit = (7 - self.skill) / 6.0
+        else:
+            chance_to_hit = 1.0  # Assume always hits if skill is 0 or invalid
 
-    def __str__(self):
-        str = f"{self.name} ({self.type}): "
-        for profile in self.profiles:
-            str += f"[{profile.name}: "
-            str += f"Range {self.get_range(profile.name)}, A {self.get_attacks(profile.name)}, "
-            str += f"BS/WS {self.get_skill(profile.name)}, S {self.get_strength(profile.name)}, "
-            str += f"AP {self.get_ap(profile.name)}, D {self.get_damage(profile.name)}]"
-        return str
+        # Average damage per hit
+        if isinstance(self.damage, DiceCollection):
+            avg_damage = self.damage.stat_average()
+        else:
+            avg_damage = self.damage or 0
 
-    def __repr__(self):
-        str = f"Wargear(name='{self.name}', type='{self.type}', "
-        for profile_name, profile in self.profiles.items():
-            str += f"[{profile_name}: "
-            str += f"range={profile.range!r}, attacks={profile.attacks!r}, "
-            str += f"skill={profile.skill!r}, strength={profile.strength!r}, "
-            str += f"ap={profile.ap!r}, damage={profile.damage!r}]"
-        return str + ")"
+        #######################################################################
+        # Handle special rules (simplified)
+        #######################################################################
+        # Handle 'Sustained Hits'
+        sustained_hits_value = self.is_sustained_hits()
+        if sustained_hits_value > 0:
+            sustained_hits_bonus = avg_attacks * chance_to_hit * (sustained_hits_value / 6.0)
+            avg_attacks += sustained_hits_bonus
 
-    def get_type(self) -> str:
-        return self.type
+        # TODO - handle rest of special rules
+        #######################################################################
 
-    def get_range(self, profile_name: str = 'default') -> Range:
-        return self.profiles[profile_name].range
+        # Expected damage
+        expected_damage = avg_attacks * chance_to_hit * avg_damage
 
-    def get_attacks(self, profile_name: str = 'default') -> Count:
-        return self.profiles[profile_name].attacks
+        # Return the estimated damage potential
+        return expected_damage
 
-    def get_skill(self, profile_name: str = 'default') -> int:
-        return self.profiles[profile_name].skill
-
-    def get_strength(self, profile_name: str = 'default') -> int:
-        return self.profiles[profile_name].strength
-
-    def get_ap(self, profile_name: str = 'default') -> int:
-        return self.profiles[profile_name].ap
-
-    def get_damage(self, profile_name: str = 'default') -> int:
-        return self.profiles[profile_name].damage
-
-    def get_keywords(self, profile_name: str = 'default') -> List[str]:
-        return self.profiles[profile_name].keywords
-
-    ### Wargear type checks
-    def is_melee(self) -> bool:
-        return self.type.lower() == 'melee'
-
-    def is_ranged(self) -> bool:
-        return self.type.lower() == 'ranged'
-
+    ###########################################################################
+    ### Wargear profile type checks
+    ###########################################################################
     def is_pistol(self) -> bool:
         return 'pistol' in [keyword.lower() for keyword in self.get_keywords()]
 
@@ -180,6 +163,73 @@ class Wargear:
                 if len(parts) == 2 and parts[2].isdigit():
                     return parts[1].lower(), int(parts[2])
         return "", 0
+
+
+class Wargear:
+    def __init__(self, wargear_data: Dict):
+        self.name = wargear_data.get('name', '').replace('’', "'")
+        if ' – ' in self.name:
+            self.name, profile_name = self.name.split(' – ')
+        else:
+            profile_name = 'default'
+        self.type = wargear_data.get('type', '')
+        self.profiles = { profile_name: WargearProfile(profile_name, wargear_data) }
+
+    def add_profile(self, profile_name: str, wargear_data: Dict):
+        self.profiles[profile_name] = WargearProfile(profile_name, wargear_data)
+
+    def __str__(self):
+        str = f"{self.name} ({self.type}): "
+        for profile in self.profiles:
+            str += f"[{profile.name}: "
+            str += f"Range {self.get_range(profile.name)}, A {self.get_attacks(profile.name)}, "
+            str += f"BS/WS {self.get_skill(profile.name)}, S {self.get_strength(profile.name)}, "
+            str += f"AP {self.get_ap(profile.name)}, D {self.get_damage(profile.name)}]"
+        return str
+
+    def __repr__(self):
+        str = f"Wargear(name='{self.name}', type='{self.type}', "
+        for profile_name, profile in self.profiles.items():
+            str += f"[{profile_name}: "
+            str += f"range={profile.range!r}, attacks={profile.attacks!r}, "
+            str += f"skill={profile.skill!r}, strength={profile.strength!r}, "
+            str += f"ap={profile.ap!r}, damage={profile.damage!r}]"
+        return str + ")"
+
+    def get_type(self) -> str:
+        return self.type
+
+    def get_range(self, profile_name: str = 'default') -> Range:
+        return self.profiles[profile_name].range
+
+    def get_attacks(self, profile_name: str = 'default') -> Count:
+        return self.profiles[profile_name].attacks
+
+    def get_skill(self, profile_name: str = 'default') -> int:
+        return self.profiles[profile_name].skill
+
+    def get_strength(self, profile_name: str = 'default') -> int:
+        return self.profiles[profile_name].strength
+
+    def get_ap(self, profile_name: str = 'default') -> int:
+        return self.profiles[profile_name].ap
+
+    def get_damage(self, profile_name: str = 'default') -> int:
+        return self.profiles[profile_name].damage
+
+    def get_keywords(self, profile_name: str = 'default') -> List[str]:
+        return self.profiles[profile_name].keywords
+
+    def get_damage_potential(self) -> float:
+        """Estimate the total damage potential of this wargear (all profiles)."""
+        return max(profile.get_damage_potential() for profile in self.profiles.values())
+
+    ### Wargear type checks
+    def is_melee(self) -> bool:
+        return self.type.lower() == 'melee'
+
+    def is_ranged(self) -> bool:
+        return self.type.lower() == 'ranged'
 
     ### Wargear actions
     def attack(self, model: 'Model', target: 'Unit') -> None:

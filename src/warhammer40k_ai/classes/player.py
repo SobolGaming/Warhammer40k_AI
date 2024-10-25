@@ -25,6 +25,7 @@ class Player:
         self.round: int = 0
         self.command_points: int = 0
         self.army: Army = army
+        self.score: int = 0
         #print(f"Player {self.name} created with army: {self.army}")
     
     def set_army(self, army: Army) -> None:
@@ -38,6 +39,12 @@ class Player:
 
     def has_units(self) -> bool:
         return len(self.army.units) > 0
+
+    def get_score(self) -> int:
+        return self.score
+
+    def add_score(self, points: int) -> None:
+        self.score += points
 
     def __str__(self):
         return f"Name: {self.name}\nType: {self.type.name}\nCommand Points: {self.command_points}\nArmy: {self.army}"
