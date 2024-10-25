@@ -40,3 +40,6 @@ venv.bak/
 wahapedia_data/*.csv
 wahapedia_data/*.json
 wahapedia_data/*.xlsx
+
+# Mac OS specific
+.DS_Store
