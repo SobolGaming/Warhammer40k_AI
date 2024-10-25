@@ -610,6 +610,7 @@ class Unit:
 
     def _execute_action(self, action: int, destination: Tuple[float, float, float], game_map: 'Map') -> bool:
         """Execute the chosen action."""
+        #self.game.event_system.publish("movement_phase_step", unit=self, game_state=self.game.get_state())
         if action == MovementAction.REMAIN_STATIONARY:
             print(f"{self.name} remains stationary")
             return self.remain_stationary()

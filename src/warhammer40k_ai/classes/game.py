@@ -91,6 +91,7 @@ class Game:
         self.do_ai_action = False
         self.map = None
         self.objectives: List[Objective] = []
+        self.commands: List[str] = []
 
     def add_player(self, player: Player) -> None:
         player.command_points = self.starting_command_points_per_player
@@ -99,6 +100,9 @@ class Game:
 
     def add_objective(self, objective: Objective) -> None:
         self.objectives.append(objective)
+
+    def add_command(self, command: str) -> None:
+        self.commands.append(command)
 
     def _initialize_battlefield(self) -> List[List[Any]]:
         # Initialize an empty battlefield based on battlefield_size

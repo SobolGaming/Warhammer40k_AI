@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from warhammer40k_ai.utility.constants import TOTAL_ROUNDS
-
+from warhammer40k_ai.utility.calcs import a_star
 
 # Constants
 PRIMARY_OBJECTIVE_REWARD = 10
@@ -68,6 +68,10 @@ class HighLevelAgent:
         """Select both an objective and a command action."""
         state = torch.tensor([1.0])  # Example input state
         probs = self.policy_net(state)
+
+        # Check if we have both objectives and commands
+        if self.num_objectives == 0 or self.num_commands == 0:
+            raise ValueError("No objectives or commands available")
 
         # Split the probabilities for objectives and commands
         obj_probs = probs[:self.num_objectives]
@@ -169,13 +173,15 @@ class TacticalAgent:
             print(f"Commanding {unit.name}")
         self.game.event_system.publish("command_phase_end", game_state=self.game.get_state())
 
-    def movement_phase(self, unit: Unit, objective: Objective) -> List[Tuple[float, float, float]]:
+    def movement_phase(self, unit: Unit, objective: Objective) -> List[List[Tuple[float, float, float]]]:
         """Handle unit pathing towards objectives."""
+        model_paths = []
         if objective and objective.location:
             self.game.event_system.publish("movement_phase_start", unit=unit, game_state=self.game.get_state())
-            path = self.game.map.find_path(unit.position, objective.location)
-            return path
-        return []
+            for model in unit.models:
+                path = a_star(model, self.game.map.obstacles, objective.location)
+                model_paths.append(path)
+        return model_paths
 
     def shooting_phase(self, unit: Unit) -> None:
         """Select targets and resolve shooting attacks."""
@@ -214,11 +220,9 @@ class LowLevelAgent:
         self.game = game
         self.player = player
 
-    def execute_movement(self, unit: Unit, path: List[Tuple[float, float, float]]) -> None:
+    def execute_movement(self, unit: Unit, model_paths: List[List[Tuple[float, float, float]]]) -> None:
         """Move the unit along the path."""
-        for step in path:
-            self.game.map.move_unit(unit, step)
-            self.game.event_system.publish("movement_phase_step", unit=unit, game_state=self.game.get_state())
+        success = unit.do_move_action(self.game.map)
         self.game.event_system.publish("movement_phase_end", unit=unit, game_state=self.game.get_state())
         # Check if objective was achieved post-move.
         for obj in self.game.objectives:

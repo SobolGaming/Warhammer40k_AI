@@ -175,7 +175,7 @@ class Army:
         print("Army is valid and ready for battle!")
 
     def get_active_units(self) -> List[Unit]:
-        return [unit for unit in self.units if unit.is_deployed and unit.is_alive()]
+        return [unit for unit in self.units if unit.deployed and unit.is_alive()]
 
     def __str__(self):
         return f"Army: {self.faction} - {self.detachment_type}\n{self.units}"

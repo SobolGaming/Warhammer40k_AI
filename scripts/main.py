@@ -3,7 +3,7 @@ import sys
 from typing import Tuple
 from warhammer40k_ai.gym_env.warhammer40k_env import WarhammerEnv
 from warhammer40k_ai.classes.game import Game
-from warhammer40k_ai.classes.map import Map, Obstacle, ObstacleType
+from warhammer40k_ai.classes.map import Map, Obstacle, ObstacleType, Objective, ObjectiveCategory, ObjectivePoint
 from warhammer40k_ai.classes.player import Player, PlayerType
 from warhammer40k_ai.classes.army import parse_army_list
 from warhammer40k_ai.UI.game_ui import GameView, GameState, ROSTER_PANE_WIDTH, BATTLEFIELD_WIDTH, BATTLEFIELD_HEIGHT, INFO_PANE_HEIGHT, handle_zoom, handle_pan, TILE_SIZE
@@ -27,16 +27,26 @@ def initialize_game() -> Tuple[pygame.Surface, WarhammerEnv, Game, Map, float, i
 
     # Define obstacles
     obstacles = [
-        Obstacle(vertices=[(3, 3), (3, 5), (5, 5), (5, 3)], terrain_type=ObstacleType.CRATER_AND_RUBBLE, height=3.0),  # Square obstacle
+        Obstacle(vertices=[(3, 3), (3, 5), (5, 5), (5, 3)], terrain_type=ObstacleType.CRATER_AND_RUBBLE, height=3.0),
         Obstacle(vertices=[(20, 7), (27, 9), (29, 9), (29, 7)], terrain_type=ObstacleType.DEBRIS_AND_STATUARY, height=6.0)
     ]
+
+    # Define objectives
+    objective_point = ObjectivePoint(15, 15, 0, 3.0)
+    objectives = [
+        Objective(name="Capture Central Point", location=objective_point, category=ObjectiveCategory.PRIMARY, points=10, 
+                  description="Capture the central point to gain control of the battlefield.", 
+                  conditions=lambda game: objective_point.controlling_player == game.get_current_player())
+    ]
+    commands = ["attack", "defend", "move"]
 
     env = WarhammerEnv(players=[player1, player2])
     game = env.game
     game_map = Map(*game.get_battlefield_size())
     game.map = game_map
     game.map.add_obstacles(obstacles)
-
+    game.objectives = objectives
+    game.commands = commands
     zoom_level = 1.0
     offset_x, offset_y = ROSTER_PANE_WIDTH, 0  # Adjust initial offset to account for left pane
 
@@ -49,11 +59,11 @@ def main_game_loop() -> None:
     game_state = GameState.SETUP
     clicked_unit = None
 
-    # Initialize agents
-    high_level_agent_player1 = HighLevelAgent(game, player1, player2)
+    # Initialize agents with objectives
+    high_level_agent_player1 = HighLevelAgent(game, player1, player2, objectives=game.objectives, commands=game.commands)
     tactical_agent_player1 = TacticalAgent(game, player1)
     low_level_agent_player1 = LowLevelAgent(game, player1)
-    high_level_agent_player2 = HighLevelAgent(game, player2, player1)
+    high_level_agent_player2 = HighLevelAgent(game, player2, player1, objectives=game.objectives, commands=game.commands)
     tactical_agent_player2 = TacticalAgent(game, player2)
     low_level_agent_player2 = LowLevelAgent(game, player2)
 
@@ -71,8 +81,8 @@ def main_game_loop() -> None:
                         tactical_agent_player1.command_phase(command)
                     elif game.is_movement_phase():
                         for unit in player1.army.units:
-                            path = tactical_agent_player1.movement_phase(unit, objective)
-                            low_level_agent_player1.execute_movement(unit, path)
+                            model_paths = tactical_agent_player1.movement_phase(unit, objective)
+                            low_level_agent_player1.execute_movement(unit, model_paths)
                     elif game.is_shooting_phase():
                         for unit in player1.army.units:
                             tactical_agent_player1.shooting_phase(unit)
@@ -113,6 +123,10 @@ def main_game_loop() -> None:
                         reward = objective.points if success else -5  # Penalize failed attempts
                         high_level_agent_player2.store_reward(reward)
                         turn_started = False
+                # Update objective control at the end of each turn
+                for objective in game.objectives:
+                    if isinstance(objective, ObjectivePoint):
+                        objective.update_control(game)
                 game.next_turn()
             game.do_ai_action = False
 
@@ -160,6 +174,12 @@ def main_game_loop() -> None:
 
         keys_pressed = pygame.key.get_pressed()
         game_view.offset_x, game_view.offset_y = handle_pan(keys_pressed, game_view.offset_x, game_view.offset_y, game_view.zoom_level)
+
+        if game_state == GameState.PLAYING:
+            # Update objective control after each human action
+            for objective in game.objectives:
+                if isinstance(objective, ObjectivePoint):
+                    objective.update_control(game)
 
         game_view.draw()
         pygame.display.flip()
