@@ -194,7 +194,11 @@ class HighLevelAgent:
             returns.insert(0, R)
 
         returns = torch.tensor(returns)
-        returns = (returns - returns.mean()) / (returns.std() + 1e-9)  # Normalize returns
+        # Check the length before normalizing
+        if len(returns) > 1:
+            returns = (returns - returns.mean()) / (returns.std() + 1e-9)
+        else:
+            returns = returns * 0  # Or keep as is without normalization
 
         # Calculate policy loss
         for log_prob, R in zip(self.log_probs, returns):
@@ -204,7 +208,7 @@ class HighLevelAgent:
 
         # Update policy network
         self.optimizer.zero_grad()
-        policy_loss = torch.cat(policy_loss).sum()
+        policy_loss = sum(policy_loss)
         policy_loss.backward()
         self.optimizer.step()
 
