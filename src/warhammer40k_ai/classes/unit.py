@@ -206,41 +206,47 @@ class Unit:
                                             ability["parameter"]))
         return abilities
 
-    def parse_wargear_option(self, option: str, result: Dict[str, List[WargearOption]]):
+    def parse_wargear_option(self, option: str, result: Dict[str, List[WargearOption]]) -> None:
         # Parse the option string
-        parts = option.split(' can be equipped with ')
-        if len(parts) != 2:
-            print(f"Invalid wargear option format: {option}")
-            return
+        if " can be equipped with " in option:
+            parts = option.split(" can be equipped with ")
+            if len(parts) != 2:
+                print(f"Invalid wargear option format: {option}")
+                return
 
-        model_description, item_description = parts
-        model_count = 1  # Default to 1 model
-        
-        # Extract model count if specified
-        if model_description.startswith(('1 ', '2 ', '3 ', '4 ', '5 ', '6 ', '7 ', '8 ', '9 ')):
-            model_count = int(model_description.split()[0])
-            model_description = ' '.join(model_description.split()[1:])
+            model_description, item_description = parts
+            model_count = 1  # Default to 1 model
+            
+            # Extract model count if specified
+            if model_description.startswith(('1 ', '2 ', '3 ', '4 ', '5 ', '6 ', '7 ', '8 ', '9 ')):
+                model_count = int(model_description.split()[0])
+                model_description = ' '.join(model_description.split()[1:])
 
-        item_count = 1 # Default to 1 item
-        # Extract item count if specified
-        if item_description.startswith(('1 ', '2 ', '3 ', '4 ', '5 ', '6 ', '7 ', '8 ', '9 ')):
-            item_count = int(item_description.split()[0])
-            item_description = ' '.join(item_description.split()[1:]).strip().replace('.', '')
+            item_count = 1 # Default to 1 item
+            # Extract item count if specified
+            if item_description.startswith(('1 ', '2 ', '3 ', '4 ', '5 ', '6 ', '7 ', '8 ', '9 ')):
+                item_count = int(item_description.split()[0])
+                item_description = ' '.join(item_description.split()[1:]).strip().replace('.', '')
 
-        # Parse "not equipped with" condition
-        not_equipped_with = None
-        if "that is not equipped with" in model_description:
-            model_parts = model_description.split("that is not equipped with")
-            model_description = model_parts[0].strip()
-            not_equipped_with = model_parts[1].strip()
-            # Remove leading "a" or "an" from not_equipped_with
-            if not_equipped_with.startswith("a "):
-                not_equipped_with = not_equipped_with[2:].strip()
-            elif not_equipped_with.startswith("an "):
-                not_equipped_with = not_equipped_with[3:].strip()
+            # Parse "not equipped with" condition
+            not_equipped_with = None
+            if "that is not equipped with" in model_description:
+                model_parts = model_description.split("that is not equipped with")
+                model_description = model_parts[0].strip()
+                not_equipped_with = model_parts[1].strip()
+                # Remove leading "a" or "an" from not_equipped_with
+                if not_equipped_with.startswith("a "):
+                    not_equipped_with = not_equipped_with[2:].strip()
+                elif not_equipped_with.startswith("an "):
+                    not_equipped_with = not_equipped_with[3:].strip()
 
-        if item_description.lower() not in result.keys():
-            result[item_description.lower()] = WargearOption(item_description, model_description, model_count, item_count, not_equipped_with)
+            if item_description.lower() not in result.keys():
+                result[item_description.lower()] = WargearOption(item_description, model_description, model_count, item_count, not_equipped_with)
+        elif " can be replaced with " in option:
+            parts = option.split(" can be replaced with ")
+            orig_item = parts[0].replace("This model’s ", "").strip().lower()
+            new_item = parts[1].strip().replace('.', '').lower()
+            print(f"NOT IMPLEMENTED - WARGEAR ITEM REPLACEMENT:Original Item: {orig_item}, New Item: {new_item}")
 
     def parse_wargear_options(self, options: List[str]):
         result = {}
