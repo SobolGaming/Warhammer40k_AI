@@ -434,12 +434,12 @@ def draw_units(screen: pygame.Surface, unit: Unit, zoom_level: float, offset_x: 
         
         # Draw facing direction
         if base.base_type == BaseType.CIRCULAR:
-            radius = int(base.getRadius() * TILE_SIZE * zoom_level)
+            radius = int(base.get_radius() * TILE_SIZE * zoom_level)
             end_x = screen_x + int(radius * math.cos(base.facing))
             end_y = screen_y + int(radius * math.sin(base.facing))
         elif base.base_type in [BaseType.ELLIPTICAL, BaseType.HULL]:
-            width = int(base.longestDistance() * TILE_SIZE * zoom_level)
-            height = int(base.longestDistance() * TILE_SIZE * zoom_level)
+            width = int(base.get_longest_radius() * TILE_SIZE * zoom_level)
+            height = int(base.get_longest_radius() * TILE_SIZE * zoom_level)
             end_x = screen_x + int(width * math.cos(base.facing))
             end_y = screen_y + int(height * math.sin(base.facing))
         else:
@@ -459,7 +459,7 @@ def draw_base(screen: pygame.Surface, base: Base, screen_x: int, screen_y: int, 
         draw_hull_base(screen, base, screen_x, screen_y, zoom_level, color)
 
 def draw_circular_base(screen: pygame.Surface, base: Base, screen_x: int, screen_y: int, zoom_level: float, color: Tuple[int, int, int]) -> None:
-    radius = int(base.getRadius() * TILE_SIZE * zoom_level)
+    radius = int(base.get_radius() * TILE_SIZE * zoom_level)
     pygame.draw.circle(screen, color, (screen_x, screen_y), radius)
     inner_radius = max(1, int(radius * 0.8))
     pygame.draw.circle(screen, (255, 255, 255), (screen_x, screen_y), inner_radius)

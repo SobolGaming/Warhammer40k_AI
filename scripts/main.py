@@ -87,6 +87,7 @@ def main_game_loop() -> None:
 
                 objective, command = high_level_agent.choose_objective_and_command()
                 print(f"{current_player.name} chose Objective: {objective.name}, Command: {command}")
+
                 if game.is_command_phase():
                     # Update objective control at the end of each turn
                     for obj in game.map.objectives:
@@ -111,6 +112,9 @@ def main_game_loop() -> None:
                         tactical_agent.fight_phase(unit)
                 
                 game.next_turn()
+                high_level_agent.update_policy()
+                tactical_agent.update_policies()
+                low_level_agent.update_policy()
 
                 # Update the display
                 game_view.draw()

@@ -4,6 +4,7 @@ from warhammer40k_ai.classes.wargear import Wargear
 from warhammer40k_ai.classes.enhancement import Enhancement
 from warhammer40k_ai.waha_helper import WahaHelper
 import codecs
+import uuid
 
 
 # Define custom exception for validation errors
@@ -13,6 +14,7 @@ class ArmyValidationError(Exception):
 
 class Army:
     def __init__(self, faction: str, detachment_type: str, points_limit: int = 2000):
+        self._id = str(uuid.uuid4())
         self.faction = faction
         self.faction_keyword = []
         self.detachment_type = detachment_type
@@ -27,7 +29,7 @@ class Army:
             self.faction_keyword = unit.faction_keywords
         elif unit.faction_keywords != self.faction_keyword:
             raise ArmyValidationError(f"Unit {unit.name} does not match army faction {self.faction}.")
-        
+        unit.set_parent_army(self)
         self.units.append(unit)
         return True
     
@@ -179,6 +181,12 @@ class Army:
 
     def __str__(self):
         return f"Army: {self.faction} - {self.detachment_type}\n{self.units}"
+
+    def __eq__(self, other):
+        return self._id == other._id
+
+    def __hash__(self):
+        return hash(self._id)
 
 # Helper function to parse an army list from a text file
 def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:

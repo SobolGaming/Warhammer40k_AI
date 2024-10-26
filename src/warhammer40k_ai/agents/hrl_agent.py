@@ -18,6 +18,13 @@ OPPONENT_SECONDARY_OBJECTIVE_PENALTY = 5
 DESTROY_UNIT_REWARD = 2
 LOSE_UNIT_PENALTY = 2
 
+MOVEMENT_REWARD_SCALING = 1.0
+SHOOTING_REWARD_SCALING = 1.0
+CHARGE_REWARD_SCALING = 1.0
+FIGHT_REWARD_SCALING = 1.0
+
+NUM_MOVEMENT_ACTIONS = len(list(MovementAction))
+
 
 class PolicyNetwork(nn.Module):
     """A simple neural network to output probabilities for objectives."""
@@ -184,6 +191,10 @@ class HighLevelAgent:
 
     def update_policy(self) -> None:
         """Update the policy network using the REINFORCE algorithm."""
+        if not self.rewards or not self.log_probs:
+            print("No rewards or log probabilities to update High Level Agent policy.")
+            return  # Skip update if there's nothing to learn from
+
         R = 0
         policy_loss = []
         returns = []
@@ -204,24 +215,36 @@ class HighLevelAgent:
         for log_prob, R in zip(self.log_probs, returns):
             policy_loss.append(-log_prob * R)
 
-        print(f"Updating policy. policy_loss length: {len(policy_loss)}")
-
         # Update policy network
         self.optimizer.zero_grad()
-        policy_loss = sum(policy_loss)
+        policy_loss = torch.stack(policy_loss).sum()
         policy_loss.backward()
         self.optimizer.step()
 
         # Clear rewards and log probabilities for the next episode
-        self.rewards = []
-        self.log_probs = []
+        self.rewards.clear()
+        self.log_probs.clear()
 
 
 class TacticalAgent:
     """Tactical Layer: Handles per-phase unit actions."""
-    def __init__(self, game: Game, player: Player) -> None:
+    def __init__(self, game: Game, player: Player, learning_rate=0.01) -> None:
         self.game = game
         self.player = player
+
+        # Policy networks and optimizers for different phases
+        self.movement_policy_net = PolicyNetwork(input_size=self.get_movement_state_size(), output_size=NUM_MOVEMENT_ACTIONS)
+        self.movement_optimizer = optim.Adam(self.movement_policy_net.parameters(), lr=learning_rate)
+        self.shooting_policy_net = PolicyNetwork(input_size=self.get_shooting_state_size(), output_size=self.get_shooting_action_size())
+        self.shooting_optimizer = optim.Adam(self.shooting_policy_net.parameters(), lr=learning_rate)
+        # Add similar networks for charge and fight phases if desired
+
+        # Store rewards and log probabilities for training
+        self.movement_rewards = []
+        self.movement_log_probs = []
+        self.shooting_rewards = []
+        self.shooting_log_probs = []
+        # Add similar buffers for charge and fight phases
 
     def command_phase(self, command: str) -> None:
         """Execute high-level commands or stratagems."""
@@ -231,6 +254,9 @@ class TacticalAgent:
             print(f"Commanding {unit.name}")
         self.game.event_system.publish("command_phase_end", game_state=self.game.get_state())
 
+    ###########################################################################
+    # Movement Phase
+    ###########################################################################
     def movement_phase(self, unit: Unit, objective: Objective) -> None:
         """Decide on movement actions for the unit and execute them."""
         if not unit.deployed or not unit.is_alive():
@@ -239,21 +265,35 @@ class TacticalAgent:
         # Determine the unit's engagement state
         state = unit.get_engagement_state(self.game.map)
         available_actions = unit.get_available_move_actions(state)
+
         # Agent decides on the action
         chosen_action = self.choose_movement_action(unit, available_actions, objective)
+
         # Decide on the destination
         destination = self.calculate_destination(unit, chosen_action, objective)
+
+        # Record the previous distance to the objective
+        unit_position_before = unit.get_position()
+        dx_before = objective.location.x - unit_position_before[0]
+        dy_before = objective.location.y - unit_position_before[1]
+        dz_before = objective.location.z - unit_position_before[2]
+        distance_before = get_dist(dx_before, dy_before, dz_before)
+
         # Execute the movement
         unit.do_move_action(chosen_action, destination, self.game.map)
 
-    def choose_movement_action(self, unit: Unit, available_actions: List[int], objective: Objective) -> int:
-        # Simple logic: if MOVE is available, choose MOVE; else REMAIN_STATIONARY
-        if MovementAction.MOVE in available_actions:
-            return MovementAction.MOVE
-        else:
-            return MovementAction.REMAIN_STATIONARY
+        # Record the new distance to the objective
+        unit_position_after = unit.get_position()
+        dx_after = objective.location.x - unit_position_after[0]
+        dy_after = objective.location.y - unit_position_after[1]
+        dz_after = objective.location.z - unit_position_after[2]
+        distance_after = get_dist(dx_after, dy_after, dz_after)
 
-    def calculate_destination(self, unit: Unit, action: int, objective: Objective) -> Tuple[float, float, float]:
+        # Compute the reward (positive if unit moved closer)
+        reward = MOVEMENT_REWARD_SCALING * (distance_before - distance_after)
+        self.movement_rewards.append(reward)
+
+    def calculate_destination(self, unit: Unit, action: MovementAction, objective: Objective) -> Tuple[float, float, float]:
         if action == MovementAction.REMAIN_STATIONARY:
             return unit.get_position()
         elif action in [MovementAction.MOVE, MovementAction.ADVANCE]:
@@ -282,19 +322,159 @@ class TacticalAgent:
         else:
             return unit.get_position()
 
+    def choose_movement_action(self, unit: Unit, available_actions: List[int], objective: Objective) -> int:
+        state = self.extract_movement_state_features(unit, objective)
+        action_probs = self.movement_policy_net(state)
+
+        # Mask unavailable actions
+        action_mask = torch.zeros(NUM_MOVEMENT_ACTIONS)
+        for action in available_actions:
+            action_mask[action] = 1
+        masked_probs = action_probs * action_mask
+        masked_probs = masked_probs / masked_probs.sum()
+
+        # Create a categorical distribution
+        action_dist = torch.distributions.Categorical(masked_probs)
+        action_idx = action_dist.sample()
+
+        # Store log probability
+        self.movement_log_probs.append(action_dist.log_prob(action_idx))
+
+        return action_idx.item()
+
+    def extract_movement_state_features(self, unit: Unit, objective: Objective) -> torch.Tensor:
+        features = []
+
+        # Unit's current position
+        unit_pos = unit.get_position()
+        features.extend([unit_pos[0], unit_pos[1], unit_pos[2]])
+
+        # Objective's position
+        obj_pos = (objective.location.x, objective.location.y, objective.location.z)
+        features.extend([obj_pos[0], obj_pos[1], obj_pos[2]])
+
+        # Distance to objective
+        dx = obj_pos[0] - unit_pos[0]
+        dy = obj_pos[1] - unit_pos[1]
+        dz = obj_pos[2] - unit_pos[2]
+        distance_to_objective = get_dist(dx, dy, dz)
+        features.append(distance_to_objective)
+
+        # Unit's movement range
+        features.append(unit.movement)
+
+        # Engagement state
+        engagement_state = unit.get_engagement_state(self.game.map)
+        features.append(engagement_state.value)
+
+        # Remaining features can be added as needed
+
+        # Convert to tensor
+        assert len(features) == self.get_movement_state_size()
+        state = torch.tensor(features, dtype=torch.float32)
+        return state
+
+    def get_movement_state_size(self) -> int:
+        # Define the size of the movement state vector
+        return 9  # Adjust based on actual features
+
+    ###########################################################################
+    # Shooting Phase
+    ###########################################################################
+    def choose_shooting_action(self, unit: Unit, targets: List[Unit]) -> int:
+        state = self.extract_shooting_state_features(unit)
+        action_probs = self.shooting_policy_net(state)
+
+        # Mask unavailable targets
+        action_mask = torch.zeros(self.get_shooting_action_size())
+        for idx, target in enumerate(targets):
+            action_mask[idx] = 1
+        masked_probs = action_probs * action_mask
+        masked_probs = masked_probs / masked_probs.sum()
+
+        # Create a categorical distribution
+        action_dist = torch.distributions.Categorical(masked_probs)
+        action_idx = action_dist.sample()
+
+        # Store log probability
+        self.shooting_log_probs.append(action_dist.log_prob(action_idx))
+
+        return action_idx.item()
+
+    def extract_shooting_state_features(self, unit: Unit) -> torch.Tensor:
+        features = []
+
+        # Unit's position and health
+        unit_pos = unit.get_position()
+        features.extend([unit_pos[0], unit_pos[1], unit_pos[2]])
+        features.append(unit.health_percent())
+
+        # Enemy units' positions and health
+        enemy_units = self.game.get_opponent(self.player).get_army().units
+        for enemy in enemy_units:
+            enemy_pos = enemy.get_position()
+            features.extend([enemy_pos[0], enemy_pos[1], enemy_pos[2]])
+            features.append(enemy.health_percent())
+
+        # Ensure the features vector has consistent size
+        # If fewer enemy units, pad with zeros
+        max_enemies = self.get_shooting_action_size()
+        current_enemies = len(enemy_units)
+        if current_enemies < max_enemies:
+            padding = [0.0] * ((max_enemies - current_enemies) * 4)
+            features.extend(padding)
+
+        # Convert to tensor
+        assert len(features) == self.get_shooting_state_size()
+        state = torch.tensor(features, dtype=torch.float32)
+        return state
+
+    def get_shooting_state_size(self) -> int:
+        # Define the size of the shooting state vector
+        return 15  # Adjust based on actual features
+
+    def get_shooting_action_size(self) -> int:
+        # Number of possible shooting targets (e.g., number of enemy units)
+        return len(self.game.get_opponent().get_army().units)
+
     def shooting_phase(self, unit: Unit) -> None:
         """Select targets and resolve shooting attacks."""
         if not unit.deployed or not unit.is_alive():
             return
 
         self.game.event_system.publish("shooting_phase_start", unit=unit, game_state=self.game.get_state())
-        #targets = self.game.find_enemies_in_shooting_range(unit)
-        #target = random.choice(targets)
-        #if target:
-        #    print(f"{unit.name} shoots at {target.name}")
-        #    self.game.attack(unit, target)
+
+        # Find targets in range
+        targets = self.find_targets_in_range(unit)
+        if targets:
+            # Agent decides on the target
+            target_idx = self.choose_shooting_action(unit, targets)
+            target = targets[target_idx]
+
+            # Record the target's health before attack
+            target_health_before = target.health_percent()
+
+            # Execute the attack
+            print(f"{unit.name} shoots at {target.name}")
+            self.game.attack(unit, target)
+
+            # Record the target's health after attack
+            target_health_after = target.health_percent()
+
+            # Compute the reward (damage inflicted)
+            damage = target_health_before - target_health_after
+            reward = SHOOTING_REWARD_SCALING * damage
+            self.shooting_rewards.append(reward)
+        else:
+            # No targets, negative reward for missed opportunity
+            reward = -1.0 * SHOOTING_REWARD_SCALING
+            self.shooting_rewards.append(reward)
+
         self.game.event_system.publish("shooting_phase_end", unit=unit, game_state=self.game.get_state())
 
+    ###########################################################################
+    # Charge Phase
+    ###########################################################################
     def charge_phase(self, unit: Unit) -> None:
         """Identify nearby targets and charge."""
         if not unit.deployed or not unit.is_alive():
@@ -308,6 +488,9 @@ class TacticalAgent:
         #    self.game.charge(unit, target)
         self.game.event_system.publish("charge_phase_end", unit=unit, game_state=self.game.get_state())
 
+    ###########################################################################
+    # Fight Phase
+    ###########################################################################
     def fight_phase(self, unit: Unit) -> None:
         """Resolve melee combat."""
         if not unit.deployed or not unit.is_alive():
@@ -321,12 +504,96 @@ class TacticalAgent:
         #    self.game.fight(unit, target)
         self.game.event_system.publish("fight_phase_end", unit=unit, game_state=self.game.get_state())
 
+    ###########################################################################
+    # Policy Updates
+    ###########################################################################
+    def update_policies(self) -> None:
+        self.update_movement_policy()
+        self.update_shooting_policy()
+        # Add updates for charge and fight policies if implemented
+
+    def update_movement_policy(self) -> None:
+        """Update the movement policy network."""
+        if not self.movement_rewards or not self.movement_log_probs:
+            print("No rewards or log probabilities to update Tactical Agent movement policy.")
+            return  # Skip update if there's nothing to learn from
+
+        R = 0
+        policy_loss = []
+        returns = []
+        gamma = 0.99  # Discount factor
+
+        # Calculate discounted rewards
+        for r in self.movement_rewards[::-1]:
+            R = r + gamma * R
+            returns.insert(0, R)
+        returns = torch.tensor(returns)
+        if len(returns) > 1:
+            returns = (returns - returns.mean()) / (returns.std() + 1e-9)
+        else:
+            returns = returns * 0
+
+        for log_prob, R in zip(self.movement_log_probs, returns):
+            policy_loss.append(-log_prob * R)
+
+        # Update the policy network
+        self.movement_optimizer.zero_grad()
+        policy_loss = torch.stack(policy_loss).sum()
+        policy_loss.backward()
+        self.movement_optimizer.step()
+
+        # Clear buffers
+        self.movement_rewards.clear()
+        self.movement_log_probs.clear()
+
+    def update_shooting_policy(self) -> None:
+        """Update the shooting policy network."""
+        if not self.shooting_rewards or not self.shooting_log_probs:
+            print("No rewards or log probabilities to update Tactical Agent shooting policy.")
+            return  # Skip update if there's nothing to learn from
+
+        R = 0
+        policy_loss = []
+        returns = []
+        gamma = 0.99  # Discount factor
+
+        # Calculate discounted rewards
+        for r in self.shooting_rewards[::-1]:
+            R = r + gamma * R
+            returns.insert(0, R)
+        returns = torch.tensor(returns)
+        if len(returns) > 1:
+            returns = (returns - returns.mean()) / (returns.std() + 1e-9)
+        else:
+            returns = returns * 0
+
+        for log_prob, R in zip(self.shooting_log_probs, returns):
+            policy_loss.append(-log_prob * R)
+
+        # Update the policy network
+        self.shooting_optimizer.zero_grad()
+        policy_loss = torch.stack(policy_loss).sum()
+        policy_loss.backward()
+        self.shooting_optimizer.step()
+
+        # Clear buffers
+        self.shooting_rewards.clear()
+        self.shooting_log_probs.clear()
+
 
 class LowLevelAgent:
     """Operational Layer: Executes precise unit movements and actions."""
-    def __init__(self, game: Game, player: Player) -> None:
+    def __init__(self, game: Game, player: Player, learning_rate=0.01) -> None:
         self.game = game
         self.player = player
+
+        # Policy network for movement execution
+        self.movement_execution_net = PolicyNetwork(input_size=self.get_state_size(), output_size=self.get_action_size())
+        self.optimizer = optim.Adam(self.movement_execution_net.parameters(), lr=learning_rate)
+
+        # Store rewards and log probabilities
+        self.rewards = []
+        self.log_probs = []
 
     def execute_movement(self, unit: Unit, model_paths: List[List[Tuple[float, float, float]]]) -> None:
         """Move the unit along the path."""
@@ -339,3 +606,45 @@ class LowLevelAgent:
     def resolve_combat(self, unit: Unit, target: Unit) -> None:
         """Perform combat calculations and apply damage."""
         self.game.fight(unit, target)
+
+    def get_state_size(self) -> int:
+        # Define the size of the state vector
+        return 20  # Adjust based on actual features
+
+    def get_action_size(self) -> int:
+        # Define the number of possible movement directions or steps
+        return 8  # For example, 8 possible movement directions
+
+    def update_policy(self) -> None:
+        """Update the movement execution policy network."""
+        if not self.rewards or not self.log_probs:
+            print("No rewards or log probabilities to update Low Level Agent movement policy.")
+            return  # Skip update if there's nothing to learn from
+
+        R = 0
+        policy_loss = []
+        returns = []
+        gamma = 0.99  # Discount factor
+
+        # Calculate discounted rewards
+        for r in self.rewards[::-1]:
+            R = r + gamma * R
+            returns.insert(0, R)
+        returns = torch.tensor(returns)
+        if len(returns) > 1:
+            returns = (returns - returns.mean()) / (returns.std() + 1e-9)
+        else:
+            returns = returns * 0
+
+        for log_prob, R in zip(self.log_probs, returns):
+            policy_loss.append(-log_prob * R)
+
+        # Update the policy network
+        self.optimizer.zero_grad()
+        policy_loss = torch.stack(policy_loss).sum()
+        policy_loss.backward()
+        self.optimizer.step()
+
+        # Clear buffers
+        self.rewards.clear()
+        self.log_probs.clear()

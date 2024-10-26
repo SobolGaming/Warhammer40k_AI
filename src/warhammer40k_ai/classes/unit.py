@@ -12,15 +12,15 @@ from .status_effects import StatusEffect
 from ..utility.constants import VIEWING_ANGLE
 import math
 import uuid
-import random
 import copy
 import numpy as np
-
+import re
+from enum import Enum, auto
 
 # Forward declarations
 if TYPE_CHECKING:
     from .map import Map
-
+    from .army import Army
 
 logging.basicConfig(format="%(asctime)s %(levelname)-8s %(message)s")
 logger = logging.getLogger(__name__)
@@ -36,16 +36,16 @@ class UnitRoundState:
     num_lost_models_this_round: int = 0
 
 
-class MovementAction:
-    REMAIN_STATIONARY = 0
-    MOVE = 1
-    ADVANCE = 2
-    FALL_BACK = 3
+class MovementAction(Enum):
+    REMAIN_STATIONARY = auto()  
+    MOVE = auto()
+    ADVANCE = auto()
+    FALL_BACK = auto()
 
 
-class MovementState:
-    IN_ENGAGEMENT_RANGE = 0
-    OUT_OF_ENGAGEMENT_RANGE = 1
+class MovementState(Enum):
+    IN_ENGAGEMENT_RANGE = auto()
+    OUT_OF_ENGAGEMENT_RANGE = auto()
 
 
 class Unit:
@@ -75,6 +75,7 @@ class Unit:
         self.attached_to = None  # For Leaders, to track which unit they are attached to
         self.enhancement = enhancement  # The Enhancement assigned to this unit (if any)
         self.is_warlord = False
+        self.parent_army = None
 
         # Game State specific attributes
         self.models_lost = []
@@ -245,8 +246,19 @@ class Unit:
         elif " can be replaced with " in option:
             parts = option.split(" can be replaced with ")
             orig_item = parts[0].replace("This model’s ", "").strip().lower()
-            new_item = parts[1].strip().replace('.', '').lower()
-            print(f"NOT IMPLEMENTED - WARGEAR ITEM REPLACEMENT:Original Item: {orig_item}, New Item: {new_item}")
+            if " and one of the following: " in parts[1]:
+                parts2 = parts[1].split(" and one of the following: ")
+                new_item_1 = parts2[0].strip().replace('.', '').lower()
+                new_item_2 = parts2[1].strip().lower()
+                pattern = r'(\d+)\s+(.*?)(?=\s+\d+\s+|$)'
+                matches = re.findall(pattern, new_item_2)
+                result = []
+                for count, item in matches:
+                    result.append(f"({count}) ({item.strip()})")
+                print(f"NOT IMPLEMENTED - WARGEAR ITEM REPLACEMENT: Original Item: {orig_item}, New Item: {new_item_1}, and ONE of: {result}")
+            else:
+                new_item = parts[1].strip().replace('.', '').lower()
+                print(f"NOT IMPLEMENTED - WARGEAR ITEM REPLACEMENT: Original Item: {orig_item}, New Item: {new_item}")
 
     def parse_wargear_options(self, options: List[str]):
         result = {}
@@ -299,6 +311,14 @@ class Unit:
                         model_instance.wargear.append(wargear_instance)
                 else:
                     model_instance.wargear.append(wargear_instance)
+
+    def set_parent_army(self, army_ptr) -> None:
+        """Set the parent army of the unit."""
+        self.parent_army = army_ptr
+
+    def get_parent_army(self) -> Optional['Army']:
+        """Get the parent army of the unit."""
+        return self.parent_army
 
     def add_ability(self, ability: Ability, model_name: str=None, quantity: int=1000) -> None:
         """Add ability to the unit."""
@@ -605,7 +625,7 @@ class Unit:
     def get_engagement_state(self, game_map: 'Map') -> int:
         """Determine if the unit is in engagement range of any enemy model."""
         current_position = self.get_position()
-        enemy_units = game_map.get_enemy_units(self.faction)
+        enemy_units = game_map.get_enemy_units(self)
         
         for enemy_unit in enemy_units:
             if game_map.is_within_engagement_range(current_position, enemy_unit):
@@ -667,7 +687,7 @@ class Unit:
                 return False
             movement_range += advance_roll
 
-        # Generate potential positions for the other models
+        # Generate potential positions for models
         potential_positions = self.calculate_model_positions(destination[0], destination[1], game_map)
         distance = 0.0
 
@@ -883,22 +903,25 @@ class Unit:
                     x, y = start_x_game, start_y_game
                     z = game_map.get_height_at_point(x, y)
                     facing = 0.0
-                    positions.append((x, y, z, facing))
-                    placed = True
-                    break
+                    # Try to find a strategic position within coherency distance
+                    valid_positions = self._find_strategic_position(model, [(x, y, z, facing)], game_map)
                 else:
                     # Try to find a strategic position within coherency distance
                     valid_positions = self._find_strategic_position(model, positions, game_map)
-                    if not valid_positions:
-                        attempts += 1
-                        continue
-                    # Check collision with all models in the unit, including the current one
-                    for x, y, z, facing in valid_positions:
-                        if not self._collides_with_unit_models(x, y, z, facing, positions):
-                            if self._is_coherent_within_unit(x, y, z, facing, positions):
-                                positions.append((x, y, z, facing))
-                                placed = True
-                                break
+
+                if not valid_positions:
+                    attempts += 1
+                    continue
+
+                positions.append(valid_positions[0])
+                placed = True
+                # Check collision with all models in the unit, including the current one
+                #for x, y, z, facing in valid_positions:
+                #    if not self._collides_with_unit_models(x, y, z, facing, positions):
+                #        if self._is_coherent_within_unit(x, y, z, facing, positions):
+                #            positions.append((x, y, z, facing))
+                #            placed = True
+                #            break
                 attempts += 1
 
             if not placed:
@@ -919,30 +942,14 @@ class Unit:
         if not positions:
             return False
 
+        if len(self.models) == 1:
+            return False
+
         new_base = self._create_potential_base(x, y, z, facing)
 
         for pos in positions:
-            logger.debug(f"Checking collision: New base at ({x:.4f}, {y:.4f}, {z:.4f}) facing {facing:.2f}")
-            logger.debug(f"Against existing base at ({pos[0]:.4f}, {pos[1]:.4f}, {pos[2]:.4f}) facing {pos[3]:.2f}")
-
-            if (z - pos[2]) > self.model_height:
-                logger.debug(f"Quick Non-Collision Decision :: Delta Z: {z - pos[2]}, Model Height: {self.model_height}")
-                return False
-            
             other_base = self._create_potential_base(pos[0], pos[1], pos[2], pos[3])
-            
-            distance = math.sqrt((x - pos[0])**2 + (y - pos[1])**2)
-            angle_between = get_angle(y - pos[1], x - pos[0])
-            
-            # Calculate the angle difference for each base
-            angle_diff_new = angle_difference(facing, angle_between)
-            angle_diff_other = angle_difference(pos[3], angle_between + math.pi)  # Add pi to get the opposite direction
-            
-            combined_radius = new_base.getRadius(angle_diff_new) + other_base.getRadius(angle_diff_other)
-            logger.debug(f"Distance between bases: {distance:.4f}")
-            logger.debug(f"Combined radius: {combined_radius:.4f}")
-
-            if distance <= combined_radius:
+            if new_base.collides_with(other_base):
                 logger.debug(f"Collision detected!")
                 return True
         return False
@@ -950,7 +957,6 @@ class Unit:
     def _is_coherent_within_unit(self, x: float, y: float, z: float, facing: float, positions: List[Tuple[float, float, float, float]]) -> bool:
         """Check if the model at the given position is within coherency with the unit."""
         new_base = self._create_potential_base(x, y, z, facing)
-        new_base_shape = new_base.get_base_shape()
 
         # Check against already placed models
         found_neighbors = 0
@@ -961,7 +967,7 @@ class Unit:
 
         for pos in positions:
             other_base = self._create_potential_base(pos[0], pos[1], pos[2] if len(pos) > 2 else 0.0, pos[3] if len(pos) > 3 else facing)
-            if new_base_shape.distance(other_base.get_base_shape()) <= self.coherency_distance:
+            if new_base.edge_to_edge_distance(other_base) <= self.coherency_distance:
                 found_neighbors += 1
                 if found_neighbors >= current_neighbors_needed:
                     return True
@@ -976,7 +982,7 @@ class Unit:
 
         valid_positions = []
         for dx, dy in directions:
-            radius_at_facing = model.model_base.getRadius(angle=get_angle(dy, dx))
+            radius_at_facing = model.model_base.get_radius(angle=get_angle(dy, dx))
             logger.debug(f"{model._id} {model.name} X: {last_x}, Y: {last_y}, Facing: {round(math.degrees(facing), 2)} :: {radius_at_facing} :: {dx} :: {dy}")
             for distance in np.arange(radius_at_facing + 0.1, radius_at_facing + self.coherency_distance, 0.1):
                 x = last_x + distance * dx
@@ -985,6 +991,7 @@ class Unit:
                 
                 if self._is_valid_position(x, y, z, facing, game_map, placed_positions):
                     valid_positions.append((x, y, z, facing))
+                    #return valid_positions
         return valid_positions
 
     def _is_valid_position(self, x: float, y: float, z: float, facing: float, game_map: 'Map', placed_positions: List[Tuple[float, float, float, float]]) -> bool:
@@ -993,13 +1000,15 @@ class Unit:
             return False
         if game_map.check_collision_with_obstacles(model, (x, y)):
             return False
-        if game_map.check_collision_with_other_units(model, (x, y)):
+        if game_map.check_collision_with_other_friendly_units(model, (x, y)):
+            return False
+        if game_map.check_collision_with_other_enemy_units(model, (x, y)):
             return False
         if self._collides_with_unit_models(x, y, z, facing, placed_positions):
             return False
-        if self._is_coherent_within_unit(x, y, z, facing, placed_positions):
-            return True
-        return False
+        if not self._is_coherent_within_unit(x, y, z, facing, placed_positions):
+            return False
+        return True
 
     def print_unit(self) -> str:
         return f"{self.name} :: M: {self.movement}\", T: {self.toughness}, Sv: {self.save}, InvSv: {self.inv_save}, OC: {self.objective_control}"

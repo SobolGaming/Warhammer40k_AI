@@ -45,8 +45,11 @@ class WargearProfile:
     ###########################################################################
     ### Wargear profile damage potential
     ###########################################################################
-    def get_damage_potential(self) -> float:
-        """Estimate the damage potential of this weapon profile."""
+    def get_damage_potential(self, target_unit: Optional['Unit'] = None) -> float:
+        """
+        Estimate the damage potential of this weapon profile.
+        If a target unit is provided, consider its toughness in the calculation.
+        """
         # Average number of attacks
         if isinstance(self.attacks, Count):
             avg_attacks = self.attacks.stat_average()
@@ -60,6 +63,23 @@ class WargearProfile:
             chance_to_hit = (7 - self.skill) / 6.0
         else:
             chance_to_hit = 1.0  # Assume always hits if skill is 0 or invalid
+
+        # Chance to wound
+        chance_to_wound = 0.5  # Default to 50% if no target is provided
+        if target_unit:
+            target_toughness = target_unit.toughness
+            strength = self.strength
+            if isinstance(strength, int) and isinstance(target_toughness, int):
+                if strength >= target_toughness * 2:
+                    chance_to_wound = 5/6
+                elif strength > target_toughness:
+                    chance_to_wound = 4/6
+                elif strength == target_toughness:
+                    chance_to_wound = 3/6
+                elif strength <= target_toughness / 2:
+                    chance_to_wound = 1/6
+                else:
+                    chance_to_wound = 2/6
 
         # Average damage per hit
         if isinstance(self.damage, DiceCollection):
@@ -80,7 +100,7 @@ class WargearProfile:
         #######################################################################
 
         # Expected damage
-        expected_damage = avg_attacks * chance_to_hit * avg_damage
+        expected_damage = avg_attacks * chance_to_hit * chance_to_wound * avg_damage
 
         # Return the estimated damage potential
         return expected_damage

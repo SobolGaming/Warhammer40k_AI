@@ -48,7 +48,7 @@ class TestWahaHelper(unittest.TestCase):
             self.assertEqual(model.wounds, 1)
             self.assertEqual(model.leadership, 7)
             self.assertEqual(model.objective_control, 2)
-            self.assertEqual(model.model_base.getRadius(), convert_mm_to_inches(32 / 2))
+            self.assertEqual(model.model_base.get_radius(), convert_mm_to_inches(32 / 2))
 
         # Check weapons
         bloodletters_unit.add_wargear()

@@ -4,8 +4,7 @@ from .unit import Unit
 from .model import Model
 from ..utility.calcs import get_dist, convert_mm_to_inches
 from ..utility.constants import ENGAGEMENT_RANGE
-from shapely.geometry import Polygon, Point
-from shapely.geometry.base import BaseGeometry    
+from shapely.geometry import Polygon, Point   
 from shapely.affinity import scale, translate
 
 from typing import TYPE_CHECKING
@@ -37,11 +36,11 @@ class Map:
         ]
         return Polygon(vertices)
 
-    def add_obstacles(self, obstacles: List['Obstacle']) -> None:
-        self.obstacles.extend(obstacles)
-
     def add_obstacle(self, obstacle: 'Obstacle') -> None:
         self.obstacles.append(obstacle)
+
+    def add_obstacles(self, obstacles: List['Obstacle']) -> None:
+        self.obstacles.extend(obstacles)
 
     def add_objective(self, objective: 'Objective') -> None:
         self.objectives.append(objective)
@@ -58,7 +57,9 @@ class Map:
                 return False
             if self.check_collision_with_obstacles(model):
                 return False
-            if self.check_collision_with_other_units(model):
+            if self.check_collision_with_other_friendly_units(model):
+                return False
+            if self.check_collision_with_other_enemy_units(model):
                 return False
         self.units.append(unit)
         return True
@@ -71,12 +72,31 @@ class Map:
             all_models.extend(unit.models)
         return all_models
 
-    def get_enemy_units(self, faction: str) -> List[Unit]:
+    def get_enemy_units(self, unit: Unit) -> List[Unit]:
         enemy_units = []
-        for unit in self.units:
-            if unit.faction != faction:
-                enemy_units.append(unit)
+        for test_unit in self.units:
+            if unit.get_parent_army() != test_unit.get_parent_army():
+                enemy_units.append(test_unit)
         return enemy_units
+
+    def get_enemy_models(self, unit: Unit) -> List[Model]:
+        enemy_models = []
+        for test_unit in self.get_enemy_units(unit):
+            enemy_models.extend(test_unit.models)
+        return enemy_models
+
+    def get_friendly_units(self, unit: Unit) -> List[Unit]:
+        friendly_units = []
+        for test_unit in self.units:
+            if unit.get_parent_army() == test_unit.get_parent_army():
+                friendly_units.append(test_unit)
+        return friendly_units
+
+    def get_friendly_models(self, unit: Unit) -> List[Model]:
+        friendly_models = []
+        for test_unit in self.get_friendly_units(unit):
+            friendly_models.extend(test_unit.models)
+        return friendly_models
 
     def is_within_boundary(self, model: Model, destination: Tuple[float, float] = None) -> bool:
         """
@@ -118,15 +138,28 @@ class Map:
                 return True
         return False
 
-    def check_collision_with_other_units(self, model: Model, destination: Tuple[float, float] = None) -> bool:
-        for unit in self.units:
+    def check_collision_with_other_friendly_units(self, model: Model, destination: Tuple[float, float] = None) -> bool:
+        test_base = model.model_base
+        if destination:
+            test_base = model.parent_unit._create_potential_base(destination[0], destination[1], test_base.z, test_base.facing)
+        for unit in self.get_friendly_units(model.parent_unit):
             if unit != model.parent_unit:  #  inter-unit collisions check done elsewhere
-                test_shape = model.model_base.get_base_shape()
-                if destination:
-                    test_shape = translate(test_shape, destination[0] - model.model_base.x, destination[1] - model.model_base.y)
                 for other_model in unit.models:
-                    if test_shape.intersects(other_model.model_base.get_base_shape()):
+                    print(f"Friendly Unit Check :: {model.parent_unit.name} checking collision with friendly units :: {other_model.parent_unit.name}")
+                    if test_base.collides_with(other_model.model_base):
                         return True
+        return False
+
+    def check_collision_with_other_enemy_units(self, model: Model, destination: Tuple[float, float] = None) -> bool:
+        test_base = model.model_base
+        if destination:
+            test_base = model.parent_unit._create_potential_base(destination[0], destination[1], test_base.z, test_base.facing)
+        
+        for unit in self.get_enemy_units(model.parent_unit):
+            for other_model in unit.models:
+                print(f"Enemy Unit Check :: {model.parent_unit.name} checking collision with enemy units :: {other_model.parent_unit.name}")
+                if test_base.collides_with(other_model.model_base):
+                    return True
         return False
 
     def get_height_at_point(self, x: float, y: float) -> float:

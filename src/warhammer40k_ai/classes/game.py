@@ -68,8 +68,19 @@ class Battlefield:
         },
     }
 
-    def __init__(self, size: BattlefieldSize):
-        self.config = self.SIZES[size]
+    def __init__(self, size: BattlefieldSize = None, width: int = None, height: int = None):
+        if size is not None:
+            self.config = self.SIZES[size]
+        elif width is not None and height is not None:
+            self.config = {
+                "Width": width,
+                "Height": height,
+                "PointLimit": 2000,  # Default values, adjust as needed
+                "CommandPoints": 6,
+                "DetachmentLimit": 1,
+            }
+        else:
+            raise ValueError("Either 'size' or both 'width' and 'height' must be provided")
 
     def __str__(self):
         ret = f"{self.config}"

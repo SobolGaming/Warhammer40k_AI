@@ -153,52 +153,18 @@ class Model:
     ################
     ### Utility Math
     ################
-    def distanceBetweenModels(self, other: "Model") -> float:
-        # Calculate the distance between two models using their bases
-        # Note: we round to 2 decimal precision (we can increase that if necessary)
-        delta_x = other.model_base.x - self.model_base.x
-        logger.debug(f"Delta X: {delta_x}")
-        delta_y = other.model_base.y - self.model_base.y
-        logger.debug(f"Delta Y: {delta_y}")
-        angle = get_angle(delta_x, delta_y)
-        logger.debug(f"Angle (in Degrees): {degrees(angle)}, (in Radians): {angle}")
-        if self.model_base.z == other.model_base.z:
-            return round(
-                get_dist(delta_x, delta_y)
-                - self.model_base.get_radius(angle)
-                - other.model_base.get_radius(angle)
-            , 2)
-        elif self.model_base.z + self.model_base.model_height < other.model_base.z:
-            xy_dist = round(
-                get_dist(delta_x, delta_y)
-                - self.model_base.get_radius(angle)
-                - other.model_base.get_radius(angle)
-            , 2)
-            return get_dist(xy_dist, other.model_base.z - self.model_base.z - self.model_base.model_height)
-        elif other.model_base.z + other.model_base.model_height < self.model_base.z:
-            xy_dist = round(
-                get_dist(delta_x, delta_y)
-                - self.model_base.get_radius(angle)
-                - other.model_base.get_radius(angle)
-            , 2)
-            return get_dist(xy_dist, self.model_base.z - other.model_base.z - other.model_base.model_height)
-        # otherwise treat it the same as if on the same z-axis since parts of the model overlap in the z-space
-        else:
-            return round(
-                get_dist(delta_x, delta_y)
-                - self.model_base.getRadius(angle)
-                - other.model_base.getRadius(angle)
-            , 2)
+    def edge_to_edge_distance(self, other: "Model") -> float:
+        return self.model_base.edge_to_edge_distance(other.model_base)
 
-    def verticalDistanceBetweenModels(self, other: "Model") -> float:
-        """Calculate the distance between two models in vertical space."""
-        if self.model_base.z + self.model_base.model_height < other.model_base.z:
-            return round(other.model_base.z - self.model_base.z - self.model_base.model_height, 2)
-        elif other.model_base.z + other.model_base.model_height < self.model_base.z:
-            return round(self.model_base.z - other.model_base.z - other.model_base.model_height, 2)
-        else:
-            return 0.0
+    def vertical_distance(self, other: "Model") -> float:
+        return self.model_base.vertical_distance(other.model_base)
 
+    def collides_with(self, other: "Model") -> bool:
+        return self.model_base.collides_with(other.model_base)
+
+    ################
+    ### Properties
+    ################
     @property
     def movement(self) -> int:
         if hasattr(self.parent_unit.stats, 'movement'):

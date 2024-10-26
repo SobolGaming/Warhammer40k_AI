@@ -102,11 +102,13 @@ def heuristic(a, b):
     """Calculate the heuristic (estimated distance) between two points."""
     return get_dist(a[0] - b[0], a[1] - b[1], a[2] - b[2])
 
-def distance_to_nearest_obstacle(point, obstacles, target):
+def distance_to_nearest_obstacle(point, obstacles):
+    if not obstacles:
+        return float('inf')  # Return infinity if there are no obstacles
     return min(obstacle.polygon.distance(Point(point)) for obstacle in obstacles)
 
 def adaptive_step_size(point, obstacles, target, min_step=0.1, max_step=6.0, safety_factor=0.5):
-    dist = distance_to_nearest_obstacle(point, obstacles, target)
+    dist = distance_to_nearest_obstacle(point, obstacles)
     return max(min_step, min(max_step, dist * safety_factor))
 
 def move_object(obj, obstacles, dx, dy, step):
