@@ -274,21 +274,53 @@ class Unit:
             if item_description.lower() not in result.keys():
                 result[item_description.lower()] = WargearOption(item_description, model_description, model_count, item_count, not_equipped_with)
         elif " can be replaced with " in option:
-            parts = option.split(" can be replaced with ")
-            orig_item = parts[0].replace("This model’s ", "").strip().lower()
-            if " and one of the following: " in parts[1]:
+            parts = option.split(" can be replaced with")
+            if "This model’s " in parts[0]:
+                orig_item = parts[0].replace("This model’s ", "").strip().lower()
+            elif f"{self.name}’s " in parts[0]:
+                orig_item = parts[0].replace(f"{self.name}’s ", "").strip().lower()
+            elif f"{self.models[0].name}’s " in parts[0]:
+                orig_item = parts[0].replace(f"{self.models[0].name}’s ", "").strip().lower()
+            else:
+                orig_item = parts[0].strip().lower()
+            if orig_item.startswith("the"):
+                orig_item = orig_item.replace("the ", "")
+            if " and one of the following: " in parts[1] or " and 1 of the following: " in parts[1]:
                 parts2 = parts[1].split(" and one of the following: ")
                 new_item_1 = parts2[0].strip().replace('.', '').lower()
                 new_item_2 = parts2[1].strip().lower()
-                pattern = r'(\d+)\s+(.*?)(?=\s+\d+\s+|$)'
-                matches = re.findall(pattern, new_item_2)
-                result = []
-                for count, item in matches:
-                    result.append(f"({count}) ({item.strip()})")
-                print(f"NOT IMPLEMENTED - WARGEAR ITEM REPLACEMENT: Original Item: {orig_item}, New Item: {new_item_1}, and ONE of: {result}")
+                entries = []
+                for entry in new_item_2.split(";"):
+                    entry = entry.replace(",", "").replace("and ", "")
+                    pattern = r'(\d+)\s+(.*?)(?=\s+\d+\s+|$)'
+                    matches = re.findall(pattern, entry)
+                    results = []
+                    for count, item in matches:
+                        results.append(f"({count}) ({item.strip()})")
+                    entries.append(results)
+                print(f"NOT IMPLEMENTED - WARGEAR ITEM REPLACEMENT: Original Item: {orig_item}, New Item: {new_item_1}, and ONE of: {entries} :: FULL STRING '{option}'")
+            elif " one of the following: " in parts[1] or " 1 of the following: " in parts[1]:
+                parts2 = parts[1].split(" of the following: ")
+                new_item_2 = parts2[1].strip().lower()
+                entries = []
+                for entry in new_item_2.split(";"):
+                    entry = entry.replace(",", "").replace("and ", "")
+                    pattern = r'(\d+)\s+(.*?)(?=\s+\d+\s+|$)'
+                    matches = re.findall(pattern, entry)
+                    results = []
+                    for count, item in matches:
+                        results.append(f"({count}) ({item.strip()})")
+                    if results:
+                        entries.append(results)
+                print(f"NOT IMPLEMENTED - WARGEAR ITEM REPLACEMENT: Original Item: {orig_item}, New Item ONE of: {entries} :: FULL STRING '{option}'")
             else:
                 new_item = parts[1].strip().replace('.', '').lower()
-                print(f"NOT IMPLEMENTED - WARGEAR ITEM REPLACEMENT: Original Item: {orig_item}, New Item: {new_item}")
+                pattern = r'(\d+)\s+(.*?)(?=\s+\d+\s+|$)'
+                matches = re.findall(pattern, new_item)
+                results = []
+                for count, item in matches:
+                    results.append(f"({count}) ({item.strip()})")
+                print(f"NOT IMPLEMENTED - WARGEAR ITEM REPLACEMENT: Original Item: {orig_item}, New Item: {results} :: FULL STRING '{option}'")
 
     def parse_wargear_options(self, options: List[str]):
         result = {}
