@@ -31,6 +31,7 @@ class WahaHelper:
         elif isinstance(data, list):
             return [self.clean_data(item) for item in data]
         elif isinstance(data, str):
+            data = data.replace("</li>", ";")
             soup = BeautifulSoup(data, 'html.parser')
             text = soup.get_text(separator=' ')
             text = re.sub(r'\s+', ' ', text).strip()

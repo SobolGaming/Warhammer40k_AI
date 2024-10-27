@@ -15,8 +15,10 @@ class Range:
     def from_string(cls, string: str) -> 'Range':
         parts = string.split("-")
         if len(parts) == 1:
+            if parts[0].strip() == "N/A":
+                return cls(min=0, max=1000)
             value = int(parts[0].strip())
-            return cls(min=value, max=value)
+            return cls(min=0, max=value)
         elif len(parts) == 2:
             return cls(min=int(parts[0].strip()), max=int(parts[1].strip()))
         else:

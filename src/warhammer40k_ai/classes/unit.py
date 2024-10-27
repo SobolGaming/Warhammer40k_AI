@@ -56,8 +56,16 @@ class Unit:
         self.faction = datasheet.faction_data["name"]
         self.keywords = getattr(datasheet, 'keywords', [])  # Use getattr with a default value
         self.faction_keywords = getattr(datasheet, 'faction_keywords', [])  # Use getattr with a default value
-        self.unit_composition = self._parse_unit_composition(datasheet.datasheets_unit_composition)
-        self.models_cost = self._parse_models_cost(datasheet.datasheets_models_cost)
+        try:
+            self.unit_composition = self._parse_unit_composition(datasheet.datasheets_unit_composition)
+        except Exception as e:
+            print(f"{self.name} - ERROR PARSING UNIT COMPOSITION: {e}")
+            return
+        try:
+            self.models_cost = self._parse_models_cost(datasheet.datasheets_models_cost)
+        except Exception as e:
+            print(f"{self.name} - ERROR PARSING MODELS COST: {e}")
+            self.models_cost = { "spawn_on_death": 0 }
         self.models = self._create_models(datasheet, quantity)
         self.possible_wargear = self._parse_wargear(datasheet)
         self.wargear_options = None
@@ -92,7 +100,7 @@ class Unit:
 
     def _parse_attribute(self, attribute_value: str) -> int:
         # Remove " and + from the attribute value
-        attribute_value = attribute_value.replace("\"", "").replace("+", "")
+        attribute_value = attribute_value.replace("\"", "").replace("+", "").replace("*", "")
         if "-" in attribute_value:
             return 0
         return int(attribute_value)
@@ -102,6 +110,10 @@ class Unit:
 
     def _parse_base_size(self, base_size: str) -> Base:
         base_size = base_size.replace("mm", "")
+        if 'flying base' in base_size:
+            # TODO - need to implement vertical offset for flying bases
+            print(f"{self.name} has flying base")
+            base_size = base_size.replace("flying base", "").strip()
         # Parse the base size from the datasheet
         if 'x' in base_size:
             # This handles the elliptical example: "32 x 16mm"
@@ -109,6 +121,16 @@ class Unit:
             major = convert_mm_to_inches(int(major.strip()) / 2.0)
             minor = convert_mm_to_inches(int(minor.strip()) / 2.0)
             return Base(BaseType.ELLIPTICAL, (major, minor))
+        elif 'Use model' in base_size:
+            print(f"{self.name} has guessed HULL base size")
+            # TODO - not sure how to handle this; assume hull with 80mm radius and 40mm width
+            return Base(BaseType.HULL, (convert_mm_to_inches(80 / 2), convert_mm_to_inches(40 / 2)))
+        elif 'No official base size' == base_size.strip():
+            print(f"{self.name} has NO officialbase size")
+            return Base(BaseType.HULL, (convert_mm_to_inches(80 / 2), convert_mm_to_inches(40 / 2)))
+        elif '' == base_size.strip():
+            print(f"{self.name} has NO base size - guessing 32mm")
+            return Base(BaseType.CIRCULAR, convert_mm_to_inches(32 / 2.0))
         else:
             # This handles the standard example: "32mm"
             return Base(BaseType.CIRCULAR, convert_mm_to_inches(int(base_size.strip()) / 2.0))
@@ -116,6 +138,13 @@ class Unit:
     def _parse_unit_composition(self, unit_composition):
         result = {}
         for comp in unit_composition:
+            if comp['description'].startswith("This unit can contain a maximum of "):
+                continue
+            if comp['description'] == "OR":
+                continue
+            if comp['description'].startswith("One of the following:"):
+                print(f"{self.name} - NEED TO HANDLE UNIT COMPOSITION")
+                continue
             parts = comp['description'].split()
             count = parts[0]
             model_name = ' '.join(parts[1:])  # Everything after the number
@@ -147,11 +176,12 @@ class Unit:
                     movement=self._parse_attribute(datasheet.datasheets_models[0]["M"]),
                     toughness=self._parse_attribute(datasheet.datasheets_models[0]["T"]),
                     save=self._parse_attribute(datasheet.datasheets_models[0]["Sv"]),
-                    inv_save=self._parse_attribute(datasheet.datasheets_models[0]["inv_sv"]),
                     wounds=self._parse_attribute(datasheet.datasheets_models[0]["W"]),
                     leadership=self._parse_attribute(datasheet.datasheets_models[0]["Ld"]),
                     objective_control=self._parse_attribute(datasheet.datasheets_models[0]["OC"]),
-                    model_base=self._parse_base_size(datasheet.datasheets_models[0]["base_size"])
+                    model_base=self._parse_base_size(datasheet.datasheets_models[0]["base_size"]),
+                    inv_save=self._parse_attribute(datasheet.datasheets_models[0]["inv_sv"]),
+                    inv_save_condition=datasheet.datasheets_models[0]["inv_sv_descr"].lower()
                 )
                 model.set_parent_unit(self)
                 models.append(model)
@@ -476,9 +506,14 @@ class Unit:
     def _parse_models_cost(self, models_cost):
         result = {}
         for cost_entry in models_cost:
-            num_models = int(cost_entry['description'].split()[0])
-            cost = int(cost_entry['cost'])
-            result[num_models] = cost
+            try:
+                num_models = int(cost_entry['description'].split()[0])
+                cost = int(cost_entry['cost'])
+                result[num_models] = cost
+            except ValueError:
+                num_models = 1
+                cost = int(cost_entry['cost'].replace("+", ""))
+                result['extra'] = cost
         return result
 
     def calculate_points(self, num_models):

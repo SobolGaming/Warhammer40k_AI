@@ -18,7 +18,7 @@ class Model:
 
     def __init__(self, name: str, movement: int, toughness: int, save: int, 
                  wounds: int, leadership: int, objective_control: int, model_base: Base, 
-                 inv_save: Optional[int] = None):
+                 inv_save: Optional[int] = None, inv_save_condition: Optional[str] = None):
         self.name = name.split(' – ')[0]
         # Model attributes have a base value, but can be modified by wargear, strategems, etc
         # We need to track base value and current value separately
@@ -29,6 +29,7 @@ class Model:
         self._base_save = save
         self._save = save
         self._inv_save = inv_save # nothing can modify this
+        self._inv_save_condition = inv_save_condition
         self._base_wounds = wounds
         self._wounds = wounds
         self._base_leadership = leadership
@@ -205,8 +206,8 @@ class Model:
         self._save = value
 
     @property
-    def inv_save(self) -> Optional[int]:
-        return self._inv_save
+    def inv_save(self) -> Tuple[Optional[int], Optional[str]]:
+        return self._inv_save, self._inv_save_condition
 
     @property
     def wounds(self) -> int:
