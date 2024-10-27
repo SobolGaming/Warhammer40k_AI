@@ -138,7 +138,7 @@ class WahaHelper:
             if 'id' in datasheet and datasheet['id'] in self.datasheets_leaders:
                 datasheet['attached_to'] = self.datasheets_leaders[datasheet['id']]
 
-    def strip_special_chars(self, text):
+    def strip_special_chars(self, text: str) -> str:
         # Normalize unicode characters
         text = unicodedata.normalize('NFKD', text)
         # Remove diacritics
@@ -148,7 +148,7 @@ class WahaHelper:
         # Convert to lowercase and strip
         return text.lower().strip()
 
-    def get_datasheet(self, name):
+    def get_datasheet(self, name: str, datasheet_id: str = None):
         """
         Returns a specific datasheet by name, using case-insensitive and partial matching.
         Also aggregates keywords and faction keywords.
@@ -158,7 +158,7 @@ class WahaHelper:
         for datasheet in self.datasheets.values():
             if 'name' in datasheet:
                 normalized_datasheet_name = self.strip_special_chars(datasheet['name'])
-                if normalized_name in normalized_datasheet_name:
+                if normalized_name in normalized_datasheet_name and (datasheet_id is None or datasheet['id'] == datasheet_id):
                     result = SimpleNamespace(**datasheet)
                     if 'datasheets_keywords' in datasheet:
                         keywords, faction_keywords = self.aggregate_keywords(datasheet['datasheets_keywords'])
@@ -167,12 +167,12 @@ class WahaHelper:
                     return result
         return None
 
-    def get_full_datasheet_info_by_name(self, name):
+    def get_full_datasheet_info_by_name(self, name: str, datasheet_id: str = None):
         """
         Returns the full datasheet information for a given name.
         This method is an alias for get_datasheet to match the expected method name in the test.
         """
-        return self.get_datasheet(name)
+        return self.get_datasheet(name, datasheet_id)
 
     def search_datasheets(self, query):
         """
@@ -188,7 +188,7 @@ class WahaHelper:
         return results
 
     def get_all_datasheet_names(self):
-        return [datasheet['name'] for datasheet in self.datasheets.values()]
+        return [(datasheet['name'], datasheet['id']) for datasheet in self.datasheets.values()]
 
     def get_all_data(self):
         """

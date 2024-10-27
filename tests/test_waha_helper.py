@@ -26,9 +26,9 @@ class TestWahaHelper(unittest.TestCase):
         self.assertIsNotNone(all_datasheets)
         self.assertGreater(len(all_datasheets), 0)
 
-        for datasheet_name in all_datasheets:
+        for datasheet_name, datasheet_id in all_datasheets:
             with self.subTest(datasheet_name=datasheet_name):
-                result = self.waha_helper.get_full_datasheet_info_by_name(datasheet_name)
+                result = self.waha_helper.get_full_datasheet_info_by_name(datasheet_name, datasheet_id)
                 self.assertIsNotNone(result)
                 self.assertIsInstance(result, SimpleNamespace)
 
