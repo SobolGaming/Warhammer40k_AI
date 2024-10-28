@@ -1,4 +1,6 @@
 from typing import Union, Dict, List, Optional
+from enum import Enum, auto
+import re
 from warhammer40k_ai.utility.dice import DiceCollection
 from warhammer40k_ai.utility.range import Range
 from warhammer40k_ai.utility.count import Count
@@ -7,6 +9,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .model import Model
     from .unit import Unit
+
 
 class WargearProfile:
     def __init__(self, profile_name: str, wargear_data: Dict):
@@ -256,16 +259,106 @@ class Wargear:
         pass
 
 
+class WargearOptionType(Enum):
+    ADDITIONAL = auto()
+    REPLACEMENT = auto()
+
+
 class WargearOption:
-    def __init__(self, wargear_name: str, model_name: str, model_quantity: int, item_quantity: int, exclude_name: Optional[str] = None):
+    def __init__(self, wargear_name: str, wargear_type: WargearOptionType, model_name: str, model_quantity: int, item_quantity: int, exclude_name: Optional[str] = None):
         self.wargear_name = wargear_name.lower()
+        self.wargear_type = wargear_type
         self.model_name = model_name
         self.model_quantity = model_quantity
         self.item_quantity = item_quantity
         self.exclude_name = exclude_name.lower() if exclude_name else None
 
     def __str__(self):
-        return f"{self.item_quantity}x {self.wargear_name} ({self.model_quantity}x {self.model_name})"
+        return f"{self.wargear_type.name}: {self.item_quantity}x {self.wargear_name} ({self.model_quantity}x {self.model_name})"
 
     def __repr__(self):
-        return f"WargearOption(wargear_name='{self.wargear_name}', model_name='{self.model_name}', model_quantity={self.model_quantity}, item_quantity={self.item_quantity}, exclude_name='{self.exclude_name}')"
+        return f"WargearOption(wargear_name='{self.wargear_name}', wargear_type={self.wargear_type.name}, model_name='{self.model_name}', model_quantity={self.model_quantity}, item_quantity={self.item_quantity}, exclude_name='{self.exclude_name}')"
+
+
+def parse_option_string(option: str, unit_ref: 'Unit') -> WargearOption:
+    if " can be equipped with " in option:
+        parts = option.split(" can be equipped with ")
+        if len(parts) != 2:
+            print(f"Invalid wargear option format: {option}")
+            return
+
+        model_description, item_description = parts
+        model_count = 1  # Default to 1 model
+        
+        # Extract model count if specified
+        if model_description.startswith(('1 ', '2 ', '3 ', '4 ', '5 ', '6 ', '7 ', '8 ', '9 ')):
+            model_count = int(model_description.split()[0])
+            model_description = ' '.join(model_description.split()[1:])
+
+        item_count = 1 # Default to 1 item
+        # Extract item count if specified
+        if item_description.startswith(('1 ', '2 ', '3 ', '4 ', '5 ', '6 ', '7 ', '8 ', '9 ')):
+            item_count = int(item_description.split()[0])
+            item_description = ' '.join(item_description.split()[1:]).strip().replace('.', '')
+
+        # Parse "not equipped with" condition
+        not_equipped_with = None
+        if "that is not equipped with" in model_description:
+            model_parts = model_description.split("that is not equipped with")
+            model_description = model_parts[0].strip()
+            not_equipped_with = model_parts[1].strip()
+            # Remove leading "a" or "an" from not_equipped_with
+            if not_equipped_with.startswith("a "):
+                not_equipped_with = not_equipped_with[2:].strip()
+            elif not_equipped_with.startswith("an "):
+                not_equipped_with = not_equipped_with[3:].strip()
+
+        return WargearOption(item_description, WargearOptionType.ADDITIONAL, model_description, model_count, item_count, not_equipped_with)
+    elif " can be replaced with " in option:
+        parts = option.split(" can be replaced with")
+        if "This model’s " in parts[0]:
+            orig_item = parts[0].replace("This model’s ", "").strip().lower()
+        elif f"{unit_ref.name}’s " in parts[0]:
+            orig_item = parts[0].replace(f"{unit_ref.name}’s ", "").strip().lower()
+        elif f"{unit_ref.models[0].name}’s " in parts[0]:
+            orig_item = parts[0].replace(f"{unit_ref.models[0].name}’s ", "").strip().lower()
+        else:
+            orig_item = parts[0].strip().lower()
+        if orig_item.startswith("the"):
+            orig_item = orig_item.replace("the ", "")
+        if " and one of the following: " in parts[1] or " and 1 of the following: " in parts[1]:
+            parts2 = parts[1].split(" and one of the following: ")
+            new_item_1 = parts2[0].strip().replace('.', '').lower()
+            new_item_2 = parts2[1].strip().lower()
+            entries = []
+            for entry in new_item_2.split(";"):
+                entry = entry.replace(",", "").replace("and ", "")
+                pattern = r'(\d+)\s+(.*?)(?=\s+\d+\s+|$)'
+                matches = re.findall(pattern, entry)
+                results = []
+                for count, item in matches:
+                    results.append(f"({count}) ({item.strip()})")
+                entries.append(results)
+            print(f"NOT IMPLEMENTED - WARGEAR ITEM REPLACEMENT: Original Item: {orig_item}, New Item: {new_item_1}, and ONE of: {entries} :: FULL STRING '{option}'")
+        elif " one of the following: " in parts[1] or " 1 of the following: " in parts[1]:
+            parts2 = parts[1].split(" of the following: ")
+            new_item_2 = parts2[1].strip().lower()
+            entries = []
+            for entry in new_item_2.split(";"):
+                entry = entry.replace(",", "").replace("and ", "")
+                pattern = r'(\d+)\s+(.*?)(?=\s+\d+\s+|$)'
+                matches = re.findall(pattern, entry)
+                results = []
+                for count, item in matches:
+                    results.append(f"({count}) ({item.strip()})")
+                if results:
+                    entries.append(results)
+            print(f"NOT IMPLEMENTED - WARGEAR ITEM REPLACEMENT: Original Item: {orig_item}, New Item ONE of: {entries} :: FULL STRING '{option}'")
+        else:
+            new_item = parts[1].strip().replace('.', '').lower()
+            pattern = r'(\d+)\s+(.*?)(?=\s+\d+\s+|$)'
+            matches = re.findall(pattern, new_item)
+            results = []
+            for count, item in matches:
+                results.append(f"({count}) ({item.strip()})")
+            print(f"NOT IMPLEMENTED - WARGEAR ITEM REPLACEMENT: Original Item: {orig_item}, New Item: {results} :: FULL STRING '{option}'")
