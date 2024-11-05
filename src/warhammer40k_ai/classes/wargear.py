@@ -265,33 +265,74 @@ class WargearOptionType(Enum):
 
 
 class WargearOption:
-    def __init__(self, wargear_name: str, wargear_type: WargearOptionType, model_name: str, model_quantity: int, item_quantity: int, exclude_name: Optional[str] = None):
-        self.wargear_name = wargear_name.lower()
+    def __init__(self, wargear_type: WargearOptionType, wargear_from: List[str] = [], 
+                 wargear_to: List[str] = [], model_name: str = '', 
+                 model_quantity: int = 1, item_quantity: int = 1, 
+                 conditional: Optional[str] = None):
+        self.wargear_from = wargear_from
+        self.wargear_to = wargear_to
         self.wargear_type = wargear_type
         self.model_name = model_name
         self.model_quantity = model_quantity
         self.item_quantity = item_quantity
-        self.exclude_name = exclude_name.lower() if exclude_name else None
+        self.conditional =  conditional.lower() if conditional else None
 
     def __str__(self):
-        return f"{self.wargear_type.name}: {self.item_quantity}x {self.wargear_name} ({self.model_quantity}x {self.model_name})"
+        from_str = ', '.join(self.wargear_from) if self.wargear_from else 'none'
+        to_str = ', '.join(self.wargear_to) if self.wargear_to else 'none'
+        conditional = f" (excluding {self.conditional})" if self.conditional else ""
+        return (f"{self.wargear_type.name}: {self.item_quantity}x [{from_str}] → [{to_str}] "
+                f"({self.model_quantity}x {self.model_name}{conditional})")
 
     def __repr__(self):
-        return f"WargearOption(wargear_name='{self.wargear_name}', wargear_type={self.wargear_type.name}, model_name='{self.model_name}', model_quantity={self.model_quantity}, item_quantity={self.item_quantity}, exclude_name='{self.exclude_name}')"
+        return (f"WargearOption(wargear_type={self.wargear_type}, "
+                f"wargear_from={self.wargear_from!r}, wargear_to={self.wargear_to!r}, "
+                f"model_name='{self.model_name}', model_quantity={self.model_quantity}, "
+                f"item_quantity={self.item_quantity}, conditional={self.conditional!r})")
 
 
-def parse_option_string(option: str, unit_ref: 'Unit') -> WargearOption:
-    if " can be equipped with " in option:
-        parts = option.split(" can be equipped with ")
+def parse_option_string(option: str, unit_ref: 'Unit') -> Optional[WargearOption]:
+    parsed_result = parse_alternate(option)
+    if parsed_result:
+        if not parsed_result["original_item"]:
+            print(f" PARSED ADDITIONAL RESULT: {parsed_result}")
+            return WargearOption(WargearOptionType.ADDITIONAL, parsed_result["original_item"], parsed_result["replacement_options"], parsed_result["model"], parsed_result["model_count"], 1, parsed_result["condition"])
+        else:
+            print(f"PARSED REPLACEMENT RESULT: {parsed_result}")
+            return WargearOption(WargearOptionType.REPLACEMENT, parsed_result["original_item"], parsed_result["replacement_options"], parsed_result["model"], parsed_result["model_count"], 1, parsed_result["condition"])
+    return None
+
+def parse_option_string2(option: str, unit_ref: 'Unit') -> Optional[WargearOption]:
+    original_option = option
+    unique_model_names = unit_ref.get_unique_model_names()
+    model_name_1 = unique_model_names[0].rstrip('s')
+    if len(unique_model_names) > 1:
+        model_name_2 = unique_model_names[1].rstrip('s')
+    else:
+        model_name_2 = "abcdefghijklmnopqrstuvwxyz"
+    if len(unique_model_names) > 2:
+        model_name_3 = unique_model_names[2].rstrip('s')
+    else:
+        model_name_3 = "abcdefghijklmnopqrstuvwxyz"
+    if len(unique_model_names) > 3:
+        print(f"WARNING: More than 3 unique model names found: {unique_model_names}")
+
+    if any(x in option for x in [" can be equipped with ", " can each be equipped with "]):
+        parts = option.split(" be equipped with ")
         if len(parts) != 2:
             print(f"Invalid wargear option format: {option}")
             return
+        parts[0] = parts[0].replace("can each", "").replace("can", "")
 
         model_description, item_description = parts
-        model_count = 1  # Default to 1 model
+        model_count = None  # Changed to None as default
         
+        # Handle "Any number of models" case
+        if model_description.lower().startswith("any number of"):
+            model_count = "any"
+            model_description = "model"
         # Extract model count if specified
-        if model_description.startswith(('1 ', '2 ', '3 ', '4 ', '5 ', '6 ', '7 ', '8 ', '9 ')):
+        elif model_description.startswith(('1 ', '2 ', '3 ', '4 ', '5 ', '6 ', '7 ', '8 ', '9 ')):
             model_count = int(model_description.split()[0])
             model_description = ' '.join(model_description.split()[1:])
 
@@ -302,7 +343,7 @@ def parse_option_string(option: str, unit_ref: 'Unit') -> WargearOption:
             item_description = ' '.join(item_description.split()[1:]).strip().replace('.', '')
 
         # Parse "not equipped with" condition
-        not_equipped_with = None
+        not_equipped_with = ''
         if "that is not equipped with" in model_description:
             model_parts = model_description.split("that is not equipped with")
             model_description = model_parts[0].strip()
@@ -312,53 +353,415 @@ def parse_option_string(option: str, unit_ref: 'Unit') -> WargearOption:
                 not_equipped_with = not_equipped_with[2:].strip()
             elif not_equipped_with.startswith("an "):
                 not_equipped_with = not_equipped_with[3:].strip()
+        #print(f"{option}")
+        parsed_result = {
+            "condition": not_equipped_with,  # Now the condition will be properly included
+            "model": model_description.strip(),
+            "model_count": 100 if model_count == "any" else int(model_count) if model_count else 0,
+            "original_item": [],
+            "replacement_options": [item_description]
+        }
+        print(f" PARSED ADDITIONAL RESULT: {parsed_result}")
+        #return WargearOption(WargearOptionType.ADDITIONAL, parsed_result["original_item"], parsed_result["replacement_options"], parsed_result["model"], parsed_result["model_count"], 1, parsed_result["condition"])
 
-        return WargearOption(item_description, WargearOptionType.ADDITIONAL, model_description, model_count, item_count, not_equipped_with)
-    elif " can be replaced with " in option:
-        parts = option.split(" can be replaced with")
-        if "This model’s " in parts[0]:
-            orig_item = parts[0].replace("This model’s ", "").strip().lower()
-        elif f"{unit_ref.name}’s " in parts[0]:
-            orig_item = parts[0].replace(f"{unit_ref.name}’s ", "").strip().lower()
-        elif f"{unit_ref.models[0].name}’s " in parts[0]:
-            orig_item = parts[0].replace(f"{unit_ref.models[0].name}’s ", "").strip().lower()
+    elif any(x in option for x in [" can be replaced with", " can each be replaced with", " can each have their "]):
+        # Add handling for "Any number of models" at the start of pattern
+        model = "model"
+        if option.startswith("Any number of "):
+            count = "any"
+            option = option.replace("Any number of ", "")
+            # Clean up the option string to match our expected format
+            if " can each have their " in option:
+                option = option.replace(" can each have their ", " ").replace(" replaced with ", " can be replaced with ")
         else:
-            orig_item = parts[0].strip().lower()
-        if orig_item.startswith("the"):
-            orig_item = orig_item.replace("the ", "")
-        if " and one of the following: " in parts[1] or " and 1 of the following: " in parts[1]:
-            parts2 = parts[1].split(" and one of the following: ")
-            new_item_1 = parts2[0].strip().replace('.', '').lower()
-            new_item_2 = parts2[1].strip().lower()
-            entries = []
-            for entry in new_item_2.split(";"):
-                entry = entry.replace(",", "").replace("and ", "")
-                pattern = r'(\d+)\s+(.*?)(?=\s+\d+\s+|$)'
-                matches = re.findall(pattern, entry)
-                results = []
-                for count, item in matches:
-                    results.append(f"({count}) ({item.strip()})")
-                entries.append(results)
-            print(f"NOT IMPLEMENTED - WARGEAR ITEM REPLACEMENT: Original Item: {orig_item}, New Item: {new_item_1}, and ONE of: {entries} :: FULL STRING '{option}'")
-        elif " one of the following: " in parts[1] or " 1 of the following: " in parts[1]:
-            parts2 = parts[1].split(" of the following: ")
-            new_item_2 = parts2[1].strip().lower()
-            entries = []
-            for entry in new_item_2.split(";"):
-                entry = entry.replace(",", "").replace("and ", "")
-                pattern = r'(\d+)\s+(.*?)(?=\s+\d+\s+|$)'
-                matches = re.findall(pattern, entry)
-                results = []
-                for count, item in matches:
-                    results.append(f"({count}) ({item.strip()})")
-                if results:
-                    entries.append(results)
-            print(f"NOT IMPLEMENTED - WARGEAR ITEM REPLACEMENT: Original Item: {orig_item}, New Item ONE of: {entries} :: FULL STRING '{option}'")
+            count = None  # Default count to None
+
+        # Improved condition extraction
+        condition = ""
+        if option.startswith("If this unit"):
+            condition_end = option.find(",")
+            if condition_end != -1:
+                condition = option[:condition_end].strip()
+                option = option[condition_end + 1:].strip()
+        elif option.startswith("For every"):  # Handle mid-sentence conditions
+            condition_start = option.find("For every")
+            condition_end = option.find(",", condition_start)
+            if condition_end != -1:
+                condition = option[condition_start:condition_end].strip()
+                option = option[:condition_start].strip() + " " + option[condition_end + 1:].strip()
+        elif option.startswith("Up to"):
+            count_match = re.match(r"Up to (\d+)", option)
+            if count_match:
+                count = int(count_match.group(1))
+                # Remove "Up to" and clean up the option string
+                option = re.sub(r"^Up to \d+ models", f"{count} models", option)
+                # Also handle the "can each have their" case
+                if " can each have their " in option:
+                    option = option.replace(" can each have their ", " ").replace(" replaced with ", " can be replaced with ")
+
+        # some pre-pattern cleaning
+        description = option.replace("’s", "'s").replace(",", " and")
+
+        pattern = re.compile(
+            r"(?P<model>(?:This model|The " + re.escape(model_name_1) + r"|The " + re.escape(model_name_2) + r"|The " + re.escape(model_name_3) + 
+            r"|" + re.escape(model_name_1) + r" model|" + re.escape(model_name_2) + r" model|" + re.escape(model_name_3) + r" model|(?:\d+ )?(?:model|models|" + 
+            re.escape(model_name_1) + r"s?|" + re.escape(model_name_2) + r"s?|" + re.escape(model_name_3) + r"s?)))"
+            # Modified to handle possessive cases with apostrophes
+            r"(?:'s|\s+)(?P<original_item>(?:\d+ )?[\w '\-]+(?:\s+and\s+(?:\d+ )?[\w '\-]+)*) can(?:\s+each)? be replaced with(?:\s*:)?\s*"
+            r"(?:"
+                r"(?P<single_replacement>(?:\d+ )?[\w '\-]+(?:\s+and\s+(?:\d+ )?[\w '\-]+)*(?:$|\.|\;))|"
+                r"(?:(?P<first_replacement>(?:\d+ )?[\w '\-]+(?:\s+and\s+(?:\d+ )?[\w '\-]+)*) and )?one of the following:\s*"
+                r"(?P<replacement_options>(?:(?:\d+ )?[\w '\-]+(?:\s+and\s+(?:\d+ )?[\w '\-]+)*(?:;|,|\.)(?:\s*(?:\d+ )?[\w '\-]+(?:\s+and\s+(?:\d+ )?[\w '\-]+)*(?:;|,|\.)*)*))"
+            r")"
+        )
+        
+        # Match the pattern in the description
+        match = pattern.search(description)
+        
+        if not match:
+            print(f"DESCRIPTION: {description}")
+            print(f"REPLACEMENT MATCH FAILED - INVALID WARGEAR OPTION: {original_option}")
+            return None
+        
+        # Extract the components and include condition in parsed_result
+        model = match.group("model") or model
+        original_item = match.group("original_item")
+        single_replacement = match.group("single_replacement")
+        replacement_options_str = match.group("replacement_options")
+        
+        # Process replacement options
+        if single_replacement:
+            options = [single_replacement]
+        elif replacement_options_str:
+            first_replacement = match.group("first_replacement")
+            # Split by semicolon or comma followed by optional whitespace
+            parts = re.split(r'[;,]\s*', replacement_options_str)
+            options = [part.strip().rstrip('.') for part in parts if part.strip()]
+            
+            # If there's a first replacement, combine it with all other options
+            if first_replacement:
+                options = [f"{first_replacement} and {opt}" for opt in options]
         else:
-            new_item = parts[1].strip().replace('.', '').lower()
-            pattern = r'(\d+)\s+(.*?)(?=\s+\d+\s+|$)'
-            matches = re.findall(pattern, new_item)
+            options = []
+        
+        # Clean up options
+        options = [opt.strip().rstrip('.').replace(",", " and ") for opt in options if opt]
+        replacement_options = []
+        for specific_option in options:
+            opt_lines = [item.strip() for item in specific_option.split(" and ")]
             results = []
-            for count, item in matches:
-                results.append(f"({count}) ({item.strip()})")
-            print(f"NOT IMPLEMENTED - WARGEAR ITEM REPLACEMENT: Original Item: {orig_item}, New Item: {results} :: FULL STRING '{option}'")
+            for opt in opt_lines:
+                # Extract count if present, default to 1
+                count_match = re.match(r'^(\d+)\s+(.+)$', opt)
+                if count_match:
+                    item_count, item_name = count_match.groups()
+                    item_count = int(item_count)
+                else:
+                    item_count = 1
+                    item_name = opt
+                results.append(f"({item_count}) ({item_name.strip().lower()})")
+            replacement_options.append(results)
+
+        original_items = [item.strip() for item in original_item.split(" and ")]
+        results = []
+        for item in original_items:
+            # Extract count if present, default to 1
+            count_match = re.match(r'^(\d+)\s+(.+)$', item)
+            if count_match:
+                item_count, item_name = count_match.groups()
+                item_count = int(item_count)
+            else:
+                item_count = 1
+                item_name = item
+            # Remove "number of models" from item name if present
+            item_name = item_name.replace("number of models ", "")
+            results.append(f"({item_count}) ({item_name.strip().lower()})")
+        original_item = [results]
+
+        parsed_result = {
+            "condition": condition,  # Now the condition will be properly included
+            "model": model.strip(),
+            "model_count": 100 if count == "any" else int(count) if count else 1,
+            "original_item": original_item,
+            "replacement_options": replacement_options
+        }
+        #print(f"NOT IMPLEMENTED - WARGEAR ITEM REPLACEMENT: FULL STRING '{option}'")
+        print(f"PARSED REPLACEMENT RESULT: {parsed_result}")
+        #return WargearOption(WargearOptionType.REPLACEMENT, parsed_result["original_item"], parsed_result["replacement_options"], parsed_result["model"], parsed_result["model_count"], 1, parsed_result["condition"])
+    else:
+        print(f"INVALID WARGEAR OPTION: {original_option}")
+        return None
+
+def parse_alternate(description):
+    description = description.replace("’", "'").lower()
+    print(f"{description}")
+    return {}
+
+    condition = ""
+    model_limit = ""
+    item_limit = ""
+    actor = ""
+    base_wargear_qualifier = ""
+
+    if description.startswith("the "):
+        marker = description.find("'s ")
+        if marker == -1:
+            marker = description.find("' ")
+        if marker != -1:
+            actor = description[4:marker].strip()
+            model_limit = "1"
+            description = description[marker+3:].strip()
+
+    if description.startswith("for every"):
+        marker = description.find(",")
+        if marker != -1:
+            condition = description[:marker].strip()
+            description = description[marker+1:].strip()
+    elif description.startswith("for each "):
+        marker = description.find(",")
+        if marker != -1:
+            condition = description[:marker].strip()
+            description = description[marker+1:].strip()
+        if "model" in condition:
+            actor = "model"
+
+    if description.startswith("all of the models in this unit"):
+        condition = "all or none"
+        model_limit = "100"
+        actor = "model"
+        description = description[30:].strip()
+
+    if description.startswith("if this unit contains"):
+        marker = description.find(",")
+        if marker != -1:
+            condition = description[:marker].strip()
+            description = description[marker+1:].strip()
+    elif description.startswith("if this unit's "):
+        marker = description.find(",")
+        start_marker = 0
+        if marker != -1:
+            model_marker = description.find("is equipped ")
+            if model_marker != -1:
+                actor = description[15:model_marker].strip()
+                start_marker = model_marker
+            condition = description[start_marker:marker].strip()
+            description = description[marker+1:].strip()
+    elif description.startswith("if this model is equipped with "):
+        actor = "model"
+        marker = description.find(",")
+        if marker != -1:
+            condition = description[17:marker].strip()
+            description = description[marker+1:].strip()
+
+    if description.startswith("up to "):
+        marker = description.find("models")
+        if marker != -1:
+            parts = description[:marker+6].replace("up to ", "").split(" ")
+            model_limit = parts[0]
+            actor = parts[1]
+            if actor[-1] == "s":
+                actor = actor[:-1]
+            description = description[marker+6:].strip()
+        else:
+            marker = description.find("can ")
+            if marker != -1:
+                model_limit, actor = description[5:marker].replace("up to ", "").strip().split(" ", 1)
+                description = description[marker:].strip()
+    if description.startswith("this model's"):
+        actor = "model"
+        model_limit = "1"
+        description = description[13:].strip()
+    if description.startswith("any number of") or description.startswith("any numbers of"):
+        # address inconsistency
+        if description.startswith("any numbers of"):
+            description = description.replace("any numbers of", "any number of")
+        marker = description.find("models")
+        if marker != -1:
+            model_limit = "any number of"
+            actor = "model"
+            if description[marker+6] == "'":
+                description = description[marker+7:].strip()
+            else:
+                description = description[marker+6:].strip()
+        else:
+            marker = description.find("can each")
+            if marker != -1:
+                model_limit = "any number of"
+                actor = description[14:marker].strip()
+                description = description[marker+8:].strip()
+    if "model's" in description:
+        marker = description.find("model's")
+        if marker != -1:
+            actor = "model"
+            if description.startswith("each of this "):
+                condition = "per base wargear"
+            elif " of this " in description[:marker]:
+                base_wargear_qualifier = description[:marker].split(" of this ")[0].strip()
+                model_limit = "1"
+            else:
+                model_limit = description[:marker].strip()
+            description = description[marker+7:].strip()
+    elif description.startswith("each model ") and "it is equipped with" in description:
+        condition = "per base wargear"
+        actor = "model"
+        description = description[11:].strip()
+        description = description.replace("it is equipped with", "")
+
+    if not actor:
+        marker = description.find("'")
+        if marker != -1:
+            parts = description[:marker].split(" ")
+            model_limit = parts[0]
+            if model_limit == "each":
+                model_limit = "1"
+                condition = "per model"
+            actor = ' '.join(parts[1:]).strip()
+            description = description[marker+2:].strip()
+
+    replacement_options = []
+    if "replaced with" in description:
+        parts = description.split("replaced with")
+        base_wargear = [parts[0].replace("can have each", "").replace("can be ", "").replace("can each be ", "").replace("can each ", "").replace("have their ", "").replace("its ", "").strip()]
+        replacement_options = parts[1].strip().replace(".", "")
+    elif "is equipped with: " in description:
+        actor, replacement_options = description.split("is equipped with")
+        base_wargear = ""
+        model_limit = "1"
+    elif "equipped with" in description:
+        what, replacement_options = description.rsplit("equipped with", 1)
+        two_equipped_with = False
+        if "not equipped with" in what:
+            two_equipped_with = True
+            what = what.replace("not equipped with an", "not equipped with a")
+            who, what = what.rsplit("not equipped with a", 1)
+            what = what.replace("can have each", "").replace("can be ", "").replace("can each be ", "").replace("can each ", "").replace("have their ", "").replace("its ", "").strip()
+            condition = "not equipped with [" + what + "]"
+            what = ""
+            model_limit, actor = who.split(" ", 1)
+            actor = actor.replace("that is", "")
+        elif "equipped with" in what:
+            two_equipped_with = True
+            what = what.replace("equipped with an", "equipped with a")
+            who, what = what.rsplit("equipped with a", 1)
+            model_limit, actor = who.split(" ", 1)
+        elif "this model can be" in what:
+            actor = "model"
+            model_limit = "1"
+            what = what.replace("this model can be", "").strip()
+        elif what.startswith("the "):
+            marker = what.find("can be ")
+            if marker != -1:
+                actor = what[4:marker].strip()
+                what = what[marker+7:].strip()
+        what = what.replace("it can be ", "").replace("can be ", "").replace("can each be ", "").replace("can each ", "").replace("have their ", "").strip()
+        if what == "1 model":
+            what = ""
+            model_limit = "1"
+            actor = "model"
+        base_wargear = [what] if what else []
+        if " additional " in replacement_options and two_equipped_with:
+            model_limit, replacement_options = replacement_options.split(" additional ", 1)
+        replacement_options = replacement_options.strip().replace(".", "").replace("additional ", "")
+
+    if not replacement_options:
+        return {}
+
+    # adjust for inconsistency
+    replacement_options = replacement_options.replace("1 of the following: ", "one of the following: ")
+    replacement_options = replacement_options.replace("2 of the following: ", "two of the following: ")
+    model_limit = model_limit.replace("one", "1").replace("two", "2")
+
+    if "one of the following: " in replacement_options:
+        item_limit = "1"
+        marker = replacement_options.find("one of the following: ")
+        and_marker = replacement_options.find(" and ")
+        replacement_option_and = None
+        if and_marker != -1 and and_marker < marker:
+            replacement_option_and = replacement_options[:and_marker]
+            print(f"REPLACEMENT OPTION AND: {replacement_option_and}")
+        replacement_options = replacement_options[marker+22:].rstrip(";")
+        replacement_options = [item.replace(",", " and").strip() for item in replacement_options.split(";")]
+        if replacement_option_and:
+            new_replacement_options = []
+            for item in replacement_options:
+                new_replacement_options.append(replacement_option_and + " and " + item)
+            replacement_options = new_replacement_options
+    elif "two of the following: " in replacement_options:
+        item_limit = "2"
+        marker = replacement_options.find("two of the following: ")
+        and_marker = replacement_options.find(" and ")
+        replacement_option_and = None
+        if and_marker != -1 and and_marker < marker:
+            replacement_option_and = replacement_options[:and_marker]
+        replacement_options = replacement_options[marker+22:].rstrip(";")
+        replacement_options = [item.replace(",", " and").strip() for item in replacement_options.split(";")]
+        if replacement_option_and:
+            new_replacement_options = []
+            for item in replacement_options:
+                new_replacement_options.append(replacement_option_and + " and " + item)
+            replacement_options = new_replacement_options
+    else:
+        if replacement_options.startswith(":"):
+            replacement_options = replacement_options[1:].replace(".",  "").strip()
+        if replacement_options[-1] == ";":
+            replacement_options = replacement_options[:-1]
+        and_marker = replacement_options.find(" and ")
+        replacement_option_and = None
+        if and_marker != -1:
+            replacement_option_and = replacement_options[:and_marker]
+        replacement_options = replacement_options.rstrip(";")
+        replacement_options = [item.replace(",", " and").strip() for item in replacement_options.split(";")]
+        if replacement_option_and:
+            new_replacement_options = []
+            for item in replacement_options:
+                new_replacement_options.append(replacement_option_and + " and " + item)
+            replacement_options = new_replacement_options
+
+    if base_wargear_qualifier:
+        adjusted_base_wargear = []
+        for base_wargear_item in base_wargear:
+            adjusted_base_wargear.append(base_wargear_qualifier + " " + base_wargear_item)
+        base_wargear = adjusted_base_wargear
+
+    base_wargear = parse_wargear_item(base_wargear)
+    replacement_options = parse_wargear_item(replacement_options)
+
+    #print(f"CONDITION: {condition}")
+    #print(f"MODEL LIMIT: {model_limit}")
+    #print(f"ACTOR: {actor}")
+    #print(f"BASE WARGEAR: {base_wargear}")
+    #print(f"ITEM LIMIT: {item_limit}")
+    #print(f"REPLACEMENT OPTIONS: {replacement_options}\n")
+
+    try:
+        parsed_result = {
+            "condition": condition,  # Now the condition will be properly included
+            "model": actor,
+            "model_count": 100 if model_limit == "any number of" else int(model_limit) if model_limit else 1,
+            "item_count": 100 if item_limit == "any number of" else int(item_limit) if item_limit else 1,
+            "original_item": base_wargear,
+            "replacement_options": replacement_options
+        }
+    except Exception as e:
+        #print(f":: ERROR PARSING WARGEAR :: {e}")
+        return {}
+
+    return parsed_result
+
+def parse_wargear_item(item_str: str):
+    full_result = []
+    for specific_option in item_str:
+        opt_lines = [item.strip() for item in specific_option.split(" and ")]
+        results = []
+        for opt in opt_lines:
+            # Extract count if present, default to 1
+            count_match = re.match(r'^(\d+)\s+(.+)$', opt)
+            if count_match:
+                item_count, item_name = count_match.groups()
+                item_count = int(item_count)
+            else:
+                item_count = 1
+                item_name = opt
+            results.append(f"({item_count}) ({item_name.strip().lower()})")
+        full_result.append(results)
+    return full_result

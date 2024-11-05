@@ -66,7 +66,7 @@ class Unit:
             self.models_cost = { "spawn_on_death": 0 }
         self.models = self._create_models(datasheet, quantity)
         self.possible_wargear = self._parse_wargear(datasheet)
-        self.wargear_options = None
+        self.wargear_options = []
         self._parse_wargear_options(datasheet) # this needs to here, sets above variable
         self.possible_abilities = self._parse_abilities(datasheet)
         self.can_be_attached_to = getattr(datasheet, 'attached_to', [])
@@ -110,7 +110,7 @@ class Unit:
         base_size = base_size.replace("mm", "")
         if 'flying base' in base_size:
             # TODO - need to implement vertical offset for flying bases
-            print(f"{self.name} has flying base")
+            #print(f"{self.name} has flying base")
             base_size = base_size.replace("flying base", "").strip()
         # Parse the base size from the datasheet
         if 'x' in base_size:
@@ -120,14 +120,14 @@ class Unit:
             minor = convert_mm_to_inches(int(minor.strip()) / 2.0)
             return Base(BaseType.ELLIPTICAL, (major, minor))
         elif 'Use model' in base_size:
-            print(f"{self.name} has guessed HULL base size")
+            #print(f"{self.name} has guessed HULL base size")
             # TODO - not sure how to handle this; assume hull with 80mm radius and 40mm width
             return Base(BaseType.HULL, (convert_mm_to_inches(80 / 2), convert_mm_to_inches(40 / 2)))
         elif 'No official base size' == base_size.strip():
-            print(f"{self.name} has NO officialbase size")
+            #print(f"{self.name} has NO officialbase size")
             return Base(BaseType.HULL, (convert_mm_to_inches(80 / 2), convert_mm_to_inches(40 / 2)))
         elif '' == base_size.strip():
-            print(f"{self.name} has NO base size - guessing 32mm")
+            #print(f"{self.name} has NO base size - guessing 32mm")
             return Base(BaseType.CIRCULAR, convert_mm_to_inches(32 / 2.0))
         else:
             # This handles the standard example: "32mm"
@@ -239,43 +239,40 @@ class Unit:
         return parse_option_string(option, unit_ref=self)
 
     def parse_wargear_options(self, options: List[str]):
-        result = {}
         if len(options) == 1 and options[0].lower() == "none":
             self.wargear_options = {}
             return
-        result = {}
         for option in options:
             wargear_option = self.parse_wargear_option(option)
-            result[wargear_option.wargear_name] = wargear_option
-        self.wargear_options = result
+            self.wargear_options.append(wargear_option)
 
     def apply_wargear_option(self, wargear_option: WargearOption):
         # Find eligible models
         eligible_models = [
             model for model in self.models
             if model.name in wargear_option.model_name and
-            wargear_option.wargear_name not in model.optional_wargear and
+            wargear_option.wargear_to not in model.optional_wargear and
             (wargear_option.exclude_name is None or wargear_option.exclude_name.lower() not in model.optional_wargear)
         ]
 
         if len(eligible_models) < wargear_option.model_quantity:
-            raise ValueError(f"Not enough eligible models for option: {wargear_option.wargear_name}")
+            raise ValueError(f"Not enough eligible models for option: {wargear_option.wargear_to}")
 
         count = 0
         for model in eligible_models:
             if count >= wargear_option.item_quantity:
                 break
-            model.optional_wargear.append(wargear_option.wargear_name)
+            model.optional_wargear.append(wargear_option.wargear_to)
             count += 1
 
     def apply_wargear_options(self, wargear_name: Optional[str] = None) -> None:
-        for optional_wargear_name in self.wargear_options.keys():
+        for optional_wargear in self.wargear_options:
             if wargear_name:
-                if optional_wargear_name == wargear_name:
-                    self.apply_wargear_option(self.wargear_options[optional_wargear_name])
+                if optional_wargear.wargear_to == wargear_name:
+                    self.apply_wargear_option(optional_wargear)
                     break
             else:
-                self.apply_wargear_option(self.wargear_options[optional_wargear_name])
+                self.apply_wargear_option(optional_wargear)
 
     def add_wargear(self, wargear: List[Wargear]=[], model_name: str=None) -> None:
         for model_instance in self.models:
@@ -452,6 +449,9 @@ class Unit:
     def print_unit(self):
         for model in self.models:
             print(f"\n{model}")
+
+    def get_unique_model_names(self) -> List[str]:
+        return list(set(model.name for model in self.models))
 
     def _parse_models_cost(self, models_cost):
         result = {}

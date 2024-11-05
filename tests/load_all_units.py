@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 def test_load_all_datasheet_units():
     waha_helper = WahaHelper()
     for unit_name, unit_id in waha_helper.get_all_datasheet_names():
-        print(f"{unit_name}")
+        #print(f"{unit_name}")
         Unit(waha_helper.get_datasheet(unit_name, unit_id))
 
 if __name__ == "__main__":
