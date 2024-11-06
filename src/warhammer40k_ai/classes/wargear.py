@@ -1026,7 +1026,12 @@ def parse_alternate_3(str_list: list[str]) -> list[WargearOption]:
             actor, condition = parse_warger_actor_string(match.group(1))
             conditions.append(condition)
             replacement_items = parse_wargear_string_ending(match.group(2))
-        elif match := re.match(r"^(?:this|the|1|one) ([\w\s'-]+)'s? ([\w\s'-]+) can be replaced with (.*)", description):
+        elif match := re.match(r"^(?:this|the|1|one) ([\w\s'-]+)'s? ([\w\s'-]+) can be replaced with:? (.*)", description):
+            actor, condition = parse_warger_actor_string(match.group(1))
+            conditions.append(condition)
+            items_to_replace = parse_wargear_item([match.group(2)])
+            replacement_items = parse_wargear_string_ending(match.group(3))
+        elif match := re.match(r"^the ([\w\s'-]+) can replace its ([\w\s'-]+) with (.*)", description):
             actor, condition = parse_warger_actor_string(match.group(1))
             conditions.append(condition)
             items_to_replace = parse_wargear_item([match.group(2)])
@@ -1039,6 +1044,8 @@ def parse_alternate_3(str_list: list[str]) -> list[WargearOption]:
                 orig_item_list, ending = match.group(2).strip().split(" replaced with ", 1)
                 items_to_replace = parse_wargear_item([orig_item_list])
                 replacement_items = parse_wargear_string_ending(ending)
+            else:
+                raise Exception(f"UNHANDLED 'ANY NUMBER OF' ADDITIONAL: {description}")
         elif match := re.match(r"^up to (\d+) ([\w\s']+) can each have their (.*)", description):
             actor, condition = parse_warger_actor_string(match.group(2))
             conditions.append(condition)
@@ -1047,6 +1054,17 @@ def parse_alternate_3(str_list: list[str]) -> list[WargearOption]:
                 orig_item_list, ending = match.group(3).strip().split(" replaced with ", 1)
                 items_to_replace = parse_wargear_item([orig_item_list])
                 replacement_items = parse_wargear_string_ending(ending)
+            else:
+                raise Exception(f"UNHANDLED 'UP TO' ADDITIONAL: {description}")
+        elif match := re.match(r"^for every (\d+) ([\w\s']+) in th[ei]s? unit([,:]+) (.*)", description):
+            break_symbol = match.group(3)
+            if break_symbol == ",":
+                wgo_list = parse_alternate_3([match.group(4)])
+                for wgo in wgo_list:
+                    wgo.conditionals.append(description.split(break_symbol)[0].strip())
+                return wgo_list
+            else:
+                raise Exception(f"UNHANDLED BREAK SYMBOL: {break_symbol}")
         else:
             print(f"UNKNOWN: {line}")
             unhandled = True
@@ -1080,7 +1098,7 @@ def parse_alternate_3(str_list: list[str]) -> list[WargearOption]:
             ))
 
     for conditional in post_conditionals:
-        search_str = ""
+        search_str = None
         if "***" in conditional:
             search_str = "***"
         elif "**" in conditional:
@@ -1091,7 +1109,7 @@ def parse_alternate_3(str_list: list[str]) -> list[WargearOption]:
             post_conditional_applies = False
             for i, items in enumerate(option.wargear_to):
                 for j, item in enumerate(items):
-                    if search_str in item[1]:
+                    if search_str and search_str in item[1]:
                         post_conditional_applies = True
                         option.wargear_to[i][j] = (item[0], item[1].replace(search_str, ""))
             if post_conditional_applies:
