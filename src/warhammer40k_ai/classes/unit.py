@@ -3,7 +3,7 @@ from typing import List, Tuple, Optional
 from typing import TYPE_CHECKING
 from .model import Model
 from ..utility.model_base import Base, BaseType
-from .wargear import Wargear, WargearOption, parse_option_string
+from .wargear import Wargear, WargearOption, parse_option_string, parse_alternate_3
 from .ability import Ability
 from ..utility.range import Range
 from ..utility.calcs import get_dist, get_angle, convert_mm_to_inches, a_star, simplify_path, get_pivot_cost, angle_difference, can_end_move_on_terrain
@@ -57,12 +57,12 @@ class Unit:
         try:
             self.unit_composition = self._parse_unit_composition(datasheet.datasheets_unit_composition)
         except Exception as e:
-            print(f"{self.name} - ERROR PARSING UNIT COMPOSITION: {e}")
+            #print(f"{self.name} - NEED TO HANDLE - ERROR PARSING UNIT COMPOSITION: {e}")
             return
         try:
             self.models_cost = self._parse_models_cost(datasheet.datasheets_models_cost)
         except Exception as e:
-            print(f"{self.name} - ERROR PARSING MODELS COST: {e}")
+            #print(f"{self.name} - NEED TO HANDLE - ERROR PARSING MODELS COST: {e}")
             self.models_cost = { "spawn_on_death": 0 }
         self.models = self._create_models(datasheet, quantity)
         self.possible_wargear = self._parse_wargear(datasheet)
@@ -141,7 +141,7 @@ class Unit:
             if comp['description'] == "OR":
                 continue
             if comp['description'].startswith("One of the following:"):
-                print(f"{self.name} - NEED TO HANDLE UNIT COMPOSITION")
+                #print(f"{self.name} - NEED TO HANDLE UNIT COMPOSITION")
                 continue
             parts = comp['description'].split()
             count = parts[0]
@@ -242,9 +242,12 @@ class Unit:
         if len(options) == 1 and options[0].lower() == "none":
             self.wargear_options = {}
             return
-        for option in options:
-            wargear_option = self.parse_wargear_option(option)
-            self.wargear_options.append(wargear_option)
+        wargear_options = []
+        #for option in options:
+        wargear_options = parse_alternate_3(options) #self.parse_wargear_option(option)
+        #    wargear_options.append(wargear_option)
+        #print(f"WARGEAR OPTIONS: {wargear_options}")
+        self.wargear_options = wargear_options
 
     def apply_wargear_option(self, wargear_option: WargearOption):
         # Find eligible models

@@ -1,5 +1,6 @@
 from typing import Union, Dict, List, Optional
 from enum import Enum, auto
+from collections import namedtuple
 import re
 from warhammer40k_ai.utility.dice import DiceCollection
 from warhammer40k_ai.utility.range import Range
@@ -264,31 +265,47 @@ class WargearOptionType(Enum):
     REPLACEMENT = auto()
 
 
+Quantity = namedtuple('Quantity', ['min', 'max'])
+
+
 class WargearOption:
     def __init__(self, wargear_type: WargearOptionType, wargear_from: List[str] = [], 
                  wargear_to: List[str] = [], model_name: str = '', 
-                 model_quantity: int = 1, item_quantity: int = 1, 
-                 conditional: Optional[str] = None):
+                 model_quantity: Quantity = Quantity(min=1, max=1),
+                 item_quantity: Quantity = Quantity(min=1, max=1),
+                 conditionals: Optional[List[str]] = []):
         self.wargear_from = wargear_from
         self.wargear_to = wargear_to
         self.wargear_type = wargear_type
         self.model_name = model_name
-        self.model_quantity = model_quantity
+        # Convert model_quantity to ModelQuantity namedtuple
+        if isinstance(model_quantity, (int, float)):
+            self.model_quantity = Quantity(min=model_quantity, max=model_quantity)
+        elif isinstance(model_quantity, tuple):
+            self.model_quantity = Quantity(*model_quantity)
+        else:
+            self.model_quantity = ModelQuantity(min=1, max=1)  # Default values
         self.item_quantity = item_quantity
-        self.conditional =  conditional.lower() if conditional else None
+        self.conditionals = [conditional.lower() for conditional in conditionals] if conditionals else []
 
     def __str__(self):
-        from_str = ', '.join(self.wargear_from) if self.wargear_from else 'none'
-        to_str = ', '.join(self.wargear_to) if self.wargear_to else 'none'
-        conditional = f" (excluding {self.conditional})" if self.conditional else ""
-        return (f"{self.wargear_type.name}: {self.item_quantity}x [{from_str}] → [{to_str}] "
-                f"({self.model_quantity}x {self.model_name}{conditional})")
+        from_str = ', '.join(str(x) for x in self.wargear_from) if self.wargear_from else 'none'
+        to_items = []
+        for sublist in self.wargear_to:
+            to_items.extend(str(item) for item in sublist)
+        to_str = ', '.join(to_items) if to_items else 'none'
+        conditionals = f"{self.conditionals}"
+        quantity_str = (f"{self.model_quantity.min}-{self.model_quantity.max}" 
+                       if self.model_quantity.min != self.model_quantity.max 
+                       else str(self.model_quantity.min))
+        return (f"{self.wargear_type.name}: {self.item_quantity}x [{from_str}] -> [{to_str}] "
+                f"({quantity_str}x {self.model_name}{conditionals})")
 
     def __repr__(self):
         return (f"WargearOption(wargear_type={self.wargear_type}, "
                 f"wargear_from={self.wargear_from!r}, wargear_to={self.wargear_to!r}, "
                 f"model_name='{self.model_name}', model_quantity={self.model_quantity}, "
-                f"item_quantity={self.item_quantity}, conditional={self.conditional!r})")
+                f"item_quantity={self.item_quantity}, conditionals={self.conditionals!r})")
 
 
 def parse_option_string(option: str, unit_ref: 'Unit') -> Optional[WargearOption]:
@@ -748,9 +765,35 @@ def parse_alternate(description):
 
     return parsed_result
 
-def parse_wargear_item(item_str: str):
+def parse_warger_actor_string(actor_str: str) -> str:
+    actor = actor_str
+    condition = ""
+
+    if actor_str[-1] == "s":
+        actor = actor_str[:-1]
+    if " equipped with " in actor:
+        match = re.match(r"^([\w\s'-]+) equipped with an? (.*)", actor)
+        actor = match.group(1)
+        condition = "equipped with " + match.group(2)
+    return actor, condition
+
+def parse_wargear_string_ending(ending: str) -> list[tuple[int, str]]:
+    if "one of the following: " in ending:
+        ending = ending.replace("one of the following: ", "")
+        return parse_wargear_itemlist(ending)
+    else:
+        return parse_wargear_item([ending])
+
+def parse_wargear_itemlist(item_str: str) -> list[tuple[int, str]]:
+    if item_str[-1] == ";":
+        item_str = item_str[:-1]
+    item_str = item_str.replace(", ", " and ")
+    return parse_wargear_item(item_str.split(";"))
+
+def parse_wargear_item(item_str: str) -> list[tuple[int, str]]:
     full_result = []
     for specific_option in item_str:
+        #print(f"SPECIFIC OPTION: {specific_option}")
         opt_lines = [item.strip() for item in specific_option.split(" and ")]
         results = []
         for opt in opt_lines:
@@ -762,6 +805,304 @@ def parse_wargear_item(item_str: str):
             else:
                 item_count = 1
                 item_name = opt
-            results.append(f"({item_count}) ({item_name.strip().lower()})")
+            results.append((item_count, item_name.strip().lower()))
         full_result.append(results)
     return full_result
+
+def parse_alternate_2(str_list: list[str]) -> list[WargearOption]:
+    from collections import defaultdict
+    starts_with_dict = defaultdict(list)
+
+    # stored variables
+    wargear_options = []
+    unhandled = False
+
+    for line in str_list:
+        # reset variables
+        is_replacement = False
+        actor = ""
+        condition = ""
+        model_limit = Quantity(min=1, max=1)
+        item_limit = Quantity(min=1, max=1)
+        items_to_replace = []
+        replacement_items = []
+
+        # some sanitization of inconsistencies
+        description = line.lower().replace("’", "'").replace(".", "").replace('model"s', "model's").replace("for every four models", "for every 4 models")
+        print(f"\nDESCRIPTION: {description}")
+        if " replaced " in description or " replace " in description:
+            is_replacement = True
+
+        if description.startswith("this model's"):
+            starts_with_dict["this model's"].append(description)
+            actor = "model"
+        elif description.startswith("1 model's") or description.startswith("one model's"):
+            starts_with_dict["1 model's"].append(description)
+            actor = "model"
+        elif description.startswith("this model can be"):
+            starts_with_dict["this model can be"].append(description)
+            actor = "model"
+        elif description.startswith("1 model can be") or description.startswith("one model can be:"):
+            starts_with_dict["1 model can be"].append(description)
+            actor = "model"
+        elif description.startswith("1 model in this unit"):
+            starts_with_dict["1 model in this unit"].append(description)
+            actor = "model"
+
+        if description.startswith("this unit can be"):
+            starts_with_dict["this unit can be"].append(description)
+        elif description.startswith("all models in this unit can each have their"):
+            starts_with_dict["all models in this unit can each have their"].append(description)
+        elif description.startswith("all models in this unit can each be"):
+            starts_with_dict["all models in this unit can each be"].append(description)
+        elif description.startswith("all of the models in this unit can each have"):
+            starts_with_dict["all of the models in this unit can each have"].append(description)
+        elif description.startswith("one model equipped with a") or description.startswith("1 model equipped with a"):
+            starts_with_dict["1 model equipped with a"].append(description)
+        elif description.startswith("if this model is equipped with"):
+            starts_with_dict["if this model is equipped with"].append(description)
+        elif description.startswith("if this model is not equipped with"):
+            starts_with_dict["if this model is not equipped with"].append(description)
+        elif description.startswith("this model can each be equipped with"):
+            starts_with_dict["this model can each be equipped with"].append(description)
+        elif description.startswith("one model can replace its"):
+            starts_with_dict["one model can replace its"].append(description)
+        elif description.startswith("this model can do one of the following"):
+            starts_with_dict["this model can do one of the following"].append(description)
+        elif description.startswith("this model must be equipped with one of the following"):
+            starts_with_dict["this model must be equipped with one of the following"].append(description)
+        elif description.startswith("this unit's"):
+            starts_with_dict["this unit's"].append(description)
+        elif description.startswith("*") or description.startswith("this weapon cannot be replaced") or description.startswith("to a maximum of"):
+            starts_with_dict["*"].append(description)
+        elif match := re.match(r"^this model's ([\w\s'-]+) can be replaced with (.*)", description):
+            actor = "model"
+            items_to_replace = parse_wargear_item([match.group(1)])
+            replacement_items = parse_wargear_string_ending(match.group(2))
+            starts_with_dict["this model's X can be replaced with"].append(description)
+        elif re.match(r"^for every \d+ models in th[ei]s? unit[,:]", description):
+            starts_with_dict["for every X models in this unit"].append(description)
+        elif re.match(r"^for every \d+ [\w\s']+ in th[ei]s? unit[,:]", description):
+            starts_with_dict["for every X Y in this unit"].append(description)
+        elif re.match(r"^the [\w\s'-]+ can be", description):
+            starts_with_dict["the X can be"].append(description)
+        elif re.match(r"^the [\w\s'-]+ can replace its", description):
+            starts_with_dict["the X can replace its"].append(description)
+        elif re.match(r"^up to \d+ models can each", description):
+            starts_with_dict["up to X models can each"].append(description)
+        elif re.match(r"^up to \d+ [\w\s']+ can each have their", description):
+            starts_with_dict["up to X Y can each have their"].append(description)
+        elif match := re.match(r"^any number of ([\w\s']+) can each have their (.*)", description):
+            actor = match.group(1).strip()
+            if actor[-1] == "s":
+                actor = actor[:-1]
+            model_limit = Quantity(min=1, max=100)
+            if is_replacement:
+                orig_item_list, ending = match.group(2).strip().split(" replaced with ", 1)
+                items_to_replace = parse_wargear_item([orig_item_list])
+                replacement_items = parse_wargear_string_ending(ending)
+
+            starts_with_dict["any number of X can each have their"].append(description)
+        elif re.match(r"^any numbers? of [\w\s'-]+ can", description):
+            #print(f"ANY NUMBER OF X CAN: {description}")
+            starts_with_dict["any number of X can"].append(description)
+        elif re.match(r"^[\w\s']+ is equipped with:", description):
+            starts_with_dict["X is equipped with:"].append(description)
+        elif re.match(r"^1 [\w\s'-]+ can be equipped with", description):
+            starts_with_dict["1 X can be equipped with"].append(description)
+        elif re.match(r"^one [\w\s'-]+ equipped with", description):
+            starts_with_dict["one X equipped with"].append(description)
+        elif match := re.match(r"^(?:1|one) ([\w\s'-]+) can be replaced with (.*)", description):
+            who_or_what = match.group(1).strip()  # Captures the X part
+            if who_or_what.startswith("model's"):
+                actor = "model"
+                items_to_replace.append(parse_wargear_item([who_or_what.split(" ", 1)[1]]))
+            remainder = match.group(2).strip()
+            replacement_items = parse_wargear_string_ending(remainder)
+
+            starts_with_dict["1 X can be replaced with"].append(description)
+        elif re.match(r"^each [\w\s'-]+ can be", description):
+            starts_with_dict["each X can be"].append(description)
+        elif re.match(r"^\d+ [\w\s']+ can have its", description):
+            starts_with_dict["X can have its"].append(description)
+        elif re.match(r"^if this unit's [\w\s'-]+ is equipped with", description):
+            starts_with_dict["if this unit's X is equipped with"].append(description)
+        elif re.match(r"^if this unit contains \d+ models,", description):
+            starts_with_dict["if this unit contains X models"].append(description)
+        elif re.match(r"^\d+ of this model's", description):
+            starts_with_dict["X of this model's"].append(description)
+        elif re.match(r"^all [\w\s'-]+ in this unit can each have their", description):
+            starts_with_dict["all X in this unit can each have their"].append(description)
+        elif re.match(r"^for each [\w\s'-]+ this model is equipped with", description):
+            starts_with_dict["for each X this model is equipped with"].append(description)
+        elif re.match(r"^the [\w\s'-]+ can do one of the following:", description):
+            starts_with_dict["the X can do one of the following:"].append(description)
+        elif re.match(r"^an [\w\s'-]+ can be replaced with", description):
+            starts_with_dict["an X can be replaced with"].append(description)
+        elif re.match(r"^each model can have each [\w\s'-]+ it is equipped with replaced with", description):
+            starts_with_dict["each model can have each X it is equipped with replaced with"].append(description)
+        elif re.match(r"^if this unit contains \d+ or fewer models", description):
+            starts_with_dict["if this unit contains X or fewer models"].append(description)
+        elif re.match(r"^if this unit contains \d+ or more models", description):
+            starts_with_dict["if this unit contains X or more models"].append(description)
+        elif re.match(r"^if the [\w\s'-]+ is equipped with [\w\s'-]+, it can be equipped with", description):
+            starts_with_dict["if the X is equipped with Y, it can be equipped with"].append(description)
+        elif re.match(r"^up to \d+ different models that are not equipped with either an?", description):
+            starts_with_dict["up to X different models that are not equipped with either an?"].append(description)
+        elif re.match(r"^up to \d+ different [\w\s'-]+ equipped with either an?", description):
+            starts_with_dict["up to X different Y equipped with either an?"].append(description)
+        elif re.match(r"^up to \d+ [\w\s'-]+ can each replace their", description):
+            starts_with_dict["up to X Y can each replace their"].append(description)
+        elif re.match(r"^both of this model's [\w\s'-]+ can be replaced with", description):
+            starts_with_dict["both of this model's X can be replaced with"].append(description)
+        else:
+            print(f"UNKNOWN: {line}")
+            unhandled = True
+            starts_with_dict["unknown"].append(description)
+
+        print(f"CONDITION: {condition}")
+        print(f"MODEL LIMIT: {model_limit}")
+        print(f"ACTOR: {actor}")
+        print(f"BASE WARGEAR: {items_to_replace}")
+        print(f"ITEM LIMIT: {item_limit}")
+        if is_replacement:
+            print(f"REPLACEMENT OPTIONS: {replacement_items}\n")
+            wargear_options.append(WargearOption(
+                WargearOptionType.REPLACEMENT,
+                items_to_replace,
+                replacement_items,
+                actor,
+                model_limit,
+                item_limit,
+                condition
+            ))
+        else:
+            print(f"ITEMS TO ADD: {replacement_items}\n")
+            wargear_options.append(WargearOption(
+                WargearOptionType.ADDITIONAL,
+                items_to_replace,
+                replacement_items,
+                actor,
+                model_limit,
+                item_limit,
+                condition
+            ))
+
+    #for key, value in sorted(starts_with_dict.items()):
+    #    print(f"{key}: {len(value)}")
+    #    print(f"{value}\n")
+
+    return wargear_options
+
+
+def parse_alternate_3(str_list: list[str]) -> list[WargearOption]:
+    post_conditionals = []
+
+    # stored variables
+    wargear_options = []
+    unhandled = False
+
+    for line in str_list:
+        # reset variables
+        is_replacement = False
+        actor = ""
+        conditions = []
+        model_limit = Quantity(min=1, max=1)
+        item_limit = Quantity(min=1, max=1)
+        items_to_replace = []
+        replacement_items = []
+
+        # some sanitization of inconsistencies
+        description = line.lower().replace("’", "'").replace(".", "").replace('model"s', "model's").replace("for every four models", "for every 4 models").replace(" one of the following ", " one of the following: ")
+        print(f"\nDESCRIPTION: {description}")
+        if " replaced " in description or " replace " in description:
+            is_replacement = True
+
+        if description.startswith("*") or description.startswith("this weapon cannot be replaced") or description.startswith("to a maximum of"):
+            post_conditionals.append(description)
+            continue
+        elif match := re.match(r"^(?:this|the|1|one) ([\w\s'-]+) can be equipped with (.*)", description):
+            assert not is_replacement
+            actor, condition = parse_warger_actor_string(match.group(1))
+            conditions.append(condition)
+            replacement_items = parse_wargear_string_ending(match.group(2))
+        elif match := re.match(r"^(?:this|the|1|one) ([\w\s'-]+)'s? ([\w\s'-]+) can be replaced with (.*)", description):
+            actor, condition = parse_warger_actor_string(match.group(1))
+            conditions.append(condition)
+            items_to_replace = parse_wargear_item([match.group(2)])
+            replacement_items = parse_wargear_string_ending(match.group(3))
+        elif match := re.match(r"^any number of ([\w\s']+) can each have their (.*)", description):
+            actor, condition = parse_warger_actor_string(match.group(1))
+            conditions.append(condition)
+            model_limit = Quantity(min=1, max=100)
+            if is_replacement:
+                orig_item_list, ending = match.group(2).strip().split(" replaced with ", 1)
+                items_to_replace = parse_wargear_item([orig_item_list])
+                replacement_items = parse_wargear_string_ending(ending)
+        elif match := re.match(r"^up to (\d+) ([\w\s']+) can each have their (.*)", description):
+            actor, condition = parse_warger_actor_string(match.group(2))
+            conditions.append(condition)
+            model_limit = Quantity(min=1, max=int(match.group(1)))
+            if is_replacement:
+                orig_item_list, ending = match.group(3).strip().split(" replaced with ", 1)
+                items_to_replace = parse_wargear_item([orig_item_list])
+                replacement_items = parse_wargear_string_ending(ending)
+        else:
+            print(f"UNKNOWN: {line}")
+            unhandled = True
+
+        print(f"CONDITIONS: {conditions}")
+        print(f"MODEL LIMIT: {model_limit}")
+        print(f"ACTOR: {actor}")
+        print(f"BASE WARGEAR: {items_to_replace}")
+        print(f"ITEM LIMIT: {item_limit}")
+        if is_replacement:
+            print(f"REPLACEMENT OPTIONS: {replacement_items}\n")
+            wargear_options.append(WargearOption(
+                WargearOptionType.REPLACEMENT,
+                items_to_replace,
+                replacement_items,
+                actor,
+                model_limit,
+                item_limit,
+                conditions
+            ))
+        else:
+            print(f"ITEMS TO ADD: {replacement_items}\n")
+            wargear_options.append(WargearOption(
+                WargearOptionType.ADDITIONAL,
+                items_to_replace,
+                replacement_items,
+                actor,
+                model_limit,
+                item_limit,
+                conditions
+            ))
+
+    for conditional in post_conditionals:
+        search_str = ""
+        if "***" in conditional:
+            search_str = "***"
+        elif "**" in conditional:
+            search_str = "**"
+        elif "*" in conditional:
+            search_str = "*"
+        for option in wargear_options:
+            post_conditional_applies = False
+            for i, items in enumerate(option.wargear_to):
+                for j, item in enumerate(items):
+                    if search_str in item[1]:
+                        post_conditional_applies = True
+                        option.wargear_to[i][j] = (item[0], item[1].replace(search_str, ""))
+            if post_conditional_applies:
+                if conditional.startswith("* that model's"):
+                    new_conditional = conditional[len("* that model's"):].strip()
+                    option.conditionals.append(new_conditional)
+                else:
+                    print(f"UNHANDLED POST_CONDITIONAL: {conditional}")
+                    asdf()
+
+    if unhandled:
+        asdf()
+
+    return wargear_options
