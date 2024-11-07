@@ -12,6 +12,7 @@ from .status_effects import StatusEffect
 import math
 import uuid
 import copy
+import re
 import numpy as np
 from enum import Enum, auto
 
@@ -188,6 +189,18 @@ class Unit:
                 break
         return models
 
+    def _parse_loadout(self, loadout: str) -> List[Wargear]:
+        loadout = loadout.replace(".", "").lower()
+        starting_wargear = []
+        if match := re.match(r"^this model is equipped with: (.*)$", loadout):
+            for item_name in match.group(1).split(";"):
+                for wargear in self.possible_wargear:
+                    if item_name.strip() == wargear.name.lower():
+                        starting_wargear.append(wargear)
+        else:
+            print(f"UNKNOWN LOADOUT: {loadout}")
+        return starting_wargear
+
     def _parse_wargear(self, datasheet):
         possible_wargear = []
         if hasattr(datasheet, 'datasheets_wargear'):
@@ -244,7 +257,7 @@ class Unit:
             return
         wargear_options = []
         #for option in options:
-        wargear_options = parse_alternate_3(options) #self.parse_wargear_option(option)
+        wargear_options = parse_alternate_3(options, self) #self.parse_wargear_option(option)
         #    wargear_options.append(wargear_option)
         #print(f"WARGEAR OPTIONS: {wargear_options}")
         self.wargear_options = wargear_options
@@ -281,7 +294,7 @@ class Unit:
         for model_instance in self.models:
             wargear_to_add = []
             if not wargear:
-                for wargear_instance in self.possible_wargear:
+                for wargear_instance in self._parse_loadout(getattr(self._datasheet, 'loadout', [])):
                     wargear_to_add.append(wargear_instance)
             else:
                 wargear_to_add.extend(wargear)

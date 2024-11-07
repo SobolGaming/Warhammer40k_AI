@@ -27,12 +27,13 @@ class WahapediaUI(QMainWindow):
         self.setWindowTitle("Wahapedia Viewer")  # Updated window title
         self.setGeometry(100, 100, 800, 600)
 
+        self.waha_helper = WahaHelper()
+        # Extract just the names from the tuples
+        self.datasheet_names = [name[0] for name in self.waha_helper.get_all_datasheet_names()]
+
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         self.layout = QVBoxLayout(self.central_widget)
-
-        self.waha_helper = WahaHelper()
-        self.datasheet_names = self.waha_helper.get_all_datasheet_names()  # Fetch all datasheet names
 
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("Enter a datasheet name...")
@@ -53,8 +54,6 @@ class WahapediaUI(QMainWindow):
         self.result_layout = QVBoxLayout(self.result_content)
         self.result_area.setWidget(self.result_content)
         self.layout.addWidget(self.result_area)
-
-        self.waha_helper = WahaHelper()
 
     def search_datasheet(self):
         # Clear previous results
