@@ -779,8 +779,26 @@ def parse_warger_actor_string(actor_str: str) -> str:
 
 def parse_wargear_string_ending(ending: str) -> list[tuple[int, str]]:
     if "one of the following: " in ending:
+        marker = ending.find(" one of the following: ")
+        and_marker = ending.find(" and ")
+        addition = ""
+        if and_marker != -1 and and_marker < marker:
+            addition = ending[:and_marker]
+            ending = ending[and_marker+5:]
         ending = ending.replace("one of the following: ", "")
-        return parse_wargear_itemlist(ending)
+        if ending[-1] == ";":
+            ending = ending[:-1]
+        ending = ending.replace(", ", " and ")
+        parsed_ending = ending.split(";")
+        if addition:
+            new_parsed_ending = []
+            for item in parsed_ending:
+                new_parsed_ending.append(addition + " and " + item)
+            parsed_ending = new_parsed_ending
+        return parse_wargear_item(parsed_ending)
+    elif " additional " in ending:
+        ending = ending.replace(" additional ", " ")
+        return parse_wargear_item([ending])
     else:
         return parse_wargear_item([ending])
 
@@ -1013,7 +1031,8 @@ def parse_alternate_3(str_list: list[str]) -> list[WargearOption]:
         replacement_items = []
 
         # some sanitization of inconsistencies
-        description = line.lower().replace("’", "'").replace(".", "").replace('model"s', "model's").replace("for every four models", "for every 4 models").replace(" one of the following ", " one of the following: ")
+        description = line.lower().replace("’", "'").replace(".", "").replace('model"s', "model's").replace("for every four models", "for every 4 models")
+        description = description.replace(" one of the following ", " one of the following: ").replace(" 1 of the following: ", " one of the following: ").replace(" 2 of the following: ", " two of the following: ")
         print(f"\nDESCRIPTION: {description}")
         if " replaced " in description or " replace " in description:
             is_replacement = True
@@ -1065,6 +1084,10 @@ def parse_alternate_3(str_list: list[str]) -> list[WargearOption]:
                 return wgo_list
             else:
                 raise Exception(f"UNHANDLED BREAK SYMBOL: {break_symbol}")
+        elif match := re.match(r"^if this unit's ([\w\s'-]+) is equipped with ([\w\s'-]+), it can be equipped with (.*)", description):
+            actor, _ = parse_warger_actor_string(match.group(1))
+            conditions.append(f"equipped with {match.group(2)}")
+            replacement_items = parse_wargear_string_ending(match.group(3))
         else:
             print(f"UNKNOWN: {line}")
             unhandled = True
