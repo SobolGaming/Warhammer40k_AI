@@ -233,15 +233,19 @@ class Unit:
                 else:
                     continue
             elif match := re.match(r"^(?:the|every|a) (.*) is equipped with: (.*)$", entry):
-                if model_name and model_name == match.group(1).strip():
-                    for item_name in match.group(2).split(";"):
-                        quantity, item_name = _parse_loadout_quantity(item_name)
-                        for wargear in self.possible_wargear:
-                            if item_name.strip() == wargear.name.lower():
-                                for _ in range(quantity):
-                                    starting_wargear.append(wargear)
-                else:
-                    continue
+                actors = [match.group(1)]
+                if " and " in actors[0]:
+                    actors = actors[0].split(" and ")
+                for actor in actors:
+                    if model_name and model_name == actor.strip():
+                        for item_name in match.group(2).split(";"):
+                            quantity, item_name = _parse_loadout_quantity(item_name)
+                            for wargear in self.possible_wargear:
+                                if item_name.strip() == wargear.name.lower():
+                                    for _ in range(quantity):
+                                        starting_wargear.append(wargear)
+                    else:
+                        continue
             elif match := re.match(r"^this (?:model|unit) is equipped with: nothing$", entry):
                 continue
             else:
