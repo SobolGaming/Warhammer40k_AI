@@ -780,6 +780,10 @@ def parse_warger_actor_string(actor_str: str) -> str:
 def parse_wargear_string_ending(ending: str) -> tuple[list[tuple[int, str]], int]:
     if " additional " in ending:
         ending = ending.replace(" additional ", " ")
+    add_post_conditional = False
+    if "*" in ending:
+        ending = ending.replace("*", "")
+        add_post_conditional = True
 
     if "one of the following: " in ending:
         marker = ending.find(" one of the following: ")
@@ -793,6 +797,8 @@ def parse_wargear_string_ending(ending: str) -> tuple[list[tuple[int, str]], int
             ending = ending[:-1]
         ending = ending.replace(", ", " and ")
         parsed_ending = ending.split(";")
+        if add_post_conditional:
+            parsed_ending = [item + "*" for item in parsed_ending]
         if addition:
             new_parsed_ending = []
             for item in parsed_ending:
@@ -811,6 +817,8 @@ def parse_wargear_string_ending(ending: str) -> tuple[list[tuple[int, str]], int
             ending = ending[:-1]
         ending = ending.replace(", ", " and ")
         parsed_ending = ending.split(";")
+        if add_post_conditional:
+            parsed_ending = [item + "*" for item in parsed_ending]
         if addition:
             new_parsed_ending = []
             for item in parsed_ending:
@@ -1068,7 +1076,7 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
             conditions.append(condition)
             replacement_items, limit = parse_wargear_string_ending(match.group(3))
             item_limit = Quantity(min=1, max=limit)
-        elif match := re.match(r"^(?:this|the|1|one) ([\w\s'-]+) can be equipped with:? (.*)", description):
+        elif match := re.match(r"^(?:this|the|1|one) ([\w\s'-]+) can (?:each |)be equipped with:? (.*)", description):
             assert not is_replacement
             actor, condition = parse_warger_actor_string(match.group(1))
             conditions.append(condition)
@@ -1080,23 +1088,38 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
             items_to_replace = parse_wargear_itemlist(match.group(2))
             replacement_items, limit = parse_wargear_string_ending(match.group(3))
             item_limit = Quantity(min=1, max=limit)
+        elif match := re.match(r"^(\d+) of this ([\w\s-]+)'s? ([\w\s'-]+) can be replaced with:? (.*)", description):
+            actor, condition = parse_warger_actor_string(match.group(2))
+            conditions.append(condition)
+            items_to_replace = parse_wargear_itemlist(match.group(3))
+            count = int(match.group(1))
+            for i, item_list in enumerate(items_to_replace):
+                for j, item in enumerate(item_list):
+                    items_to_replace[i][j] = (count, item[1])
+            replacement_items, limit = parse_wargear_string_ending(match.group(4))
+            item_limit = Quantity(min=1, max=limit)
         elif match := re.match(r"^the ([\w\s'-]+) can replace its ([\w\s'-]+) with (.*)", description):
             actor, condition = parse_warger_actor_string(match.group(1))
             conditions.append(condition)
             items_to_replace = parse_wargear_itemlist(match.group(2))
             replacement_items, limit = parse_wargear_string_ending(match.group(3))
             item_limit = Quantity(min=1, max=limit)
-        elif match := re.match(r"^any number of ([\w\s']+) can each have their (.*)", description):
+        elif match := re.match(r"^any number of ([\w\s']+) can each have their ([\w\s'-]+) replaced with (.*)", description):
+            assert is_replacement
             actor, condition = parse_warger_actor_string(match.group(1))
             conditions.append(condition)
             model_limit = Quantity(min=1, max=len(unit_ptr.models))
-            if is_replacement:
-                orig_item_list, ending = match.group(2).strip().split(" replaced with ", 1)
-                items_to_replace = parse_wargear_itemlist(orig_item_list)
-                replacement_items, limit = parse_wargear_string_ending(ending)
-                item_limit = Quantity(min=1, max=limit)
-            else:
-                raise Exception(f"UNHANDLED 'ANY NUMBER OF' ADDITIONAL: {description}")
+            items_to_replace = parse_wargear_itemlist(match.group(2))
+            replacement_items, limit = parse_wargear_string_ending(match.group(3))
+            item_limit = Quantity(min=1, max=limit)
+        elif match := re.match(r"^any number of ([\w\s]+)' ([\w\s'-]+) can each be replaced with (.*)", description):
+            assert is_replacement
+            actor, condition = parse_warger_actor_string(match.group(1))
+            conditions.append(condition)
+            model_limit = Quantity(min=1, max=len(unit_ptr.models))
+            items_to_replace = parse_wargear_itemlist(match.group(2))
+            replacement_items, limit = parse_wargear_string_ending(match.group(3))
+            item_limit = Quantity(min=1, max=limit)
         elif match := re.match(r"^any number of ([\w\s']+) can each be equipped with (.*)", description):
             assert not is_replacement
             actor, condition = parse_warger_actor_string(match.group(1))
