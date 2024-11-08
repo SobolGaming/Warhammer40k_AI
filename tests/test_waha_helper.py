@@ -22,7 +22,7 @@ class TestWahaHelper(unittest.TestCase):
         self.assertIsNone(result)
 
     def test_load_all_datasheets(self):
-        all_datasheets, all_datasheet_ids = self.waha_helper.get_all_datasheet_names()
+        all_datasheets = self.waha_helper.get_all_datasheet_names()
         self.assertIsNotNone(all_datasheets)
         self.assertGreater(len(all_datasheets), 0)
 

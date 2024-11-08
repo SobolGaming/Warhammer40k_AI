@@ -66,10 +66,15 @@ class Unit:
             #print(f"{self.name} - NEED TO HANDLE - ERROR PARSING MODELS COST: {e}")
             self.models_cost = { "spawn_on_death": 0 }
         self.models = self._create_models(datasheet, quantity)
+
+        # Wargear Stuff
         self.possible_wargear = self._parse_wargear(datasheet)
         self.wargear_options = []
         self._parse_wargear_options(datasheet) # this needs to here, sets above variable
         self.possible_abilities = self._parse_abilities(datasheet)
+        self.add_wargear()
+
+        # Attachments
         self.can_be_attached_to = getattr(datasheet, 'attached_to', [])
 
         if hasattr(datasheet, 'damaged_w') and datasheet.damaged_w:
@@ -189,16 +194,58 @@ class Unit:
                 break
         return models
 
-    def _parse_loadout(self, loadout: str) -> List[Wargear]:
-        loadout = loadout.replace(".", "").lower()
+    def _parse_loadout(self, loadout: str, model_name: str = "") -> List[Wargear]:
+        entries = loadout.replace('’', '').lower().split('.')
+
+        def _parse_loadout_quantity(item_name: str) -> Tuple[int, str]:
+            if quantity_match := re.match(r"^(\d+) (.*)s$", item_name.strip()):
+                return int(quantity_match.group(1)), quantity_match.group(2)
+            return 1, item_name.strip()
+
         starting_wargear = []
-        if match := re.match(r"^this model is equipped with: (.*)$", loadout):
-            for item_name in match.group(1).split(";"):
-                for wargear in self.possible_wargear:
-                    if item_name.strip() == wargear.name.lower():
-                        starting_wargear.append(wargear)
-        else:
-            print(f"UNKNOWN LOADOUT: {loadout}")
+        for entry in entries:
+            if not entry:
+                continue
+            entry = entry.strip()
+
+            if match := re.match(r"^this model is equipped with: (.*)$", entry):
+                for item_name in match.group(1).split(";"):
+                    quantity, item_name = _parse_loadout_quantity(item_name)
+                    for wargear in self.possible_wargear:
+                        if item_name.strip() == wargear.name.lower():
+                            for _ in range(quantity):
+                                starting_wargear.append(wargear)
+            elif match := re.match(r"^every model is equipped with: (.*)$", entry):
+                for item_name in match.group(1).split(";"):
+                    quantity, item_name = _parse_loadout_quantity(item_name)
+                    for wargear in self.possible_wargear:
+                        if item_name.strip() == wargear.name.lower():
+                            for _ in range(quantity):
+                                starting_wargear.append(wargear)
+            elif match := re.match(r"^(?:the|every) (.*) model is equipped with: (.*)$", entry):
+                if model_name and model_name == match.group(1).strip():
+                    for item_name in match.group(2).split(";"):
+                        quantity, item_name = _parse_loadout_quantity(item_name)
+                        for wargear in self.possible_wargear:
+                            if item_name.strip() == wargear.name.lower():
+                                for _ in range(quantity):
+                                    starting_wargear.append(wargear)
+                else:
+                    continue
+            elif match := re.match(r"^(?:the|every|a) (.*) is equipped with: (.*)$", entry):
+                if model_name and model_name == match.group(1).strip():
+                    for item_name in match.group(2).split(";"):
+                        quantity, item_name = _parse_loadout_quantity(item_name)
+                        for wargear in self.possible_wargear:
+                            if item_name.strip() == wargear.name.lower():
+                                for _ in range(quantity):
+                                    starting_wargear.append(wargear)
+                else:
+                    continue
+            elif match := re.match(r"^this (?:model|unit) is equipped with: nothing$", entry):
+                continue
+            else:
+                print(f"UNKNOWN LOADOUT: {entry}")
         return starting_wargear
 
     def _parse_wargear(self, datasheet):
@@ -271,7 +318,7 @@ class Unit:
             (wargear_option.exclude_name is None or wargear_option.exclude_name.lower() not in model.optional_wargear)
         ]
 
-        if len(eligible_models) < wargear_option.model_quantity:
+        if len(eligible_models) < wargear_option.model_quantity.min:
             raise ValueError(f"Not enough eligible models for option: {wargear_option.wargear_to}")
 
         count = 0
@@ -294,13 +341,14 @@ class Unit:
         for model_instance in self.models:
             wargear_to_add = []
             if not wargear:
-                for wargear_instance in self._parse_loadout(getattr(self._datasheet, 'loadout', [])):
+                for wargear_instance in self._parse_loadout(getattr(self._datasheet, 'loadout', []), model_instance.name.lower()):
                     wargear_to_add.append(wargear_instance)
             else:
+                # TODO - validate wargear against options and their limits and exchanges
                 wargear_to_add.extend(wargear)
             for wargear_instance in wargear_to_add:
                 if model_name:
-                    if model_instance.name == model_name:
+                    if model_instance.name.lower() == model_name.lower():
                         model_instance.wargear.append(wargear_instance)
                 else:
                     model_instance.wargear.append(wargear_instance)

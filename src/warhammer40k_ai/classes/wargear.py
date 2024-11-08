@@ -1058,6 +1058,13 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
         if description.startswith("*") or description.startswith("this weapon cannot be replaced") or description.startswith("to a maximum of"):
             post_conditionals.append(description)
             continue
+        elif match := re.match(r"^(?:this|the|1|one) ([\w\s'-]+) that is not equipped with an? ([\w\s'-]+) can be equipped with (.*)", description):
+            assert not is_replacement
+            actor, _ = parse_warger_actor_string(match.group(1))
+            condition = f"not equipped with {match.group(2)}"
+            conditions.append(condition)
+            replacement_items, limit = parse_wargear_string_ending(match.group(3))
+            item_limit = Quantity(min=1, max=limit)
         elif match := re.match(r"^(?:this|the|1|one) ([\w\s'-]+) can be equipped with (.*)", description):
             assert not is_replacement
             actor, condition = parse_warger_actor_string(match.group(1))
@@ -1118,6 +1125,12 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
             items_to_replace = parse_wargear_item([match.group(2)])
             replacement_items, limit = parse_wargear_string_ending(match.group(3))
             item_limit = Quantity(min=1, max=limit)
+        elif match := re.match(r"^each of this model's ([\w\s'-]+)s can be replaced with (.*)", description):
+            actor = "model"
+            conditions.append(f"item_limit is equal to number of equipped {match.group(1)}")
+            items_to_replace = parse_wargear_item([match.group(1)])
+            replacement_items, limit = parse_wargear_string_ending(match.group(2))
+            item_limit = Quantity(min=1, max=limit)
         elif match := re.match(r"^all of the models in this unit can each have their ([\w\s'-]+) replaced with (.*)", description):
             actor = "model"
             model_limit = Quantity(min=len(unit_ptr.models), max=len(unit_ptr.models))
@@ -1156,6 +1169,9 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
                 conditions
             ))
 
+        if unhandled:
+            raise Exception(f"UNHANDLED: {str_list}")
+
     for conditional in post_conditionals:
         search_str = None
         if "***" in conditional:
@@ -1177,9 +1193,6 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
                     option.conditionals.append(new_conditional)
                 else:
                     print(f"UNHANDLED POST_CONDITIONAL: {conditional}")
-                    asdf()
-
-    if unhandled:
-        asdf()
+                    raise Exception(f"UNHANDLED POST_CONDITIONAL: {conditional}")
 
     return wargear_options
