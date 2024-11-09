@@ -781,7 +781,7 @@ def parse_wargear_string_ending(ending: str) -> tuple[list[tuple[int, str]], int
     if " additional " in ending:
         ending = ending.replace(" additional ", " ")
     add_post_conditional = False
-    if "*" in ending:
+    if "following:*" in ending:
         ending = ending.replace("*", "")
         add_post_conditional = True
 
@@ -1063,6 +1063,12 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
         description = description.replace(" one of the following ", " one of the following: ").replace(" 1 of the following: ", " one of the following: ").replace(" 2 of the following: ", " two of the following: ")
         description = description.replace("up to two models", "up to 2 models").replace("up to three models", "up to 3 models").replace("up to four models", "up to 4 models")
         print(f"\nDESCRIPTION: {description}")
+        if "(" in description and ")" in description:
+            marker_1 = description.find("(")
+            marker_2 = description.find(")")
+            if marker_1 != -1 and marker_2 != -1:
+                description = description[:marker_1] + description[marker_2+1:]
+                conditions.append(description[marker_1+1:marker_2])
         if " replaced " in description or " replace " in description:
             is_replacement = True
 
@@ -1237,7 +1243,7 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
             post_conditional_applies = False
             for i, items in enumerate(option.wargear_to):
                 for j, item in enumerate(items):
-                    if search_str and search_str in item[1]:
+                    if search_str and search_str == item[1][-len(search_str):] and not search_str == item[1][-len(search_str)-1:-1]:
                         post_conditional_applies = True
                         option.wargear_to[i][j] = (item[0], item[1].replace(search_str, ""))
             if post_conditional_applies:
@@ -1245,6 +1251,12 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
                     new_conditional = conditional[len(f"{search_str} that model's"):].strip()
                     option.conditionals.append(new_conditional)
                 elif conditional.startswith(f"{search_str} you cannot select the same weapon from this list more than once per unit"):
+                    new_conditional = conditional[len(f"{search_str} "):].strip()
+                    option.conditionals.append(new_conditional)
+                elif match := re.match(r" excluding the (\D+), you cannot select the same weapon from this list more than once per unit$", conditional[len(search_str):]):
+                    new_conditional = conditional[len(f"{search_str} "):].strip()
+                    option.conditionals.append(new_conditional)
+                elif match := re.match(r" a model can only take one of these options, and if it does so its (\D+) cannot be replaced$", conditional[len(search_str):]):
                     new_conditional = conditional[len(f"{search_str} "):].strip()
                     option.conditionals.append(new_conditional)
                 else:
