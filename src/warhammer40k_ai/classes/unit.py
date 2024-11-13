@@ -627,14 +627,35 @@ class Unit:
         """Calculate the maximum possible charge distance."""
         return 12.0  # 2D6 maximum roll
 
-    def get_threat_level(self) -> float:
+    def get_threat_level(self, target_unit: Optional['Unit'] = None) -> Tuple[float, float]:
         """Calculate the threat level of the unit based on offensive capabilities."""
-        threat = 0
+        melee_threat = 0
+        ranged_threat = 0
         for model in self.models:
             for weapon in model.wargear:
                 if weapon.is_ranged() or weapon.is_melee():
-                    threat += weapon.get_damage_potential()
-        return threat
+                    dmg_potential = weapon.get_damage_potential(target_unit)
+                    print(f"{weapon.name} damage potential: {dmg_potential}")
+                    if weapon.is_ranged():
+                        ranged_threat += dmg_potential
+                    else:
+                        melee_threat += dmg_potential
+                else:
+                    raise Exception(f"UNHANDLED WEAPON TYPE: {weapon.name}")
+        return ranged_threat, melee_threat
+
+    def get_threat_per_cost(self, target_unit: Optional['Unit'] = None) -> Tuple[float, float]:
+        ranged_threat, melee_threat = self.get_threat_level(target_unit)
+        try:
+            cost = self.models_cost[len(self.models)]
+        except KeyError:
+            try:
+                cost = self.models_cost[len(self.models) - 1]
+                cost += self.models_cost["extra"]
+            except KeyError:
+                print(f"No cost found for {self.name}")
+                cost = 1000
+        return ranged_threat / cost, melee_threat / cost
 
     ###########################################################################
     ### Properties
