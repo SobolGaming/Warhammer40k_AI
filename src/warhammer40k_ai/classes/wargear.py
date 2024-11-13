@@ -1059,9 +1059,9 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
         replacement_items = []
 
         # some sanitization of inconsistencies
-        description = line.lower().replace("’", "'").replace(".", "").replace('model"s', "model's").replace("for every four models", "for every 4 models")
+        description = line.lower().replace("’", "'").replace(".", "").replace('model"s', "model's").replace("for every four ", "for every 4 ")
         description = description.replace(" one of the following ", " one of the following: ").replace(" 1 of the following: ", " one of the following: ").replace(" 2 of the following: ", " two of the following: ")
-        description = description.replace("up to two models", "up to 2 models").replace("up to three models", "up to 3 models").replace("up to four models", "up to 4 models")
+        description = description.replace("up to two ", "up to 2 ").replace("up to three ", "up to 3 ").replace("up to four ", "up to 4 ")
         print(f"\nDESCRIPTION: {description}")
         if "(" in description and ")" in description:
             marker_1 = description.find("(")
@@ -1110,7 +1110,7 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
             items_to_replace = parse_wargear_itemlist(match.group(2))
             replacement_items, limit = parse_wargear_string_ending(match.group(3))
             item_limit = Quantity(min=1, max=limit)
-        elif match := re.match(r"^any number of ([\w\s']+) can each have their ([\w\s'-]+) replaced with (.*)", description):
+        elif match := re.match(r"^any number of ([\w\s'-]+) can each have their ([\w\s'-]+) replaced with (.*)", description):
             assert is_replacement
             actor, condition = parse_warger_actor_string(match.group(1))
             conditions.append(condition)
@@ -1118,7 +1118,15 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
             items_to_replace = parse_wargear_itemlist(match.group(2))
             replacement_items, limit = parse_wargear_string_ending(match.group(3))
             item_limit = Quantity(min=1, max=limit)
-        elif match := re.match(r"^any number of ([\w\s]+)' ([\w\s'-]+) can each be replaced with (.*)", description):
+        elif match := re.match(r"^any number of ([\w\s-]+)' ([\w\s'-]+) can each be replaced with (.*)", description):
+            assert is_replacement
+            actor, condition = parse_warger_actor_string(match.group(1))
+            conditions.append(condition)
+            model_limit = Quantity(min=1, max=len(unit_ptr.models))
+            items_to_replace = parse_wargear_itemlist(match.group(2))
+            replacement_items, limit = parse_wargear_string_ending(match.group(3))
+            item_limit = Quantity(min=1, max=limit)
+        elif match := re.match(r"^any number of ([\w\s-]+) can replace their ([\w\s'-]+) with (.*)", description):
             assert is_replacement
             actor, condition = parse_warger_actor_string(match.group(1))
             conditions.append(condition)
@@ -1146,7 +1154,7 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
         elif match := re.match(r"^for every (\d+) ([\w\s']+) in th[ei]s? unit([,:]+) (.*)", description):
             break_symbol = match.group(3)
             if break_symbol == ",":
-                wgo_list = parse_alternate_3([match.group(4)])
+                wgo_list = parse_alternate_3([match.group(4)], unit_ptr)
                 for wgo in wgo_list:
                     wgo.conditionals.append(description.split(break_symbol)[0].strip())
                 wargear_options.extend(wgo_list)
@@ -1157,6 +1165,13 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
             actor, _ = parse_warger_actor_string(match.group(1))
             conditions.append(f"equipped with {match.group(2)}")
             replacement_items, limit = parse_wargear_string_ending(match.group(3))
+            item_limit = Quantity(min=1, max=limit)
+        elif match := re.match(r"^if this ([\w\s'-]+) is equipped with ([\w\s'-]+), its ([\w\s'-]+) can be replaced with (.*)", description):
+            assert is_replacement
+            actor, _ = parse_warger_actor_string(match.group(1))
+            conditions.append(f"equipped with {match.group(2)}")
+            items_to_replace = parse_wargear_itemlist(match.group(3))
+            replacement_items, limit = parse_wargear_string_ending(match.group(4))
             item_limit = Quantity(min=1, max=limit)
         elif match := re.match(r"^each ([\w\s'-]+) can have each ([\w\s'-]+) it is equipped with replaced with (.*)", description):
             actor, _ = parse_warger_actor_string(match.group(1))
@@ -1178,7 +1193,7 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
             item_limit = Quantity(min=1, max=limit)
         elif match := re.match(r"^if this unit contains (\d+) models, (.*)", description):
             condition = f"contains {match.group(1)} models"
-            wgo_list = parse_alternate_3([match.group(2)])
+            wgo_list = parse_alternate_3([match.group(2)], unit_ptr)
             for wgo in wgo_list:
                 wgo.conditionals.append(condition.strip())
             wargear_options.extend(wgo_list)
@@ -1189,7 +1204,7 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
             if remainder[-1] == ";":    
                 remainder = remainder[:-1]
             for complex_entry in remainder.split(";"):
-                wgo_list = parse_alternate_3([complex_entry.strip()])
+                wgo_list = parse_alternate_3([complex_entry.strip()], unit_ptr)
                 for wgo in wgo_list:
                     wgo.conditionals.append(condition.strip())
                 wargear_options.extend(wgo_list)
@@ -1253,12 +1268,17 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
                 elif conditional.startswith(f"{search_str} you cannot select the same weapon from this list more than once per unit"):
                     new_conditional = conditional[len(f"{search_str} "):].strip()
                     option.conditionals.append(new_conditional)
+                elif conditional.startswith(f"{search_str} you cannot select the same weapon from this list more than twice per unit"):
+                    new_conditional = conditional[len(f"{search_str} "):].strip()
+                    option.conditionals.append(new_conditional)
                 elif match := re.match(r" excluding the (\D+), you cannot select the same weapon from this list more than once per unit$", conditional[len(search_str):]):
                     new_conditional = conditional[len(f"{search_str} "):].strip()
                     option.conditionals.append(new_conditional)
                 elif match := re.match(r" a model can only take one of these options, and if it does so its (\D+) cannot be replaced$", conditional[len(search_str):]):
                     new_conditional = conditional[len(f"{search_str} "):].strip()
                     option.conditionals.append(new_conditional)
+                elif match := re.match(r" you cannot select the same weapon more than once per unit unless it contains (\d+) models, in which case you cannot select the same weapon more than twice per unit", conditional[len(search_str):]):
+                    option.conditionals.append(match.group(0))
                 else:
                     print(f"UNHANDLED POST_CONDITIONAL: {conditional}")
                     raise Exception(f"UNHANDLED POST_CONDITIONAL: {conditional}")
