@@ -46,6 +46,9 @@ class WargearProfile:
             return [keyword.strip() for keyword in keywords_string.split(',')]
         return []
 
+    def get_keywords(self) -> List[str]:
+        return self.keywords
+
     ###########################################################################
     ### Wargear profile damage potential
     ###########################################################################
@@ -244,9 +247,9 @@ class Wargear:
     def get_keywords(self, profile_name: str = 'default') -> List[str]:
         return self.profiles[profile_name].keywords
 
-    def get_damage_potential(self) -> float:
+    def get_damage_potential(self, target_unit: Optional['Unit'] = None) -> float:
         """Estimate the total damage potential of this wargear (all profiles)."""
-        return max(profile.get_damage_potential() for profile in self.profiles.values())
+        return max(profile.get_damage_potential(target_unit) for profile in self.profiles.values())
 
     ### Wargear type checks
     def is_melee(self) -> bool:
