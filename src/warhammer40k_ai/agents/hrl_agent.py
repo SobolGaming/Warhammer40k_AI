@@ -329,7 +329,7 @@ class TacticalAgent:
         # Mask unavailable actions
         action_mask = torch.zeros(NUM_MOVEMENT_ACTIONS)
         for action in available_actions:
-            action_mask[action] = 1
+            action_mask[action.value] = 1
         masked_probs = action_probs * action_mask
         masked_probs = masked_probs / masked_probs.sum()
 

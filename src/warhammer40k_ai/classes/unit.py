@@ -6,7 +6,7 @@ from ..utility.model_base import Base, BaseType
 from .wargear import Wargear, WargearOption, parse_option_string, parse_alternate_3
 from .ability import Ability
 from ..utility.range import Range
-from ..utility.calcs import get_dist, get_angle, convert_mm_to_inches, a_star, simplify_path, get_pivot_cost, angle_difference, can_end_move_on_terrain
+from ..utility.calcs import get_dist, get_angle, convert_mm_to_inches, a_star
 from ..utility.dice import get_roll
 from .status_effects import StatusEffect
 import math
@@ -730,16 +730,16 @@ class Unit:
 
     def _execute_action(self, action: int, destination: Tuple[float, float, float], game_map: 'Map') -> bool:
         """Execute the chosen action."""
-        if action == MovementAction.REMAIN_STATIONARY:
+        if action == MovementAction.REMAIN_STATIONARY.value:
             print(f"{self.name} remains stationary")
             return self.remain_stationary()
-        elif action == MovementAction.MOVE:
+        elif action == MovementAction.MOVE.value:
             print(f"{self.name} moves to {destination}")
             return self.move(destination, game_map)
-        elif action == MovementAction.ADVANCE:
+        elif action == MovementAction.ADVANCE.value:
             print(f"{self.name} advances to {destination}")
             return self.advance(destination, game_map)
-        elif action == MovementAction.FALL_BACK:
+        elif action == MovementAction.FALL_BACK.value:
             print(f"{self.name} falls back")
             return self.fall_back(destination, game_map)
         else:
