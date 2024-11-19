@@ -258,6 +258,12 @@ class Wargear:
     def is_ranged(self) -> bool:
         return self.type.lower() == 'ranged'
 
+    def maximum_range(self) -> int:
+        max_range = 0
+        for profile in self.profiles.values():
+            max_range = max(max_range, profile.range.max)
+        return max_range
+
     ### Wargear actions
     def attack(self, model: 'Model', target: 'Unit') -> None:
         pass

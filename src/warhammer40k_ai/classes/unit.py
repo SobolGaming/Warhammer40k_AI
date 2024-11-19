@@ -1098,6 +1098,26 @@ class Unit:
             return False
         return True
 
+
+    ###########################################################################
+    ### Range and Line of Sight
+    ###########################################################################
+    def maximum_range(self) -> int:
+        """Maximum range of the unit."""
+        if hasattr(self, 'max_shooting_range'):
+            return self.max_shooting_range
+
+        max_range = 0
+        for model in self.models:
+            max_range = max(max_range, model.maximum_range())
+        self.max_shooting_range = max_range
+        return max_range
+
+    def find_targets_in_range(self, game_map: 'Map') -> List['Unit']:
+        targets = []
+        
+        return targets
+
     def print_unit(self) -> str:
         return f"{self.name} :: M: {self.movement}\", T: {self.toughness}, Sv: {self.save}, InvSv: {self.inv_save}, OC: {self.objective_control}"
 

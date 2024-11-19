@@ -445,7 +445,7 @@ class TacticalAgent:
         self.game.event_system.publish("shooting_phase_start", unit=unit, game_state=self.game.get_state())
 
         # Find targets in range
-        targets = self.find_targets_in_range(unit)
+        targets = unit.find_targets_in_range(self.game.map)
         if targets:
             # Agent decides on the target
             target_idx = self.choose_shooting_action(unit, targets)
