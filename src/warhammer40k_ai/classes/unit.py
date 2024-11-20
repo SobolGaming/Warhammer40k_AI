@@ -6,7 +6,7 @@ from ..utility.model_base import Base, BaseType
 from .wargear import Wargear, WargearOption, parse_option_string, parse_alternate_3
 from .ability import Ability
 from ..utility.range import Range
-from ..utility.calcs import get_dist, get_angle, convert_mm_to_inches, a_star, simplify_path, get_pivot_cost, angle_difference, can_end_move_on_terrain
+from ..utility.calcs import get_dist, get_angle, convert_mm_to_inches, a_star
 from ..utility.dice import get_roll
 from .status_effects import StatusEffect
 import math
@@ -730,16 +730,16 @@ class Unit:
 
     def _execute_action(self, action: int, destination: Tuple[float, float, float], game_map: 'Map') -> bool:
         """Execute the chosen action."""
-        if action == MovementAction.REMAIN_STATIONARY:
+        if action == MovementAction.REMAIN_STATIONARY.value:
             print(f"{self.name} remains stationary")
             return self.remain_stationary()
-        elif action == MovementAction.MOVE:
+        elif action == MovementAction.MOVE.value:
             print(f"{self.name} moves to {destination}")
             return self.move(destination, game_map)
-        elif action == MovementAction.ADVANCE:
+        elif action == MovementAction.ADVANCE.value:
             print(f"{self.name} advances to {destination}")
             return self.advance(destination, game_map)
-        elif action == MovementAction.FALL_BACK:
+        elif action == MovementAction.FALL_BACK.value:
             print(f"{self.name} falls back")
             return self.fall_back(destination, game_map)
         else:
@@ -1097,6 +1097,26 @@ class Unit:
         if not self._is_coherent_within_unit(x, y, z, facing, placed_positions):
             return False
         return True
+
+
+    ###########################################################################
+    ### Range and Line of Sight
+    ###########################################################################
+    def maximum_range(self) -> int:
+        """Maximum range of the unit."""
+        if hasattr(self, 'max_shooting_range'):
+            return self.max_shooting_range
+
+        max_range = 0
+        for model in self.models:
+            max_range = max(max_range, model.maximum_range())
+        self.max_shooting_range = max_range
+        return max_range
+
+    def find_targets_in_range(self, game_map: 'Map') -> List['Unit']:
+        targets = []
+        
+        return targets
 
     def print_unit(self) -> str:
         return f"{self.name} :: M: {self.movement}\", T: {self.toughness}, Sv: {self.save}, InvSv: {self.inv_save}, OC: {self.objective_control}"

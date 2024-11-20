@@ -244,6 +244,16 @@ class Model:
         self._objective_control = value
 
     ################
+    ### Battle Related
+    ################
+    def maximum_range(self) -> int:
+        max_range = 0
+        for wargear in self.wargear:
+            if wargear.is_ranged():
+                max_range = max(max_range, wargear.maximum_range())
+        return max_range
+
+    ################
     ### String Representation
     ################
     def __str__(self) -> str:
