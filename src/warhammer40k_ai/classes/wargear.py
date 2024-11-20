@@ -1182,6 +1182,11 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
             items_to_replace = parse_wargear_item([match.group(2)])
             replacement_items, limit = parse_wargear_string_ending(match.group(3))
             item_limit = Quantity(min=1, max=limit)
+        elif match := re.match(r"^(?:this|the|1|one) ([\w\s'-]+) can have its ([\w\s'-]+) replaced with (.*)", description):
+            actor, condition = parse_warger_actor_string(match.group(1))
+            items_to_replace = parse_wargear_item([match.group(2)])
+            replacement_items, limit = parse_wargear_string_ending(match.group(3))
+            item_limit = Quantity(min=1, max=limit)
         elif match := re.match(r"^each of this model's ([\w\s'-]+)s can be replaced with (.*)", description):
             actor = "model"
             conditions.append(f"item_limit is equal to number of equipped {match.group(1)}")
@@ -1212,6 +1217,10 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
                     wgo.conditionals.append(condition.strip())
                 wargear_options.extend(wgo_list)
             called_recursively = True
+        elif match := re.match(r"^it can be equipped with (.*)", description):
+            replacement_items, limit = parse_wargear_string_ending(match.group(1))
+            item_limit = Quantity(min=1, max=limit)
+            actor = "model"
         else:
             print(f"UNKNOWN: {line}")
             unhandled = True
@@ -1265,6 +1274,7 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
                         post_conditional_applies = True
                         option.wargear_to[i][j] = (item[0], item[1].replace(search_str, ""))
             if post_conditional_applies:
+                conditional = conditional.replace("the some model", " the same model")
                 if conditional.startswith(f"{search_str} that model's"):
                     new_conditional = conditional[len(f"{search_str} that model's"):].strip()
                     option.conditionals.append(new_conditional)
@@ -1272,6 +1282,12 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
                     new_conditional = conditional[len(f"{search_str} "):].strip()
                     option.conditionals.append(new_conditional)
                 elif conditional.startswith(f"{search_str} you cannot select the same weapon from this list more than twice per unit"):
+                    new_conditional = conditional[len(f"{search_str} "):].strip()
+                    option.conditionals.append(new_conditional)
+                elif conditional.startswith(f"{search_str} the same model cannot be equipped with more than one of these wargear options"):
+                    new_conditional = conditional[len(f"{search_str} "):].strip()
+                    option.conditionals.append(new_conditional)
+                elif conditional.startswith(f"{search_str} you cannot select both of these options for the same model"):
                     new_conditional = conditional[len(f"{search_str} "):].strip()
                     option.conditionals.append(new_conditional)
                 elif match := re.match(r" excluding the (\D+), you cannot select the same weapon from this list more than once per unit$", conditional[len(search_str):]):
