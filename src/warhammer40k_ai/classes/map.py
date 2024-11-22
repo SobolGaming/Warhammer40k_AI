@@ -157,7 +157,7 @@ class Map:
         
         for unit in self.get_enemy_units(model.parent_unit):
             for other_model in unit.models:
-                print(f"Enemy Unit Check :: {model.parent_unit.name} checking collision with enemy units :: {other_model.parent_unit.name}")
+                #print(f"Enemy Unit Check :: {model.parent_unit.name} checking collision with enemy units :: {other_model.parent_unit.name}")
                 if test_base.collides_with(other_model.model_base):
                     return True
         return False

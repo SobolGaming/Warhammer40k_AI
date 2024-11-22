@@ -213,11 +213,11 @@ class Base:
             return 0.0
 
     def collides_with(self, other: 'Base') -> bool:
-        print(f"Base 1: {self.x:.2f}, {self.y:.2f}, {self.z:.2f}, {self.facing:.2f}")
-        print(f"Base 2: {other.x:.2f}, {other.y:.2f}, {other.z:.2f}, {other.facing:.2f}")
+        #print(f"Base 1: {self.x:.2f}, {self.y:.2f}, {self.z:.2f}, {self.facing:.2f}")
+        #print(f"Base 2: {other.x:.2f}, {other.y:.2f}, {other.z:.2f}, {other.facing:.2f}")
         vert_dist = self.vertical_distance(other)
         edge_dist = self.edge_to_edge_distance(other)
-        print(f"Vertical Distance: {vert_dist}, Edge Distance: {edge_dist}")
+        #print(f"Vertical Distance: {vert_dist}, Edge Distance: {edge_dist}")
         return vert_dist == 0.0 and edge_dist == 0.0
 
     #########################################################################################

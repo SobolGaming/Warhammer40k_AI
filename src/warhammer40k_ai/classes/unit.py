@@ -367,9 +367,11 @@ class Unit:
             for wargear_instance in wargear_to_add:
                 if model_name:
                     if model_instance.name.lower() == model_name.lower():
-                        model_instance.wargear.append(wargear_instance)
+                        if wargear_instance:
+                            model_instance.wargear.append(wargear_instance)
                 else:
-                    model_instance.wargear.append(wargear_instance)
+                    if wargear_instance:
+                        model_instance.wargear.append(wargear_instance)
 
     def set_parent_army(self, army_ptr) -> None:
         """Set the parent army of the unit."""
@@ -581,7 +583,14 @@ class Unit:
 
         # Apply wargear to all models
         for model in self.models:
-            model.add_wargear(wargear)
+            if wargear:
+                if type(wargear) == list:
+                    for wargear_item in wargear:
+                        model.add_wargear(wargear_item)
+                else:
+                    model.add_wargear(wargear)
+            else:
+                model.wargear = []
 
     @property
     def abilities(self):
@@ -1115,7 +1124,18 @@ class Unit:
 
     def find_targets_in_range(self, game_map: 'Map') -> List['Unit']:
         targets = []
-        
+        enemy_units = game_map.get_enemy_units(self)
+        for enemy_unit in enemy_units:
+            for enemy_model in enemy_unit.models:
+                in_range = False
+                for model in self.models:
+                    if get_dist(model.x - enemy_model.x, model.y - enemy_model.y, model.z - enemy_model.z) < model.maximum_range():
+                        in_range = True
+                        break
+                if in_range:
+                    # TODO - Check line of sight
+                    targets.append(enemy_unit)
+                    break
         return targets
 
     def print_unit(self) -> str:

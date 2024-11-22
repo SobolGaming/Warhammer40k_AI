@@ -235,7 +235,8 @@ class TacticalAgent:
         # Policy networks and optimizers for different phases
         self.movement_policy_net = PolicyNetwork(input_size=self.get_movement_state_size(), output_size=NUM_MOVEMENT_ACTIONS)
         self.movement_optimizer = optim.Adam(self.movement_policy_net.parameters(), lr=learning_rate)
-        self.shooting_policy_net = PolicyNetwork(input_size=self.get_shooting_state_size(), output_size=self.get_shooting_action_size())
+        shooting_state_size = self.get_shooting_state_size()
+        self.shooting_policy_net = PolicyNetwork(input_size=shooting_state_size, output_size=self.get_shooting_action_size())
         self.shooting_optimizer = optim.Adam(self.shooting_policy_net.parameters(), lr=learning_rate)
         # Add similar networks for charge and fight phases if desired
 
@@ -407,14 +408,14 @@ class TacticalAgent:
         # Unit's position and health
         unit_pos = unit.get_position()
         features.extend([unit_pos[0], unit_pos[1], unit_pos[2]])
-        features.append(unit.health_percent())
+        features.append(unit.health_percent)
 
         # Enemy units' positions and health
-        enemy_units = self.game.get_opponent(self.player).get_army().units
+        enemy_units = self.game.get_opponent().get_army().units
         for enemy in enemy_units:
             enemy_pos = enemy.get_position()
             features.extend([enemy_pos[0], enemy_pos[1], enemy_pos[2]])
-            features.append(enemy.health_percent())
+            features.append(enemy.health_percent)
 
         # Ensure the features vector has consistent size
         # If fewer enemy units, pad with zeros
@@ -425,13 +426,17 @@ class TacticalAgent:
             features.extend(padding)
 
         # Convert to tensor
+        print(f"Shooting State Features: {len(features)}, Expected: {self.get_shooting_state_size()}")
         assert len(features) == self.get_shooting_state_size()
         state = torch.tensor(features, dtype=torch.float32)
         return state
 
     def get_shooting_state_size(self) -> int:
-        # Define the size of the shooting state vector
-        return 15  # Adjust based on actual features
+        # Calculate the exact size needed based on maximum number of enemy units
+        max_enemy_units = len(self.game.get_opponent().get_army().units)
+        # 4 features for the shooting unit (x, y, z, health)
+        # 4 features per enemy unit (x, y, z, health)
+        return 4 + (max_enemy_units * 4)
 
     def get_shooting_action_size(self) -> int:
         # Number of possible shooting targets (e.g., number of enemy units)
@@ -444,6 +449,13 @@ class TacticalAgent:
 
         self.game.event_system.publish("shooting_phase_start", unit=unit, game_state=self.game.get_state())
 
+        if unit.round_state.advanced_this_round:
+            print(f"{unit.name} cannot shoot after advancing.")
+            return
+        if unit.round_state.fell_back_this_round:
+            print(f"{unit.name} cannot shoot after falling back.")
+            return
+
         # Find targets in range
         targets = unit.find_targets_in_range(self.game.map)
         if targets:
@@ -452,14 +464,14 @@ class TacticalAgent:
             target = targets[target_idx]
 
             # Record the target's health before attack
-            target_health_before = target.health_percent()
+            target_health_before = target.health_percent
 
             # Execute the attack
             print(f"{unit.name} shoots at {target.name}")
-            self.game.attack(unit, target)
+            #self.game.attack(unit, target)
 
             # Record the target's health after attack
-            target_health_after = target.health_percent()
+            target_health_after = target.health_percent
 
             # Compute the reward (damage inflicted)
             damage = target_health_before - target_health_after

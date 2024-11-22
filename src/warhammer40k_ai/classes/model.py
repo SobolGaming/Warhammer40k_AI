@@ -79,6 +79,7 @@ class Model:
 
     def add_wargear(self, wargear: Wargear) -> None:
         """Add wargear to the model."""
+        print(f"Appending: {type(wargear)}")
         self.wargear.append(wargear)
     
     def add_optional_wargear(self, wargear: str) -> None:
@@ -243,12 +244,31 @@ class Model:
     def objective_control(self, value: int) -> None:
         self._objective_control = value
 
+    @property
+    def x(self) -> float:
+        return self.model_base.x
+
+    @property
+    def y(self) -> float:
+        return self.model_base.y
+
+    @property
+    def z(self) -> float:
+        return self.model_base.z
+
+    @property
+    def facing(self) -> float:
+        return self.model_base.facing
+
     ################
     ### Battle Related
     ################
     def maximum_range(self) -> int:
         max_range = 0
+        print(f"DEBUG - Model {self.name} wargear type: {type(self.wargear)}")
+        print(f"DEBUG - Model {self.name} wargear contents: {self.wargear}")
         for wargear in self.wargear:
+            print(f"DEBUG - Wargear item type: {type(wargear)}")
             if wargear.is_ranged():
                 max_range = max(max_range, wargear.maximum_range())
         return max_range
