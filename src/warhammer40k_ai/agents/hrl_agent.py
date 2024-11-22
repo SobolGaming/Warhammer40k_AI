@@ -35,7 +35,9 @@ class PolicyNetwork(nn.Module):
 
     def forward(self, x):
         x = torch.relu(self.fc1(x))
-        return torch.softmax(self.fc2(x), dim=-1)
+        x = self.fc2(x)
+        x = torch.softmax(x, dim=-1)
+        return x
 
 
 class State:
@@ -235,8 +237,7 @@ class TacticalAgent:
         # Policy networks and optimizers for different phases
         self.movement_policy_net = PolicyNetwork(input_size=self.get_movement_state_size(), output_size=NUM_MOVEMENT_ACTIONS)
         self.movement_optimizer = optim.Adam(self.movement_policy_net.parameters(), lr=learning_rate)
-        shooting_state_size = self.get_shooting_state_size()
-        self.shooting_policy_net = PolicyNetwork(input_size=shooting_state_size, output_size=self.get_shooting_action_size())
+        self.shooting_policy_net = PolicyNetwork(input_size=self.get_shooting_state_size(), output_size=self.get_shooting_action_size())
         self.shooting_optimizer = optim.Adam(self.shooting_policy_net.parameters(), lr=learning_rate)
         # Add similar networks for charge and fight phases if desired
 
@@ -409,17 +410,24 @@ class TacticalAgent:
         unit_pos = unit.get_position()
         features.extend([unit_pos[0], unit_pos[1], unit_pos[2]])
         features.append(unit.health_percent)
+        features.append(*unit.get_threat_level())
+
+        max_enemies = self.get_shooting_action_size()
 
         # Enemy units' positions and health
         enemy_units = self.game.get_opponent().get_army().units
+        count = 0
         for enemy in enemy_units:
             enemy_pos = enemy.get_position()
             features.extend([enemy_pos[0], enemy_pos[1], enemy_pos[2]])
             features.append(enemy.health_percent)
+            features.append(*enemy.get_threat_level())
+            count += 1
+            if count >= max_enemies:
+                break
 
         # Ensure the features vector has consistent size
         # If fewer enemy units, pad with zeros
-        max_enemies = self.get_shooting_action_size()
         current_enemies = len(enemy_units)
         if current_enemies < max_enemies:
             padding = [0.0] * ((max_enemies - current_enemies) * 4)
@@ -433,14 +441,14 @@ class TacticalAgent:
 
     def get_shooting_state_size(self) -> int:
         # Calculate the exact size needed based on maximum number of enemy units
-        max_enemy_units = len(self.game.get_opponent().get_army().units)
-        # 4 features for the shooting unit (x, y, z, health)
-        # 4 features per enemy unit (x, y, z, health)
-        return 4 + (max_enemy_units * 4)
+        max_enemy_units = self.get_shooting_action_size()
+        # 6 features for the shooting unit (x, y, z, health, ranged_threat, melee_threat)
+        # 6 features per enemy unit (x, y, z, health, ranged_threat, melee_threat)
+        return 6 + (max_enemy_units * 6)
 
     def get_shooting_action_size(self) -> int:
-        # Number of possible shooting targets (e.g., number of enemy units)
-        return len(self.game.get_opponent().get_army().units)
+        # Maximum number of possible shooting targets (e.g., number of enemy units)
+        return 40
 
     def shooting_phase(self, unit: Unit) -> None:
         """Select targets and resolve shooting attacks."""
