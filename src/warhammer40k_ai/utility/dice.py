@@ -43,7 +43,9 @@ class DiceCollection:
         raise ValueError(f"Invalid dice string: {dice_string}")
 
     def roll(self) -> int:
-        return sum(get_dice_roll(self.die_faces) for _ in range(self.number)) + self.modifier
+        roll_value = sum(get_dice_roll(self.die_faces) for _ in range(self.number)) + self.modifier
+        print(f"Roll of {self}: {roll_value}")
+        return roll_value
 
     def min(self) -> int:
         return self.number + self.modifier
@@ -53,6 +55,12 @@ class DiceCollection:
 
     def stat_average(self) -> float:
         return (self.number * (self.die_faces + 1) / 2) + self.modifier
+
+    def __str__(self) -> str:
+        return f"{self.number}D{self.die_faces}{'+' + str(self.modifier) if self.modifier > 0 else ''}"
+
+    def __repr__(self) -> str:
+        return f"DiceCollection({self.number}, {self.die_faces}, {self.modifier})"
 
 def get_roll(data: str) -> Union[int, None]:
     try:
