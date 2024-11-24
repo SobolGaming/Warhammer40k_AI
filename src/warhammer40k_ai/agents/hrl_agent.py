@@ -3,6 +3,8 @@ from typing import List, Tuple
 from warhammer40k_ai.classes.game import Game
 from warhammer40k_ai.classes.map import Objective, ObjectivePoint
 from warhammer40k_ai.classes.unit import Unit, MovementAction
+from warhammer40k_ai.classes.model import Model
+from warhammer40k_ai.classes.wargear import Wargear, WargearProfile
 from warhammer40k_ai.classes.player import Player
 import torch
 import torch.nn as nn
@@ -11,6 +13,9 @@ from warhammer40k_ai.utility.constants import TOTAL_ROUNDS
 from warhammer40k_ai.utility.calcs import get_dist
 
 # Constants
+MAX_TARGETS = 25  # Maximum number of targets to consider
+MAX_PROFILES = 3  # Maximum number of profiles per weapon
+
 PRIMARY_OBJECTIVE_REWARD = 10
 SECONDARY_OBJECTIVE_REWARD = 5
 OPPONENT_PRIMARY_OBJECTIVE_PENALTY = 10
@@ -383,15 +388,18 @@ class TacticalAgent:
     ###########################################################################
     # Shooting Phase
     ###########################################################################
-    def choose_shooting_action(self, unit: Unit, targets: List[Unit]) -> int:
-        state = self.extract_shooting_state_features(unit)
+    def choose_shooting_target(self, model: Model, profile: WargearProfile, targets: List[Unit]) -> int:
+        """Choose a target for the model's weapon/profile."""
+        state = self.extract_shooting_state_features(model, profile, targets)
         action_probs = self.shooting_policy_net(state)
 
         # Mask unavailable targets
         action_mask = torch.zeros(self.get_shooting_action_size())
-        for idx, target in enumerate(targets):
+        num_targets = min(len(targets), MAX_TARGETS)
+        for idx in range(num_targets):
             action_mask[idx] = 1
-        masked_probs = action_probs * action_mask
+        # The target selection probabilities come after the profile selection probabilities
+        masked_probs = action_probs[self.get_profile_selection_action_size():] * action_mask
         masked_probs = masked_probs / masked_probs.sum()
 
         # Create a categorical distribution
@@ -403,55 +411,157 @@ class TacticalAgent:
 
         return action_idx.item()
 
-    def extract_shooting_state_features(self, unit: Unit) -> torch.Tensor:
+    def choose_weapon_profile(self, model: Model, wargear_item: Wargear) -> WargearProfile:
+        """Choose a weapon profile to use from the wargear item."""
+        profiles = list(wargear_item.profiles.values())
+
+        if len(profiles) == 1:
+            # Only one profile available
+            return profiles[0]
+
+        # Extract state features for profile selection
+        state = self.extract_profile_selection_state(model, wargear_item, profiles)
+        action_probs = self.shooting_policy_net(state)
+
+        # Mask unavailable profiles
+        action_mask = torch.zeros(self.get_profile_selection_action_size())
+        num_profiles = min(len(profiles), MAX_PROFILES)
+        for idx in range(num_profiles):
+            action_mask[idx] = 1
+        masked_probs = action_probs[:self.get_profile_selection_action_size()] * action_mask
+        masked_probs = masked_probs / masked_probs.sum()
+
+        # Create a categorical distribution for profile selection
+        profile_dist = torch.distributions.Categorical(masked_probs)
+        profile_idx = profile_dist.sample()
+
+        # Store log probability
+        self.shooting_log_probs.append(profile_dist.log_prob(profile_idx))
+
+        return profiles[profile_idx.item()]
+
+    def extract_profile_selection_state(self, model: Model, wargear_item: Wargear, profiles: List[WargearProfile]) -> torch.Tensor:
+        """Extract state features for selecting a weapon profile."""
         features = []
 
-        # Unit's position and health
-        unit_pos = unit.get_position()
-        features.extend([unit_pos[0], unit_pos[1], unit_pos[2]])
-        features.append(unit.health_percent)
-        features.append(*unit.get_threat_level())
+        # Model's position and health
+        model_pos = model.get_position()
+        features.extend([model_pos[0], model_pos[1], model_pos[2]])
+        features.append(model.health_percent)
 
-        max_enemies = self.get_shooting_action_size()
+        # Characteristics of each profile
+        for profile in profiles[:MAX_PROFILES]:
+            features.append(profile.range)
+            features.append(profile.attacks)
+            features.append(profile.strength)
+            features.append(profile.AP)
+            features.append(profile.damage)
+
+        # If fewer than MAX_PROFILES, pad with zeros
+        num_profiles = len(profiles)
+        if num_profiles < MAX_PROFILES:
+            padding = [0.0] * ((MAX_PROFILES - num_profiles) * 5)  # 5 features per profile
+            features.extend(padding)
+
+        # Add other relevant features if necessary
+
+        # Convert to tensor
+        state = torch.tensor([features], dtype=torch.float32)  # Batch dimension
+
+        return state
+
+    def extract_profile_selection_state(self, model: Model, wargear_item, profiles: List[WargearProfile]) -> torch.Tensor:
+        """Extract state features for selecting a weapon profile."""
+        features = []
+
+        # Model's position and health
+        model_pos = model.get_location()
+        features.extend([model_pos[0], model_pos[1], model_pos[2]])
+        features.append(model.health_percent)
+
+        # Characteristics of each profile
+        for profile in profiles[:MAX_PROFILES]:
+            features.append(profile.range)
+            features.append(profile.attacks)
+            features.append(profile.strength)
+            features.append(profile.AP)
+            features.append(profile.damage)
+
+        # If fewer than MAX_PROFILES, pad with zeros
+        num_profiles = len(profiles)
+        if num_profiles < MAX_PROFILES:
+            padding = [0.0] * ((MAX_PROFILES - num_profiles) * 5)  # 5 features per profile
+            features.extend(padding)
+
+        # Add other relevant features if necessary
+
+        # Convert to tensor
+        state = torch.tensor([features], dtype=torch.float32)  # Batch dimension
+
+        return state
+
+    def extract_shooting_state_features(self, model: Model, profile: WargearProfile, targets: List[Unit]) -> torch.Tensor:
+        """Extract state features for shooting decision."""
+        features = []
+
+        # Model's position and health
+        model_pos = model.get_location()
+        features.extend([model_pos[0], model_pos[1], model_pos[2]])
+        features.append(model.health_percent)
+
+        # Weapon/profile characteristics
+        features.append(profile.range.max)
+        features.append(profile.attacks)
+        features.append(profile.strength)
+        features.append(profile.ap)
+        features.append(profile.damage)
 
         # Enemy units' positions and health
-        enemy_units = self.game.get_opponent().get_army().units
-        count = 0
-        for enemy in enemy_units:
+        for enemy in targets[:MAX_TARGETS]:
             enemy_pos = enemy.get_position()
             features.extend([enemy_pos[0], enemy_pos[1], enemy_pos[2]])
             features.append(enemy.health_percent)
-            features.append(*enemy.get_threat_level())
-            count += 1
-            if count >= max_enemies:
-                break
 
-        # Ensure the features vector has consistent size
-        # If fewer enemy units, pad with zeros
-        current_enemies = len(enemy_units)
-        if current_enemies < max_enemies:
-            padding = [0.0] * ((max_enemies - current_enemies) * 4)
+        # If fewer than MAX_TARGETS, pad with zeros
+        num_targets = len(targets)
+        if num_targets < MAX_TARGETS:
+            padding = [0.0] * ((MAX_TARGETS - num_targets) * 4)  # 4 features per target
             features.extend(padding)
 
         # Convert to tensor
-        print(f"Shooting State Features: {len(features)}, Expected: {self.get_shooting_state_size()}")
-        assert len(features) == self.get_shooting_state_size()
-        state = torch.tensor(features, dtype=torch.float32)
+        state = torch.tensor([features], dtype=torch.float32)  # Batch dimension
+
         return state
 
     def get_shooting_state_size(self) -> int:
-        # Calculate the exact size needed based on maximum number of enemy units
-        max_enemy_units = self.get_shooting_action_size()
-        # 6 features for the shooting unit (x, y, z, health, ranged_threat, melee_threat)
-        # 6 features per enemy unit (x, y, z, health, ranged_threat, melee_threat)
-        return 6 + (max_enemy_units * 6)
+        """Calculate the size of the shooting state vector."""
+        # For profile selection:
+        # 4 features for the model (x, y, z, health)
+        # 5 features per profile * MAX_PROFILES
+
+        # For target selection:
+        # 4 features for the model (x, y, z, health)
+        # 5 features for the selected profile
+        # 4 features per target * MAX_TARGETS
+
+        # We need to ensure the input size matches the largest possible input (either profile selection or target selection)
+        profile_selection_size = 4 + (MAX_PROFILES * 5)
+        target_selection_size = 4 + 5 + (MAX_TARGETS * 4)
+
+        # Return the maximum of the two
+        return max(profile_selection_size, target_selection_size)
+
+    def get_profile_selection_action_size(self) -> int:
+        """Define the number of possible profiles to select from."""
+        return MAX_PROFILES
 
     def get_shooting_action_size(self) -> int:
-        # Maximum number of possible shooting targets (e.g., number of enemy units)
-        return 40
+        """Define the total number of possible actions (profile selection + target selection)."""
+        # Total action size is the sum of profile selection actions and target selection actions
+        return self.get_profile_selection_action_size() + MAX_TARGETS
 
     def shooting_phase(self, unit: Unit) -> None:
-        """Select targets and resolve shooting attacks."""
+        """Select targets and resolve shooting attacks for each model in the unit."""
         if not unit.deployed or not unit.is_alive():
             return
 
@@ -464,33 +574,48 @@ class TacticalAgent:
             print(f"{unit.name} cannot shoot after falling back.")
             return
 
-        # Find targets in range
-        targets = unit.find_targets_in_range(self.game.map)
-        if targets:
-            # Agent decides on the target
-            target_idx = self.choose_shooting_action(unit, targets)
-            target = targets[target_idx]
+        # Loop over each model in the unit
+        for model in unit.models:
+            if not model.is_alive:
+                continue
 
-            # Record the target's health before attack
-            target_health_before = target.health_percent
+            # For each wargear (weapon) the model has
+            for wargear_item in model.wargear:
+                # Decide which profile to use if the weapon has multiple profiles
+                selected_profile = self.choose_weapon_profile(model, wargear_item)
+                
+                if selected_profile is None:
+                    continue  # No valid profile selected
 
-            # Execute the attack
-            print(f"{unit.name} shoots at {target.name}")
-            #self.game.attack(unit, target)
+                # Find targets in range for this weapon/profile
+                targets = model.find_targets_in_range(self.game.map, wargear_profile=selected_profile)
 
-            # Record the target's health after attack
-            target_health_after = target.health_percent
+                if targets:
+                    # Agent decides on the target
+                    target_idx = self.choose_shooting_target(model, selected_profile, targets)
+                    target = targets[target_idx]
 
-            # Compute the reward (damage inflicted)
-            damage = target_health_before - target_health_after
-            reward = SHOOTING_REWARD_SCALING * damage
-            self.shooting_rewards.append(reward)
-        else:
-            # No targets, negative reward for missed opportunity
-            reward = -1.0 * SHOOTING_REWARD_SCALING
-            self.shooting_rewards.append(reward)
+                    # Record the target's health before attack
+                    target_health_before = target.health_percent
+
+                    # Execute the attack
+                    print(f"{model.name} of {unit.name} shoots at {target.name} with {wargear_item.name} ({selected_profile.name})")
+                    model.ranged_attack(target, selected_profile)
+
+                    # Record the target's health after attack
+                    target_health_after = target.health_percent
+
+                    # Compute the reward (damage inflicted)
+                    damage = target_health_before - target_health_after
+                    reward = SHOOTING_REWARD_SCALING * damage
+                    self.shooting_rewards.append(reward)
+                else:
+                    # No targets, negative reward for missed opportunity
+                    reward = -1.0 * SHOOTING_REWARD_SCALING
+                    self.shooting_rewards.append(reward)
 
         self.game.event_system.publish("shooting_phase_end", unit=unit, game_state=self.game.get_state())
+
 
     ###########################################################################
     # Charge Phase

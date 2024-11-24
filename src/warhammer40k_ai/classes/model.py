@@ -1,13 +1,16 @@
 from typing import List, Dict, Optional, Tuple
-from .wargear import Wargear
+from .wargear import Wargear, WargearProfile
 from .ability import Ability
 from .status_effects import UnitStatsModifier
 from ..utility.model_base import Base
 import uuid
 import logging
-from math import degrees
-from ..utility.calcs import get_dist, get_angle
+from ..utility.calcs import get_dist
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from .map import Map
+    from .unit import Unit
 
 logging.basicConfig(format="%(asctime)s %(levelname)-8s %(message)s")
 logger = logging.getLogger(__name__)
@@ -75,7 +78,12 @@ class Model:
     @property
     def is_max_health(self) -> bool:
         """Return whether the model is at full health."""
-        return self.wounds == self.base_wounds
+        return self.wounds == self._base_wounds
+
+    @property
+    def health_percent(self) -> float:
+        """Return the health percent of the model."""
+        return (self.wounds / self._base_wounds) * 100
 
     def add_wargear(self, wargear: Wargear) -> None:
         """Add wargear to the model."""
@@ -163,6 +171,25 @@ class Model:
 
     def collides_with(self, other: "Model") -> bool:
         return self.model_base.collides_with(other.model_base)
+
+    def return_closest_model_in_unit(self, unit: 'Unit') -> 'Model':
+        closest_model = None
+        closest_dist = float('inf')
+        for model in unit.models:
+            dist = self.edge_to_edge_distance(model)
+            if dist < closest_dist:
+                closest_dist = dist
+                closest_model = model
+        return closest_model, closest_dist
+
+    def find_targets_in_range(self, game_map: 'Map', wargear_item: Optional[Wargear] = None, wargear_profile: Optional[WargearProfile] = None) -> List['Unit']:
+        targets = []
+        enemy_units = game_map.get_enemy_units(self.parent_unit)
+        for enemy_unit in enemy_units:
+            closest_model, closest_dist = self.return_closest_model_in_unit(enemy_unit)
+            if closest_model and closest_dist < self.maximum_range(wargear_item, wargear_profile):
+                targets.append(enemy_unit)
+        return targets
 
     ################
     ### Properties
@@ -263,15 +290,24 @@ class Model:
     ################
     ### Battle Related
     ################
-    def maximum_range(self) -> int:
+    def maximum_range(self, wargear_item: Optional[Wargear] = None, wargear_profile: Optional[WargearProfile] = None) -> int:
         max_range = 0
-        print(f"DEBUG - Model {self.name} wargear type: {type(self.wargear)}")
-        print(f"DEBUG - Model {self.name} wargear contents: {self.wargear}")
-        for wargear in self.wargear:
-            print(f"DEBUG - Wargear item type: {type(wargear)}")
-            if wargear.is_ranged():
-                max_range = max(max_range, wargear.maximum_range())
+        if wargear_profile:
+            return wargear_profile.range.max
+        elif wargear_item:
+            if wargear_item.is_ranged():
+                max_range = max(max_range, wargear_item.maximum_range())
+        else:
+            for wargear in self.wargear:
+                if wargear.is_ranged():
+                    max_range = max(max_range, wargear.maximum_range())
         return max_range
+
+    def ranged_attack(self, target: 'Unit', wargear_profile: WargearProfile) -> None:
+        pass
+
+    def melee_attack(self, target: 'Unit', wargear_profile: WargearProfile) -> None:
+        pass
 
     ################
     ### String Representation

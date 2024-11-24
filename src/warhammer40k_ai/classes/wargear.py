@@ -258,10 +258,13 @@ class Wargear:
     def is_ranged(self) -> bool:
         return self.type.lower() == 'ranged'
 
-    def maximum_range(self) -> int:
+    def maximum_range(self, profile_name: Optional[str] = None) -> int:
         max_range = 0
-        for profile in self.profiles.values():
-            max_range = max(max_range, profile.range.max)
+        if profile_name is None:
+            for profile in self.profiles.values():
+                max_range = max(max_range, profile.range.max)
+        else:
+            max_range = self.profiles[profile_name].range.max
         return max_range
 
     ### Wargear actions
