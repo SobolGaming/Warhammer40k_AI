@@ -244,6 +244,8 @@ class TacticalAgent:
         self.movement_optimizer = optim.Adam(self.movement_policy_net.parameters(), lr=learning_rate)
         self.shooting_policy_net = PolicyNetwork(input_size=self.get_shooting_state_size(), output_size=self.get_shooting_action_size())
         self.shooting_optimizer = optim.Adam(self.shooting_policy_net.parameters(), lr=learning_rate)
+        self.profile_selection_policy_net = PolicyNetwork(input_size=self.get_profile_selection_state_size(), output_size=self.get_profile_selection_action_size())
+        self.profile_selection_optimizer = optim.Adam(self.profile_selection_policy_net.parameters(), lr=learning_rate)
         # Add similar networks for charge and fight phases if desired
 
         # Store rewards and log probabilities for training
@@ -251,6 +253,8 @@ class TacticalAgent:
         self.movement_log_probs = []
         self.shooting_rewards = []
         self.shooting_log_probs = []
+        self.profile_selection_rewards = []
+        self.profile_selection_log_probs = []
         # Add similar buffers for charge and fight phases
 
     def command_phase(self, command: str) -> None:
@@ -399,7 +403,7 @@ class TacticalAgent:
         for idx in range(num_targets):
             action_mask[idx] = 1
         # The target selection probabilities come after the profile selection probabilities
-        masked_probs = action_probs[self.get_profile_selection_action_size():] * action_mask
+        masked_probs = action_probs * action_mask
         masked_probs = masked_probs / masked_probs.sum()
 
         # Create a categorical distribution
@@ -421,14 +425,14 @@ class TacticalAgent:
 
         # Extract state features for profile selection
         state = self.extract_profile_selection_state(model, wargear_item, profiles)
-        action_probs = self.shooting_policy_net(state)
+        action_probs = self.profile_selection_policy_net(state)
 
         # Mask unavailable profiles
         action_mask = torch.zeros(self.get_profile_selection_action_size())
         num_profiles = min(len(profiles), MAX_PROFILES)
         for idx in range(num_profiles):
             action_mask[idx] = 1
-        masked_probs = action_probs[:self.get_profile_selection_action_size()] * action_mask
+        masked_probs = action_probs * action_mask
         masked_probs = masked_probs / masked_probs.sum()
 
         # Create a categorical distribution for profile selection
@@ -436,7 +440,7 @@ class TacticalAgent:
         profile_idx = profile_dist.sample()
 
         # Store log probability
-        self.shooting_log_probs.append(profile_dist.log_prob(profile_idx))
+        self.profile_selection_log_probs.append(profile_dist.log_prob(profile_idx))
 
         return profiles[profile_idx.item()]
 
@@ -489,7 +493,7 @@ class TacticalAgent:
         # If fewer than MAX_TARGETS, pad with zeros
         num_targets = len(targets)
         if num_targets < MAX_TARGETS:
-            padding = [0.0] * ((MAX_TARGETS - num_targets) * 4)  # 4 features per target
+            padding = [0.0] * ((MAX_TARGETS - num_targets) * 5)  # 5 features per target
             features.extend(padding)
 
         # Convert to tensor
@@ -497,24 +501,25 @@ class TacticalAgent:
 
         return state
 
-    def get_shooting_state_size(self) -> int:
-        """Calculate the size of the shooting state vector."""
-        # For target selection:
+    def get_profile_selection_state_size(self) -> int:
+        """Calculate the size of the profile selection state vector."""
         # 4 features for the model (x, y, z, health)
-        # 1 damage potential features for the selected profile per target * MAX_TARGETS
-        # 4 features per target * MAX_TARGETS
-        target_selection_size = 4 + (MAX_TARGETS * 5)
-
-        return target_selection_size
+        # 5 features per profile * MAX_PROFILES
+        return 4 + (MAX_PROFILES * 5)
 
     def get_profile_selection_action_size(self) -> int:
         """Define the number of possible profiles to select from."""
         return MAX_PROFILES
 
+    def get_shooting_state_size(self) -> int:
+        """Calculate the size of the target selection state vector."""
+        # 4 features for the model (x, y, z, health)
+        # 5 features per target (damage potential, x, y, z, health) * MAX_TARGETS
+        return 4 + (MAX_TARGETS * 5)
+
     def get_shooting_action_size(self) -> int:
-        """Define the total number of possible actions (profile selection + target selection)."""
-        # Total action size is the sum of profile selection actions and target selection actions
-        return self.get_profile_selection_action_size() + MAX_TARGETS
+        """Define the number of possible targets to select from."""
+        return MAX_TARGETS
 
     def shooting_phase(self, unit: Unit) -> None:
         """Select targets and resolve shooting attacks for each model in the unit."""
@@ -564,10 +569,12 @@ class TacticalAgent:
                     # Compute the reward (damage inflicted)
                     damage = target_health_before - target_health_after
                     reward = SHOOTING_REWARD_SCALING * damage
+                    self.profile_selection_rewards.append(reward)
                     self.shooting_rewards.append(reward)
                 else:
                     # No targets, negative reward for missed opportunity
                     reward = -1.0 * SHOOTING_REWARD_SCALING
+                    self.profile_selection_rewards.append(reward)
                     self.shooting_rewards.append(reward)
 
         self.game.event_system.publish("shooting_phase_end", unit=unit, game_state=self.game.get_state())
@@ -611,6 +618,7 @@ class TacticalAgent:
     def update_policies(self) -> None:
         self.update_movement_policy()
         self.update_shooting_policy()
+        self.update_profile_selection_policy()
         # Add updates for charge and fight policies if implemented
 
     def update_movement_policy(self) -> None:
@@ -680,6 +688,40 @@ class TacticalAgent:
         # Clear buffers
         self.shooting_rewards.clear()
         self.shooting_log_probs.clear()
+
+    def update_profile_selection_policy(self) -> None:
+        """Update the profile selection policy network."""
+        if not self.profile_selection_rewards or not self.profile_selection_log_probs:
+            print("No rewards or log probabilities to update profile selection policy.")
+            return  # Skip update if there's nothing to learn from
+
+        R = 0
+        policy_loss = []
+        returns = []
+        gamma = 0.99  # Discount factor
+
+        # Calculate discounted rewards
+        for r in self.profile_selection_rewards[::-1]:
+            R = r + gamma * R
+            returns.insert(0, R)
+        returns = torch.tensor(returns)
+        if len(returns) > 1:
+            returns = (returns - returns.mean()) / (returns.std() + 1e-9)
+        else:
+            returns = returns * 0
+
+        for log_prob, R in zip(self.profile_selection_log_probs, returns):
+            policy_loss.append(-log_prob * R)
+
+        # Update the policy network
+        self.profile_selection_optimizer.zero_grad()
+        policy_loss = torch.stack(policy_loss).sum()
+        policy_loss.backward()
+        self.profile_selection_optimizer.step()
+
+        # Clear buffers
+        self.profile_selection_rewards.clear()
+        self.profile_selection_log_probs.clear()
 
 
 class LowLevelAgent:
