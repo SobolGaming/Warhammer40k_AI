@@ -1,4 +1,3 @@
-import random
 from typing import List, Tuple
 from warhammer40k_ai.classes.game import Game
 from warhammer40k_ai.classes.map import Objective, ObjectivePoint
@@ -6,11 +5,12 @@ from warhammer40k_ai.classes.unit import Unit, MovementAction
 from warhammer40k_ai.classes.model import Model
 from warhammer40k_ai.classes.wargear import Wargear, WargearProfile
 from warhammer40k_ai.classes.player import Player
+from warhammer40k_ai.utility.constants import TOTAL_ROUNDS
+from warhammer40k_ai.utility.calcs import get_dist
+from warhammer40k_ai.utility.dice import DiceCollection
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from warhammer40k_ai.utility.constants import TOTAL_ROUNDS
-from warhammer40k_ai.utility.calcs import get_dist
 
 # Constants
 MAX_TARGETS = 25  # Maximum number of targets to consider
@@ -440,36 +440,6 @@ class TacticalAgent:
 
         return profiles[profile_idx.item()]
 
-    def extract_profile_selection_state(self, model: Model, wargear_item: Wargear, profiles: List[WargearProfile]) -> torch.Tensor:
-        """Extract state features for selecting a weapon profile."""
-        features = []
-
-        # Model's position and health
-        model_pos = model.get_position()
-        features.extend([model_pos[0], model_pos[1], model_pos[2]])
-        features.append(model.health_percent)
-
-        # Characteristics of each profile
-        for profile in profiles[:MAX_PROFILES]:
-            features.append(profile.range)
-            features.append(profile.attacks)
-            features.append(profile.strength)
-            features.append(profile.AP)
-            features.append(profile.damage)
-
-        # If fewer than MAX_PROFILES, pad with zeros
-        num_profiles = len(profiles)
-        if num_profiles < MAX_PROFILES:
-            padding = [0.0] * ((MAX_PROFILES - num_profiles) * 5)  # 5 features per profile
-            features.extend(padding)
-
-        # Add other relevant features if necessary
-
-        # Convert to tensor
-        state = torch.tensor([features], dtype=torch.float32)  # Batch dimension
-
-        return state
-
     def extract_profile_selection_state(self, model: Model, wargear_item, profiles: List[WargearProfile]) -> torch.Tensor:
         """Extract state features for selecting a weapon profile."""
         features = []
@@ -481,11 +451,11 @@ class TacticalAgent:
 
         # Characteristics of each profile
         for profile in profiles[:MAX_PROFILES]:
-            features.append(profile.range)
-            features.append(profile.attacks)
-            features.append(profile.strength)
-            features.append(profile.AP)
-            features.append(profile.damage)
+            features.append(profile.range.max)
+            features.append(profile.attacks.stat_average())
+            features.append(profile.strength.stat_average() if type(profile.strength) == DiceCollection else profile.strength)
+            features.append(profile.ap.stat_average() if type(profile.ap) == DiceCollection else profile.ap)
+            features.append(profile.damage.stat_average() if type(profile.damage) == DiceCollection else profile.damage)
 
         # If fewer than MAX_PROFILES, pad with zeros
         num_profiles = len(profiles)
@@ -509,15 +479,9 @@ class TacticalAgent:
         features.extend([model_pos[0], model_pos[1], model_pos[2]])
         features.append(model.health_percent)
 
-        # Weapon/profile characteristics
-        features.append(profile.range.max)
-        features.append(profile.attacks)
-        features.append(profile.strength)
-        features.append(profile.ap)
-        features.append(profile.damage)
-
         # Enemy units' positions and health
         for enemy in targets[:MAX_TARGETS]:
+            features.append(profile.get_damage_potential(enemy))
             enemy_pos = enemy.get_position()
             features.extend([enemy_pos[0], enemy_pos[1], enemy_pos[2]])
             features.append(enemy.health_percent)
@@ -535,21 +499,13 @@ class TacticalAgent:
 
     def get_shooting_state_size(self) -> int:
         """Calculate the size of the shooting state vector."""
-        # For profile selection:
-        # 4 features for the model (x, y, z, health)
-        # 5 features per profile * MAX_PROFILES
-
         # For target selection:
         # 4 features for the model (x, y, z, health)
-        # 5 features for the selected profile
+        # 1 damage potential features for the selected profile per target * MAX_TARGETS
         # 4 features per target * MAX_TARGETS
+        target_selection_size = 4 + (MAX_TARGETS * 5)
 
-        # We need to ensure the input size matches the largest possible input (either profile selection or target selection)
-        profile_selection_size = 4 + (MAX_PROFILES * 5)
-        target_selection_size = 4 + 5 + (MAX_TARGETS * 4)
-
-        # Return the maximum of the two
-        return max(profile_selection_size, target_selection_size)
+        return target_selection_size
 
     def get_profile_selection_action_size(self) -> int:
         """Define the number of possible profiles to select from."""
