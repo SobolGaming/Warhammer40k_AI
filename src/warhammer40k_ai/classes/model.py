@@ -2,10 +2,10 @@ from typing import List, Dict, Optional, Tuple
 from .wargear import Wargear, WargearProfile
 from .ability import Ability
 from .status_effects import UnitStatsModifier
+from ..utility.dice import get_roll
 from ..utility.model_base import Base
 import uuid
 import logging
-from ..utility.calcs import get_dist
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -271,6 +271,9 @@ class Model:
     def objective_control(self, value: int) -> None:
         self._objective_control = value
 
+    ################
+    ### Location
+    ################
     @property
     def x(self) -> float:
         return self.model_base.x
@@ -304,10 +307,40 @@ class Model:
         return max_range
 
     def ranged_attack(self, target: 'Unit', wargear_profile: WargearProfile) -> None:
-        pass
+        self.attack(target, wargear_profile)
 
     def melee_attack(self, target: 'Unit', wargear_profile: WargearProfile) -> None:
-        pass
+        self.attack(target, wargear_profile)
+
+    def attack(self, target: 'Unit', wargear_profile: WargearProfile) -> None:
+        assert target is not None
+        assert wargear_profile is not None
+        damage = wargear_profile.attack(target, self)
+        print(f"{self.name} attacks {target.name} with {wargear_profile.name} for {damage} damage")
+        target.take_damage(damage)
+
+    def passed_saving_throw(self, attack_instance: Dict, attacking_ap: int = 0) -> bool:
+        save_value = self.save - attacking_ap
+        inv_save, inv_save_condition = self.inv_save
+        if inv_save:
+            if not inv_save_condition:
+                save_value = min(save_value, inv_save)
+            elif inv_save_condition(attack_instance):
+                save_value = max(save_value, inv_save)
+            else:
+                raise Exception(f"Invalid inv_save_condition: {inv_save_condition}")
+
+        dice_roll = get_roll("D6")
+        if dice_roll == 1:  # unmodified dice roll of 1 is always a fail
+            return False
+
+        dice_modifier = 0  # TODO - handle positive & negative modifiers
+        dice_modifier = min(dice_modifier, 1)  # modifications are capped at +1
+        return (dice_roll + dice_modifier) >= save_value
+
+
+    def failed_saving_throw(self, attack_instance: Dict) -> bool:
+        return not self.passed_saving_throw(attack_instance)
 
     ################
     ### String Representation

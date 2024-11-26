@@ -443,7 +443,7 @@ class Unit:
                 - The first damaged model found, or None if all models are at full health
         """
         for model in self.models:
-            if not model.is_max_health():
+            if not model.is_max_health:
                 return False, model
         return True, None
 
@@ -521,6 +521,9 @@ class Unit:
     @property
     def is_imperium_primarch(self) -> bool:
         return "Imperium" in self.keywords and "Primarch" in self.keywords
+
+    def has_keyword(self, keyword: str) -> bool:
+        return keyword.lower() in [keyword.lower() for keyword in self.keywords]
 
     @property
     def has_circular_base(self) -> bool:

@@ -2,7 +2,7 @@ from typing import Union, Dict, List, Optional
 from enum import Enum, auto
 from collections import namedtuple
 import re
-from warhammer40k_ai.utility.dice import DiceCollection
+from warhammer40k_ai.utility.dice import DiceCollection, get_roll
 from warhammer40k_ai.utility.range import Range
 from warhammer40k_ai.utility.count import Count
 
@@ -112,6 +112,158 @@ class WargearProfile:
         # Return the estimated damage potential
         return expected_damage
 
+    def attack(self, target: 'Unit', attacker: 'Model') -> None:
+        wound_instances = []
+        hit_instances = []
+        num_attacks = 0
+
+        if isinstance(self.attacks, Count):
+            num_attacks = self.attacks.resolve()
+        else:
+            num_attacks = self.attacks or 0
+
+        closest_target, closest_dist = attacker.return_closest_model_in_unit(target)
+        if closest_dist <= (self.range.max / 2) and self.is_rapid_fire() > 0:
+            print(f"Rapid fire: +{self.is_rapid_fire()} attacks")
+            num_attacks = self.is_rapid_fire()
+
+        if self.is_blast():
+            target_model_count = len(target.models)
+            num_attacks_modifier = int(target_model_count / 5)
+            print(f"Blast: +{num_attacks_modifier} attacks")
+            num_attacks += num_attacks_modifier
+
+        for _ in range(num_attacks):
+            print(f"Attack {_ + 1} of {num_attacks}")
+            attack_instance = {
+                'crit_hit': False,
+                'crit_wound': False,
+                'mortal_wound': False,
+                'below_half_distanct': closest_dist <= (self.range.max / 2),
+                'damage': 0
+            }
+            # check if we hit
+            if self.hit_target(target, attacker, attack_instance):
+                hit_instances.append(attack_instance)
+            if hasattr(attack_instance, 'sustained_hit'):
+                for _ in range(attack_instance['sustained_hit']):
+                    hit_instances.append(attack_instance)
+
+        for _, hit_instance in enumerate(hit_instances):
+            # check if we wound
+            print(f"Wound Evaluation: {_ + 1} of {len(hit_instances)}")
+            if self.wound_target(target, attacker, hit_instance):
+                wound_instances.append(hit_instance)
+
+        for _, attack_instance in enumerate(wound_instances):
+            # Allocate damage instances to the target unit
+            target_model = self.opponent_wound_allocation(target)
+            if attack_instance['mortal_wound'] or target_model.failed_saving_throw(attack_instance):
+                dmg_value = self.damage_target(target_model, attack_instance)
+                target_model.take_damage(dmg_value)
+        return
+
+    def hit_target(self, target: 'Unit', attacker: 'Model', attack_instance: Dict) -> bool:
+        # TODO - handle cover
+        # TODO - handle stealth and other keyword on target unit
+        # TODO - handle positive skill modifiers on shooter
+
+        if self.is_torrent():
+            print("\tTorrent: always hits")
+            return True
+
+        dice_roll = get_roll("D6")
+        if dice_roll == 1:  # unmodified dice roll of 1 is always a miss
+            print("\tunmodified dice roll of 1 is always a miss")
+            return False
+        elif dice_roll == 6:  # unmodified dice roll of 6 is always a hit
+            print("\tunmodified dice roll of 6 is a crit hit")
+            attack_instance['crit_hit'] = True
+            if self.is_lethal_hits():
+                print("\t\tLethal hits: crit hit is lethal")
+                attack_instance['lethal_hit'] = True
+            if self.is_sustained_hits() > 0:
+                print(f"\t\tSustained hits: +{self.is_sustained_hits()} hits")
+                attack_instance['sustained_hit'] = self.is_sustained_hits()
+            return True
+
+        dice_modifier = 0
+        if self.is_heavy() and attacker.parent_unit.round_state.remained_stationary_this_round:
+            print("\tHeavy: +1 to hit modifier since unit remained stationary this round")
+            dice_modifier += 1
+        dice_modifier = min(max(dice_modifier, -1), 1)  # modifications are capped between -1 and 1
+        print(f"\t\tSkill: {self.skill}, dice_modifier: {dice_modifier}, dice_roll: {dice_roll} -> {self.skill > 0 and dice_roll >= (self.skill + dice_modifier)}")
+        return self.skill > 0 and dice_roll >= (self.skill + dice_modifier)
+
+    def wound_target(self, target: 'Unit', attacker: 'Model', attack_instance: Dict) -> bool:
+        if hasattr(attack_instance, 'lethal_hit') and attack_instance['lethal_hit']:
+            print("\tLethal hit: always wounds")
+            return True
+
+        target_toughness = target.toughness
+        strength = self.strength
+        dice_roll = get_roll("D6")
+
+        if self.is_twin_linked():
+            # TODO - you can re-roll the wound roll
+            pass
+
+        if dice_roll == 1:  # unmodified dice roll of 1 is always a miss
+            print("\t\tunmodified dice roll of 1 is always a miss")
+            return False
+        elif dice_roll == 6:  # unmodified dice roll of 6 is always a hit
+            print("\t\tunmodified dice roll of 6 is a crit wound")
+            attack_instance['crit_wound'] = True
+            if self.is_devastating_wounds():
+                print("\t\tDevastating wounds: crit wound is mortal")
+                attack_instance['mortal_wound'] = True
+            return True
+
+        anti_keyword, anti_value = self.is_anti()
+        if anti_keyword and target.has_keyword(anti_keyword):
+            if dice_roll >= anti_value:
+                print(f"\t\tAnti-{anti_keyword}: +{anti_value} to wound modifier")
+                attack_instance['crit_wound'] = True
+                if self.is_devastating_wounds():
+                    print("\t\t\tDevastating wounds: crit wound is mortal")
+                    attack_instance['mortal_wound'] = True
+                return True
+
+        dice_modifier = 0
+        # TODO - handle positive and negative modifiers for wounding
+        dice_modifier = min(max(dice_modifier, -1), 1)  # modifications are capped between -1 and 1
+        dice_roll += dice_modifier
+
+        if strength >= (target_toughness * 2):
+            print(f"\t\tStrength: {strength}, Toughness: {target_toughness}, dice_roll: {dice_roll} -> {dice_roll >= 2}")
+            return dice_roll >= 2
+        elif strength > target_toughness:
+            print(f"\t\tStrength: {strength}, Toughness: {target_toughness}, dice_roll: {dice_roll} -> {dice_roll >= 3}")
+            return dice_roll >= 3
+        elif strength == target_toughness:
+            print(f"\t\tStrength: {strength}, Toughness: {target_toughness}, dice_roll: {dice_roll} -> {dice_roll >= 4}")
+            return dice_roll >= 4
+        elif strength <= (target_toughness / 2):
+            print(f"\t\tStrength: {strength}, Toughness: {target_toughness}, dice_roll: {dice_roll} -> {dice_roll >= 5}")
+        else:
+            print(f"\t\tStrength: {strength}, Toughness: {target_toughness}, dice_roll: {dice_roll} -> {dice_roll >= 6}")
+            return dice_roll >= 6
+        return False
+
+    def opponent_wound_allocation(self, target: 'Unit') -> 'Model':
+        _, damaged_model = target.is_max_health()
+        if damaged_model:
+            return damaged_model
+        else:
+            # TODO - implement AI selection of target model
+            return target.models[0]
+
+    def damage_target(self, target: 'Unit', attack_instance: Dict) -> None:
+        damage_value = self.damage.roll() if isinstance(self.damage, DiceCollection) else self.damage
+        if self.is_melta() and attack_instance['below_half_distance']:
+            damage_value += self.is_melta()
+        return damage_value
+
     ###########################################################################
     ### Wargear profile type checks
     ###########################################################################
@@ -142,6 +294,12 @@ class WargearProfile:
     def is_torrent(self) -> bool:
         return 'torrent' in [keyword.lower() for keyword in self.get_keywords()]
 
+    def is_lance(self) -> bool:
+        return 'lance' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def is_twin_linked(self) -> bool:
+        return 'twin-linked' in [keyword.lower() for keyword in self.get_keywords()]
+
     def is_devastating_wounds(self) -> bool:
         return 'devastating wounds' in [keyword.lower() for keyword in self.get_keywords()]
 
@@ -161,8 +319,11 @@ class WargearProfile:
         for keyword in self.get_keywords():
             if keyword.lower().startswith('sustained hits'):
                 parts = keyword.split()
-                if len(parts) > 2 and parts[2].isdigit():
-                    return int(parts[2])
+                if len(parts) > 2:
+                    if parts[2].isdigit():
+                        return int(parts[2])
+                    else:
+                        raise Exception(f"Invalid sustained hits value: {keyword}")
                 return 1  # Default to 1 if no number is specified
         return 0
 
@@ -170,18 +331,21 @@ class WargearProfile:
         for keyword in self.get_keywords():
             if keyword.lower().startswith('rapid fire'):
                 parts = keyword.split()
-                if len(parts) > 2 and parts[2].isdigit():
-                    return int(parts[2])
+                if len(parts) > 2:
+                    if parts[2].isdigit():
+                        return int(parts[2])
+                    else:
+                        raise Exception(f"Invalid rapid fire value: {keyword}")
                 return 1  # Default to 1 if no number is specified
         return 0
 
-    def is_melta(self) -> bool:
+    def is_melta(self) -> int:
         for keyword in self.get_keywords():
             if keyword.lower().startswith('melta'):
                 parts = keyword.split()
                 assert len(parts) == 2
-                return parts[2]
-        return "0"
+                return int(parts[2])
+        return 0
 
     def is_anti(self):
         for keyword in self.get_keywords():
