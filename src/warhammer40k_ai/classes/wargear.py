@@ -159,8 +159,13 @@ class WargearProfile:
             # Allocate damage instances to the target unit
             target_model = self.opponent_wound_allocation(target)
             if attack_instance['mortal_wound'] or target_model.failed_saving_throw(attack_instance):
-                dmg_value = self.damage_target(target_model, attack_instance)
-                target_model.take_damage(dmg_value)
+                dmg_value = self.damage_target(target_model, attacker, attack_instance)
+                excess_damage = target_model.take_damage(dmg_value, attack_instance['mortal_wound'])
+                print(f"{target_model.name} took {dmg_value}{' mortal' if attack_instance['mortal_wound'] else ''} damage")
+                while excess_damage > 0 and target.is_alive():
+                    target_model = self.opponent_wound_allocation(target)
+                    excess_damage = target_model.take_damage(excess_damage, attack_instance['mortal_wound'])
+                    print(f"{target_model.name} took {excess_damage}{' mortal' if attack_instance['mortal_wound'] else ''} damage")
         return
 
     def hit_target(self, target: 'Unit', attacker: 'Model', attack_instance: Dict) -> bool:
@@ -258,7 +263,7 @@ class WargearProfile:
             # TODO - implement AI selection of target model
             return target.models[0]
 
-    def damage_target(self, target: 'Unit', attack_instance: Dict) -> None:
+    def damage_target(self, target: 'Unit', attacker: 'Model', attack_instance: Dict) -> None:
         damage_value = self.damage.roll() if isinstance(self.damage, DiceCollection) else self.damage
         if self.is_melta() and attack_instance['below_half_distance']:
             damage_value += self.is_melta()

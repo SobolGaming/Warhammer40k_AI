@@ -124,15 +124,16 @@ class Model:
     ################
     ### Modifiers
     ################
-    def take_damage(self, amount: int = 0, is_mortal: bool = False):
+    def take_damage(self, amount: int = 0, is_mortal: bool = False) -> int:
         self.wounds -= amount
         logger.info(f"{self.name} takes {amount} damage. It is {'Alive' if self.is_alive else 'Dead'}")
+        excess_damage = 0
         if not self.is_alive:
             self.die()
             if is_mortal and abs(self.wounds) > 0:
-                #overage = abs(self.wounds)
-                raise Exception("IMPLEMENT MORTAL WOUND DAMAGE OVERAGE HANDLING")
+                excess_damage = abs(self.wounds)
         self._check_damaged_profile()
+        return excess_damage
 
     def die(self) -> None:
         logger.info(f"{self.name} [{self.id}] has Died!!!")
@@ -315,9 +316,7 @@ class Model:
     def attack(self, target: 'Unit', wargear_profile: WargearProfile) -> None:
         assert target is not None
         assert wargear_profile is not None
-        damage = wargear_profile.attack(target, self)
-        print(f"{self.name} attacks {target.name} with {wargear_profile.name} for {damage} damage")
-        target.take_damage(damage)
+        wargear_profile.attack(target, self)
 
     def passed_saving_throw(self, attack_instance: Dict, attacking_ap: int = 0) -> bool:
         save_value = self.save - attacking_ap
