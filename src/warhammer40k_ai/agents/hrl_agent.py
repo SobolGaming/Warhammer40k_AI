@@ -1,4 +1,9 @@
 from typing import List, Tuple
+import os
+import torch
+import torch.nn as nn
+import torch.optim as optim
+
 from warhammer40k_ai.classes.game import Game
 from warhammer40k_ai.classes.map import Objective, ObjectivePoint
 from warhammer40k_ai.classes.unit import Unit, MovementAction
@@ -8,9 +13,6 @@ from warhammer40k_ai.classes.player import Player
 from warhammer40k_ai.utility.constants import TOTAL_ROUNDS
 from warhammer40k_ai.utility.calcs import get_dist
 from warhammer40k_ai.utility.dice import DiceCollection
-import torch
-import torch.nn as nn
-import torch.optim as optim
 
 # Constants
 MAX_TARGETS = 25  # Maximum number of targets to consider
@@ -77,6 +79,7 @@ class HighLevelAgent:
         # Store rewards and log probabilities for training
         self.rewards = []
         self.log_probs = []
+        self.episode = 0  # Added episode counter for checkpointing
 
     def extract_state_features(self) -> torch.Tensor:
         """Extract features from the game state for the policy network."""
@@ -182,13 +185,11 @@ class HighLevelAgent:
         # Reward for destroying an opponent unit
         if len(current_state.opponent_units) < len(previous_state.opponent_units):
             for unit in [unit for unit in previous_state.opponent.army.units if unit not in current_state.opponent.army.units]:
-                #unit_value = unit.get_unit_cost() / 10.0
                 reward += DESTROY_UNIT_REWARD
 
         # Penalty for losing a unit
         if len(current_state.player_units) < len(previous_state.player_units):
             for unit in [unit for unit in previous_state.player.army.units if unit not in current_state.player.army.units]:
-                #unit_value = unit.get_unit_cost() / 10.0
                 reward -= LOSE_UNIT_PENALTY
 
         # Additional rewards or penalties based on game state
@@ -212,11 +213,11 @@ class HighLevelAgent:
             returns.insert(0, R)
 
         returns = torch.tensor(returns)
-        # Check the length before normalizing
+        # Normalize returns if more than one value exists
         if len(returns) > 1:
             returns = (returns - returns.mean()) / (returns.std() + 1e-9)
         else:
-            returns = returns * 0  # Or keep as is without normalization
+            returns = returns * 0
 
         # Calculate policy loss
         for log_prob, R in zip(self.log_probs, returns):
@@ -231,8 +232,42 @@ class HighLevelAgent:
         # Clear rewards and log probabilities for the next episode
         self.rewards.clear()
         self.log_probs.clear()
+        self.episode += 1
 
+    # --- Checkpointing Functionality for HighLevelAgent ---
+    def save_checkpoint(self, filepath: str = 'hla_checkpoint.pth') -> None:
+        """
+        Save the current state of the HighLevelAgent to a checkpoint file.
+        This includes the policy network, optimizer, rewards, log probabilities, and episode counter.
+        """
+        checkpoint = {
+            'policy_net_state_dict': self.policy_net.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'episode': self.episode,
+            'rewards': self.rewards,
+            'log_probs': self.log_probs
+        }
+        torch.save(checkpoint, filepath)
+        print(f"HighLevelAgent checkpoint saved to {filepath}")
 
+    def load_checkpoint(self, filepath: str = 'hla_checkpoint.pth') -> None:
+        """
+        Load the HighLevelAgent state from a checkpoint file, if available.
+        """
+        if os.path.exists(filepath):
+            checkpoint = torch.load(filepath)
+            self.policy_net.load_state_dict(checkpoint.get('policy_net_state_dict', {}))
+            self.optimizer.load_state_dict(checkpoint.get('optimizer_state_dict', {}))
+            self.episode = checkpoint.get('episode', 0)
+            self.rewards = checkpoint.get('rewards', [])
+            self.log_probs = checkpoint.get('log_probs', [])
+            print(f"HighLevelAgent checkpoint loaded from {filepath}")
+        else:
+            print("No checkpoint found for HighLevelAgent. Starting with fresh state.")
+
+###############################################################################
+# TacticalAgent
+###############################################################################
 class TacticalAgent:
     """Tactical Layer: Handles per-phase unit actions."""
     def __init__(self, game: Game, player: Player, learning_rate=0.01) -> None:
@@ -579,7 +614,6 @@ class TacticalAgent:
 
         self.game.event_system.publish("shooting_phase_end", unit=unit, game_state=self.game.get_state())
 
-
     ###########################################################################
     # Charge Phase
     ###########################################################################
@@ -589,11 +623,12 @@ class TacticalAgent:
             return
 
         self.game.event_system.publish("charge_phase_start", unit=unit, game_state=self.game.get_state())
-        #targets = self.game.find_enemies_in_charge_range(unit)
-        #target = random.choice(targets)
-        #if target:
-        #    print(f"{unit.name} charges {target.name}")
-        #    self.game.charge(unit, target)
+        # Example placeholder for charge logic
+        # targets = self.game.find_enemies_in_charge_range(unit)
+        # target = random.choice(targets)
+        # if target:
+        #     print(f"{unit.name} charges {target.name}")
+        #     self.game.charge(unit, target)
         self.game.event_system.publish("charge_phase_end", unit=unit, game_state=self.game.get_state())
 
     ###########################################################################
@@ -605,11 +640,12 @@ class TacticalAgent:
             return
 
         self.game.event_system.publish("fight_phase_start", unit=unit, game_state=self.game.get_state())
-        #targets = self.game.find_enemies_in_melee_range(unit)
-        #target = random.choice(targets)
-        #if target:
-        #    print(f"{unit.name} fights {target.name}")
-        #    self.game.fight(unit, target)
+        # Example placeholder for fight logic
+        # targets = self.game.find_enemies_in_melee_range(unit)
+        # target = random.choice(targets)
+        # if target:
+        #     print(f"{unit.name} fights {target.name}")
+        #     self.game.fight(unit, target)
         self.game.event_system.publish("fight_phase_end", unit=unit, game_state=self.game.get_state())
 
     ###########################################################################
