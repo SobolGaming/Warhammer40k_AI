@@ -79,7 +79,7 @@ class HighLevelAgent:
         # Store rewards and log probabilities for training
         self.rewards = []
         self.log_probs = []
-        self.episode = 0  # Added episode counter for checkpointing
+        self.episode = 0  # Episode counter for checkpointing
 
     def extract_state_features(self) -> torch.Tensor:
         """Extract features from the game state for the policy network."""
@@ -130,7 +130,6 @@ class HighLevelAgent:
 
         # Convert features to tensor
         state = torch.tensor(features, dtype=torch.float32)
-
         return state
 
     def choose_objective_and_command(self) -> Tuple[Objective, str]:
@@ -234,11 +233,10 @@ class HighLevelAgent:
         self.log_probs.clear()
         self.episode += 1
 
-    # --- Checkpointing Functionality for HighLevelAgent ---
+    # --- Checkpointing for HighLevelAgent ---
     def save_checkpoint(self, filepath: str = 'hla_checkpoint.pth') -> None:
         """
         Save the current state of the HighLevelAgent to a checkpoint file.
-        This includes the policy network, optimizer, rewards, log probabilities, and episode counter.
         """
         checkpoint = {
             'policy_net_state_dict': self.policy_net.state_dict(),
@@ -264,6 +262,7 @@ class HighLevelAgent:
             print(f"HighLevelAgent checkpoint loaded from {filepath}")
         else:
             print("No checkpoint found for HighLevelAgent. Starting with fresh state.")
+
 
 ###############################################################################
 # TacticalAgent
@@ -308,7 +307,6 @@ class TacticalAgent:
         if not unit.deployed or not unit.is_alive():
             return
 
-        # Determine the unit's engagement state
         state = unit.get_engagement_state(self.game.map)
         available_actions = unit.get_available_move_actions(state)
 
@@ -385,21 +383,14 @@ class TacticalAgent:
 
         # Store log probability
         self.movement_log_probs.append(action_dist.log_prob(action_idx))
-
         return action_idx.item()
 
     def extract_movement_state_features(self, unit: Unit, objective: Objective) -> torch.Tensor:
         features = []
-
-        # Unit's current position
         unit_pos = unit.get_position()
         features.extend([unit_pos[0], unit_pos[1], unit_pos[2]])
-
-        # Objective's position
         obj_pos = (objective.location.x, objective.location.y, objective.location.z)
         features.extend([obj_pos[0], obj_pos[1], obj_pos[2]])
-
-        # Distance to objective
         dx = obj_pos[0] - unit_pos[0]
         dy = obj_pos[1] - unit_pos[1]
         dz = obj_pos[2] - unit_pos[2]
@@ -447,18 +438,13 @@ class TacticalAgent:
 
         # Store log probability
         self.shooting_log_probs.append(action_dist.log_prob(action_idx))
-
         return action_idx.item()
 
     def choose_weapon_profile(self, model: Model, wargear_item: Wargear) -> WargearProfile:
         """Choose a weapon profile to use from the wargear item."""
         profiles = list(wargear_item.profiles.values())
-
         if len(profiles) == 1:
-            # Only one profile available
             return profiles[0]
-
-        # Extract state features for profile selection
         state = self.extract_profile_selection_state(model, wargear_item, profiles)
         action_probs = self.profile_selection_policy_net(state)
 
@@ -476,30 +462,23 @@ class TacticalAgent:
 
         # Store log probability
         self.profile_selection_log_probs.append(profile_dist.log_prob(profile_idx))
-
         return profiles[profile_idx.item()]
 
     def extract_profile_selection_state(self, model: Model, wargear_item, profiles: List[WargearProfile]) -> torch.Tensor:
         """Extract state features for selecting a weapon profile."""
         features = []
-
-        # Model's position and health
         model_pos = model.get_location()
         features.extend([model_pos[0], model_pos[1], model_pos[2]])
         features.append(model.health_percent)
-
-        # Characteristics of each profile
         for profile in profiles[:MAX_PROFILES]:
             features.append(profile.range.max)
             features.append(profile.attacks.stat_average())
             features.append(profile.strength.stat_average() if type(profile.strength) == DiceCollection else profile.strength)
             features.append(profile.ap.stat_average() if type(profile.ap) == DiceCollection else profile.ap)
             features.append(profile.damage.stat_average() if type(profile.damage) == DiceCollection else profile.damage)
-
-        # If fewer than MAX_PROFILES, pad with zeros
         num_profiles = len(profiles)
         if num_profiles < MAX_PROFILES:
-            padding = [0.0] * ((MAX_PROFILES - num_profiles) * 5)  # 5 features per profile
+            padding = [0.0] * ((MAX_PROFILES - num_profiles) * 5)
             features.extend(padding)
 
         # Add other relevant features if necessary
@@ -512,23 +491,17 @@ class TacticalAgent:
     def extract_shooting_state_features(self, model: Model, profile: WargearProfile, targets: List[Unit]) -> torch.Tensor:
         """Extract state features for shooting decision."""
         features = []
-
-        # Model's position and health
         model_pos = model.get_location()
         features.extend([model_pos[0], model_pos[1], model_pos[2]])
         features.append(model.health_percent)
-
-        # Enemy units' positions and health
         for enemy in targets[:MAX_TARGETS]:
             features.append(profile.get_damage_potential(enemy))
             enemy_pos = enemy.get_position()
             features.extend([enemy_pos[0], enemy_pos[1], enemy_pos[2]])
             features.append(enemy.health_percent)
-
-        # If fewer than MAX_TARGETS, pad with zeros
         num_targets = len(targets)
         if num_targets < MAX_TARGETS:
-            padding = [0.0] * ((MAX_TARGETS - num_targets) * 5)  # 5 features per target
+            padding = [0.0] * ((MAX_TARGETS - num_targets) * 5)
             features.extend(padding)
 
         # Convert to tensor
@@ -562,7 +535,6 @@ class TacticalAgent:
             return
 
         self.game.event_system.publish("shooting_phase_start", unit=unit, game_state=self.game.get_state())
-
         if unit.round_state.advanced_this_round:
             print(f"{unit.name} cannot shoot after advancing.")
             return
@@ -570,22 +542,15 @@ class TacticalAgent:
             print(f"{unit.name} cannot shoot after falling back.")
             return
 
-        # Loop over each model in the unit
         for model in unit.models:
             if not model.is_alive:
                 continue
-
-            # For each wargear (weapon) the model has
             for wargear_item in model.wargear:
                 # Decide which profile to use if the weapon has multiple profiles
                 selected_profile = self.choose_weapon_profile(model, wargear_item)
-                
                 if selected_profile is None:
-                    continue  # No valid profile selected
-
-                # Find targets in range for this weapon/profile
+                    continue
                 targets = model.find_targets_in_range(self.game.map, wargear_profile=selected_profile)
-
                 if targets:
                     # Agent decides on the target
                     target_idx = self.choose_shooting_target(model, selected_profile, targets)
@@ -607,7 +572,6 @@ class TacticalAgent:
                     self.profile_selection_rewards.append(reward)
                     self.shooting_rewards.append(reward)
                 else:
-                    # No targets, negative reward for missed opportunity
                     reward = -1.0 * SHOOTING_REWARD_SCALING
                     self.profile_selection_rewards.append(reward)
                     self.shooting_rewards.append(reward)
@@ -658,17 +622,15 @@ class TacticalAgent:
         # Add updates for charge and fight policies if implemented
 
     def update_movement_policy(self) -> None:
-        """Update the movement policy network."""
         if not self.movement_rewards or not self.movement_log_probs:
             print("No rewards or log probabilities to update Tactical Agent movement policy.")
-            return  # Skip update if there's nothing to learn from
+            return
 
         R = 0
         policy_loss = []
         returns = []
-        gamma = 0.99  # Discount factor
+        gamma = 0.99
 
-        # Calculate discounted rewards
         for r in self.movement_rewards[::-1]:
             R = r + gamma * R
             returns.insert(0, R)
@@ -681,28 +643,24 @@ class TacticalAgent:
         for log_prob, R in zip(self.movement_log_probs, returns):
             policy_loss.append(-log_prob * R)
 
-        # Update the policy network
         self.movement_optimizer.zero_grad()
         policy_loss = torch.stack(policy_loss).sum()
         policy_loss.backward()
         self.movement_optimizer.step()
 
-        # Clear buffers
         self.movement_rewards.clear()
         self.movement_log_probs.clear()
 
     def update_shooting_policy(self) -> None:
-        """Update the shooting policy network."""
         if not self.shooting_rewards or not self.shooting_log_probs:
             print("No rewards or log probabilities to update Tactical Agent shooting policy.")
-            return  # Skip update if there's nothing to learn from
+            return
 
         R = 0
         policy_loss = []
         returns = []
-        gamma = 0.99  # Discount factor
+        gamma = 0.99
 
-        # Calculate discounted rewards
         for r in self.shooting_rewards[::-1]:
             R = r + gamma * R
             returns.insert(0, R)
@@ -715,28 +673,24 @@ class TacticalAgent:
         for log_prob, R in zip(self.shooting_log_probs, returns):
             policy_loss.append(-log_prob * R)
 
-        # Update the policy network
         self.shooting_optimizer.zero_grad()
         policy_loss = torch.stack(policy_loss).sum()
         policy_loss.backward()
         self.shooting_optimizer.step()
 
-        # Clear buffers
         self.shooting_rewards.clear()
         self.shooting_log_probs.clear()
 
     def update_profile_selection_policy(self) -> None:
-        """Update the profile selection policy network."""
         if not self.profile_selection_rewards or not self.profile_selection_log_probs:
             print("No rewards or log probabilities to update profile selection policy.")
-            return  # Skip update if there's nothing to learn from
+            return
 
         R = 0
         policy_loss = []
         returns = []
-        gamma = 0.99  # Discount factor
+        gamma = 0.99
 
-        # Calculate discounted rewards
         for r in self.profile_selection_rewards[::-1]:
             R = r + gamma * R
             returns.insert(0, R)
@@ -749,17 +703,56 @@ class TacticalAgent:
         for log_prob, R in zip(self.profile_selection_log_probs, returns):
             policy_loss.append(-log_prob * R)
 
-        # Update the policy network
         self.profile_selection_optimizer.zero_grad()
         policy_loss = torch.stack(policy_loss).sum()
         policy_loss.backward()
         self.profile_selection_optimizer.step()
 
-        # Clear buffers
         self.profile_selection_rewards.clear()
         self.profile_selection_log_probs.clear()
 
+    # --- Checkpointing for TacticalAgent ---
+    def save_checkpoint(self, filepath: str = 'tactical_agent_checkpoint.pth') -> None:
+        checkpoint = {
+            'movement_policy_net_state_dict': self.movement_policy_net.state_dict(),
+            'movement_optimizer_state_dict': self.movement_optimizer.state_dict(),
+            'shooting_policy_net_state_dict': self.shooting_policy_net.state_dict(),
+            'shooting_optimizer_state_dict': self.shooting_optimizer.state_dict(),
+            'profile_selection_policy_net_state_dict': self.profile_selection_policy_net.state_dict(),
+            'profile_selection_optimizer_state_dict': self.profile_selection_optimizer.state_dict(),
+            'movement_rewards': self.movement_rewards,
+            'movement_log_probs': self.movement_log_probs,
+            'shooting_rewards': self.shooting_rewards,
+            'shooting_log_probs': self.shooting_log_probs,
+            'profile_selection_rewards': self.profile_selection_rewards,
+            'profile_selection_log_probs': self.profile_selection_log_probs
+        }
+        torch.save(checkpoint, filepath)
+        print(f"TacticalAgent checkpoint saved to {filepath}")
 
+    def load_checkpoint(self, filepath: str = 'tactical_agent_checkpoint.pth') -> None:
+        if os.path.exists(filepath):
+            checkpoint = torch.load(filepath)
+            self.movement_policy_net.load_state_dict(checkpoint.get('movement_policy_net_state_dict', {}))
+            self.movement_optimizer.load_state_dict(checkpoint.get('movement_optimizer_state_dict', {}))
+            self.shooting_policy_net.load_state_dict(checkpoint.get('shooting_policy_net_state_dict', {}))
+            self.shooting_optimizer.load_state_dict(checkpoint.get('shooting_optimizer_state_dict', {}))
+            self.profile_selection_policy_net.load_state_dict(checkpoint.get('profile_selection_policy_net_state_dict', {}))
+            self.profile_selection_optimizer.load_state_dict(checkpoint.get('profile_selection_optimizer_state_dict', {}))
+            self.movement_rewards = checkpoint.get('movement_rewards', [])
+            self.movement_log_probs = checkpoint.get('movement_log_probs', [])
+            self.shooting_rewards = checkpoint.get('shooting_rewards', [])
+            self.shooting_log_probs = checkpoint.get('shooting_log_probs', [])
+            self.profile_selection_rewards = checkpoint.get('profile_selection_rewards', [])
+            self.profile_selection_log_probs = checkpoint.get('profile_selection_log_probs', [])
+            print(f"TacticalAgent checkpoint loaded from {filepath}")
+        else:
+            print("No TacticalAgent checkpoint found. Starting with fresh state.")
+
+
+###############################################################################
+# LowLevelAgent
+###############################################################################
 class LowLevelAgent:
     """Operational Layer: Executes precise unit movements and actions."""
     def __init__(self, game: Game, player: Player, learning_rate=0.01) -> None:
@@ -775,7 +768,6 @@ class LowLevelAgent:
         self.log_probs = []
 
     def execute_movement(self, unit: Unit, model_paths: List[List[Tuple[float, float, float]]]) -> None:
-        """Move the unit along the path."""
         success = unit.do_move_action(self.game.map)
         self.game.event_system.publish("movement_phase_end", unit=unit, game_state=self.game.get_state())
         # Check if objective was achieved post-move.
@@ -795,17 +787,15 @@ class LowLevelAgent:
         return 8  # For example, 8 possible movement directions
 
     def update_policy(self) -> None:
-        """Update the movement execution policy network."""
         if not self.rewards or not self.log_probs:
             print("No rewards or log probabilities to update Low Level Agent movement policy.")
-            return  # Skip update if there's nothing to learn from
+            return
 
         R = 0
         policy_loss = []
         returns = []
-        gamma = 0.99  # Discount factor
+        gamma = 0.99
 
-        # Calculate discounted rewards
         for r in self.rewards[::-1]:
             R = r + gamma * R
             returns.insert(0, R)
@@ -818,12 +808,32 @@ class LowLevelAgent:
         for log_prob, R in zip(self.log_probs, returns):
             policy_loss.append(-log_prob * R)
 
-        # Update the policy network
         self.optimizer.zero_grad()
         policy_loss = torch.stack(policy_loss).sum()
         policy_loss.backward()
         self.optimizer.step()
 
-        # Clear buffers
         self.rewards.clear()
         self.log_probs.clear()
+
+    # --- Checkpointing for LowLevelAgent ---
+    def save_checkpoint(self, filepath: str = 'low_level_agent_checkpoint.pth') -> None:
+        checkpoint = {
+            'movement_execution_net_state_dict': self.movement_execution_net.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'rewards': self.rewards,
+            'log_probs': self.log_probs
+        }
+        torch.save(checkpoint, filepath)
+        print(f"LowLevelAgent checkpoint saved to {filepath}")
+
+    def load_checkpoint(self, filepath: str = 'low_level_agent_checkpoint.pth') -> None:
+        if os.path.exists(filepath):
+            checkpoint = torch.load(filepath)
+            self.movement_execution_net.load_state_dict(checkpoint.get('movement_execution_net_state_dict', {}))
+            self.optimizer.load_state_dict(checkpoint.get('optimizer_state_dict', {}))
+            self.rewards = checkpoint.get('rewards', [])
+            self.log_probs = checkpoint.get('log_probs', [])
+            print(f"LowLevelAgent checkpoint loaded from {filepath}")
+        else:
+            print("No LowLevelAgent checkpoint found. Starting with fresh state.")
