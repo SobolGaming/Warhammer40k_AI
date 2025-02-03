@@ -4,6 +4,8 @@ import logging
 from enum import Enum, auto
 from .army import Army
 from .unit import Unit
+from warhammer40k_ai.classes.map import Objective
+from warhammer40k_ai.utility.calcs import get_dist
 
 logging.basicConfig(format="%(asctime)s %(levelname)-8s %(message)s")
 logger = logging.getLogger(__name__)
@@ -45,6 +47,18 @@ class Player:
 
     def add_score(self, points: int) -> None:
         self.score += points
+
+    def compute_average_distance(self, objective: Objective) -> float:
+        """Compute the average distance of the player's alive units to the objective."""
+        distances = []
+        for unit in self.get_army().units:
+            if unit.is_alive() and unit.deployed:
+                unit_pos = unit.get_position()
+                obj_pos = (objective.location.x, objective.location.y, objective.location.z)
+                distances.append(get_dist(unit_pos[0] - obj_pos[0],
+                                        unit_pos[1] - obj_pos[1],
+                                        unit_pos[2] - obj_pos[2]))
+        return sum(distances) / len(distances) if distances else 0.0
 
     def __str__(self):
         return f"Name: {self.name}\nType: {self.type.name}\nCommand Points: {self.command_points}\nArmy: {self.army}"

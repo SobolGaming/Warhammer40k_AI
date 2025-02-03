@@ -335,6 +335,7 @@ class TacticalAgent:
 
         # Compute the reward (positive if unit moved closer)
         reward = MOVEMENT_REWARD_SCALING * (distance_before - distance_after)
+        print(f"Reward: {reward}, Distance before: {distance_before}, Distance after: {distance_after}")
         self.movement_rewards.append(reward)
 
     def calculate_destination(self, unit: Unit, action: MovementAction, objective: Objective) -> Tuple[float, float, float]:

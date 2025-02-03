@@ -88,6 +88,9 @@ def main_game_loop() -> None:
                 objective, command = high_level_agent.choose_objective_and_command()
                 print(f"{current_player.name} chose Objective: {objective.name}, Command: {command}")
 
+                # Record average distance at start of turn for high-level reward calculation
+                avg_distance_before =current_player.compute_average_distance(objective)
+
                 if game.is_command_phase():
                     # Update objective control at the end of each turn
                     for obj in game.map.objectives:
@@ -96,7 +99,6 @@ def main_game_loop() -> None:
                         if obj.check_completion(game):
                             print(f"Objective {obj.name} completed!")
                             current_player.add_score(obj.points)
-                    
                     tactical_agent.command_phase(command)
                 elif game.is_movement_phase():
                     for unit in current_player.army.units:
@@ -112,6 +114,13 @@ def main_game_loop() -> None:
                         tactical_agent.fight_phase(unit)
                 
                 game.next_turn()
+
+                # Compute aggregated reward for the High Level Agent based on distance improvement.
+                avg_distance_after = current_player.compute_average_distance(objective)
+                high_level_reward = (avg_distance_before - avg_distance_after) * 1.0  # scale factor can be tuned
+                print(f"High Level Reward: {high_level_reward} (Avg before: {avg_distance_before}, Avg after: {avg_distance_after})")
+
+                high_level_agent.store_reward(high_level_reward)
                 high_level_agent.update_policy()
                 tactical_agent.update_policies()
                 low_level_agent.update_policy()
