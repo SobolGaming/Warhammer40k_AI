@@ -585,16 +585,29 @@ class TacticalAgent:
     def charge_phase(self, unit: Unit) -> None:
         """Identify nearby targets and charge."""
         if not unit.deployed or not unit.is_alive():
-            return
+            return None
 
         self.game.event_system.publish("charge_phase_start", unit=unit, game_state=self.game.get_state())
-        # Example placeholder for charge logic
-        # targets = self.game.find_enemies_in_charge_range(unit)
-        # target = random.choice(targets)
-        # if target:
-        #     print(f"{unit.name} charges {target.name}")
-        #     self.game.charge(unit, target)
+        enemy_units = self.game.get_enemy_units(unit.player_id)
+        chargeable_targets = [enemy for enemy in enemy_units if unit.can_declare_charge_against(enemy, self.game)]
+        if not chargeable_targets:
+            return None
+
+        # Select target with highest value-to-risk ratio
+        charge_target = max(
+            chargeable_targets,
+            key=lambda target: target.get_threat_value() / (1 + target.get_overwatch_risk(unit, self.game))
+        )
+
+        self.game.event_system.publish("charge_declared", unit=unit, target=charge_target)
+        success = self.game.attempt_charge(unit, charge_target)
+        self.game.event_system.publish("charge_result", unit=unit, target=charge_target, success=success)
         self.game.event_system.publish("charge_phase_end", unit=unit, game_state=self.game.get_state())
+
+        if success:
+            return CHARGE_REWARD_SCALING * charge_target.get_threat_value()
+        else:
+            return -CHARGE_REWARD_SCALING * 2  # Penalize failed charges
 
     ###########################################################################
     # Fight Phase
@@ -602,7 +615,7 @@ class TacticalAgent:
     def fight_phase(self, unit: Unit) -> None:
         """Resolve melee combat."""
         if not unit.deployed or not unit.is_alive():
-            return
+            return None
 
         self.game.event_system.publish("fight_phase_start", unit=unit, game_state=self.game.get_state())
         # Example placeholder for fight logic

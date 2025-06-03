@@ -20,6 +20,7 @@ from enum import Enum, auto
 if TYPE_CHECKING:
     from .map import Map
     from .army import Army
+    from .game import Game
 
 logging.basicConfig(format="%(asctime)s %(levelname)-8s %(message)s")
 logger = logging.getLogger(__name__)
@@ -1160,6 +1161,59 @@ class Unit:
 
     def __hash__(self) -> int:
         return hash(self._id)
+
+    def can_declare_charge_against(self, target_unit: 'Unit', game: 'Game') -> bool:
+        """Check if this unit can declare a charge against the target unit."""
+        if not self.is_alive() or not target_unit.is_alive():
+            return False
+        
+        if self.round_state.advanced_this_round or self.round_state.fell_back_this_round:
+            return False
+        
+        # Check if target is within maximum charge range (2D6 = max 12")
+        distance = game.get_distance_between_units(self, target_unit)
+        if distance > self.max_charge_distance:
+            return False
+        
+        # Check if there's a clear charge path
+        # This is simplified - in real 40k you can charge around terrain
+        if game.map.is_path_blocked(self, target_unit):
+            return False
+        
+        return True
+
+    def get_threat_value(self) -> float:
+        """Calculate the total threat value of this unit."""
+        ranged_threat, melee_threat = self.get_threat_level()
+        return ranged_threat + melee_threat
+
+    def get_overwatch_risk(self, charging_unit: 'Unit', game: 'Game') -> float:
+        """Calculate the risk this unit poses in overwatch to a charging unit.
+        
+        Args:
+            charging_unit (Unit): The unit attempting to charge
+            game (Game): The game instance for distance calculations
+            
+        Returns:
+            float: Risk value from 0.0 to 1.0, where higher values indicate more risk
+        """
+        # Base risk on our ranged threat level
+        ranged_threat, _ = self.get_threat_level()
+        
+        # Modify based on distance (closer = more dangerous)
+        distance = game.get_distance_between_units(charging_unit, self)
+        distance_modifier = 1.0 / max(distance, 1.0)  # Avoid division by zero
+        
+        # Consider if we've already shot this round
+        if self.round_state.shot_this_round:
+            ranged_threat *= 0.5  # Reduced effectiveness if already shot
+            
+        # Consider remaining CP for stratagems
+        if self.get_parent_army():
+            cp_modifier = min(1.0, self.get_parent_army().command_points / 3.0)  # Scale based on available CP
+            ranged_threat *= (1.0 + cp_modifier)  # More CP = more potential threats
+        
+        return ranged_threat * distance_modifier
 
 
 

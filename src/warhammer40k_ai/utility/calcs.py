@@ -37,15 +37,32 @@ def angle_difference(angle1: float, angle2: float) -> float:
     return diff
 
 def can_traverse_freely(unit: 'Unit', obstacle: 'Obstacle') -> bool:
-    # Check if the unit can ignore the obstacle based on abilities
+    """Check if a unit can freely traverse over an obstacle.
+    
+    This function combines both general movement rules and specific terrain type rules.
+    """
+    # Flying units can traverse any obstacle
     if unit.is_flying:
-        return True  # Units with Fly can move over obstacles
-    # Additional checks based on terrain type and unit abilities
+        return True
+
+    # Check height-based traversal
     if obstacle.height <= FREELY_CLIMBABLE_RANGE:
         return True
-    if obstacle.terrain_type.name == 'RUINS' and (unit.is_infantry or unit.is_beast or unit.is_belisarius_cawl or unit.is_imperium_primarch):
-        return True  # Infantry, beasts, Belisarius Cawl and Imperium Primarch can traverse into ruins
-    # Add more rules as needed
+
+    # Check terrain type specific rules
+    terrain = obstacle.terrain_type
+    if terrain in [ObstacleType.CRATER_AND_RUBBLE, ObstacleType.DEBRIS_AND_STATUARY]:
+        return True  # These are always traversable
+    elif terrain == ObstacleType.HILLS_AND_SEALED_BUILDINGS:
+        return False  # Cannot traverse through buildings
+    elif terrain == ObstacleType.WOODS:
+        return True  # Can traverse through woods
+    elif terrain == ObstacleType.RUINS:
+        # Special characters and infantry/beasts can traverse ruins
+        return (unit.is_infantry or unit.is_beast or 
+                unit.is_belisarius_cawl or unit.is_imperium_primarch)
+    
+    # Default to not traversable for unknown terrain types
     return False
 
 def get_pivot_cost(unit: 'Unit') -> float:

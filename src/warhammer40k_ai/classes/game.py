@@ -1,9 +1,12 @@
-from typing import List, Dict, Any
-from enum import Enum
+from typing import List, Dict, Any, Optional, Tuple
+from enum import Enum, auto
 from .event_system import EventSystem
-from .map import Objective
+from .map import Map, Objective, ObstacleType
 from .player import Player
+from .unit import Unit
 from ..utility.constants import TOTAL_ROUNDS
+from shapely.geometry import LineString
+from ..utility.calcs import get_dist, get_roll, can_traverse_freely
 
 class SetupPhase(Enum):
     """
@@ -89,23 +92,17 @@ class Battlefield:
 
 class Game:
     def __init__(self, battlefield: Battlefield, players: List[Player] = []):
-        self.battlefield_size = (battlefield.config["Height"], battlefield.config["Width"])
-        self.battle_point_limit = battlefield.config["PointLimit"]
-        self.starting_command_points_per_player = battlefield.config["CommandPoints"]
-        self.detachment_limit_per_player = battlefield.config["DetachmentLimit"]
-        self.current_player_index = 0
+        self.battlefield = battlefield
+        self.players = players
         self.turn = 1
-        self.phase = BattleRoundPhases.COMMAND_PHASE
-        self.battlefield = self._initialize_battlefield()
-        self.players: List[Player] = players
+        self.current_player_index = 0
+        self.map = Map(battlefield.config["Width"], battlefield.config["Height"])
         self.event_system = EventSystem()
-        self.do_ai_action = False
-        self.map = None
-        self.objectives: List[Objective] = []
-        self.commands: List[str] = []
+        self.objectives = []
+        self.commands = []
 
     def add_player(self, player: Player) -> None:
-        player.command_points = self.starting_command_points_per_player
+        player.command_points = self.battlefield.config["CommandPoints"]
         print(f"Player {player.name} added with {player.command_points} command points and army: {player.army}")
         self.players.append(player)
 
@@ -114,10 +111,6 @@ class Game:
 
     def add_command(self, command: str) -> None:
         self.commands.append(command)
-
-    def _initialize_battlefield(self) -> List[List[Any]]:
-        # Initialize an empty battlefield based on battlefield_size
-        return [[None for _ in range(self.battlefield_size[1])] for _ in range(self.battlefield_size[0])]
 
     def get_current_player(self) -> Player:
         player = self.players[self.current_player_index]
@@ -128,7 +121,7 @@ class Game:
         return self.players[opponent_index]
 
     def get_battlefield_size(self) -> tuple[int, int]:
-        return self.battlefield_size
+        return (self.battlefield.config["Height"], self.battlefield.config["Width"])
 
     def next_turn(self):
         if self.is_fight_phase():
@@ -181,3 +174,43 @@ class Game:
             "turn": self.turn,
             "phase": self.phase,
         }
+
+    def get_distance_between_units(self, unit1: 'Unit', unit2: 'Unit') -> float:
+        """Calculate the shortest distance between two units."""
+        shortest_distance = float('inf')
+        
+        # Check distance between each model pair
+        for model1 in unit1.models:
+            for model2 in unit2.models:
+                distance = model1.edge_to_edge_distance(model2)
+                shortest_distance = min(shortest_distance, distance)
+                
+        return shortest_distance
+
+    def attempt_charge(self, charging_unit: 'Unit', target_unit: 'Unit') -> bool:
+        """Attempt a charge move with the given unit against the target."""
+        if not charging_unit.can_declare_charge_against(target_unit, self):
+            return False
+
+        # Calculate charge distance needed
+        current_pos = charging_unit.get_position()
+        target_pos = target_unit.get_position()
+        dx = target_pos[0] - current_pos[0]
+        dy = target_pos[1] - current_pos[1]
+        distance = get_dist(dx, dy)
+
+        # Roll 2D6 for charge distance
+        charge_roll = get_roll("2D6")
+        if charge_roll < distance:
+            return False
+
+        # Calculate the actual movement vector
+        scale = charge_roll / distance
+        new_x = current_pos[0] + dx * scale
+        new_y = current_pos[1] + dy * scale
+        new_z = self.map.get_height_at_point(new_x, new_y)
+        
+        # Move the unit
+        charging_unit.move((new_x, new_y, new_z), self.map)
+        charging_unit.round_state.declared_charge_this_round = True
+        return True

@@ -2,9 +2,9 @@ from typing import List, Optional, Tuple
 from enum import Enum, auto
 from .unit import Unit
 from .model import Model
-from ..utility.calcs import get_dist, convert_mm_to_inches
+from ..utility.calcs import get_dist, convert_mm_to_inches, can_traverse_freely
 from ..utility.constants import ENGAGEMENT_RANGE
-from shapely.geometry import Polygon, Point   
+from shapely.geometry import Polygon, Point, LineString
 from shapely.affinity import scale, translate
 
 from typing import TYPE_CHECKING
@@ -182,6 +182,31 @@ class Map:
                 max_height = max(max_height, obstacle.height)
 
         return max_height
+
+    def is_path_blocked(self, unit: Unit, target: Unit) -> bool:
+        """Check if there's a clear path between two units considering terrain and obstacles.
+        
+        Args:
+            unit (Unit): The unit checking the path
+            target (Unit): The target unit
+            
+        Returns:
+            bool: True if path is blocked, False if clear
+        """
+        # Get the positions of both units
+        unit_pos = unit.get_position()
+        target_pos = target.get_position()
+        
+        # Create a line representing the path
+        path = LineString([(unit_pos[0], unit_pos[1]), (target_pos[0], target_pos[1])])
+        
+        # Check for intersections with obstacles
+        for obstacle in self.obstacles:
+            if path.intersects(obstacle.polygon):
+                if not can_traverse_freely(unit, obstacle):
+                    return True  # Path is blocked
+        
+        return False  # Path is clear
 
 
 
