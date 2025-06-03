@@ -1166,20 +1166,20 @@ class Unit:
         """Check if this unit can declare a charge against the target unit."""
         if not self.is_alive() or not target_unit.is_alive():
             return False
-        
+            
         if self.round_state.advanced_this_round or self.round_state.fell_back_this_round:
             return False
-        
+            
         # Check if target is within maximum charge range (2D6 = max 12")
-        distance = game.get_distance_between_units(self, target_unit)
+        distance = game.map.get_distance_between_units(self, target_unit)
         if distance > self.max_charge_distance:
             return False
-        
+            
         # Check if there's a clear charge path
         # This is simplified - in real 40k you can charge around terrain
         if game.map.is_path_blocked(self, target_unit):
             return False
-        
+            
         return True
 
     def get_threat_value(self) -> float:

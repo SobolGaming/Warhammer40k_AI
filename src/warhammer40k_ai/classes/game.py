@@ -42,52 +42,53 @@ class BattlefieldSize(Enum):
 class Battlefield:
     SIZES: Dict[BattlefieldSize, Dict[str, Any]] = {
         BattlefieldSize.COMBAT_PATROL: {
-            "PointLimit": 500,
-            "CommandPoints": 6,
-            "DetachmentLimit": 1,
-            "Width": 44,
-            "Height": 30,
+            "width": 44,
+            "height": 30,
+            "points": 500,
+            "command_points": 3,
+            "detachments": 1
         },
         BattlefieldSize.INCURSION: {
-            "PointLimit": 1000,
-            "CommandPoints": 6,
-            "DetachmentLimit": 1,
-            "Width": 44,
-            "Height": 30,
+            "width": 44,
+            "height": 30,
+            "points": 1000,
+            "command_points": 6,
+            "detachments": 2
         },
         BattlefieldSize.STRIKE_FORCE: {
-            "PointLimit": 2000,
-            "CommandPoints": 6,
-            "DetachmentLimit": 1,
-            "Width": 44,
-            "Height": 60,
+            "width": 60,
+            "height": 44,
+            "points": 2000,
+            "command_points": 6,
+            "detachments": 3
         },
         BattlefieldSize.ONSLAUGHT: {
-            "PointLimit": 3000,
-            "CommandPoints": 6,
-            "DetachmentLimit": 1,
-            "Width": 44,
-            "Height": 90,
-        },
+            "width": 90,
+            "height": 44,
+            "points": 3000,
+            "command_points": 8,
+            "detachments": 4
+        }
     }
 
     def __init__(self, size: BattlefieldSize = None, width: int = None, height: int = None):
-        if size is not None:
-            self.config = self.SIZES[size]
-        elif width is not None and height is not None:
-            self.config = {
-                "Width": width,
-                "Height": height,
-                "PointLimit": 2000,  # Default values, adjust as needed
-                "CommandPoints": 6,
-                "DetachmentLimit": 1,
-            }
+        if size:
+            self.size = size
+            self.width = self.SIZES[size]["width"]
+            self.height = self.SIZES[size]["height"]
+            self.points = self.SIZES[size]["points"]
+            self.command_points = self.SIZES[size]["command_points"]
+            self.detachments = self.SIZES[size]["detachments"]
         else:
-            raise ValueError("Either 'size' or both 'width' and 'height' must be provided")
+            self.size = None
+            self.width = width
+            self.height = height
+            self.points = None
+            self.command_points = None
+            self.detachments = None
 
     def __str__(self):
-        ret = f"{self.config}"
-        return ret
+        return f"Battlefield({self.width}\" x {self.height}\")"
 
 
 class Game:
@@ -96,41 +97,44 @@ class Game:
         self.players = players
         self.turn = 1
         self.current_player_index = 0
-        self.map = Map(battlefield.config["Width"], battlefield.config["Height"])
+        self.map = Map(battlefield.width, battlefield.height)
         self.event_system = EventSystem()
         self.objectives = []
         self.commands = []
 
     def add_player(self, player: Player) -> None:
-        player.command_points = self.battlefield.config["CommandPoints"]
-        print(f"Player {player.name} added with {player.command_points} command points and army: {player.army}")
+        """Add a player to the game."""
         self.players.append(player)
+        player.set_game(self)
 
     def add_objective(self, objective: Objective) -> None:
+        """Add an objective to the game."""
         self.objectives.append(objective)
 
     def add_command(self, command: str) -> None:
+        """Add a command to the game."""
         self.commands.append(command)
 
     def get_current_player(self) -> Player:
-        player = self.players[self.current_player_index]
-        return player
+        """Get the current player."""
+        return self.players[self.current_player_index]
 
     def get_opponent(self) -> Player:
-        opponent_index = (self.current_player_index + 1) % len(self.players)
-        return self.players[opponent_index]
+        """Get the opponent of the current player."""
+        return self.players[(self.current_player_index + 1) % len(self.players)]
 
     def get_battlefield_size(self) -> tuple[int, int]:
-        return (self.battlefield.config["Height"], self.battlefield.config["Width"])
+        return self.battlefield.width, self.battlefield.height
 
     def next_turn(self):
-        if self.is_fight_phase():
-            if self.current_player_index == 1:
-                self.turn += 1
-            self.current_player_index = (self.current_player_index + 1) % len(self.players)
-            self.phase = BattleRoundPhases.COMMAND_PHASE
-        else:
-            self.phase = BattleRoundPhases(self.phase.value + 1)
+        """Advance to the next turn."""
+        self.current_player_index = (self.current_player_index + 1) % len(self.players)
+        if self.current_player_index == 0:
+            self.turn += 1
+            # Reset round state for all units
+            for player in self.players:
+                for unit in player.get_army().units:
+                    unit.initialize_round()
 
     def is_command_phase(self) -> bool:
         return self.phase == BattleRoundPhases.COMMAND_PHASE
@@ -174,18 +178,6 @@ class Game:
             "turn": self.turn,
             "phase": self.phase,
         }
-
-    def get_distance_between_units(self, unit1: 'Unit', unit2: 'Unit') -> float:
-        """Calculate the shortest distance between two units."""
-        shortest_distance = float('inf')
-        
-        # Check distance between each model pair
-        for model1 in unit1.models:
-            for model2 in unit2.models:
-                distance = model1.edge_to_edge_distance(model2)
-                shortest_distance = min(shortest_distance, distance)
-                
-        return shortest_distance
 
     def attempt_charge(self, charging_unit: 'Unit', target_unit: 'Unit') -> bool:
         """Attempt a charge move with the given unit against the target."""

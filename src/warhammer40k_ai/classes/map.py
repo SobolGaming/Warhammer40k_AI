@@ -183,6 +183,26 @@ class Map:
 
         return max_height
 
+    def get_distance_between_units(self, unit1: Unit, unit2: Unit) -> float:
+        """Calculate the shortest distance between two units.
+        
+        Args:
+            unit1 (Unit): First unit
+            unit2 (Unit): Second unit
+            
+        Returns:
+            float: The shortest distance between any models in the two units
+        """
+        shortest_distance = float('inf')
+        
+        # Check distance between each model pair
+        for model1 in unit1.models:
+            for model2 in unit2.models:
+                distance = model1.edge_to_edge_distance(model2)
+                shortest_distance = min(shortest_distance, distance)
+                
+        return shortest_distance
+
     def is_path_blocked(self, unit: Unit, target: Unit) -> bool:
         """Check if there's a clear path between two units considering terrain and obstacles.
         
