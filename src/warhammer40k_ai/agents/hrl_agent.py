@@ -588,7 +588,7 @@ class TacticalAgent:
             return None
 
         self.game.event_system.publish("charge_phase_start", unit=unit, game_state=self.game.get_state())
-        enemy_units = self.game.get_enemy_units(unit.player_id)
+        enemy_units = self.game.get_enemy_units(self.player)
         chargeable_targets = [enemy for enemy in enemy_units if unit.can_declare_charge_against(enemy, self.game)]
         if not chargeable_targets:
             return None

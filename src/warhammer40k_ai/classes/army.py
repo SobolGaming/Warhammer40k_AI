@@ -23,6 +23,7 @@ class Army:
         self.warlord = None
         self.enhancements = []  # List of Enhancements used in the army
         self.detachment_rules = {}  # Placeholder for detachment-specific rules
+        self.player = None  # Reference to the owning player
     
     def add_unit(self, unit: Unit) -> bool:
         if not self.faction_keyword:
@@ -188,6 +189,10 @@ class Army:
     def __hash__(self):
         return hash(self._id)
 
+    def set_player(self, player) -> None:
+        """Set the player that owns this army."""
+        self.player = player
+
 # Helper function to parse an army list from a text file
 def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
     with codecs.open(file_path, 'r', encoding='utf-8-sig') as f:
@@ -300,7 +305,7 @@ def add_unit_to_army(army: Army, unit: Unit, model_count: int, wargear_dict: Dic
     # Add wargear to the unit
     for model_name, wargear_list in wargear_dict.items():
         for wargear_name, _ in wargear_list:
-            gear_name = wargear_name.lower().replace("’", "'")
+            gear_name = wargear_name.lower().replace("'","")
             matching_gear = next((gear for gear in unit.possible_wargear if gear.name.lower() == gear_name), None)
             if matching_gear:
                 unit.add_wargear([matching_gear if gear.name.lower() == gear_name else None for gear in unit.possible_wargear], model_name)

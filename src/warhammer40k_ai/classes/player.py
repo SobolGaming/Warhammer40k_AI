@@ -32,6 +32,7 @@ class Player:
     
     def set_army(self, army: Army) -> None:
         self.army = army
+        army.set_player(self)
 
     def get_army(self) -> Army | None:
         return self.army

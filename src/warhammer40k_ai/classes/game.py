@@ -103,6 +103,7 @@ class Game:
         self.objectives = []
         self.commands = []
         self.phase = BattleRoundPhases.COMMAND_PHASE  # Initialize phase to COMMAND_PHASE
+        self.do_ai_action = False  # Initialize AI action flag
 
     def add_player(self, player: Player) -> None:
         """Add a player to the game."""
@@ -125,8 +126,25 @@ class Game:
         """Get the opponent of the current player."""
         return self.players[(self.current_player_index + 1) % len(self.players)]
 
+    def get_enemy_units(self, player: Player) -> List['Unit']:
+        """Get all units belonging to the opponent of the given player."""
+        # Get their opponent
+        opponent = next((p for p in self.players if p != player), None)
+        if not opponent:
+            return []
+        
+        return opponent.get_army().units
+
     def get_battlefield_size(self) -> tuple[int, int]:
         return self.battlefield.width, self.battlefield.height
+
+    def get_distance_between_units(self, unit1: 'Unit', unit2: 'Unit') -> float:
+        """Calculate the shortest distance between any two models in the units."""
+        shortest_distance = float('inf')
+        for model1 in unit1.models:
+            closest_model, distance = model1.return_closest_model_in_unit(unit2)
+            shortest_distance = min(shortest_distance, distance)
+        return shortest_distance
 
     def next_turn(self):
         """Advance to the next turn."""

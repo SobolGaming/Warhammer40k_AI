@@ -1209,8 +1209,9 @@ class Unit:
             ranged_threat *= 0.5  # Reduced effectiveness if already shot
             
         # Consider remaining CP for stratagems
-        if self.get_parent_army():
-            cp_modifier = min(1.0, self.get_parent_army().command_points / 3.0)  # Scale based on available CP
+        army = self.get_parent_army()
+        if army and army.player:
+            cp_modifier = min(1.0, army.player.command_points / 3.0)  # Scale based on available CP
             ranged_threat *= (1.0 + cp_modifier)  # More CP = more potential threats
         
         return ranged_threat * distance_modifier
