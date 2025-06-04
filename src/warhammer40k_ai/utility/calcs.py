@@ -10,7 +10,6 @@ if TYPE_CHECKING:
     from ..classes.map import Obstacle, ObstacleType
     from ..classes.unit import Unit
     from ..classes.model import Model
-    from ..classes.map import Map
 
 import logging
 logging.basicConfig(format="%(asctime)s %(levelname)-8s %(message)s")

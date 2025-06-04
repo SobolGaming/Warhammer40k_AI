@@ -1,12 +1,13 @@
 from typing import List, Dict, Any, Optional, Tuple
 from enum import Enum, auto
+from dataclasses import dataclass
 from .event_system import EventSystem
-from .map import Map, Objective, ObstacleType
+from .map import Map, Objective
 from .player import Player
 from .unit import Unit
+from ..utility.calcs import get_dist
+from ..utility.dice import get_roll
 from ..utility.constants import TOTAL_ROUNDS
-from shapely.geometry import LineString
-from ..utility.calcs import get_dist, get_roll, can_traverse_freely
 
 class SetupPhase(Enum):
     """
@@ -101,6 +102,7 @@ class Game:
         self.event_system = EventSystem()
         self.objectives = []
         self.commands = []
+        self.phase = BattleRoundPhases.COMMAND_PHASE  # Initialize phase to COMMAND_PHASE
 
     def add_player(self, player: Player) -> None:
         """Add a player to the game."""
@@ -135,6 +137,16 @@ class Game:
             for player in self.players:
                 for unit in player.get_army().units:
                     unit.initialize_round()
+            # Reset phase to COMMAND_PHASE at the start of a new turn
+            self.phase = BattleRoundPhases.COMMAND_PHASE
+
+    def next_phase(self):
+        """Advance to the next phase."""
+        current_phase_value = self.phase.value
+        next_phase_value = (current_phase_value + 1) % len(BattleRoundPhases)
+        self.phase = BattleRoundPhases(next_phase_value)
+        if next_phase_value == 0:  # If we've wrapped around to COMMAND_PHASE
+            self.next_turn()
 
     def is_command_phase(self) -> bool:
         return self.phase == BattleRoundPhases.COMMAND_PHASE

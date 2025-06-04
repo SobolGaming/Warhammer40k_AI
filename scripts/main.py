@@ -100,20 +100,23 @@ def main_game_loop() -> None:
                             print(f"Objective {obj.name} completed!")
                             current_player.add_score(obj.points)
                     tactical_agent.command_phase(command)
+                    game.next_phase()
                 elif game.is_movement_phase():
                     for unit in current_player.army.units:
                         tactical_agent.movement_phase(unit, objective)
+                    game.next_phase()
                 elif game.is_shooting_phase():
                     for unit in current_player.army.units:
                         tactical_agent.shooting_phase(unit)
+                    game.next_phase()
                 elif game.is_charge_phase():
                     for unit in current_player.army.units:
                         tactical_agent.charge_phase(unit)
+                    game.next_phase()
                 elif game.is_fight_phase():
                     for unit in current_player.army.units:
                         tactical_agent.fight_phase(unit)
-                
-                game.next_turn()
+                    game.next_phase()  # This will trigger next_turn() since it's the last phase
 
                 # Compute aggregated reward for the High Level Agent based on distance improvement.
                 avg_distance_after = current_player.compute_average_distance(objective)
@@ -181,7 +184,8 @@ def main_game_loop() -> None:
                     game_state = GameState.PLAYING
                     print("Game started!")
                 elif event.key == pygame.K_SPACE and game_state == GameState.PLAYING:
-                    game.next_turn()
+                    game.next_phase()
+                    print(f"Advanced to {game.phase.name} phase")
                 elif event.key == pygame.K_a and game_state == GameState.PLAYING:
                     game.do_ai_action = True
 
