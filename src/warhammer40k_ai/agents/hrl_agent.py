@@ -141,9 +141,36 @@ class HighLevelAgent:
         if self.num_objectives == 0 or self.num_commands == 0:
             raise ValueError("No objectives or commands available")
 
+        # Check for NaN values in network output
+        if torch.isnan(probs).any():
+            print("Warning: NaN values detected in high-level policy network output, using uniform distribution")
+            probs = torch.ones_like(probs)
+
         # Split the probabilities for objectives and commands
         obj_probs = probs[:self.num_objectives]
         cmd_probs = probs[self.num_objectives:]
+
+        # Normalize probabilities separately
+        obj_sum = obj_probs.sum()
+        cmd_sum = cmd_probs.sum()
+        
+        if obj_sum == 0 or torch.isnan(obj_sum):
+            print("Warning: Invalid objective probability sum, using uniform distribution")
+            obj_probs = torch.ones(self.num_objectives) / self.num_objectives
+        else:
+            obj_probs = obj_probs / obj_sum
+            
+        if cmd_sum == 0 or torch.isnan(cmd_sum):
+            print("Warning: Invalid command probability sum, using uniform distribution")
+            cmd_probs = torch.ones(self.num_commands) / self.num_commands
+        else:
+            cmd_probs = cmd_probs / cmd_sum
+
+        # Final check for NaN values
+        if torch.isnan(obj_probs).any():
+            obj_probs = torch.ones(self.num_objectives) / self.num_objectives
+        if torch.isnan(cmd_probs).any():
+            cmd_probs = torch.ones(self.num_commands) / self.num_commands
 
         # Sample from both distributions
         obj_dist = torch.distributions.Categorical(obj_probs)
@@ -225,7 +252,17 @@ class HighLevelAgent:
         # Update policy network
         self.optimizer.zero_grad()
         policy_loss = torch.stack(policy_loss).sum()
+        
+        # Check for NaN in loss
+        if torch.isnan(policy_loss):
+            print("Warning: NaN loss detected in HighLevelAgent, skipping update")
+            return
+            
         policy_loss.backward()
+        
+        # Clip gradients to prevent explosion
+        torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), max_norm=1.0)
+        
         self.optimizer.step()
 
         # Clear rewards and log probabilities for the next episode
@@ -379,12 +416,31 @@ class TacticalAgent:
         state = self.extract_movement_state_features(unit, objective)
         action_probs = self.movement_policy_net(state)
 
+        # Check for NaN values in network output
+        if torch.isnan(action_probs).any():
+            print("Warning: NaN values detected in movement policy network output, using uniform distribution")
+            action_probs = torch.ones_like(action_probs)
+
         # Mask unavailable actions
         action_mask = torch.zeros(NUM_MOVEMENT_ACTIONS)
         for action in available_actions:
             action_mask[action.value] = 1
+        
+        # Apply mask and normalize
         masked_probs = action_probs * action_mask
-        masked_probs = masked_probs / masked_probs.sum()
+        prob_sum = masked_probs.sum()
+        
+        # Handle zero sum or NaN cases
+        if prob_sum == 0 or torch.isnan(prob_sum):
+            print("Warning: Invalid probability sum detected, using uniform distribution over valid movement actions")
+            masked_probs = action_mask / action_mask.sum()
+        else:
+            masked_probs = masked_probs / prob_sum
+        
+        # Final check for NaN values
+        if torch.isnan(masked_probs).any():
+            print("Warning: NaN values after normalization, falling back to uniform distribution")
+            masked_probs = action_mask / action_mask.sum()
 
         # Create a categorical distribution
         action_dist = torch.distributions.Categorical(masked_probs)
@@ -432,14 +488,32 @@ class TacticalAgent:
         state = self.extract_shooting_state_features(model, profile, targets)
         action_probs = self.shooting_policy_net(state)
 
+        # Check for NaN values in network output
+        if torch.isnan(action_probs).any():
+            print("Warning: NaN values detected in shooting policy network output, using uniform distribution")
+            action_probs = torch.ones_like(action_probs)
+
         # Mask unavailable targets
         action_mask = torch.zeros(self.get_shooting_action_size())
         num_targets = min(len(targets), MAX_TARGETS)
         for idx in range(num_targets):
             action_mask[idx] = 1
-        # The target selection probabilities come after the profile selection probabilities
+        
+        # Apply mask and normalize
         masked_probs = action_probs * action_mask
-        masked_probs = masked_probs / masked_probs.sum()
+        prob_sum = masked_probs.sum()
+        
+        # Handle zero sum or NaN cases
+        if prob_sum == 0 or torch.isnan(prob_sum):
+            print("Warning: Invalid probability sum detected, using uniform distribution over valid targets")
+            masked_probs = action_mask / action_mask.sum()
+        else:
+            masked_probs = masked_probs / prob_sum
+        
+        # Final check for NaN values
+        if torch.isnan(masked_probs).any():
+            print("Warning: NaN values after normalization, falling back to uniform distribution")
+            masked_probs = action_mask / action_mask.sum()
 
         # Create a categorical distribution
         action_dist = torch.distributions.Categorical(masked_probs)
@@ -457,13 +531,32 @@ class TacticalAgent:
         state = self.extract_profile_selection_state(model, wargear_item, profiles)
         action_probs = self.profile_selection_policy_net(state)
 
+        # Check for NaN values in network output
+        if torch.isnan(action_probs).any():
+            print("Warning: NaN values detected in profile selection policy network output, using uniform distribution")
+            action_probs = torch.ones_like(action_probs)
+
         # Mask unavailable profiles
         action_mask = torch.zeros(self.get_profile_selection_action_size())
         num_profiles = min(len(profiles), MAX_PROFILES)
         for idx in range(num_profiles):
             action_mask[idx] = 1
+        
+        # Apply mask and normalize
         masked_probs = action_probs * action_mask
-        masked_probs = masked_probs / masked_probs.sum()
+        prob_sum = masked_probs.sum()
+        
+        # Handle zero sum or NaN cases
+        if prob_sum == 0 or torch.isnan(prob_sum):
+            print("Warning: Invalid probability sum detected, using uniform distribution over valid profiles")
+            masked_probs = action_mask / action_mask.sum()
+        else:
+            masked_probs = masked_probs / prob_sum
+        
+        # Final check for NaN values
+        if torch.isnan(masked_probs).any():
+            print("Warning: NaN values after normalization, falling back to uniform distribution")
+            masked_probs = action_mask / action_mask.sum()
 
         # Create a categorical distribution for profile selection
         profile_dist = torch.distributions.Categorical(masked_probs)
@@ -655,13 +748,32 @@ class TacticalAgent:
         state = self.extract_fight_state_features(model, profile, targets)
         action_probs = self.fight_target_policy_net(state)
 
+        # Check for NaN values in network output
+        if torch.isnan(action_probs).any():
+            print("Warning: NaN values detected in fight target policy network output, using uniform distribution")
+            action_probs = torch.ones_like(action_probs)
+
         # Mask unavailable targets
         action_mask = torch.zeros(self.get_fight_action_size())
         num_targets = min(len(targets), MAX_TARGETS)
         for idx in range(num_targets):
             action_mask[idx] = 1
+        
+        # Apply mask and normalize
         masked_probs = action_probs * action_mask
-        masked_probs = masked_probs / masked_probs.sum()
+        prob_sum = masked_probs.sum()
+        
+        # Handle zero sum or NaN cases
+        if prob_sum == 0 or torch.isnan(prob_sum):
+            print("Warning: Invalid probability sum detected, using uniform distribution over valid fight targets")
+            masked_probs = action_mask / action_mask.sum()
+        else:
+            masked_probs = masked_probs / prob_sum
+        
+        # Final check for NaN values
+        if torch.isnan(masked_probs).any():
+            print("Warning: NaN values after normalization, falling back to uniform distribution")
+            masked_probs = action_mask / action_mask.sum()
 
         # Create a categorical distribution
         action_dist = torch.distributions.Categorical(masked_probs)
@@ -680,13 +792,32 @@ class TacticalAgent:
         state = self.extract_profile_selection_state(model, wargear_item, profiles)
         action_probs = self.fight_profile_selection_policy_net(state)
 
+        # Check for NaN values in network output
+        if torch.isnan(action_probs).any():
+            print("Warning: NaN values detected in fight profile selection policy network output, using uniform distribution")
+            action_probs = torch.ones_like(action_probs)
+
         # Mask unavailable profiles
         action_mask = torch.zeros(self.get_profile_selection_action_size())
         num_profiles = min(len(profiles), MAX_PROFILES)
         for idx in range(num_profiles):
             action_mask[idx] = 1
+        
+        # Apply mask and normalize
         masked_probs = action_probs * action_mask
-        masked_probs = masked_probs / masked_probs.sum()
+        prob_sum = masked_probs.sum()
+        
+        # Handle zero sum or NaN cases
+        if prob_sum == 0 or torch.isnan(prob_sum):
+            print("Warning: Invalid probability sum detected, using uniform distribution over valid melee profiles")
+            masked_probs = action_mask / action_mask.sum()
+        else:
+            masked_probs = masked_probs / prob_sum
+        
+        # Final check for NaN values
+        if torch.isnan(masked_probs).any():
+            print("Warning: NaN values after normalization, falling back to uniform distribution")
+            masked_probs = action_mask / action_mask.sum()
 
         # Create a categorical distribution for profile selection
         profile_dist = torch.distributions.Categorical(masked_probs)
@@ -833,7 +964,17 @@ class TacticalAgent:
 
         self.movement_optimizer.zero_grad()
         policy_loss = torch.stack(policy_loss).sum()
+        
+        # Check for NaN in loss
+        if torch.isnan(policy_loss):
+            print("Warning: NaN loss detected in movement policy, skipping update")
+            return
+            
         policy_loss.backward()
+        
+        # Clip gradients to prevent explosion
+        torch.nn.utils.clip_grad_norm_(self.movement_policy_net.parameters(), max_norm=1.0)
+        
         self.movement_optimizer.step()
 
         self.movement_rewards.clear()
@@ -863,7 +1004,17 @@ class TacticalAgent:
 
         self.shooting_optimizer.zero_grad()
         policy_loss = torch.stack(policy_loss).sum()
+        
+        # Check for NaN in loss
+        if torch.isnan(policy_loss):
+            print("Warning: NaN loss detected in shooting policy, skipping update")
+            return
+            
         policy_loss.backward()
+        
+        # Clip gradients to prevent explosion
+        torch.nn.utils.clip_grad_norm_(self.shooting_policy_net.parameters(), max_norm=1.0)
+        
         self.shooting_optimizer.step()
 
         self.shooting_rewards.clear()
@@ -893,7 +1044,17 @@ class TacticalAgent:
 
         self.profile_selection_optimizer.zero_grad()
         policy_loss = torch.stack(policy_loss).sum()
+        
+        # Check for NaN in loss
+        if torch.isnan(policy_loss):
+            print("Warning: NaN loss detected in profile selection policy, skipping update")
+            return
+            
         policy_loss.backward()
+        
+        # Clip gradients to prevent explosion
+        torch.nn.utils.clip_grad_norm_(self.profile_selection_policy_net.parameters(), max_norm=1.0)
+        
         self.profile_selection_optimizer.step()
 
         self.profile_selection_rewards.clear()
@@ -923,7 +1084,17 @@ class TacticalAgent:
 
         self.fight_target_optimizer.zero_grad()
         policy_loss = torch.stack(policy_loss).sum()
+        
+        # Check for NaN in loss
+        if torch.isnan(policy_loss):
+            print("Warning: NaN loss detected in fight target policy, skipping update")
+            return
+            
         policy_loss.backward()
+        
+        # Clip gradients to prevent explosion
+        torch.nn.utils.clip_grad_norm_(self.fight_target_policy_net.parameters(), max_norm=1.0)
+        
         self.fight_target_optimizer.step()
 
         self.fight_target_rewards.clear()
@@ -953,7 +1124,17 @@ class TacticalAgent:
 
         self.fight_profile_selection_optimizer.zero_grad()
         policy_loss = torch.stack(policy_loss).sum()
+        
+        # Check for NaN in loss
+        if torch.isnan(policy_loss):
+            print("Warning: NaN loss detected in fight profile selection policy, skipping update")
+            return
+            
         policy_loss.backward()
+        
+        # Clip gradients to prevent explosion
+        torch.nn.utils.clip_grad_norm_(self.fight_profile_selection_policy_net.parameters(), max_norm=1.0)
+        
         self.fight_profile_selection_optimizer.step()
 
         self.fight_profile_selection_rewards.clear()
@@ -1074,7 +1255,17 @@ class LowLevelAgent:
 
         self.optimizer.zero_grad()
         policy_loss = torch.stack(policy_loss).sum()
+        
+        # Check for NaN in loss
+        if torch.isnan(policy_loss):
+            print("Warning: NaN loss detected in LowLevelAgent, skipping update")
+            return
+            
         policy_loss.backward()
+        
+        # Clip gradients to prevent explosion
+        torch.nn.utils.clip_grad_norm_(self.movement_execution_net.parameters(), max_norm=1.0)
+        
         self.optimizer.step()
 
         self.rewards.clear()
