@@ -325,7 +325,7 @@ class Model:
             if not inv_save_condition:
                 save_value = min(save_value, inv_save)
             elif inv_save_condition(attack_instance):
-                save_value = max(save_value, inv_save)
+                save_value = min(save_value, inv_save)
             else:
                 raise Exception(f"Invalid inv_save_condition: {inv_save_condition}")
 
@@ -336,7 +336,6 @@ class Model:
         dice_modifier = 0  # TODO - handle positive & negative modifiers
         dice_modifier = min(dice_modifier, 1)  # modifications are capped at +1
         return (dice_roll + dice_modifier) >= save_value
-
 
     def failed_saving_throw(self, attack_instance: Dict, attacking_ap: int = 0) -> bool:
         return not self.passed_saving_throw(attack_instance, attacking_ap)
