@@ -174,7 +174,7 @@ class Map:
         for unit in self.get_friendly_units(model.parent_unit):
             if unit != model.parent_unit:  #  inter-unit collisions check done elsewhere
                 for other_model in unit.models:
-                    print(f"Friendly Unit Check :: {model.parent_unit.name} checking collision with friendly units :: {other_model.parent_unit.name}")
+                    #print(f"Friendly Unit Check :: {model.parent_unit.name} checking collision with friendly units :: {other_model.parent_unit.name}")
                     if test_base.collides_with(other_model.model_base):
                         return True
         return False
