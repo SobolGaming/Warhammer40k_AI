@@ -27,6 +27,21 @@ def create_checkpoint_dir():
     if not os.path.exists(CHECKPOINT_DIR):
         os.makedirs(CHECKPOINT_DIR)
 
+def cleanup_destroyed_units(game: Game):
+    """Remove destroyed units from the game map and player armies."""
+    # Clean up units from the map
+    destroyed_units = [unit for unit in game.map.units if not unit.is_alive()]
+    for unit in destroyed_units:
+        print(f"Removing destroyed unit {unit.name} from the battlefield")
+        game.map.units.remove(unit)
+    
+    # Clean up units from player armies
+    for player in game.players:
+        destroyed_units = [unit for unit in player.get_army().units if not unit.is_alive()]
+        for unit in destroyed_units:
+            print(f"Removing destroyed unit {unit.name} from {player.name}'s army")
+            player.get_army().units.remove(unit)
+
 def auto_deploy_units(game: Game, player1: Player, player2: Player):
     """Automatically deploy units for both players in their deployment zones."""
     # Define deployment zones (assuming standard 44x60 battlefield)
@@ -221,6 +236,9 @@ def run_training_episode(episode_num: int, agents: dict) -> dict:
         high_level_agent.update_policy()
         tactical_agent.update_policies()
         low_level_agent.update_policy()
+        
+        # Clean up destroyed units
+        cleanup_destroyed_units(game)
 
     # Record episode results
     episode_results['total_turns'] = game.turn
@@ -427,6 +445,9 @@ def main_game_loop() -> None:
                 high_level_agent.update_policy()
                 tactical_agent.update_policies()
                 low_level_agent.update_policy()
+                
+                # Clean up destroyed units from the map
+                cleanup_destroyed_units(game)
 
                 # Update the display
                 game_view.draw()

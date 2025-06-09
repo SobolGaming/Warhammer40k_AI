@@ -158,12 +158,19 @@ class WargearProfile:
         for _, attack_instance in enumerate(wound_instances):
             # Allocate damage instances to the target unit
             target_model = self.opponent_wound_allocation(target)
+            if target_model is None:
+                print(f"No valid target model found in unit {target.name} - unit may be destroyed")
+                continue
+                
             if attack_instance['mortal_wound'] or target_model.failed_saving_throw(attack_instance):
                 dmg_value = self.damage_target(target_model, attacker, attack_instance)
                 excess_damage = target_model.take_damage(dmg_value, attack_instance['mortal_wound'])
                 print(f"{target_model.name} took {dmg_value}{' mortal' if attack_instance['mortal_wound'] else ''} damage")
                 while excess_damage > 0 and target.is_alive():
                     target_model = self.opponent_wound_allocation(target)
+                    if target_model is None:
+                        print(f"No valid target model found for excess damage - unit {target.name} may be destroyed")
+                        break
                     excess_damage = target_model.take_damage(excess_damage, attack_instance['mortal_wound'])
                     print(f"{target_model.name} took {excess_damage}{' mortal' if attack_instance['mortal_wound'] else ''} damage")
         return
@@ -255,7 +262,12 @@ class WargearProfile:
             return dice_roll >= 6
         return False
 
-    def opponent_wound_allocation(self, target: 'Unit') -> 'Model':
+    def opponent_wound_allocation(self, target: 'Unit') -> Optional['Model']:
+        # Check if the unit has any models left
+        if not target.models:
+            print(f"Warning: Unit {target.name} has no models left for wound allocation")
+            return None
+            
         _, damaged_model = target.is_max_health()
         if damaged_model:
             return damaged_model

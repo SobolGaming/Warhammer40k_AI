@@ -560,17 +560,35 @@ class TacticalAgent:
                 if selected_profile is None:
                     continue
                 targets = model.find_targets_in_range(self.game.map, wargear_profile=selected_profile)
+                # Filter out destroyed units
+                targets = [target for target in targets if target.is_alive()]
+                
                 if targets:
                     # Agent decides on the target
                     target_idx = self.choose_shooting_target(model, selected_profile, targets)
                     target = targets[target_idx]
+
+                    # Double-check that target is still alive before attacking
+                    if not target.is_alive():
+                        print(f"Target {target.name} was destroyed before attack could be executed")
+                        reward = -0.5 * SHOOTING_REWARD_SCALING
+                        self.profile_selection_rewards.append(reward)
+                        self.shooting_rewards.append(reward)
+                        continue
 
                     # Record the target's health before attack
                     target_health_before = target.health_percent
 
                     # Execute the attack
                     print(f"{model.name} of {unit.name} shoots at {target.name} with {wargear_item.name} ({selected_profile.name})")
-                    model.ranged_attack(target, selected_profile)
+                    try:
+                        model.ranged_attack(target, selected_profile)
+                    except Exception as e:
+                        print(f"Error during ranged attack: {e}")
+                        reward = -1.0 * SHOOTING_REWARD_SCALING
+                        self.profile_selection_rewards.append(reward)
+                        self.shooting_rewards.append(reward)
+                        continue
 
                     # Record the target's health after attack
                     target_health_after = target.health_percent
@@ -719,6 +737,8 @@ class TacticalAgent:
         
         # Find enemies in melee range
         enemies_in_range = self.find_enemies_in_melee_range(unit)
+        # Filter out destroyed units
+        enemies_in_range = [enemy for enemy in enemies_in_range if enemy.is_alive()]
         
         if not enemies_in_range:
             print(f"{unit.name} has no enemies in melee range.")
@@ -746,12 +766,27 @@ class TacticalAgent:
                 target_idx = self.choose_fight_target(model, selected_profile, enemies_in_range)
                 target = enemies_in_range[target_idx]
 
+                # Double-check that target is still alive before attacking
+                if not target.is_alive():
+                    print(f"Fight target {target.name} was destroyed before attack could be executed")
+                    reward = -0.5 * FIGHT_REWARD_SCALING
+                    self.fight_profile_selection_rewards.append(reward)
+                    self.fight_target_rewards.append(reward)
+                    continue
+
                 # Record the target's health before attack
                 target_health_before = target.health_percent
 
                 # Execute the melee attack
                 print(f"{model.name} of {unit.name} fights {target.name} with {wargear_item.name} ({selected_profile.name})")
-                model.melee_attack(target, selected_profile)
+                try:
+                    model.melee_attack(target, selected_profile)
+                except Exception as e:
+                    print(f"Error during melee attack: {e}")
+                    reward = -1.0 * FIGHT_REWARD_SCALING
+                    self.fight_profile_selection_rewards.append(reward)
+                    self.fight_target_rewards.append(reward)
+                    continue
 
                 # Record the target's health after attack
                 target_health_after = target.health_percent
