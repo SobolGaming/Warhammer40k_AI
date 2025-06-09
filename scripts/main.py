@@ -74,7 +74,8 @@ def auto_deploy_units(game: Game, player1: Player, player2: Player):
                     model_x = x + (j % 3) * 0.5  # Spread models slightly
                     model_y = y + (j // 3) * 0.5
                     model_z = game.map.get_height_at_point(model_x, model_y)
-                    model.set_location(model_x, model_y, model_z)
+                    model_facing = 0.0  # Default facing direction
+                    model.set_location(model_x, model_y, model_z, model_facing)
                 
                 unit.set_position(x, y, z)
                 unit.deployed = True
@@ -121,17 +122,33 @@ def initialize_game() -> Tuple[pygame.Surface, WarhammerEnv, Game, Map, float, i
         Obstacle(vertices=[(20, 7), (27, 9), (29, 9), (29, 7)], terrain_type=ObstacleType.DEBRIS_AND_STATUARY, height=6.0)
     ]
 
-    # Define objectives
-    objective_point = ObjectivePoint(15, 15, 0, 3.0)
+    env = WarhammerEnv(players=[player1, player2])
+    game = env.game
+    
+    # RANDOMIZE STARTING PLAYER TO REMOVE FIRST-PLAYER ADVANTAGE
+    game.current_player_index = random.randint(0, 1)
+    starting_player = game.get_current_player()
+    logger.debug(f"Randomized starting player: {starting_player.name}")
+    
+    # Define objectives - CENTER THE OBJECTIVE TO REMOVE BIAS
+    battlefield_width, battlefield_height = game.get_battlefield_size()
+    center_x = battlefield_width / 2.0
+    center_y = battlefield_height / 2.0
+
+    # Add some randomization to prevent predictable positioning
+    random_offset_x = random.uniform(-3, 3)
+    random_offset_y = random.uniform(-3, 3)
+    objective_x = center_x + random_offset_x
+    objective_y = center_y + random_offset_y
+
+    objective_point = ObjectivePoint(objective_x, objective_y, 0, 3.0)
     objectives = [
         Objective(name="Capture Central Point", location=objective_point, category=ObjectiveCategory.PRIMARY, points=10, 
                   description="Capture the central point to gain control of the battlefield.", 
                   conditions=lambda game: objective_point.controlling_player == game.get_current_player())
     ]
     commands = ["attack", "defend", "move"]
-
-    env = WarhammerEnv(players=[player1, player2])
-    game = env.game
+    
     game_map = Map(*game.get_battlefield_size())
     game.map = game_map
     game.map.add_obstacles(obstacles)
