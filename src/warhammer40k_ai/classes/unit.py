@@ -754,7 +754,8 @@ class Unit:
             return self.advance(destination, game_map)
         elif action == MovementAction.FALL_BACK.value:
             print(f"{self.name} falls back")
-            return self.fall_back(destination, game_map)
+            # Provide an empty path list for fall back action
+            return self.fall_back(destination, [], game_map)
         else:
             raise ValueError(f"Invalid action: {action}")
 
