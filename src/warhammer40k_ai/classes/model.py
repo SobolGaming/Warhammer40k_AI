@@ -338,8 +338,8 @@ class Model:
         return (dice_roll + dice_modifier) >= save_value
 
 
-    def failed_saving_throw(self, attack_instance: Dict) -> bool:
-        return not self.passed_saving_throw(attack_instance)
+    def failed_saving_throw(self, attack_instance: Dict, attacking_ap: int = 0) -> bool:
+        return not self.passed_saving_throw(attack_instance, attacking_ap)
 
     ################
     ### String Representation

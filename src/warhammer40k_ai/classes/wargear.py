@@ -162,7 +162,7 @@ class WargearProfile:
                 print(f"No valid target model found in unit {target.name} - unit may be destroyed")
                 continue
                 
-            if attack_instance['mortal_wound'] or target_model.failed_saving_throw(attack_instance):
+            if attack_instance['mortal_wound'] or target_model.failed_saving_throw(attack_instance, self.ap):
                 dmg_value = self.damage_target(target_model, attacker, attack_instance)
                 # 10th Edition: Apply damage to the target model, excess damage is lost
                 excess_damage = target_model.take_damage(dmg_value, attack_instance['mortal_wound'])
