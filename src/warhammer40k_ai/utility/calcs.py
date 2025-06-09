@@ -7,11 +7,9 @@ from shapely.affinity import translate
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
+    from ..classes.map import Obstacle, ObstacleType
     from ..classes.unit import Unit
     from ..classes.model import Model
-
-# Import at runtime for actual usage
-from ..classes.map import Obstacle, ObstacleType
 
 import logging
 logging.basicConfig(format="%(asctime)s %(levelname)-8s %(message)s")
@@ -50,6 +48,9 @@ def can_traverse_freely(unit: 'Unit', obstacle: 'Obstacle') -> bool:
     if obstacle.height <= FREELY_CLIMBABLE_RANGE:
         return True
 
+    # Import at runtime to avoid circular import
+    from ..classes.map import ObstacleType
+    
     # Check terrain type specific rules
     terrain = obstacle.terrain_type
     if terrain in [ObstacleType.CRATER_AND_RUBBLE, ObstacleType.DEBRIS_AND_STATUARY]:
