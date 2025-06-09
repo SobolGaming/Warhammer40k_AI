@@ -247,9 +247,17 @@ class HighLevelAgent:
 
         # Calculate policy loss
         for log_prob, R in zip(self.log_probs, returns):
-            policy_loss.append(-log_prob * R)
+            if log_prob.requires_grad:
+                policy_loss.append(-log_prob * R)
+            else:
+                print("Warning: log_prob does not require grad, skipping this term")
+                continue
 
         # Update policy network
+        if not policy_loss:
+            print("Warning: No valid policy loss terms to update HighLevelAgent")
+            return
+            
         self.optimizer.zero_grad()
         policy_loss = torch.stack(policy_loss).sum()
         
@@ -507,6 +515,7 @@ class TacticalAgent:
         if prob_sum == 0 or torch.isnan(prob_sum):
             print("Warning: Invalid probability sum detected, using uniform distribution over valid targets")
             masked_probs = action_mask / action_mask.sum()
+            masked_probs = masked_probs.detach().requires_grad_(True)
         else:
             masked_probs = masked_probs / prob_sum
         
@@ -514,6 +523,7 @@ class TacticalAgent:
         if torch.isnan(masked_probs).any():
             print("Warning: NaN values after normalization, falling back to uniform distribution")
             masked_probs = action_mask / action_mask.sum()
+            masked_probs = masked_probs.detach().requires_grad_(True)
 
         # Create a categorical distribution
         action_dist = torch.distributions.Categorical(masked_probs)
@@ -960,8 +970,16 @@ class TacticalAgent:
             returns = returns * 0
 
         for log_prob, R in zip(self.movement_log_probs, returns):
-            policy_loss.append(-log_prob * R)
+            if log_prob.requires_grad:
+                policy_loss.append(-log_prob * R)
+            else:
+                print("Warning: movement log_prob does not require grad, skipping this term")
+                continue
 
+        if not policy_loss:
+            print("Warning: No valid policy loss terms to update movement policy")
+            return
+            
         self.movement_optimizer.zero_grad()
         policy_loss = torch.stack(policy_loss).sum()
         
@@ -1000,8 +1018,16 @@ class TacticalAgent:
             returns = returns * 0
 
         for log_prob, R in zip(self.shooting_log_probs, returns):
-            policy_loss.append(-log_prob * R)
+            if log_prob.requires_grad:
+                policy_loss.append(-log_prob * R)
+            else:
+                print("Warning: shooting log_prob does not require grad, skipping this term")
+                continue
 
+        if not policy_loss:
+            print("Warning: No valid policy loss terms to update shooting policy")
+            return
+            
         self.shooting_optimizer.zero_grad()
         policy_loss = torch.stack(policy_loss).sum()
         
@@ -1040,8 +1066,16 @@ class TacticalAgent:
             returns = returns * 0
 
         for log_prob, R in zip(self.profile_selection_log_probs, returns):
-            policy_loss.append(-log_prob * R)
+            if log_prob.requires_grad:
+                policy_loss.append(-log_prob * R)
+            else:
+                print("Warning: profile selection log_prob does not require grad, skipping this term")
+                continue
 
+        if not policy_loss:
+            print("Warning: No valid policy loss terms to update profile selection policy")
+            return
+            
         self.profile_selection_optimizer.zero_grad()
         policy_loss = torch.stack(policy_loss).sum()
         
@@ -1080,8 +1114,16 @@ class TacticalAgent:
             returns = returns * 0
 
         for log_prob, R in zip(self.fight_target_log_probs, returns):
-            policy_loss.append(-log_prob * R)
+            if log_prob.requires_grad:
+                policy_loss.append(-log_prob * R)
+            else:
+                print("Warning: fight target log_prob does not require grad, skipping this term")
+                continue
 
+        if not policy_loss:
+            print("Warning: No valid policy loss terms to update fight target policy")
+            return
+            
         self.fight_target_optimizer.zero_grad()
         policy_loss = torch.stack(policy_loss).sum()
         
@@ -1120,8 +1162,16 @@ class TacticalAgent:
             returns = returns * 0
 
         for log_prob, R in zip(self.fight_profile_selection_log_probs, returns):
-            policy_loss.append(-log_prob * R)
+            if log_prob.requires_grad:
+                policy_loss.append(-log_prob * R)
+            else:
+                print("Warning: fight profile selection log_prob does not require grad, skipping this term")
+                continue
 
+        if not policy_loss:
+            print("Warning: No valid policy loss terms to update fight profile selection policy")
+            return
+            
         self.fight_profile_selection_optimizer.zero_grad()
         policy_loss = torch.stack(policy_loss).sum()
         
@@ -1251,8 +1301,16 @@ class LowLevelAgent:
             returns = returns * 0
 
         for log_prob, R in zip(self.log_probs, returns):
-            policy_loss.append(-log_prob * R)
+            if log_prob.requires_grad:
+                policy_loss.append(-log_prob * R)
+            else:
+                print("Warning: LowLevelAgent log_prob does not require grad, skipping this term")
+                continue
 
+        if not policy_loss:
+            print("Warning: No valid policy loss terms to update LowLevelAgent policy")
+            return
+            
         self.optimizer.zero_grad()
         policy_loss = torch.stack(policy_loss).sum()
         
