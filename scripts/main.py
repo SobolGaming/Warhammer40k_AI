@@ -29,16 +29,45 @@ def setup_logging():
     """Configure logging to reduce noise while preserving important information."""
     # Set up different log levels for different modules
     root_logger = logging.getLogger()
-    root_logger.setLevel(logging.WARNING)
+    root_logger.setLevel(logging.DEBUG)  # Allow all levels at root, but filter at handler level
     
     # Create a formatter for clean output
-    formatter = logging.Formatter('%(levelname)s: %(message)s')
+    formatter = logging.Formatter('%(message)s')  # Simplified format
     
     # Console handler for warnings and errors only
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.WARNING)
     console_handler.setFormatter(formatter)
+    
+    # Custom filter for important combat messages
+    class ImportantCombatFilter(logging.Filter):
+        def filter(self, record):
+            # Allow death messages and important combat info
+            if 'has Died' in record.getMessage() or 'has Fled' in record.getMessage():
+                return True
+            if 'destroyed before attack' in record.getMessage():
+                return True
+            # Allow episode completion messages
+            if 'Episode' in record.getMessage() and ('completed' in record.getMessage() or 'Starting' in record.getMessage()):
+                return True
+            # Allow training summaries
+            if 'TRAINING ANALYSIS' in record.getMessage() or 'FIRST PLAYER' in record.getMessage():
+                return True
+            # Block other info messages
+            if record.levelno == logging.INFO:
+                return False
+            # Allow warnings and errors
+            return record.levelno >= logging.WARNING
+    
+    # Combat info handler for important combat messages
+    combat_handler = logging.StreamHandler()
+    combat_handler.setLevel(logging.INFO)
+    combat_handler.setFormatter(formatter)
+    combat_handler.addFilter(ImportantCombatFilter())
+    
+    # Add both handlers
     root_logger.addHandler(console_handler)
+    root_logger.addHandler(combat_handler)
     
     # Specifically quiet down noisy modules
     logging.getLogger('warhammer40k_ai.agents.hrl_agent').setLevel(logging.ERROR)
@@ -242,161 +271,134 @@ def run_training_episode(episode_num: int, agents: dict) -> dict:
         'total_turns': 0,
         'objective_position': None,
         # Combat statistics
-        'shooting_kills': {'player1': 0, 'player2': 0},
-        'melee_kills': {'player1': 0, 'player2': 0},
-        'models_lost': {'player1': 0, 'player2': 0},
-        'units_destroyed': {'player1': 0, 'player2': 0},
-        # Phase statistics
-        'shooting_attacks': {'player1': 0, 'player2': 0},
-        'melee_attacks': {'player1': 0, 'player2': 0},
-        'charges_attempted': {'player1': 0, 'player2': 0},
-        'charges_successful': {'player1': 0, 'player2': 0},
-        # Movement statistics
-        'movement_actions': {'player1': {'advance': 0, 'move': 0, 'remain': 0, 'fall_back': 0},
-                           'player2': {'advance': 0, 'move': 0, 'remain': 0, 'fall_back': 0}},
-        # Command selection tracking
-        'commands_selected': {'player1': {'attack': 0, 'defend': 0, 'move': 0},
-                             'player2': {'attack': 0, 'defend': 0, 'move': 0}},
-        # Initial army sizes
-        'initial_units': {'player1': len(player1.get_army().units), 'player2': len(player2.get_army().units)},
-        'initial_models': {'player1': sum(len(unit.models) for unit in player1.get_army().units),
-                          'player2': sum(len(unit.models) for unit in player2.get_army().units)}
+        'shooting_kills': 0,
+        'melee_kills': 0,
+        'total_kills': 0,
+        'models_destroyed': [],  # Track which models died
+        # Command tracking
+        'commands_selected': {
+            'player1': {'attack': 0, 'defend': 0, 'move': 0},
+            'player2': {'attack': 0, 'defend': 0, 'move': 0}
+        }
     }
     
-    # Get objective position for bias analysis
-    if game.map.objectives:
-        obj = game.map.objectives[0]
-        episode_stats['objective_position'] = (obj.location.x, obj.location.y)
-    
-    # Auto-deploy units
-    auto_deploy_units(game, player1, player2)
-    
-    # Set up agents for this episode
-    high_level_agent_player1 = agents['hla1']
-    tactical_agent_player1 = agents['ta1']
-    low_level_agent_player1 = agents['lla1']
-    high_level_agent_player2 = agents['hla2']
-    tactical_agent_player2 = agents['ta2']
-    low_level_agent_player2 = agents['lla2']
-    
-    # Update agents with new game instance
-    for agent in [high_level_agent_player1, tactical_agent_player1, low_level_agent_player1]:
-        agent.game = game
-        agent.player = player1
-    for agent in [high_level_agent_player2, tactical_agent_player2, low_level_agent_player2]:
-        agent.game = game
-        agent.player = player2
-    
-    # Track combat statistics during the game
+    # Track combat stats during the episode
     def track_combat_stats():
-        """Update combat statistics based on current game state."""
-        # Count remaining units and models
-        p1_units = len([u for u in player1.get_army().units if u.is_alive()])
-        p1_models = sum(len([m for m in u.models if m.is_alive]) for u in player1.get_army().units)
-        p2_units = len([u for u in player2.get_army().units if u.is_alive()])
-        p2_models = sum(len([m for m in u.models if m.is_alive]) for u in player2.get_army().units)
+        """Track kills by monitoring model count changes."""
+        player1_initial_models = sum(len(unit.models) for unit in player1.get_army().units)
+        player2_initial_models = sum(len(unit.models) for unit in player2.get_army().units)
         
-        episode_stats['models_lost']['player1'] = episode_stats['initial_models']['player1'] - p1_models
-        episode_stats['models_lost']['player2'] = episode_stats['initial_models']['player2'] - p2_models
-        episode_stats['units_destroyed']['player1'] = episode_stats['initial_units']['player1'] - p1_units
-        episode_stats['units_destroyed']['player2'] = episode_stats['initial_units']['player2'] - p2_units
+        # Count current models
+        player1_current_models = sum(len(unit.models) for unit in player1.get_army().units if unit.is_alive())
+        player2_current_models = sum(len(unit.models) for unit in player2.get_army().units if unit.is_alive())
+        
+        # Calculate deaths
+        player1_deaths = player1_initial_models - player1_current_models
+        player2_deaths = player2_initial_models - player2_current_models
+        
+        episode_stats['total_kills'] = player1_deaths + player2_deaths
+        
+        return player1_deaths, player2_deaths
     
-    episode_results = {
-        'winner': None,
-        'player1_score': 0,
-        'player2_score': 0,
-        'total_turns': 0
-    }
+    # Override the Unit.remove_model method to track deaths
+    import types
+    original_remove_model = None
     
-    # Run the game loop
-    while not game.is_game_over():
-        current_player = game.get_current_player()
-        current_player_key = 'player1' if current_player == player1 else 'player2'
+    def tracking_remove_model(self, model, fleed=False):
+        """Enhanced remove_model that tracks deaths for statistics."""
+        if not fleed:  # Only count actual deaths, not fleeing
+            episode_stats['models_destroyed'].append({
+                'model_name': model.name,
+                'unit_name': self.name,
+                'owner': 'player1' if self in player1.get_army().units else 'player2',
+                'turn': game.turn
+            })
+        # Call original method
+        return original_remove_model(self, model, fleed)
+    
+    # Monkey patch the Unit class to track deaths
+    from warhammer40k_ai.classes.unit import Unit
+    original_remove_model = Unit.remove_model
+    Unit.remove_model = tracking_remove_model
+    
+    try:
+        # Deploy units automatically
+        auto_deploy_units(game, player1, player2)
         
-        if current_player == player1:
-            high_level_agent = high_level_agent_player1
-            tactical_agent = tactical_agent_player1
-        else:
-            high_level_agent = high_level_agent_player2
-            tactical_agent = tactical_agent_player2
-
-        # High-level decision making
-        objective, command = high_level_agent.choose_objective_and_command()
-        episode_stats['commands_selected'][current_player_key][command] += 1
-
-        # Execute phases for each unit
-        for unit in current_player.get_army().units:
-            if unit.is_alive():
-                # Movement phase
-                tactical_agent.movement_phase(unit, objective)
-                
-                # Track movement actions (simplified - would need to modify tactical agent to return action)
-                # For now, we'll estimate based on unit position changes
-                
-                # Shooting phase
-                pre_shooting_models = episode_stats['models_lost']['player1'] + episode_stats['models_lost']['player2']
-                tactical_agent.shooting_phase(unit)
-                post_shooting_models = sum(episode_stats['models_lost'].values())
-                
-                # If models were lost during shooting, track it
-                if post_shooting_models > pre_shooting_models:
-                    models_killed_in_shooting = post_shooting_models - pre_shooting_models
-                    episode_stats['shooting_kills'][current_player_key] += models_killed_in_shooting
-                
-                # Charge phase (simplified tracking)
-                charge_reward = tactical_agent.charge_phase(unit)
-                if charge_reward is not None:
-                    episode_stats['charges_attempted'][current_player_key] += 1
-                    if charge_reward > 0:
-                        episode_stats['charges_successful'][current_player_key] += 1
-
-                # Fight phase
-                pre_fight_models = sum(episode_stats['models_lost'].values())
-                tactical_agent.fight_phase(unit)
-                post_fight_models = sum(episode_stats['models_lost'].values())
-                
-                # If models were lost during fighting, track it
-                if post_fight_models > pre_fight_models:
-                    models_killed_in_fighting = post_fight_models - pre_fight_models
-                    episode_stats['melee_kills'][current_player_key] += models_killed_in_fighting
-
-        # Update combat statistics
-        track_combat_stats()
+        # Track objective position
+        if game.map.objectives:
+            obj = game.map.objectives[0]
+            episode_stats['objective_position'] = (obj.location.x, obj.location.y)
         
-        # Cleanup destroyed units
-        cleanup_destroyed_units(game)
-
-        # End turn and update policies
-        game.next_turn()
-        episode_stats['total_turns'] = game.turn
+        # Initialize agents for this episode
+        high_level_agent_player1 = agents['hla1']
+        tactical_agent_player1 = agents['ta1'] 
+        low_level_agent_player1 = agents['lla1']
+        high_level_agent_player2 = agents['hla2']
+        tactical_agent_player2 = agents['ta2']
+        low_level_agent_player2 = agents['lla2']
         
-        if current_player == player1:
-            high_level_agent_player1.update_policy()
-            tactical_agent_player1.update_policies()
-            low_level_agent_player1.update_policy()
-        else:
-            high_level_agent_player2.update_policy()
-            tactical_agent_player2.update_policies()
-            low_level_agent_player2.update_policy()
+        # Run the game loop
+        while not game.is_game_over():
+            current_player = game.get_current_player()
+            current_player_key = 'player1' if current_player == player1 else 'player2'
+            
+            if current_player == player1:
+                high_level_agent = high_level_agent_player1
+                tactical_agent = tactical_agent_player1
+            else:
+                high_level_agent = high_level_agent_player2
+                tactical_agent = tactical_agent_player2
 
+            # High-level decision making
+            objective, command = high_level_agent.choose_objective_and_command()
+            episode_stats['commands_selected'][current_player_key][command] += 1
+
+            # Execute phases for each unit
+            for unit in current_player.get_army().units:
+                if unit.is_alive():
+                    # Movement phase
+                    tactical_agent.movement_phase(unit, objective)
+                    
+                    # Shooting phase  
+                    tactical_agent.shooting_phase(unit)
+                    
+                    # Charge phase
+                    charge_reward = tactical_agent.charge_phase(unit)
+                    if charge_reward:
+                        tactical_agent.movement_rewards.append(charge_reward)
+                    
+                    # Fight phase
+                    tactical_agent.fight_phase(unit)
+
+            # Clean up destroyed units
+            cleanup_destroyed_units(game)
+            
+            # End turn and update policies
+            game.next_turn()
+            episode_stats['total_turns'] = game.turn
+
+        # Update all agent policies after episode
+        for agent_key, agent in agents.items():
+            agent.update_policies() if hasattr(agent, 'update_policies') else agent.update_policy()
+    
+    finally:
+        # Restore original method
+        Unit.remove_model = original_remove_model
+    
     # Final statistics
     episode_stats['player1_score'] = player1.get_score()
     episode_stats['player2_score'] = player2.get_score()
+    episode_stats['total_kills'] = len(episode_stats['models_destroyed'])
     
     if player1.get_score() > player2.get_score():
         episode_stats['winner'] = 'player1'
     elif player2.get_score() > player1.get_score():
         episode_stats['winner'] = 'player2'
     else:
-        episode_stats['winner'] = 'ties'
+        episode_stats['winner'] = 'ties'  # Changed from 'tie' to 'ties' to match the stats dict
     
-    # Final combat statistics update
-    track_combat_stats()
-    
-    winner_name = episode_stats['winner']
-    starting_indicator = "🎯" if episode_stats['starting_player'] == episode_stats['winner'] else "🔄"
-    
-    print(f"Episode {episode_num + 1} completed! Winner: {winner_name}, Score: {episode_stats['player1_score']}-{episode_stats['player2_score']}, Turns: {episode_stats['total_turns']} {starting_indicator}")
+    print(f"Episode {episode_num + 1} completed! Winner: {episode_stats['winner']}, Score: {episode_stats['player1_score']}-{episode_stats['player2_score']}, Turns: {episode_stats['total_turns']} {'🔄' if episode_stats['winner'] == 'ties' else '🏆'}")
     
     return episode_stats
 
@@ -431,7 +433,7 @@ def run_training_loop():
     training_stats = {
         'total_episodes': 0,
         'wins': {'player1': 0, 'player2': 0, 'ties': 0},
-        'first_player_wins': {'first_wins': 0, 'second_wins': 0},  # First to go vs second to go
+        'first_player_advantage': {'starting_player_wins': 0, 'second_player_wins': 0},
         'total_turns': 0,
         'combat_data': {
             'total_shooting_kills': 0,
@@ -453,45 +455,40 @@ def run_training_loop():
         episode_stats = run_training_episode(episode, agents)
         all_episode_stats.append(episode_stats)
         
-        # Update training statistics
+        # Update training statistics with episode results
         training_stats['total_episodes'] += 1
+        training_stats['total_turns'] += episode_stats['total_turns']
         
-        # Ensure tie handling
+        # Ensure winner is handled properly
         winner = episode_stats['winner']
         if winner in training_stats['wins']:
             training_stats['wins'][winner] += 1
         else:
             # This shouldn't happen, but let's be safe
             training_stats['wins']['ties'] += 1
-            
-        training_stats['total_turns'] += episode_stats['total_turns']
         
-        # Track first player advantage
-        if episode_stats['starting_player_index'] == 0:  # Player 1 started
-            if episode_stats['winner'] == 'player1':
-                training_stats['first_player_wins']['first_wins'] += 1
-            elif episode_stats['winner'] == 'player2':
-                training_stats['first_player_wins']['second_wins'] += 1
-        else:  # Player 2 started
-            if episode_stats['winner'] == 'player2':
-                training_stats['first_player_wins']['first_wins'] += 1
-            elif episode_stats['winner'] == 'player1':
-                training_stats['first_player_wins']['second_wins'] += 1
+        # Combat statistics
+        training_stats['combat_data']['total_shooting_kills'] += episode_stats.get('shooting_kills', 0)
+        training_stats['combat_data']['total_melee_kills'] += episode_stats.get('melee_kills', 0)
         
-        # Aggregate combat data
-        total_shooting = sum(episode_stats['shooting_kills'].values())
-        total_melee = sum(episode_stats['melee_kills'].values())
-        training_stats['combat_data']['total_shooting_kills'] += total_shooting
-        training_stats['combat_data']['total_melee_kills'] += total_melee
+        # Command usage tracking
+        for player in ['player1', 'player2']:
+            for command in ['attack', 'defend', 'move']:
+                training_stats['command_usage'][command] += episode_stats['commands_selected'][player][command]
         
-        # Command usage
-        for player_commands in episode_stats['commands_selected'].values():
-            for command, count in player_commands.items():
-                training_stats['command_usage'][command] += count
-        
-        # Objective positions for bias analysis
+        # Objective positioning for bias analysis
         if episode_stats['objective_position']:
             training_stats['objective_positions'].append(episode_stats['objective_position'])
+        
+        # First player advantage tracking
+        starting_player = episode_stats['starting_player_index']
+        winning_player = episode_stats['winner']
+        
+        if winning_player != 'ties':
+            if (starting_player == 0 and winning_player == 'player1') or (starting_player == 1 and winning_player == 'player2'):
+                training_stats['first_player_advantage']['starting_player_wins'] += 1
+            else:
+                training_stats['first_player_advantage']['second_player_wins'] += 1
         
         # Progress updates every 10 episodes
         if (episode + 1) % 10 == 0:
@@ -516,8 +513,8 @@ def display_progress_update(episode_num: int, training_stats: dict, all_episode_
     avg_turns = training_stats['total_turns'] / total_episodes if total_episodes > 0 else 0
     
     # First player advantage analysis
-    first_wins = training_stats['first_player_wins']['first_wins']
-    second_wins = training_stats['first_player_wins']['second_wins']
+    first_wins = training_stats['first_player_advantage']['starting_player_wins']
+    second_wins = training_stats['first_player_advantage']['second_player_wins']
     total_decided = first_wins + second_wins
     first_advantage = (first_wins / total_decided * 100) if total_decided > 0 else 50
     
@@ -555,8 +552,8 @@ def display_final_analysis(training_stats: dict, all_episode_stats: list):
     print(f"   Ties: {ties} ({ties/total_episodes*100:.1f}%)")
     
     # First player advantage analysis
-    first_wins = training_stats['first_player_wins']['first_wins']
-    second_wins = training_stats['first_player_wins']['second_wins']
+    first_wins = training_stats['first_player_advantage']['starting_player_wins']
+    second_wins = training_stats['first_player_advantage']['second_player_wins']
     total_decided = first_wins + second_wins
     
     print(f"\n🎯 FIRST PLAYER ADVANTAGE ANALYSIS:")
@@ -575,14 +572,37 @@ def display_final_analysis(training_stats: dict, all_episode_stats: list):
     total_kills = shooting_kills + melee_kills
     
     print(f"\n⚔️ COMBAT EFFECTIVENESS:")
-    print(f"   Total Models Killed: {total_kills}")
     if total_kills > 0:
-        print(f"   Shooting Phase Kills: {shooting_kills} ({shooting_kills/total_kills*100:.1f}%)")
-        print(f"   Melee Phase Kills: {melee_kills} ({melee_kills/total_kills*100:.1f}%)")
-        print(f"   Combat Style: {'Shooting-focused' if shooting_kills > melee_kills * 1.5 else 'Melee-focused' if melee_kills > shooting_kills * 1.5 else 'Balanced'}")
+        print(f"   Total Models Killed: {total_kills}")
+        print(f"   Shooting Kills: {shooting_kills} ({shooting_kills/total_kills*100:.1f}%)")
+        print(f"   Melee Kills: {melee_kills} ({melee_kills/total_kills*100:.1f}%)")
     else:
-        print(f"   No models were killed during training")
-        print(f"   May indicate units not engaging or damage system issues")
+        # Look at detailed episode stats for actual death tracking
+        total_deaths = sum(len(episode['models_destroyed']) for episode in all_episode_stats)
+        if total_deaths > 0:
+            print(f"   Total Models Killed: {total_deaths}")
+            # Analyze deaths by player
+            player1_deaths = sum(len([d for d in episode['models_destroyed'] if d['owner'] == 'player2']) for episode in all_episode_stats)
+            player2_deaths = sum(len([d for d in episode['models_destroyed'] if d['owner'] == 'player1']) for episode in all_episode_stats) 
+            print(f"   Player 1 killed {player1_deaths} enemy models")
+            print(f"   Player 2 killed {player2_deaths} enemy models")
+            
+            # Show some examples of what died
+            all_deaths = []
+            for episode in all_episode_stats:
+                all_deaths.extend(episode['models_destroyed'])
+            
+            if all_deaths:
+                unit_types = {}
+                for death in all_deaths[:10]:  # Show first 10 deaths as examples
+                    unit_type = death['model_name']
+                    unit_types[unit_type] = unit_types.get(unit_type, 0) + 1
+                
+                print(f"   Most common casualties: {', '.join([f'{name} ({count})' for name, count in list(unit_types.items())[:5]])}")
+        else:
+            print(f"   Total Models Killed: 0")
+            print(f"   No models were killed during training")
+            print(f"   May indicate units not engaging or damage system issues")
     
     # Command usage analysis
     total_commands = sum(training_stats['command_usage'].values())
