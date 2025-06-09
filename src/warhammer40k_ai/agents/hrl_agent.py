@@ -1238,7 +1238,7 @@ class TacticalAgent:
         self.fight_profile_selection_log_probs.clear()
 
     # --- Checkpointing for TacticalAgent ---
-    def save_checkpoint(self, filepath: str = 'tactical_agent_checkpoint.pth') -> None:
+    def save_checkpoint(self, filepath: str = 'ta_checkpoint.pth') -> None:
         checkpoint = {
             'movement_policy_net_state_dict': self.movement_policy_net.state_dict(),
             'movement_optimizer_state_dict': self.movement_optimizer.state_dict(),
@@ -1264,7 +1264,7 @@ class TacticalAgent:
         torch.save(checkpoint, filepath)
         logger.info(f"TacticalAgent checkpoint saved to {filepath}")
 
-    def load_checkpoint(self, filepath: str = 'tactical_agent_checkpoint.pth') -> None:
+    def load_checkpoint(self, filepath: str = 'ta_checkpoint.pth') -> None:
         if os.path.exists(filepath):
             checkpoint = torch.load(filepath, weights_only=False)
             self.movement_policy_net.load_state_dict(checkpoint.get('movement_policy_net_state_dict', {}))
@@ -1377,7 +1377,7 @@ class LowLevelAgent:
         self.log_probs.clear()
 
     # --- Checkpointing for LowLevelAgent ---
-    def save_checkpoint(self, filepath: str = 'low_level_agent_checkpoint.pth') -> None:
+    def save_checkpoint(self, filepath: str = 'lla_checkpoint.pth') -> None:
         checkpoint = {
             'movement_execution_net_state_dict': self.movement_execution_net.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
@@ -1387,7 +1387,7 @@ class LowLevelAgent:
         torch.save(checkpoint, filepath)
         logger.info(f"LowLevelAgent checkpoint saved to {filepath}")
 
-    def load_checkpoint(self, filepath: str = 'low_level_agent_checkpoint.pth') -> None:
+    def load_checkpoint(self, filepath: str = 'lla_checkpoint.pth') -> None:
         if os.path.exists(filepath):
             checkpoint = torch.load(filepath, weights_only=False)
             self.movement_execution_net.load_state_dict(checkpoint.get('movement_execution_net_state_dict', {}))
