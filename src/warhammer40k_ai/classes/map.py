@@ -3,7 +3,7 @@ from enum import Enum, auto
 from .unit import Unit
 from .model import Model
 from ..utility.calcs import get_dist, convert_mm_to_inches, can_traverse_freely
-from ..utility.constants import ENGAGEMENT_RANGE
+from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VERTICAL
 from shapely.geometry import Polygon, Point, LineString
 from shapely.affinity import scale, translate
 
@@ -108,11 +108,40 @@ class Map:
         return self.boundary.contains(test_shape)
 
     def is_within_engagement_range(self, position: Tuple[float, float, float], target: Unit) -> bool:
-        for model in target.models:
-            target_position = model.get_location()
-            distance = get_dist(position[0] - target_position[0], position[1] - target_position[1])
-            if distance <= ENGAGEMENT_RANGE:
+        """
+        Check if any model in the target unit is within engagement range.
+        
+        Engagement Range in 10th Edition:
+        - Within 1″ horizontally (measured base-to-base)  
+        - Within 5″ vertically
+        
+        Args:
+            position: The position to check from (x, y, z)
+            target: The target unit to check against
+            
+        Returns:
+            bool: True if any model in target is within engagement range
+        """
+        # Create a temporary model at the given position for distance calculations
+        from .model import Model
+        from ..utility.model_base import Base, BaseType
+        
+        # Create a temporary base for the position we're checking from
+        temp_base = Base(BaseType.CIRCULAR, 0.1)  # Small radius for point-like calculation
+        temp_base.set_position(position[0], position[1], position[2])
+        
+        for target_model in target.models:
+            # Calculate horizontal distance (base-to-base)
+            horizontal_distance = temp_base.edge_to_edge_distance(target_model.model_base)
+            
+            # Calculate vertical distance  
+            vertical_distance = temp_base.vertical_distance(target_model.model_base)
+            
+            # Check if within engagement range
+            if (horizontal_distance <= ENGAGEMENT_RANGE_HORIZONTAL and 
+                vertical_distance <= ENGAGEMENT_RANGE_VERTICAL):
                 return True
+                
         return False
 
     def calculate_pivot_cost(self, unit: Unit) -> float:

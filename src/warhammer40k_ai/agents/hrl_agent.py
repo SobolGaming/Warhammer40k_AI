@@ -280,7 +280,11 @@ class TacticalAgent:
         self.shooting_optimizer = optim.Adam(self.shooting_policy_net.parameters(), lr=learning_rate)
         self.profile_selection_policy_net = PolicyNetwork(input_size=self.get_profile_selection_state_size(), output_size=self.get_profile_selection_action_size())
         self.profile_selection_optimizer = optim.Adam(self.profile_selection_policy_net.parameters(), lr=learning_rate)
-        # Add similar networks for charge and fight phases if desired
+        # Fight phase networks
+        self.fight_target_policy_net = PolicyNetwork(input_size=self.get_fight_state_size(), output_size=self.get_fight_action_size())
+        self.fight_target_optimizer = optim.Adam(self.fight_target_policy_net.parameters(), lr=learning_rate)
+        self.fight_profile_selection_policy_net = PolicyNetwork(input_size=self.get_profile_selection_state_size(), output_size=self.get_profile_selection_action_size())
+        self.fight_profile_selection_optimizer = optim.Adam(self.fight_profile_selection_policy_net.parameters(), lr=learning_rate)
 
         # Store rewards and log probabilities for training
         self.movement_rewards = []
@@ -289,7 +293,11 @@ class TacticalAgent:
         self.shooting_log_probs = []
         self.profile_selection_rewards = []
         self.profile_selection_log_probs = []
-        # Add similar buffers for charge and fight phases
+        # Fight phase rewards and log probs
+        self.fight_target_rewards = []
+        self.fight_target_log_probs = []
+        self.fight_profile_selection_rewards = []
+        self.fight_profile_selection_log_probs = []
 
     def command_phase(self, command: str) -> None:
         """Execute high-level commands or stratagems."""
@@ -612,18 +620,148 @@ class TacticalAgent:
     ###########################################################################
     # Fight Phase
     ###########################################################################
+    def find_enemies_in_melee_range(self, unit: Unit) -> List[Unit]:
+        """Find all enemy units within engagement range of the given unit."""
+        enemies_in_range = []
+        unit_position = unit.get_position()
+        enemy_units = self.game.map.get_enemy_units(unit)
+        
+        for enemy_unit in enemy_units:
+            if self.game.map.is_within_engagement_range(unit_position, enemy_unit):
+                enemies_in_range.append(enemy_unit)
+        
+        return enemies_in_range
+    
+    def choose_fight_target(self, model: Model, profile: WargearProfile, targets: List[Unit]) -> int:
+        """Choose a target for the model's melee weapon/profile in the fight phase."""
+        state = self.extract_fight_state_features(model, profile, targets)
+        action_probs = self.fight_target_policy_net(state)
+
+        # Mask unavailable targets
+        action_mask = torch.zeros(self.get_fight_action_size())
+        num_targets = min(len(targets), MAX_TARGETS)
+        for idx in range(num_targets):
+            action_mask[idx] = 1
+        masked_probs = action_probs * action_mask
+        masked_probs = masked_probs / masked_probs.sum()
+
+        # Create a categorical distribution
+        action_dist = torch.distributions.Categorical(masked_probs)
+        action_idx = action_dist.sample()
+
+        # Store log probability
+        self.fight_target_log_probs.append(action_dist.log_prob(action_idx))
+        return action_idx.item()
+    
+    def choose_melee_weapon_profile(self, model: Model, wargear_item: Wargear) -> WargearProfile:
+        """Choose a melee weapon profile to use from the wargear item."""
+        profiles = list(wargear_item.profiles.values())
+        if len(profiles) == 1:
+            return profiles[0]
+        
+        state = self.extract_profile_selection_state(model, wargear_item, profiles)
+        action_probs = self.fight_profile_selection_policy_net(state)
+
+        # Mask unavailable profiles
+        action_mask = torch.zeros(self.get_profile_selection_action_size())
+        num_profiles = min(len(profiles), MAX_PROFILES)
+        for idx in range(num_profiles):
+            action_mask[idx] = 1
+        masked_probs = action_probs * action_mask
+        masked_probs = masked_probs / masked_probs.sum()
+
+        # Create a categorical distribution for profile selection
+        profile_dist = torch.distributions.Categorical(masked_probs)
+        profile_idx = profile_dist.sample()
+
+        # Store log probability
+        self.fight_profile_selection_log_probs.append(profile_dist.log_prob(profile_idx))
+        return profiles[profile_idx.item()]
+    
+    def extract_fight_state_features(self, model: Model, profile: WargearProfile, targets: List[Unit]) -> torch.Tensor:
+        """Extract state features for fight target selection."""
+        features = []
+        model_pos = model.get_location()
+        features.extend([model_pos[0], model_pos[1], model_pos[2]])
+        features.append(model.health_percent)
+        
+        for enemy in targets[:MAX_TARGETS]:
+            features.append(profile.get_damage_potential(enemy))
+            enemy_pos = enemy.get_position()
+            features.extend([enemy_pos[0], enemy_pos[1], enemy_pos[2]])
+            features.append(enemy.health_percent)
+        
+        num_targets = len(targets)
+        if num_targets < MAX_TARGETS:
+            padding = [0.0] * ((MAX_TARGETS - num_targets) * 5)
+            features.extend(padding)
+
+        # Convert to tensor
+        state = torch.tensor([features], dtype=torch.float32)  # Batch dimension
+        return state
+    
+    def get_fight_state_size(self) -> int:
+        """Calculate the size of the fight target selection state vector."""
+        # 4 features for the model (x, y, z, health)
+        # 5 features per target (damage potential, x, y, z, health) * MAX_TARGETS
+        return 4 + (MAX_TARGETS * 5)
+
+    def get_fight_action_size(self) -> int:
+        """Define the number of possible fight targets to select from."""
+        return MAX_TARGETS
+
     def fight_phase(self, unit: Unit) -> None:
         """Resolve melee combat."""
         if not unit.deployed or not unit.is_alive():
-            return None
+            return
 
         self.game.event_system.publish("fight_phase_start", unit=unit, game_state=self.game.get_state())
-        # Example placeholder for fight logic
-        # targets = self.game.find_enemies_in_melee_range(unit)
-        # target = random.choice(targets)
-        # if target:
-        #     print(f"{unit.name} fights {target.name}")
-        #     self.game.fight(unit, target)
+        
+        # Find enemies in melee range
+        enemies_in_range = self.find_enemies_in_melee_range(unit)
+        
+        if not enemies_in_range:
+            print(f"{unit.name} has no enemies in melee range.")
+            self.game.event_system.publish("fight_phase_end", unit=unit, game_state=self.game.get_state())
+            return
+
+        # For each model in the unit, resolve melee attacks
+        for model in unit.models:
+            if not model.is_alive:
+                continue
+                
+            # Find melee weapons for this model
+            melee_weapons = [wargear for wargear in model.wargear if wargear.is_melee()]
+            
+            if not melee_weapons:
+                continue
+                
+            for wargear_item in melee_weapons:
+                # Choose which profile to use if the weapon has multiple profiles
+                selected_profile = self.choose_melee_weapon_profile(model, wargear_item)
+                if selected_profile is None:
+                    continue
+                
+                # Agent decides on the target
+                target_idx = self.choose_fight_target(model, selected_profile, enemies_in_range)
+                target = enemies_in_range[target_idx]
+
+                # Record the target's health before attack
+                target_health_before = target.health_percent
+
+                # Execute the melee attack
+                print(f"{model.name} of {unit.name} fights {target.name} with {wargear_item.name} ({selected_profile.name})")
+                model.melee_attack(target, selected_profile)
+
+                # Record the target's health after attack
+                target_health_after = target.health_percent
+
+                # Compute the reward (damage inflicted)
+                damage = target_health_before - target_health_after
+                reward = FIGHT_REWARD_SCALING * damage
+                self.fight_profile_selection_rewards.append(reward)
+                self.fight_target_rewards.append(reward)
+
         self.game.event_system.publish("fight_phase_end", unit=unit, game_state=self.game.get_state())
 
     ###########################################################################
@@ -633,7 +771,8 @@ class TacticalAgent:
         self.update_movement_policy()
         self.update_shooting_policy()
         self.update_profile_selection_policy()
-        # Add updates for charge and fight policies if implemented
+        self.update_fight_target_policy()
+        self.update_fight_profile_selection_policy()
 
     def update_movement_policy(self) -> None:
         if not self.movement_rewards or not self.movement_log_probs:
@@ -725,6 +864,66 @@ class TacticalAgent:
         self.profile_selection_rewards.clear()
         self.profile_selection_log_probs.clear()
 
+    def update_fight_target_policy(self) -> None:
+        if not self.fight_target_rewards or not self.fight_target_log_probs:
+            print("No rewards or log probabilities to update fight target policy.")
+            return
+
+        R = 0
+        policy_loss = []
+        returns = []
+        gamma = 0.99
+
+        for r in self.fight_target_rewards[::-1]:
+            R = r + gamma * R
+            returns.insert(0, R)
+        returns = torch.tensor(returns)
+        if len(returns) > 1:
+            returns = (returns - returns.mean()) / (returns.std() + 1e-9)
+        else:
+            returns = returns * 0
+
+        for log_prob, R in zip(self.fight_target_log_probs, returns):
+            policy_loss.append(-log_prob * R)
+
+        self.fight_target_optimizer.zero_grad()
+        policy_loss = torch.stack(policy_loss).sum()
+        policy_loss.backward()
+        self.fight_target_optimizer.step()
+
+        self.fight_target_rewards.clear()
+        self.fight_target_log_probs.clear()
+
+    def update_fight_profile_selection_policy(self) -> None:
+        if not self.fight_profile_selection_rewards or not self.fight_profile_selection_log_probs:
+            print("No rewards or log probabilities to update fight profile selection policy.")
+            return
+
+        R = 0
+        policy_loss = []
+        returns = []
+        gamma = 0.99
+
+        for r in self.fight_profile_selection_rewards[::-1]:
+            R = r + gamma * R
+            returns.insert(0, R)
+        returns = torch.tensor(returns)
+        if len(returns) > 1:
+            returns = (returns - returns.mean()) / (returns.std() + 1e-9)
+        else:
+            returns = returns * 0
+
+        for log_prob, R in zip(self.fight_profile_selection_log_probs, returns):
+            policy_loss.append(-log_prob * R)
+
+        self.fight_profile_selection_optimizer.zero_grad()
+        policy_loss = torch.stack(policy_loss).sum()
+        policy_loss.backward()
+        self.fight_profile_selection_optimizer.step()
+
+        self.fight_profile_selection_rewards.clear()
+        self.fight_profile_selection_log_probs.clear()
+
     # --- Checkpointing for TacticalAgent ---
     def save_checkpoint(self, filepath: str = 'tactical_agent_checkpoint.pth') -> None:
         checkpoint = {
@@ -734,12 +933,20 @@ class TacticalAgent:
             'shooting_optimizer_state_dict': self.shooting_optimizer.state_dict(),
             'profile_selection_policy_net_state_dict': self.profile_selection_policy_net.state_dict(),
             'profile_selection_optimizer_state_dict': self.profile_selection_optimizer.state_dict(),
+            'fight_target_policy_net_state_dict': self.fight_target_policy_net.state_dict(),
+            'fight_target_optimizer_state_dict': self.fight_target_optimizer.state_dict(),
+            'fight_profile_selection_policy_net_state_dict': self.fight_profile_selection_policy_net.state_dict(),
+            'fight_profile_selection_optimizer_state_dict': self.fight_profile_selection_optimizer.state_dict(),
             'movement_rewards': self.movement_rewards,
             'movement_log_probs': self.movement_log_probs,
             'shooting_rewards': self.shooting_rewards,
             'shooting_log_probs': self.shooting_log_probs,
             'profile_selection_rewards': self.profile_selection_rewards,
-            'profile_selection_log_probs': self.profile_selection_log_probs
+            'profile_selection_log_probs': self.profile_selection_log_probs,
+            'fight_target_rewards': self.fight_target_rewards,
+            'fight_target_log_probs': self.fight_target_log_probs,
+            'fight_profile_selection_rewards': self.fight_profile_selection_rewards,
+            'fight_profile_selection_log_probs': self.fight_profile_selection_log_probs
         }
         torch.save(checkpoint, filepath)
         print(f"TacticalAgent checkpoint saved to {filepath}")
@@ -753,12 +960,20 @@ class TacticalAgent:
             self.shooting_optimizer.load_state_dict(checkpoint.get('shooting_optimizer_state_dict', {}))
             self.profile_selection_policy_net.load_state_dict(checkpoint.get('profile_selection_policy_net_state_dict', {}))
             self.profile_selection_optimizer.load_state_dict(checkpoint.get('profile_selection_optimizer_state_dict', {}))
+            self.fight_target_policy_net.load_state_dict(checkpoint.get('fight_target_policy_net_state_dict', {}))
+            self.fight_target_optimizer.load_state_dict(checkpoint.get('fight_target_optimizer_state_dict', {}))
+            self.fight_profile_selection_policy_net.load_state_dict(checkpoint.get('fight_profile_selection_policy_net_state_dict', {}))
+            self.fight_profile_selection_optimizer.load_state_dict(checkpoint.get('fight_profile_selection_optimizer_state_dict', {}))
             self.movement_rewards = checkpoint.get('movement_rewards', [])
             self.movement_log_probs = checkpoint.get('movement_log_probs', [])
             self.shooting_rewards = checkpoint.get('shooting_rewards', [])
             self.shooting_log_probs = checkpoint.get('shooting_log_probs', [])
             self.profile_selection_rewards = checkpoint.get('profile_selection_rewards', [])
             self.profile_selection_log_probs = checkpoint.get('profile_selection_log_probs', [])
+            self.fight_target_rewards = checkpoint.get('fight_target_rewards', [])
+            self.fight_target_log_probs = checkpoint.get('fight_target_log_probs', [])
+            self.fight_profile_selection_rewards = checkpoint.get('fight_profile_selection_rewards', [])
+            self.fight_profile_selection_log_probs = checkpoint.get('fight_profile_selection_log_probs', [])
             print(f"TacticalAgent checkpoint loaded from {filepath}")
         else:
             print("No TacticalAgent checkpoint found. Starting with fresh state.")
