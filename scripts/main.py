@@ -3,6 +3,7 @@ import sys
 import os
 import random
 import argparse
+import logging
 from typing import Tuple
 from warhammer40k_ai.gym_env.warhammer40k_env import WarhammerEnv
 from warhammer40k_ai.classes.game import Game
@@ -19,6 +20,10 @@ NUM_TRAINING_EPISODES = 1000
 CHECKPOINT_INTERVAL = 10  # Save checkpoints every N episodes
 CHECKPOINT_DIR = "checkpoints"
 
+# Setup logging
+logging.basicConfig(level=logging.WARNING, format='%(levelname)s: %(message)s')
+logger = logging.getLogger(__name__)
+
 # Helper
 waha_helper = WahaHelper()
 
@@ -32,82 +37,72 @@ def cleanup_destroyed_units(game: Game):
     # Clean up units from the map
     destroyed_units = [unit for unit in game.map.units if not unit.is_alive()]
     for unit in destroyed_units:
-        print(f"Removing destroyed unit {unit.name} from the battlefield")
+        logger.debug(f"Removing destroyed unit {unit.name} from the battlefield")
         game.map.units.remove(unit)
     
     # Clean up units from player armies
     for player in game.players:
         destroyed_units = [unit for unit in player.get_army().units if not unit.is_alive()]
         for unit in destroyed_units:
-            print(f"Removing destroyed unit {unit.name} from {player.name}'s army")
+            logger.debug(f"Removing destroyed unit {unit.name} from {player.name}'s army")
             player.get_army().units.remove(unit)
 
 def auto_deploy_units(game: Game, player1: Player, player2: Player):
     """Automatically deploy units for both players in their deployment zones."""
-    # Define deployment zones (assuming standard 44x60 battlefield)
-    # Player 1 deploys in bottom third, Player 2 in top third
-    p1_zone = {"x_min": 5, "x_max": 55, "y_min": 5, "y_max": 12}
-    p2_zone = {"x_min": 5, "x_max": 55, "y_min": 32, "y_max": 39}
     
     def deploy_player_units(player: Player, zone: dict):
-        """Deploy all units for a player in their zone."""
-        for unit in player.get_army().units:
-            if not unit.deployed:
-                # Try to find a valid position for the unit
-                max_attempts = 50
-                deployed = False
-                for attempt in range(max_attempts):
-                    try:
-                        x = random.uniform(zone["x_min"], zone["x_max"])
-                        y = random.uniform(zone["y_min"], zone["y_max"])
-                        
-                        # Calculate model positions
-                        model_positions = unit.calculate_model_positions(x, y, game.map, 1.0)
-                        
-                        if model_positions:
-                            # Set model positions
-                            for model, position in zip(unit.models, model_positions):
-                                model_x, model_y, model_z, model_facing = position
-                                model.set_location(model_x, model_y, model_z, model_facing)
-                            
-                            # Set unit position
-                            unit_x = sum(pos[0] for pos in model_positions) / len(model_positions)
-                            unit_y = sum(pos[1] for pos in model_positions) / len(model_positions)
-                            unit.set_position(unit_x, unit_y)
-                            
-                            # Try to place the unit
-                            if game.map.place_unit(unit):
-                                unit.deployed = True
-                                deployed = True
-                                print(f"Auto-deployed {unit.name} at ({unit_x:.1f}, {unit_y:.1f})")
-                                break
-                    except Exception as e:
-                        print(f"Error during deployment attempt {attempt + 1} for {unit.name}: {e}")
-                        continue
-                    
-                if not deployed:
-                    print(f"Failed to auto-deploy {unit.name} after {max_attempts} attempts")
-                    # Force deploy at a simple position as fallback
-                    try:
-                        x = zone["x_min"] + (zone["x_max"] - zone["x_min"]) / 2
-                        y = zone["y_min"] + random.uniform(0, zone["y_max"] - zone["y_min"])
-                        unit.set_position(x, y)
-                        for i, model in enumerate(unit.models):
-                            model.set_location(x + i * 0.5, y, 0, 0)
-                        unit.deployed = True
-                        print(f"Force-deployed {unit.name} at ({x:.1f}, {y:.1f})")
-                    except Exception as e:
-                        print(f"Failed to force-deploy {unit.name}: {e}")
+        """Deploy units for a specific player in their zone."""
+        logger.debug(f"Auto-deploying units for {player.name}")
+        x_start, x_end = zone['x_range']
+        y_start, y_end = zone['y_range']
+        
+        units = player.get_army().units
+        grid_size = max(2, int((len(units) ** 0.5) + 1))
+        x_step = (x_end - x_start) / (grid_size + 1)
+        y_step = (y_end - y_start) / (grid_size + 1)
+        
+        for i, unit in enumerate(units):
+            try:
+                row = i // grid_size
+                col = i % grid_size
+                x = x_start + (col + 1) * x_step
+                y = y_start + (row + 1) * y_step
+                z = game.map.get_height_at_point(x, y)
+                
+                # Deploy each model in the unit
+                for j, model in enumerate(unit.models):
+                    model_x = x + (j % 3) * 0.5  # Spread models slightly
+                    model_y = y + (j // 3) * 0.5
+                    model_z = game.map.get_height_at_point(model_x, model_y)
+                    model.set_location(model_x, model_y, model_z)
+                
+                unit.set_position(x, y, z)
+                unit.deployed = True
+                game.map.units.append(unit)
+                logger.debug(f"Deployed {unit.name} at ({x:.1f}, {y:.1f}, {z:.1f})")
+                
+            except Exception as e:
+                logger.warning(f"Failed to deploy {unit.name}: {e}")
+                # Fallback: simple positioning
+                unit.set_position(x_start + 2, y_start + 2, 0)
+                unit.deployed = True
+                game.map.units.append(unit)
     
-    try:
-        deploy_player_units(player1, p1_zone)
-        deploy_player_units(player2, p2_zone)
-        print(f"Deployment complete. Player 1: {sum(1 for u in player1.get_army().units if u.deployed)}/{len(player1.get_army().units)} units deployed")
-        print(f"Deployment complete. Player 2: {sum(1 for u in player2.get_army().units if u.deployed)}/{len(player2.get_army().units)} units deployed")
-    except Exception as e:
-        print(f"Error during auto-deployment: {e}")
-        import traceback
-        traceback.print_exc()
+    # Define deployment zones
+    battlefield_width, battlefield_height = game.get_battlefield_size()
+    
+    player1_zone = {
+        'x_range': (2, battlefield_width * 0.4),
+        'y_range': (2, battlefield_height - 2)
+    }
+    
+    player2_zone = {
+        'x_range': (battlefield_width * 0.6, battlefield_width - 2),
+        'y_range': (2, battlefield_height - 2)
+    }
+    
+    deploy_player_units(player1, player1_zone)
+    deploy_player_units(player2, player2_zone)
 
 def initialize_game() -> Tuple[pygame.Surface, WarhammerEnv, Game, Map, float, int, int, Player, Player]:
     pygame.init()
@@ -149,7 +144,7 @@ def initialize_game() -> Tuple[pygame.Surface, WarhammerEnv, Game, Map, float, i
 
 def run_training_episode(episode_num: int, agents: dict) -> dict:
     """Run a single training episode and return the results."""
-    print(f"\n=== TRAINING EPISODE {episode_num + 1} ===")
+    print(f"Episode {episode_num + 1}/{NUM_TRAINING_EPISODES}: Starting...")
     
     # Initialize a fresh game for this episode
     screen, env, game, game_map, _, _, _, player1, player2 = initialize_game()
@@ -192,10 +187,10 @@ def run_training_episode(episode_num: int, agents: dict) -> dict:
             tactical_agent = tactical_agent_player2
             low_level_agent = low_level_agent_player2
 
-        print(f"TURN [{game.turn}] PHASE: {game.phase.name} :: {current_player.name} choosing objective and command")
+        logger.debug(f"TURN [{game.turn}] PHASE: {game.phase.name} :: {current_player.name} choosing objective and command")
 
         objective, command = high_level_agent.choose_objective_and_command()
-        print(f"{current_player.name} chose Objective: {objective.name}, Command: {command}")
+        logger.debug(f"{current_player.name} chose Objective: {objective.name}, Command: {command}")
 
         # Record average distance at start of turn for high-level reward calculation
         avg_distance_before = current_player.compute_average_distance(objective)
@@ -206,7 +201,7 @@ def run_training_episode(episode_num: int, agents: dict) -> dict:
                 if isinstance(obj.location, ObjectivePoint):
                     obj.location.update_control(game)
                 if obj.check_completion(game):
-                    print(f"Objective {obj.name} completed!")
+                    logger.debug(f"Objective {obj.name} completed!")
                     current_player.add_score(obj.points)
             tactical_agent.command_phase(command)
             game.next_phase()
@@ -227,10 +222,32 @@ def run_training_episode(episode_num: int, agents: dict) -> dict:
                 tactical_agent.fight_phase(unit)
             game.next_phase()  # This will trigger next_turn() since it's the last phase
 
-        # Compute aggregated reward for the High Level Agent based on distance improvement.
+        # Compute aggregated reward for the High Level Agent based on distance improvement and command effectiveness
         avg_distance_after = current_player.compute_average_distance(objective)
-        high_level_reward = (avg_distance_before - avg_distance_after) * 1.0  # scale factor can be tuned
-        print(f"High Level Reward: {high_level_reward} (Avg before: {avg_distance_before}, Avg after: {avg_distance_after})")
+        distance_reward = (avg_distance_before - avg_distance_after) * 1.0
+        
+        # Add command-specific rewards to encourage variety
+        command_reward = 0
+        if command == "attack":
+            # Reward for dealing damage to enemies
+            enemy_units = [unit for unit in game.get_opponent().get_army().units if unit.is_alive()]
+            total_enemy_health = sum(unit.health_percent for unit in enemy_units)
+            command_reward = total_enemy_health * 0.1  # Small reward for maintaining enemy pressure
+        elif command == "defend":
+            # Reward for maintaining unit health and objective control
+            friendly_units = [unit for unit in current_player.get_army().units if unit.is_alive()]
+            total_friendly_health = sum(unit.health_percent for unit in friendly_units)
+            command_reward = total_friendly_health * 0.05  # Small reward for keeping units healthy
+            # Bonus for controlling objectives
+            for obj in game.map.objectives:
+                if isinstance(obj.location, ObjectivePoint) and obj.location.controlling_player == current_player:
+                    command_reward += 2.0
+        elif command == "move":
+            # Reward based on distance improvement (already calculated)
+            command_reward = distance_reward * 0.5  # Emphasize movement effectiveness
+        
+        high_level_reward = distance_reward + command_reward
+        logger.debug(f"High Level Reward: {high_level_reward} (Distance: {distance_reward}, Command '{command}': {command_reward})")
 
         high_level_agent.store_reward(high_level_reward)
         high_level_agent.update_policy()
@@ -272,7 +289,7 @@ def run_training_loop():
     screen, env, game, game_map, _, _, _, player1, player2 = initialize_game()
     
     # Initialize agents
-    print("Initializing AI agents...")
+    logger.info("Initializing AI agents...")
     high_level_agent_player1 = HighLevelAgent(game, player1, player2, objectives=game.map.objectives, commands=game.commands)
     tactical_agent_player1 = TacticalAgent(game, player1)
     low_level_agent_player1 = LowLevelAgent(game, player1)
@@ -281,7 +298,7 @@ def run_training_loop():
     low_level_agent_player2 = LowLevelAgent(game, player2)
     
     # Load existing checkpoints if available
-    print("Loading checkpoints...")
+    logger.info("Loading checkpoints...")
     high_level_agent_player1.load_checkpoint(os.path.join(CHECKPOINT_DIR, 'hla_player1_checkpoint.pth'))
     tactical_agent_player1.load_checkpoint(os.path.join(CHECKPOINT_DIR, 'tactical_agent_player1_checkpoint.pth'))
     low_level_agent_player1.load_checkpoint(os.path.join(CHECKPOINT_DIR, 'low_level_agent_player1_checkpoint.pth'))
@@ -307,7 +324,8 @@ def run_training_loop():
         'total_turns': 0
     }
     
-    print(f"Starting training for {NUM_TRAINING_EPISODES} episodes...")
+    print(f"\n🎮 Starting training for {NUM_TRAINING_EPISODES} episodes...")
+    print("=" * 60)
     
     # Main training loop
     for episode in range(NUM_TRAINING_EPISODES):
@@ -323,39 +341,38 @@ def run_training_loop():
         else:
             training_stats['player2_wins'] += 1
         
+        # Calculate win rates
+        p1_win_rate = (training_stats['player1_wins'] / training_stats['total_episodes']) * 100
+        p2_win_rate = (training_stats['player2_wins'] / training_stats['total_episodes']) * 100
+        
+        # Print progress every 10 episodes or on important milestones
+        if (episode + 1) % 10 == 0 or episode == 0:
+            print(f"📊 Progress Update - Episode {episode + 1}/{NUM_TRAINING_EPISODES}")
+            print(f"   Player 1 Win Rate: {p1_win_rate:.1f}% ({training_stats['player1_wins']} wins)")
+            print(f"   Player 2 Win Rate: {p2_win_rate:.1f}% ({training_stats['player2_wins']} wins)")
+            print(f"   Avg Turns/Episode: {training_stats['avg_turns_per_episode']:.1f}")
+            print("-" * 40)
+        
         # Save checkpoints periodically
         if (episode + 1) % CHECKPOINT_INTERVAL == 0:
-            print(f"\nSaving checkpoints after episode {episode + 1}...")
+            print(f"💾 Saving checkpoints after episode {episode + 1}...")
             high_level_agent_player1.save_checkpoint(os.path.join(CHECKPOINT_DIR, 'hla_player1_checkpoint.pth'))
             tactical_agent_player1.save_checkpoint(os.path.join(CHECKPOINT_DIR, 'tactical_agent_player1_checkpoint.pth'))
             low_level_agent_player1.save_checkpoint(os.path.join(CHECKPOINT_DIR, 'low_level_agent_player1_checkpoint.pth'))
             high_level_agent_player2.save_checkpoint(os.path.join(CHECKPOINT_DIR, 'hla_player2_checkpoint.pth'))
             tactical_agent_player2.save_checkpoint(os.path.join(CHECKPOINT_DIR, 'tactical_agent_player2_checkpoint.pth'))
             low_level_agent_player2.save_checkpoint(os.path.join(CHECKPOINT_DIR, 'low_level_agent_player2_checkpoint.pth'))
-            
-            # Print training statistics
-            win_rate_p1 = training_stats['player1_wins'] / training_stats['total_episodes'] * 100
-            win_rate_p2 = training_stats['player2_wins'] / training_stats['total_episodes'] * 100
-            print(f"Training Progress: Episode {episode + 1}/{NUM_TRAINING_EPISODES}")
-            print(f"Player 1 Win Rate: {win_rate_p1:.1f}% ({training_stats['player1_wins']} wins)")
-            print(f"Player 2 Win Rate: {win_rate_p2:.1f}% ({training_stats['player2_wins']} wins)")
-            print(f"Average Turns per Episode: {training_stats['avg_turns_per_episode']:.1f}")
     
-    # Final checkpoint save
-    print("\nTraining completed! Saving final checkpoints...")
-    high_level_agent_player1.save_checkpoint(os.path.join(CHECKPOINT_DIR, 'hla_player1_final.pth'))
-    tactical_agent_player1.save_checkpoint(os.path.join(CHECKPOINT_DIR, 'tactical_agent_player1_final.pth'))
-    low_level_agent_player1.save_checkpoint(os.path.join(CHECKPOINT_DIR, 'low_level_agent_player1_final.pth'))
-    high_level_agent_player2.save_checkpoint(os.path.join(CHECKPOINT_DIR, 'hla_player2_final.pth'))
-    tactical_agent_player2.save_checkpoint(os.path.join(CHECKPOINT_DIR, 'tactical_agent_player2_final.pth'))
-    low_level_agent_player2.save_checkpoint(os.path.join(CHECKPOINT_DIR, 'low_level_agent_player2_final.pth'))
-    
-    # Print final statistics
-    print(f"\n=== TRAINING SUMMARY ===")
-    print(f"Total Episodes: {training_stats['total_episodes']}")
-    print(f"Player 1 Wins: {training_stats['player1_wins']} ({training_stats['player1_wins']/training_stats['total_episodes']*100:.1f}%)")
-    print(f"Player 2 Wins: {training_stats['player2_wins']} ({training_stats['player2_wins']/training_stats['total_episodes']*100:.1f}%)")
-    print(f"Average Turns per Episode: {training_stats['avg_turns_per_episode']:.1f}")
+    # Final training summary
+    print("\n" + "=" * 60)
+    print("🏁 TRAINING COMPLETED!")
+    print("=" * 60)
+    print(f"📈 Final Results after {NUM_TRAINING_EPISODES} episodes:")
+    print(f"   Player 1: {training_stats['player1_wins']} wins ({p1_win_rate:.1f}%)")
+    print(f"   Player 2: {training_stats['player2_wins']} wins ({p2_win_rate:.1f}%)")
+    print(f"   Average game length: {training_stats['avg_turns_per_episode']:.1f} turns")
+    print(f"   Total training turns: {training_stats['total_turns']}")
+    print("=" * 60)
 
 def main_game_loop() -> None:
     screen, env, game, game_map, _, _, _, player1, player2 = initialize_game()

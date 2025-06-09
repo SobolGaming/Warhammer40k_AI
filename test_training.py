@@ -7,10 +7,11 @@ This runs a very short training session to test all components.
 import sys
 import os
 import subprocess
+import logging
 
 def test_training_system():
     """Run a quick test of the training system."""
-    print("Testing Warhammer 40k AI Training System")
+    print("🧪 Testing Warhammer 40k AI Training System")
     print("=" * 50)
     
     # Test with just 2 episodes and checkpoint every episode
@@ -22,40 +23,45 @@ def test_training_system():
     ]
     
     print(f"Running command: {' '.join(cmd)}")
-    print("This will run 2 training episodes...")
+    print("This will run 2 training episodes...\n")
     
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        # Set environment variable to reduce logging noise during test
+        env = os.environ.copy()
+        env['PYTHONPATH'] = os.getcwd()
         
-        print("\nSTDOUT:")
-        print(result.stdout)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300, env=env)
         
-        if result.stderr:
-            print("\nSTDERR:")
-            print(result.stderr)
-            
         if result.returncode == 0:
-            print("\n✅ Test completed successfully!")
+            print("✅ Test completed successfully!")
+            print("\n--- Test Output ---")
+            # Only show the important lines from output
+            lines = result.stdout.split('\n')
+            important_lines = [line for line in lines if any(keyword in line for keyword in 
+                              ['Starting training', 'Episode', 'completed', 'Progress Update', 'TRAINING COMPLETED', 'Final Results'])]
+            for line in important_lines[-20:]:  # Show last 20 important lines
+                print(line)
             
-            # Check if checkpoint files were created
-            checkpoint_dir = "checkpoints"
-            if os.path.exists(checkpoint_dir):
-                files = os.listdir(checkpoint_dir)
-                print(f"✅ Checkpoint directory created with {len(files)} files:")
-                for file in files:
-                    print(f"  - {file}")
-            else:
-                print("⚠️  No checkpoint directory found")
+            if result.stderr:
+                print("\n--- Warnings/Errors ---")
+                print(result.stderr[:1000])  # Show first 1000 chars of stderr
                 
         else:
-            print(f"\n❌ Test failed with return code: {result.returncode}")
+            print("❌ Test failed!")
+            print(f"Return code: {result.returncode}")
+            print("\n--- Error Output ---")
+            print(result.stderr)
+            print("\n--- Standard Output ---") 
+            print(result.stdout[-1000:])  # Show last 1000 chars
             
     except subprocess.TimeoutExpired:
-        print("\n⏰ Test timed out after 5 minutes")
-        print("This might be normal for slower systems")
-        
+        print("⏱️ Test timed out after 5 minutes")
+        return False
     except Exception as e:
-        print(f"\n❌ Test failed with exception: {e}")
+        print(f"❌ Test error: {e}")
+        return False
+    
+    return result.returncode == 0
 
 def test_manual_mode():
     """Test that manual mode starts without errors."""
@@ -82,14 +88,11 @@ def test_manual_mode():
         print(f"❌ Manual mode test failed: {e}")
 
 if __name__ == "__main__":
-    print("Warhammer 40k AI Training System Test")
-    print("This will run a quick test to verify everything works.\n")
+    # Set logging level to reduce noise
+    logging.basicConfig(level=logging.ERROR)
     
-    # Change to the project root directory
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    os.chdir(script_dir)
-    
-    test_training_system()
+    success = test_training_system()
+    sys.exit(0 if success else 1)
     
     # Optionally test manual mode (commented out since it's interactive)
     # test_manual_mode()
