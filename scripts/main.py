@@ -5,6 +5,10 @@ import random
 import argparse
 import logging
 from typing import Tuple
+
+# Suppress pygame initialization messages before importing pygame
+os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
+
 from warhammer40k_ai.gym_env.warhammer40k_env import WarhammerEnv
 from warhammer40k_ai.classes.game import Game
 from warhammer40k_ai.classes.map import Map, Obstacle, ObstacleType, Objective, ObjectiveCategory, ObjectivePoint
@@ -20,9 +24,49 @@ NUM_TRAINING_EPISODES = 1000
 CHECKPOINT_INTERVAL = 10  # Save checkpoints every N episodes
 CHECKPOINT_DIR = "checkpoints"
 
-# Setup logging
-logging.basicConfig(level=logging.WARNING, format='%(levelname)s: %(message)s')
-logger = logging.getLogger(__name__)
+# Setup logging with improved configuration
+def setup_logging():
+    """Configure logging to reduce noise while preserving important information."""
+    # Set up different log levels for different modules
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.WARNING)
+    
+    # Create a formatter for clean output
+    formatter = logging.Formatter('%(levelname)s: %(message)s')
+    
+    # Console handler for warnings and errors only
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.WARNING)
+    console_handler.setFormatter(formatter)
+    root_logger.addHandler(console_handler)
+    
+    # Specifically quiet down noisy modules
+    logging.getLogger('warhammer40k_ai.agents.hrl_agent').setLevel(logging.ERROR)
+    logging.getLogger('pygame').setLevel(logging.ERROR)
+    logging.getLogger('warhammer40k_ai.classes.army').setLevel(logging.ERROR)
+    logging.getLogger('warhammer40k_ai.waha_helper').setLevel(logging.ERROR)
+    
+    # Suppress PyTorch warnings
+    import warnings
+    warnings.filterwarnings("ignore", category=FutureWarning, module="torch")
+    
+    return logging.getLogger(__name__)
+
+logger = setup_logging()
+
+# Context manager to suppress print statements during noisy operations
+import contextlib
+import io
+
+@contextlib.contextmanager
+def suppress_stdout():
+    """Context manager to suppress stdout prints during noisy operations."""
+    old_stdout = sys.stdout
+    sys.stdout = io.StringIO()
+    try:
+        yield
+    finally:
+        sys.stdout = old_stdout
 
 # Helper
 waha_helper = WahaHelper()
@@ -37,14 +81,18 @@ def cleanup_destroyed_units(game: Game):
     # Clean up units from the map
     destroyed_units = [unit for unit in game.map.units if not unit.is_alive()]
     for unit in destroyed_units:
-        logger.debug(f"Removing destroyed unit {unit.name} from the battlefield")
+        # Reduced logging - only log if many units destroyed
+        if len(destroyed_units) > 3:
+            logger.debug(f"Removing destroyed unit {unit.name} from the battlefield")
         game.map.units.remove(unit)
     
     # Clean up units from player armies
     for player in game.players:
         destroyed_units = [unit for unit in player.get_army().units if not unit.is_alive()]
         for unit in destroyed_units:
-            logger.debug(f"Removing destroyed unit {unit.name} from {player.name}'s army")
+            # Reduced logging - only log if many units destroyed
+            if len(destroyed_units) > 3:
+                logger.debug(f"Removing destroyed unit {unit.name} from {player.name}'s army")
             player.get_army().units.remove(unit)
 
 def auto_deploy_units(game: Game, player1: Player, player2: Player):
@@ -52,7 +100,7 @@ def auto_deploy_units(game: Game, player1: Player, player2: Player):
     
     def deploy_player_units(player: Player, zone: dict):
         """Deploy units for a specific player in their zone."""
-        logger.debug(f"Auto-deploying units for {player.name}")
+        # Reduced logging frequency
         x_start, x_end = zone['x_range']
         y_start, y_end = zone['y_range']
         
@@ -60,6 +108,9 @@ def auto_deploy_units(game: Game, player1: Player, player2: Player):
         grid_size = max(2, int((len(units) ** 0.5) + 1))
         x_step = (x_end - x_start) / (grid_size + 1)
         y_step = (y_end - y_start) / (grid_size + 1)
+        
+        deployed_count = 0
+        failed_count = 0
         
         for i, unit in enumerate(units):
             try:
@@ -80,14 +131,21 @@ def auto_deploy_units(game: Game, player1: Player, player2: Player):
                 unit.set_position(x, y, z)
                 unit.deployed = True
                 game.map.units.append(unit)
-                logger.debug(f"Deployed {unit.name} at ({x:.1f}, {y:.1f}, {z:.1f})")
+                deployed_count += 1
                 
             except Exception as e:
-                logger.warning(f"Failed to deploy {unit.name}: {e}")
+                failed_count += 1
+                # Only log first few failures to avoid spam
+                if failed_count <= 2:
+                    logger.warning(f"Failed to deploy {unit.name}: {e}")
                 # Fallback: simple positioning
                 unit.set_position(x_start + 2, y_start + 2, 0)
                 unit.deployed = True
                 game.map.units.append(unit)
+        
+        # Summary logging instead of per-unit logging
+        logger.debug(f"Deployed {deployed_count} units for {player.name}" + 
+                    (f" ({failed_count} with fallback positioning)" if failed_count > 0 else ""))
     
     # Define deployment zones
     battlefield_width, battlefield_height = game.get_battlefield_size()
@@ -110,11 +168,18 @@ def initialize_game() -> Tuple[pygame.Surface, WarhammerEnv, Game, Map, float, i
     screen = pygame.display.set_mode((BATTLEFIELD_WIDTH + 2 * ROSTER_PANE_WIDTH, BATTLEFIELD_HEIGHT + INFO_PANE_HEIGHT))
     pygame.display.set_caption('Warhammer 40,000 Battlefield')
 
-    # Create players with armies
-    player1 = Player("Player 1", PlayerType.HUMAN, parse_army_list("army_lists/warhammer_app_dump.txt", waha_helper))
-    player2 = Player("Player 2", PlayerType.HUMAN, parse_army_list("army_lists/chaos_daemons_GT2023.txt", waha_helper))
-    print(f"Player 1 army created with {len(player1.get_army().units)} units")
-    print(f"Player 2 army created with {len(player2.get_army().units)} units")
+    # Create players with armies (suppress noisy parsing output)
+    with suppress_stdout():
+        player1 = Player("Player 1", PlayerType.HUMAN, parse_army_list("army_lists/warhammer_app_dump.txt", waha_helper))
+        player2 = Player("Player 2", PlayerType.HUMAN, parse_army_list("army_lists/chaos_daemons_GT2023.txt", waha_helper))
+    
+    # Only print during first initialization
+    if hasattr(initialize_game, '_first_run'):
+        pass  # Skip printing on subsequent runs
+    else:
+        print(f"Player 1 army created with {len(player1.get_army().units)} units")
+        print(f"Player 2 army created with {len(player2.get_army().units)} units")
+        initialize_game._first_run = True
 
     # Define obstacles
     obstacles = [
@@ -299,7 +364,10 @@ def run_training_episode(episode_num: int, agents: dict) -> dict:
     return episode_results
 
 def run_training_loop():
-    """Run the main training loop for multiple episodes."""
+    """Run the main training loop for the specified number of episodes."""
+    print(f"Starting AI training mode for {NUM_TRAINING_EPISODES} episodes...")
+    
+    # Create checkpoint directory
     create_checkpoint_dir()
     
     # Initialize game once to get the basic structure
@@ -341,7 +409,6 @@ def run_training_loop():
         'total_turns': 0
     }
     
-    print(f"\n🎮 Starting training for {NUM_TRAINING_EPISODES} episodes...")
     print("=" * 60)
     
     # Main training loop

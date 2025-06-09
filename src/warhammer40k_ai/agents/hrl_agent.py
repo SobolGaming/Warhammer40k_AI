@@ -4,6 +4,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import logging
+import time
+from collections import defaultdict
 
 from warhammer40k_ai.classes.game import Game
 from warhammer40k_ai.classes.map import Objective, ObjectivePoint
@@ -17,6 +19,20 @@ from warhammer40k_ai.utility.dice import DiceCollection
 
 # Setup logging for the agents
 logger = logging.getLogger(__name__)
+
+# Warning throttling system - only log each warning type once per 30 seconds
+_warning_throttle = defaultdict(float)
+_warning_throttle_interval = 30.0  # seconds
+
+def throttled_warning(message: str, warning_key: str = None):
+    """Log a warning message, but throttle repeated warnings."""
+    if warning_key is None:
+        warning_key = message
+    
+    current_time = time.time()
+    if current_time - _warning_throttle[warning_key] > _warning_throttle_interval:
+        logger.debug(message)  # Changed from warning to debug to reduce noise
+        _warning_throttle[warning_key] = current_time
 
 # Constants
 MAX_TARGETS = 25  # Maximum number of targets to consider
@@ -43,11 +59,21 @@ class PolicyNetwork(nn.Module):
         super(PolicyNetwork, self).__init__()
         self.fc1 = nn.Linear(input_size, 128)
         self.fc2 = nn.Linear(128, output_size)
+        
+        # Better initialization to prevent NaN values
+        nn.init.xavier_uniform_(self.fc1.weight)
+        nn.init.zeros_(self.fc1.bias)
+        nn.init.xavier_uniform_(self.fc2.weight)
+        nn.init.zeros_(self.fc2.bias)
 
     def forward(self, x):
+        # Add small epsilon to prevent numerical instability
+        x = torch.clamp(x, -10, 10)  # Clamp extreme values
         x = torch.relu(self.fc1(x))
         x = self.fc2(x)
         x = torch.softmax(x, dim=-1)
+        # Ensure minimum probability to prevent exact zeros
+        x = torch.clamp(x, min=1e-8, max=1.0)
         return x
 
 
@@ -147,7 +173,7 @@ class HighLevelAgent:
 
         # Check for NaN values in network output
         if torch.isnan(probs).any():
-            logger.warning("Warning: NaN values detected in high-level policy network output, using uniform distribution")
+            throttled_warning("Warning: NaN values detected in high-level policy network output, using uniform distribution")
             probs = torch.ones_like(probs)
 
         # Split the probabilities for objectives and commands
@@ -159,13 +185,13 @@ class HighLevelAgent:
         cmd_sum = cmd_probs.sum()
         
         if obj_sum == 0 or torch.isnan(obj_sum):
-            logger.warning("Warning: Invalid objective probability sum, using uniform distribution")
+            throttled_warning("Warning: Invalid objective probability sum, using uniform distribution")
             obj_probs = torch.ones(self.num_objectives) / self.num_objectives
         else:
             obj_probs = obj_probs / obj_sum
             
         if cmd_sum == 0 or torch.isnan(cmd_sum):
-            logger.warning("Warning: Invalid command probability sum, using uniform distribution")
+            throttled_warning("Warning: Invalid command probability sum, using uniform distribution")
             cmd_probs = torch.ones(self.num_commands) / self.num_commands
         else:
             cmd_probs = cmd_probs / cmd_sum
@@ -230,7 +256,7 @@ class HighLevelAgent:
     def update_policy(self) -> None:
         """Update the policy network using the REINFORCE algorithm."""
         if not self.rewards or not self.log_probs:
-            logger.warning("No rewards or log probabilities to update High Level Agent policy.")
+            throttled_warning("No rewards or log probabilities to update High Level Agent policy.")
             return  # Skip update if there's nothing to learn from
 
         R = 0
@@ -259,7 +285,7 @@ class HighLevelAgent:
 
         # Update policy network
         if not policy_loss:
-            logger.warning("Warning: No valid policy loss terms to update HighLevelAgent")
+            throttled_warning("Warning: No valid policy loss terms to update HighLevelAgent")
             return
             
         self.optimizer.zero_grad()
@@ -267,7 +293,7 @@ class HighLevelAgent:
         
         # Check for NaN in loss
         if torch.isnan(policy_loss):
-            logger.warning("Warning: NaN loss detected in HighLevelAgent, skipping update")
+            throttled_warning("Warning: NaN loss detected in HighLevelAgent, skipping update")
             return
             
         policy_loss.backward()
@@ -302,7 +328,7 @@ class HighLevelAgent:
         Load the HighLevelAgent state from a checkpoint file, if available.
         """
         if os.path.exists(filepath):
-            checkpoint = torch.load(filepath)
+            checkpoint = torch.load(filepath, weights_only=False)
             self.policy_net.load_state_dict(checkpoint.get('policy_net_state_dict', {}))
             self.optimizer.load_state_dict(checkpoint.get('optimizer_state_dict', {}))
             self.episode = checkpoint.get('episode', 0)
@@ -436,7 +462,7 @@ class TacticalAgent:
 
         # Check for NaN values in network output
         if torch.isnan(action_probs).any():
-            logger.warning("Warning: NaN values detected in movement policy network output, using uniform distribution")
+            throttled_warning("Warning: NaN values detected in movement policy network output, using uniform distribution")
             action_probs = torch.ones_like(action_probs)
 
         # Mask unavailable actions
@@ -455,14 +481,14 @@ class TacticalAgent:
         
         # Handle zero sum or NaN cases
         if prob_sum == 0 or torch.isnan(prob_sum):
-            logger.warning("Warning: Invalid probability sum detected, using uniform distribution over valid movement actions")
+            throttled_warning("Warning: Invalid probability sum detected, using uniform distribution over valid movement actions")
             masked_probs = action_mask / action_mask.sum()
         else:
             masked_probs = masked_probs / prob_sum
         
         # Final check for NaN values
         if torch.isnan(masked_probs).any():
-            logger.warning("Warning: NaN values after normalization, falling back to uniform distribution")
+            throttled_warning("Warning: NaN values after normalization, falling back to uniform distribution")
             masked_probs = action_mask / action_mask.sum()
 
         # print(f"Final probabilities: {masked_probs.detach().numpy()}")
@@ -519,7 +545,7 @@ class TacticalAgent:
 
         # Check for NaN values in network output
         if torch.isnan(action_probs).any():
-            logger.warning("Warning: NaN values detected in shooting policy network output, using uniform distribution")
+            throttled_warning("Warning: NaN values detected in shooting policy network output, using uniform distribution")
             action_probs = torch.ones_like(action_probs)
 
         # Mask unavailable targets
@@ -534,7 +560,7 @@ class TacticalAgent:
         
         # Handle zero sum or NaN cases
         if prob_sum == 0 or torch.isnan(prob_sum):
-            logger.warning("Warning: Invalid probability sum detected, using uniform distribution over valid targets")
+            throttled_warning("Warning: Invalid probability sum detected, using uniform distribution over valid targets")
             masked_probs = action_mask / action_mask.sum()
             masked_probs = masked_probs.detach().requires_grad_(True)
         else:
@@ -542,7 +568,7 @@ class TacticalAgent:
         
         # Final check for NaN values
         if torch.isnan(masked_probs).any():
-            logger.warning("Warning: NaN values after normalization, falling back to uniform distribution")
+            throttled_warning("Warning: NaN values after normalization, falling back to uniform distribution")
             masked_probs = action_mask / action_mask.sum()
             masked_probs = masked_probs.detach().requires_grad_(True)
 
@@ -564,7 +590,7 @@ class TacticalAgent:
 
         # Check for NaN values in network output
         if torch.isnan(action_probs).any():
-            logger.warning("Warning: NaN values detected in profile selection policy network output, using uniform distribution")
+            throttled_warning("Warning: NaN values detected in profile selection policy network output, using uniform distribution")
             action_probs = torch.ones_like(action_probs)
 
         # Mask unavailable profiles
@@ -579,14 +605,14 @@ class TacticalAgent:
         
         # Handle zero sum or NaN cases
         if prob_sum == 0 or torch.isnan(prob_sum):
-            logger.warning("Warning: Invalid probability sum detected, using uniform distribution over valid profiles")
+            throttled_warning("Warning: Invalid probability sum detected, using uniform distribution over valid profiles")
             masked_probs = action_mask / action_mask.sum()
         else:
             masked_probs = masked_probs / prob_sum
         
         # Final check for NaN values
         if torch.isnan(masked_probs).any():
-            logger.warning("Warning: NaN values after normalization, falling back to uniform distribution")
+            throttled_warning("Warning: NaN values after normalization, falling back to uniform distribution")
             masked_probs = action_mask / action_mask.sum()
 
         # Create a categorical distribution for profile selection
@@ -781,7 +807,7 @@ class TacticalAgent:
 
         # Check for NaN values in network output
         if torch.isnan(action_probs).any():
-            logger.warning("Warning: NaN values detected in fight target policy network output, using uniform distribution")
+            throttled_warning("Warning: NaN values detected in fight target policy network output, using uniform distribution")
             action_probs = torch.ones_like(action_probs)
 
         # Mask unavailable targets
@@ -796,14 +822,14 @@ class TacticalAgent:
         
         # Handle zero sum or NaN cases
         if prob_sum == 0 or torch.isnan(prob_sum):
-            logger.warning("Warning: Invalid probability sum detected, using uniform distribution over valid fight targets")
+            throttled_warning("Warning: Invalid probability sum detected, using uniform distribution over valid fight targets")
             masked_probs = action_mask / action_mask.sum()
         else:
             masked_probs = masked_probs / prob_sum
         
         # Final check for NaN values
         if torch.isnan(masked_probs).any():
-            logger.warning("Warning: NaN values after normalization, falling back to uniform distribution")
+            throttled_warning("Warning: NaN values after normalization, falling back to uniform distribution")
             masked_probs = action_mask / action_mask.sum()
 
         # Create a categorical distribution
@@ -825,7 +851,7 @@ class TacticalAgent:
 
         # Check for NaN values in network output
         if torch.isnan(action_probs).any():
-            logger.warning("Warning: NaN values detected in fight profile selection policy network output, using uniform distribution")
+            throttled_warning("Warning: NaN values detected in fight profile selection policy network output, using uniform distribution")
             action_probs = torch.ones_like(action_probs)
 
         # Mask unavailable profiles
@@ -840,14 +866,14 @@ class TacticalAgent:
         
         # Handle zero sum or NaN cases
         if prob_sum == 0 or torch.isnan(prob_sum):
-            logger.warning("Warning: Invalid probability sum detected, using uniform distribution over valid melee profiles")
+            throttled_warning("Warning: Invalid probability sum detected, using uniform distribution over valid melee profiles")
             masked_probs = action_mask / action_mask.sum()
         else:
             masked_probs = masked_probs / prob_sum
         
         # Final check for NaN values
         if torch.isnan(masked_probs).any():
-            logger.warning("Warning: NaN values after normalization, falling back to uniform distribution")
+            throttled_warning("Warning: NaN values after normalization, falling back to uniform distribution")
             masked_probs = action_mask / action_mask.sum()
 
         # Create a categorical distribution for profile selection
@@ -973,7 +999,7 @@ class TacticalAgent:
 
     def update_movement_policy(self) -> None:
         if not self.movement_rewards or not self.movement_log_probs:
-            logger.warning("No rewards or log probabilities to update Tactical Agent movement policy.")
+            throttled_warning("No rewards or log probabilities to update Tactical Agent movement policy.")
             return
 
         R = 0
@@ -998,7 +1024,7 @@ class TacticalAgent:
                 continue
 
         if not policy_loss:
-            logger.warning("Warning: No valid policy loss terms to update movement policy")
+            throttled_warning("Warning: No valid policy loss terms to update movement policy")
             return
             
         self.movement_optimizer.zero_grad()
@@ -1006,7 +1032,7 @@ class TacticalAgent:
         
         # Check for NaN in loss
         if torch.isnan(policy_loss):
-            logger.warning("Warning: NaN loss detected in movement policy, skipping update")
+            throttled_warning("Warning: NaN loss detected in movement policy, skipping update")
             return
             
         policy_loss.backward()
@@ -1021,7 +1047,7 @@ class TacticalAgent:
 
     def update_shooting_policy(self) -> None:
         if not self.shooting_rewards or not self.shooting_log_probs:
-            logger.warning("No rewards or log probabilities to update Tactical Agent shooting policy.")
+            throttled_warning("No rewards or log probabilities to update Tactical Agent shooting policy.")
             return
 
         R = 0
@@ -1046,7 +1072,7 @@ class TacticalAgent:
                 continue
 
         if not policy_loss:
-            logger.warning("Warning: No valid policy loss terms to update shooting policy")
+            throttled_warning("Warning: No valid policy loss terms to update shooting policy")
             return
             
         self.shooting_optimizer.zero_grad()
@@ -1054,7 +1080,7 @@ class TacticalAgent:
         
         # Check for NaN in loss
         if torch.isnan(policy_loss):
-            logger.warning("Warning: NaN loss detected in shooting policy, skipping update")
+            throttled_warning("Warning: NaN loss detected in shooting policy, skipping update")
             return
             
         policy_loss.backward()
@@ -1069,7 +1095,7 @@ class TacticalAgent:
 
     def update_profile_selection_policy(self) -> None:
         if not self.profile_selection_rewards or not self.profile_selection_log_probs:
-            logger.warning("No rewards or log probabilities to update profile selection policy.")
+            throttled_warning("No rewards or log probabilities to update profile selection policy.")
             return
 
         R = 0
@@ -1094,7 +1120,7 @@ class TacticalAgent:
                 continue
 
         if not policy_loss:
-            logger.warning("Warning: No valid policy loss terms to update profile selection policy")
+            throttled_warning("Warning: No valid policy loss terms to update profile selection policy")
             return
             
         self.profile_selection_optimizer.zero_grad()
@@ -1102,7 +1128,7 @@ class TacticalAgent:
         
         # Check for NaN in loss
         if torch.isnan(policy_loss):
-            logger.warning("Warning: NaN loss detected in profile selection policy, skipping update")
+            throttled_warning("Warning: NaN loss detected in profile selection policy, skipping update")
             return
             
         policy_loss.backward()
@@ -1117,7 +1143,7 @@ class TacticalAgent:
 
     def update_fight_target_policy(self) -> None:
         if not self.fight_target_rewards or not self.fight_target_log_probs:
-            logger.warning("No rewards or log probabilities to update fight target policy.")
+            throttled_warning("No rewards or log probabilities to update fight target policy.")
             return
 
         R = 0
@@ -1142,7 +1168,7 @@ class TacticalAgent:
                 continue
 
         if not policy_loss:
-            logger.warning("Warning: No valid policy loss terms to update fight target policy")
+            throttled_warning("Warning: No valid policy loss terms to update fight target policy")
             return
             
         self.fight_target_optimizer.zero_grad()
@@ -1150,7 +1176,7 @@ class TacticalAgent:
         
         # Check for NaN in loss
         if torch.isnan(policy_loss):
-            logger.warning("Warning: NaN loss detected in fight target policy, skipping update")
+            throttled_warning("Warning: NaN loss detected in fight target policy, skipping update")
             return
             
         policy_loss.backward()
@@ -1165,7 +1191,7 @@ class TacticalAgent:
 
     def update_fight_profile_selection_policy(self) -> None:
         if not self.fight_profile_selection_rewards or not self.fight_profile_selection_log_probs:
-            logger.warning("No rewards or log probabilities to update fight profile selection policy.")
+            throttled_warning("No rewards or log probabilities to update fight profile selection policy.")
             return
 
         R = 0
@@ -1190,7 +1216,7 @@ class TacticalAgent:
                 continue
 
         if not policy_loss:
-            logger.warning("Warning: No valid policy loss terms to update fight profile selection policy")
+            throttled_warning("Warning: No valid policy loss terms to update fight profile selection policy")
             return
             
         self.fight_profile_selection_optimizer.zero_grad()
@@ -1198,7 +1224,7 @@ class TacticalAgent:
         
         # Check for NaN in loss
         if torch.isnan(policy_loss):
-            logger.warning("Warning: NaN loss detected in fight profile selection policy, skipping update")
+            throttled_warning("Warning: NaN loss detected in fight profile selection policy, skipping update")
             return
             
         policy_loss.backward()
@@ -1240,7 +1266,7 @@ class TacticalAgent:
 
     def load_checkpoint(self, filepath: str = 'tactical_agent_checkpoint.pth') -> None:
         if os.path.exists(filepath):
-            checkpoint = torch.load(filepath)
+            checkpoint = torch.load(filepath, weights_only=False)
             self.movement_policy_net.load_state_dict(checkpoint.get('movement_policy_net_state_dict', {}))
             self.movement_optimizer.load_state_dict(checkpoint.get('movement_optimizer_state_dict', {}))
             self.shooting_policy_net.load_state_dict(checkpoint.get('shooting_policy_net_state_dict', {}))
@@ -1304,7 +1330,7 @@ class LowLevelAgent:
 
     def update_policy(self) -> None:
         if not self.rewards or not self.log_probs:
-            logger.warning("No rewards or log probabilities to update Low Level Agent movement policy.")
+            throttled_warning("No rewards or log probabilities to update Low Level Agent movement policy.")
             return
 
         R = 0
@@ -1329,7 +1355,7 @@ class LowLevelAgent:
                 continue
 
         if not policy_loss:
-            logger.warning("Warning: No valid policy loss terms to update LowLevelAgent policy")
+            throttled_warning("Warning: No valid policy loss terms to update LowLevelAgent policy")
             return
             
         self.optimizer.zero_grad()
@@ -1337,7 +1363,7 @@ class LowLevelAgent:
         
         # Check for NaN in loss
         if torch.isnan(policy_loss):
-            logger.warning("Warning: NaN loss detected in LowLevelAgent, skipping update")
+            throttled_warning("Warning: NaN loss detected in LowLevelAgent, skipping update")
             return
             
         policy_loss.backward()
@@ -1363,7 +1389,7 @@ class LowLevelAgent:
 
     def load_checkpoint(self, filepath: str = 'low_level_agent_checkpoint.pth') -> None:
         if os.path.exists(filepath):
-            checkpoint = torch.load(filepath)
+            checkpoint = torch.load(filepath, weights_only=False)
             self.movement_execution_net.load_state_dict(checkpoint.get('movement_execution_net_state_dict', {}))
             self.optimizer.load_state_dict(checkpoint.get('optimizer_state_dict', {}))
             self.rewards = checkpoint.get('rewards', [])
