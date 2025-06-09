@@ -250,7 +250,7 @@ class HighLevelAgent:
             if log_prob.requires_grad:
                 policy_loss.append(-log_prob * R)
             else:
-                print("Warning: log_prob does not require grad, skipping this term")
+                #print("Warning: log_prob does not require grad, skipping this term")
                 continue
 
         # Update policy network
@@ -364,7 +364,13 @@ class TacticalAgent:
         available_actions = unit.get_available_move_actions(state)
 
         # Agent decides on the action
-        chosen_action = self.choose_movement_action(unit, available_actions, objective)
+        chosen_action_idx = self.choose_movement_action(unit, available_actions, objective)
+        
+        # Convert action index back to MovementAction enum
+        chosen_action = MovementAction(chosen_action_idx)
+        
+        # Debug: Print chosen action (uncomment for debugging)
+        # print(f"AI chose action: {chosen_action.name} (index {chosen_action_idx}) from available: {[MovementAction(a.value).name for a in available_actions]}")
 
         # Decide on the destination
         destination = self.calculate_destination(unit, chosen_action, objective)
@@ -376,8 +382,8 @@ class TacticalAgent:
         dz_before = objective.location.z - unit_position_before[2]
         distance_before = get_dist(dx_before, dy_before, dz_before)
 
-        # Execute the movement
-        unit.do_move_action(chosen_action, destination, self.game.map)
+        # Execute the movement (unit expects the integer value)
+        unit.do_move_action(chosen_action_idx, destination, self.game.map)
 
         # Record the new distance to the objective
         unit_position_after = unit.get_position()
@@ -432,11 +438,16 @@ class TacticalAgent:
         # Mask unavailable actions
         action_mask = torch.zeros(NUM_MOVEMENT_ACTIONS)
         for action in available_actions:
-            action_mask[action.value] = 1
+            action_mask[action.value - 1] = 1  # Subtract 1 because enum values start at 1, but indices start at 0
         
         # Apply mask and normalize
         masked_probs = action_probs * action_mask
         prob_sum = masked_probs.sum()
+        
+        # Debug: Print action selection info (uncomment for debugging)
+        # print(f"Action probabilities: {action_probs.detach().numpy()}")
+        # print(f"Action mask: {action_mask.numpy()}")
+        # print(f"Masked probabilities: {masked_probs.detach().numpy()}")
         
         # Handle zero sum or NaN cases
         if prob_sum == 0 or torch.isnan(prob_sum):
@@ -450,13 +461,19 @@ class TacticalAgent:
             print("Warning: NaN values after normalization, falling back to uniform distribution")
             masked_probs = action_mask / action_mask.sum()
 
+        # print(f"Final probabilities: {masked_probs.detach().numpy()}")
+
         # Create a categorical distribution
         action_dist = torch.distributions.Categorical(masked_probs)
         action_idx = action_dist.sample()
 
         # Store log probability
         self.movement_log_probs.append(action_dist.log_prob(action_idx))
-        return action_idx.item()
+        
+        # Convert back to enum value (add 1 because enum values start at 1)
+        enum_value = action_idx.item() + 1
+        # print(f"Returning enum value: {enum_value} for action index: {action_idx.item()}")
+        return enum_value
 
     def extract_movement_state_features(self, unit: Unit, objective: Objective) -> torch.Tensor:
         features = []
@@ -973,7 +990,7 @@ class TacticalAgent:
             if log_prob.requires_grad:
                 policy_loss.append(-log_prob * R)
             else:
-                print("Warning: movement log_prob does not require grad, skipping this term")
+                #print("Warning: movement log_prob does not require grad, skipping this term")
                 continue
 
         if not policy_loss:
@@ -1021,7 +1038,7 @@ class TacticalAgent:
             if log_prob.requires_grad:
                 policy_loss.append(-log_prob * R)
             else:
-                print("Warning: shooting log_prob does not require grad, skipping this term")
+                #print("Warning: shooting log_prob does not require grad, skipping this term")
                 continue
 
         if not policy_loss:
@@ -1069,7 +1086,7 @@ class TacticalAgent:
             if log_prob.requires_grad:
                 policy_loss.append(-log_prob * R)
             else:
-                print("Warning: profile selection log_prob does not require grad, skipping this term")
+                #print("Warning: profile selection log_prob does not require grad, skipping this term")
                 continue
 
         if not policy_loss:
@@ -1117,7 +1134,7 @@ class TacticalAgent:
             if log_prob.requires_grad:
                 policy_loss.append(-log_prob * R)
             else:
-                print("Warning: fight target log_prob does not require grad, skipping this term")
+                #print("Warning: fight target log_prob does not require grad, skipping this term")
                 continue
 
         if not policy_loss:
@@ -1165,7 +1182,7 @@ class TacticalAgent:
             if log_prob.requires_grad:
                 policy_loss.append(-log_prob * R)
             else:
-                print("Warning: fight profile selection log_prob does not require grad, skipping this term")
+                #print("Warning: fight profile selection log_prob does not require grad, skipping this term")
                 continue
 
         if not policy_loss:
@@ -1304,7 +1321,7 @@ class LowLevelAgent:
             if log_prob.requires_grad:
                 policy_loss.append(-log_prob * R)
             else:
-                print("Warning: LowLevelAgent log_prob does not require grad, skipping this term")
+                #print("Warning: LowLevelAgent log_prob does not require grad, skipping this term")
                 continue
 
         if not policy_loss:

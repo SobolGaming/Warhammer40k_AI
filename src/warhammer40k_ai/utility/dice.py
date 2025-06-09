@@ -44,7 +44,7 @@ class DiceCollection:
 
     def roll(self) -> int:
         roll_value = sum(get_dice_roll(self.die_faces) for _ in range(self.number)) + self.modifier
-        print(f"Roll of {self}: {roll_value}")
+        #print(f"Roll of {self}: {roll_value}")
         return roll_value
 
     def min(self) -> int:
