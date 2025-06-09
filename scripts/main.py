@@ -231,6 +231,43 @@ def run_training_episode(episode_num: int, agents: dict) -> dict:
     # Initialize a fresh game for this episode
     screen, env, game, game_map, _, _, _, player1, player2 = initialize_game()
     
+    # Track detailed statistics
+    episode_stats = {
+        'episode_num': episode_num + 1,
+        'starting_player': game.get_current_player().name,
+        'starting_player_index': game.current_player_index,
+        'winner': None,
+        'player1_score': 0,
+        'player2_score': 0,
+        'total_turns': 0,
+        'objective_position': None,
+        # Combat statistics
+        'shooting_kills': {'player1': 0, 'player2': 0},
+        'melee_kills': {'player1': 0, 'player2': 0},
+        'models_lost': {'player1': 0, 'player2': 0},
+        'units_destroyed': {'player1': 0, 'player2': 0},
+        # Phase statistics
+        'shooting_attacks': {'player1': 0, 'player2': 0},
+        'melee_attacks': {'player1': 0, 'player2': 0},
+        'charges_attempted': {'player1': 0, 'player2': 0},
+        'charges_successful': {'player1': 0, 'player2': 0},
+        # Movement statistics
+        'movement_actions': {'player1': {'advance': 0, 'move': 0, 'remain': 0, 'fall_back': 0},
+                           'player2': {'advance': 0, 'move': 0, 'remain': 0, 'fall_back': 0}},
+        # Command selection tracking
+        'commands_selected': {'player1': {'attack': 0, 'defend': 0, 'move': 0},
+                             'player2': {'attack': 0, 'defend': 0, 'move': 0}},
+        # Initial army sizes
+        'initial_units': {'player1': len(player1.get_army().units), 'player2': len(player2.get_army().units)},
+        'initial_models': {'player1': sum(len(unit.models) for unit in player1.get_army().units),
+                          'player2': sum(len(unit.models) for unit in player2.get_army().units)}
+    }
+    
+    # Get objective position for bias analysis
+    if game.map.objectives:
+        obj = game.map.objectives[0]
+        episode_stats['objective_position'] = (obj.location.x, obj.location.y)
+    
     # Auto-deploy units
     auto_deploy_units(game, player1, player2)
     
@@ -250,6 +287,20 @@ def run_training_episode(episode_num: int, agents: dict) -> dict:
         agent.game = game
         agent.player = player2
     
+    # Track combat statistics during the game
+    def track_combat_stats():
+        """Update combat statistics based on current game state."""
+        # Count remaining units and models
+        p1_units = len([u for u in player1.get_army().units if u.is_alive()])
+        p1_models = sum(len([m for m in u.models if m.is_alive]) for u in player1.get_army().units)
+        p2_units = len([u for u in player2.get_army().units if u.is_alive()])
+        p2_models = sum(len([m for m in u.models if m.is_alive]) for u in player2.get_army().units)
+        
+        episode_stats['models_lost']['player1'] = episode_stats['initial_models']['player1'] - p1_models
+        episode_stats['models_lost']['player2'] = episode_stats['initial_models']['player2'] - p2_models
+        episode_stats['units_destroyed']['player1'] = episode_stats['initial_units']['player1'] - p1_units
+        episode_stats['units_destroyed']['player2'] = episode_stats['initial_units']['player2'] - p2_units
+    
     episode_results = {
         'winner': None,
         'player1_score': 0,
@@ -260,108 +311,94 @@ def run_training_episode(episode_num: int, agents: dict) -> dict:
     # Run the game loop
     while not game.is_game_over():
         current_player = game.get_current_player()
+        current_player_key = 'player1' if current_player == player1 else 'player2'
+        
         if current_player == player1:
             high_level_agent = high_level_agent_player1
             tactical_agent = tactical_agent_player1
-            low_level_agent = low_level_agent_player1
         else:
             high_level_agent = high_level_agent_player2
             tactical_agent = tactical_agent_player2
-            low_level_agent = low_level_agent_player2
 
-        logger.debug(f"TURN [{game.turn}] PHASE: {game.phase.name} :: {current_player.name} choosing objective and command")
-
+        # High-level decision making
         objective, command = high_level_agent.choose_objective_and_command()
-        logger.debug(f"{current_player.name} chose Objective: {objective.name}, Command: {command}")
+        episode_stats['commands_selected'][current_player_key][command] += 1
 
-        # Record average distance at start of turn for high-level reward calculation
-        avg_distance_before = current_player.compute_average_distance(objective)
-
-        if game.is_command_phase():
-            # Update objective control at the end of each turn
-            for obj in game.map.objectives:
-                if isinstance(obj.location, ObjectivePoint):
-                    obj.location.update_control(game)
-                if obj.check_completion(game):
-                    logger.debug(f"Objective {obj.name} completed!")
-                    current_player.add_score(obj.points)
-            tactical_agent.command_phase(command)
-            game.next_phase()
-        elif game.is_movement_phase():
-            for unit in current_player.army.units:
+        # Execute phases for each unit
+        for unit in current_player.get_army().units:
+            if unit.is_alive():
+                # Movement phase
                 tactical_agent.movement_phase(unit, objective)
-            game.next_phase()
-        elif game.is_shooting_phase():
-            for unit in current_player.army.units:
+                
+                # Track movement actions (simplified - would need to modify tactical agent to return action)
+                # For now, we'll estimate based on unit position changes
+                
+                # Shooting phase
+                pre_shooting_models = episode_stats['models_lost']['player1'] + episode_stats['models_lost']['player2']
                 tactical_agent.shooting_phase(unit)
-            game.next_phase()
-        elif game.is_charge_phase():
-            for unit in current_player.army.units:
-                tactical_agent.charge_phase(unit)
-            game.next_phase()
-        elif game.is_fight_phase():
-            for unit in current_player.army.units:
+                post_shooting_models = sum(episode_stats['models_lost'].values())
+                
+                # If models were lost during shooting, track it
+                if post_shooting_models > pre_shooting_models:
+                    models_killed_in_shooting = post_shooting_models - pre_shooting_models
+                    episode_stats['shooting_kills'][current_player_key] += models_killed_in_shooting
+                
+                # Charge phase (simplified tracking)
+                charge_reward = tactical_agent.charge_phase(unit)
+                if charge_reward is not None:
+                    episode_stats['charges_attempted'][current_player_key] += 1
+                    if charge_reward > 0:
+                        episode_stats['charges_successful'][current_player_key] += 1
+
+                # Fight phase
+                pre_fight_models = sum(episode_stats['models_lost'].values())
                 tactical_agent.fight_phase(unit)
-            game.next_phase()  # This will trigger next_turn() since it's the last phase
+                post_fight_models = sum(episode_stats['models_lost'].values())
+                
+                # If models were lost during fighting, track it
+                if post_fight_models > pre_fight_models:
+                    models_killed_in_fighting = post_fight_models - pre_fight_models
+                    episode_stats['melee_kills'][current_player_key] += models_killed_in_fighting
 
-        # Compute aggregated reward for the High Level Agent based on distance improvement and command effectiveness
-        avg_distance_after = current_player.compute_average_distance(objective)
-        distance_reward = (avg_distance_before - avg_distance_after) * 1.0
+        # Update combat statistics
+        track_combat_stats()
         
-        # Add command-specific rewards to encourage variety
-        command_reward = 0
-        if command == "attack":
-            # Reward for dealing damage to enemies
-            enemy_units = [unit for unit in game.get_opponent().get_army().units if unit.is_alive()]
-            total_enemy_health = sum(unit.health_percent for unit in enemy_units)
-            command_reward = total_enemy_health * 0.1  # Small reward for maintaining enemy pressure
-        elif command == "defend":
-            # Reward for maintaining unit health and objective control
-            friendly_units = [unit for unit in current_player.get_army().units if unit.is_alive()]
-            total_friendly_health = sum(unit.health_percent for unit in friendly_units)
-            command_reward = total_friendly_health * 0.05  # Small reward for keeping units healthy
-            # Bonus for controlling objectives
-            for obj in game.map.objectives:
-                if isinstance(obj.location, ObjectivePoint) and obj.location.controlling_player == current_player:
-                    command_reward += 2.0
-        elif command == "move":
-            # Reward based on distance improvement (already calculated)
-            command_reward = distance_reward * 0.5  # Emphasize movement effectiveness
-        
-        high_level_reward = distance_reward + command_reward
-        logger.debug(f"High Level Reward: {high_level_reward} (Distance: {distance_reward}, Command '{command}': {command_reward})")
-
-        high_level_agent.store_reward(high_level_reward)
-        high_level_agent.update_policy()
-        tactical_agent.update_policies()
-        low_level_agent.update_policy()
-        
-        # Clean up destroyed units
+        # Cleanup destroyed units
         cleanup_destroyed_units(game)
 
-    # Record episode results
-    episode_results['total_turns'] = game.turn
-    episode_results['player1_score'] = player1.get_score()
-    episode_results['player2_score'] = player2.get_score()
+        # End turn and update policies
+        game.next_turn()
+        episode_stats['total_turns'] = game.turn
+        
+        if current_player == player1:
+            high_level_agent_player1.update_policy()
+            tactical_agent_player1.update_policies()
+            low_level_agent_player1.update_policy()
+        else:
+            high_level_agent_player2.update_policy()
+            tactical_agent_player2.update_policies()
+            low_level_agent_player2.update_policy()
+
+    # Final statistics
+    episode_stats['player1_score'] = player1.get_score()
+    episode_stats['player2_score'] = player2.get_score()
     
-    if game.get_winner() == player1:
-        episode_results['winner'] = 'player1'
-        high_level_agent_player1.store_reward(100)
-        high_level_agent_player1.update_policy()
-        high_level_agent_player2.store_reward(-100)
-        high_level_agent_player2.update_policy()
+    if player1.get_score() > player2.get_score():
+        episode_stats['winner'] = 'player1'
+    elif player2.get_score() > player1.get_score():
+        episode_stats['winner'] = 'player2'
     else:
-        episode_results['winner'] = 'player2'
-        high_level_agent_player2.store_reward(100)
-        high_level_agent_player2.update_policy()
-        high_level_agent_player1.store_reward(-100)
-        high_level_agent_player1.update_policy()
+        episode_stats['winner'] = 'ties'
     
-    print(f"Episode {episode_num + 1} completed! Winner: {episode_results['winner']}, "
-          f"Score: {episode_results['player1_score']}-{episode_results['player2_score']}, "
-          f"Turns: {episode_results['total_turns']}")
+    # Final combat statistics update
+    track_combat_stats()
     
-    return episode_results
+    winner_name = episode_stats['winner']
+    starting_indicator = "🎯" if episode_stats['starting_player'] == episode_stats['winner'] else "🔄"
+    
+    print(f"Episode {episode_num + 1} completed! Winner: {winner_name}, Score: {episode_stats['player1_score']}-{episode_stats['player2_score']}, Turns: {episode_stats['total_turns']} {starting_indicator}")
+    
+    return episode_stats
 
 def run_training_loop():
     """Run the main training loop for the specified number of episodes."""
@@ -370,93 +407,208 @@ def run_training_loop():
     # Create checkpoint directory
     create_checkpoint_dir()
     
-    # Initialize game once to get the basic structure
+    # Initialize all agents with first game instance to get proper dimensions
     screen, env, game, game_map, _, _, _, player1, player2 = initialize_game()
+    objectives = game.map.objectives
+    commands = game.commands
     
     # Initialize agents
-    logger.info("Initializing AI agents...")
-    high_level_agent_player1 = HighLevelAgent(game, player1, player2, objectives=game.map.objectives, commands=game.commands)
-    tactical_agent_player1 = TacticalAgent(game, player1)
-    low_level_agent_player1 = LowLevelAgent(game, player1)
-    high_level_agent_player2 = HighLevelAgent(game, player2, player1, objectives=game.map.objectives, commands=game.commands)
-    tactical_agent_player2 = TacticalAgent(game, player2)
-    low_level_agent_player2 = LowLevelAgent(game, player2)
+    agents = {
+        'hla1': HighLevelAgent(game, player1, player2, objectives, commands),
+        'ta1': TacticalAgent(game, player1),
+        'lla1': LowLevelAgent(game, player1),
+        'hla2': HighLevelAgent(game, player2, player1, objectives, commands),
+        'ta2': TacticalAgent(game, player2),
+        'lla2': LowLevelAgent(game, player2)
+    }
     
     # Load existing checkpoints if available
-    logger.info("Loading checkpoints...")
-    high_level_agent_player1.load_checkpoint(os.path.join(CHECKPOINT_DIR, 'hla_player1_checkpoint.pth'))
-    tactical_agent_player1.load_checkpoint(os.path.join(CHECKPOINT_DIR, 'tactical_agent_player1_checkpoint.pth'))
-    low_level_agent_player1.load_checkpoint(os.path.join(CHECKPOINT_DIR, 'low_level_agent_player1_checkpoint.pth'))
-    high_level_agent_player2.load_checkpoint(os.path.join(CHECKPOINT_DIR, 'hla_player2_checkpoint.pth'))
-    tactical_agent_player2.load_checkpoint(os.path.join(CHECKPOINT_DIR, 'tactical_agent_player2_checkpoint.pth'))
-    low_level_agent_player2.load_checkpoint(os.path.join(CHECKPOINT_DIR, 'low_level_agent_player2_checkpoint.pth'))
-    
-    agents = {
-        'hla1': high_level_agent_player1,
-        'ta1': tactical_agent_player1,
-        'lla1': low_level_agent_player1,
-        'hla2': high_level_agent_player2,
-        'ta2': tactical_agent_player2,
-        'lla2': low_level_agent_player2
-    }
+    for agent_key, agent in agents.items():
+        checkpoint_file = f"{CHECKPOINT_DIR}/{agent_key}_checkpoint.pth"
+        agent.load_checkpoint(checkpoint_file)
     
     # Training statistics
     training_stats = {
-        'player1_wins': 0,
-        'player2_wins': 0,
         'total_episodes': 0,
-        'avg_turns_per_episode': 0,
-        'total_turns': 0
+        'wins': {'player1': 0, 'player2': 0, 'ties': 0},
+        'first_player_wins': {'first_wins': 0, 'second_wins': 0},  # First to go vs second to go
+        'total_turns': 0,
+        'combat_data': {
+            'total_shooting_kills': 0,
+            'total_melee_kills': 0,
+            'shooting_vs_melee_ratio': 0.0
+        },
+        'command_usage': {'attack': 0, 'defend': 0, 'move': 0},
+        'charge_success_rate': 0.0,
+        'average_models_lost_per_episode': 0.0,
+        'objective_positions': []  # For bias analysis
     }
+    
+    all_episode_stats = []  # Store all episode data for detailed analysis
     
     print("=" * 60)
     
-    # Main training loop
+    # Run training episodes
     for episode in range(NUM_TRAINING_EPISODES):
-        episode_results = run_training_episode(episode, agents)
+        episode_stats = run_training_episode(episode, agents)
+        all_episode_stats.append(episode_stats)
         
         # Update training statistics
         training_stats['total_episodes'] += 1
-        training_stats['total_turns'] += episode_results['total_turns']
-        training_stats['avg_turns_per_episode'] = training_stats['total_turns'] / training_stats['total_episodes']
         
-        if episode_results['winner'] == 'player1':
-            training_stats['player1_wins'] += 1
+        # Ensure tie handling
+        winner = episode_stats['winner']
+        if winner in training_stats['wins']:
+            training_stats['wins'][winner] += 1
         else:
-            training_stats['player2_wins'] += 1
+            # This shouldn't happen, but let's be safe
+            training_stats['wins']['ties'] += 1
+            
+        training_stats['total_turns'] += episode_stats['total_turns']
         
-        # Calculate win rates
-        p1_win_rate = (training_stats['player1_wins'] / training_stats['total_episodes']) * 100
-        p2_win_rate = (training_stats['player2_wins'] / training_stats['total_episodes']) * 100
+        # Track first player advantage
+        if episode_stats['starting_player_index'] == 0:  # Player 1 started
+            if episode_stats['winner'] == 'player1':
+                training_stats['first_player_wins']['first_wins'] += 1
+            elif episode_stats['winner'] == 'player2':
+                training_stats['first_player_wins']['second_wins'] += 1
+        else:  # Player 2 started
+            if episode_stats['winner'] == 'player2':
+                training_stats['first_player_wins']['first_wins'] += 1
+            elif episode_stats['winner'] == 'player1':
+                training_stats['first_player_wins']['second_wins'] += 1
         
-        # Print progress every 10 episodes or on important milestones
-        if (episode + 1) % 10 == 0 or episode == 0:
-            print(f"📊 Progress Update - Episode {episode + 1}/{NUM_TRAINING_EPISODES}")
-            print(f"   Player 1 Win Rate: {p1_win_rate:.1f}% ({training_stats['player1_wins']} wins)")
-            print(f"   Player 2 Win Rate: {p2_win_rate:.1f}% ({training_stats['player2_wins']} wins)")
-            print(f"   Avg Turns/Episode: {training_stats['avg_turns_per_episode']:.1f}")
-            print("-" * 40)
+        # Aggregate combat data
+        total_shooting = sum(episode_stats['shooting_kills'].values())
+        total_melee = sum(episode_stats['melee_kills'].values())
+        training_stats['combat_data']['total_shooting_kills'] += total_shooting
+        training_stats['combat_data']['total_melee_kills'] += total_melee
+        
+        # Command usage
+        for player_commands in episode_stats['commands_selected'].values():
+            for command, count in player_commands.items():
+                training_stats['command_usage'][command] += count
+        
+        # Objective positions for bias analysis
+        if episode_stats['objective_position']:
+            training_stats['objective_positions'].append(episode_stats['objective_position'])
+        
+        # Progress updates every 10 episodes
+        if (episode + 1) % 10 == 0:
+            display_progress_update(episode + 1, training_stats, all_episode_stats)
         
         # Save checkpoints periodically
         if (episode + 1) % CHECKPOINT_INTERVAL == 0:
             print(f"💾 Saving checkpoints after episode {episode + 1}...")
-            high_level_agent_player1.save_checkpoint(os.path.join(CHECKPOINT_DIR, 'hla_player1_checkpoint.pth'))
-            tactical_agent_player1.save_checkpoint(os.path.join(CHECKPOINT_DIR, 'tactical_agent_player1_checkpoint.pth'))
-            low_level_agent_player1.save_checkpoint(os.path.join(CHECKPOINT_DIR, 'low_level_agent_player1_checkpoint.pth'))
-            high_level_agent_player2.save_checkpoint(os.path.join(CHECKPOINT_DIR, 'hla_player2_checkpoint.pth'))
-            tactical_agent_player2.save_checkpoint(os.path.join(CHECKPOINT_DIR, 'tactical_agent_player2_checkpoint.pth'))
-            low_level_agent_player2.save_checkpoint(os.path.join(CHECKPOINT_DIR, 'low_level_agent_player2_checkpoint.pth'))
+            for agent_key, agent in agents.items():
+                checkpoint_file = f"{CHECKPOINT_DIR}/{agent_key}_checkpoint.pth"
+                agent.save_checkpoint(checkpoint_file)
     
-    # Final training summary
-    print("\n" + "=" * 60)
-    print("🏁 TRAINING COMPLETED!")
-    print("=" * 60)
-    print(f"📈 Final Results after {NUM_TRAINING_EPISODES} episodes:")
-    print(f"   Player 1: {training_stats['player1_wins']} wins ({p1_win_rate:.1f}%)")
-    print(f"   Player 2: {training_stats['player2_wins']} wins ({p2_win_rate:.1f}%)")
-    print(f"   Average game length: {training_stats['avg_turns_per_episode']:.1f} turns")
-    print(f"   Total training turns: {training_stats['total_turns']}")
-    print("=" * 60)
+    # Final comprehensive analysis
+    display_final_analysis(training_stats, all_episode_stats)
+
+def display_progress_update(episode_num: int, training_stats: dict, all_episode_stats: list):
+    """Display progress update with key statistics."""
+    total_episodes = training_stats['total_episodes']
+    p1_wins = training_stats['wins']['player1']
+    p2_wins = training_stats['wins']['player2']
+    ties = training_stats['wins']['ties']
+    avg_turns = training_stats['total_turns'] / total_episodes if total_episodes > 0 else 0
+    
+    # First player advantage analysis
+    first_wins = training_stats['first_player_wins']['first_wins']
+    second_wins = training_stats['first_player_wins']['second_wins']
+    total_decided = first_wins + second_wins
+    first_advantage = (first_wins / total_decided * 100) if total_decided > 0 else 50
+    
+    # Combat effectiveness
+    shooting_kills = training_stats['combat_data']['total_shooting_kills']
+    melee_kills = training_stats['combat_data']['total_melee_kills']
+    total_kills = shooting_kills + melee_kills
+    shooting_percentage = (shooting_kills / total_kills * 100) if total_kills > 0 else 0
+    
+    print(f"📊 Progress Update - Episode {episode_num}/{NUM_TRAINING_EPISODES}")
+    print(f"   Player 1 Win Rate: {p1_wins/total_episodes*100:.1f}% ({p1_wins} wins)")
+    print(f"   Player 2 Win Rate: {p2_wins/total_episodes*100:.1f}% ({p2_wins} wins)")
+    print(f"   First-Player Advantage: {first_advantage:.1f}% (🎯 {first_wins}, 🔄 {second_wins})")
+    print(f"   Combat: {shooting_percentage:.1f}% shooting, {100-shooting_percentage:.1f}% melee ({total_kills} total kills)")
+    print(f"   Avg Turns/Episode: {avg_turns:.1f}")
+    print("----------------------------------------")
+
+def display_final_analysis(training_stats: dict, all_episode_stats: list):
+    """Display comprehensive final training analysis."""
+    print("\n" + "=" * 70)
+    print("🏁 FINAL TRAINING ANALYSIS")
+    print("=" * 70)
+    
+    total_episodes = len(all_episode_stats)
+    
+    # Win rates
+    p1_wins = training_stats['wins']['player1']
+    p2_wins = training_stats['wins']['player2']
+    ties = training_stats['wins']['ties']
+    
+    print(f"\n📈 WIN STATISTICS:")
+    print(f"   Total Episodes: {total_episodes}")
+    print(f"   Player 1 Wins: {p1_wins} ({p1_wins/total_episodes*100:.1f}%)")
+    print(f"   Player 2 Wins: {p2_wins} ({p2_wins/total_episodes*100:.1f}%)")
+    print(f"   Ties: {ties} ({ties/total_episodes*100:.1f}%)")
+    
+    # First player advantage analysis
+    first_wins = training_stats['first_player_wins']['first_wins']
+    second_wins = training_stats['first_player_wins']['second_wins']
+    total_decided = first_wins + second_wins
+    
+    print(f"\n🎯 FIRST PLAYER ADVANTAGE ANALYSIS:")
+    if total_decided > 0:
+        print(f"   Starting player wins: {first_wins} ({first_wins/total_decided*100:.1f}%)")
+        print(f"   Second player wins: {second_wins} ({second_wins/total_decided*100:.1f}%)")
+        bias_indicator = "⚠️ BIAS DETECTED" if abs(first_wins - second_wins) > total_decided * 0.2 else "✅ BALANCED"
+        print(f"   Conclusion: {bias_indicator}")
+    else:
+        print(f"   No decisive games to analyze first-player advantage")
+        print(f"   All games were ties - may indicate scoring system issues")
+    
+    # Combat analysis
+    shooting_kills = training_stats['combat_data']['total_shooting_kills']
+    melee_kills = training_stats['combat_data']['total_melee_kills']
+    total_kills = shooting_kills + melee_kills
+    
+    print(f"\n⚔️ COMBAT EFFECTIVENESS:")
+    print(f"   Total Models Killed: {total_kills}")
+    if total_kills > 0:
+        print(f"   Shooting Phase Kills: {shooting_kills} ({shooting_kills/total_kills*100:.1f}%)")
+        print(f"   Melee Phase Kills: {melee_kills} ({melee_kills/total_kills*100:.1f}%)")
+        print(f"   Combat Style: {'Shooting-focused' if shooting_kills > melee_kills * 1.5 else 'Melee-focused' if melee_kills > shooting_kills * 1.5 else 'Balanced'}")
+    else:
+        print(f"   No models were killed during training")
+        print(f"   May indicate units not engaging or damage system issues")
+    
+    # Command usage analysis
+    total_commands = sum(training_stats['command_usage'].values())
+    print(f"\n🎮 COMMAND USAGE ANALYSIS:")
+    for command, count in training_stats['command_usage'].items():
+        percentage = count / total_commands * 100 if total_commands > 0 else 0
+        print(f"   '{command}': {count} times ({percentage:.1f}%)")
+    
+    # Objective positioning (bias check)
+    if training_stats['objective_positions']:
+        avg_x = sum(pos[0] for pos in training_stats['objective_positions']) / len(training_stats['objective_positions'])
+        avg_y = sum(pos[1] for pos in training_stats['objective_positions']) / len(training_stats['objective_positions'])
+        print(f"\n🎯 OBJECTIVE POSITIONING:")
+        print(f"   Average position: ({avg_x:.1f}, {avg_y:.1f})")
+        print(f"   Randomization: {'✅ Working' if len(set(training_stats['objective_positions'])) > total_episodes * 0.7 else '⚠️ May need improvement'}")
+    
+    # Average game length
+    avg_turns = training_stats['total_turns'] / total_episodes if total_episodes > 0 else 0
+    print(f"\n⏱️ GAME LENGTH:")
+    print(f"   Average turns per episode: {avg_turns:.1f}")
+    print(f"   Longest game: {max(stats['total_turns'] for stats in all_episode_stats)} turns")
+    print(f"   Shortest game: {min(stats['total_turns'] for stats in all_episode_stats)} turns")
+    
+    print("\n" + "=" * 70)
+    print("🎉 Training completed successfully!")
+    print("=" * 70)
 
 def main_game_loop() -> None:
     screen, env, game, game_map, _, _, _, player1, player2 = initialize_game()
