@@ -126,7 +126,7 @@ class Model:
     ################
     def take_damage(self, amount: int = 0, is_mortal: bool = False) -> int:
         self.wounds -= amount
-        logger.info(f"{self.name} takes {amount} damage. It is {'Alive' if self.is_alive else 'Dead'}")
+        print(f"{self.name} takes {amount} damage. It is {'Alive' if self.is_alive else 'Dead'}")
         excess_damage = 0
         if not self.is_alive:
             self.die()
@@ -136,7 +136,7 @@ class Model:
         return excess_damage
 
     def die(self) -> None:
-        logger.info(f"{self.name} [{self.id}] has Died!!!")
+        print(f"{self.name} [{self.id}] has Died!!!")
         #self.callbacks[hook_events.ENEMY_MODEL_KILLED].append(self)
         self.parent_unit.remove_model(self, False)
 
@@ -319,6 +319,7 @@ class Model:
         wargear_profile.attack(target, self)
 
     def passed_saving_throw(self, attack_instance: Dict, attacking_ap: int = 0) -> bool:
+        assert attacking_ap <= 0
         save_value = self.save - attacking_ap
         inv_save, inv_save_condition = self.inv_save
         if inv_save:
@@ -331,10 +332,12 @@ class Model:
 
         dice_roll = get_roll("D6")
         if dice_roll == 1:  # unmodified dice roll of 1 is always a fail
+            print(f"Saving Throw: dice_roll == 1, returning False")
             return False
 
         dice_modifier = 0  # TODO - handle positive & negative modifiers
         dice_modifier = min(dice_modifier, 1)  # modifications are capped at +1
+        print(f"Saving Throw: dice_roll: {dice_roll}, dice_modifier: {dice_modifier}, save_value: {save_value}")
         return (dice_roll + dice_modifier) >= save_value
 
     def failed_saving_throw(self, attack_instance: Dict, attacking_ap: int = 0) -> bool:

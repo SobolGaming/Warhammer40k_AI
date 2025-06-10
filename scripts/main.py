@@ -29,7 +29,7 @@ def setup_logging():
     """Configure logging to reduce noise while preserving important information."""
     # Set up different log levels for different modules
     root_logger = logging.getLogger()
-    root_logger.setLevel(logging.DEBUG)  # Allow all levels at root, but filter at handler level
+    root_logger.setLevel(logging.INFO)  # Changed from DEBUG to INFO to reduce noise
     
     # Create a formatter for clean output
     formatter = logging.Formatter('%(message)s')  # Simplified format

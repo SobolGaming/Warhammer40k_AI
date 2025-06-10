@@ -607,7 +607,7 @@ def parse_option_string2(option: str, unit_ref: 'Unit') -> Optional[WargearOptio
                     option = option.replace(" can each have their ", " ").replace(" replaced with ", " can be replaced with ")
 
         # some pre-pattern cleaning
-        description = option.replace("'s", "'s").replace(",", " and")
+        description = option.replace("’s", "'s").replace(",", " and")
 
         pattern = re.compile(
             r"(?P<model>(?:This model|The " + re.escape(model_name_1) + r"|The " + re.escape(model_name_2) + r"|The " + re.escape(model_name_3) + 
@@ -700,7 +700,7 @@ def parse_option_string2(option: str, unit_ref: 'Unit') -> Optional[WargearOptio
         return None
 
 def parse_alternate(description):
-    description = description.replace("'s", "'").lower()
+    description = description.replace("’", "'").lower()
     print(f"{description}")
     return {}
 
@@ -1063,7 +1063,7 @@ def parse_alternate_2(str_list: list[str]) -> list[WargearOption]:
         replacement_items = []
 
         # some sanitization of inconsistencies
-        description = line.lower().replace("'s", "'").replace(".", "").replace('model"s', "model's").replace("for every four models", "for every 4 models")
+        description = line.lower().replace("’", "'").replace(".", "").replace('model"s', "model's").replace("for every four models", "for every 4 models")
         print(f"\nDESCRIPTION: {description}")
         if " replaced " in description or " replace " in description:
             is_replacement = True
@@ -1249,7 +1249,7 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
         replacement_items = []
 
         # some sanitization of inconsistencies
-        description = line.lower().replace("'s", "'").replace(".", "").replace('model"s', "model's").replace("for every four ", "for every 4 ")
+        description = line.lower().replace("’", "'").replace(".", "").replace('model"s', "model's").replace("for every four ", "for every 4 ")
         description = description.replace(" one of the following ", " one of the following: ").replace(" 1 of the following: ", " one of the following: ").replace(" 2 of the following: ", " two of the following: ")
         description = description.replace("up to two ", "up to 2 ").replace("up to three ", "up to 3 ").replace("up to four ", "up to 4 ")
         print(f"\nDESCRIPTION: {description}")
