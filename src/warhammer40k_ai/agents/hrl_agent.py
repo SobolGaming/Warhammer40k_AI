@@ -390,6 +390,8 @@ class TacticalAgent:
         if not unit.deployed or not unit.is_alive():
             return
 
+        logger.info(f"🚶 {self.player.name}: {unit.name} making movement decision")
+
         state = unit.get_engagement_state(self.game.map)
         available_actions = unit.get_available_move_actions(state)
 
@@ -409,6 +411,9 @@ class TacticalAgent:
         dz_before = objective.location.z - unit_position_before[2]
         distance_before = get_dist(dx_before, dy_before, dz_before)
 
+        # Assess shooting opportunities before movement
+        shooting_opportunity_score = self.assess_shooting_opportunities(unit)
+        
         # Execute the movement (unit expects the integer value)
         unit.do_move_action(chosen_action_idx, destination, self.game.map)
 
@@ -419,9 +424,26 @@ class TacticalAgent:
         dz_after = objective.location.z - unit_position_after[2]
         distance_after = get_dist(dx_after, dy_after, dz_after)
 
-        # Compute the reward (positive if unit moved closer)
-        reward = MOVEMENT_REWARD_SCALING * (distance_before - distance_after)
-        logger.info(f"Reward: {reward}, Distance before: {distance_before}, Distance after: {distance_after}")
+        # Compute the basic movement reward (positive if unit moved closer)
+        movement_reward = MOVEMENT_REWARD_SCALING * (distance_before - distance_after)
+        
+        # Apply shooting opportunity penalty for advancing
+        if chosen_action == MovementAction.ADVANCE and shooting_opportunity_score > 0.5:
+            # Heavy penalty for advancing when good shooting opportunities exist
+            shooting_penalty = -2.0 * MOVEMENT_REWARD_SCALING * shooting_opportunity_score
+            logger.info(f"{unit.name} chose to ADVANCE despite shooting opportunities (penalty: {shooting_penalty:.2f})")
+        elif chosen_action == MovementAction.MOVE and shooting_opportunity_score > 0.5:
+            # Small bonus for choosing MOVE when shooting opportunities exist
+            shooting_penalty = 0.5 * MOVEMENT_REWARD_SCALING * shooting_opportunity_score
+            logger.info(f"{unit.name} chose to MOVE preserving shooting opportunities (bonus: {shooting_penalty:.2f})")
+        else:
+            shooting_penalty = 0.0
+        
+        # Total reward combines movement and shooting considerations
+        reward = movement_reward + shooting_penalty
+        
+        logger.info(f"Movement reward: {movement_reward:.2f}, Shooting adjustment: {shooting_penalty:.2f}, Total: {reward:.2f}")
+        logger.info(f"Distance before: {distance_before:.1f}, Distance after: {distance_after:.1f}, Shooting score: {shooting_opportunity_score:.2f}")
         self.movement_rewards.append(reward)
 
     def calculate_destination(self, unit: Unit, action: MovementAction, objective: Objective) -> Tuple[float, float, float]:
@@ -465,7 +487,7 @@ class TacticalAgent:
         # Mask unavailable actions
         action_mask = torch.zeros(NUM_MOVEMENT_ACTIONS)
         for action in available_actions:
-            action_mask[action.value - 1] = 1  # Subtract 1 because enum values start at 1, but indices start at 0
+            action_mask[action - 1] = 1  # Subtract 1 because enum values start at 1, but indices start at 0
         
         # Apply mask and normalize
         masked_probs = action_probs * action_mask
@@ -523,6 +545,100 @@ class TacticalAgent:
     def get_movement_state_size(self) -> int:
         # Define the size of the movement state vector
         return 9  # Adjust based on actual features
+
+    def assess_shooting_opportunities(self, unit: Unit) -> float:
+        """
+        Assess the quality of shooting opportunities for a unit.
+        Returns a score from 0.0 (no opportunities) to 1.0 (excellent opportunities).
+        """
+        logger.info(f"🎯 Assessing shooting opportunities for {unit.name}")
+        
+        if not unit.is_alive() or not unit.deployed:
+            logger.debug(f"{unit.name} not alive or not deployed")
+            return 0.0
+            
+        total_opportunity_score = 0.0
+        model_count = 0
+        
+        # Evaluate shooting opportunities for each model in the unit
+        for model in unit.models:
+            if not model.is_alive:
+                continue
+                
+            model_count += 1
+            model_shooting_score = 0.0
+            weapon_count = 0
+            
+            # Check each ranged weapon the model has
+            for wargear_item in model.wargear:
+                # Skip melee weapons
+                if wargear_item.is_melee():
+                    continue
+                    
+                weapon_count += 1
+                
+                # Find the best profile for this weapon
+                best_profile = None
+                best_range = 0
+                for profile in wargear_item.profiles.values():
+                    if hasattr(profile, 'range') and profile.range.max > best_range:
+                        best_profile = profile
+                        best_range = profile.range.max
+                
+                if not best_profile:
+                    continue
+                
+                # Find targets within range
+                try:
+                    targets = model.find_targets_in_range(self.game.map, wargear_profile=best_profile)
+                    # Filter out destroyed units
+                    targets = [target for target in targets if target.is_alive()]
+                    
+                    logger.info(f"DEBUG: {unit.name} model {model.name} with {wargear_item.name} (range {best_profile.range.max}) found {len(targets)} targets")
+                    
+                    if targets:
+                        # Score based on number and quality of targets
+                        target_score = min(1.0, len(targets) / 3.0)  # Normalize to max 1.0
+                        
+                        # Bonus for closer targets (easier to hit)
+                        closest_target_distance = min(
+                            get_dist(
+                                target.get_position()[0] - model.get_location()[0],
+                                target.get_position()[1] - model.get_location()[1],
+                                target.get_position()[2] - model.get_location()[2]
+                            ) for target in targets
+                        )
+                        # Higher score for closer targets (within half range gets bonus)
+                        distance_score = max(0.0, 1.0 - (closest_target_distance / (best_profile.range.max * 0.5)))
+                        
+                        weapon_opportunity_score = (target_score + distance_score) / 2.0
+                        model_shooting_score = max(model_shooting_score, weapon_opportunity_score)
+                        
+                        logger.info(f"DEBUG:   Closest target at {closest_target_distance:.1f}\", score: {weapon_opportunity_score:.2f}")
+                        
+                    else:
+                        logger.info(f"DEBUG: {unit.name} model {model.name} with {wargear_item.name} found NO targets")
+                        
+                except Exception as e:
+                    # If target finding fails, assume no opportunities
+                    logger.error(f"Error assessing shooting opportunities for {model.name}: {e}")
+                    continue
+            
+            # If model has ranged weapons, add its score
+            if weapon_count > 0:
+                total_opportunity_score += model_shooting_score
+            else:
+                logger.debug(f"{unit.name} has no ranged weapons")
+        
+        # Average opportunity score across all models with ranged weapons
+        if model_count > 0:
+            final_score = total_opportunity_score / model_count
+            result = min(1.0, final_score)  # Cap at 1.0
+            logger.debug(f"{unit.name} final shooting opportunity score: {result:.2f}")
+            return result
+        
+        logger.debug(f"{unit.name} has no models")
+        return 0.0
 
     ###########################################################################
     # Shooting Phase

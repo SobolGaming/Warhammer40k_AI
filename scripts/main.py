@@ -47,6 +47,9 @@ def setup_logging():
                 return True
             if 'destroyed before attack' in record.getMessage():
                 return True
+            # Allow shooting and combat messages
+            if any(word in record.getMessage().lower() for word in ['shoot', 'attack', 'charge', 'fight', 'target']):
+                return True
             # Allow episode completion messages
             if 'Episode' in record.getMessage() and ('completed' in record.getMessage() or 'Starting' in record.getMessage()):
                 return True
@@ -69,8 +72,8 @@ def setup_logging():
     root_logger.addHandler(console_handler)
     root_logger.addHandler(combat_handler)
     
-    # Specifically quiet down noisy modules
-    logging.getLogger('warhammer40k_ai.agents.hrl_agent').setLevel(logging.ERROR)
+    # Specifically quiet down noisy modules (but allow combat messages)
+    logging.getLogger('warhammer40k_ai.agents.hrl_agent').setLevel(logging.INFO)  # Changed from ERROR to INFO
     logging.getLogger('pygame').setLevel(logging.ERROR)
     logging.getLogger('warhammer40k_ai.classes.army').setLevel(logging.ERROR)
     logging.getLogger('warhammer40k_ai.waha_helper').setLevel(logging.ERROR)
@@ -202,8 +205,8 @@ def initialize_game() -> Tuple[pygame.Surface, WarhammerEnv, Game, Map, float, i
 
     # Create players with armies (suppress noisy parsing output)
     with suppress_stdout():
-        player1 = Player("Player 1", PlayerType.HUMAN, parse_army_list("army_lists/warhammer_app_dump.txt", waha_helper))
-        player2 = Player("Player 2", PlayerType.HUMAN, parse_army_list("army_lists/chaos_daemons_GT2023.txt", waha_helper))
+        player1 = Player("Player 1", PlayerType.AI, parse_army_list("army_lists/warhammer_app_dump.txt", waha_helper))
+        player2 = Player("Player 2", PlayerType.AI, parse_army_list("army_lists/chaos_daemons_GT2023.txt", waha_helper))
     
     # Only print during first initialization
     if hasattr(initialize_game, '_first_run'):

@@ -737,9 +737,9 @@ class Unit:
     def get_available_move_actions(self, state: int) -> List[int]:
         """Get the list of available actions based on the current state."""
         if state == MovementState.IN_ENGAGEMENT_RANGE:
-            return [MovementAction.REMAIN_STATIONARY, MovementAction.FALL_BACK]
+            return [MovementAction.REMAIN_STATIONARY.value, MovementAction.FALL_BACK.value]
         else:
-            return [MovementAction.REMAIN_STATIONARY, MovementAction.MOVE, MovementAction.ADVANCE]
+            return [MovementAction.REMAIN_STATIONARY.value, MovementAction.MOVE.value, MovementAction.ADVANCE.value]
 
     def _execute_action(self, action: int, destination: Tuple[float, float, float], game_map: 'Map') -> bool:
         """Execute the chosen action."""
