@@ -284,10 +284,22 @@ def initialize_game() -> Tuple[pygame.Surface, WarhammerEnv, Game, Map, float, i
 
 def run_training_episode(episode_num: int, agents: dict) -> dict:
     """Run a single training episode and return statistics."""
-    logger.error(f"🏁 EPISODE START: Beginning episode {episode_num + 1}")
-    
-    # Create fresh game instance for this episode
-    screen, env, game, game_map, _, _, _, player1, player2 = initialize_game()
+    try:
+        logger.error(f"🏁 EPISODE START: Beginning episode {episode_num + 1}")
+        logger.error(f"🔧 EPISODE DEBUG: Function called successfully")
+        
+        # Create fresh game instance for this episode
+        logger.error(f"🔧 EPISODE DEBUG: About to call initialize_game()")
+        screen, env, game, game_map, _, _, _, player1, player2 = initialize_game()
+        logger.error(f"🔧 EPISODE DEBUG: initialize_game() completed")
+    except Exception as early_error:
+        logger.error(f"❌ EARLY EPISODE FAILURE: {early_error}")
+        logger.error(f"Error type: {type(early_error).__name__}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        raise
+        
+    logger.error(f"🔧 EPISODE DEBUG: Setting up episode statistics...")
     
     # Track detailed statistics
     episode_stats = {
@@ -362,9 +374,19 @@ def run_training_episode(episode_num: int, agents: dict) -> dict:
         return original_remove_model(self, model, fleed)
     
     # Monkey patch the Unit class to track deaths
-    from warhammer40k_ai.classes.unit import Unit
-    original_remove_model = Unit.remove_model
-    Unit.remove_model = tracking_remove_model
+    logger.error(f"🔧 EPISODE DEBUG: About to start monkey patching section...")
+    try:
+        logger.error("🔧 MONKEY PATCH: Starting monkey patching...")
+        from warhammer40k_ai.classes.unit import Unit
+        original_remove_model = Unit.remove_model
+        Unit.remove_model = tracking_remove_model
+        logger.error("✅ MONKEY PATCH: Monkey patching completed successfully")
+    except Exception as patch_error:
+        logger.error(f"❌ MONKEY PATCH FAILED: {patch_error}")
+        logger.error(f"Error type: {type(patch_error).__name__}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        raise  # Re-raise to see the full error
     
     try:
         # Deploy units automatically
@@ -384,13 +406,23 @@ def run_training_episode(episode_num: int, agents: dict) -> dict:
             obj = game.map.objectives[0]
             episode_stats['objective_position'] = (obj.location.x, obj.location.y)
         
-        # Initialize agents for this episode
+        # Initialize agents for this episode with the NEW game instance
         high_level_agent_player1 = agents['hla1']
         tactical_agent_player1 = agents['ta1'] 
         low_level_agent_player1 = agents['lla1']
         high_level_agent_player2 = agents['hla2']
         tactical_agent_player2 = agents['ta2']
         low_level_agent_player2 = agents['lla2']
+        
+        # CRITICAL FIX: Update all agents to use the NEW game instance for this episode
+        logger.error("🔧 AGENTS UPDATE: Updating agents to use new game instance...")
+        high_level_agent_player1.game = game
+        tactical_agent_player1.game = game
+        low_level_agent_player1.game = game
+        high_level_agent_player2.game = game
+        tactical_agent_player2.game = game
+        low_level_agent_player2.game = game
+        logger.error("✅ AGENTS UPDATE: All agents updated to use new game instance")
         
         # Run the game loop
         while not game.is_game_over():
@@ -524,7 +556,17 @@ def run_training_loop():
     
     # Run training episodes
     for episode in range(NUM_TRAINING_EPISODES):
-        episode_stats = run_training_episode(episode, agents)
+        logger.error(f"🎯 TRAINING LOOP: About to call run_training_episode for episode {episode + 1}")
+        try:
+            episode_stats = run_training_episode(episode, agents)
+            logger.error(f"✅ TRAINING LOOP: run_training_episode returned successfully for episode {episode + 1}")
+        except Exception as episode_error:
+            logger.error(f"❌ TRAINING LOOP: run_training_episode failed for episode {episode + 1}: {episode_error}")
+            logger.error(f"Error type: {type(episode_error).__name__}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
+            continue  # Skip to next episode
+            
         all_episode_stats.append(episode_stats)
         
         # Update training statistics with episode results
