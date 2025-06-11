@@ -704,12 +704,15 @@ class TacticalAgent:
         for model in unit.models:
             if not model.is_alive:
                 continue
+            
             for wargear_item in model.wargear:
                 # Decide which profile to use if the weapon has multiple profiles
                 selected_profile = self.choose_weapon_profile(model, wargear_item)
                 if selected_profile is None:
                     continue
+                    
                 targets = model.find_targets_in_range(self.game.map, wargear_profile=selected_profile)
+                
                 # Filter out destroyed units
                 targets = [target for target in targets if target.is_alive()]
                 

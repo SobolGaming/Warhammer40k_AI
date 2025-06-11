@@ -157,7 +157,7 @@ def auto_deploy_units(game: Game, player1: Player, player2: Player):
                     model_facing = 0.0  # Default facing direction
                     model.set_location(model_x, model_y, model_z, model_facing)
                 
-                unit.set_position(x, y, z)
+                # Let unit position be calculated from model positions (don't override!)
                 unit.deployed = True
                 game.map.units.append(unit)
                 deployed_count += 1
@@ -167,8 +167,11 @@ def auto_deploy_units(game: Game, player1: Player, player2: Player):
                 # Only log first few failures to avoid spam
                 if failed_count <= 2:
                     logger.warning(f"Failed to deploy {unit.name}: {e}")
-                # Fallback: simple positioning
-                unit.set_position(x_start + 2, y_start + 2, 0)
+                # Fallback: simple positioning for models
+                for j, model in enumerate(unit.models):
+                    model_x = x_start + 2 + (j % 3) * 0.5
+                    model_y = y_start + 2 + (j // 3) * 0.5
+                    model.set_location(model_x, model_y, 0, 0.0)
                 unit.deployed = True
                 game.map.units.append(unit)
         
