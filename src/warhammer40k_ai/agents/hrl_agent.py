@@ -399,9 +399,6 @@ class TacticalAgent:
         # Convert action index back to MovementAction enum
         chosen_action = MovementAction(chosen_action_idx)
         
-        # Debug: Print chosen action (uncomment for debugging)
-        # print(f"AI chose action: {chosen_action.name} (index {chosen_action_idx}) from available: {[MovementAction(a.value).name for a in available_actions]}")
-
         # Decide on the destination
         destination = self.calculate_destination(unit, chosen_action, objective)
 
@@ -474,11 +471,6 @@ class TacticalAgent:
         masked_probs = action_probs * action_mask
         prob_sum = masked_probs.sum()
         
-        # Debug: Print action selection info (uncomment for debugging)
-        # print(f"Action probabilities: {action_probs.detach().numpy()}")
-        # print(f"Action mask: {action_mask.numpy()}")
-        # print(f"Masked probabilities: {masked_probs.detach().numpy()}")
-        
         # Handle zero sum or NaN cases
         if prob_sum == 0 or torch.isnan(prob_sum):
             throttled_warning("Warning: Invalid probability sum detected, using uniform distribution over valid movement actions")
@@ -491,8 +483,6 @@ class TacticalAgent:
             throttled_warning("Warning: NaN values after normalization, falling back to uniform distribution")
             masked_probs = action_mask / action_mask.sum()
 
-        # print(f"Final probabilities: {masked_probs.detach().numpy()}")
-
         # Create a categorical distribution
         action_dist = torch.distributions.Categorical(masked_probs)
         action_idx = action_dist.sample()
@@ -502,7 +492,6 @@ class TacticalAgent:
         
         # Convert back to enum value (add 1 because enum values start at 1)
         enum_value = action_idx.item() + 1
-        # print(f"Returning enum value: {enum_value} for action index: {action_idx.item()}")
         return enum_value
 
     def extract_movement_state_features(self, unit: Unit, objective: Objective) -> torch.Tensor:

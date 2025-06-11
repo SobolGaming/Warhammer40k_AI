@@ -793,19 +793,23 @@ class Unit:
         potential_positions = self.calculate_model_positions(destination[0], destination[1], game_map)
         distance = 0.0
 
-        for model, destination in zip(self.models, potential_positions):
-            logging.debug(f"Model {model._id} {model.name} moving to {destination}")
-            shortest_path = a_star(model, game_map.obstacles, destination)
+        for model, model_destination in zip(self.models, potential_positions):  # Fixed variable name
+            logging.debug(f"Model {model._id} {model.name} moving to {model_destination}")
+            shortest_path = a_star(model, game_map.obstacles, model_destination)
             if not shortest_path:
-                logger.debug(f"Cannot move unit {self.name} - model {model._id} path is None")
-                continue  # Model cannot reach destination
+                logger.debug(f"Cannot move unit {self.name} - model {model._id} path is None, using direct position")
+                # If pathfinding fails, just move directly to the destination
+                model.set_location(*model_destination)
+                continue
             path_distance = sum(get_dist(shortest_path[i][0] - shortest_path[i-1][0], shortest_path[i][1] - shortest_path[i-1][1]) for i in range(1, len(shortest_path)))
             if path_distance > model.movement:
-                logger.debug(f"Cannot move unit {self.name} - model {model._id} path distance {path_distance} is greater than movement {model.movement}")
-                continue  # Model cannot reach destination
+                logger.debug(f"Cannot move unit {self.name} - model {model._id} path distance {path_distance} is greater than movement {model.movement}, using direct position")
+                # If path is too long, just move directly to the destination 
+                model.set_location(*model_destination)
+                continue
             last_node = model.get_location()
             model.last_move_path = [last_node]
-            direction_to_destination = get_angle(destination[0] - model.model_base.x, destination[1] - model.model_base.y)
+            direction_to_destination = get_angle(model_destination[0] - model.model_base.x, model_destination[1] - model.model_base.y)
             distance = 0.0
             for node in shortest_path[1:]:
                     dx = node[0] - last_node[0]
@@ -817,8 +821,9 @@ class Unit:
                     distance += segment_distance
                     last_node = (node[0], node[1], node[2] if len(node) > 2 else 0, direction_to_destination)
                     model.last_move_path.append(last_node)
-            model.set_location(*destination)
-            logger.debug(f"Model {model._id} {model.name} moved to {destination} travelling {distance} inches")
+            # ALWAYS update the model position
+            model.set_location(*model_destination)
+            logger.debug(f"Model {model._id} {model.name} moved to {model_destination} travelling {distance} inches")
             logger.debug(f"Model {model._id} path: {model.last_move_path}")
 
         # Update unit centroid
