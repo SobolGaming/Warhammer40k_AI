@@ -130,6 +130,11 @@ def cleanup_destroyed_units(game: Game):
 def auto_deploy_units(game: Game, player1: Player, player2: Player):
     """Automatically deploy units for both players in their deployment zones."""
     
+    logger.error(f"🚢 DEPLOYMENT: Starting unit deployment...")
+    logger.error(f"DEPLOYMENT: Player 1 has {len(player1.get_army().units)} units to deploy")
+    logger.error(f"DEPLOYMENT: Player 2 has {len(player2.get_army().units)} units to deploy")
+    logger.error(f"DEPLOYMENT: Map currently has {len(game.map.units)} units")
+    
     def deploy_player_units(player: Player, zone: dict):
         """Deploy units for a specific player in their zone."""
         # Reduced logging frequency
@@ -143,6 +148,8 @@ def auto_deploy_units(game: Game, player1: Player, player2: Player):
         
         deployed_count = 0
         failed_count = 0
+        
+        logger.info(f"🚢 Deploying {len(units)} units for {player.name} in zone x=({x_start:.1f}-{x_end:.1f}), y=({y_start:.1f}-{y_end:.1f})")
         
         for i, unit in enumerate(units):
             try:
@@ -162,8 +169,15 @@ def auto_deploy_units(game: Game, player1: Player, player2: Player):
                 
                 # Let unit position be calculated from model positions (don't override!)
                 unit.deployed = True
+                
+                # DEBUG: Check army assignment
+                logger.info(f"  Unit {unit.name}: Army ID = {id(unit.get_parent_army())}, Deployed = {unit.deployed}")
+                
                 game.map.units.append(unit)
                 deployed_count += 1
+                
+                # DEBUG: Verify unit was added to map
+                logger.info(f"  Added {unit.name} to map. Map now has {len(game.map.units)} units")
                 
             except Exception as e:
                 failed_count += 1
@@ -179,7 +193,7 @@ def auto_deploy_units(game: Game, player1: Player, player2: Player):
                 game.map.units.append(unit)
         
         # Summary logging instead of per-unit logging
-        logger.debug(f"Deployed {deployed_count} units for {player.name}" + 
+        logger.info(f"✅ Deployed {deployed_count} units for {player.name}" + 
                     (f" ({failed_count} with fallback positioning)" if failed_count > 0 else ""))
     
     # Define deployment zones
@@ -197,6 +211,11 @@ def auto_deploy_units(game: Game, player1: Player, player2: Player):
     
     deploy_player_units(player1, player1_zone)
     deploy_player_units(player2, player2_zone)
+    
+    logger.info(f"🚢 Deployment complete! Total units on map: {len(game.map.units)}")
+    logger.info(f"Player 1 army units: {[unit.name for unit in player1.get_army().units]}")
+    logger.info(f"Player 2 army units: {[unit.name for unit in player2.get_army().units]}")
+    logger.info(f"Map units: {[unit.name for unit in game.map.units]}")
 
 def initialize_game() -> Tuple[pygame.Surface, WarhammerEnv, Game, Map, float, int, int, Player, Player]:
     pygame.init()
@@ -345,7 +364,16 @@ def run_training_episode(episode_num: int, agents: dict) -> dict:
     
     try:
         # Deploy units automatically
-        auto_deploy_units(game, player1, player2)
+        logger.error("⚠️  DEPLOYMENT: About to call auto_deploy_units...")
+        try:
+            auto_deploy_units(game, player1, player2)
+            logger.error("✅ DEPLOYMENT: auto_deploy_units completed successfully")
+        except Exception as deploy_error:
+            logger.error(f"❌ DEPLOYMENT FAILED: {deploy_error}")
+            logger.error(f"Error type: {type(deploy_error).__name__}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
+            raise  # Re-raise to see the full error
         
         # Track objective position
         if game.map.objectives:

@@ -594,6 +594,32 @@ class TacticalAgent:
                     # Filter out destroyed units
                     targets = [target for target in targets if target.is_alive()]
                     
+                    # Debug: Print detailed position and distance information
+                    model_pos = model.get_location()
+                    logger.info(f"DEBUG: {unit.name} model {model.name} at position ({model_pos[0]:.1f}, {model_pos[1]:.1f}, {model_pos[2]:.1f})")
+                    logger.info(f"DEBUG: Weapon {wargear_item.name} ({best_profile.name}) has range {best_profile.range.max}")
+                    
+                    # Check all enemy units and their distances
+                    enemy_units = self.game.map.get_enemy_units(unit)
+                    logger.info(f"DEBUG: Found {len(enemy_units)} enemy units total")
+                    
+                    # Debug: Print parent army information
+                    logger.info(f"DEBUG: Unit {unit.name} belongs to army ID: {id(unit.get_parent_army())} (Player: {getattr(unit.get_parent_army(), 'player', 'Unknown') if unit.get_parent_army() else 'None'})")
+                    
+                    # Show all units on the map and their army assignments
+                    map_units = self.game.map.units
+                    logger.info(f"DEBUG: Total units on map: {len(map_units)}")
+                    for i, map_unit in enumerate(map_units):
+                        logger.info(f"DEBUG:   Map unit {i+1}: {map_unit.name} - Army ID: {id(map_unit.get_parent_army())} (Player: {getattr(map_unit.get_parent_army(), 'player', 'Unknown') if map_unit.get_parent_army() else 'None'})")
+                    
+                    for i, enemy_unit in enumerate(enemy_units):
+                        if not enemy_unit.is_alive():
+                            continue
+                        enemy_pos = enemy_unit.get_position()
+                        distance = ((model_pos[0] - enemy_pos[0])**2 + (model_pos[1] - enemy_pos[1])**2 + (model_pos[2] - enemy_pos[2])**2)**0.5
+                        in_range = distance <= best_profile.range.max
+                        logger.info(f"DEBUG:   Enemy {i+1}: {enemy_unit.name} at ({enemy_pos[0]:.1f}, {enemy_pos[1]:.1f}, {enemy_pos[2]:.1f}) - Distance: {distance:.1f}\" - In Range: {in_range}")
+                    
                     logger.info(f"DEBUG: {unit.name} model {model.name} with {wargear_item.name} (range {best_profile.range.max}) found {len(targets)} targets")
                     
                     if targets:
