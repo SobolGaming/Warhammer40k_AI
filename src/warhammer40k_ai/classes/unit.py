@@ -648,7 +648,7 @@ class Unit:
             for weapon in model.wargear:
                 if weapon.is_ranged() or weapon.is_melee():
                     dmg_potential = weapon.get_damage_potential(target_unit)
-                    print(f"{weapon.name} damage potential: {dmg_potential}")
+                    #print(f"{weapon.name} damage potential: {dmg_potential}")
                     if weapon.is_ranged():
                         ranged_threat += dmg_potential
                     else:

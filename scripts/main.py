@@ -307,12 +307,28 @@ def run_training_episode(episode_num: int, agents: dict) -> dict:
     def tracking_remove_model(self, model, fleed=False):
         """Enhanced remove_model that tracks deaths for statistics."""
         if not fleed:  # Only count actual deaths, not fleeing
+            # Determine if this was a shooting or melee kill based on the current game phase
+            if game.is_shooting_phase():
+                kill_type = 'shooting'
+            elif game.is_fight_phase():
+                kill_type = 'melee'
+            else:
+                # Default to melee for other phases (charge phase, etc.)
+                kill_type = 'melee'
+            
             episode_stats['models_destroyed'].append({
                 'model_name': model.name,
                 'unit_name': self.name,
                 'owner': 'player1' if self in player1.get_army().units else 'player2',
-                'turn': game.turn
+                'turn': game.turn,
+                'kill_type': kill_type  # Track whether it was shooting or melee
             })
+            
+            # Increment the appropriate kill counter
+            if kill_type == 'shooting':
+                episode_stats['shooting_kills'] += 1
+            else:
+                episode_stats['melee_kills'] += 1
         # Call original method
         return original_remove_model(self, model, fleed)
     

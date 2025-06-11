@@ -1026,7 +1026,7 @@ class TacticalAgent:
         if not policy_loss:
             throttled_warning("Warning: No valid policy loss terms to update movement policy")
             return
-            
+
         self.movement_optimizer.zero_grad()
         policy_loss = torch.stack(policy_loss).sum()
         
@@ -1074,7 +1074,7 @@ class TacticalAgent:
         if not policy_loss:
             throttled_warning("Warning: No valid policy loss terms to update shooting policy")
             return
-            
+
         self.shooting_optimizer.zero_grad()
         policy_loss = torch.stack(policy_loss).sum()
         
@@ -1122,7 +1122,7 @@ class TacticalAgent:
         if not policy_loss:
             throttled_warning("Warning: No valid policy loss terms to update profile selection policy")
             return
-            
+
         self.profile_selection_optimizer.zero_grad()
         policy_loss = torch.stack(policy_loss).sum()
         
@@ -1170,7 +1170,7 @@ class TacticalAgent:
         if not policy_loss:
             throttled_warning("Warning: No valid policy loss terms to update fight target policy")
             return
-            
+
         self.fight_target_optimizer.zero_grad()
         policy_loss = torch.stack(policy_loss).sum()
         
@@ -1218,7 +1218,7 @@ class TacticalAgent:
         if not policy_loss:
             throttled_warning("Warning: No valid policy loss terms to update fight profile selection policy")
             return
-            
+
         self.fight_profile_selection_optimizer.zero_grad()
         policy_loss = torch.stack(policy_loss).sum()
         
@@ -1357,7 +1357,7 @@ class LowLevelAgent:
         if not policy_loss:
             throttled_warning("Warning: No valid policy loss terms to update LowLevelAgent policy")
             return
-            
+
         self.optimizer.zero_grad()
         policy_loss = torch.stack(policy_loss).sum()
         
