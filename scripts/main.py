@@ -171,13 +171,17 @@ def auto_deploy_units(game: Game, player1: Player, player2: Player):
                 unit.deployed = True
                 
                 # DEBUG: Check army assignment
-                logger.info(f"  Unit {unit.name}: Army ID = {id(unit.get_parent_army())}, Deployed = {unit.deployed}")
+                logger.error(f"  Unit {unit.name}: Army ID = {id(unit.get_parent_army())}, Deployed = {unit.deployed}")
+                
+                # DEBUG: Log before adding to map
+                logger.error(f"  Map has {len(game.map.units)} units before adding {unit.name}")
                 
                 game.map.units.append(unit)
                 deployed_count += 1
                 
                 # DEBUG: Verify unit was added to map
-                logger.info(f"  Added {unit.name} to map. Map now has {len(game.map.units)} units")
+                logger.error(f"  Added {unit.name} to map. Map now has {len(game.map.units)} units")
+                logger.error(f"  Map units list: {[u.name for u in game.map.units]}")
                 
             except Exception as e:
                 failed_count += 1
@@ -279,10 +283,10 @@ def initialize_game() -> Tuple[pygame.Surface, WarhammerEnv, Game, Map, float, i
     return screen, env, game, game_map, zoom_level, offset_x, offset_y, player1, player2
 
 def run_training_episode(episode_num: int, agents: dict) -> dict:
-    """Run a single training episode and return the results."""
-    print(f"Episode {episode_num + 1}/{NUM_TRAINING_EPISODES}: Starting...")
+    """Run a single training episode and return statistics."""
+    logger.error(f"🏁 EPISODE START: Beginning episode {episode_num + 1}")
     
-    # Initialize a fresh game for this episode
+    # Create fresh game instance for this episode
     screen, env, game, game_map, _, _, _, player1, player2 = initialize_game()
     
     # Track detailed statistics
