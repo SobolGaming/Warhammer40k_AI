@@ -147,7 +147,8 @@ class Game:
         return shortest_distance
 
     def next_turn(self):
-        """Advance to the next turn."""
+        """Advance to the next turn (legacy method - turn advancement now handled in next_phase)."""
+        # This method is kept for compatibility but turn advancement is now handled in next_phase()
         self.current_player_index = (self.current_player_index + 1) % len(self.players)
         if self.current_player_index == 0:
             self.turn += 1
@@ -163,8 +164,19 @@ class Game:
         current_phase_value = self.phase.value
         next_phase_value = (current_phase_value + 1) % len(BattleRoundPhases)
         self.phase = BattleRoundPhases(next_phase_value)
+        
         if next_phase_value == 0:  # If we've wrapped around to COMMAND_PHASE
-            self.next_turn()
+            # This means we've finished all phases for the current player
+            # Switch to the next player
+            self.current_player_index = (self.current_player_index + 1) % len(self.players)
+            
+            # If we've gone through all players, start a new turn
+            if self.current_player_index == 0:
+                self.turn += 1
+                # Reset round state for all units at the start of a new turn
+                for player in self.players:
+                    for unit in player.get_army().units:
+                        unit.initialize_round()
 
     def is_command_phase(self) -> bool:
         return self.phase == BattleRoundPhases.COMMAND_PHASE

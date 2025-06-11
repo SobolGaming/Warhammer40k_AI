@@ -369,32 +369,50 @@ def run_training_episode(episode_num: int, agents: dict) -> dict:
                 high_level_agent = high_level_agent_player2
                 tactical_agent = tactical_agent_player2
 
-            # High-level decision making
+            # Get objective and command at start of each phase (needed for all phases)
             objective, command = high_level_agent.choose_objective_and_command()
-            episode_stats['commands_selected'][current_player_key][command] += 1
+            
+            # Execute the current phase based on game state
+            if game.is_command_phase():
+                # Command phase
+                episode_stats['commands_selected'][current_player_key][command] += 1
+                tactical_agent.command_phase(command)
+                game.next_phase()
+                
+            elif game.is_movement_phase():
+                # Movement phase for all units
+                for unit in current_player.get_army().units:
+                    if unit.is_alive():
+                        tactical_agent.movement_phase(unit, objective)
+                game.next_phase()
+                
+            elif game.is_shooting_phase():
+                # Shooting phase for all units
+                for unit in current_player.get_army().units:
+                    if unit.is_alive():
+                        tactical_agent.shooting_phase(unit)
+                game.next_phase()
+                
+            elif game.is_charge_phase():
+                # Charge phase for all units
+                for unit in current_player.get_army().units:
+                    if unit.is_alive():
+                        charge_reward = tactical_agent.charge_phase(unit)
+                        if charge_reward:
+                            tactical_agent.movement_rewards.append(charge_reward)
+                game.next_phase()
+                
+            elif game.is_fight_phase():
+                # Fight phase for all units
+                for unit in current_player.get_army().units:
+                    if unit.is_alive():
+                        tactical_agent.fight_phase(unit)
+                game.next_phase()  # This will advance to next player or next turn
 
-            # Execute phases for each unit
-            for unit in current_player.get_army().units:
-                if unit.is_alive():
-                    # Movement phase
-                    tactical_agent.movement_phase(unit, objective)
-                    
-                    # Shooting phase  
-                    tactical_agent.shooting_phase(unit)
-                    
-                    # Charge phase
-                    charge_reward = tactical_agent.charge_phase(unit)
-                    if charge_reward:
-                        tactical_agent.movement_rewards.append(charge_reward)
-                    
-                    # Fight phase
-                    tactical_agent.fight_phase(unit)
-
-            # Clean up destroyed units
+            # Clean up destroyed units after each phase
             cleanup_destroyed_units(game)
             
-            # End turn and update policies
-            game.next_turn()
+            # Update turn counter
             episode_stats['total_turns'] = game.turn
 
         # Update all agent policies after episode
@@ -693,7 +711,7 @@ def main_game_loop() -> None:
                     tactical_agent = tactical_agent_player2
                     low_level_agent = low_level_agent_player2
 
-                print(f"TURN [{game.turn}] PHASE: {game.phase.name} :: {current_player.name} choosing objective and command")
+                print(f"🎮 TURN {game.turn} | {current_player.name} | Phase: {game.phase.name}")
 
                 objective, command = high_level_agent.choose_objective_and_command()
                 print(f"{current_player.name} chose Objective: {objective.name}, Command: {command}")
