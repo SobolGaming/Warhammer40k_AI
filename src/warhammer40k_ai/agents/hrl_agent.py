@@ -832,6 +832,14 @@ class TacticalAgent:
             logger.info(f"{unit.name} cannot shoot after falling back.")
             return
 
+        # Check if unit is within engagement range of any enemy
+        unit_position = unit.get_position()
+        enemy_units = self.game.map.get_enemy_units(unit)
+        in_engagement_range = any(
+            self.game.map.is_within_engagement_range(unit_position, enemy_unit) 
+            for enemy_unit in enemy_units if enemy_unit.is_alive()
+        )
+
         for model in unit.models:
             if not model.is_alive:
                 continue
@@ -840,6 +848,11 @@ class TacticalAgent:
                 # Decide which profile to use if the weapon has multiple profiles
                 selected_profile = self.choose_weapon_profile(model, wargear_item)
                 if selected_profile is None:
+                    continue
+                
+                # CRITICAL: Units within engagement range can only shoot with Pistol weapons
+                if in_engagement_range and not selected_profile.is_pistol():
+                    logger.debug(f"{model.name} cannot shoot {wargear_item.name} ({selected_profile.name}) - in engagement range and not a Pistol weapon")
                     continue
                     
                 targets = model.find_targets_in_range(self.game.map, wargear_profile=selected_profile)
