@@ -860,10 +860,32 @@ class TacticalAgent:
                 # Filter out destroyed units
                 targets = [target for target in targets if target.is_alive()]
                 
-                if targets:
+                # Filter out targets that are in engagement range with friendly units
+                valid_targets = []
+                for target in targets:
+                    # Skip if target is in engagement range with any friendly unit
+                    target_in_engagement = False
+                    for friendly_unit in self.game.map.get_friendly_units(unit):
+                        if friendly_unit != unit and friendly_unit.is_alive():
+                            if self.game.map.is_within_engagement_range(friendly_unit.get_position(), target):
+                                target_in_engagement = True
+                                break
+                    
+                    # Allow target if:
+                    # 1. Not in engagement range with friendly units, OR
+                    # 2. Weapon is Indirect Fire, OR
+                    # 3. Unit is in engagement range and weapon is Pistol
+                    if not target_in_engagement or selected_profile.is_indirect_fire() or (in_engagement_range and selected_profile.is_pistol()):
+                        # Additional check for Blast weapons
+                        if selected_profile.is_blast() and target_in_engagement:
+                            logger.debug(f"{model.name} cannot use Blast weapon {wargear_item.name} against {target.name} - target is in engagement range")
+                            continue
+                        valid_targets.append(target)
+                
+                if valid_targets:
                     # Agent decides on the target
-                    target_idx = self.choose_shooting_target(model, selected_profile, targets)
-                    target = targets[target_idx]
+                    target_idx = self.choose_shooting_target(model, selected_profile, valid_targets)
+                    target = valid_targets[target_idx]
 
                     # Double-check that target is still alive before attacking
                     if not target.is_alive():
