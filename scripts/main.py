@@ -26,61 +26,85 @@ CHECKPOINT_DIR = "checkpoints"
 
 # Setup logging with improved configuration
 def setup_logging():
-    """Configure logging to reduce noise while preserving important information."""
+    """Configure logging to show clean training progress while suppressing debug noise."""
     # Set up different log levels for different modules
     root_logger = logging.getLogger()
-    root_logger.setLevel(logging.INFO)  # Changed from DEBUG to INFO to reduce noise
+    root_logger.setLevel(logging.INFO)  # Only allow INFO and above at root level
+    
+    # Clear any existing handlers
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
     
     # Create a formatter for clean output
-    formatter = logging.Formatter('%(message)s')  # Simplified format
+    formatter = logging.Formatter('%(message)s')
     
-    # Console handler for warnings and errors only
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.WARNING)
-    console_handler.setFormatter(formatter)
-    
-    # Custom filter for important combat messages
-    class ImportantCombatFilter(logging.Filter):
+    # Custom filter for training progress and important events
+    class TrainingProgressFilter(logging.Filter):
         def filter(self, record):
-            # Allow death messages and important combat info
-            if 'has Died' in record.getMessage() or 'has Fled' in record.getMessage():
+            message = record.getMessage()
+            
+            # ALWAYS allow these critical training messages
+            if any(keyword in message for keyword in [
+                'Starting AI training',
+                'Episode ', 'completed!',
+                'Progress Update',
+                'FINAL TRAINING ANALYSIS',
+                'Training completed successfully',
+                'Win Rate:', 'Combat:', 'First-Player'
+            ]):
                 return True
-            if 'destroyed before attack' in record.getMessage():
+                
+            # Allow important combat events (deaths, major actions)
+            if any(keyword in message for keyword in [
+                'has Died', 'has Fled', 'destroyed before attack',
+                'models killed', 'casualties'
+            ]):
                 return True
-            # Allow shooting and combat messages
-            if any(word in record.getMessage().lower() for word in ['shoot', 'attack', 'charge', 'fight', 'target']):
-                return True
-            # Allow episode completion messages
-            if 'Episode' in record.getMessage() and ('completed' in record.getMessage() or 'Starting' in record.getMessage()):
-                return True
-            # Allow training summaries
-            if 'TRAINING ANALYSIS' in record.getMessage() or 'FIRST PLAYER' in record.getMessage():
-                return True
-            # Block other info messages
-            if record.levelno == logging.INFO:
+                
+            # Block all DEBUG level noise (shouldn't reach here due to root level, but safety check)
+            if record.levelno == logging.DEBUG:
                 return False
+                
+            # Block INFO level DEBUG statements and deployment spam
+            if record.levelno == logging.INFO:
+                if any(spam in message for spam in [
+                    'DEBUG:', 'DEPLOYMENT:', 'EPISODE DEBUG:', 'MONKEY PATCH:',
+                    'AGENTS UPDATE:', 'Map has', 'Added', 'Map now has',
+                    'Assessing shooting opportunities', 'Found', 'enemy units total',
+                    'belongs to army ID', 'Total units on map:', 'Map unit',
+                    'Closest target at', 'with', 'found', 'targets'
+                ]):
+                    return False
+                    
             # Allow warnings and errors
             return record.levelno >= logging.WARNING
     
-    # Combat info handler for important combat messages
-    combat_handler = logging.StreamHandler()
-    combat_handler.setLevel(logging.INFO)
-    combat_handler.setFormatter(formatter)
-    combat_handler.addFilter(ImportantCombatFilter())
+    # Main console handler with clean output
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(formatter)
+    console_handler.addFilter(TrainingProgressFilter())
     
-    # Add both handlers
+    # Add handler
     root_logger.addHandler(console_handler)
-    root_logger.addHandler(combat_handler)
     
-    # Specifically quiet down noisy modules (but allow combat messages)
-    logging.getLogger('warhammer40k_ai.agents.hrl_agent').setLevel(logging.INFO)  # Changed from ERROR to INFO
+    # Quiet down noisy modules completely during training
+    logging.getLogger('warhammer40k_ai.agents.hrl_agent').setLevel(logging.ERROR)
     logging.getLogger('pygame').setLevel(logging.ERROR)
     logging.getLogger('warhammer40k_ai.classes.army').setLevel(logging.ERROR)
     logging.getLogger('warhammer40k_ai.waha_helper').setLevel(logging.ERROR)
+    logging.getLogger('warhammer40k_ai.classes.unit').setLevel(logging.ERROR)
+    logging.getLogger('warhammer40k_ai.classes.model').setLevel(logging.ERROR)
+    logging.getLogger('warhammer40k_ai.classes.game').setLevel(logging.ERROR)
+    logging.getLogger('warhammer40k_ai.classes.map').setLevel(logging.ERROR)
+    
+    # Suppress all print statements from game engine during training
+    logging.getLogger('warhammer40k_ai').setLevel(logging.ERROR)
     
     # Suppress PyTorch warnings
     import warnings
     warnings.filterwarnings("ignore", category=FutureWarning, module="torch")
+    warnings.filterwarnings("ignore", category=UserWarning, module="torch")
     
     return logging.getLogger(__name__)
 
@@ -130,10 +154,10 @@ def cleanup_destroyed_units(game: Game):
 def auto_deploy_units(game: Game, player1: Player, player2: Player):
     """Automatically deploy units for both players in their deployment zones."""
     
-    logger.error(f"🚢 DEPLOYMENT: Starting unit deployment...")
-    logger.error(f"DEPLOYMENT: Player 1 has {len(player1.get_army().units)} units to deploy")
-    logger.error(f"DEPLOYMENT: Player 2 has {len(player2.get_army().units)} units to deploy")
-    logger.error(f"DEPLOYMENT: Map currently has {len(game.map.units)} units")
+    logger.debug(f"Starting unit deployment...")
+    logger.debug(f"Player 1 has {len(player1.get_army().units)} units to deploy")
+    logger.debug(f"Player 2 has {len(player2.get_army().units)} units to deploy")
+    logger.debug(f"Map currently has {len(game.map.units)} units")
     
     def deploy_player_units(player: Player, zone: dict):
         """Deploy units for a specific player in their zone."""
@@ -170,18 +194,11 @@ def auto_deploy_units(game: Game, player1: Player, player2: Player):
                 # Let unit position be calculated from model positions (don't override!)
                 unit.deployed = True
                 
-                # DEBUG: Check army assignment
-                logger.error(f"  Unit {unit.name}: Army ID = {id(unit.get_parent_army())}, Deployed = {unit.deployed}")
-                
-                # DEBUG: Log before adding to map
-                logger.error(f"  Map has {len(game.map.units)} units before adding {unit.name}")
-                
+                # Add unit to map
                 game.map.units.append(unit)
                 deployed_count += 1
                 
-                # DEBUG: Verify unit was added to map
-                logger.error(f"  Added {unit.name} to map. Map now has {len(game.map.units)} units")
-                logger.error(f"  Map units list: {[u.name for u in game.map.units]}")
+                logger.debug(f"Deployed {unit.name} at ({x:.1f}, {y:.1f})")
                 
             except Exception as e:
                 failed_count += 1
@@ -216,10 +233,10 @@ def auto_deploy_units(game: Game, player1: Player, player2: Player):
     deploy_player_units(player1, player1_zone)
     deploy_player_units(player2, player2_zone)
     
-    logger.info(f"🚢 Deployment complete! Total units on map: {len(game.map.units)}")
-    logger.info(f"Player 1 army units: {[unit.name for unit in player1.get_army().units]}")
-    logger.info(f"Player 2 army units: {[unit.name for unit in player2.get_army().units]}")
-    logger.info(f"Map units: {[unit.name for unit in game.map.units]}")
+    logger.debug(f"Deployment complete! Total units on map: {len(game.map.units)}")
+    logger.debug(f"Player 1 army units: {[unit.name for unit in player1.get_army().units]}")
+    logger.debug(f"Player 2 army units: {[unit.name for unit in player2.get_army().units]}")
+    logger.debug(f"Map units: {[unit.name for unit in game.map.units]}")
 
 def initialize_game() -> Tuple[pygame.Surface, WarhammerEnv, Game, Map, float, int, int, Player, Player]:
     pygame.init()
@@ -285,21 +302,17 @@ def initialize_game() -> Tuple[pygame.Surface, WarhammerEnv, Game, Map, float, i
 def run_training_episode(episode_num: int, agents: dict) -> dict:
     """Run a single training episode and return statistics."""
     try:
-        logger.error(f"🏁 EPISODE START: Beginning episode {episode_num + 1}")
-        logger.error(f"🔧 EPISODE DEBUG: Function called successfully")
+        logger.debug(f"Starting episode {episode_num + 1}")
         
         # Create fresh game instance for this episode
-        logger.error(f"🔧 EPISODE DEBUG: About to call initialize_game()")
         screen, env, game, game_map, _, _, _, player1, player2 = initialize_game()
-        logger.error(f"🔧 EPISODE DEBUG: initialize_game() completed")
+        logger.debug(f"Game initialization completed for episode {episode_num + 1}")
     except Exception as early_error:
-        logger.error(f"❌ EARLY EPISODE FAILURE: {early_error}")
+        logger.error(f"❌ EPISODE INITIALIZATION FAILED: {early_error}")
         logger.error(f"Error type: {type(early_error).__name__}")
         import traceback
         logger.error(f"Full traceback: {traceback.format_exc()}")
         raise
-        
-    logger.error(f"🔧 EPISODE DEBUG: Setting up episode statistics...")
     
     # Track detailed statistics
     episode_stats = {
@@ -374,15 +387,14 @@ def run_training_episode(episode_num: int, agents: dict) -> dict:
         return original_remove_model(self, model, fleed)
     
     # Monkey patch the Unit class to track deaths
-    logger.error(f"🔧 EPISODE DEBUG: About to start monkey patching section...")
     try:
-        logger.error("🔧 MONKEY PATCH: Starting monkey patching...")
+        logger.debug("Setting up kill tracking system...")
         from warhammer40k_ai.classes.unit import Unit
         original_remove_model = Unit.remove_model
         Unit.remove_model = tracking_remove_model
-        logger.error("✅ MONKEY PATCH: Monkey patching completed successfully")
+        logger.debug("Kill tracking system activated")
     except Exception as patch_error:
-        logger.error(f"❌ MONKEY PATCH FAILED: {patch_error}")
+        logger.error(f"❌ KILL TRACKING SETUP FAILED: {patch_error}")
         logger.error(f"Error type: {type(patch_error).__name__}")
         import traceback
         logger.error(f"Full traceback: {traceback.format_exc()}")
@@ -390,10 +402,10 @@ def run_training_episode(episode_num: int, agents: dict) -> dict:
     
     try:
         # Deploy units automatically
-        logger.error("⚠️  DEPLOYMENT: About to call auto_deploy_units...")
+        logger.debug("Deploying units...")
         try:
             auto_deploy_units(game, player1, player2)
-            logger.error("✅ DEPLOYMENT: auto_deploy_units completed successfully")
+            logger.debug("Unit deployment completed")
         except Exception as deploy_error:
             logger.error(f"❌ DEPLOYMENT FAILED: {deploy_error}")
             logger.error(f"Error type: {type(deploy_error).__name__}")
@@ -415,72 +427,73 @@ def run_training_episode(episode_num: int, agents: dict) -> dict:
         low_level_agent_player2 = agents['lla2']
         
         # CRITICAL FIX: Update all agents to use the NEW game instance for this episode
-        logger.error("🔧 AGENTS UPDATE: Updating agents to use new game instance...")
+        logger.debug("Updating agents to use new game instance...")
         high_level_agent_player1.game = game
         tactical_agent_player1.game = game
         low_level_agent_player1.game = game
         high_level_agent_player2.game = game
         tactical_agent_player2.game = game
         low_level_agent_player2.game = game
-        logger.error("✅ AGENTS UPDATE: All agents updated to use new game instance")
+        logger.debug("All agents updated to use new game instance")
         
-        # Run the game loop
-        while not game.is_game_over():
-            current_player = game.get_current_player()
-            current_player_key = 'player1' if current_player == player1 else 'player2'
-            
-            if current_player == player1:
-                high_level_agent = high_level_agent_player1
-                tactical_agent = tactical_agent_player1
-            else:
-                high_level_agent = high_level_agent_player2
-                tactical_agent = tactical_agent_player2
+        # Run the game loop (suppress print statements during training)
+        with suppress_stdout():
+            while not game.is_game_over():
+                current_player = game.get_current_player()
+                current_player_key = 'player1' if current_player == player1 else 'player2'
+                
+                if current_player == player1:
+                    high_level_agent = high_level_agent_player1
+                    tactical_agent = tactical_agent_player1
+                else:
+                    high_level_agent = high_level_agent_player2
+                    tactical_agent = tactical_agent_player2
 
-            # Get objective and command at start of each phase (needed for all phases)
-            objective, command = high_level_agent.choose_objective_and_command()
-            
-            # Execute the current phase based on game state
-            if game.is_command_phase():
-                # Command phase
-                episode_stats['commands_selected'][current_player_key][command] += 1
-                tactical_agent.command_phase(command)
-                game.next_phase()
+                # Get objective and command at start of each phase (needed for all phases)
+                objective, command = high_level_agent.choose_objective_and_command()
                 
-            elif game.is_movement_phase():
-                # Movement phase for all units
-                for unit in current_player.get_army().units:
-                    if unit.is_alive():
-                        tactical_agent.movement_phase(unit, objective)
-                game.next_phase()
-                
-            elif game.is_shooting_phase():
-                # Shooting phase for all units
-                for unit in current_player.get_army().units:
-                    if unit.is_alive():
-                        tactical_agent.shooting_phase(unit)
-                game.next_phase()
-                
-            elif game.is_charge_phase():
-                # Charge phase for all units
-                for unit in current_player.get_army().units:
-                    if unit.is_alive():
-                        charge_reward = tactical_agent.charge_phase(unit)
-                        if charge_reward:
-                            tactical_agent.movement_rewards.append(charge_reward)
-                game.next_phase()
-                
-            elif game.is_fight_phase():
-                # Fight phase for all units
-                for unit in current_player.get_army().units:
-                    if unit.is_alive():
-                        tactical_agent.fight_phase(unit)
-                game.next_phase()  # This will advance to next player or next turn
+                # Execute the current phase based on game state
+                if game.is_command_phase():
+                    # Command phase
+                    episode_stats['commands_selected'][current_player_key][command] += 1
+                    tactical_agent.command_phase(command)
+                    game.next_phase()
+                    
+                elif game.is_movement_phase():
+                    # Movement phase for all units
+                    for unit in current_player.get_army().units:
+                        if unit.is_alive():
+                            tactical_agent.movement_phase(unit, objective)
+                    game.next_phase()
+                    
+                elif game.is_shooting_phase():
+                    # Shooting phase for all units
+                    for unit in current_player.get_army().units:
+                        if unit.is_alive():
+                            tactical_agent.shooting_phase(unit)
+                    game.next_phase()
+                    
+                elif game.is_charge_phase():
+                    # Charge phase for all units
+                    for unit in current_player.get_army().units:
+                        if unit.is_alive():
+                            charge_reward = tactical_agent.charge_phase(unit)
+                            if charge_reward:
+                                tactical_agent.movement_rewards.append(charge_reward)
+                    game.next_phase()
+                    
+                elif game.is_fight_phase():
+                    # Fight phase for all units
+                    for unit in current_player.get_army().units:
+                        if unit.is_alive():
+                            tactical_agent.fight_phase(unit)
+                    game.next_phase()  # This will advance to next player or next turn
 
-            # Clean up destroyed units after each phase
-            cleanup_destroyed_units(game)
-            
-            # Update turn counter
-            episode_stats['total_turns'] = game.turn
+                # Clean up destroyed units after each phase
+                cleanup_destroyed_units(game)
+                
+                # Update turn counter
+                episode_stats['total_turns'] = game.turn
 
         # Update all agent policies after episode
         for agent_key, agent in agents.items():
@@ -556,12 +569,10 @@ def run_training_loop():
     
     # Run training episodes
     for episode in range(NUM_TRAINING_EPISODES):
-        logger.error(f"🎯 TRAINING LOOP: About to call run_training_episode for episode {episode + 1}")
         try:
             episode_stats = run_training_episode(episode, agents)
-            logger.error(f"✅ TRAINING LOOP: run_training_episode returned successfully for episode {episode + 1}")
         except Exception as episode_error:
-            logger.error(f"❌ TRAINING LOOP: run_training_episode failed for episode {episode + 1}: {episode_error}")
+            logger.error(f"❌ Episode {episode + 1} FAILED: {episode_error}")
             logger.error(f"Error type: {type(episode_error).__name__}")
             import traceback
             logger.error(f"Full traceback: {traceback.format_exc()}")

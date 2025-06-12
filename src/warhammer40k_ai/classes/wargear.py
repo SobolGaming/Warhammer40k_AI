@@ -73,7 +73,7 @@ class WargearProfile:
 
         # Chance to wound
         chance_to_wound = 0.5  # Default to 50% if no target is provided
-        if target_unit:
+        if target_unit and target_unit.models:  # Check if target has models before accessing properties
             target_toughness = target_unit.toughness
             strength = self.strength
             if isinstance(strength, int) and isinstance(target_toughness, int):
@@ -208,6 +208,11 @@ class WargearProfile:
         if hasattr(attack_instance, 'lethal_hit') and attack_instance['lethal_hit']:
             print("\tLethal hit: always wounds")
             return True
+
+        # Check if target unit still has models before accessing properties
+        if not target.models:
+            print(f"\tTarget unit {target.name} has no models left - cannot wound")
+            return False
 
         target_toughness = target.toughness
         strength = self.strength

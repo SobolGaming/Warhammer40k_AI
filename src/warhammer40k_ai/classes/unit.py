@@ -527,12 +527,40 @@ class Unit:
         return keyword.lower() in [keyword.lower() for keyword in self.keywords]
 
     @property
+    def movement(self) -> int:
+        return self.models[0].movement
+
+    @property
+    def toughness(self) -> int:
+        return self.models[0].toughness
+
+    @property
+    def save(self) -> int:
+        return self.models[0].save
+
+    @property
+    def inv_save(self) -> Optional[int]:
+        return self.models[0].inv_save
+
+    @property
+    def leadership(self) -> int:
+        return self.models[0].leadership
+
+    @property
+    def objective_control(self) -> int:
+        return self.models[0].objective_control
+
+    @property
     def has_circular_base(self) -> bool:
         return self.models[0].has_circular_base
 
     @property
     def base_size(self) -> float:
         return self.models[0].base_size
+
+    @property
+    def model_height(self) -> float:
+        return max(model.model_base.model_height for model in self.models)
 
     def print_unit(self):
         for model in self.models:
@@ -604,10 +632,6 @@ class Unit:
         return abilities
 
     @property
-    def model_height(self) -> float:
-        return max(model.model_base.model_height for model in self.models)
-
-    @property
     def health_percent(self) -> float:
         """Calculate the percentage of remaining health."""
         total_wounds = sum(model.wounds for model in self.models)
@@ -671,38 +695,8 @@ class Unit:
         return ranged_threat / cost, melee_threat / cost
 
     ###########################################################################
-    ### Properties
-    ###########################################################################
-    @property
-    def movement(self) -> int:
-        return self.models[0].movement
-
-    @property
-    def toughness(self) -> int:
-        return self.models[0].toughness
-
-    @property
-    def save(self) -> int:
-        return self.models[0].save
-
-    @property
-    def inv_save(self) -> Optional[int]:
-        return self.models[0].inv_save
-
-    @property
-    def leadership(self) -> int:
-        return self.models[0].leadership
-
-    @property
-    def objective_control(self) -> int:
-        return self.models[0].objective_control
-
-    ###########################################################################
-    ###########################################################################
     ### Core Actions
     ###########################################################################
-    ###########################################################################
-
     def apply_command_abilities(self) -> None:
         """Applies command abilities during the Command phase."""
         for ability in self.abilities.get('command_phase', []):
@@ -1174,6 +1168,12 @@ class Unit:
             return False
             
         if self.round_state.advanced_this_round or self.round_state.fell_back_this_round:
+            return False
+            
+        # CRITICAL: Units already within engagement range cannot declare charges
+        # They are already considered to be "in combat"
+        current_position = self.get_position()
+        if game.map.is_within_engagement_range(current_position, target_unit):
             return False
             
         # Check if target is within maximum charge range (2D6 = max 12")
