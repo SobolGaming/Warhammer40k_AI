@@ -842,7 +842,7 @@ class TacticalAgent:
             return True
             
         # Vehicles can shoot while engaged
-        if unit.is_vehicle():
+        if unit.is_vehicle:
             return True
             
         # TODO: Add checks for unit abilities that allow shooting in engagement
@@ -866,7 +866,7 @@ class TacticalAgent:
         # If target is not the unit we're engaged with:
         # - Vehicles can shoot at other targets
         # - Other units cannot shoot at other targets while engaged
-        return unit.is_vehicle()
+        return unit.is_vehicle
 
     def shooting_phase(self, unit: Unit) -> None:
         """Select targets and resolve shooting attacks for each model in the unit."""
