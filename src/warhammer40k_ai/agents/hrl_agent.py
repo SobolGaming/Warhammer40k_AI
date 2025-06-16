@@ -841,11 +841,32 @@ class TacticalAgent:
         if profile.is_indirect_fire():
             return True
             
+        # Vehicles can shoot while engaged
+        if unit.is_vehicle():
+            return True
+            
         # TODO: Add checks for unit abilities that allow shooting in engagement
         # Example: if unit.has_ability("shoot_in_engagement"):
         #     return True
             
         return False
+
+    def can_shoot_at_target_while_engaged(self, unit: Unit, target: Unit, profile: WargearProfile) -> bool:
+        """Check if a unit can shoot at a specific target while engaged with other units."""
+        # If unit is not in engagement range, they can always shoot
+        if not any(self.game.map.is_within_engagement_range(unit.get_position(), enemy) 
+                  for enemy in self.game.map.get_enemy_units(unit) if enemy.is_alive()):
+            return True
+            
+        # If target is the unit we're engaged with, only Pistols can shoot
+        if any(self.game.map.is_within_engagement_range(unit.get_position(), enemy) 
+              for enemy in [target] if enemy.is_alive()):
+            return profile.is_pistol()
+            
+        # If target is not the unit we're engaged with:
+        # - Vehicles can shoot at other targets
+        # - Other units cannot shoot at other targets while engaged
+        return unit.is_vehicle()
 
     def shooting_phase(self, unit: Unit) -> None:
         """Select targets and resolve shooting attacks for each model in the unit."""
@@ -910,6 +931,12 @@ class TacticalAgent:
                         if selected_profile.is_blast() and target_in_engagement:
                             logger.debug(f"{model.name} cannot use Blast weapon {wargear_item.name} against {target.name} - target is in engagement range")
                             continue
+                            
+                        # Check if unit can shoot at this specific target while engaged
+                        if not self.can_shoot_at_target_while_engaged(unit, target, selected_profile):
+                            logger.debug(f"{model.name} cannot shoot at {target.name} with {wargear_item.name} ({selected_profile.name}) - engaged and not allowed to shoot at other targets")
+                            continue
+                            
                         valid_targets.append(target)
                 
                 if valid_targets:
