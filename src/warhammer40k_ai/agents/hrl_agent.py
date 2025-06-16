@@ -819,15 +819,40 @@ class TacticalAgent:
         """Define the number of possible targets to select from."""
         return MAX_TARGETS
 
+    def can_shoot_after_advance(self, unit: Unit, profile: WargearProfile) -> bool:
+        """Check if a unit can shoot after advancing with the given weapon profile."""
+        # Check for Assault weapons
+        if profile.is_assault():
+            return True
+            
+        # TODO: Add checks for unit abilities that allow advance and shoot
+        # Example: if unit.has_ability("advance_and_shoot"):
+        #     return True
+            
+        return False
+
+    def can_shoot_in_engagement_range(self, unit: Unit, profile: WargearProfile) -> bool:
+        """Check if a unit can shoot while in engagement range with the given weapon profile."""
+        # Check for Pistol weapons
+        if profile.is_pistol():
+            return True
+            
+        # Check for Indirect Fire weapons
+        if profile.is_indirect_fire():
+            return True
+            
+        # TODO: Add checks for unit abilities that allow shooting in engagement
+        # Example: if unit.has_ability("shoot_in_engagement"):
+        #     return True
+            
+        return False
+
     def shooting_phase(self, unit: Unit) -> None:
         """Select targets and resolve shooting attacks for each model in the unit."""
         if not unit.deployed or not unit.is_alive():
             return
 
         self.game.event_system.publish("shooting_phase_start", unit=unit, game_state=self.game.get_state())
-        if unit.round_state.advanced_this_round:
-            logger.info(f"{unit.name} cannot shoot after advancing.")
-            return
         if unit.round_state.fell_back_this_round:
             logger.info(f"{unit.name} cannot shoot after falling back.")
             return
@@ -850,9 +875,14 @@ class TacticalAgent:
                 if selected_profile is None:
                     continue
                 
-                # CRITICAL: Units within engagement range can only shoot with Pistol weapons
-                if in_engagement_range and not selected_profile.is_pistol():
-                    logger.debug(f"{model.name} cannot shoot {wargear_item.name} ({selected_profile.name}) - in engagement range and not a Pistol weapon")
+                # Skip if unit advanced and cannot shoot after advancing
+                if unit.round_state.advanced_this_round and not self.can_shoot_after_advance(unit, selected_profile):
+                    logger.debug(f"{model.name} cannot shoot {wargear_item.name} ({selected_profile.name}) - advanced and not allowed to shoot")
+                    continue
+                
+                # Skip if in engagement range and cannot shoot in engagement
+                if in_engagement_range and not self.can_shoot_in_engagement_range(unit, selected_profile):
+                    logger.debug(f"{model.name} cannot shoot {wargear_item.name} ({selected_profile.name}) - in engagement range and not allowed to shoot")
                     continue
                     
                 targets = model.find_targets_in_range(self.game.map, wargear_profile=selected_profile)
