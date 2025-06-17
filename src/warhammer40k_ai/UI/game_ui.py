@@ -752,10 +752,12 @@ class GameView:
         self.pan_start_offset = (0, 0)
         
         # Create roster panes with reference to all units for color correlation
-        self.left_roster_pane = RosterPane(0, 0, ROSTER_PANE_WIDTH, BATTLEFIELD_HEIGHT - INFO_PANE_HEIGHT, 
+        # Roster panes now extend to full battlefield height + info pane height
+        roster_pane_height = BATTLEFIELD_HEIGHT + INFO_PANE_HEIGHT
+        self.left_roster_pane = RosterPane(0, 0, ROSTER_PANE_WIDTH, roster_pane_height, 
                                          player1.get_army().units, f"Player 1 ({player1.name})")
         self.right_roster_pane = RosterPane(BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH, 0, ROSTER_PANE_WIDTH, 
-                                          BATTLEFIELD_HEIGHT - INFO_PANE_HEIGHT, player2.get_army().units, 
+                                          roster_pane_height, player2.get_army().units, 
                                           f"Player 2 ({player2.name})")
         
         # Pass all units to roster panes for color correlation
@@ -763,8 +765,9 @@ class GameView:
         self.left_roster_pane.all_units = all_units
         self.right_roster_pane.all_units = all_units
         
-        self.info_pane = InfoPane(0, BATTLEFIELD_HEIGHT - INFO_PANE_HEIGHT, 
-                                BATTLEFIELD_WIDTH + 2 * ROSTER_PANE_WIDTH, INFO_PANE_HEIGHT, self.selected_unit)
+        # Position InfoPane between roster panes and below battlefield
+        self.info_pane = InfoPane(ROSTER_PANE_WIDTH, BATTLEFIELD_HEIGHT, 
+                                BATTLEFIELD_WIDTH, INFO_PANE_HEIGHT, self.selected_unit)
 
     def on_mouse_press(self, x, y, button):
         # PRIORITY 1: Check if click is on unit detail panel first (highest priority)
@@ -930,12 +933,12 @@ class GameView:
 
         for player in [self.player1, self.player2]:
             for unit in [unit for unit in player.get_army().units if unit.deployed]:
-                print(f"Checking unit: {unit.name}")
-                print(f"Unit position: {unit.get_position()}")
+                #print(f"Checking unit: {unit.name}")
+                #print(f"Unit position: {unit.get_position()}")
                 if unit.is_point_inside(game_x, game_y):
                     return unit
         
-        print("No unit found at position")
+        #print("No unit found at position")
         return None
 
     def draw_move_path(self, unit: Unit):
