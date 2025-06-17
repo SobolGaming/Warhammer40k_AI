@@ -329,22 +329,61 @@ class Unit:
         self.wargear_options = wargear_options
 
     def apply_wargear_option(self, wargear_option: WargearOption):
+        # Extract wargear names from the nested structure
+        wargear_names = []
+        if isinstance(wargear_option.wargear_to, list):
+            for item_group in wargear_option.wargear_to:
+                if isinstance(item_group, list):
+                    for item in item_group:
+                        if isinstance(item, tuple) and len(item) >= 2:
+                            wargear_names.append(item[1])  # Extract name from (quantity, name) tuple
+                        elif isinstance(item, str):
+                            wargear_names.append(item)
+                elif isinstance(item_group, str):
+                    wargear_names.append(item_group)
+        elif isinstance(wargear_option.wargear_to, str):
+            wargear_names.append(wargear_option.wargear_to)
+        
+        if not wargear_names:
+            return  # No valid wargear to apply
+        
         # Find eligible models
-        eligible_models = [
-            model for model in self.models
-            if model.name in wargear_option.model_name and
-            wargear_option.wargear_to not in model.optional_wargear and
-            (wargear_option.exclude_name is None or wargear_option.exclude_name.lower() not in model.optional_wargear)
-        ]
+        eligible_models = []
+        for model in self.models:
+            # Check if model name matches (case-insensitive)
+            model_name_matches = model.name.lower() == wargear_option.model_name.lower()
+            
+            # Check if any of the wargear names are already equipped
+            already_has_wargear = any(wargear_name in model.optional_wargear for wargear_name in wargear_names)
+            
+            # Check conditionals (exclusion rules)
+            meets_conditionals = True
+            if wargear_option.conditionals:
+                for conditional in wargear_option.conditionals:
+                    # Handle "not equipped with X" conditions
+                    if conditional.startswith("not equipped with "):
+                        excluded_item = conditional.replace("not equipped with ", "").strip()
+                        if excluded_item in model.optional_wargear:
+                            meets_conditionals = False
+                            break
+            
+            if model_name_matches and not already_has_wargear and meets_conditionals:
+                eligible_models.append(model)
 
         if len(eligible_models) < wargear_option.model_quantity.min:
-            raise ValueError(f"Not enough eligible models for option: {wargear_option.wargear_to}")
+            # If no eligible models found, this might be due to conditionals, so just skip silently
+            return
 
+        # Apply wargear to eligible models up to the limit
         count = 0
+        max_count = min(len(eligible_models), wargear_option.item_quantity.max if hasattr(wargear_option.item_quantity, 'max') else wargear_option.item_quantity)
+        
         for model in eligible_models:
-            if count >= wargear_option.item_quantity:
+            if count >= max_count:
                 break
-            model.optional_wargear.append(wargear_option.wargear_to)
+            # Add the first wargear name to the model's optional wargear
+            if wargear_names:
+                model.optional_wargear.append(wargear_names[0])
             count += 1
 
     def apply_wargear_options(self, wargear_name: Optional[str] = None) -> None:
@@ -834,6 +873,46 @@ class Unit:
         self.round_state.fell_back_this_round = True
         return True
 
+    def can_shoot_after_advance(self, profile) -> bool:
+        """Check if this unit can shoot after advancing with the given weapon profile."""
+        # Check for Assault weapons
+        if profile.is_assault():
+            return True
+        # TODO: Add checks for unit abilities that allow advance and shoot
+        # Example: if self.has_ability("advance_and_shoot"):
+        #     return True
+        return False
+
+    def can_shoot_in_engagement_range(self, profile) -> bool:
+        """Check if this unit can shoot while in engagement range with the given weapon profile."""
+        # Check for Pistol weapons
+        if profile.is_pistol():
+            return True
+        # Check for Indirect Fire weapons
+        if profile.is_indirect_fire():
+            return True
+        # Vehicles can shoot while engaged
+        if self.is_vehicle:
+            return True
+        # TODO: Add checks for unit abilities that allow shooting in engagement
+        # Example: if self.has_ability("shoot_in_engagement"):
+        #     return True
+        return False
+
+    def can_shoot_at_target_while_engaged(self, target, profile, game_map) -> bool:
+        """Check if this unit can shoot at a specific target while engaged with other units."""
+        # If unit is not in engagement range, they can always shoot
+        if not any(game_map.is_within_engagement_range(self.get_position(), enemy)
+                  for enemy in game_map.get_enemy_units(self) if enemy.is_alive()):
+            return True
+        # If target is the unit we're engaged with, only Pistols can shoot
+        if any(game_map.is_within_engagement_range(self.get_position(), enemy)
+              for enemy in [target] if enemy.is_alive()):
+            return profile.is_pistol()
+        # If target is not the unit we're engaged with:
+        # - Vehicles can shoot at other targets
+        # - Other units cannot shoot at other targets while engaged
+        return self.is_vehicle
 
     ###########################################################################
     ### Shooting Phase Actions

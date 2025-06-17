@@ -819,55 +819,6 @@ class TacticalAgent:
         """Define the number of possible targets to select from."""
         return MAX_TARGETS
 
-    def can_shoot_after_advance(self, unit: Unit, profile: WargearProfile) -> bool:
-        """Check if a unit can shoot after advancing with the given weapon profile."""
-        # Check for Assault weapons
-        if profile.is_assault():
-            return True
-            
-        # TODO: Add checks for unit abilities that allow advance and shoot
-        # Example: if unit.has_ability("advance_and_shoot"):
-        #     return True
-            
-        return False
-
-    def can_shoot_in_engagement_range(self, unit: Unit, profile: WargearProfile) -> bool:
-        """Check if a unit can shoot while in engagement range with the given weapon profile."""
-        # Check for Pistol weapons
-        if profile.is_pistol():
-            return True
-            
-        # Check for Indirect Fire weapons
-        if profile.is_indirect_fire():
-            return True
-            
-        # Vehicles can shoot while engaged
-        if unit.is_vehicle:
-            return True
-            
-        # TODO: Add checks for unit abilities that allow shooting in engagement
-        # Example: if unit.has_ability("shoot_in_engagement"):
-        #     return True
-            
-        return False
-
-    def can_shoot_at_target_while_engaged(self, unit: Unit, target: Unit, profile: WargearProfile) -> bool:
-        """Check if a unit can shoot at a specific target while engaged with other units."""
-        # If unit is not in engagement range, they can always shoot
-        if not any(self.game.map.is_within_engagement_range(unit.get_position(), enemy) 
-                  for enemy in self.game.map.get_enemy_units(unit) if enemy.is_alive()):
-            return True
-            
-        # If target is the unit we're engaged with, only Pistols can shoot
-        if any(self.game.map.is_within_engagement_range(unit.get_position(), enemy) 
-              for enemy in [target] if enemy.is_alive()):
-            return profile.is_pistol()
-            
-        # If target is not the unit we're engaged with:
-        # - Vehicles can shoot at other targets
-        # - Other units cannot shoot at other targets while engaged
-        return unit.is_vehicle
-
     def shooting_phase(self, unit: Unit) -> None:
         """Select targets and resolve shooting attacks for each model in the unit."""
         if not unit.deployed or not unit.is_alive():
@@ -897,12 +848,12 @@ class TacticalAgent:
                     continue
                 
                 # Skip if unit advanced and cannot shoot after advancing
-                if unit.round_state.advanced_this_round and not self.can_shoot_after_advance(unit, selected_profile):
+                if unit.round_state.advanced_this_round and not unit.can_shoot_after_advance(selected_profile):
                     logger.debug(f"{model.name} cannot shoot {wargear_item.name} ({selected_profile.name}) - advanced and not allowed to shoot")
                     continue
                 
                 # Skip if in engagement range and cannot shoot in engagement
-                if in_engagement_range and not self.can_shoot_in_engagement_range(unit, selected_profile):
+                if in_engagement_range and not unit.can_shoot_in_engagement_range(selected_profile):
                     logger.debug(f"{model.name} cannot shoot {wargear_item.name} ({selected_profile.name}) - in engagement range and not allowed to shoot")
                     continue
                     
@@ -933,7 +884,7 @@ class TacticalAgent:
                             continue
                             
                         # Check if unit can shoot at this specific target while engaged
-                        if not self.can_shoot_at_target_while_engaged(unit, target, selected_profile):
+                        if not unit.can_shoot_at_target_while_engaged(target, selected_profile, self.game.map):
                             logger.debug(f"{model.name} cannot shoot at {target.name} with {wargear_item.name} ({selected_profile.name}) - engaged and not allowed to shoot at other targets")
                             continue
                             
