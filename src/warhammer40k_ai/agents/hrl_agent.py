@@ -13,6 +13,7 @@ from warhammer40k_ai.classes.unit import Unit, MovementAction
 from warhammer40k_ai.classes.model import Model
 from warhammer40k_ai.classes.wargear import Wargear, WargearProfile
 from warhammer40k_ai.classes.player import Player
+from warhammer40k_ai.classes.deployment import DeploymentDecisionMaker
 from warhammer40k_ai.utility.constants import TOTAL_ROUNDS
 from warhammer40k_ai.utility.calcs import get_dist
 from warhammer40k_ai.utility.dice import DiceCollection
@@ -427,14 +428,42 @@ class HighLevelAgent:
         """
         if os.path.exists(filepath):
             checkpoint = torch.load(filepath, weights_only=False)
-            self.policy_net.load_state_dict(checkpoint.get('policy_net_state_dict', {}))
-            self.optimizer.load_state_dict(checkpoint.get('optimizer_state_dict', {}))
-            self.deployment_zone_net.load_state_dict(checkpoint.get('deployment_zone_net_state_dict', {}))
-            self.deployment_zone_optimizer.load_state_dict(checkpoint.get('deployment_zone_optimizer_state_dict', {}))
-            self.reserves_selection_net.load_state_dict(checkpoint.get('reserves_selection_net_state_dict', {}))
-            self.reserves_selection_optimizer.load_state_dict(checkpoint.get('reserves_selection_optimizer_state_dict', {}))
-            self.unit_deployment_net.load_state_dict(checkpoint.get('unit_deployment_net_state_dict', {}))
-            self.unit_deployment_optimizer.load_state_dict(checkpoint.get('unit_deployment_optimizer_state_dict', {}))
+            
+            # Load main policy network (always present)
+            if 'policy_net_state_dict' in checkpoint:
+                self.policy_net.load_state_dict(checkpoint['policy_net_state_dict'])
+            if 'optimizer_state_dict' in checkpoint:
+                self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            
+            # Load deployment networks (may not exist in old checkpoints)
+            try:
+                if 'deployment_zone_net_state_dict' in checkpoint and checkpoint['deployment_zone_net_state_dict']:
+                    self.deployment_zone_net.load_state_dict(checkpoint['deployment_zone_net_state_dict'])
+                if 'deployment_zone_optimizer_state_dict' in checkpoint and checkpoint['deployment_zone_optimizer_state_dict']:
+                    self.deployment_zone_optimizer.load_state_dict(checkpoint['deployment_zone_optimizer_state_dict'])
+            except Exception as e:
+                logger.warning(f"Could not load deployment zone network from checkpoint: {e}")
+                logger.info("Using fresh deployment zone network")
+            
+            try:
+                if 'reserves_selection_net_state_dict' in checkpoint and checkpoint['reserves_selection_net_state_dict']:
+                    self.reserves_selection_net.load_state_dict(checkpoint['reserves_selection_net_state_dict'])
+                if 'reserves_selection_optimizer_state_dict' in checkpoint and checkpoint['reserves_selection_optimizer_state_dict']:
+                    self.reserves_selection_optimizer.load_state_dict(checkpoint['reserves_selection_optimizer_state_dict'])
+            except Exception as e:
+                logger.warning(f"Could not load reserves selection network from checkpoint: {e}")
+                logger.info("Using fresh reserves selection network")
+            
+            try:
+                if 'unit_deployment_net_state_dict' in checkpoint and checkpoint['unit_deployment_net_state_dict']:
+                    self.unit_deployment_net.load_state_dict(checkpoint['unit_deployment_net_state_dict'])
+                if 'unit_deployment_optimizer_state_dict' in checkpoint and checkpoint['unit_deployment_optimizer_state_dict']:
+                    self.unit_deployment_optimizer.load_state_dict(checkpoint['unit_deployment_optimizer_state_dict'])
+            except Exception as e:
+                logger.warning(f"Could not load unit deployment network from checkpoint: {e}")
+                logger.info("Using fresh unit deployment network")
+            
+            # Load other state
             self.episode = checkpoint.get('episode', 0)
             self.rewards = checkpoint.get('rewards', [])
             self.log_probs = checkpoint.get('log_probs', [])
@@ -442,6 +471,7 @@ class HighLevelAgent:
             self.deployment_log_probs = checkpoint.get('deployment_log_probs', [])
             self.reserves_rewards = checkpoint.get('reserves_rewards', [])
             self.reserves_log_probs = checkpoint.get('reserves_log_probs', [])
+            
             logger.info(f"HighLevelAgent checkpoint loaded from {filepath}")
         else:
             logger.info("No checkpoint found for HighLevelAgent. Starting with fresh state.")
@@ -578,8 +608,8 @@ class HighLevelAgent:
         
         # Tactical considerations
         features.append(1.0 if unit.has_deep_strike() else 0.0)
-        features.append(1.0 if unit.is_character() else 0.0)
-        features.append(1.0 if unit.is_vehicle() else 0.0)
+        features.append(1.0 if unit.is_character else 0.0)
+        features.append(1.0 if unit.is_vehicle else 0.0)
         
         # Game state
         features.append(len(self.objectives))
@@ -1941,233 +1971,34 @@ class LowLevelAgent:
 
 
 ###############################################################################
-# DeploymentManager - Handles Official Warhammer 40k Deployment Sequence
+# AI Deployment Decision Maker - Integrates with HighLevelAgent
 ###############################################################################
-class DeploymentManager:
-    """Manages the official Warhammer 40k 10th Edition deployment sequence."""
+class AIDeploymentDecisionMaker(DeploymentDecisionMaker):
+    """Implementation for AI players making deployment decisions via neural networks."""
     
-    def __init__(self, game: Game, player1_agent: HighLevelAgent, player2_agent: HighLevelAgent):
-        self.game = game
-        self.player1_agent = player1_agent
-        self.player2_agent = player2_agent
-        self.attacker = None
-        self.defender = None
-        self.deployment_zones = []
-        
-    def execute_deployment_sequence(self) -> dict:
-        """Execute the complete deployment sequence according to Warhammer 40k rules."""
-        deployment_results = {
-            'attacker': None,
-            'defender': None,
-            'first_turn_player': None,
-            'deployment_zones': {},
-            'reserves': {},
-            'deployment_positions': {}
-        }
-        
-        logger.info("🚀 Starting Official Warhammer 40k Deployment Sequence")
-        
-        # Step 1: Determine Attacker and Defender
-        self.attacker, self.defender = self.determine_attacker_and_defender()
-        deployment_results['attacker'] = self.attacker.name
-        deployment_results['defender'] = self.defender.name
-        logger.info(f"📋 Attacker: {self.attacker.name}, Defender: {self.defender.name}")
-        
-        # Step 2: Defender chooses deployment zone
-        available_zones = self.create_deployment_zones()
-        defender_agent = self.get_agent_for_player(self.defender)
-        chosen_zone = defender_agent.choose_deployment_zone(available_zones)
-        
-        # Assign zones
-        defender_zone = chosen_zone
-        attacker_zone = next(zone for zone in available_zones if zone != chosen_zone)
-        
-        deployment_results['deployment_zones'][self.defender.name] = defender_zone
-        deployment_results['deployment_zones'][self.attacker.name] = attacker_zone
-        
-        logger.info(f"🎯 {self.defender.name} chose deployment zone, {self.attacker.name} gets the other")
-        
-        # Step 3: Declare Reserves & Strategic Reserves (simultaneously)
-        defender_reserves = defender_agent.declare_reserves()
-        attacker_agent = self.get_agent_for_player(self.attacker)
-        attacker_reserves = attacker_agent.declare_reserves()
-        
-        deployment_results['reserves'][self.defender.name] = defender_reserves
-        deployment_results['reserves'][self.attacker.name] = attacker_reserves
-        
-        logger.info(f"📦 Reserves declared - {self.defender.name}: {sum(1 for d in defender_reserves.values() if d != 'deploy')} units, "
-                   f"{self.attacker.name}: {sum(1 for d in attacker_reserves.values() if d != 'deploy')} units")
-        
-        # Step 4: Alternating Deployment (Defender first)
-        self.execute_alternating_deployment(deployment_results)
-        
-        # Step 5: Determine First Turn
-        first_turn_player = self.determine_first_turn()
-        deployment_results['first_turn_player'] = first_turn_player.name
-        
-        logger.info(f"🎲 {first_turn_player.name} will take the first turn")
-        logger.info("✅ Deployment sequence complete!")
-        
-        # Compute rewards for both agents based on deployment quality
-        self.compute_deployment_rewards(deployment_results)
-        
-        return deployment_results
+    def __init__(self, high_level_agent: HighLevelAgent):
+        self.agent = high_level_agent
     
-    def determine_attacker_and_defender(self) -> Tuple[Player, Player]:
-        """Roll off to determine attacker and defender."""
-        player1_roll = torch.randint(1, 7, (1,)).item()
-        player2_roll = torch.randint(1, 7, (1,)).item()
-        
-        logger.info(f"🎲 Attacker/Defender roll-off: {self.game.players[0].name}={player1_roll}, {self.game.players[1].name}={player2_roll}")
-        
-        # Re-roll ties
-        while player1_roll == player2_roll:
-            player1_roll = torch.randint(1, 7, (1,)).item()
-            player2_roll = torch.randint(1, 7, (1,)).item()
-            logger.info(f"🎲 Tie! Re-rolling: {self.game.players[0].name}={player1_roll}, {self.game.players[1].name}={player2_roll}")
-        
-        if player1_roll > player2_roll:
-            return self.game.players[0], self.game.players[1]  # Player 1 is attacker
-        else:
-            return self.game.players[1], self.game.players[0]  # Player 2 is attacker
+    def choose_deployment_zone(self, available_zones: List[dict]) -> dict:
+        """AI chooses deployment zone using neural network."""
+        return self.agent.choose_deployment_zone(available_zones)
     
-    def create_deployment_zones(self) -> List[dict]:
-        """Create deployment zones based on battlefield size."""
-        battlefield_width, battlefield_height = self.game.get_battlefield_size()
-        
-        # Standard deployment zones (opposite table edges)
-        zone1 = {
-            'name': 'Zone 1',
-            'x_range': (2, battlefield_width * 0.4),
-            'y_range': (2, battlefield_height - 2)
-        }
-        
-        zone2 = {
-            'name': 'Zone 2', 
-            'x_range': (battlefield_width * 0.6, battlefield_width - 2),
-            'y_range': (2, battlefield_height - 2)
-        }
-        
-        return [zone1, zone2]
+    def declare_reserves(self, player: Player) -> dict:
+        """AI declares reserves using neural network."""
+        return self.agent.declare_reserves()
     
-    def execute_alternating_deployment(self, deployment_results: dict) -> None:
-        """Execute alternating deployment starting with the defender."""
-        defender_zone = deployment_results['deployment_zones'][self.defender.name]
-        attacker_zone = deployment_results['deployment_zones'][self.attacker.name]
-        
-        # Get units to deploy (not in reserves)
-        defender_units = [unit for unit in self.defender.get_army().units 
-                         if deployment_results['reserves'][self.defender.name].get(unit.name, 'deploy') == 'deploy']
-        attacker_units = [unit for unit in self.attacker.get_army().units 
-                         if deployment_results['reserves'][self.attacker.name].get(unit.name, 'deploy') == 'deploy']
-        
-        logger.info(f"📍 Alternating deployment: {len(defender_units)} vs {len(attacker_units)} units")
-        
-        # Track deployment order and positions
-        deployment_order = []
-        defender_deployed = []
-        attacker_deployed = []
-        
-        # Defender starts
-        current_player = self.defender
-        current_units = defender_units
-        current_zone = defender_zone
-        current_agent = self.get_agent_for_player(self.defender)
-        current_deployed = defender_deployed
-        
-        turn_count = 0
-        while defender_units or attacker_units:
-            if current_units:
-                # Deploy next unit
-                unit = current_units.pop(0)
-                position = current_agent.choose_unit_deployment_position(unit, current_zone, current_deployed)
-                
-                # Actually deploy the unit
-                self.deploy_unit(unit, position, current_zone)
-                current_deployed.append(unit)
-                deployment_order.append((current_player.name, unit.name, position))
-                
-                logger.info(f"🚢 {current_player.name} deploys {unit.name} at ({position[0]:.1f}, {position[1]:.1f})")
-            
-            # Switch to other player
-            turn_count += 1
-            if current_player == self.defender:
-                current_player = self.attacker
-                current_units = attacker_units
-                current_zone = attacker_zone  
-                current_agent = self.get_agent_for_player(self.attacker)
-                current_deployed = attacker_deployed
-            else:
-                current_player = self.defender
-                current_units = defender_units
-                current_zone = defender_zone
-                current_agent = self.get_agent_for_player(self.defender) 
-                current_deployed = defender_deployed
-        
-        deployment_results['deployment_order'] = deployment_order
+    def choose_unit_deployment_position(self, unit: 'Unit', deployment_zone: dict, 
+                                       already_deployed: List['Unit']) -> Tuple[float, float]:
+        """AI chooses unit position using neural network."""
+        return self.agent.choose_unit_deployment_position(unit, deployment_zone, already_deployed)
     
-    def deploy_unit(self, unit: 'Unit', position: Tuple[float, float], zone: dict) -> None:
-        """Deploy a unit at the specified position."""
-        x, y = position
-        z = self.game.map.get_height_at_point(x, y)
+    def compute_deployment_reward(self, deployment_results: dict) -> float:
+        """Compute and store deployment rewards for learning."""
+        reward = self.agent.compute_deployment_reward(deployment_results)
         
-        # Calculate model positions within the unit
-        model_positions = unit.calculate_model_positions(x, y, self.game.map)
+        # Store rewards for both deployment zone selection and reserves
+        self.agent.deployment_rewards.append(reward)
+        self.agent.reserves_rewards.append(reward)
         
-        if model_positions and len(model_positions) == len(unit.models):
-            # Use calculated positions
-            for model, pos in zip(unit.models, model_positions):
-                model_x, model_y, model_z, model_facing = pos
-                model.set_location(model_x, model_y, model_z, model_facing)
-        else:
-            # Fallback positioning
-            for i, model in enumerate(unit.models):
-                model_x = x + (i % 3) * 0.5
-                model_y = y + (i // 3) * 0.5
-                model_z = self.game.map.get_height_at_point(model_x, model_y)
-                model.set_location(model_x, model_y, model_z, 0.0)
-        
-        unit.deployed = True
-        self.game.map.units.append(unit)
-    
-    def determine_first_turn(self) -> Player:
-        """Determine who goes first according to Warhammer 40k rules."""
-        # Attacker rolls D6: 1-3 = Defender goes first, 4-6 = Attacker goes first
-        roll = torch.randint(1, 7, (1,)).item()
-        logger.info(f"🎲 First turn roll: {roll}")
-        
-        if roll <= 3:
-            logger.info(f"🥇 {self.defender.name} (Defender) takes first turn")
-            return self.defender
-        else:
-            logger.info(f"🥇 {self.attacker.name} (Attacker) takes first turn")
-            return self.attacker
-    
-    def get_agent_for_player(self, player: Player) -> HighLevelAgent:
-        """Get the HighLevelAgent for the specified player."""
-        if player == self.player1_agent.player:
-            return self.player1_agent
-        elif player == self.player2_agent.player:
-            return self.player2_agent
-        else:
-            raise ValueError(f"No agent found for player {player.name}")
-    
-    def compute_deployment_rewards(self, deployment_results: dict) -> None:
-        """Compute and store deployment rewards for both agents."""
-        for player_name, agent in [(self.defender.name, self.get_agent_for_player(self.defender)),
-                                  (self.attacker.name, self.get_agent_for_player(self.attacker))]:
-            
-            # Create deployment results subset for this player
-            player_deployment = {
-                'selected_zone': deployment_results['deployment_zones'].get(player_name),
-                'reserves_decisions': deployment_results['reserves'].get(player_name, {}),
-                'deployment_order': deployment_results['deployment_order']
-            }
-            
-            reward = agent.compute_deployment_reward(player_deployment)
-            
-            # Store rewards for both deployment zone selection and reserves
-            agent.deployment_rewards.append(reward)
-            agent.reserves_rewards.append(reward)
-            
-            logger.info(f"📊 {player_name} deployment reward: {reward:.2f}")
+        logger.info(f"📊 {self.agent.player.name} deployment reward: {reward:.2f}")
+        return reward

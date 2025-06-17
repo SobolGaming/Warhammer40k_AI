@@ -16,7 +16,8 @@ from warhammer40k_ai.classes.player import Player, PlayerType
 from warhammer40k_ai.classes.army import parse_army_list
 from warhammer40k_ai.UI.game_ui import GameView, GameState, ROSTER_PANE_WIDTH, BATTLEFIELD_WIDTH, BATTLEFIELD_HEIGHT, INFO_PANE_HEIGHT, handle_zoom, handle_pan, TILE_SIZE
 from warhammer40k_ai.waha_helper import WahaHelper
-from warhammer40k_ai.agents.hrl_agent import HighLevelAgent, TacticalAgent, LowLevelAgent
+from warhammer40k_ai.agents.hrl_agent import HighLevelAgent, TacticalAgent, LowLevelAgent, AIDeploymentDecisionMaker
+from warhammer40k_ai.classes.deployment import DeploymentManager, HumanDeploymentDecisionMaker
 
 # Training configuration
 TRAINING_MODE = True  # Set to True for AI training, False for manual play
@@ -132,6 +133,16 @@ def create_checkpoint_dir():
     if not os.path.exists(CHECKPOINT_DIR):
         os.makedirs(CHECKPOINT_DIR)
 
+def clear_checkpoints():
+    """Clear all existing checkpoint files."""
+    if os.path.exists(CHECKPOINT_DIR):
+        checkpoint_files = [f for f in os.listdir(CHECKPOINT_DIR) if f.endswith('.pth')]
+        for file in checkpoint_files:
+            os.remove(os.path.join(CHECKPOINT_DIR, file))
+        print(f"🗑️  Cleared {len(checkpoint_files)} checkpoint files")
+    else:
+        print("📁 No checkpoint directory found")
+
 def cleanup_destroyed_units(game: Game):
     """Remove destroyed units from the game map and player armies."""
     # Clean up units from the map
@@ -151,83 +162,55 @@ def cleanup_destroyed_units(game: Game):
                 logger.debug(f"Removing destroyed unit {unit.name} from {player.name}'s army")
             player.get_army().units.remove(unit)
 
+def execute_official_deployment(game: Game, player1: Player, player2: Player, 
+                               player1_agent: HighLevelAgent = None, player2_agent: HighLevelAgent = None) -> dict:
+    """Execute the official Warhammer 40k deployment sequence."""
+    
+    logger.info("🚀 Starting Official Warhammer 40k Deployment Sequence")
+    
+    # Create deployment manager
+    deployment_manager = DeploymentManager(game)
+    
+    # Create decision makers based on player types
+    decision_makers = {}
+    
+    if player1_agent:
+        # AI player
+        decision_makers[player1.name] = AIDeploymentDecisionMaker(player1_agent)
+    else:
+        # Human player (fallback for now)
+        decision_makers[player1.name] = HumanDeploymentDecisionMaker()
+    
+    if player2_agent:
+        # AI player
+        decision_makers[player2.name] = AIDeploymentDecisionMaker(player2_agent)
+    else:
+        # Human player (fallback for now)
+        decision_makers[player2.name] = HumanDeploymentDecisionMaker()
+    
+    # Execute deployment
+    deployment_results = deployment_manager.execute_deployment_sequence(decision_makers)
+    
+    logger.info(f"✅ Deployment complete! {deployment_results['first_turn_player']} goes first")
+    
+    # Compute and store deployment rewards for AI agents
+    for player_name, decision_maker in decision_makers.items():
+        if isinstance(decision_maker, AIDeploymentDecisionMaker):
+            player_deployment = {
+                'selected_zone': deployment_results['deployment_zones'].get(player_name),
+                'reserves_decisions': deployment_results['reserves'].get(player_name, {}),
+                'deployment_order': deployment_results['deployment_order']
+            }
+            decision_maker.compute_deployment_reward(player_deployment)
+    
+    return deployment_results
+
+
 def auto_deploy_units(game: Game, player1: Player, player2: Player):
-    """Automatically deploy units for both players in their deployment zones."""
+    """Legacy function - kept for compatibility. Use execute_official_deployment instead."""
+    logger.warning("⚠️  Using legacy deployment system. Consider using execute_official_deployment for proper Warhammer 40k rules.")
     
-    logger.debug(f"Starting unit deployment...")
-    logger.debug(f"Player 1 has {len(player1.get_army().units)} units to deploy")
-    logger.debug(f"Player 2 has {len(player2.get_army().units)} units to deploy")
-    logger.debug(f"Map currently has {len(game.map.units)} units")
-    
-    def deploy_player_units(player: Player, zone: dict):
-        """Deploy units for a specific player in their zone."""
-        # Reduced logging frequency
-        x_start, x_end = zone['x_range']
-        y_start, y_end = zone['y_range']
-        
-        units = player.get_army().units
-        grid_size = max(2, int((len(units) ** 0.5) + 1))
-        x_step = (x_end - x_start) / (grid_size + 1)
-        y_step = (y_end - y_start) / (grid_size + 1)
-        
-        deployed_count = 0
-        failed_count = 0
-        
-        logger.info(f"🚢 Deploying {len(units)} units for {player.name} in zone x=({x_start:.1f}-{x_end:.1f}), y=({y_start:.1f}-{y_end:.1f})")
-        
-        for i, unit in enumerate(units):
-            try:
-                row = i // grid_size
-                col = i % grid_size
-                x = x_start + (col + 1) * x_step
-                y = y_start + (row + 1) * y_step
-                z = game.map.get_height_at_point(x, y)
-                
-                # Use the same model positioning logic as human players
-                model_positions = unit.calculate_model_positions(x, y, game.map)
-                
-                if model_positions and len(model_positions) == len(unit.models):
-                    # Successfully calculated positions for all models
-                    for model, position in zip(unit.models, model_positions):
-                        model_x, model_y, model_z, model_facing = position
-                        model.set_location(model_x, model_y, model_z, model_facing)
-                else:
-                    # Fallback to simple positioning if calculate_model_positions fails
-                    logger.debug(f"Using fallback positioning for {unit.name}")
-                    for j, model in enumerate(unit.models):
-                        model_x = x + (j % 3) * 0.5  # Spread models slightly
-                        model_y = y + (j // 3) * 0.5
-                        model_z = game.map.get_height_at_point(model_x, model_y)
-                        model_facing = 0.0  # Default facing direction
-                        model.set_location(model_x, model_y, model_z, model_facing)
-                
-                # Let unit position be calculated from model positions (don't override!)
-                unit.deployed = True
-                
-                # Add unit to map
-                game.map.units.append(unit)
-                deployed_count += 1
-                
-                logger.debug(f"Deployed {unit.name} at ({x:.1f}, {y:.1f})")
-                
-            except Exception as e:
-                failed_count += 1
-                # Only log first few failures to avoid spam
-                if failed_count <= 2:
-                    logger.warning(f"Failed to deploy {unit.name}: {e}")
-                # Fallback: simple positioning for models
-                for j, model in enumerate(unit.models):
-                    model_x = x_start + 2 + (j % 3) * 0.5
-                    model_y = y_start + 2 + (j // 3) * 0.5
-                    model.set_location(model_x, model_y, 0, 0.0)
-                unit.deployed = True
-                game.map.units.append(unit)
-        
-        # Summary logging instead of per-unit logging
-        logger.info(f"✅ Deployed {deployed_count} units for {player.name}" + 
-                    (f" ({failed_count} with fallback positioning)" if failed_count > 0 else ""))
-    
-    # Define deployment zones
+    # Quick fallback deployment for systems that haven't been updated yet
     battlefield_width, battlefield_height = game.get_battlefield_size()
     
     player1_zone = {
@@ -240,13 +223,25 @@ def auto_deploy_units(game: Game, player1: Player, player2: Player):
         'y_range': (2, battlefield_height - 2)
     }
     
-    deploy_player_units(player1, player1_zone)
-    deploy_player_units(player2, player2_zone)
+    def quick_deploy(player: Player, zone: dict):
+        units = player.get_army().units
+        x_start, x_end = zone['x_range']
+        y_start, y_end = zone['y_range']
+        
+        for i, unit in enumerate(units):
+            x = x_start + (i % 3) * 5
+            y = y_start + (i // 3) * 5
+            
+            for j, model in enumerate(unit.models):
+                model_x = x + (j % 2) * 1
+                model_y = y + (j // 2) * 1
+                model.set_location(model_x, model_y, 0, 0.0)
+            
+            unit.deployed = True
+            game.map.units.append(unit)
     
-    logger.debug(f"Deployment complete! Total units on map: {len(game.map.units)}")
-    logger.debug(f"Player 1 army units: {[unit.name for unit in player1.get_army().units]}")
-    logger.debug(f"Player 2 army units: {[unit.name for unit in player2.get_army().units]}")
-    logger.debug(f"Map units: {[unit.name for unit in game.map.units]}")
+    quick_deploy(player1, player1_zone)
+    quick_deploy(player2, player2_zone)
 
 def initialize_game() -> Tuple[pygame.Surface, WarhammerEnv, Game, Map, float, int, int, Player, Player]:
     pygame.init()
@@ -411,18 +406,6 @@ def run_training_episode(episode_num: int, agents: dict) -> dict:
         raise  # Re-raise to see the full error
     
     try:
-        # Deploy units automatically
-        logger.debug("Deploying units...")
-        try:
-            auto_deploy_units(game, player1, player2)
-            logger.debug("Unit deployment completed")
-        except Exception as deploy_error:
-            logger.error(f"❌ DEPLOYMENT FAILED: {deploy_error}")
-            logger.error(f"Error type: {type(deploy_error).__name__}")
-            import traceback
-            logger.error(f"Full traceback: {traceback.format_exc()}")
-            raise  # Re-raise to see the full error
-        
         # Track objective position
         if game.map.objectives:
             obj = game.map.objectives[0]
@@ -445,6 +428,38 @@ def run_training_episode(episode_num: int, agents: dict) -> dict:
         tactical_agent_player2.game = game
         low_level_agent_player2.game = game
         logger.debug("All agents updated to use new game instance")
+        
+        # Execute official deployment sequence (AFTER agents are initialized)
+        logger.debug("Starting official deployment sequence...")
+        try:
+            deployment_results = execute_official_deployment(
+                game, player1, player2, 
+                high_level_agent_player1, high_level_agent_player2
+            )
+            
+            # Store deployment information for later analysis
+            episode_stats['deployment'] = {
+                'attacker': deployment_results['attacker'],
+                'first_turn_player': deployment_results['first_turn_player'],
+                'deployment_zones': deployment_results['deployment_zones'],
+                'reserves_count': {
+                    player1.name: len([u for u, decision in deployment_results['reserves'].get(player1.name, {}).items() 
+                                     if decision in ['reserves', 'strategic_reserves']]),
+                    player2.name: len([u for u, decision in deployment_results['reserves'].get(player2.name, {}).items() 
+                                     if decision in ['reserves', 'strategic_reserves']])
+                }
+            }
+            
+            logger.debug("Official deployment completed successfully")
+        except Exception as deploy_error:
+            logger.error(f"❌ DEPLOYMENT FAILED: {deploy_error}")
+            logger.error(f"Error type: {type(deploy_error).__name__}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
+            # Fallback to legacy deployment
+            logger.warning("Falling back to legacy deployment system")
+            auto_deploy_units(game, player1, player2)
+            episode_stats['deployment'] = {'fallback': True}
         
         # Run the game loop (suppress print statements during training)
         with suppress_stdout():
@@ -530,12 +545,16 @@ def run_training_episode(episode_num: int, agents: dict) -> dict:
     
     return episode_stats
 
-def run_training_loop():
+def run_training_loop(clear_checkpoints_flag=False):
     """Run the main training loop for the specified number of episodes."""
     print(f"Starting AI training mode for {NUM_TRAINING_EPISODES} episodes...")
     
     # Create checkpoint directory
     create_checkpoint_dir()
+    
+    # Clear checkpoints if requested
+    if clear_checkpoints_flag:
+        clear_checkpoints()
     
     # Initialize all agents with first game instance to get proper dimensions
     screen, env, game, game_map, _, _, _, player1, player2 = initialize_game()
@@ -797,7 +816,14 @@ def main_game_loop() -> None:
         if game_state == GameState.PLAYING and game.do_ai_action:
             # Auto-deploy units if not already deployed
             if not all(unit.deployed for unit in player1.get_army().units + player2.get_army().units):
-                auto_deploy_units(game, player1, player2)
+                try:
+                    # Use official deployment for AI vs AI
+                    execute_official_deployment(game, player1, player2, 
+                                              high_level_agent_player1, high_level_agent_player2)
+                except Exception as e:
+                    logger.warning(f"Official deployment failed in main loop: {e}")
+                    # Fallback to legacy deployment
+                    auto_deploy_units(game, player1, player2)
             
             while not game.is_game_over():
                 current_player = game.get_current_player()
@@ -974,6 +1000,8 @@ if __name__ == "__main__":
                         help='Number of training episodes (default: 1000)')
     parser.add_argument('--checkpoint-interval', type=int, default=10,
                         help='Save checkpoints every N episodes (default: 10)')
+    parser.add_argument('--clear-checkpoints', action='store_true',
+                        help='Clear existing checkpoints and start fresh (useful after model changes)')
     
     args = parser.parse_args()
     
@@ -985,7 +1013,7 @@ if __name__ == "__main__":
     try:
         if TRAINING_MODE:
             print(f"Starting AI training mode for {NUM_TRAINING_EPISODES} episodes...")
-            run_training_loop()
+            run_training_loop(args.clear_checkpoints)
         else:
             print("Starting manual play mode...")
             main_game_loop()

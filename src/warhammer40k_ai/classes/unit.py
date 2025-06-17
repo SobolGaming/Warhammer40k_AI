@@ -1314,6 +1314,45 @@ class Unit:
             ranged_threat *= (1.0 + cp_modifier)  # More CP = more potential threats
         
         return ranged_threat * distance_modifier
+    
+    def has_deep_strike(self) -> bool:
+        """Check if the unit has Deep Strike ability."""
+        # Check if the unit has Deep Strike keyword or ability
+        if "Deep Strike" in self.keywords:
+            return True
+        
+        # Check abilities for Deep Strike
+        for ability in self.abilities:
+            # Handle both string and ability object cases
+            if isinstance(ability, str):
+                if "deep strike" in ability.lower() or "deepstrike" in ability.lower():
+                    return True
+            else:
+                # Ability object with name and description attributes
+                if hasattr(ability, 'name') and ability.name:
+                    if "deep strike" in ability.name.lower() or "deepstrike" in ability.name.lower():
+                        return True
+                if hasattr(ability, 'description') and ability.description:
+                    if "deep strike" in ability.description.lower() or "deepstrike" in ability.description.lower():
+                        return True
+        
+        return False
+    
+    def get_max_weapon_range(self) -> float:
+        """Get the maximum range of all weapons in the unit."""
+        max_range = 0
+        for model in self.models:
+            for weapon in model.wargear:
+                # Skip melee weapons
+                if weapon.is_melee():
+                    continue
+                
+                # Get the maximum range from all profiles
+                for profile in weapon.profiles.values():
+                    if hasattr(profile, 'range') and profile.range and hasattr(profile.range, 'max'):
+                        max_range = max(max_range, profile.range.max)
+        
+        return max_range
 
 
 
