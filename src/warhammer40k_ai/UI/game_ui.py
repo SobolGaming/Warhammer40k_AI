@@ -73,10 +73,18 @@ class RosterPane(pygame.sprite.Sprite):
         self.selected_unit = None
         self.hovered_unit = None
         self.background_color = PANEL_BG
-        self.font_large = pygame.font.Font(None, FONT_LARGE)
-        self.font_medium = pygame.font.Font(None, FONT_MEDIUM)
-        self.font_small = pygame.font.Font(None, FONT_SMALL)
-        self.font_tiny = pygame.font.Font(None, FONT_TINY)
+        # Use system fonts for better clarity
+        try:
+            self.font_large = pygame.font.SysFont('Arial', FONT_LARGE, bold=True)
+            self.font_medium = pygame.font.SysFont('Arial', FONT_MEDIUM, bold=False)
+            self.font_small = pygame.font.SysFont('Arial', FONT_SMALL, bold=False)
+            self.font_tiny = pygame.font.SysFont('Arial', FONT_TINY, bold=False)
+        except:
+            # Fallback to default fonts if system fonts fail
+            self.font_large = pygame.font.Font(None, FONT_LARGE)
+            self.font_medium = pygame.font.Font(None, FONT_MEDIUM)
+            self.font_small = pygame.font.Font(None, FONT_SMALL)
+            self.font_tiny = pygame.font.Font(None, FONT_TINY)
         self.button_height = ROSTER_PANE_BUTTON_HEIGHT
         self.button_width = width - 20  # 10px padding on each side
         self.buttons = []
@@ -225,6 +233,22 @@ class RosterPane(pygame.sprite.Sprite):
         status_surface = self.font_tiny.render(status_text, True, status_color)
         status_rect = status_surface.get_rect()
         surface.blit(status_surface, (x_right - status_rect.width, y_offset))
+        
+        y_offset += 14
+        
+        # Primary weapons summary (if space allows)
+        if unit.models and unit.models[0].wargear and y_offset < button_rect.bottom - 10:
+            weapons = []
+            for wargear in unit.models[0].wargear[:2]:  # Show first 2 weapons
+                if wargear and hasattr(wargear, 'profiles'):
+                    weapons.append(wargear.name)
+            
+            if weapons:
+                weapons_text = "Weapons: " + ", ".join(weapons)
+                if len(weapons_text) > 25:
+                    weapons_text = weapons_text[:22] + "..."
+                weapons_surface = self.font_tiny.render(weapons_text, True, TEXT_SECONDARY)
+                surface.blit(weapons_surface, (x_left, y_offset))
 
     def draw_scroll_indicator(self, surface):
         """Draw a scroll indicator on the right side"""
@@ -257,9 +281,16 @@ class InfoPane(pygame.sprite.Sprite):
     def __init__(self, left: int, bottom: int, width: int, height: int, selected_unit: Unit):
         super().__init__()
         self.rect = pygame.Rect(left, bottom, width, height)
-        self.font_large = pygame.font.Font(None, FONT_LARGE)
-        self.font_medium = pygame.font.Font(None, FONT_MEDIUM)
-        self.font_small = pygame.font.Font(None, FONT_SMALL)
+        # Use system fonts for better clarity
+        try:
+            self.font_large = pygame.font.SysFont('Arial', FONT_LARGE, bold=True)
+            self.font_medium = pygame.font.SysFont('Arial', FONT_MEDIUM, bold=False)
+            self.font_small = pygame.font.SysFont('Arial', FONT_SMALL, bold=False)
+        except:
+            # Fallback to default fonts if system fonts fail
+            self.font_large = pygame.font.Font(None, FONT_LARGE)
+            self.font_medium = pygame.font.Font(None, FONT_MEDIUM)
+            self.font_small = pygame.font.Font(None, FONT_SMALL)
         self.background_color = PANEL_BG
         self.text_color = TEXT_PRIMARY
         self.selected_unit = selected_unit
@@ -314,18 +345,30 @@ class InfoPane(pygame.sprite.Sprite):
 
 class UnitDetailPanel(pygame.sprite.Sprite):
     """Detailed unit information panel that appears when hovering over units"""
-    def __init__(self, width=400, height=500):
+    def __init__(self, width=500, height=600):
         super().__init__()
         self.width = width
         self.height = height
-        self.font_large = pygame.font.Font(None, FONT_LARGE)
-        self.font_medium = pygame.font.Font(None, FONT_MEDIUM)
-        self.font_small = pygame.font.Font(None, FONT_SMALL)
-        self.font_tiny = pygame.font.Font(None, FONT_TINY)
+        # Use system fonts for better clarity
+        try:
+            self.font_large = pygame.font.SysFont('Arial', FONT_LARGE, bold=True)
+            self.font_medium = pygame.font.SysFont('Arial', FONT_MEDIUM, bold=True)
+            self.font_small = pygame.font.SysFont('Arial', FONT_SMALL, bold=False)
+            self.font_tiny = pygame.font.SysFont('Arial', FONT_TINY, bold=False)
+        except:
+            # Fallback to default fonts if system fonts fail
+            self.font_large = pygame.font.Font(None, FONT_LARGE)
+            self.font_medium = pygame.font.Font(None, FONT_MEDIUM)
+            self.font_small = pygame.font.Font(None, FONT_SMALL)
+            self.font_tiny = pygame.font.Font(None, FONT_TINY)
         self.background_color = PANEL_BG
         self.border_color = PANEL_BORDER
         self.scroll_offset = 0
         self.max_scroll = 0
+
+    def scroll(self, delta):
+        """Handle scrolling in the unit detail panel"""
+        self.scroll_offset = max(0, min(self.max_scroll, self.scroll_offset + delta))
 
     def draw(self, surface: pygame.Surface, unit: Unit, x: int, y: int):
         """Draw detailed unit information at the specified position"""
@@ -367,14 +410,12 @@ class UnitDetailPanel(pygame.sprite.Sprite):
         surface.blit(faction_text, (x_left, y_pos))
         y_pos += 20
         
-        # Keywords (wrapped)
+        # Keywords (single line, no wrapping)
         if unit.keywords:
             keywords_str = "Keywords: " + ", ".join(unit.keywords)
-            keywords_wrapped = self.wrap_text(keywords_str, self.font_tiny, self.width - 30)
-            for line in keywords_wrapped:
-                keyword_text = self.font_tiny.render(line, True, TEXT_SECONDARY)
-                surface.blit(keyword_text, (x_left, y_pos))
-                y_pos += 14
+            keyword_text = self.font_tiny.render(keywords_str, True, TEXT_SECONDARY)
+            surface.blit(keyword_text, (x_left, y_pos))
+            y_pos += 14
         
         y_pos += 10
         
@@ -412,10 +453,17 @@ class UnitDetailPanel(pygame.sprite.Sprite):
                 
                 for wargear in models[0].wargear:
                     if wargear:
-                        wargear_text = f"    - {wargear.name}"
+                        # Wargear name
+                        wargear_text = f"    • {wargear.name}"
                         wargear_surface = self.font_tiny.render(wargear_text, True, TEXT_SECONDARY)
                         surface.blit(wargear_surface, (x_left + 15, y_pos))
                         y_pos += 12
+                        
+                        # Show wargear profiles
+                        if hasattr(wargear, 'profiles') and wargear.profiles:
+                            for profile_name, profile in wargear.profiles.items():
+                                y_pos = self.draw_wargear_profile(surface, profile, profile_name, x_left + 25, y_pos)
+                        y_pos += 5  # Extra spacing between wargear items
         
         y_pos += 15
         
@@ -456,6 +504,110 @@ class UnitDetailPanel(pygame.sprite.Sprite):
         
         # Reset clipping
         surface.set_clip(None)
+        
+        # Draw scroll indicator if needed
+        if self.max_scroll > 0:
+            self.draw_scroll_indicator(surface, x, y)
+
+    def draw_scroll_indicator(self, surface: pygame.Surface, x: int, y: int):
+        """Draw scroll indicator on the right side of the panel"""
+        if self.max_scroll <= 0:
+            return
+        
+        # Scroll bar background
+        scrollbar_x = x + self.width - 15
+        scrollbar_y = y + 10
+        scrollbar_height = self.height - 20
+        scrollbar_rect = pygame.Rect(scrollbar_x, scrollbar_y, 10, scrollbar_height)
+        pygame.draw.rect(surface, DARK_GREY, scrollbar_rect, border_radius=5)
+        
+        # Scroll thumb
+        thumb_height = max(20, int(scrollbar_height * (self.height - 30) / (self.max_scroll + self.height - 30)))
+        thumb_y = scrollbar_y + int((scrollbar_height - thumb_height) * (self.scroll_offset / self.max_scroll))
+        thumb_rect = pygame.Rect(scrollbar_x + 1, thumb_y, 8, thumb_height)
+        pygame.draw.rect(surface, TEXT_SECONDARY, thumb_rect, border_radius=4)
+
+    def draw_wargear_profile(self, surface: pygame.Surface, profile, profile_name: str, x_pos: int, y_pos: int) -> int:
+        """Draw detailed wargear profile information and return new y position"""
+        # Profile name (if not 'default')
+        if profile_name != 'default':
+            profile_header = self.font_tiny.render(f"      {profile_name}:", True, TEXT_ACCENT)
+            surface.blit(profile_header, (x_pos, y_pos))
+            y_pos += 12
+        
+        # Determine if weapon is melee or ranged
+        is_melee = False
+        if hasattr(profile, 'range'):
+            if hasattr(profile.range, 'max') and profile.range.max == 0:
+                is_melee = True
+            elif hasattr(profile.range, 'min') and hasattr(profile.range, 'max') and profile.range.min == 0 and profile.range.max == 0:
+                is_melee = True
+        
+        # Format profile stats - display all on one line
+        stats_parts = []
+        
+        # Weapon type and range
+        if hasattr(profile, 'range'):
+            if is_melee:
+                stats_parts.append("Melee")
+            elif hasattr(profile.range, 'max'):
+                stats_parts.append(f"Ranged {profile.range.max}\"")
+            else:
+                stats_parts.append(f"Ranged {profile.range}")
+        
+        # Attacks
+        if hasattr(profile, 'attacks'):
+            if hasattr(profile.attacks, 'value'):
+                stats_parts.append(f"A: {profile.attacks.value}")
+            else:
+                stats_parts.append(f"A: {profile.attacks}")
+        
+        # Skill (BS for ranged, WS for melee)
+        if hasattr(profile, 'skill'):
+            if is_melee:
+                stats_parts.append(f"WS: {profile.skill}+")
+            else:
+                stats_parts.append(f"BS: {profile.skill}+")
+        
+        # Strength
+        if hasattr(profile, 'strength'):
+            stats_parts.append(f"S: {profile.strength}")
+        
+        # AP
+        if hasattr(profile, 'ap'):
+            ap_val = profile.ap
+            if ap_val == 0:
+                stats_parts.append("AP: -")
+            else:
+                stats_parts.append(f"AP: {ap_val}")
+        
+        # Damage
+        if hasattr(profile, 'damage'):
+            if hasattr(profile.damage, 'value'):
+                stats_parts.append(f"D: {profile.damage.value}")
+            else:
+                stats_parts.append(f"D: {profile.damage}")
+        
+        # Display all stats on one line
+        if stats_parts:
+            stats_line = " | ".join(stats_parts)
+            stats_text = self.font_tiny.render(f"        {stats_line}", True, TEXT_SECONDARY)
+            surface.blit(stats_text, (x_pos, y_pos))
+            y_pos += 12
+        
+        # Keywords on next line
+        if hasattr(profile, 'keywords') and profile.keywords:
+            keywords_str = ", ".join(profile.keywords)
+            if keywords_str:
+                # Wrap keywords if too long
+                max_keyword_width = self.width - x_pos - 40
+                keywords_wrapped = self.wrap_text(f"Keywords: {keywords_str}", self.font_tiny, max_keyword_width)
+                for line in keywords_wrapped:
+                    keyword_text = self.font_tiny.render(f"        {line}", True, TEXT_ACCENT)
+                    surface.blit(keyword_text, (x_pos, y_pos))
+                    y_pos += 12
+        
+        return y_pos + 3  # Add small spacing after profile
 
     def wrap_text(self, text: str, font: pygame.font.Font, max_width: int) -> List[str]:
         """Wrap text to fit within max_width"""
@@ -510,6 +662,17 @@ class GameView:
         self.detail_panel_pos = (0, 0)
 
     def on_mouse_press(self, x, y, button):
+        # PRIORITY 1: Check if click is on unit detail panel first (highest priority)
+        if self.show_unit_details and button == 1:  # Left click
+            # Use the rect that was set during drawing (if it exists)
+            if hasattr(self.unit_detail_panel, 'rect') and self.unit_detail_panel.rect:
+                # Check if click is on the unit detail panel using the actual rect
+                if self.unit_detail_panel.rect.collidepoint(x, y):
+                    return  # CRITICAL: Exit early to prevent other actions
+                else:
+                    self.close_unit_details()
+                    return  # Exit early since we handled the click
+        
         if button == 1:  # Left mouse button
             # Check if click is in player1's roster pane
             if self.player1_roster.rect.collidepoint(x, y):
@@ -551,6 +714,10 @@ class GameView:
                 self.selected_unit = None
                 self.player1_roster.selected_unit = None
                 self.player2_roster.selected_unit = None
+            else:
+                # Click outside of everything - close unit details if open
+                if self.show_unit_details:
+                    self.close_unit_details()
         
         elif button == 3:  # Right mouse button - show unit details
             hovered_unit, _ = self.get_hovered_unit(x, y)
@@ -560,7 +727,16 @@ class GameView:
 
     def on_mouse_scroll(self, x, y, scroll_y):
         """Handle mouse scroll events"""
-        # Check if scrolling in roster panes
+        # PRIORITY 1: Check if scrolling in unit detail panel first (highest priority)
+        if self.show_unit_details:
+            # Use the rect that was set during drawing (if it exists)
+            if hasattr(self.unit_detail_panel, 'rect') and self.unit_detail_panel.rect:
+                # Check if mouse is over the unit detail panel using the actual rect
+                if self.unit_detail_panel.rect.collidepoint(x, y):
+                    self.unit_detail_panel.scroll(-scroll_y * 30)  # Scroll speed
+                    return  # CRITICAL: Exit early to prevent other panels from handling the event
+        
+        # PRIORITY 2: Only check roster panes if unit detail panel didn't handle the event
         if self.player1_roster.rect.collidepoint(x, y):
             self.player1_roster.scroll(-scroll_y * 30)  # Scroll speed
         elif self.player2_roster.rect.collidepoint(x, y):
@@ -684,9 +860,32 @@ class GameView:
 
         pygame.display.update()
 
+    def on_key_press(self, key):
+        """Handle keyboard events"""
+        if key == pygame.K_ESCAPE:
+            # Close unit details panel if open
+            if self.show_unit_details:
+                self.close_unit_details()
+        elif self.show_unit_details:
+            # Keyboard scrolling in unit detail panel
+            if key == pygame.K_UP or key == pygame.K_w:
+                self.unit_detail_panel.scroll(-30)  # Scroll up
+            elif key == pygame.K_DOWN or key == pygame.K_s:
+                self.unit_detail_panel.scroll(30)   # Scroll down
+            elif key == pygame.K_PAGEUP:
+                self.unit_detail_panel.scroll(-150)  # Page up
+            elif key == pygame.K_PAGEDOWN:
+                self.unit_detail_panel.scroll(150)   # Page down
+            elif key == pygame.K_HOME:
+                self.unit_detail_panel.scroll_offset = 0  # Go to top
+            elif key == pygame.K_END:
+                self.unit_detail_panel.scroll_offset = self.unit_detail_panel.max_scroll  # Go to bottom
+
     def close_unit_details(self):
         """Close the unit details panel"""
         self.show_unit_details = None
+        # Reset scroll position when closing
+        self.unit_detail_panel.scroll_offset = 0
 
 
 ### Battlefield drawing functions

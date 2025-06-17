@@ -910,12 +910,16 @@ def main_game_loop() -> None:
                 else:
                     game_view.on_mouse_press(*event.pos, event.button)
             elif event.type == pygame.MOUSEWHEEL:
-                # Check if mouse is over roster panes for scrolling
+                # Handle mouse wheel scrolling
                 mouse_pos = pygame.mouse.get_pos()
-                if (game_view.player1_roster.rect.collidepoint(mouse_pos) or 
-                    game_view.player2_roster.rect.collidepoint(mouse_pos)):
-                    game_view.on_mouse_scroll(*mouse_pos, event.y)
-                else:
+                # Always call on_mouse_scroll first - it will handle unit detail panel and roster panes
+                # and return early if handled, preventing zoom changes
+                game_view.on_mouse_scroll(*mouse_pos, event.y)
+                
+                # Only handle zoom if scrolling wasn't handled by UI elements
+                if not (game_view.show_unit_details or 
+                        game_view.player1_roster.rect.collidepoint(mouse_pos) or 
+                        game_view.player2_roster.rect.collidepoint(mouse_pos)):
                     game_view.zoom_level = handle_zoom(game_view.zoom_level, event)
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE and game_state == GameState.SETUP:
@@ -932,6 +936,9 @@ def main_game_loop() -> None:
                     game_view.selected_unit = None
                     game_view.player1_roster.selected_unit = None
                     game_view.player2_roster.selected_unit = None
+                else:
+                    # Pass other key events to game_view for handling (including detail panel scrolling)
+                    game_view.on_key_press(event.key)
 
         keys_pressed = pygame.key.get_pressed()
         game_view.offset_x, game_view.offset_y = handle_pan(keys_pressed, game_view.offset_x, game_view.offset_y, game_view.zoom_level)
