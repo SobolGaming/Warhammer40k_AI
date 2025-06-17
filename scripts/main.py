@@ -464,7 +464,8 @@ def run_training_episode(episode_num: int, agents: dict) -> dict:
                 
                 # Execute the current phase based on game state
                 if game.is_command_phase():
-                    # Command phase
+                    # Command phase - all players gain 1 CP at the start
+                    game.start_command_phase()
                     episode_stats['commands_selected'][current_player_key][command] += 1
                     tactical_agent.command_phase(command)
                     game.next_phase()
@@ -818,6 +819,8 @@ def main_game_loop() -> None:
                 avg_distance_before =current_player.compute_average_distance(objective)
 
                 if game.is_command_phase():
+                    # Command phase - all players gain 1 CP at the start
+                    game.start_command_phase()
                     # Update objective control at the end of each turn
                     for obj in game.map.objectives:
                         if isinstance(obj.location, ObjectivePoint):
@@ -907,7 +910,13 @@ def main_game_loop() -> None:
                 else:
                     game_view.on_mouse_press(*event.pos, event.button)
             elif event.type == pygame.MOUSEWHEEL:
-                game_view.zoom_level = handle_zoom(game_view.zoom_level, event)
+                # Check if mouse is over roster panes for scrolling
+                mouse_pos = pygame.mouse.get_pos()
+                if (game_view.player1_roster.rect.collidepoint(mouse_pos) or 
+                    game_view.player2_roster.rect.collidepoint(mouse_pos)):
+                    game_view.on_mouse_scroll(*mouse_pos, event.y)
+                else:
+                    game_view.zoom_level = handle_zoom(game_view.zoom_level, event)
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE and game_state == GameState.SETUP:
                     game_state = GameState.PLAYING
@@ -917,6 +926,12 @@ def main_game_loop() -> None:
                     print(f"Advanced to {game.phase.name} phase")
                 elif event.key == pygame.K_a and game_state == GameState.PLAYING:
                     game.do_ai_action = True
+                elif event.key == pygame.K_ESCAPE:
+                    # Close unit details panel or deselect units
+                    game_view.close_unit_details()
+                    game_view.selected_unit = None
+                    game_view.player1_roster.selected_unit = None
+                    game_view.player2_roster.selected_unit = None
 
         keys_pressed = pygame.key.get_pressed()
         game_view.offset_x, game_view.offset_y = handle_pan(keys_pressed, game_view.offset_x, game_view.offset_y, game_view.zoom_level)

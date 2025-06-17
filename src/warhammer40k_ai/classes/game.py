@@ -180,6 +180,11 @@ class Game:
 
     def is_command_phase(self) -> bool:
         return self.phase == BattleRoundPhases.COMMAND_PHASE
+    
+    def start_command_phase(self) -> None:
+        """Start the command phase - all players gain 1 Command Point"""
+        for player in self.players:
+            player.gain_command_point()
 
     def is_movement_phase(self) -> bool:
         return self.phase == BattleRoundPhases.MOVEMENT_PHASE

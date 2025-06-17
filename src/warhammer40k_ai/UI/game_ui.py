@@ -1,7 +1,7 @@
 import pygame
 import textwrap
 import math
-from typing import Optional, Tuple, Dict
+from typing import Optional, Tuple, Dict, List
 from warhammer40k_ai.classes.unit import Unit
 from warhammer40k_ai.utility.model_base import Base, BaseType
 from warhammer40k_ai.classes.player import Player
@@ -15,14 +15,29 @@ BATTLEFIELD_HEIGHT_INCHES = 44
 BATTLEFIELD_WIDTH = BATTLEFIELD_WIDTH_INCHES * TILE_SIZE
 BATTLEFIELD_HEIGHT = BATTLEFIELD_HEIGHT_INCHES * TILE_SIZE
 
-# Colors
+# Enhanced Colors - Modern UI Palette
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 GREY = (50, 50, 50)
+LIGHT_GREY = (200, 200, 200)
+DARK_GREY = (40, 40, 40)
 GREEN = (0, 255, 0)
 BLUE = (0, 0, 255)
 RED = (255, 0, 0)
 PURPLE = (128, 0, 128)
+
+# Modern UI Colors
+PANEL_BG = (45, 45, 48)  # Dark background
+PANEL_BORDER = (63, 63, 70)  # Subtle border
+BUTTON_BG = (60, 60, 67)  # Button background
+BUTTON_HOVER = (75, 75, 82)  # Button hover
+BUTTON_SELECTED = (0, 122, 204)  # Selected button
+TEXT_PRIMARY = (255, 255, 255)  # Primary text
+TEXT_SECONDARY = (200, 200, 200)  # Secondary text
+TEXT_ACCENT = (100, 149, 237)  # Accent text
+HEALTH_GOOD = (76, 175, 80)  # Green for good health
+HEALTH_DAMAGED = (255, 193, 7)  # Yellow for damaged
+HEALTH_CRITICAL = (244, 67, 54)  # Red for critical
 
 # Game states
 class GameState:
@@ -36,37 +51,60 @@ MAX_ZOOM = 2.0
 ZOOM_SPEED = 0.1
 PAN_SPEED = 5
 
-# New constants for the roster panes
-ROSTER_PANE_WIDTH = 300
-ROSTER_PANE_BUTTON_HEIGHT = 30
-ROSTER_FONT_SIZE = 18
-ROSTER_LINE_HEIGHT = 20
-INFO_PANE_HEIGHT = 100
+# Enhanced constants for the roster panes
+ROSTER_PANE_WIDTH = 350  # Wider for more information
+ROSTER_PANE_BUTTON_HEIGHT = 80  # Taller for more details
+ROSTER_FONT_SIZE = 16
+ROSTER_LINE_HEIGHT = 18
+INFO_PANE_HEIGHT = 120  # Taller for more game info
 
-# Add these new classes
+# Font sizes
+FONT_LARGE = 20
+FONT_MEDIUM = 16
+FONT_SMALL = 14
+FONT_TINY = 12
+
 class RosterPane(pygame.sprite.Sprite):
-    def __init__(self, left, bottom, width, height, roster):
+    def __init__(self, left, bottom, width, height, roster, player_name):
         super().__init__()
         self.rect = pygame.Rect(left, bottom, width, height)
         self.roster = roster
+        self.player_name = player_name
         self.selected_unit = None
-        self.background_color = pygame.Color('lightgray')
-        self.font = pygame.font.Font(None, 20)
-        self.button_height = 50
+        self.hovered_unit = None
+        self.background_color = PANEL_BG
+        self.font_large = pygame.font.Font(None, FONT_LARGE)
+        self.font_medium = pygame.font.Font(None, FONT_MEDIUM)
+        self.font_small = pygame.font.Font(None, FONT_SMALL)
+        self.font_tiny = pygame.font.Font(None, FONT_TINY)
+        self.button_height = ROSTER_PANE_BUTTON_HEIGHT
         self.button_width = width - 20  # 10px padding on each side
         self.buttons = []
+        self.scroll_offset = 0
+        self.max_scroll = 0
         self.create_buttons()
-        self.game_map = None  # Add this line
+        self.game_map = None
 
     def create_buttons(self):
+        self.buttons = []
         for i, unit in enumerate(self.roster):
             button_rect = pygame.Rect(
                 self.rect.left + 10,
-                self.rect.top + 10 + i * (self.button_height + 5),
+                self.rect.top + 40 + i * (self.button_height + 5) - self.scroll_offset,  # Account for header
                 self.button_width,
                 self.button_height
             )
             self.buttons.append((button_rect, unit))
+        
+        # Calculate max scroll based on content height
+        total_content_height = len(self.roster) * (self.button_height + 5) + 40  # +40 for header
+        visible_height = self.rect.height
+        self.max_scroll = max(0, total_content_height - visible_height)
+
+    def scroll(self, delta):
+        """Handle scrolling in the roster pane"""
+        self.scroll_offset = max(0, min(self.max_scroll, self.scroll_offset + delta))
+        self.create_buttons()  # Recreate buttons with new scroll offset
 
     def on_mouse_press(self, x, y, button):
         if button == 1:  # Left mouse button
@@ -75,34 +113,143 @@ class RosterPane(pygame.sprite.Sprite):
                     self.selected_unit = unit
                     return
             self.selected_unit = None
-            
-            # Remove the elif block here, as it's redundant with GameView.on_mouse_press
 
-    def draw(self, surface):
+    def draw(self, surface, game):
+        # Draw main background
         pygame.draw.rect(surface, self.background_color, self.rect)
+        pygame.draw.rect(surface, PANEL_BORDER, self.rect, 2)
         
+        # Draw header
+        header_rect = pygame.Rect(self.rect.left, self.rect.top, self.rect.width, 35)
+        pygame.draw.rect(surface, DARK_GREY, header_rect)
+        
+        # Player name and army info
+        player_text = self.font_medium.render(f"{self.player_name}", True, TEXT_PRIMARY)
+        surface.blit(player_text, (self.rect.left + 10, self.rect.top + 5))
+        
+        # Army points total
+        if self.roster:
+            total_points = sum(unit.get_unit_cost() for unit in self.roster)
+            points_text = self.font_small.render(f"{total_points} pts", True, TEXT_SECONDARY)
+            surface.blit(points_text, (self.rect.right - 80, self.rect.top + 8))
+        
+        # Create clipping rect for scrollable content
+        content_rect = pygame.Rect(self.rect.left, self.rect.top + 40, self.rect.width, self.rect.height - 40)
+        surface.set_clip(content_rect)
+        
+        # Draw unit buttons
         for button_rect, unit in self.buttons:
-            # Draw button background
-            pygame.draw.rect(surface, pygame.Color('white'), button_rect, border_radius=5)
+            if button_rect.bottom < self.rect.top + 40 or button_rect.top > self.rect.bottom:
+                continue  # Skip buttons outside visible area
+                
+            # Determine button state and color
+            if unit == self.selected_unit:
+                button_color = BUTTON_SELECTED
+                border_color = TEXT_ACCENT
+            elif unit == self.hovered_unit:
+                button_color = BUTTON_HOVER
+                border_color = PANEL_BORDER
+            else:
+                button_color = BUTTON_BG
+                border_color = PANEL_BORDER
             
-            # Draw unit name (wrapped)
-            wrapped_text = textwrap.wrap(unit.name, width=20)
-            for i, line in enumerate(wrapped_text):
-                text = self.font.render(line, True, pygame.Color('black'))
-                text_rect = text.get_rect(center=(button_rect.centerx, button_rect.top + 15 + i * 20))
-                surface.blit(text, text_rect)
+            # Draw button background
+            pygame.draw.rect(surface, button_color, button_rect, border_radius=5)
+            pygame.draw.rect(surface, border_color, button_rect, 2, border_radius=5)
+            
+            # Draw unit information
+            self.draw_unit_info(surface, unit, button_rect)
 
-        # Highlight the selected unit
-        if self.selected_unit:
-            for button_rect, unit in self.buttons:
-                if unit == self.selected_unit:
-                    pygame.draw.rect(surface, pygame.Color('yellow'), button_rect, 3, border_radius=5)
-                    break
+        # Reset clipping
+        surface.set_clip(None)
+        
+        # Draw scroll indicator if needed
+        if self.max_scroll > 0:
+            self.draw_scroll_indicator(surface)
+
+    def draw_unit_info(self, surface, unit, button_rect):
+        """Draw detailed unit information in the button"""
+        y_offset = button_rect.top + 5
+        x_left = button_rect.left + 8
+        x_right = button_rect.right - 8
+        
+        # Unit name (truncated if too long)
+        unit_name = unit.name
+        if len(unit_name) > 20:
+            unit_name = unit_name[:17] + "..."
+        name_text = self.font_medium.render(unit_name, True, TEXT_PRIMARY)
+        surface.blit(name_text, (x_left, y_offset))
+        
+        # Unit cost
+        cost_text = self.font_small.render(f"{unit.get_unit_cost()}pts", True, TEXT_ACCENT)
+        cost_rect = cost_text.get_rect()
+        surface.blit(cost_text, (x_right - cost_rect.width, y_offset))
+        
+        y_offset += 20
+        
+        # Model count and composition
+        model_count_text = f"{len(unit.models)} models"
+        if unit.is_character:
+            model_count_text += " (Character)"
+        elif unit.is_leader:
+            model_count_text += " (Leader)"
+        
+        models_text = self.font_small.render(model_count_text, True, TEXT_SECONDARY)
+        surface.blit(models_text, (x_left, y_offset))
+        
+        y_offset += 16
+        
+        # Health status
+        health_percent = unit.health_percent
+        if health_percent == 100:
+            health_color = HEALTH_GOOD
+            health_text = "Full Health"
+        elif health_percent > 50:
+            health_color = HEALTH_DAMAGED
+            health_text = f"{health_percent:.0f}% Health"
+        else:
+            health_color = HEALTH_CRITICAL
+            health_text = f"{health_percent:.0f}% Health"
+        
+        health_surface = self.font_tiny.render(health_text, True, health_color)
+        surface.blit(health_surface, (x_left, y_offset))
+        
+        # Deployment status
+        if unit.deployed:
+            status_text = "Deployed"
+            status_color = HEALTH_GOOD
+        else:
+            status_text = "Not Deployed"
+            status_color = TEXT_SECONDARY
+        
+        status_surface = self.font_tiny.render(status_text, True, status_color)
+        status_rect = status_surface.get_rect()
+        surface.blit(status_surface, (x_right - status_rect.width, y_offset))
+
+    def draw_scroll_indicator(self, surface):
+        """Draw a scroll indicator on the right side"""
+        if self.max_scroll == 0:
+            return
+            
+        indicator_width = 4
+        indicator_x = self.rect.right - indicator_width - 2
+        indicator_height = max(20, int((self.rect.height - 40) * (self.rect.height - 40) / (self.max_scroll + self.rect.height - 40)))
+        indicator_y = self.rect.top + 40 + int(self.scroll_offset * (self.rect.height - 40 - indicator_height) / self.max_scroll)
+        
+        # Background track
+        track_rect = pygame.Rect(indicator_x, self.rect.top + 40, indicator_width, self.rect.height - 40)
+        pygame.draw.rect(surface, DARK_GREY, track_rect)
+        
+        # Scroll thumb
+        thumb_rect = pygame.Rect(indicator_x, indicator_y, indicator_width, indicator_height)
+        pygame.draw.rect(surface, TEXT_SECONDARY, thumb_rect, border_radius=2)
 
     def get_hovered_unit(self, x, y):
         for button_rect, unit in self.buttons:
             if button_rect.collidepoint(x, y):
+                self.hovered_unit = unit
                 return unit
+        self.hovered_unit = None
         return None
 
 
@@ -110,27 +257,227 @@ class InfoPane(pygame.sprite.Sprite):
     def __init__(self, left: int, bottom: int, width: int, height: int, selected_unit: Unit):
         super().__init__()
         self.rect = pygame.Rect(left, bottom, width, height)
-        self.font = pygame.font.Font(None, 24)
-        self.background_color = (200, 200, 200)
-        self.text_color = pygame.Color('black')
+        self.font_large = pygame.font.Font(None, FONT_LARGE)
+        self.font_medium = pygame.font.Font(None, FONT_MEDIUM)
+        self.font_small = pygame.font.Font(None, FONT_SMALL)
+        self.background_color = PANEL_BG
+        self.text_color = TEXT_PRIMARY
         self.selected_unit = selected_unit
 
     def draw(self, surface: pygame.Surface, game: Game):
         # Draw background
         pygame.draw.rect(surface, self.background_color, self.rect)
+        pygame.draw.rect(surface, PANEL_BORDER, self.rect, 2)
 
         # Get game information
         current_player = game.get_current_player()
+        opponent = game.get_opponent()
+        
+        y_offset = self.rect.top + 10
+        x_left = self.rect.left + 15
+        x_center = self.rect.centerx
+        x_right = self.rect.right - 15
 
-        # Render text
-        player_text = self.font.render(f"Player: {current_player.name}, Turn: {game.turn}, Phase: {game.phase.name}", True, self.text_color)
-        text_rect = player_text.get_rect(center=(self.rect.centerx, BATTLEFIELD_HEIGHT + 10))
-        surface.blit(player_text, text_rect)
+        # Game status line 1: Turn and Phase
+        game_status = f"Turn {game.turn} - {game.phase.name.replace('_', ' ').title()}"
+        game_text = self.font_medium.render(game_status, True, TEXT_PRIMARY)
+        game_rect = game_text.get_rect(center=(x_center, y_offset + 10))
+        surface.blit(game_text, game_rect)
+        
+        y_offset += 30
+        
+        # Player information
+        current_player_text = f"{current_player.name}: {current_player.command_points} CP | Score: {current_player.score}"
+        player_surface = self.font_small.render(current_player_text, True, TEXT_ACCENT)
+        surface.blit(player_surface, (x_left, y_offset))
+        
+        opponent_text = f"{opponent.name}: {opponent.command_points} CP | Score: {opponent.score}"
+        opponent_surface = self.font_small.render(opponent_text, True, TEXT_SECONDARY)
+        opponent_rect = opponent_surface.get_rect()
+        surface.blit(opponent_surface, (x_right - opponent_rect.width, y_offset))
+        
+        y_offset += 25
+        
+        # Army status
+        current_army = current_player.get_army()
+        opponent_army = opponent.get_army()
+        
+        if current_army and opponent_army:
+            current_units_alive = len([u for u in current_army.units if u.is_alive()])
+            opponent_units_alive = len([u for u in opponent_army.units if u.is_alive()])
+            
+            army_status = f"Units: {current_units_alive} vs {opponent_units_alive}"
+            army_text = self.font_small.render(army_status, True, TEXT_SECONDARY)
+            army_rect = army_text.get_rect(center=(x_center, y_offset))
+            surface.blit(army_text, army_rect)
 
-        if self.selected_unit:
-            unit_text = self.font.render(f"{self.selected_unit.print_unit()}", True, self.text_color)
-            unit_text_rect = unit_text.get_rect(center=(self.rect.centerx, BATTLEFIELD_HEIGHT + 40))
-            surface.blit(unit_text, unit_text_rect)
+
+class UnitDetailPanel(pygame.sprite.Sprite):
+    """Detailed unit information panel that appears when hovering over units"""
+    def __init__(self, width=400, height=500):
+        super().__init__()
+        self.width = width
+        self.height = height
+        self.font_large = pygame.font.Font(None, FONT_LARGE)
+        self.font_medium = pygame.font.Font(None, FONT_MEDIUM)
+        self.font_small = pygame.font.Font(None, FONT_SMALL)
+        self.font_tiny = pygame.font.Font(None, FONT_TINY)
+        self.background_color = PANEL_BG
+        self.border_color = PANEL_BORDER
+        self.scroll_offset = 0
+        self.max_scroll = 0
+
+    def draw(self, surface: pygame.Surface, unit: Unit, x: int, y: int):
+        """Draw detailed unit information at the specified position"""
+        # Adjust position to keep panel on screen
+        screen_width, screen_height = surface.get_size()
+        if x + self.width > screen_width:
+            x = screen_width - self.width - 10
+        if y + self.height > screen_height:
+            y = screen_height - self.height - 10
+        
+        self.rect = pygame.Rect(x, y, self.width, self.height)
+        
+        # Draw background with shadow effect
+        shadow_rect = pygame.Rect(x + 3, y + 3, self.width, self.height)
+        pygame.draw.rect(surface, (0, 0, 0, 100), shadow_rect, border_radius=8)
+        pygame.draw.rect(surface, self.background_color, self.rect, border_radius=8)
+        pygame.draw.rect(surface, self.border_color, self.rect, 2, border_radius=8)
+        
+        # Create clipping area for scrollable content
+        content_rect = pygame.Rect(x + 10, y + 10, self.width - 20, self.height - 20)
+        surface.set_clip(content_rect)
+        
+        y_pos = y + 15 - self.scroll_offset
+        x_left = x + 15
+        x_right = x + self.width - 15
+        
+        # Unit name and cost
+        unit_name = self.font_large.render(unit.name, True, TEXT_PRIMARY)
+        surface.blit(unit_name, (x_left, y_pos))
+        
+        cost_text = self.font_medium.render(f"{unit.get_unit_cost()} points", True, TEXT_ACCENT)
+        cost_rect = cost_text.get_rect()
+        surface.blit(cost_text, (x_right - cost_rect.width, y_pos))
+        
+        y_pos += 35
+        
+        # Faction and keywords
+        faction_text = self.font_small.render(f"Faction: {unit.faction}", True, TEXT_SECONDARY)
+        surface.blit(faction_text, (x_left, y_pos))
+        y_pos += 20
+        
+        # Keywords (wrapped)
+        if unit.keywords:
+            keywords_str = "Keywords: " + ", ".join(unit.keywords)
+            keywords_wrapped = self.wrap_text(keywords_str, self.font_tiny, self.width - 30)
+            for line in keywords_wrapped:
+                keyword_text = self.font_tiny.render(line, True, TEXT_SECONDARY)
+                surface.blit(keyword_text, (x_left, y_pos))
+                y_pos += 14
+        
+        y_pos += 10
+        
+        # Unit composition header
+        comp_header = self.font_medium.render("Unit Composition:", True, TEXT_PRIMARY)
+        surface.blit(comp_header, (x_left, y_pos))
+        y_pos += 25
+        
+        # Model details
+        model_groups = {}
+        for model in unit.models:
+            if model.name not in model_groups:
+                model_groups[model.name] = []
+            model_groups[model.name].append(model)
+        
+        for model_name, models in model_groups.items():
+            count = len(models)
+            model_info = f"• {count}x {model_name}"
+            
+            # Add stats
+            if models:
+                m = models[0]  # Use first model as reference
+                stats = f" (M:{m.movement}\" T:{m.toughness} Sv:{m.save}+ W:{m.wounds} Ld:{m.leadership}+ OC:{m.objective_control})"
+                model_info += stats
+            
+            model_text = self.font_small.render(model_info, True, TEXT_SECONDARY)
+            surface.blit(model_text, (x_left + 5, y_pos))
+            y_pos += 18
+            
+            # Show wargear for this model type
+            if models and models[0].wargear:
+                wargear_header = self.font_tiny.render("  Wargear:", True, TEXT_ACCENT)
+                surface.blit(wargear_header, (x_left + 10, y_pos))
+                y_pos += 14
+                
+                for wargear in models[0].wargear:
+                    if wargear:
+                        wargear_text = f"    - {wargear.name}"
+                        wargear_surface = self.font_tiny.render(wargear_text, True, TEXT_SECONDARY)
+                        surface.blit(wargear_surface, (x_left + 15, y_pos))
+                        y_pos += 12
+        
+        y_pos += 15
+        
+        # Abilities
+        if unit.possible_abilities:
+            abilities_header = self.font_medium.render("Abilities:", True, TEXT_PRIMARY)
+            surface.blit(abilities_header, (x_left, y_pos))
+            y_pos += 25
+            
+            for ability in unit.possible_abilities[:5]:  # Show first 5 abilities
+                ability_name = self.font_small.render(f"• {ability.name}", True, TEXT_ACCENT)
+                surface.blit(ability_name, (x_left + 5, y_pos))
+                y_pos += 18
+                
+                # Wrap ability description
+                if ability.description:
+                    desc_wrapped = self.wrap_text(ability.description, self.font_tiny, self.width - 40)
+                    for line in desc_wrapped[:3]:  # Show first 3 lines
+                        desc_text = self.font_tiny.render(line, True, TEXT_SECONDARY)
+                        surface.blit(desc_text, (x_left + 10, y_pos))
+                        y_pos += 12
+                    y_pos += 5
+        
+        # Enhancement
+        if unit.enhancement:
+            y_pos += 10
+            enh_header = self.font_medium.render("Enhancement:", True, TEXT_PRIMARY)
+            surface.blit(enh_header, (x_left, y_pos))
+            y_pos += 20
+            
+            enh_name = self.font_small.render(f"• {unit.enhancement.name} ({unit.enhancement.points}pts)", True, TEXT_ACCENT)
+            surface.blit(enh_name, (x_left + 5, y_pos))
+            y_pos += 18
+        
+        # Calculate max scroll
+        total_content_height = y_pos - (y + 15) + self.scroll_offset
+        self.max_scroll = max(0, total_content_height - (self.height - 30))
+        
+        # Reset clipping
+        surface.set_clip(None)
+
+    def wrap_text(self, text: str, font: pygame.font.Font, max_width: int) -> List[str]:
+        """Wrap text to fit within max_width"""
+        words = text.split(' ')
+        lines = []
+        current_line = []
+        
+        for word in words:
+            test_line = ' '.join(current_line + [word])
+            if font.size(test_line)[0] <= max_width:
+                current_line.append(word)
+            else:
+                if current_line:
+                    lines.append(' '.join(current_line))
+                    current_line = [word]
+                else:
+                    lines.append(word)  # Word is too long, add it anyway
+        
+        if current_line:
+            lines.append(' '.join(current_line))
+        
+        return lines
 
 
 class GameView:
@@ -146,14 +493,21 @@ class GameView:
         self.offset_y = 0
         self.selected_unit = None
         
-        # Create RosterPane instances and set their game_map
-        self.player1_roster = RosterPane(0, 0, ROSTER_PANE_WIDTH, BATTLEFIELD_HEIGHT + INFO_PANE_HEIGHT, player1.get_army().units)
-        self.player2_roster = RosterPane(BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH, 0, ROSTER_PANE_WIDTH, BATTLEFIELD_HEIGHT + INFO_PANE_HEIGHT, player2.get_army().units)
+        # Create enhanced RosterPane instances
+        self.player1_roster = RosterPane(0, 0, ROSTER_PANE_WIDTH, BATTLEFIELD_HEIGHT + INFO_PANE_HEIGHT, 
+                                       player1.get_army().units, player1.name)
+        self.player2_roster = RosterPane(BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH, 0, ROSTER_PANE_WIDTH, 
+                                       BATTLEFIELD_HEIGHT + INFO_PANE_HEIGHT, player2.get_army().units, player2.name)
         self.player1_roster.game_map = game_map
         self.player2_roster.game_map = game_map
 
-        # Create InfoPane
+        # Create enhanced InfoPane
         self.info_pane = InfoPane(ROSTER_PANE_WIDTH, BATTLEFIELD_HEIGHT, BATTLEFIELD_WIDTH, INFO_PANE_HEIGHT, self.selected_unit)
+        
+        # Create unit detail panel
+        self.unit_detail_panel = UnitDetailPanel()
+        self.show_unit_details = None
+        self.detail_panel_pos = (0, 0)
 
     def on_mouse_press(self, x, y, button):
         if button == 1:  # Left mouse button
@@ -197,6 +551,20 @@ class GameView:
                 self.selected_unit = None
                 self.player1_roster.selected_unit = None
                 self.player2_roster.selected_unit = None
+        
+        elif button == 3:  # Right mouse button - show unit details
+            hovered_unit, _ = self.get_hovered_unit(x, y)
+            if hovered_unit:
+                self.show_unit_details = hovered_unit
+                self.detail_panel_pos = (x, y)
+
+    def on_mouse_scroll(self, x, y, scroll_y):
+        """Handle mouse scroll events"""
+        # Check if scrolling in roster panes
+        if self.player1_roster.rect.collidepoint(x, y):
+            self.player1_roster.scroll(-scroll_y * 30)  # Scroll speed
+        elif self.player2_roster.rect.collidepoint(x, y):
+            self.player2_roster.scroll(-scroll_y * 30)
 
     def reset_unit_position(self, unit, original_unit_position, original_model_positions):
         if original_unit_position:
@@ -278,15 +646,11 @@ class GameView:
         return (screen_x, screen_y)
 
     def draw(self):
-        self.screen.fill(WHITE)
+        self.screen.fill(DARK_GREY)
     
-        # Draw debug rectangles for roster panes
-        pygame.draw.rect(self.screen, (255, 0, 0), self.player1_roster.rect, 2)
-        pygame.draw.rect(self.screen, (0, 0, 255), self.player2_roster.rect, 2)
-        
-        # Draw roster panes
-        self.player1_roster.draw(self.screen)
-        self.player2_roster.draw(self.screen)
+        # Draw roster panes with enhanced styling
+        self.player1_roster.draw(self.screen, self.game)
+        self.player2_roster.draw(self.screen, self.game)
 
         # Draw the battlefield
         battlefield_surface = pygame.Surface((BATTLEFIELD_WIDTH, BATTLEFIELD_HEIGHT))
@@ -306,17 +670,13 @@ class GameView:
         
         self.screen.blit(battlefield_surface, (ROSTER_PANE_WIDTH, 0))
 
-        # Draw InfoPane
-        pygame.draw.rect(self.screen, (200, 200, 200), self.info_pane.rect)
-
-        # Draw actual InfoPane content
+        # Draw enhanced InfoPane
         self.info_pane.draw(self.screen, self.game)
 
-        # Display unit info for hovered unit
-        mouse_pos = pygame.mouse.get_pos()
-        hovered_unit, roster_pane = self.get_hovered_unit(*mouse_pos)
-        if hovered_unit:
-            self.display_unit_info(hovered_unit, roster_pane)
+        # Draw unit details panel if requested
+        if self.show_unit_details:
+            self.unit_detail_panel.draw(self.screen, self.show_unit_details, 
+                                      self.detail_panel_pos[0], self.detail_panel_pos[1])
 
         # Draw move paths for all units
         for unit in self.game.get_current_player().get_army().units:
@@ -324,38 +684,9 @@ class GameView:
 
         pygame.display.update()
 
-    def display_unit_info(self, unit, roster_pane):
-        font = pygame.font.SysFont(None, 24)
-        info_text = f"{unit.name} - {len(unit.models)} models"
-        text_surface = font.render(info_text, True, (255, 255, 255))  # White text
-        text_rect = text_surface.get_rect()
-        
-        # Find the button for this unit in the roster pane
-        for button_rect, roster_unit in roster_pane.buttons:
-            if roster_unit == unit:
-                # Position the info box above the button
-                x = button_rect.left
-                y = button_rect.top - text_rect.height - 10
-                break
-        else:
-            # If not found (shouldn't happen), use default position
-            x, y = pygame.mouse.get_pos()
-
-        # Adjust position to keep the box within the screen
-        padding = 10
-        x = max(padding, min(x, self.screen.get_width() - text_rect.width - padding))
-        y = max(padding, min(y, self.screen.get_height() - text_rect.height - padding))
-        
-        text_rect.topleft = (x, y)
-        
-        # Draw a semi-transparent background
-        background_rect = text_rect.inflate(20, 10)
-        background = pygame.Surface(background_rect.size, pygame.SRCALPHA)
-        background.fill((0, 0, 0, 180))  # Semi-transparent black
-        self.screen.blit(background, background_rect.topleft)
-        
-        # Draw the text
-        self.screen.blit(text_surface, text_rect)
+    def close_unit_details(self):
+        """Close the unit details panel"""
+        self.show_unit_details = None
 
 
 ### Battlefield drawing functions

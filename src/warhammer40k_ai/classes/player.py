@@ -25,7 +25,7 @@ class Player:
             raise ValueError(f"Invalid player type: {player_type}")
         self.type = player_type
         self.round: int = 0
-        self.command_points: int = 0
+        self.command_points: int = 0  # Players start with 0 Command Points in 10th edition
         self.army: Army = army
         self.score: int = 0
         #print(f"Player {self.name} created with army: {self.army}")
@@ -48,6 +48,17 @@ class Player:
 
     def add_score(self, points: int) -> None:
         self.score += points
+    
+    def gain_command_point(self) -> None:
+        """Gain a command point (typically done at the start of each turn)"""
+        self.command_points += 1
+    
+    def spend_command_points(self, amount: int) -> bool:
+        """Spend command points if available"""
+        if self.command_points >= amount:
+            self.command_points -= amount
+            return True
+        return False
 
     def compute_average_distance(self, objective: Objective) -> float:
         """Compute the average distance of the player's alive units to the objective."""

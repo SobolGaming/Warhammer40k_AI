@@ -31,12 +31,19 @@ class WahaHelper:
         elif isinstance(data, list):
             return [self.clean_data(item) for item in data]
         elif isinstance(data, str):
-            data = data.replace("</li>", ";")
-            soup = BeautifulSoup(data, 'html.parser')
-            text = soup.get_text(separator=' ')
-            text = re.sub(r'\s+', ' ', text).strip()
-            text = re.sub(r'\s+([,.])', r'\1', text)
-            return text
+            # Only process with BeautifulSoup if the string contains HTML tags
+            if '<' in data and '>' in data:
+                data = data.replace("</li>", ";")
+                soup = BeautifulSoup(data, 'html.parser')
+                text = soup.get_text(separator=' ')
+                text = re.sub(r'\s+', ' ', text).strip()
+                text = re.sub(r'\s+([,.])', r'\1', text)
+                return text
+            else:
+                # For plain text strings, just clean up whitespace
+                text = re.sub(r'\s+', ' ', data).strip()
+                text = re.sub(r'\s+([,.])', r'\1', text)
+                return text
         else:
             return data
 
