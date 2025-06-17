@@ -111,7 +111,7 @@ class HighLevelAgent:
         self.deployment_zone_net = PolicyNetwork(input_size=12, output_size=2)  # Choose deployment zone (if defender)
         self.deployment_zone_optimizer = optim.Adam(self.deployment_zone_net.parameters(), lr=learning_rate)
         
-        self.reserves_selection_net = PolicyNetwork(input_size=15, output_size=3)  # Deploy, Reserve, or Strategic Reserve
+        self.reserves_selection_net = PolicyNetwork(input_size=17, output_size=3)  # Deploy, Reserve, or Strategic Reserve
         self.reserves_selection_optimizer = optim.Adam(self.reserves_selection_net.parameters(), lr=learning_rate)
         
         self.unit_deployment_net = PolicyNetwork(input_size=20, output_size=100)  # Position selection within zone
@@ -520,27 +520,90 @@ class HighLevelAgent:
         return available_zones[min(zone_idx, len(available_zones) - 1)]
     
     def declare_reserves(self) -> dict:
-        """Decide which units go into reserves, strategic reserves, or deploy normally."""
+        """Decide which units go into reserves, strategic reserves, or deploy normally.
+        
+        Enforces Warhammer 40k 10th Edition reserve limits:
+        - Maximum 50% of units can be in reserves
+        - Maximum 50% of army points can be in reserves
+        """
         reserves_decisions = {}
+        total_units = len(self.player.get_army().units)
+        max_reserve_units = total_units // 2  # 50% unit limit
+        
+        # Calculate total army points and max reserve points
+        total_points = sum(unit.get_unit_cost() for unit in self.player.get_army().units)
+        max_reserve_points = total_points // 2  # 50% points limit
+        
+        current_reserve_units = 0
+        current_reserve_points = 0
+        
+        # Sort units by AI preference for reserves (evaluate all first, then decide)
+        unit_preferences = []
         
         for unit in self.player.get_army().units:
             state = self.extract_reserves_decision_features(unit)
             probs = self.reserves_selection_net(state)
             
             if torch.isnan(probs).any():
-                throttled_warning(f"Warning: NaN values in reserves selection for {unit.name}")
-                decision = 'deploy'  # Default to normal deployment
+                # Default preference: deploy normally
+                preference_scores = [0.8, 0.1, 0.1]  # [deploy, reserves, strategic]
             else:
-                decision_dist = torch.distributions.Categorical(probs)
+                # Apply bias toward deploying units (especially for untrained networks)
+                deploy_bias = torch.tensor([0.7, 0.2, 0.1])
+                biased_probs = probs * 0.3 + deploy_bias * 0.7
+                preference_scores = biased_probs.tolist()
+            
+            # Calculate preference for reserves (reserves + strategic reserves)
+            reserves_preference = preference_scores[1] + preference_scores[2]
+            
+            unit_preferences.append({
+                'unit': unit,
+                'reserves_preference': reserves_preference,
+                'preference_scores': preference_scores,
+                'points': unit.get_unit_cost()
+            })
+        
+        # Sort by reserves preference (highest first)
+        unit_preferences.sort(key=lambda x: x['reserves_preference'], reverse=True)
+        
+        # Make decisions while respecting limits
+        for unit_data in unit_preferences:
+            unit = unit_data['unit']
+            preference_scores = unit_data['preference_scores']
+            unit_points = unit_data['points']
+            
+            # Check if we can still put units in reserves
+            can_reserve = (current_reserve_units < max_reserve_units and 
+                          current_reserve_points + unit_points <= max_reserve_points)
+            
+            if can_reserve:
+                # AI can choose freely
+                decision_dist = torch.distributions.Categorical(torch.tensor(preference_scores))
                 decision_idx = decision_dist.sample().item()
                 self.reserves_log_probs.append(decision_dist.log_prob(torch.tensor(decision_idx)))
                 
-                # Map index to decision
                 decisions = ['deploy', 'reserves', 'strategic_reserves']
                 decision = decisions[decision_idx]
+                
+                # Update counters if unit goes to reserves
+                if decision in ['reserves', 'strategic_reserves']:
+                    current_reserve_units += 1
+                    current_reserve_points += unit_points
+            else:
+                # Force deployment due to reserve limits
+                decision = 'deploy'
+                # Still log the decision for learning (with forced deploy probability)
+                forced_probs = torch.tensor([1.0, 0.0, 0.0])  # 100% deploy
+                decision_dist = torch.distributions.Categorical(forced_probs)
+                self.reserves_log_probs.append(decision_dist.log_prob(torch.tensor(0)))  # log prob of deploy
             
             reserves_decisions[unit.name] = decision
-            
+        
+        # Log reserve allocation for debugging
+        total_reserves = sum(1 for d in reserves_decisions.values() if d != 'deploy')
+        logger.debug(f"🏗️ {self.player.name} reserves: {total_reserves}/{max_reserve_units} units, "
+                    f"{current_reserve_points}/{max_reserve_points} points")
+        
         return reserves_decisions
     
     def choose_unit_deployment_position(self, unit: 'Unit', deployment_zone: dict, 
@@ -608,6 +671,13 @@ class HighLevelAgent:
         
         # Tactical considerations
         features.append(1.0 if unit.has_deep_strike() else 0.0)
+        
+        # Scout ability and normalized distance for deployment considerations
+        has_scout_ability, scout_distance = unit.has_scout()
+        features.append(1.0 if has_scout_ability else 0.0)
+        features.append(unit.get_scout_distance_normalized())
+        
+        # TODO - add more tactical considerations (e.g., has_infiltrate(), has_lone_operative(), etc.)
         features.append(1.0 if unit.is_character else 0.0)
         features.append(1.0 if unit.is_vehicle else 0.0)
         
@@ -624,8 +694,8 @@ class HighLevelAgent:
                                 if enemy_unit.get_max_weapon_range() > 24)
         features.append(enemy_ranged_threat)
         
-        # Pad to expected size
-        while len(features) < 15:
+        # Pad to expected size (increased from 15 to 17 due to scout features)
+        while len(features) < 17:
             features.append(0.0)
             
         return torch.tensor(features, dtype=torch.float32)
@@ -731,6 +801,15 @@ class HighLevelAgent:
                     reward += 2.0  # Good decision to put deep strike unit in reserves
                 elif decision == 'deploy' and not unit.has_deep_strike():
                     reward += 1.0  # Good decision to deploy normal unit
+                    
+                # Reward for deploying Scout units (they benefit from pre-game movement)
+                has_scout_ability, scout_distance = unit.has_scout()
+                if decision == 'deploy' and has_scout_ability:
+                    # Reward deploying scout units normally, scaled by scout distance
+                    reward += 1.5 * unit.get_scout_distance_normalized()
+                elif decision == 'reserves' and has_scout_ability:
+                    # Small penalty for putting scout units in reserves (they lose scout benefit)
+                    reward -= 0.5 * unit.get_scout_distance_normalized()
         
         return reward
 

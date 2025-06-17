@@ -1338,6 +1338,95 @@ class Unit:
         
         return False
     
+    def has_scout(self) -> Tuple[bool, float]:
+        """Check if the unit has Scout ability and return the scout distance.
+        
+        Returns:
+            Tuple[bool, float]: A tuple containing:
+                - A boolean indicating if the unit has Scout ability
+                - The scout distance in inches (0.0 if no Scout ability)
+        """
+        import re
+        
+        # Check if the unit has Scout keyword
+        for keyword in self.keywords:
+            if "scout" in keyword.lower():
+                # Try to extract distance from keyword like "Scout 6\"" or "Scout (6\")"
+                distance_match = re.search(r'scout\s*\(?(\d+)', keyword.lower())
+                if distance_match:
+                    return True, float(distance_match.group(1))
+                # Default scout distance if no specific distance found
+                return True, 6.0
+        
+        # Check unit-level abilities (possible_abilities)
+        for ability in self.possible_abilities:
+            # Handle both string and ability object cases
+            if isinstance(ability, str):
+                if "scout" in ability.lower():
+                    # Try to extract distance from ability description
+                    distance_match = re.search(r'scout\s*\(?(\d+)', ability.lower())
+                    if distance_match:
+                        return True, float(distance_match.group(1))
+                    return True, 6.0
+            else:
+                # Ability object with name and description attributes
+                if hasattr(ability, 'name') and ability.name and "scout" in ability.name.lower():
+                    # Try to extract distance from ability name
+                    distance_match = re.search(r'scout\s*\(?(\d+)', ability.name.lower())
+                    if distance_match:
+                        return True, float(distance_match.group(1))
+                    return True, 6.0
+                
+                if hasattr(ability, 'description') and ability.description and "scout" in ability.description.lower():
+                    # Try to extract distance from ability description
+                    distance_match = re.search(r'scout\s*\(?(\d+)', ability.description.lower())
+                    if distance_match:
+                        return True, float(distance_match.group(1))
+                    return True, 6.0
+        
+        # Check model-level abilities
+        for ability in self.abilities:
+            # Handle both string and ability object cases
+            if isinstance(ability, str):
+                if "scout" in ability.lower():
+                    # Try to extract distance from ability description
+                    distance_match = re.search(r'scout\s*\(?(\d+)', ability.lower())
+                    if distance_match:
+                        return True, float(distance_match.group(1))
+                    return True, 6.0
+            else:
+                # Ability object with name and description attributes
+                if hasattr(ability, 'name') and ability.name and "scout" in ability.name.lower():
+                    # Try to extract distance from ability name
+                    distance_match = re.search(r'scout\s*\(?(\d+)', ability.name.lower())
+                    if distance_match:
+                        return True, float(distance_match.group(1))
+                    return True, 6.0
+                
+                if hasattr(ability, 'description') and ability.description and "scout" in ability.description.lower():
+                    # Try to extract distance from ability description
+                    distance_match = re.search(r'scout\s*\(?(\d+)', ability.description.lower())
+                    if distance_match:
+                        return True, float(distance_match.group(1))
+                    return True, 6.0
+        
+        return False, 0.0
+    
+    def get_scout_distance_normalized(self, max_scout_distance: float = 12.0) -> float:
+        """Get the normalized scout distance for deployment considerations.
+        
+        Args:
+            max_scout_distance (float): Maximum possible scout distance for normalization
+            
+        Returns:
+            float: Normalized scout distance (0.0 to 1.0), where 1.0 represents maximum scout mobility
+        """
+        has_scout_ability, scout_distance = self.has_scout()
+        if not has_scout_ability:
+            return 0.0
+        
+        return min(scout_distance / max_scout_distance, 1.0)
+
     def get_max_weapon_range(self) -> float:
         """Get the maximum range of all weapons in the unit."""
         max_range = 0

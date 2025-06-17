@@ -482,6 +482,15 @@ def run_training_episode(episode_num: int, agents: dict) -> dict:
                     # Command phase - all players gain 1 CP at the start
                     game.start_command_phase()
                     episode_stats['commands_selected'][current_player_key][command] += 1
+                    
+                    # Update objective control at the start of each turn (like in manual mode)
+                    for obj in game.map.objectives:
+                        if isinstance(obj.location, ObjectivePoint):
+                            obj.location.update_control(game)
+                        if obj.check_completion(game):
+                            logger.debug(f"Objective {obj.name} completed by {current_player.name}!")
+                            current_player.add_score(obj.points)
+                    
                     tactical_agent.command_phase(command)
                     game.next_phase()
                     

@@ -257,8 +257,9 @@ class WargearProfile:
         elif strength == target_toughness:
             print(f"\t\tStrength: {strength}, Toughness: {target_toughness}, dice_roll: {dice_roll} -> {dice_roll >= 4}")
             return dice_roll >= 4
-        elif strength <= (target_toughness / 2):
-            print(f"\t\tStrength: {strength}, Toughness: {target_toughness}, dice_roll: {dice_roll} -> {dice_roll >= 5}")
+        elif strength < (target_toughness / 2):
+            print(f"\t\tStrength: {strength}, Toughness: {target_toughness}, dice_roll: {dice_roll} -> {dice_roll >= 6}")
+            return dice_roll >= 5
         else:
             print(f"\t\tStrength: {strength}, Toughness: {target_toughness}, dice_roll: {dice_roll} -> {dice_roll >= 6}")
             return dice_roll >= 6
@@ -277,7 +278,7 @@ class WargearProfile:
             # TODO - implement AI selection of target model
             return target.models[0]
 
-    def damage_target(self, target: 'Unit', attacker: 'Model', attack_instance: Dict) -> None:
+    def damage_target(self, target_model: 'Model', attacker: 'Model', attack_instance: Dict) -> int:
         damage_value = self.damage.roll() if isinstance(self.damage, DiceCollection) else self.damage
         if self.is_melta() and attack_instance['below_half_distance']:
             damage_value += self.is_melta()
