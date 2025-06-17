@@ -1,4 +1,4 @@
-from typing import List, Tuple, Dict, Any, Optional
+from typing import List, Tuple, Dict, Any, Optional, TYPE_CHECKING
 import logging
 import torch
 from abc import ABC, abstractmethod
@@ -6,6 +6,9 @@ from abc import ABC, abstractmethod
 from warhammer40k_ai.classes.game import Game
 from warhammer40k_ai.classes.player import Player
 from warhammer40k_ai.utility.calcs import get_dist
+
+if TYPE_CHECKING:
+    from warhammer40k_ai.classes.unit import Unit
 
 logger = logging.getLogger(__name__)
 
