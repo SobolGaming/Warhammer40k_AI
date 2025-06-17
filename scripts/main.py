@@ -183,13 +183,23 @@ def auto_deploy_units(game: Game, player1: Player, player2: Player):
                 y = y_start + (row + 1) * y_step
                 z = game.map.get_height_at_point(x, y)
                 
-                # Deploy each model in the unit
-                for j, model in enumerate(unit.models):
-                    model_x = x + (j % 3) * 0.5  # Spread models slightly
-                    model_y = y + (j // 3) * 0.5
-                    model_z = game.map.get_height_at_point(model_x, model_y)
-                    model_facing = 0.0  # Default facing direction
-                    model.set_location(model_x, model_y, model_z, model_facing)
+                # Use the same model positioning logic as human players
+                model_positions = unit.calculate_model_positions(x, y, game.map)
+                
+                if model_positions and len(model_positions) == len(unit.models):
+                    # Successfully calculated positions for all models
+                    for model, position in zip(unit.models, model_positions):
+                        model_x, model_y, model_z, model_facing = position
+                        model.set_location(model_x, model_y, model_z, model_facing)
+                else:
+                    # Fallback to simple positioning if calculate_model_positions fails
+                    logger.debug(f"Using fallback positioning for {unit.name}")
+                    for j, model in enumerate(unit.models):
+                        model_x = x + (j % 3) * 0.5  # Spread models slightly
+                        model_y = y + (j // 3) * 0.5
+                        model_z = game.map.get_height_at_point(model_x, model_y)
+                        model_facing = 0.0  # Default facing direction
+                        model.set_location(model_x, model_y, model_z, model_facing)
                 
                 # Let unit position be calculated from model positions (don't override!)
                 unit.deployed = True

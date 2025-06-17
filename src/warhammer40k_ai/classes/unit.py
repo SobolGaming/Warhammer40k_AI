@@ -1083,18 +1083,25 @@ class Unit:
                     x, y = start_x_game, start_y_game
                     z = game_map.get_height_at_point(x, y)
                     facing = 0.0
-                    # Try to find a strategic position within coherency distance
-                    valid_positions = self._find_strategic_position(model, [(x, y, z, facing)], game_map)
+                    # For the first model, check if the position is valid
+                    if self._is_valid_position(x, y, z, facing, game_map, positions, model):
+                        positions.append((x, y, z, facing))
+                        placed = True
+                    else:
+                        # Try to find a strategic position within coherency distance
+                        valid_positions = self._find_strategic_position(model, [(x, y, z, facing)], game_map)
+                        if valid_positions:
+                            positions.append(valid_positions[0])
+                            placed = True
                 else:
                     # Try to find a strategic position within coherency distance
                     valid_positions = self._find_strategic_position(model, positions, game_map)
+                    if valid_positions:
+                        positions.append(valid_positions[0])
+                        placed = True
 
-                if not valid_positions:
+                if not placed:
                     attempts += 1
-                    continue
-
-                positions.append(valid_positions[0])
-                placed = True
                 # Check collision with all models in the unit, including the current one
                 #for x, y, z, facing in valid_positions:
                 #    if not self._collides_with_unit_models(x, y, z, facing, positions):
@@ -1110,14 +1117,16 @@ class Unit:
         # We return game coordinates, not screen coordinates
         return positions
 
-    def _create_potential_base(self, x: float, y: float, z: float, facing: float):
-        # Create a new base with the same properties as the model's base
-        new_base = copy.deepcopy(self.models[0].model_base)
+    def _create_potential_base(self, x: float, y: float, z: float, facing: float, model: Model = None):
+        # Create a new base with the same properties as the specified model's base
+        if model is None:
+            model = self.models[0]  # Default to first model
+        new_base = copy.deepcopy(model.model_base)
         new_base.x, new_base.y, new_base.z = x, y, z
         new_base.set_facing(facing)
         return new_base
 
-    def _collides_with_unit_models(self, x: float, y: float, z: float, facing: float, positions: List[Tuple[float, float, float, float]]) -> bool:
+    def _collides_with_unit_models(self, x: float, y: float, z: float, facing: float, positions: List[Tuple[float, float, float, float]], model: Model = None) -> bool:
         """Check if the model at the given position collides with any other model in the unit."""
         if not positions:
             return False
@@ -1125,18 +1134,20 @@ class Unit:
         if len(self.models) == 1:
             return False
 
-        new_base = self._create_potential_base(x, y, z, facing)
+        new_base = self._create_potential_base(x, y, z, facing, model)
 
-        for pos in positions:
-            other_base = self._create_potential_base(pos[0], pos[1], pos[2], pos[3])
+        for i, pos in enumerate(positions):
+            # Use the corresponding model for each position
+            other_model = self.models[i] if i < len(self.models) else self.models[0]
+            other_base = self._create_potential_base(pos[0], pos[1], pos[2], pos[3], other_model)
             if new_base.collides_with(other_base):
                 logger.debug(f"Collision detected!")
                 return True
         return False
 
-    def _is_coherent_within_unit(self, x: float, y: float, z: float, facing: float, positions: List[Tuple[float, float, float, float]]) -> bool:
+    def _is_coherent_within_unit(self, x: float, y: float, z: float, facing: float, positions: List[Tuple[float, float, float, float]], model: Model = None) -> bool:
         """Check if the model at the given position is within coherency with the unit."""
-        new_base = self._create_potential_base(x, y, z, facing)
+        new_base = self._create_potential_base(x, y, z, facing, model)
 
         # Check against already placed models
         found_neighbors = 0
@@ -1145,8 +1156,10 @@ class Unit:
         if current_neighbors_needed == 0:
             return True
 
-        for pos in positions:
-            other_base = self._create_potential_base(pos[0], pos[1], pos[2] if len(pos) > 2 else 0.0, pos[3] if len(pos) > 3 else facing)
+        for i, pos in enumerate(positions):
+            # Use the corresponding model for each position
+            other_model = self.models[i] if i < len(self.models) else self.models[0]
+            other_base = self._create_potential_base(pos[0], pos[1], pos[2] if len(pos) > 2 else 0.0, pos[3] if len(pos) > 3 else facing, other_model)
             if new_base.edge_to_edge_distance(other_base) <= self.coherency_distance:
                 found_neighbors += 1
                 if found_neighbors >= current_neighbors_needed:
@@ -1169,13 +1182,14 @@ class Unit:
                 y = last_y + distance * dy
                 z = game_map.get_height_at_point(x, y)
                 
-                if self._is_valid_position(x, y, z, facing, game_map, placed_positions):
+                if self._is_valid_position(x, y, z, facing, game_map, placed_positions, model):
                     valid_positions.append((x, y, z, facing))
                     #return valid_positions
         return valid_positions
 
-    def _is_valid_position(self, x: float, y: float, z: float, facing: float, game_map: 'Map', placed_positions: List[Tuple[float, float, float, float]]) -> bool:
-        model = self.models[0]  # Use the first model as a reference
+    def _is_valid_position(self, x: float, y: float, z: float, facing: float, game_map: 'Map', placed_positions: List[Tuple[float, float, float, float]], model: Model = None) -> bool:
+        if model is None:
+            model = self.models[0]  # Use the first model as a reference
         if not game_map.is_within_boundary(model, (x, y)):
             return False
         if game_map.check_collision_with_obstacles(model, (x, y)):
@@ -1184,9 +1198,9 @@ class Unit:
             return False
         if game_map.check_collision_with_other_enemy_units(model, (x, y)):
             return False
-        if self._collides_with_unit_models(x, y, z, facing, placed_positions):
+        if self._collides_with_unit_models(x, y, z, facing, placed_positions, model):
             return False
-        if not self._is_coherent_within_unit(x, y, z, facing, placed_positions):
+        if not self._is_coherent_within_unit(x, y, z, facing, placed_positions, model):
             return False
         return True
 
