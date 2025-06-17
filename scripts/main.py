@@ -917,9 +917,9 @@ def main_game_loop() -> None:
                 game_view.on_mouse_scroll(*mouse_pos, event.y)
                 
                 # Only handle zoom if scrolling wasn't handled by UI elements
-                if not (game_view.show_unit_details or 
-                        game_view.player1_roster.rect.collidepoint(mouse_pos) or 
-                        game_view.player2_roster.rect.collidepoint(mouse_pos)):
+                if not (game_view.detailed_unit or 
+                        game_view.left_roster_pane.rect.collidepoint(mouse_pos) or 
+                        game_view.right_roster_pane.rect.collidepoint(mouse_pos)):
                     game_view.zoom_level = handle_zoom(game_view.zoom_level, event)
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE and game_state == GameState.SETUP:
@@ -934,8 +934,8 @@ def main_game_loop() -> None:
                     # Close unit details panel or deselect units
                     game_view.close_unit_details()
                     game_view.selected_unit = None
-                    game_view.player1_roster.selected_unit = None
-                    game_view.player2_roster.selected_unit = None
+                    game_view.left_roster_pane.selected_unit = None
+                    game_view.right_roster_pane.selected_unit = None
                 else:
                     # Pass other key events to game_view for handling (including detail panel scrolling)
                     game_view.on_key_press(event.key)
