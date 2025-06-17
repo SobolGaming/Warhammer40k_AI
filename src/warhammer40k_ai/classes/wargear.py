@@ -258,7 +258,7 @@ class WargearProfile:
             print(f"\t\tStrength: {strength}, Toughness: {target_toughness}, dice_roll: {dice_roll} -> {dice_roll >= 4}")
             return dice_roll >= 4
         elif strength < (target_toughness / 2):
-            print(f"\t\tStrength: {strength}, Toughness: {target_toughness}, dice_roll: {dice_roll} -> {dice_roll >= 6}")
+            print(f"\t\tStrength: {strength}, Toughness: {target_toughness}, dice_roll: {dice_roll} -> {dice_roll >= 5}")
             return dice_roll >= 5
         else:
             print(f"\t\tStrength: {strength}, Toughness: {target_toughness}, dice_roll: {dice_roll} -> {dice_roll >= 6}")
