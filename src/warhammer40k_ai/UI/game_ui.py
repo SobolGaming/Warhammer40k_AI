@@ -474,7 +474,12 @@ class UnitDetailPanel(pygame.sprite.Sprite):
             y_pos += 25
             
             for ability in unit.possible_abilities[:5]:  # Show first 5 abilities
-                ability_name = self.font_small.render(f"• {ability.name}", True, TEXT_ACCENT)
+                # Include parameter in ability name if available (e.g., "Feel No Pain 5+")
+                ability_display_name = ability.name
+                if hasattr(ability, 'parameter') and ability.parameter:
+                    ability_display_name = f"{ability.name} {ability.parameter}"
+                
+                ability_name = self.font_small.render(f"• {ability_display_name}", True, TEXT_ACCENT)
                 surface.blit(ability_name, (x_left + 5, y_pos))
                 y_pos += 18
                 
@@ -497,6 +502,15 @@ class UnitDetailPanel(pygame.sprite.Sprite):
             enh_name = self.font_small.render(f"• {unit.enhancement.name} ({unit.enhancement.points}pts)", True, TEXT_ACCENT)
             surface.blit(enh_name, (x_left + 5, y_pos))
             y_pos += 18
+            
+            # Enhancement description
+            if hasattr(unit.enhancement, 'description') and unit.enhancement.description:
+                desc_wrapped = self.wrap_text(unit.enhancement.description, self.font_tiny, self.width - 40)
+                for line in desc_wrapped:
+                    desc_text = self.font_tiny.render(line, True, TEXT_SECONDARY)
+                    surface.blit(desc_text, (x_left + 10, y_pos))
+                    y_pos += 12
+                y_pos += 5  # Extra spacing after description
         
         # Calculate max scroll
         total_content_height = y_pos - (y + 15) + self.scroll_offset
@@ -595,17 +609,13 @@ class UnitDetailPanel(pygame.sprite.Sprite):
             surface.blit(stats_text, (x_pos, y_pos))
             y_pos += 12
         
-        # Keywords on next line
+        # Keywords on next line (single line, no wrapping)
         if hasattr(profile, 'keywords') and profile.keywords:
             keywords_str = ", ".join(profile.keywords)
             if keywords_str:
-                # Wrap keywords if too long
-                max_keyword_width = self.width - x_pos - 40
-                keywords_wrapped = self.wrap_text(f"Keywords: {keywords_str}", self.font_tiny, max_keyword_width)
-                for line in keywords_wrapped:
-                    keyword_text = self.font_tiny.render(f"        {line}", True, TEXT_ACCENT)
-                    surface.blit(keyword_text, (x_pos, y_pos))
-                    y_pos += 12
+                keyword_text = self.font_tiny.render(f"        Keywords: {keywords_str}", True, TEXT_ACCENT)
+                surface.blit(keyword_text, (x_pos, y_pos))
+                y_pos += 12
         
         return y_pos + 3  # Add small spacing after profile
 
