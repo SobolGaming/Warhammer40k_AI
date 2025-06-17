@@ -1070,9 +1070,9 @@ class Unit:
         positions = seeded_positions.copy()
         max_attempts = 100  # Maximum number of attempts to place each model
 
-        # Convert start position (mouse position) to game coordinates
-        start_x_game = start_x / zoom_level
-        start_y_game = start_y / zoom_level
+        # start_x and start_y are already in game coordinates from the UI
+        start_x_game = start_x
+        start_y_game = start_y
 
         for i, model in enumerate(self.models):
             placed = False

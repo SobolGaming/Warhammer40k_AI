@@ -50,7 +50,8 @@ class GameState:
 MIN_ZOOM = 1.0
 MAX_ZOOM = 2.0
 ZOOM_SPEED = 0.1
-PAN_SPEED = 5
+PAN_SPEED = 15  # Increased from 5 for faster keyboard panning
+MOUSE_PAN_SPEED = 1.0  # New constant for mouse panning sensitivity
 
 # Enhanced constants for the roster panes
 ROSTER_PANE_WIDTH = 350  # Wider for more information
@@ -745,6 +746,11 @@ class GameView:
         self.detail_panel_pos = (0, 0)
         self.unit_detail_panel = UnitDetailPanel()
         
+        # Mouse panning support
+        self.panning = False
+        self.pan_start_pos = (0, 0)
+        self.pan_start_offset = (0, 0)
+        
         # Create roster panes with reference to all units for color correlation
         self.left_roster_pane = RosterPane(0, 0, ROSTER_PANE_WIDTH, BATTLEFIELD_HEIGHT - INFO_PANE_HEIGHT, 
                                          player1.get_army().units, f"Player 1 ({player1.name})")
@@ -783,8 +789,9 @@ class GameView:
                 self.selected_unit = self.right_roster_pane.selected_unit
             # Check if click is on the battlefield and a unit is selected
             elif self.selected_unit and not self.selected_unit.deployed and ROSTER_PANE_WIDTH < x < BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH:
-                battlefield_x = (x - ROSTER_PANE_WIDTH) / TILE_SIZE
-                battlefield_y = y / TILE_SIZE
+                # Convert screen coordinates to game coordinates (accounting for zoom and pan)
+                battlefield_x = (x - ROSTER_PANE_WIDTH - self.offset_x) / (TILE_SIZE * self.zoom_level)
+                battlefield_y = (y - self.offset_y) / (TILE_SIZE * self.zoom_level)
                 
                 original_unit_position = self.selected_unit.get_position() if self.selected_unit.position else None
                 original_model_positions = [model.get_location() for model in self.selected_unit.models] if self.selected_unit else []
@@ -818,11 +825,37 @@ class GameView:
                 if self.detailed_unit:
                     self.close_unit_details()
         
+        elif button == 2:  # Middle mouse button - start panning
+            # Only allow panning if mouse is over the battlefield
+            if ROSTER_PANE_WIDTH < x < BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH:
+                self.panning = True
+                self.pan_start_pos = (x, y)
+                self.pan_start_offset = (self.offset_x, self.offset_y)
+        
         elif button == 3:  # Right mouse button - show unit details
             hovered_unit, _ = self.get_hovered_unit(x, y)
             if hovered_unit:
                 self.detailed_unit = hovered_unit
                 self.detail_panel_pos = (x, y)
+
+    def on_mouse_release(self, x, y, button):
+        """Handle mouse button release events"""
+        if button == 2:  # Middle mouse button - stop panning
+            self.panning = False
+
+    def on_mouse_motion(self, x, y):
+        """Handle mouse motion events"""
+        if self.panning:
+            # Calculate pan delta
+            dx = x - self.pan_start_pos[0]
+            dy = y - self.pan_start_pos[1]
+            
+            # Apply panning with sensitivity adjustment
+            self.offset_x = self.pan_start_offset[0] + dx * MOUSE_PAN_SPEED
+            self.offset_y = self.pan_start_offset[1] + dy * MOUSE_PAN_SPEED
+            
+            # Apply panning limits
+            self.offset_x, self.offset_y = self._apply_pan_limits(self.offset_x, self.offset_y)
 
     def on_mouse_scroll(self, x, y, scroll_y):
         """Handle mouse scroll events"""
@@ -840,6 +873,20 @@ class GameView:
             self.left_roster_pane.scroll(-scroll_y * 30)  # Scroll speed
         elif self.right_roster_pane.rect.collidepoint(x, y):
             self.right_roster_pane.scroll(-scroll_y * 30)
+        
+        # PRIORITY 3: Handle battlefield panning with Shift+Scroll (alternative to middle mouse)
+        elif ROSTER_PANE_WIDTH < x < BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH:
+            keys = pygame.key.get_pressed()
+            if keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]:
+                # Horizontal panning with Shift+Scroll
+                pan_delta = scroll_y * 20 * MOUSE_PAN_SPEED
+                self.offset_x += pan_delta
+                self.offset_x, self.offset_y = self._apply_pan_limits(self.offset_x, self.offset_y)
+            elif keys[pygame.K_LCTRL] or keys[pygame.K_RCTRL]:
+                # Vertical panning with Ctrl+Scroll
+                pan_delta = scroll_y * 20 * MOUSE_PAN_SPEED
+                self.offset_y += pan_delta
+                self.offset_x, self.offset_y = self._apply_pan_limits(self.offset_x, self.offset_y)
 
     def reset_unit_position(self, unit, original_unit_position, original_model_positions):
         if original_unit_position:
@@ -985,6 +1032,15 @@ class GameView:
         self.detailed_unit = None
         # Reset scroll position when closing
         self.unit_detail_panel.scroll_offset = 0
+
+    def _apply_pan_limits(self, offset_x: int, offset_y: int) -> Tuple[int, int]:
+        """Apply panning limits to prevent moving outside the battlefield"""
+        # Limit panning to prevent moving outside the grid
+        max_offset_x = max(0, int(BATTLEFIELD_WIDTH * self.zoom_level) - BATTLEFIELD_WIDTH)
+        max_offset_y = max(0, int(BATTLEFIELD_HEIGHT * self.zoom_level) - BATTLEFIELD_HEIGHT)
+        limited_offset_x = max(-max_offset_x, min(0, offset_x))
+        limited_offset_y = max(-max_offset_y, min(0, offset_y))
+        return limited_offset_x, limited_offset_y
 
 
 ### Battlefield drawing functions
@@ -1490,15 +1546,18 @@ def handle_zoom(zoom_level: float, event: pygame.event.Event) -> float:
     return max(MIN_ZOOM, min(MAX_ZOOM, new_zoom))
 
 def handle_pan(keys_pressed: Dict[int, bool], offset_x: int, offset_y: int, zoom_level: float) -> Tuple[int, int]:
-    pan_speed = int(PAN_SPEED / zoom_level)
+    # Improved pan speed that doesn't get slower when zoomed in (but can be faster when zoomed out)
+    pan_speed = max(PAN_SPEED, int(PAN_SPEED * zoom_level))
     new_offset_x, new_offset_y = offset_x, offset_y
-    if keys_pressed[pygame.K_LEFT]:
+    
+    # Support both arrow keys and WASD
+    if keys_pressed[pygame.K_LEFT] or keys_pressed[pygame.K_a]:
         new_offset_x += pan_speed
-    if keys_pressed[pygame.K_RIGHT]:
+    if keys_pressed[pygame.K_RIGHT] or keys_pressed[pygame.K_d]:
         new_offset_x -= pan_speed
-    if keys_pressed[pygame.K_UP]:
+    if keys_pressed[pygame.K_UP] or keys_pressed[pygame.K_w]:
         new_offset_y += pan_speed
-    if keys_pressed[pygame.K_DOWN]:
+    if keys_pressed[pygame.K_DOWN] or keys_pressed[pygame.K_s]:
         new_offset_y -= pan_speed
     
     # Limit panning to prevent moving outside the grid

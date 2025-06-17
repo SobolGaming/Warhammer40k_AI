@@ -909,6 +909,12 @@ def main_game_loop() -> None:
                             print("No unit at this position")
                 else:
                     game_view.on_mouse_press(*event.pos, event.button)
+            elif event.type == pygame.MOUSEBUTTONUP:
+                # Handle mouse button releases
+                game_view.on_mouse_release(*event.pos, event.button)
+            elif event.type == pygame.MOUSEMOTION:
+                # Handle mouse motion for panning
+                game_view.on_mouse_motion(*event.pos)
             elif event.type == pygame.MOUSEWHEEL:
                 # Handle mouse wheel scrolling
                 mouse_pos = pygame.mouse.get_pos()
@@ -917,9 +923,13 @@ def main_game_loop() -> None:
                 game_view.on_mouse_scroll(*mouse_pos, event.y)
                 
                 # Only handle zoom if scrolling wasn't handled by UI elements
+                keys = pygame.key.get_pressed()
+                battlefield_area = (ROSTER_PANE_WIDTH < mouse_pos[0] < BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH)
                 if not (game_view.detailed_unit or 
                         game_view.left_roster_pane.rect.collidepoint(mouse_pos) or 
-                        game_view.right_roster_pane.rect.collidepoint(mouse_pos)):
+                        game_view.right_roster_pane.rect.collidepoint(mouse_pos) or
+                        (battlefield_area and (keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT] or 
+                                             keys[pygame.K_LCTRL] or keys[pygame.K_RCTRL]))):
                     game_view.zoom_level = handle_zoom(game_view.zoom_level, event)
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE and game_state == GameState.SETUP:
