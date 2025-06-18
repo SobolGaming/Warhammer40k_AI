@@ -1,6 +1,7 @@
 import pygame
 import textwrap
 import math
+import random
 from typing import Optional, Tuple, Dict, List
 from warhammer40k_ai.classes.unit import Unit
 from warhammer40k_ai.classes.model import Model
@@ -33,12 +34,23 @@ PANEL_BORDER = (63, 63, 70)  # Subtle border
 BUTTON_BG = (60, 60, 67)  # Button background
 BUTTON_HOVER = (75, 75, 82)  # Button hover
 BUTTON_SELECTED = (0, 122, 204)  # Selected button
+BUTTON_DISABLED = (40, 40, 40)  # Disabled button
 TEXT_PRIMARY = (255, 255, 255)  # Primary text
 TEXT_SECONDARY = (200, 200, 200)  # Secondary text
 TEXT_ACCENT = (100, 149, 237)  # Accent text
+TEXT_DISABLED = (100, 100, 100)  # Disabled text
 HEALTH_GOOD = (76, 175, 80)  # Green for good health
 HEALTH_DAMAGED = (255, 193, 7)  # Yellow for damaged
 HEALTH_CRITICAL = (244, 67, 54)  # Red for critical
+
+# Reserves UI Colors
+RESERVES_BUTTON_BG = (140, 80, 200)  # Brighter purple for reserves
+RESERVES_BUTTON_HOVER = (160, 100, 220)  # Lighter purple
+STRATEGIC_RESERVES_BG = (60, 120, 200)  # Brighter blue for strategic reserves
+STRATEGIC_RESERVES_HOVER = (80, 140, 220)  # Lighter blue
+STRATEGIC_BUTTON_BG = (60, 120, 200)  # Brighter blue for strategic button
+DEPLOY_BUTTON_BG = (40, 160, 40)  # Brighter green for deploy
+DEPLOY_BUTTON_HOVER = (60, 180, 60)  # Lighter green
 
 # Game states
 class GameState:
@@ -134,6 +146,7 @@ class RosterPane(pygame.sprite.Sprite):
         self.max_scroll = 0
         self.create_buttons()
         self.game_map = None
+        self.game_view = None  # Reference to GameView for deployment dialog
 
     def create_buttons(self):
         self.buttons = []
@@ -160,8 +173,32 @@ class RosterPane(pygame.sprite.Sprite):
         if button == 1:  # Left mouse button
             for button_rect, unit in self.buttons:
                 if button_rect.collidepoint(x, y):
-                    self.selected_unit = unit
-                    return
+                    # Check if this is during deployment phase and unit is not deployed
+                    if not unit.deployed and self.game_view and self.game_view.ui_interface:
+                        # Show deployment choice dialog
+                        def on_deployment_choice(choice):
+                            if choice == 'deploy':
+                                unit.set_reserve_status('deployed')
+                                unit.deployed = False  # Mark as ready for deployment but not yet placed
+                                self.selected_unit = unit  # Select for battlefield placement
+                                self.game_view.selected_unit = unit  # Also update GameView's selection
+                            elif choice == 'reserves':
+                                unit.set_reserve_status('reserves')
+                                unit.deployed = False  # Not deployed, in reserves
+                                self.selected_unit = None
+                                self.game_view.selected_unit = None  # Clear GameView's selection
+                            elif choice == 'strategic_reserves':
+                                unit.set_reserve_status('strategic_reserves')
+                                unit.deployed = False  # Not deployed, in strategic reserves
+                                self.selected_unit = None
+                                self.game_view.selected_unit = None  # Clear GameView's selection
+                        
+                        self.game_view.ui_interface.deployment_choice_dialog.show(unit, on_deployment_choice)
+                        return
+                    else:
+                        # Normal unit selection (for deployed units or non-deployment phases)
+                        self.selected_unit = unit
+                        return
             self.selected_unit = None
 
     def draw(self, surface, game):
@@ -278,8 +315,15 @@ class RosterPane(pygame.sprite.Sprite):
         
         health_text = f"Health: {current_wounds}/{total_wounds}"
         if not unit.deployed:
-            health_text += " (Not Deployed)"
-            health_color = TEXT_SECONDARY
+            if unit.reserve_status == 'reserves':
+                health_text += " (Reserves)"
+                health_color = RESERVES_BUTTON_BG
+            elif unit.reserve_status == 'strategic_reserves':
+                health_text += " (Strategic Reserves)"
+                health_color = STRATEGIC_BUTTON_BG
+            else:
+                health_text += " (Not Deployed)"
+                health_color = TEXT_SECONDARY
         
         health_surface = self.font_small.render(health_text, True, health_color)
         surface.blit(health_surface, (x_left + icon_size + 8, y_offset))
@@ -366,21 +410,33 @@ class InfoPane(pygame.sprite.Sprite):
     def __init__(self, left: int, bottom: int, width: int, height: int, selected_unit: Unit):
         super().__init__()
         self.rect = pygame.Rect(left, bottom, width, height)
-        # Use system fonts for better clarity
+        self.selected_unit = selected_unit
+        self.background_color = PANEL_BG
+        
+        # Fonts
         try:
             self.font_large = pygame.font.SysFont('Arial', FONT_LARGE, bold=True)
             self.font_medium = pygame.font.SysFont('Arial', FONT_MEDIUM, bold=False)
             self.font_small = pygame.font.SysFont('Arial', FONT_SMALL, bold=False)
+            self.font_tiny = pygame.font.SysFont('Arial', FONT_TINY, bold=False)
         except:
-            # Fallback to default fonts if system fonts fail
             self.font_large = pygame.font.Font(None, FONT_LARGE)
             self.font_medium = pygame.font.Font(None, FONT_MEDIUM)
             self.font_small = pygame.font.Font(None, FONT_SMALL)
-        self.background_color = PANEL_BG
-        self.text_color = TEXT_PRIMARY
-        self.selected_unit = selected_unit
+            self.font_tiny = pygame.font.Font(None, FONT_TINY)
+        
 
-    def draw(self, surface: pygame.Surface, game: Game):
+
+    def handle_click(self, x: int, y: int, game_view) -> bool:
+        """Handle mouse clicks on the info pane. Returns True if click was handled."""
+        # No interactive elements in info pane anymore
+        return False
+    
+    def update_hover(self, x: int, y: int):
+        """Update hover state for interactive elements."""
+        pass  # No interactive elements to hover over
+
+    def draw(self, surface: pygame.Surface, game: Game, game_view=None):
         # Draw background
         pygame.draw.rect(surface, self.background_color, self.rect)
         pygame.draw.rect(surface, PANEL_BORDER, self.rect, 2)
@@ -394,27 +450,49 @@ class InfoPane(pygame.sprite.Sprite):
         x_center = self.rect.centerx
         x_right = self.rect.right - 15
 
-        # Game status line 1: Turn and Phase
-        game_status = f"Turn {game.turn} - {game.phase.name.replace('_', ' ').title()}"
-        game_text = self.font_medium.render(game_status, True, TEXT_PRIMARY)
+        # Game status line 1: Turn and Phase (or Deployment Phase)
+        # Check if we're in deployment phase by looking for undeployed units
+        current_army = current_player.get_army()
+        opponent_army = opponent.get_army()
+        
+        # Consider it deployment phase if any units are not deployed
+        in_deployment_phase = False
+        if current_army and opponent_army:
+            undeployed_units = [u for u in current_army.units + opponent_army.units if not u.deployed]
+            in_deployment_phase = len(undeployed_units) > 0 and game.turn == 1
+        
+        if in_deployment_phase:
+            game_status = "DEPLOYMENT PHASE"
+            text_color = TEXT_ACCENT  # Use accent color to highlight deployment phase
+        else:
+            game_status = f"Turn {game.turn} - {game.phase.name.replace('_', ' ').title()}"
+            text_color = TEXT_PRIMARY
+        
+        game_text = self.font_medium.render(game_status, True, text_color)
         game_rect = game_text.get_rect(center=(x_center, y_offset + 10))
         surface.blit(game_text, game_rect)
         
         y_offset += 30
         
-        # Player information
-        current_player_text = f"{current_player.name}: {current_player.command_points} CP | Score: {current_player.score}"
-        player_surface = self.font_small.render(current_player_text, True, TEXT_ACCENT)
-        surface.blit(player_surface, (x_left, y_offset))
-        
-        opponent_text = f"{opponent.name}: {opponent.command_points} CP | Score: {opponent.score}"
-        opponent_surface = self.font_small.render(opponent_text, True, TEXT_SECONDARY)
-        opponent_rect = opponent_surface.get_rect()
-        surface.blit(opponent_surface, (x_right - opponent_rect.width, y_offset))
+        # Player information or deployment status
+        if game_view and hasattr(game_view, 'selected_unit') and game_view.selected_unit and not game_view.selected_unit.deployed:
+            deployment_text = f"📍 Click battlefield to deploy: {game_view.selected_unit.name}"
+            deployment_surface = self.font_small.render(deployment_text, True, DEPLOY_BUTTON_BG)
+            deployment_rect = deployment_surface.get_rect(center=(x_center, y_offset))
+            surface.blit(deployment_surface, deployment_rect)
+        else:
+            current_player_text = f"{current_player.name}: {current_player.command_points} CP | Score: {current_player.score}"
+            player_surface = self.font_small.render(current_player_text, True, TEXT_ACCENT)
+            surface.blit(player_surface, (x_left, y_offset))
+            
+            opponent_text = f"{opponent.name}: {opponent.command_points} CP | Score: {opponent.score}"
+            opponent_surface = self.font_small.render(opponent_text, True, TEXT_SECONDARY)
+            opponent_rect = opponent_surface.get_rect()
+            surface.blit(opponent_surface, (x_right - opponent_rect.width, y_offset))
         
         y_offset += 25
         
-        # Army status
+        # Army status or controls
         current_army = current_player.get_army()
         opponent_army = opponent.get_army()
         
@@ -426,6 +504,17 @@ class InfoPane(pygame.sprite.Sprite):
             army_text = self.font_small.render(army_status, True, TEXT_SECONDARY)
             army_rect = army_text.get_rect(center=(x_center, y_offset))
             surface.blit(army_text, army_rect)
+            
+            y_offset += 20
+            
+            # Show controls during deployment phase
+            if in_deployment_phase:
+                controls_text = "ENTER: Auto-deploy remaining | SPACE: Start game"
+                controls_surface = self.font_tiny.render(controls_text, True, TEXT_SECONDARY)
+                controls_rect = controls_surface.get_rect(center=(x_center, y_offset))
+                surface.blit(controls_surface, controls_rect)
+        
+        # No reserves button anymore - reserves selection happens in roster pane
 
 
 class UnitDetailPanel(pygame.sprite.Sprite):
@@ -705,30 +794,947 @@ class UnitDetailPanel(pygame.sprite.Sprite):
         return y_pos + 3  # Add small spacing after profile
 
     def wrap_text(self, text: str, font: pygame.font.Font, max_width: int) -> List[str]:
-        """Wrap text to fit within max_width"""
-        words = text.split(' ')
+        """Wrap text to fit within max_width pixels."""
         lines = []
-        current_line = []
+        words = text.split(' ')
+        current_line = ""
         
         for word in words:
-            test_line = ' '.join(current_line + [word])
+            test_line = current_line + (" " if current_line else "") + word
             if font.size(test_line)[0] <= max_width:
-                current_line.append(word)
+                current_line = test_line
             else:
                 if current_line:
-                    lines.append(' '.join(current_line))
-                    current_line = [word]
-                else:
-                    lines.append(word)  # Word is too long, add it anyway
+                    lines.append(current_line)
+                current_line = word
         
         if current_line:
-            lines.append(' '.join(current_line))
+            lines.append(current_line)
         
         return lines
 
 
+class DeploymentChoiceDialog:
+    """Simple dialog for choosing deployment option for a single unit"""
+    def __init__(self, screen_width: int, screen_height: int):
+        self.screen_width = screen_width
+        self.screen_height = screen_height
+        self.width = 300
+        self.height = 200
+        self.visible = False
+        self.unit = None
+        self.callback = None
+        
+        # Calculate position (center of screen)
+        self.x = (screen_width - self.width) // 2
+        self.y = (screen_height - self.height) // 2
+        
+        # Fonts
+        try:
+            self.font_medium = pygame.font.SysFont('Arial', FONT_MEDIUM, bold=True)
+            self.font_small = pygame.font.SysFont('Arial', FONT_SMALL, bold=False)
+        except:
+            self.font_medium = pygame.font.Font(None, FONT_MEDIUM)
+            self.font_small = pygame.font.Font(None, FONT_SMALL)
+        
+        # Button rectangles
+        button_width = 80
+        button_height = 30
+        button_spacing = 10
+        
+        start_x = self.x + (self.width - (3 * button_width + 2 * button_spacing)) // 2
+        button_y = self.y + self.height - 50
+        
+        self.deploy_button = pygame.Rect(start_x, button_y, button_width, button_height)
+        self.reserves_button = pygame.Rect(start_x + button_width + button_spacing, button_y, button_width, button_height)
+        self.strategic_button = pygame.Rect(start_x + 2 * (button_width + button_spacing), button_y, button_width, button_height)
+        
+        self.hovered_button = None
+    
+    def show(self, unit, callback):
+        """Show the dialog for the given unit"""
+        self.unit = unit
+        self.callback = callback
+        self.visible = True
+    
+    def hide(self):
+        """Hide the dialog"""
+        self.visible = False
+        self.unit = None
+        self.callback = None
+    
+    def handle_event(self, event):
+        """Handle pygame events"""
+        if not self.visible:
+            return False
+        
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            return self.handle_click(event.pos)
+        elif event.type == pygame.MOUSEMOTION:
+            self.update_hover(event.pos)
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                self.hide()
+                return True
+        
+        return True  # Consume all events when visible
+    
+    def handle_click(self, mouse_pos):
+        """Handle mouse clicks"""
+        if self.deploy_button.collidepoint(mouse_pos):
+            if self.callback:
+                self.callback('deploy')
+            self.hide()
+            return True
+        elif self.reserves_button.collidepoint(mouse_pos):
+            # Only allow reserves if unit has Deep Strike
+            if self.unit and self.unit.has_deep_strike():
+                if self.callback:
+                    self.callback('reserves')
+                self.hide()
+                return True
+            # If unit doesn't have Deep Strike, don't do anything but still consume the click
+            return True
+        elif self.strategic_button.collidepoint(mouse_pos):
+            if self.callback:
+                self.callback('strategic_reserves')
+            self.hide()
+            return True
+        
+        # Click outside dialog - close it
+        dialog_rect = pygame.Rect(self.x, self.y, self.width, self.height)
+        if not dialog_rect.collidepoint(mouse_pos):
+            self.hide()
+            return True
+        
+        return True
+    
+    def update_hover(self, mouse_pos):
+        """Update hover state"""
+        if self.deploy_button.collidepoint(mouse_pos):
+            self.hovered_button = 'deploy'
+        elif self.reserves_button.collidepoint(mouse_pos):
+            self.hovered_button = 'reserves'
+        elif self.strategic_button.collidepoint(mouse_pos):
+            self.hovered_button = 'strategic'
+        else:
+            self.hovered_button = None
+    
+    def draw(self, screen):
+        """Draw the dialog"""
+        if not self.visible or not self.unit:
+            return
+        
+        # Draw semi-transparent overlay
+        overlay = pygame.Surface((self.screen_width, self.screen_height))
+        overlay.set_alpha(128)
+        overlay.fill((0, 0, 0))
+        screen.blit(overlay, (0, 0))
+        
+        # Draw dialog background
+        dialog_rect = pygame.Rect(self.x, self.y, self.width, self.height)
+        pygame.draw.rect(screen, PANEL_BG, dialog_rect)
+        pygame.draw.rect(screen, PANEL_BORDER, dialog_rect, 3)
+        
+        # Draw title
+        title_text = self.font_medium.render(f"Deploy {self.unit.name}", True, TEXT_PRIMARY)
+        title_rect = title_text.get_rect(center=(self.x + self.width // 2, self.y + 30))
+        screen.blit(title_text, title_rect)
+        
+        # Draw instruction
+        instruction = "Choose deployment option:"
+        instruction_text = self.font_small.render(instruction, True, TEXT_SECONDARY)
+        instruction_rect = instruction_text.get_rect(center=(self.x + self.width // 2, self.y + 60))
+        screen.blit(instruction_text, instruction_rect)
+        
+        # Draw buttons
+        self.draw_button(screen, self.deploy_button, "Deploy", 'deploy', DEPLOY_BUTTON_BG)
+        
+        # Reserves button - only enabled if unit has Deep Strike
+        if self.unit.has_deep_strike():
+            self.draw_button(screen, self.reserves_button, "Reserves", 'reserves', RESERVES_BUTTON_BG)
+        else:
+            self.draw_button(screen, self.reserves_button, "Reserves", 'reserves', BUTTON_DISABLED, enabled=False)
+        
+        self.draw_button(screen, self.strategic_button, "Strategic", 'strategic', STRATEGIC_BUTTON_BG)
+        
+        # Draw help text
+        if self.unit.has_deep_strike():
+            help_text = "Reserves: Deep Strike ability required"
+        else:
+            help_text = "Reserves: Requires Deep Strike ability"
+        
+        help_surface = self.font_small.render(help_text, True, TEXT_SECONDARY)
+        help_rect = help_surface.get_rect(center=(self.x + self.width // 2, self.y + self.height - 20))
+        screen.blit(help_surface, help_rect)
+    
+    def draw_button(self, screen, rect, text, button_id, base_color, enabled=True):
+        """Draw a button with hover effects"""
+        if not enabled:
+            color = BUTTON_DISABLED
+            text_color = TEXT_DISABLED
+        elif self.hovered_button == button_id:
+            color = BUTTON_HOVER
+            text_color = TEXT_PRIMARY
+        else:
+            color = base_color
+            text_color = TEXT_PRIMARY
+        
+        pygame.draw.rect(screen, color, rect)
+        pygame.draw.rect(screen, PANEL_BORDER, rect, 2)
+        
+        button_text = self.font_small.render(text, True, text_color)
+        text_rect = button_text.get_rect(center=rect.center)
+        screen.blit(button_text, text_rect)
+
+
+class ReservesSelectionDialog:
+    """UI Dialog for selecting which units to place in reserves during deployment."""
+    
+    def __init__(self, screen_width: int, screen_height: int):
+        self.screen_width = screen_width
+        self.screen_height = screen_height
+        self.width = 800
+        self.height = 600
+        self.x = (screen_width - self.width) // 2
+        self.y = (screen_height - self.height) // 2
+        self.rect = pygame.Rect(self.x, self.y, self.width, self.height)
+        
+        # UI state
+        self.visible = False
+        self.player = None
+        self.units = []
+        self.reserves_decisions = {}  # unit_name -> 'deploy'/'reserves'/'strategic_reserves'
+        self.selected_unit = None
+        self.hovered_unit = None
+        self.scroll_offset = 0
+        self.max_scroll = 0
+        
+        # Fonts
+        try:
+            self.font_large = pygame.font.SysFont('Arial', 24, bold=True)
+            self.font_medium = pygame.font.SysFont('Arial', 18, bold=False)
+            self.font_small = pygame.font.SysFont('Arial', 14, bold=False)
+        except:
+            self.font_large = pygame.font.Font(None, 24)
+            self.font_medium = pygame.font.Font(None, 18)
+            self.font_small = pygame.font.Font(None, 14)
+            
+        # Button dimensions
+        self.unit_button_height = 100
+        self.button_width = self.width - 40
+        self.choice_button_width = 140
+        self.choice_button_height = 30
+        
+        # Complete callback
+        self.on_complete = None
+        
+    def show(self, player, on_complete_callback):
+        """Show the reserves selection dialog."""
+        self.visible = True
+        self.player = player
+        self.units = player.get_army().units
+        self.on_complete = on_complete_callback
+        
+        # Initialize all units to deploy by default
+        self.reserves_decisions = {unit.name: 'deploy' for unit in self.units}
+        
+        # Calculate scroll limits
+        total_height = len(self.units) * (self.unit_button_height + 10) + 100  # +100 for header/footer
+        visible_height = self.height - 100  # Account for header/footer
+        self.max_scroll = max(0, total_height - visible_height)
+        
+    def hide(self):
+        """Hide the reserves selection dialog."""
+        self.visible = False
+        self.player = None
+        self.units = []
+        self.reserves_decisions = {}
+        
+    def handle_event(self, event):
+        """Handle pygame events for the reserves dialog."""
+        if not self.visible:
+            return False
+            
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1:  # Left click
+                return self.handle_click(event.pos)
+            elif event.button == 4:  # Mouse wheel up
+                self.scroll_offset = max(0, self.scroll_offset - 30)
+                return True
+            elif event.button == 5:  # Mouse wheel down
+                self.scroll_offset = min(self.max_scroll, self.scroll_offset + 30)
+                return True
+                
+        elif event.type == pygame.MOUSEMOTION:
+            self.update_hover(event.pos)
+            return True
+            
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                self.hide()
+                return True
+            elif event.key == pygame.K_RETURN:
+                self.complete_selection()
+                return True
+                
+        return True  # Consume all events while visible
+        
+    def handle_click(self, mouse_pos):
+        """Handle mouse clicks in the reserves dialog."""
+        x, y = mouse_pos
+        
+        # Check if click is outside dialog
+        if not self.rect.collidepoint(x, y):
+            return True
+            
+        # Check complete button
+        complete_rect = pygame.Rect(self.x + self.width - 120, self.y + self.height - 50, 100, 30)
+        if complete_rect.collidepoint(x, y):
+            self.complete_selection()
+            return True
+            
+        # Check unit buttons and choice buttons
+        for i, unit in enumerate(self.units):
+            unit_y = self.y + 80 + i * (self.unit_button_height + 10) - self.scroll_offset
+            unit_rect = pygame.Rect(self.x + 20, unit_y, self.button_width, self.unit_button_height)
+            
+            if unit_rect.collidepoint(x, y):
+                # Check which choice button was clicked
+                choice_y = unit_y + 60
+                deploy_rect = pygame.Rect(self.x + 30, choice_y, self.choice_button_width, self.choice_button_height)
+                reserves_rect = pygame.Rect(self.x + 30 + self.choice_button_width + 10, choice_y, self.choice_button_width, self.choice_button_height)
+                strategic_rect = pygame.Rect(self.x + 30 + 2 * (self.choice_button_width + 10), choice_y, self.choice_button_width, self.choice_button_height)
+                
+                if deploy_rect.collidepoint(x, y):
+                    self.reserves_decisions[unit.name] = 'deploy'
+                elif reserves_rect.collidepoint(x, y) and self.can_use_reserves(unit):
+                    self.reserves_decisions[unit.name] = 'reserves'
+                elif strategic_rect.collidepoint(x, y):
+                    self.reserves_decisions[unit.name] = 'strategic_reserves'
+                
+                return True
+                
+        return True
+        
+    def update_hover(self, mouse_pos):
+        """Update hover state based on mouse position."""
+        x, y = mouse_pos
+        self.hovered_unit = None
+        
+        for i, unit in enumerate(self.units):
+            unit_y = self.y + 80 + i * (self.unit_button_height + 10) - self.scroll_offset
+            unit_rect = pygame.Rect(self.x + 20, unit_y, self.button_width, self.unit_button_height)
+            
+            if unit_rect.collidepoint(x, y):
+                self.hovered_unit = unit
+                break
+                
+    def can_use_reserves(self, unit):
+        """Check if a unit can use standard reserves (Deep Strike, etc.)."""
+        # Units with Deep Strike or similar abilities can use reserves
+        return unit.has_deep_strike() or "Deep Strike" in unit.keywords
+        
+    def complete_selection(self):
+        """Complete the reserves selection and call the callback."""
+        if self.on_complete:
+            self.on_complete(self.reserves_decisions)
+        self.hide()
+        
+    def draw(self, screen):
+        """Draw the reserves selection dialog."""
+        if not self.visible:
+            return
+            
+        # Draw backdrop
+        backdrop = pygame.Surface((self.screen_width, self.screen_height))
+        backdrop.set_alpha(128)
+        backdrop.fill(BLACK)
+        screen.blit(backdrop, (0, 0))
+        
+        # Draw main dialog
+        pygame.draw.rect(screen, PANEL_BG, self.rect)
+        pygame.draw.rect(screen, PANEL_BORDER, self.rect, 3)
+        
+        # Draw header
+        header_text = self.font_large.render(f"Reserves Selection - {self.player.name}", True, TEXT_PRIMARY)
+        screen.blit(header_text, (self.x + 20, self.y + 20))
+        
+        # Draw instructions
+        instructions = "Choose deployment options for each unit. Units with Deep Strike can use Reserves."
+        instr_text = self.font_small.render(instructions, True, TEXT_SECONDARY)
+        screen.blit(instr_text, (self.x + 20, self.y + 50))
+        
+        # Create clipping rect for scrollable content
+        content_rect = pygame.Rect(self.x + 10, self.y + 70, self.width - 20, self.height - 120)
+        screen.set_clip(content_rect)
+        
+        # Draw units
+        for i, unit in enumerate(self.units):
+            unit_y = self.y + 80 + i * (self.unit_button_height + 10) - self.scroll_offset
+            
+            # Skip units outside visible area
+            if unit_y + self.unit_button_height < self.y + 70 or unit_y > self.y + self.height - 50:
+                continue
+                
+            self.draw_unit_selection(screen, unit, unit_y)
+            
+        # Remove clipping
+        screen.set_clip(None)
+        
+        # Draw complete button
+        complete_rect = pygame.Rect(self.x + self.width - 120, self.y + self.height - 50, 100, 30)
+        pygame.draw.rect(screen, BUTTON_BG, complete_rect)
+        pygame.draw.rect(screen, PANEL_BORDER, complete_rect, 2)
+        
+        complete_text = self.font_medium.render("Complete", True, TEXT_PRIMARY)
+        text_rect = complete_text.get_rect(center=complete_rect.center)
+        screen.blit(complete_text, text_rect)
+        
+        # Draw scroll indicator if needed
+        if self.max_scroll > 0:
+            self.draw_scroll_indicator(screen)
+            
+    def draw_unit_selection(self, screen, unit, y):
+        """Draw an individual unit's selection options."""
+        unit_rect = pygame.Rect(self.x + 20, y, self.button_width, self.unit_button_height)
+        
+        # Background color based on hover
+        bg_color = BUTTON_HOVER if unit == self.hovered_unit else BUTTON_BG
+        pygame.draw.rect(screen, bg_color, unit_rect)
+        pygame.draw.rect(screen, PANEL_BORDER, unit_rect, 2)
+        
+        # Unit name and info
+        name_text = self.font_medium.render(unit.name, True, TEXT_PRIMARY)
+        screen.blit(name_text, (self.x + 30, y + 10))
+        
+        # Unit details
+        details = f"{len(unit.models)} models • {unit.get_unit_cost()} pts"
+        details_text = self.font_small.render(details, True, TEXT_SECONDARY)
+        screen.blit(details_text, (self.x + 30, y + 35))
+        
+        # Choice buttons
+        choice_y = y + 60
+        current_choice = self.reserves_decisions.get(unit.name, 'deploy')
+        
+        # Deploy button
+        deploy_rect = pygame.Rect(self.x + 30, choice_y, self.choice_button_width, self.choice_button_height)
+        deploy_color = DEPLOY_BUTTON_BG if current_choice == 'deploy' else BUTTON_BG
+        pygame.draw.rect(screen, deploy_color, deploy_rect)
+        pygame.draw.rect(screen, PANEL_BORDER, deploy_rect, 1)
+        
+        deploy_text = self.font_small.render("Deploy", True, TEXT_PRIMARY)
+        text_rect = deploy_text.get_rect(center=deploy_rect.center)
+        screen.blit(deploy_text, text_rect)
+        
+        # Reserves button
+        reserves_rect = pygame.Rect(self.x + 30 + self.choice_button_width + 10, choice_y, self.choice_button_width, self.choice_button_height)
+        can_reserves = self.can_use_reserves(unit)
+        reserves_color = RESERVES_BUTTON_BG if current_choice == 'reserves' else (BUTTON_BG if can_reserves else DARK_GREY)
+        pygame.draw.rect(screen, reserves_color, reserves_rect)
+        pygame.draw.rect(screen, PANEL_BORDER, reserves_rect, 1)
+        
+        reserves_text = self.font_small.render("Reserves", True, TEXT_PRIMARY if can_reserves else TEXT_SECONDARY)
+        text_rect = reserves_text.get_rect(center=reserves_rect.center)
+        screen.blit(reserves_text, text_rect)
+        
+        # Strategic reserves button
+        strategic_rect = pygame.Rect(self.x + 30 + 2 * (self.choice_button_width + 10), choice_y, self.choice_button_width, self.choice_button_height)
+        strategic_color = STRATEGIC_RESERVES_BG if current_choice == 'strategic_reserves' else BUTTON_BG
+        pygame.draw.rect(screen, strategic_color, strategic_rect)
+        pygame.draw.rect(screen, PANEL_BORDER, strategic_rect, 1)
+        
+        strategic_text = self.font_small.render("Strategic Reserves", True, TEXT_PRIMARY)
+        text_rect = strategic_text.get_rect(center=strategic_rect.center)
+        screen.blit(strategic_text, text_rect)
+        
+    def draw_scroll_indicator(self, screen):
+        """Draw scroll indicator."""
+        if self.max_scroll <= 0:
+            return
+            
+        # Scroll bar background
+        scroll_rect = pygame.Rect(self.x + self.width - 15, self.y + 70, 10, self.height - 120)
+        pygame.draw.rect(screen, DARK_GREY, scroll_rect)
+        
+        # Scroll thumb
+        thumb_height = max(20, int((self.height - 120) * (self.height - 120) / (self.max_scroll + self.height - 120)))
+        thumb_y = self.y + 70 + int(self.scroll_offset * (self.height - 120 - thumb_height) / self.max_scroll)
+        thumb_rect = pygame.Rect(self.x + self.width - 15, thumb_y, 10, thumb_height)
+        pygame.draw.rect(screen, LIGHT_GREY, thumb_rect)
+
+
+class ReservesArrivalPanel:
+    """UI Panel for bringing units in from reserves during the game."""
+    
+    def __init__(self, width: int = 400, height: int = 500):
+        self.width = width
+        self.height = height
+        self.visible = False
+        self.player = None
+        self.game = None
+        self.available_units = []
+        self.selected_unit = None
+        self.placement_mode = False
+        self.placement_position = None
+        
+        # Fonts
+        try:
+            self.font_large = pygame.font.SysFont('Arial', 20, bold=True)
+            self.font_medium = pygame.font.SysFont('Arial', 16, bold=False)
+            self.font_small = pygame.font.SysFont('Arial', 14, bold=False)
+        except:
+            self.font_large = pygame.font.Font(None, 20)
+            self.font_medium = pygame.font.Font(None, 16)
+            self.font_small = pygame.font.Font(None, 14)
+            
+        # Button dimensions
+        self.unit_button_height = 60
+        self.button_width = self.width - 40
+        
+        # Callbacks
+        self.on_unit_placed = None
+        self.on_cancel = None
+        
+    def show(self, player, game, on_unit_placed_callback, on_cancel_callback):
+        """Show the reserves arrival panel."""
+        self.visible = True
+        self.player = player
+        self.game = game
+        self.on_unit_placed = on_unit_placed_callback
+        self.on_cancel = on_cancel_callback
+        
+        # Get units that can arrive from reserves
+        self.available_units = [unit for unit in player.get_army().units if unit.can_arrive_from_reserves(game.turn)]
+        
+    def hide(self):
+        """Hide the reserves arrival panel."""
+        self.visible = False
+        self.placement_mode = False
+        self.selected_unit = None
+        self.placement_position = None
+        
+    def handle_event(self, event):
+        """Handle pygame events for the reserves arrival panel."""
+        if not self.visible:
+            return False
+            
+        if self.placement_mode:
+            return self.handle_placement_event(event)
+        else:
+            return self.handle_selection_event(event)
+            
+    def handle_selection_event(self, event):
+        """Handle events during unit selection."""
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            return self.handle_selection_click(event.pos)
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                if self.on_cancel:
+                    self.on_cancel()
+                self.hide()
+                return True
+                
+        return True
+        
+    def handle_placement_event(self, event):
+        """Handle events during unit placement."""
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1:  # Left click to place
+                if self.placement_position and self.is_valid_placement(self.placement_position):
+                    if self.on_unit_placed:
+                        self.on_unit_placed(self.selected_unit, self.placement_position)
+                    self.hide()
+                    return True
+            elif event.button == 3:  # Right click to cancel
+                self.placement_mode = False
+                self.selected_unit = None
+                return True
+                
+        elif event.type == pygame.MOUSEMOTION:
+            # Update placement position
+            game_x, game_y = self.screen_to_game_coords(event.pos)
+            self.placement_position = (game_x, game_y, 0.0)
+            return True
+            
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                self.placement_mode = False
+                self.selected_unit = None
+                return True
+                
+        return True
+        
+    def handle_selection_click(self, mouse_pos):
+        """Handle mouse clicks during unit selection."""
+        x, y = mouse_pos
+        
+        # Check unit buttons
+        panel_x = 10  # Assume panel is positioned at left edge
+        panel_y = 100  # Assume panel is positioned below other UI elements
+        
+        for i, unit in enumerate(self.available_units):
+            unit_y = panel_y + 60 + i * (self.unit_button_height + 10)  # +60 for header
+            unit_rect = pygame.Rect(panel_x + 20, unit_y, self.button_width, self.unit_button_height)
+            
+            if unit_rect.collidepoint(x, y):
+                self.selected_unit = unit
+                self.placement_mode = True
+                return True
+                
+        # Check cancel button
+        cancel_rect = pygame.Rect(panel_x + 20, panel_y + self.height - 50, 100, 30)
+        if cancel_rect.collidepoint(x, y):
+            if self.on_cancel:
+                self.on_cancel()
+            self.hide()
+            return True
+            
+        return True
+        
+    def screen_to_game_coords(self, screen_pos):
+        """Convert screen coordinates to game coordinates."""
+        # This would need to be implemented based on the game's coordinate system
+        # For now, return the screen position as-is
+        return screen_pos[0], screen_pos[1]
+        
+    def is_valid_placement(self, position):
+        """Check if the placement position is valid for the selected unit."""
+        if not self.selected_unit or not position:
+            return False
+            
+        # Check reserves arrival rules
+        if self.selected_unit.is_in_strategic_reserves():
+            # Strategic reserves rules for board edge placement
+            return self.is_valid_strategic_reserves_position(position)
+        else:
+            # Standard reserves (Deep Strike) rules
+            return self.is_valid_deep_strike_position(position)
+            
+    def is_valid_strategic_reserves_position(self, position):
+        """Check if position is valid for strategic reserves arrival."""
+        # Must be within 6" of battlefield edge and more than 9" from enemies
+        # This is a simplified check - full implementation would need game map
+        return True
+        
+    def is_valid_deep_strike_position(self, position):
+        """Check if position is valid for deep strike arrival."""
+        # Must be more than 9" from enemy models
+        # This is a simplified check - full implementation would need game map
+        return True
+        
+    def draw(self, screen):
+        """Draw the reserves arrival panel."""
+        if not self.visible:
+            return
+            
+        if self.placement_mode:
+            self.draw_placement_mode(screen)
+        else:
+            self.draw_selection_mode(screen)
+            
+    def draw_selection_mode(self, screen):
+        """Draw the unit selection interface."""
+        panel_x = 10
+        panel_y = 100
+        panel_rect = pygame.Rect(panel_x, panel_y, self.width, self.height)
+        
+        # Draw panel background
+        pygame.draw.rect(screen, PANEL_BG, panel_rect)
+        pygame.draw.rect(screen, PANEL_BORDER, panel_rect, 2)
+        
+        # Draw header
+        header_text = self.font_large.render("Reserves Arrival", True, TEXT_PRIMARY)
+        screen.blit(header_text, (panel_x + 20, panel_y + 20))
+        
+        # Draw turn info
+        turn_info = f"Turn {self.game.turn} - {self.player.name}"
+        turn_text = self.font_medium.render(turn_info, True, TEXT_SECONDARY)
+        screen.blit(turn_text, (panel_x + 20, panel_y + 45))
+        
+        # Draw units
+        if not self.available_units:
+            no_units_text = self.font_medium.render("No units available", True, TEXT_SECONDARY)
+            screen.blit(no_units_text, (panel_x + 20, panel_y + 80))
+        else:
+            for i, unit in enumerate(self.available_units):
+                unit_y = panel_y + 60 + i * (self.unit_button_height + 10)
+                self.draw_reserves_unit_button(screen, unit, panel_x + 20, unit_y)
+                
+        # Draw cancel button
+        cancel_rect = pygame.Rect(panel_x + 20, panel_y + self.height - 50, 100, 30)
+        pygame.draw.rect(screen, BUTTON_BG, cancel_rect)
+        pygame.draw.rect(screen, PANEL_BORDER, cancel_rect, 1)
+        
+        cancel_text = self.font_medium.render("Cancel", True, TEXT_PRIMARY)
+        text_rect = cancel_text.get_rect(center=cancel_rect.center)
+        screen.blit(cancel_text, text_rect)
+        
+    def draw_placement_mode(self, screen):
+        """Draw the placement interface."""
+        # Draw placement instructions
+        instructions = [
+            f"Placing {self.selected_unit.name}",
+            "Left click to place unit",
+            "Right click to cancel",
+            "Must be >9\" from enemies"
+        ]
+        
+        for i, instruction in enumerate(instructions):
+            text = self.font_medium.render(instruction, True, TEXT_PRIMARY)
+            screen.blit(text, (10, 10 + i * 25))
+            
+        # Draw placement preview if position is available
+        if self.placement_position:
+            self.draw_placement_preview(screen)
+            
+    def draw_placement_preview(self, screen):
+        """Draw a preview of where the unit will be placed."""
+        if not self.placement_position:
+            return
+            
+        # Convert game coordinates to screen coordinates
+        screen_x, screen_y = self.placement_position[0], self.placement_position[1]
+        
+        # Draw placement circle
+        color = GREEN if self.is_valid_placement(self.placement_position) else RED
+        pygame.draw.circle(screen, color, (int(screen_x), int(screen_y)), 30, 3)
+        
+        # Draw unit name
+        name_text = self.font_medium.render(self.selected_unit.name, True, color)
+        screen.blit(name_text, (int(screen_x) - 50, int(screen_y) - 50))
+        
+    def draw_reserves_unit_button(self, screen, unit, x, y):
+        """Draw a button for a unit available from reserves."""
+        unit_rect = pygame.Rect(x, y, self.button_width, self.unit_button_height)
+        
+        # Background color based on reserve type
+        if unit.is_in_strategic_reserves():
+            bg_color = STRATEGIC_RESERVES_BG
+        else:
+            bg_color = RESERVES_BUTTON_BG
+            
+        pygame.draw.rect(screen, bg_color, unit_rect)
+        pygame.draw.rect(screen, PANEL_BORDER, unit_rect, 2)
+        
+        # Unit name
+        name_text = self.font_medium.render(unit.name, True, TEXT_PRIMARY)
+        screen.blit(name_text, (x + 10, y + 10))
+        
+        # Unit details
+        reserve_type = "Strategic Reserves" if unit.is_in_strategic_reserves() else "Reserves"
+        details = f"{reserve_type} • {len(unit.models)} models • {unit.get_unit_cost()} pts"
+        details_text = self.font_small.render(details, True, TEXT_SECONDARY)
+        screen.blit(details_text, (x + 10, y + 35))
+
+
+class HumanUIInterface:
+    """Interface class that bridges human UI components with the deployment system."""
+    
+    def __init__(self, screen_width: int, screen_height: int):
+        self.screen_width = screen_width
+        self.screen_height = screen_height
+        
+        # UI components
+        self.deployment_choice_dialog = DeploymentChoiceDialog(screen_width, screen_height)
+        self.reserves_dialog = ReservesSelectionDialog(screen_width, screen_height)
+        self.reserves_arrival_panel = ReservesArrivalPanel()
+        
+        # State for handling UI interactions
+        self.pending_reserves_callback = None
+        self.pending_position_callback = None
+        self.current_unit_for_placement = None
+        self.current_deployment_zone = None
+        self.placement_mode = False
+        
+    def choose_deployment_zone(self, available_zones: List[dict]) -> dict:
+        """Human chooses deployment zone via UI."""
+        # For now, return the first available zone
+        # In a full implementation, this would show a zone selection dialog
+        return available_zones[0]
+    
+    def declare_reserves(self, player) -> dict:
+        """Human declares reserves via UI dialog."""
+        import pygame
+        
+        # Set up the reserves selection dialog
+        reserves_decisions = {}
+        dialog_complete = False
+        
+        def on_reserves_complete(decisions):
+            nonlocal reserves_decisions, dialog_complete
+            reserves_decisions = decisions
+            dialog_complete = True
+        
+        # Show the reserves dialog
+        self.reserves_dialog.show(player, on_reserves_complete)
+        
+        # Wait for user input
+        clock = pygame.time.Clock()
+        while not dialog_complete and self.reserves_dialog.visible:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    return {unit.name: 'deploy' for unit in player.get_army().units}
+                
+                # Let the dialog handle the event
+                if self.reserves_dialog.handle_event(event):
+                    continue
+            
+            # Draw the current screen (this would be called by the main game loop)
+            # For now, we'll assume the screen is being drawn elsewhere
+            
+            clock.tick(60)
+        
+        return reserves_decisions if reserves_decisions else {unit.name: 'deploy' for unit in player.get_army().units}
+    
+    def choose_unit_deployment_position(self, unit: 'Unit', deployment_zone: dict, 
+                                       already_deployed: List['Unit']) -> Tuple[float, float]:
+        """Human chooses unit position via UI clicking."""
+        import pygame
+        
+        # Set up for position selection
+        self.current_unit_for_placement = unit
+        self.current_deployment_zone = deployment_zone
+        self.placement_mode = True
+        
+        selected_position = None
+        position_selected = False
+        
+        print(f"Click on the battlefield to place {unit.name}")
+        print(f"Deployment zone: X({deployment_zone['x_range'][0]:.1f} - {deployment_zone['x_range'][1]:.1f}), Y({deployment_zone['y_range'][0]:.1f} - {deployment_zone['y_range'][1]:.1f})")
+        
+        # Wait for position selection
+        clock = pygame.time.Clock()
+        while not position_selected and self.placement_mode:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    # Return center of deployment zone as fallback
+                    x_center = (deployment_zone['x_range'][0] + deployment_zone['x_range'][1]) / 2
+                    y_center = (deployment_zone['y_range'][0] + deployment_zone['y_range'][1]) / 2
+                    return x_center, y_center
+                
+                elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    # Convert screen coordinates to game coordinates
+                    game_x, game_y = self.screen_to_game_coords(event.pos)
+                    
+                    # Check if position is within deployment zone
+                    if self.is_position_in_zone(game_x, game_y, deployment_zone):
+                        selected_position = (game_x, game_y)
+                        position_selected = True
+                        print(f"Unit {unit.name} will be placed at ({game_x:.1f}, {game_y:.1f})")
+                    else:
+                        print(f"Invalid position ({game_x:.1f}, {game_y:.1f}) - must be within deployment zone")
+                
+                elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                    # Cancel and use center of deployment zone
+                    x_center = (deployment_zone['x_range'][0] + deployment_zone['x_range'][1]) / 2
+                    y_center = (deployment_zone['y_range'][0] + deployment_zone['y_range'][1]) / 2
+                    selected_position = (x_center, y_center)
+                    position_selected = True
+                    print(f"Position selection cancelled, using center of deployment zone")
+            
+            clock.tick(60)
+        
+        self.placement_mode = False
+        self.current_unit_for_placement = None
+        self.current_deployment_zone = None
+        
+        return selected_position if selected_position else (
+            (deployment_zone['x_range'][0] + deployment_zone['x_range'][1]) / 2,
+            (deployment_zone['y_range'][0] + deployment_zone['y_range'][1]) / 2
+        )
+    
+    def screen_to_game_coords(self, screen_pos: Tuple[int, int]) -> Tuple[float, float]:
+        """Convert screen coordinates to game coordinates."""
+        # This would need to account for zoom, pan, and coordinate system
+        # For now, simplified conversion assuming 1:1 mapping
+        x, y = screen_pos
+        # Convert from screen pixels to game inches
+        game_x = x / TILE_SIZE
+        game_y = y / TILE_SIZE
+        return game_x, game_y
+    
+    def is_position_in_zone(self, x: float, y: float, zone: dict) -> bool:
+        """Check if a position is within the deployment zone."""
+        x_min, x_max = zone['x_range']
+        y_min, y_max = zone['y_range']
+        return x_min <= x <= x_max and y_min <= y <= y_max
+    
+    def update(self, screen):
+        """Update and draw UI components."""
+        # Draw deployment choice dialog if visible (highest priority)
+        if self.deployment_choice_dialog.visible:
+            self.deployment_choice_dialog.draw(screen)
+        
+        if self.reserves_dialog.visible:
+            self.reserves_dialog.draw(screen)
+        
+        if self.reserves_arrival_panel.visible:
+            self.reserves_arrival_panel.draw(screen)
+        
+        # Draw placement indicator if in placement mode
+        if self.placement_mode and self.current_unit_for_placement:
+            self.draw_placement_indicator(screen)
+    
+    def draw_placement_indicator(self, screen):
+        """Draw visual indicator for unit placement."""
+        if not self.current_unit_for_placement or not self.current_deployment_zone:
+            return
+        
+        # Draw deployment zone outline
+        zone = self.current_deployment_zone
+        x_min, x_max = zone['x_range']
+        y_min, y_max = zone['y_range']
+        
+        # Convert to screen coordinates
+        screen_x_min = int(x_min * TILE_SIZE)
+        screen_y_min = int(y_min * TILE_SIZE)
+        screen_width = int((x_max - x_min) * TILE_SIZE)
+        screen_height = int((y_max - y_min) * TILE_SIZE)
+        
+        zone_rect = pygame.Rect(screen_x_min, screen_y_min, screen_width, screen_height)
+        pygame.draw.rect(screen, TEXT_ACCENT, zone_rect, 3)
+        
+        # Draw unit name
+        font = pygame.font.SysFont('Arial', 16, bold=True)
+        text = font.render(f"Place {self.current_unit_for_placement.name}", True, TEXT_PRIMARY)
+        screen.blit(text, (10, 10))
+        
+        # Draw instructions
+        instr_font = pygame.font.SysFont('Arial', 14)
+        instructions = [
+            "Left click to place unit",
+            "ESC to use center position",
+            f"Must be in highlighted zone"
+        ]
+        
+        for i, instruction in enumerate(instructions):
+            instr_text = instr_font.render(instruction, True, TEXT_SECONDARY)
+            screen.blit(instr_text, (10, 40 + i * 20))
+    
+    def handle_event(self, event):
+        """Handle pygame events for all UI components."""
+        handled = False
+        
+        # Let deployment choice dialog handle events first (highest priority)
+        if self.deployment_choice_dialog.visible:
+            handled = self.deployment_choice_dialog.handle_event(event)
+        
+        # Let reserves dialog handle events
+        if not handled and self.reserves_dialog.visible:
+            handled = self.reserves_dialog.handle_event(event)
+        
+        # Let reserves arrival panel handle events
+        if not handled and self.reserves_arrival_panel.visible:
+            handled = self.reserves_arrival_panel.handle_event(event)
+        
+        return handled
+
+
 class GameView:
-    def __init__(self, screen, env, game, game_map, player1, player2):
+    def __init__(self, screen, env, game, game_map, player1, player2, ui_interface=None):
         self.screen = screen
         self.env = env
         self.game = game
@@ -745,6 +1751,9 @@ class GameView:
         self.detailed_unit = None
         self.detail_panel_pos = (0, 0)
         self.unit_detail_panel = UnitDetailPanel()
+        
+        # UI interface for human player interaction
+        self.ui_interface = ui_interface
         
         # Mouse panning support
         self.panning = False
@@ -765,9 +1774,41 @@ class GameView:
         self.left_roster_pane.all_units = all_units
         self.right_roster_pane.all_units = all_units
         
+        # Set game_view reference in roster panes for deployment dialog
+        self.left_roster_pane.game_view = self
+        self.right_roster_pane.game_view = self
+        
         # Position InfoPane between roster panes and below battlefield
         self.info_pane = InfoPane(ROSTER_PANE_WIDTH, BATTLEFIELD_HEIGHT, 
                                 BATTLEFIELD_WIDTH, INFO_PANE_HEIGHT, self.selected_unit)
+
+    def handle_pygame_event(self, event):
+        """Handle pygame events, including reserves UI integration."""
+        # Let UI interface handle reserves-related events first
+        if self.ui_interface:
+            # Check deployment choice dialog first (highest priority)
+            if hasattr(self.ui_interface, 'deployment_choice_dialog') and self.ui_interface.deployment_choice_dialog.visible:
+                if self.ui_interface.deployment_choice_dialog.handle_event(event):
+                    return True
+            
+            # Then check other UI components
+            if self.ui_interface.handle_event(event):
+                return True  # Event was handled by reserves UI
+        
+        # Handle regular game events
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            self.on_mouse_press(event.pos[0], event.pos[1], event.button)
+        elif event.type == pygame.MOUSEBUTTONUP:
+            self.on_mouse_release(event.pos[0], event.pos[1], event.button)
+        elif event.type == pygame.MOUSEMOTION:
+            self.on_mouse_motion(event.pos[0], event.pos[1])
+        elif event.type == pygame.MOUSEWHEEL:
+            mouse_x, mouse_y = pygame.mouse.get_pos()
+            self.on_mouse_scroll(mouse_x, mouse_y, event.y)
+        elif event.type == pygame.KEYDOWN:
+            self.on_key_press(event.key)
+        
+        return False
 
     def on_mouse_press(self, x, y, button):
         # PRIORITY 1: Check if click is on unit detail panel first (highest priority)
@@ -782,8 +1823,12 @@ class GameView:
                     return  # Exit early since we handled the click
         
         if button == 1:  # Left mouse button
+            # Check if click is in info pane (reserves button)
+            if self.info_pane.rect.collidepoint(x, y):
+                if self.info_pane.handle_click(x, y, self):
+                    return  # Click was handled by info pane
             # Check if click is in player1's roster pane
-            if self.left_roster_pane.rect.collidepoint(x, y):
+            elif self.left_roster_pane.rect.collidepoint(x, y):
                 self.left_roster_pane.on_mouse_press(x, y, button)
                 self.selected_unit = self.left_roster_pane.selected_unit
             # Check if click is in player2's roster pane
@@ -859,6 +1904,9 @@ class GameView:
             
             # Apply panning limits
             self.offset_x, self.offset_y = self._apply_pan_limits(self.offset_x, self.offset_y)
+        
+        # Update hover state for info pane
+        self.info_pane.update_hover(x, y)
 
     def on_mouse_scroll(self, x, y, scroll_y):
         """Handle mouse scroll events"""
@@ -996,7 +2044,7 @@ class GameView:
         self.screen.blit(battlefield_surface, (ROSTER_PANE_WIDTH, 0))
 
         # Draw enhanced InfoPane
-        self.info_pane.draw(self.screen, self.game)
+        self.info_pane.draw(self.screen, self.game, self)
 
         # Draw unit details panel if requested
         if self.detailed_unit:
@@ -1007,6 +2055,10 @@ class GameView:
         for unit in self.game.get_current_player().get_army().units:
             self.draw_move_path(unit)
 
+        # Draw UI interface components (reserves dialogs, etc.)
+        if self.ui_interface:
+            self.ui_interface.update(self.screen)
+
         pygame.display.update()
 
     def on_key_press(self, key):
@@ -1015,6 +2067,10 @@ class GameView:
             # Close unit details panel if open
             if self.detailed_unit:
                 self.close_unit_details()
+        elif key == pygame.K_RETURN or key == pygame.K_KP_ENTER:
+            # ENTER key: Force complete deployment phase
+            # Deploy all remaining undeployed units automatically
+            self.force_complete_deployment()
         elif self.detailed_unit:
             # Keyboard scrolling in unit detail panel
             if key == pygame.K_UP or key == pygame.K_w:
@@ -1029,6 +2085,50 @@ class GameView:
                 self.unit_detail_panel.scroll_offset = 0  # Go to top
             elif key == pygame.K_END:
                 self.unit_detail_panel.scroll_offset = self.unit_detail_panel.max_scroll  # Go to bottom
+    
+    def force_complete_deployment(self):
+        """Force complete the deployment phase by auto-deploying remaining units"""
+        # Get all undeployed units from both players
+        all_units = self.player1.get_army().units + self.player2.get_army().units
+        undeployed_units = [unit for unit in all_units if not unit.deployed]
+        
+        if not undeployed_units:
+            print("All units already deployed!")
+            return
+        
+        print(f"Auto-deploying {len(undeployed_units)} remaining units...")
+        
+        # Simple auto-deployment: place units in their deployment zones
+        for unit in undeployed_units:
+            if unit in self.player1.get_army().units:
+                # Player 1 deployment zone (left side)
+                x = random.uniform(5, 25)
+                y = random.uniform(5, 40)
+            else:
+                # Player 2 deployment zone (right side)  
+                x = random.uniform(35, 55)
+                y = random.uniform(5, 40)
+            
+            # Try to place the unit
+            model_positions = unit.calculate_model_positions(x, y, self.game_map, 1.0)
+            if model_positions:
+                for model, position in zip(unit.models, model_positions):
+                    model.set_location(*position)
+                unit.set_position(x, y)
+                if self.game_map.place_unit(unit):
+                    unit.deployed = True
+                    print(f"Auto-deployed {unit.name} at ({x:.1f}, {y:.1f})")
+                else:
+                    print(f"Failed to auto-deploy {unit.name}")
+            else:
+                print(f"Could not find valid positions for {unit.name}")
+        
+        # Clear any selected units
+        self.selected_unit = None
+        self.left_roster_pane.selected_unit = None
+        self.right_roster_pane.selected_unit = None
+        
+        print("Deployment phase completed! Press SPACE to start the game.")
 
     def close_unit_details(self):
         """Close the unit details panel"""

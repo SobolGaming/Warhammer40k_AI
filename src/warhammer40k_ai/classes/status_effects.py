@@ -12,8 +12,12 @@ class StatusEffect:
         self.apply_effect = apply_effect  # Function to apply effect
         self.remove_effect = remove_effect  # Function to remove effect
     
-    def check_expiration(self, unit: 'Unit'):
-        if Game.current_turn >= self.turn and Game.current_phase >= self.phase:
+    def check_expiration(self, unit: 'Unit', current_turn: int = None, current_phase: int = None):
+        # If no current turn/phase provided, assume effect is still active
+        if current_turn is None or current_phase is None:
+            return True
+        
+        if current_turn >= self.turn and current_phase >= self.phase:
             self.remove_effect(unit)
             return False  # Effect has ended
         return True  # Effect is still active
@@ -26,12 +30,12 @@ class UnitStatsModifier(Enum):
 
 
 class BattleShockEffect(StatusEffect):
-    def __init__(self):
+    def __init__(self, current_turn: int = 1):
         super().__init__(
             name = "Battle-shock",
             # Lasts until the next Command Phase
-            turn_duration = Game.current_turn + 1,
-            phase_duration = Game.BattleRoundPhases.COMMAND_PHASE,
+            turn_duration = current_turn + 1,
+            phase_duration = 0,  # Command phase is phase 0
             apply_effect = self.apply_battle_shock,
             remove_effect = self.remove_battle_shock
         )

@@ -1,6 +1,7 @@
 from typing import List, Dict, Any, Optional, Tuple
 from enum import Enum, auto
 from dataclasses import dataclass
+import logging
 from .event_system import EventSystem
 from .map import Map, Objective
 from .player import Player
@@ -8,6 +9,8 @@ from .unit import Unit
 from ..utility.calcs import get_dist
 from ..utility.dice import get_roll
 from ..utility.constants import TOTAL_ROUNDS
+
+logger = logging.getLogger(__name__)
 
 class SetupPhase(Enum):
     """
@@ -253,3 +256,234 @@ class Game:
         charging_unit.move((new_x, new_y, new_z), self.map)
         charging_unit.round_state.declared_charge_this_round = True
         return True
+
+    ###########################################################################
+    ### Reserves System
+    ###########################################################################
+    def get_units_in_reserves(self, player: Player) -> List['Unit']:
+        """Get all units belonging to a player that are currently in reserves."""
+        return [unit for unit in player.get_army().units if unit.is_in_reserves()]
+    
+    def get_units_that_can_arrive_from_reserves(self, player: Player) -> List['Unit']:
+        """Get all units belonging to a player that can arrive from reserves this turn."""
+        return [unit for unit in self.get_units_in_reserves(player) 
+                if unit.can_arrive_from_reserves(self.turn)]
+    
+    def get_units_that_must_arrive_from_reserves(self, player: Player) -> List['Unit']:
+        """Get all units belonging to a player that must arrive from reserves this turn or be destroyed."""
+        return [unit for unit in self.get_units_in_reserves(player) 
+                if unit.must_arrive_from_reserves(self.turn)]
+    
+    def destroy_units_not_arrived_from_reserves(self, player: Player) -> List['Unit']:
+        """Destroy all units that did not arrive from reserves by the deadline."""
+        units_to_destroy = []
+        
+        for unit in self.get_units_in_reserves(player):
+            if self.turn > 3:  # After turn 3, units in reserves are destroyed
+                units_to_destroy.append(unit)
+                logger.warning(f"💀 {unit.name} destroyed - failed to arrive from reserves by turn 3")
+        
+        # Remove destroyed units from the army
+        for unit in units_to_destroy:
+            player.get_army().units.remove(unit)
+        
+        return units_to_destroy
+    
+    def can_place_unit_arriving_from_reserves(self, unit: 'Unit', position: Tuple[float, float, float], 
+                                              battlefield_edge: str = None) -> bool:
+        """Check if a unit can be legally placed when arriving from reserves.
+        
+        Args:
+            unit: The unit arriving from reserves
+            position: (x, y, z) position where the unit would be placed
+            battlefield_edge: For strategic reserves, which edge they're arriving from
+                             ('own', 'left', 'right', 'enemy') 
+        
+        Returns:
+            bool: True if the placement is legal
+        """
+        # Check if position is within battlefield bounds
+        if (position[0] < 0 or position[0] >= self.battlefield.width or
+            position[1] < 0 or position[1] >= self.battlefield.height):
+            return False
+        
+        # For strategic reserves, check edge restrictions
+        if unit.is_in_strategic_reserves() and battlefield_edge:
+            if not self.is_valid_strategic_reserves_edge(battlefield_edge):
+                return False
+            
+            # Check if unit is within 6" of the specified edge
+            edge_distance = self.get_distance_to_battlefield_edge(position, battlefield_edge)
+            if edge_distance > 6.0:
+                return False
+        
+        # Check 9" restriction from enemy units
+        enemy_units = self.get_enemy_units(unit.get_parent_army().player)
+        for enemy_unit in enemy_units:
+            if not enemy_unit.is_alive() or not enemy_unit.deployed:
+                continue
+                
+            enemy_pos = enemy_unit.get_position()
+            distance = get_dist(
+                position[0] - enemy_pos[0],
+                position[1] - enemy_pos[1],
+                position[2] - enemy_pos[2]
+            )
+            
+            if distance < 9.0:
+                return False
+        
+        return True
+    
+    def is_valid_strategic_reserves_edge(self, battlefield_edge: str) -> bool:
+        """Check if the specified battlefield edge is valid for strategic reserves arrival.
+        
+        Args:
+            battlefield_edge: 'own', 'left', 'right', 'enemy'
+        
+        Returns:
+            bool: True if the edge is valid for the current turn
+        """
+        if self.turn == 2:
+            # Turn 2: Can only arrive from own battlefield edge
+            return battlefield_edge == 'own'
+        elif self.turn >= 3:
+            # Turn 3+: Can arrive from any edge except enemy's
+            return battlefield_edge in ['own', 'left', 'right']
+        else:
+            # Turn 1: No strategic reserves arrivals allowed
+            return False
+    
+    def get_distance_to_battlefield_edge(self, position: Tuple[float, float, float], 
+                                       battlefield_edge: str) -> float:
+        """Calculate distance from a position to the specified battlefield edge.
+        
+        Args:
+            position: (x, y, z) position
+            battlefield_edge: 'own', 'left', 'right', 'enemy'
+        
+        Returns:
+            float: Distance to the edge in inches
+        """
+        x, y, z = position
+        
+        if battlefield_edge == 'own':
+            # Assuming own edge is at y=0 (bottom)
+            return y
+        elif battlefield_edge == 'enemy':
+            # Assuming enemy edge is at y=battlefield.height (top)
+            return self.battlefield.height - y
+        elif battlefield_edge == 'left':
+            # Left edge at x=0
+            return x
+        elif battlefield_edge == 'right':
+            # Right edge at x=battlefield.width
+            return self.battlefield.width - x
+        else:
+            return float('inf')  # Invalid edge
+    
+    def handle_reserves_arrival_phase(self) -> Dict[str, List['Unit']]:
+        """Handle the reserves arrival phase at the end of movement phase.
+        
+        This should be called at the end of each player's movement phase.
+        
+        Returns:
+            Dict mapping player names to lists of units that arrived from reserves
+        """
+        arrival_results = {}
+        current_player = self.get_current_player()
+        
+        # Handle reserves arrivals for the current player
+        units_arrived = self.process_player_reserves_arrivals(current_player)
+        arrival_results[current_player.name] = units_arrived
+        
+        # Destroy units that must arrive but didn't
+        destroyed_units = self.destroy_units_not_arrived_from_reserves(current_player)
+        if destroyed_units:
+            logger.warning(f"💀 {len(destroyed_units)} units destroyed for {current_player.name} - failed to arrive from reserves")
+        
+        return arrival_results
+    
+    def process_player_reserves_arrivals(self, player: Player) -> List['Unit']:
+        """Process reserves arrivals for a specific player.
+        
+        This method should be extended or overridden to integrate with AI decision making.
+        
+        Args:
+            player: The player whose reserves arrivals to process
+        
+        Returns:
+            List of units that arrived from reserves
+        """
+        units_arrived = []
+        units_that_can_arrive = self.get_units_that_can_arrive_from_reserves(player)
+        units_that_must_arrive = self.get_units_that_must_arrive_from_reserves(player)
+        
+        # For now, this is a placeholder implementation
+        # In the full implementation, this should integrate with AI agents to make decisions
+        logger.info(f"🪂 {player.name} has {len(units_that_can_arrive)} units that can arrive from reserves")
+        
+        # Force arrival of units that must arrive
+        for unit in units_that_must_arrive:
+            # Try to find a valid placement position
+            # This is a simple fallback - should be improved with proper AI integration
+            valid_position = self.find_valid_reserves_position(unit)
+            if valid_position:
+                if unit.arrive_from_reserves(valid_position, self.turn):
+                    units_arrived.append(unit)
+                    self.map.units.append(unit)  # Add to map
+                else:
+                    logger.error(f"❌ Failed to deploy {unit.name} from reserves despite finding valid position")
+            else:
+                logger.warning(f"⚠️ No valid position found for {unit.name} - unit will be destroyed")
+        
+        return units_arrived
+    
+    def find_valid_reserves_position(self, unit: 'Unit') -> Optional[Tuple[float, float, float]]:
+        """Find a valid position for a unit arriving from reserves.
+        
+        This is a basic implementation that tries to find any valid position.
+        Should be enhanced with proper AI decision making.
+        
+        Args:
+            unit: The unit arriving from reserves
+        
+        Returns:
+            Valid position tuple or None if no valid position found
+        """
+        # Try multiple positions across the battlefield
+        attempts = 100
+        
+        for _ in range(attempts):
+            if unit.is_in_strategic_reserves():
+                # For strategic reserves, try positions near valid edges
+                edge = 'own' if self.turn == 2 else 'own'  # Could be expanded to try different edges
+                if edge == 'own':
+                    x = self.battlefield.width * 0.5  # Center of battlefield
+                    y = 5.0  # 5" from own edge
+                elif edge == 'left':
+                    x = 5.0  # 5" from left edge
+                    y = self.battlefield.height * 0.5
+                elif edge == 'right':
+                    x = self.battlefield.width - 5.0  # 5" from right edge
+                    y = self.battlefield.height * 0.5
+                else:
+                    continue
+                    
+                z = self.map.get_height_at_point(x, y)
+                position = (x, y, z)
+                
+                if self.can_place_unit_arriving_from_reserves(unit, position, edge):
+                    return position
+            else:
+                # For standard reserves (Deep Strike), can arrive anywhere more than 9" from enemies
+                import random
+                x = random.uniform(9.0, self.battlefield.width - 9.0)
+                y = random.uniform(9.0, self.battlefield.height - 9.0)
+                z = self.map.get_height_at_point(x, y)
+                position = (x, y, z)
+                
+                if self.can_place_unit_arriving_from_reserves(unit, position):
+                    return position
+        
+        return None  # No valid position found

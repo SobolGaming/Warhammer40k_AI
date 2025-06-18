@@ -14,10 +14,11 @@ from warhammer40k_ai.classes.game import Game
 from warhammer40k_ai.classes.map import Map, Obstacle, ObstacleType, Objective, ObjectiveCategory, ObjectivePoint
 from warhammer40k_ai.classes.player import Player, PlayerType
 from warhammer40k_ai.classes.army import parse_army_list
-from warhammer40k_ai.UI.game_ui import GameView, GameState, ROSTER_PANE_WIDTH, BATTLEFIELD_WIDTH, BATTLEFIELD_HEIGHT, INFO_PANE_HEIGHT, handle_zoom, handle_pan, TILE_SIZE
+from warhammer40k_ai.UI.game_ui import GameView, GameState, ROSTER_PANE_WIDTH, BATTLEFIELD_WIDTH, BATTLEFIELD_HEIGHT, INFO_PANE_HEIGHT, handle_zoom, handle_pan, TILE_SIZE, BLACK
 from warhammer40k_ai.waha_helper import WahaHelper
 from warhammer40k_ai.agents.hrl_agent import HighLevelAgent, TacticalAgent, LowLevelAgent, AIDeploymentDecisionMaker
 from warhammer40k_ai.classes.deployment import DeploymentManager, HumanDeploymentDecisionMaker
+from warhammer40k_ai.UI.game_ui import HumanUIInterface
 
 # Training configuration
 TRAINING_MODE = True  # Set to True for AI training, False for manual play
@@ -163,7 +164,8 @@ def cleanup_destroyed_units(game: Game):
             player.get_army().units.remove(unit)
 
 def execute_official_deployment(game: Game, player1: Player, player2: Player, 
-                               player1_agent: HighLevelAgent = None, player2_agent: HighLevelAgent = None) -> dict:
+                               player1_agent: HighLevelAgent = None, player2_agent: HighLevelAgent = None,
+                               ui_interface = None) -> dict:
     """Execute the official Warhammer 40k deployment sequence."""
     
     logger.info("🚀 Starting Official Warhammer 40k Deployment Sequence")
@@ -178,15 +180,15 @@ def execute_official_deployment(game: Game, player1: Player, player2: Player,
         # AI player
         decision_makers[player1.name] = AIDeploymentDecisionMaker(player1_agent)
     else:
-        # Human player (fallback for now)
-        decision_makers[player1.name] = HumanDeploymentDecisionMaker()
+        # Human player with UI interface
+        decision_makers[player1.name] = HumanDeploymentDecisionMaker(ui_interface)
     
     if player2_agent:
         # AI player
         decision_makers[player2.name] = AIDeploymentDecisionMaker(player2_agent)
     else:
-        # Human player (fallback for now)
-        decision_makers[player2.name] = HumanDeploymentDecisionMaker()
+        # Human player with UI interface
+        decision_makers[player2.name] = HumanDeploymentDecisionMaker(ui_interface)
     
     # Execute deployment
     deployment_results = deployment_manager.execute_deployment_sequence(decision_makers)
@@ -204,6 +206,47 @@ def execute_official_deployment(game: Game, player1: Player, player2: Player,
             decision_maker.compute_deployment_reward(player_deployment)
     
     return deployment_results
+
+
+def example_human_reserves_game():
+    """Example function showing how to use the reserves UI system."""
+    logger.info("🎮 Starting Human vs AI Game with Reserves UI")
+    
+    # Initialize the game
+    screen, env, game, game_map, zoom_level, offset_x, offset_y, player1, player2 = initialize_game()
+    
+    # Create UI interface for human player
+    screen_width = BATTLEFIELD_WIDTH + 2 * ROSTER_PANE_WIDTH
+    screen_height = BATTLEFIELD_HEIGHT + INFO_PANE_HEIGHT
+    ui_interface = HumanUIInterface(screen_width, screen_height)
+    
+    # Create game view with UI interface
+    game_view = GameView(screen, env, game, game_map, player1, player2, ui_interface)
+    
+    # For this example, let's manually trigger the reserves dialog
+    print("🪂 Click the 'Set Reserves' button in the bottom panel to configure reserves!")
+    print("🎯 During turns 2+, click 'Reserves' button to bring units from reserves!")
+    
+    clock = pygame.time.Clock()
+    running = True
+    
+    # Main game loop
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            else:
+                # Handle events through game view (includes reserves UI)
+                game_view.handle_pygame_event(event)
+        
+        # Clear screen and draw
+        screen.fill(BLACK)
+        game_view.draw()
+        
+        clock.tick(60)
+    
+    pygame.quit()
+    return
 
 
 def auto_deploy_units(game: Game, player1: Player, player2: Player):
@@ -796,7 +839,12 @@ def display_final_analysis(training_stats: dict, all_episode_stats: list):
 
 def main_game_loop() -> None:
     screen, env, game, game_map, _, _, _, player1, player2 = initialize_game()
-    game_view = GameView(screen, env, game, game_map, player1, player2)
+    
+    # Create UI interface for human player interactions
+    screen_width, screen_height = screen.get_size()
+    ui_interface = HumanUIInterface(screen_width, screen_height)
+    
+    game_view = GameView(screen, env, game, game_map, player1, player2, ui_interface)
     game_state = GameState.SETUP
     clicked_unit = None
 
@@ -914,6 +962,10 @@ def main_game_loop() -> None:
             game.do_ai_action = False
 
         for event in pygame.event.get():
+            # Let GameView handle UI events first (including deployment dialogs)
+            if game_view.handle_pygame_event(event):
+                continue  # Event was handled by UI, skip other processing
+                
             if event.type == pygame.QUIT:
                 running = False
             elif event.type == pygame.MOUSEBUTTONDOWN:
@@ -943,6 +995,7 @@ def main_game_loop() -> None:
                         else:
                             print("No unit at this position")
                 else:
+                    # Always allow game_view to handle mouse events (including during setup/deployment)
                     game_view.on_mouse_press(*event.pos, event.button)
             elif event.type == pygame.MOUSEBUTTONUP:
                 # Handle mouse button releases

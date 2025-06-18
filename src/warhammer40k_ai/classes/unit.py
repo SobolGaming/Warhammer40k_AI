@@ -97,6 +97,11 @@ class Unit:
         self.stats = {}  # Dictionary of stats modifiers
         self.deployed = False
 
+        # Reserves tracking
+        self.reserve_status = 'deployed'  # 'deployed', 'reserves', 'strategic_reserves'
+        self.reserve_turn_deployed = None  # Turn when unit arrived from reserves
+        self.arrived_from_reserves_this_turn = False  # Flag for movement/charge restrictions
+
         # Initialize round-tracked variables
         self.initialize_round()
 
@@ -470,8 +475,17 @@ class Unit:
     def initialize_round(self) -> None:
         """Reset round-tracked variables to default state."""
         self.round_state = UnitRoundState()
+        # Check status effects expiration (with safe defaults)
         for status_effect in self.status_effects:
-            status_effect.check_expiration(self)
+            try:
+                status_effect.check_expiration(self)
+            except Exception:
+                # If status effect check fails, just continue
+                # This prevents crashes from incomplete status effect implementations
+                pass
+        
+        # Reset reserves arrival flag
+        self.arrived_from_reserves_this_turn = False
 
     def is_max_health(self) -> Tuple[bool, Optional[Model]]:
         """
@@ -797,12 +811,21 @@ class Unit:
         return True
 
     def advance(self, destination: Tuple[float, float, float], game_map: 'Map') -> bool:
+        # Check if unit can advance after arriving from reserves
+        if self.arrived_from_reserves_this_turn and not self.can_advance_after_arriving_from_reserves():
+            logger.info(f"{self.name} cannot advance - arrived from reserves this turn")
+            return False
         return self.move(destination, game_map, advance=True)
 
     def move(self, destination: Tuple[float, float, float], game_map: 'Map', advance: bool = False) -> bool:
         """Moves the unit towards the destination up to its movement characteristic or Advance."""
         if not self.models:
             logger.error(f"Cannot move unit {self.name}: no models in unit")
+            return False
+        
+        # Check if unit can move after arriving from reserves
+        if self.arrived_from_reserves_this_turn and not self.can_move_after_arriving_from_reserves():
+            logger.info(f"{self.name} cannot move - arrived from reserves this turn")
             return False
 
         current_position = self.get_position()
@@ -1262,6 +1285,10 @@ class Unit:
             
         if self.round_state.advanced_this_round or self.round_state.fell_back_this_round:
             return False
+        
+        # Check if unit arrived from reserves this turn and has special charge restrictions
+        if self.arrived_from_reserves_this_turn and not self.can_charge_after_arriving_from_reserves():
+            return False
             
         # CRITICAL: Units already within engagement range cannot declare charges
         # They are already considered to be "in combat"
@@ -1321,7 +1348,22 @@ class Unit:
         if "Deep Strike" in self.keywords:
             return True
         
-        # Check abilities for Deep Strike
+        # Check possible_abilities for Deep Strike (unit-level abilities)
+        for ability in self.possible_abilities:
+            # Handle both string and ability object cases
+            if isinstance(ability, str):
+                if "deep strike" in ability.lower() or "deepstrike" in ability.lower():
+                    return True
+            else:
+                # Ability object with name and description attributes
+                if hasattr(ability, 'name') and ability.name:
+                    if "deep strike" in ability.name.lower() or "deepstrike" in ability.name.lower():
+                        return True
+                if hasattr(ability, 'description') and ability.description:
+                    if "deep strike" in ability.description.lower() or "deepstrike" in ability.description.lower():
+                        return True
+        
+        # Also check model-level abilities (self.abilities)
         for ability in self.abilities:
             # Handle both string and ability object cases
             if isinstance(ability, str):
@@ -1442,6 +1484,164 @@ class Unit:
                         max_range = max(max_range, profile.range.max)
         
         return max_range
+
+    ###########################################################################
+    ### Reserves System
+    ###########################################################################
+    # Units arriving from reserves (including Deep Strike) have the following restrictions:
+    # - CANNOT move normally or advance (unless special rules allow it)
+    # - CAN shoot, charge, and fight normally (this is the default rule)
+    # - Only special rules would prevent charging/shooting after arriving from reserves
+    def set_reserve_status(self, status: str) -> None:
+        """Set the reserve status of the unit.
+        
+        Args:
+            status: 'deployed', 'reserves', 'strategic_reserves'
+        """
+        valid_statuses = ['deployed', 'reserves', 'strategic_reserves']
+        if status not in valid_statuses:
+            raise ValueError(f"Invalid reserve status: {status}. Must be one of {valid_statuses}")
+        
+        self.reserve_status = status
+        if status != 'deployed':
+            self.deployed = False
+        
+    def is_in_reserves(self) -> bool:
+        """Check if the unit is currently in reserves (any type)."""
+        return self.reserve_status in ['reserves', 'strategic_reserves']
+    
+    def is_in_standard_reserves(self) -> bool:
+        """Check if the unit is in standard reserves (Deep Strike, etc.)."""
+        return self.reserve_status == 'reserves'
+    
+    def is_in_strategic_reserves(self) -> bool:
+        """Check if the unit is in strategic reserves."""
+        return self.reserve_status == 'strategic_reserves'
+    
+    def can_arrive_from_reserves(self, current_turn: int) -> bool:
+        """Check if the unit can arrive from reserves this turn.
+        
+        Args:
+            current_turn: The current battle round number
+        
+        Returns:
+            bool: True if the unit can arrive from reserves this turn
+        """
+        if not self.is_in_reserves():
+            return False
+        
+        # Units cannot arrive from reserves on Turn 1
+        if current_turn < 2:
+            return False
+        
+        # Units must arrive by end of Turn 3 or be destroyed
+        if current_turn > 3:
+            return False
+        
+        return True
+    
+    def must_arrive_from_reserves(self, current_turn: int) -> bool:
+        """Check if the unit must arrive from reserves this turn or be destroyed.
+        
+        Args:
+            current_turn: The current battle round number
+        
+        Returns:
+            bool: True if the unit must arrive this turn or be destroyed
+        """
+        return self.is_in_reserves() and current_turn >= 3
+    
+    def arrive_from_reserves(self, position: Tuple[float, float, float], turn: int) -> bool:
+        """Deploy the unit from reserves at the specified position.
+        
+        Args:
+            position: (x, y, z) coordinates where the unit should be placed
+            turn: Current turn number
+        
+        Returns:
+            bool: True if deployment was successful
+        """
+        if not self.can_arrive_from_reserves(turn):
+            return False
+        
+        # Place the unit at the specified position
+        self.set_position(position[0], position[1], position[2])
+        
+        # Deploy all models at calculated positions
+        try:
+            # Use the existing model positioning logic
+            battlefield_width, battlefield_height = 60, 44  # Default battlefield size, should be passed from game
+            model_positions = self.calculate_model_positions(position[0], position[1], None, 1.0, [])
+            
+            for model, model_pos in zip(self.models, model_positions):
+                model.set_location(model_pos[0], model_pos[1], model_pos[2], model_pos[3])
+        except Exception as e:
+            logger.warning(f"Could not calculate model positions for {self.name} arriving from reserves: {e}")
+            # Fallback: place all models at the unit position
+            for model in self.models:
+                model.set_location(position[0], position[1], position[2], 0.0)
+        
+        # Update unit status
+        self.deployed = True
+        self.reserve_status = 'deployed'
+        self.reserve_turn_deployed = turn
+        self.arrived_from_reserves_this_turn = True
+        
+        logger.info(f"🪂 {self.name} arrived from reserves at turn {turn}")
+        return True
+    
+    def can_move_after_arriving_from_reserves(self) -> bool:
+        """Check if the unit can move normally after arriving from reserves this turn."""
+        # Units arriving from reserves cannot move unless they have special rules
+        if not self.arrived_from_reserves_this_turn:
+            return True
+        
+        # Check for special abilities that allow movement after arriving from reserves
+        for ability in self.possible_abilities:
+            if hasattr(ability, 'name') and ability.name:
+                if "can move after" in ability.name.lower() or "move after arriving" in ability.name.lower():
+                    return True
+            if hasattr(ability, 'description') and ability.description:
+                if "can move after" in ability.description.lower() or "move after arriving" in ability.description.lower():
+                    return True
+        
+        return False
+    
+    def can_advance_after_arriving_from_reserves(self) -> bool:
+        """Check if the unit can advance after arriving from reserves this turn."""
+        if not self.arrived_from_reserves_this_turn:
+            return True
+        
+        # Units arriving from reserves cannot advance unless they have special rules
+        # Check for special abilities that allow advancing after arriving from reserves
+        for ability in self.possible_abilities:
+            if hasattr(ability, 'name') and ability.name:
+                if "can advance after" in ability.name.lower() or "advance after arriving" in ability.name.lower():
+                    return True
+            if hasattr(ability, 'description') and ability.description:
+                if "can advance after" in ability.description.lower() or "advance after arriving" in ability.description.lower():
+                    return True
+        
+        return False
+    
+    def can_charge_after_arriving_from_reserves(self) -> bool:
+        """Check if the unit can charge after arriving from reserves this turn."""
+        if not self.arrived_from_reserves_this_turn:
+            return True
+        
+        # Units arriving from reserves CAN charge by default (this is the normal rule)
+        # Only special restrictions would prevent charging
+        for ability in self.possible_abilities:
+            if hasattr(ability, 'name') and ability.name:
+                if ("cannot charge after" in ability.name.lower() or 
+                    "no charge after arriving" in ability.name.lower()):
+                    return False
+            if hasattr(ability, 'description') and ability.description:
+                if ("cannot charge after" in ability.description.lower() or 
+                    "no charge after arriving" in ability.description.lower()):
+                    return False
+        
+        return True  # Default: can charge after arriving from reserves
 
 
 

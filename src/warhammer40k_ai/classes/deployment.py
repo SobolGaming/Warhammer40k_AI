@@ -106,6 +106,8 @@ class DeploymentManager:
         logger.info(f"🎲 {first_turn_player.name} will take the first turn")
         logger.info("✅ Deployment sequence complete!")
         
+        self.set_reserves_status(deployment_results)
+        
         return deployment_results
     
     def determine_attacker_and_defender(self) -> Tuple[Player, Player]:
@@ -239,6 +241,27 @@ class DeploymentManager:
             logger.info(f"🥇 {self.attacker.name} (Attacker) takes first turn")
             return self.attacker
 
+    def set_reserves_status(self, deployment_results: dict) -> None:
+        """Set the reserve status for all units based on deployment decisions."""
+        for player_name in [self.attacker.name, self.defender.name]:
+            player = self.attacker if player_name == self.attacker.name else self.defender
+            reserves_decisions = deployment_results['reserves'].get(player_name, {})
+            
+            for unit in player.get_army().units:
+                reserve_decision = reserves_decisions.get(unit.name, 'deploy')
+                
+                if reserve_decision == 'deploy':
+                    unit.set_reserve_status('deployed')
+                elif reserve_decision == 'reserves':
+                    unit.set_reserve_status('reserves')
+                    logger.info(f"🏗️ {unit.name} placed in standard reserves")
+                elif reserve_decision == 'strategic_reserves':
+                    unit.set_reserve_status('strategic_reserves')
+                    logger.info(f"🏗️ {unit.name} placed in strategic reserves")
+                else:
+                    # Default to deployed for any unknown status
+                    unit.set_reserve_status('deployed')
+
 
 class HumanDeploymentDecisionMaker(DeploymentDecisionMaker):
     """Implementation for human players making deployment decisions via UI."""
@@ -260,9 +283,41 @@ class HumanDeploymentDecisionMaker(DeploymentDecisionMaker):
         if self.ui_interface:
             return self.ui_interface.declare_reserves(player)
         else:
-            # Fallback: deploy all units normally
-            logger.warning("No UI interface available for human reserves declaration, deploying all units normally")
-            return {unit.name: 'deploy' for unit in player.get_army().units}
+            # Interactive fallback for console-based reserves selection
+            logger.info(f"🪂 {player.name}: Choose reserves for your units")
+            reserves_decisions = {}
+            
+            for unit in player.get_army().units:
+                print(f"\n📋 {unit.name} ({len(unit.models)} models, {unit.get_unit_cost()} pts)")
+                
+                # Check if unit can use standard reserves
+                can_use_reserves = unit.has_deep_strike() or "Deep Strike" in unit.keywords
+                
+                if can_use_reserves:
+                    print("Options: (1) Deploy normally, (2) Standard Reserves, (3) Strategic Reserves")
+                    choice = input(f"Choice for {unit.name} [1/2/3]: ").strip()
+                    
+                    if choice == '2':
+                        reserves_decisions[unit.name] = 'reserves'
+                        print(f"✅ {unit.name} placed in Standard Reserves")
+                    elif choice == '3':
+                        reserves_decisions[unit.name] = 'strategic_reserves'
+                        print(f"✅ {unit.name} placed in Strategic Reserves")
+                    else:
+                        reserves_decisions[unit.name] = 'deploy'
+                        print(f"✅ {unit.name} will deploy normally")
+                else:
+                    print("Options: (1) Deploy normally, (3) Strategic Reserves")
+                    choice = input(f"Choice for {unit.name} [1/3]: ").strip()
+                    
+                    if choice == '3':
+                        reserves_decisions[unit.name] = 'strategic_reserves'
+                        print(f"✅ {unit.name} placed in Strategic Reserves")
+                    else:
+                        reserves_decisions[unit.name] = 'deploy'
+                        print(f"✅ {unit.name} will deploy normally")
+            
+            return reserves_decisions
     
     def choose_unit_deployment_position(self, unit: 'Unit', deployment_zone: dict, 
                                        already_deployed: List['Unit']) -> Tuple[float, float]:
@@ -270,8 +325,28 @@ class HumanDeploymentDecisionMaker(DeploymentDecisionMaker):
         if self.ui_interface:
             return self.ui_interface.choose_unit_deployment_position(unit, deployment_zone, already_deployed)
         else:
-            # Fallback: center of deployment zone
-            logger.warning(f"No UI interface available for human unit deployment, placing {unit.name} in center of zone")
+            # Interactive fallback for console-based position selection
+            print(f"\n🎯 Place {unit.name} in deployment zone:")
+            print(f"   X range: {deployment_zone['x_range'][0]:.1f}\" to {deployment_zone['x_range'][1]:.1f}\"")
+            print(f"   Y range: {deployment_zone['y_range'][0]:.1f}\" to {deployment_zone['y_range'][1]:.1f}\"")
+            
             x_center = (deployment_zone['x_range'][0] + deployment_zone['x_range'][1]) / 2
             y_center = (deployment_zone['y_range'][0] + deployment_zone['y_range'][1]) / 2
-            return x_center, y_center 
+            
+            try:
+                x_input = input(f"X position ({deployment_zone['x_range'][0]:.1f}-{deployment_zone['x_range'][1]:.1f}, default {x_center:.1f}): ").strip()
+                x = float(x_input) if x_input else x_center
+                
+                y_input = input(f"Y position ({deployment_zone['y_range'][0]:.1f}-{deployment_zone['y_range'][1]:.1f}, default {y_center:.1f}): ").strip()
+                y = float(y_input) if y_input else y_center
+                
+                # Clamp to deployment zone
+                x = max(deployment_zone['x_range'][0], min(deployment_zone['x_range'][1], x))
+                y = max(deployment_zone['y_range'][0], min(deployment_zone['y_range'][1], y))
+                
+                print(f"✅ {unit.name} positioned at ({x:.1f}, {y:.1f})")
+                return x, y
+                
+            except ValueError:
+                logger.warning(f"Invalid input for {unit.name} position, using center of zone")
+                return x_center, y_center 

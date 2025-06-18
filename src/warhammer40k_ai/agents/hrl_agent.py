@@ -1,4 +1,4 @@
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 import os
 import torch
 import torch.nn as nn
@@ -2081,3 +2081,343 @@ class AIDeploymentDecisionMaker(DeploymentDecisionMaker):
         
         logger.info(f"📊 {self.agent.player.name} deployment reward: {reward:.2f}")
         return reward
+
+    ###########################################################################
+    ### Reserves Arrival System
+    ###########################################################################
+    def handle_reserves_arrival_phase(self, game: 'Game') -> List['Unit']:
+        """Handle reserves arrival decisions for the AI player.
+        
+        Args:
+            game: The current game instance
+        
+        Returns:
+            List of units that arrived from reserves this turn
+        """
+        from warhammer40k_ai.classes.game import Game
+        assert isinstance(game, Game)
+        
+        units_arrived = []
+        units_that_can_arrive = game.get_units_that_can_arrive_from_reserves(self.player)
+        units_that_must_arrive = game.get_units_that_must_arrive_from_reserves(self.player)
+        
+        logger.info(f"🪂 {self.player.name} reserves phase: {len(units_that_can_arrive)} can arrive, {len(units_that_must_arrive)} must arrive")
+        
+        # Always bring in units that must arrive (to avoid destruction)
+        for unit in units_that_must_arrive:
+            position, edge = self.choose_reserves_arrival_position(unit, game, forced=True)
+            if position and unit.arrive_from_reserves(position, game.turn):
+                units_arrived.append(unit)
+                game.map.units.append(unit)
+                logger.info(f"✅ {unit.name} forced arrival from reserves at turn {game.turn}")
+                
+                # Store reward for forced arrivals (neutral, since it was mandatory)
+                self.reserves_rewards.append(0.0)
+            else:
+                logger.error(f"❌ Failed to deploy {unit.name} despite being forced - unit will be destroyed")
+                self.reserves_rewards.append(-5.0)  # Heavy penalty for failing mandatory deployment
+        
+        # Make strategic decisions for optional arrivals
+        optional_units = [unit for unit in units_that_can_arrive if unit not in units_that_must_arrive]
+        
+        for unit in optional_units:
+            should_arrive = self.decide_whether_to_arrive_from_reserves(unit, game)
+            
+            if should_arrive:
+                position, edge = self.choose_reserves_arrival_position(unit, game, forced=False)
+                if position and unit.arrive_from_reserves(position, game.turn):
+                    units_arrived.append(unit)
+                    game.map.units.append(unit)
+                    logger.info(f"🎯 {unit.name} strategic arrival from reserves at turn {game.turn}")
+                    
+                    # Compute reward based on tactical value of arrival
+                    arrival_reward = self.compute_reserves_arrival_reward(unit, position, game)
+                    self.reserves_rewards.append(arrival_reward)
+                else:
+                    logger.warning(f"⚠️ Failed to deploy {unit.name} despite decision to arrive")
+                    self.reserves_rewards.append(-2.0)  # Penalty for failed deployment
+        
+        return units_arrived
+    
+    def decide_whether_to_arrive_from_reserves(self, unit: 'Unit', game: 'Game') -> bool:
+        """Decide whether a unit should arrive from reserves this turn.
+        
+        Args:
+            unit: The unit in reserves
+            game: The current game instance
+        
+        Returns:
+            bool: True if the unit should arrive this turn
+        """
+        state = self.extract_reserves_arrival_features(unit, game)
+        probs = self.reserves_selection_net(state)
+        
+        # Check for NaN values
+        if torch.isnan(probs).any():
+            throttled_warning(f"Warning: NaN values in reserves arrival decision for {unit.name}")
+            # Default to arriving (conservative choice)
+            return True
+        
+        # Use the deployment network for arrival decisions (index 0 = don't arrive, 1 = arrive)
+        # We'll interpret the first two outputs as [stay_in_reserves, arrive_now]
+        arrival_probs = torch.softmax(probs[:2], dim=0)
+        
+        arrival_dist = torch.distributions.Categorical(arrival_probs)
+        decision = arrival_dist.sample().item()
+        
+        # Store log probability for learning
+        self.reserves_log_probs.append(arrival_dist.log_prob(torch.tensor(decision)))
+        
+        return decision == 1  # 1 means arrive now
+    
+    def choose_reserves_arrival_position(self, unit: 'Unit', game: 'Game', forced: bool = False) -> Tuple[Optional[Tuple[float, float, float]], Optional[str]]:
+        """Choose where to place a unit arriving from reserves.
+        
+        Args:
+            unit: The unit arriving from reserves
+            game: The current game instance
+            forced: Whether this is a forced arrival (affects decision making)
+        
+        Returns:
+            Tuple of (position, battlefield_edge) or (None, None) if no valid position
+        """
+        # Get valid edges for strategic reserves
+        valid_edges = []
+        if unit.is_in_strategic_reserves():
+            if game.turn == 2:
+                valid_edges = ['own']
+            elif game.turn >= 3:
+                valid_edges = ['own', 'left', 'right']
+        
+        # Try to find the best position
+        best_position = None
+        best_edge = None
+        best_score = -float('inf')
+        
+        attempts = 50 if not forced else 100  # More attempts for forced arrivals
+        
+        for _ in range(attempts):
+            if unit.is_in_strategic_reserves() and valid_edges:
+                # Choose edge (could be enhanced with AI decision making)
+                import random
+                edge = random.choice(valid_edges)
+                
+                # Generate position near that edge
+                if edge == 'own':
+                    x = random.uniform(10, game.battlefield.width - 10)
+                    y = random.uniform(0, 6)  # Within 6" of own edge
+                elif edge == 'left':
+                    x = random.uniform(0, 6)  # Within 6" of left edge
+                    y = random.uniform(10, game.battlefield.height - 10)
+                elif edge == 'right':
+                    x = random.uniform(game.battlefield.width - 6, game.battlefield.width)
+                    y = random.uniform(10, game.battlefield.height - 10)
+                else:
+                    continue
+                    
+                z = game.map.get_height_at_point(x, y)
+                position = (x, y, z)
+                
+                if game.can_place_unit_arriving_from_reserves(unit, position, edge):
+                    # Score this position
+                    score = self.score_reserves_position(unit, position, game)
+                    if score > best_score:
+                        best_score = score
+                        best_position = position
+                        best_edge = edge
+            else:
+                # Standard reserves (Deep Strike) - can arrive anywhere more than 9" from enemies
+                import random
+                x = random.uniform(15, game.battlefield.width - 15)  # Stay away from edges
+                y = random.uniform(15, game.battlefield.height - 15)
+                z = game.map.get_height_at_point(x, y)
+                position = (x, y, z)
+                
+                if game.can_place_unit_arriving_from_reserves(unit, position):
+                    # Score this position
+                    score = self.score_reserves_position(unit, position, game)
+                    if score > best_score:
+                        best_score = score
+                        best_position = position
+                        best_edge = None
+        
+        return best_position, best_edge
+    
+    def score_reserves_position(self, unit: 'Unit', position: Tuple[float, float, float], game: 'Game') -> float:
+        """Score a potential reserves arrival position.
+        
+        Args:
+            unit: The unit arriving from reserves
+            position: The potential position
+            game: The current game instance
+        
+        Returns:
+            float: Score for this position (higher is better)
+        """
+        score = 0.0
+        
+        # Prefer positions closer to objectives
+        for objective in self.objectives:
+            distance = get_dist(
+                objective.location.x - position[0],
+                objective.location.y - position[1],
+                objective.location.z - position[2]
+            )
+            # Closer to objectives is better
+            score += max(0, 20 - distance)
+        
+        # Consider threat to enemy units
+        enemy_units = game.get_enemy_units(self.player)
+        for enemy_unit in enemy_units:
+            if not enemy_unit.is_alive() or not enemy_unit.deployed:
+                continue
+                
+            enemy_pos = enemy_unit.get_position()
+            distance = get_dist(
+                enemy_pos[0] - position[0],
+                enemy_pos[1] - position[1],
+                enemy_pos[2] - position[2]
+            )
+            
+            # Prefer positions within threat range but not too close
+            if 9 < distance < unit.get_max_weapon_range():
+                score += 10  # Good threatening position
+            elif distance > unit.get_max_weapon_range():
+                score -= distance * 0.1  # Penalty for being too far away
+        
+        # Avoid being too isolated from friendly units
+        friendly_units = [u for u in self.player.get_army().units if u != unit and u.deployed and u.is_alive()]
+        if friendly_units:
+            closest_friendly_distance = min(
+                get_dist(
+                    friendly_unit.get_position()[0] - position[0],
+                    friendly_unit.get_position()[1] - position[1],
+                    friendly_unit.get_position()[2] - position[2]
+                ) for friendly_unit in friendly_units
+            )
+            
+            # Prefer moderate distance from friendlies (not too close, not too far)
+            if 6 < closest_friendly_distance < 18:
+                score += 5
+            elif closest_friendly_distance > 24:
+                score -= 5  # Penalty for being too isolated
+        
+        return score
+    
+    def extract_reserves_arrival_features(self, unit: 'Unit', game: 'Game') -> torch.Tensor:
+        """Extract features for reserves arrival decision.
+        
+        Args:
+            unit: The unit in reserves
+            game: The current game instance
+        
+        Returns:
+            torch.Tensor: Feature vector for the neural network
+        """
+        features = []
+        
+        # Current turn and urgency
+        features.append(game.turn)
+        features.append(1.0 if unit.must_arrive_from_reserves(game.turn) else 0.0)
+        
+        # Unit characteristics
+        features.append(unit.movement)
+        features.append(len(unit.models))
+        features.append(unit.get_max_weapon_range())
+        features.append(unit.toughness)
+        features.append(unit.save)
+        
+        # Game state
+        friendly_units_on_board = len([u for u in self.player.get_army().units if u.deployed and u.is_alive()])
+        enemy_units_on_board = len([u for u in self.opponent.get_army().units if u.deployed and u.is_alive()])
+        features.extend([friendly_units_on_board, enemy_units_on_board])
+        
+        # Objective control situation
+        objectives_controlled = sum(1 for obj in self.objectives 
+                                  if hasattr(obj.location, 'controlling_player') and 
+                                     obj.location.controlling_player == self.player)
+        objectives_contested = len(self.objectives) - objectives_controlled
+        features.extend([objectives_controlled, objectives_contested])
+        
+        # Threat assessment
+        enemy_ranged_threat = sum(1 for enemy_unit in self.opponent.get_army().units 
+                                if enemy_unit.deployed and enemy_unit.get_max_weapon_range() > 24)
+        features.append(enemy_ranged_threat)
+        
+        # Player scores (if available)
+        try:
+            features.append(self.player.get_score())
+            features.append(self.opponent.get_score())
+        except:
+            features.extend([0.0, 0.0])
+        
+        # Pad to expected size
+        while len(features) < 17:  # Match reserves decision feature size
+            features.append(0.0)
+        
+        return torch.tensor(features, dtype=torch.float32)
+    
+    def compute_reserves_arrival_reward(self, unit: 'Unit', position: Tuple[float, float, float], game: 'Game') -> float:
+        """Compute reward for a reserves arrival decision.
+        
+        Args:
+            unit: The unit that arrived
+            position: Where it was placed
+            game: The current game instance
+        
+        Returns:
+            float: Reward value
+        """
+        reward = 1.0  # Base reward for successful arrival
+        
+        # Bonus for arriving at optimal times
+        if game.turn == 2:
+            reward += 0.5  # Good timing for most units
+        elif game.turn == 3:
+            reward += 0.2  # Still reasonable timing
+        
+        # Bonus for threat positioning
+        enemy_units = game.get_enemy_units(self.player)
+        for enemy_unit in enemy_units:
+            if not enemy_unit.is_alive() or not enemy_unit.deployed:
+                continue
+                
+            distance = get_dist(
+                enemy_unit.get_position()[0] - position[0],
+                enemy_unit.get_position()[1] - position[1],
+                enemy_unit.get_position()[2] - position[2]
+            )
+            
+            # Bonus for good threatening positions
+            if 9 < distance < unit.get_max_weapon_range():
+                reward += 1.0
+        
+        # Bonus for objective proximity
+        for objective in self.objectives:
+            distance = get_dist(
+                objective.location.x - position[0],
+                objective.location.y - position[1],
+                objective.location.z - position[2]
+            )
+            if distance < 12:  # Within reasonable objective range
+                reward += 0.5
+        
+        return reward
+
+    ###########################################################################
+    # Reserves Phase (end of Movement Phase)
+    ###########################################################################
+    def handle_reserves_arrival_phase(self, high_level_agent: 'HighLevelAgent') -> List['Unit']:
+        """Handle reserves arrivals at the end of the movement phase.
+        
+        Args:
+            high_level_agent: The high-level agent to make reserves decisions
+        
+        Returns:
+            List of units that arrived from reserves
+        """
+        if high_level_agent and hasattr(high_level_agent, 'handle_reserves_arrival_phase'):
+            return high_level_agent.handle_reserves_arrival_phase(self.game)
+        else:
+            # Fallback to basic game logic
+            return self.game.process_player_reserves_arrivals(self.player)
