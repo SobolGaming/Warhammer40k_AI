@@ -177,22 +177,28 @@ def execute_official_deployment(game: Game, player1: Player, player2: Player,
     # Create deployment manager
     deployment_manager = DeploymentManager(game)
     
-    # Create decision makers based on player types
+    # Create decision makers based on player types (not just agent existence)
     decision_makers = {}
     
-    if player1_agent:
-        # AI player
+    # Player 1 decision maker
+    if player1.type == PlayerType.AI and player1_agent:
+        # AI player with agent
         decision_makers[player1.name] = AIDeploymentDecisionMaker(player1_agent)
+        logger.info(f"🤖 {player1.name} will use AI deployment decisions")
     else:
         # Human player with UI interface
         decision_makers[player1.name] = HumanDeploymentDecisionMaker(ui_interface)
+        logger.info(f"👤 {player1.name} will use human deployment decisions")
     
-    if player2_agent:
-        # AI player
+    # Player 2 decision maker
+    if player2.type == PlayerType.AI and player2_agent:
+        # AI player with agent
         decision_makers[player2.name] = AIDeploymentDecisionMaker(player2_agent)
+        logger.info(f"🤖 {player2.name} will use AI deployment decisions")
     else:
         # Human player with UI interface
         decision_makers[player2.name] = HumanDeploymentDecisionMaker(ui_interface)
+        logger.info(f"👤 {player2.name} will use human deployment decisions")
     
     # Execute deployment
     deployment_results = deployment_manager.execute_deployment_sequence(decision_makers)
@@ -210,6 +216,31 @@ def execute_official_deployment(game: Game, player1: Player, player2: Player,
             decision_maker.compute_deployment_reward(player_deployment)
     
     return deployment_results
+
+def auto_deploy_player_units(game: Game, player: Player, zone: dict):
+    """Deploy all units for a single player within their deployment zone."""
+    units = player.get_army().units
+    x_start, x_end = zone['x_range']
+    y_start, y_end = zone['y_range']
+    
+    print(f"🤖 Auto-deploying {len(units)} units for {player.name}")
+    
+    for i, unit in enumerate(units):
+        x = x_start + (i % 3) * 5
+        y = y_start + (i // 3) * 5
+        
+        # Ensure position stays within zone bounds
+        x = max(x_start + 1, min(x, x_end - 1))
+        y = max(y_start + 1, min(y, y_end - 1))
+        
+        for j, model in enumerate(unit.models):
+            model_x = x + (j % 2) * 1
+            model_y = y + (j // 2) * 1
+            model.set_location(model_x, model_y, 0, 0.0)
+        
+        unit.deployed = True
+        game.map.units.append(unit)
+        print(f"  ✅ {unit.name} deployed at ({x:.1f}, {y:.1f})")
 
 def auto_deploy_units(game: Game, player1: Player, player2: Player):
     """Legacy function - kept for compatibility. Use execute_official_deployment instead."""
@@ -229,42 +260,41 @@ def auto_deploy_units(game: Game, player1: Player, player2: Player):
         'y_range': (0, battlefield_height)  # Full height
     }
     
-    def quick_deploy(player: Player, zone: dict):
-        units = player.get_army().units
-        x_start, x_end = zone['x_range']
-        y_start, y_end = zone['y_range']
-        
-        for i, unit in enumerate(units):
-            x = x_start + (i % 3) * 5
-            y = y_start + (i // 3) * 5
-            
-            for j, model in enumerate(unit.models):
-                model_x = x + (j % 2) * 1
-                model_y = y + (j // 2) * 1
-                model.set_location(model_x, model_y, 0, 0.0)
-            
-            unit.deployed = True
-            game.map.units.append(unit)
-    
-    quick_deploy(player1, player1_zone)
-    quick_deploy(player2, player2_zone)
+    auto_deploy_player_units(game, player1, player1_zone)
+    auto_deploy_player_units(game, player2, player2_zone)
 
-def initialize_game() -> Tuple[pygame.Surface, WarhammerEnv, Game, Map, float, int, int, Player, Player]:
+def validate_army_files(player1_army_file: str, player2_army_file: str):
+    """Validate that army files exist and are readable."""
+    if not os.path.exists(player1_army_file):
+        raise FileNotFoundError(f"Player 1 army file not found: {player1_army_file}")
+    if not os.path.exists(player2_army_file):
+        raise FileNotFoundError(f"Player 2 army file not found: {player2_army_file}")
+
+def initialize_game(player1_type: str = 'ai', player2_type: str = 'ai', 
+                   player1_army_file: str = 'army_lists/warhammer_app_dump.txt',
+                   player2_army_file: str = 'army_lists/chaos_daemons_GT2023.txt') -> Tuple[pygame.Surface, WarhammerEnv, Game, Map, float, int, int, Player, Player]:
     pygame.init()
     screen = pygame.display.set_mode((BATTLEFIELD_WIDTH + 2 * ROSTER_PANE_WIDTH, BATTLEFIELD_HEIGHT + INFO_PANE_HEIGHT))
     pygame.display.set_caption('Warhammer 40,000 Battlefield')
 
+    # Validate army files exist
+    validate_army_files(player1_army_file, player2_army_file)
+
+    # Convert string types to PlayerType enum
+    player1_player_type = PlayerType.HUMAN if player1_type.lower() == 'human' else PlayerType.AI
+    player2_player_type = PlayerType.HUMAN if player2_type.lower() == 'human' else PlayerType.AI
+
     # Create players with armies (suppress noisy parsing output)
     with suppress_stdout():
-        player1 = Player("Player 1", PlayerType.AI, parse_army_list("army_lists/warhammer_app_dump.txt", waha_helper))
-        player2 = Player("Player 2", PlayerType.AI, parse_army_list("army_lists/chaos_daemons_GT2023.txt", waha_helper))
+        player1 = Player("Player 1", player1_player_type, parse_army_list(player1_army_file, waha_helper))
+        player2 = Player("Player 2", player2_player_type, parse_army_list(player2_army_file, waha_helper))
     
     # Only print during first initialization
     if hasattr(initialize_game, '_first_run'):
         pass  # Skip printing on subsequent runs
     else:
-        print(f"Player 1 army created with {len(player1.get_army().units)} units")
-        print(f"Player 2 army created with {len(player2.get_army().units)} units")
+        print(f"Player 1 ({player1_type.upper()}) army created with {len(player1.get_army().units)} units from {player1_army_file}")
+        print(f"Player 2 ({player2_type.upper()}) army created with {len(player2.get_army().units)} units from {player2_army_file}")
         initialize_game._first_run = True
 
     # Define obstacles
@@ -310,13 +340,27 @@ def initialize_game() -> Tuple[pygame.Surface, WarhammerEnv, Game, Map, float, i
 
     return screen, env, game, game_map, zoom_level, offset_x, offset_y, player1, player2
 
-def run_training_episode(episode_num: int, agents: dict) -> dict:
+def run_training_episode(episode_num: int, agents: dict, player_configs: dict = None) -> dict:
     """Run a single training episode and return statistics."""
     try:
         logger.debug(f"Starting episode {episode_num + 1}")
         
+        # Use default AI vs AI for training if no config provided
+        if player_configs is None:
+            player_configs = {
+                'player1_type': 'ai',
+                'player2_type': 'ai',
+                'player1_army_file': 'army_lists/warhammer_app_dump.txt',
+                'player2_army_file': 'army_lists/chaos_daemons_GT2023.txt'
+            }
+        
         # Create fresh game instance for this episode
-        screen, env, game, game_map, _, _, _, player1, player2 = initialize_game()
+        screen, env, game, game_map, _, _, _, player1, player2 = initialize_game(
+            player_configs['player1_type'],
+            player_configs['player2_type'],
+            player_configs['player1_army_file'],
+            player_configs['player2_army_file']
+        )
         logger.debug(f"Game initialization completed for episode {episode_num + 1}")
     except Exception as early_error:
         logger.error(f"❌ EPISODE INITIALIZATION FAILED: {early_error}")
@@ -559,7 +603,7 @@ def run_training_episode(episode_num: int, agents: dict) -> dict:
     
     return episode_stats
 
-def run_training_loop(clear_checkpoints_flag=False):
+def run_training_loop(clear_checkpoints_flag=False, player_configs=None):
     """Run the main training loop for the specified number of episodes."""
     print(f"Starting AI training mode for {NUM_TRAINING_EPISODES} episodes...")
     
@@ -570,8 +614,22 @@ def run_training_loop(clear_checkpoints_flag=False):
     if clear_checkpoints_flag:
         clear_checkpoints()
     
+    # Use default AI vs AI for training if no config provided
+    if player_configs is None:
+        player_configs = {
+            'player1_type': 'ai',
+            'player2_type': 'ai',
+            'player1_army_file': 'army_lists/warhammer_app_dump.txt',
+            'player2_army_file': 'army_lists/chaos_daemons_GT2023.txt'
+        }
+    
     # Initialize all agents with first game instance to get proper dimensions
-    screen, env, game, game_map, _, _, _, player1, player2 = initialize_game()
+    screen, env, game, game_map, _, _, _, player1, player2 = initialize_game(
+        player_configs['player1_type'],
+        player_configs['player2_type'],
+        player_configs['player1_army_file'],
+        player_configs['player2_army_file']
+    )
     objectives = game.map.objectives
     commands = game.commands
     
@@ -614,7 +672,7 @@ def run_training_loop(clear_checkpoints_flag=False):
     # Run training episodes
     for episode in range(NUM_TRAINING_EPISODES):
         try:
-            episode_stats = run_training_episode(episode, agents)
+            episode_stats = run_training_episode(episode, agents, player_configs)
         except Exception as episode_error:
             logger.error(f"❌ Episode {episode + 1} FAILED: {episode_error}")
             logger.error(f"Error type: {type(episode_error).__name__}")
@@ -799,8 +857,22 @@ def display_final_analysis(training_stats: dict, all_episode_stats: list):
     print("🎉 Training completed successfully!")
     print("=" * 70)
 
-def main_game_loop() -> None:
-    screen, env, game, game_map, _, _, _, player1, player2 = initialize_game()
+def main_game_loop(player_configs=None) -> None:
+    # Use default configurations if none provided
+    if player_configs is None:
+        player_configs = {
+            'player1_type': 'human',
+            'player2_type': 'ai',
+            'player1_army_file': 'army_lists/warhammer_app_dump.txt',
+            'player2_army_file': 'army_lists/chaos_daemons_GT2023.txt'
+        }
+    
+    screen, env, game, game_map, _, _, _, player1, player2 = initialize_game(
+        player_configs['player1_type'],
+        player_configs['player2_type'],
+        player_configs['player1_army_file'],
+        player_configs['player2_army_file']
+    )
     
     # Set up attacker/defender for proper deployment order (defender starts)
     import random
@@ -819,136 +891,203 @@ def main_game_loop() -> None:
     game_state = GameState.SETUP
     clicked_unit = None
 
-    # Initialize agents with objectives
-    high_level_agent_player1 = HighLevelAgent(game, player1, player2, objectives=game.map.objectives, commands=game.commands)
-    tactical_agent_player1 = TacticalAgent(game, player1)
-    low_level_agent_player1 = LowLevelAgent(game, player1)
-    high_level_agent_player2 = HighLevelAgent(game, player2, player1, objectives=game.map.objectives, commands=game.commands)
-    tactical_agent_player2 = TacticalAgent(game, player2)
-    low_level_agent_player2 = LowLevelAgent(game, player2)
+    # Initialize agents with objectives (only for AI players)
+    high_level_agent_player1 = None
+    tactical_agent_player1 = None
+    low_level_agent_player1 = None
+    high_level_agent_player2 = None
+    tactical_agent_player2 = None
+    low_level_agent_player2 = None
+    
+    # Create AI agents only for AI players
+    if player1.type == PlayerType.AI:
+        high_level_agent_player1 = HighLevelAgent(game, player1, player2, objectives=game.map.objectives, commands=game.commands)
+        tactical_agent_player1 = TacticalAgent(game, player1)
+        low_level_agent_player1 = LowLevelAgent(game, player1)
+        
+    if player2.type == PlayerType.AI:
+        high_level_agent_player2 = HighLevelAgent(game, player2, player1, objectives=game.map.objectives, commands=game.commands)
+        tactical_agent_player2 = TacticalAgent(game, player2)
+        low_level_agent_player2 = LowLevelAgent(game, player2)
 
-    # Load checkpoints for manual play mode
+    # Load checkpoints for AI players only
     if os.path.exists(CHECKPOINT_DIR):
         print("Loading trained AI models...")
-        high_level_agent_player1.load_checkpoint(os.path.join(CHECKPOINT_DIR, 'hla_player1_checkpoint.pth'))
-        tactical_agent_player1.load_checkpoint(os.path.join(CHECKPOINT_DIR, 'tactical_agent_player1_checkpoint.pth'))
-        low_level_agent_player1.load_checkpoint(os.path.join(CHECKPOINT_DIR, 'low_level_agent_player1_checkpoint.pth'))
-        high_level_agent_player2.load_checkpoint(os.path.join(CHECKPOINT_DIR, 'hla_player2_checkpoint.pth'))
-        tactical_agent_player2.load_checkpoint(os.path.join(CHECKPOINT_DIR, 'tactical_agent_player2_checkpoint.pth'))
-        low_level_agent_player2.load_checkpoint(os.path.join(CHECKPOINT_DIR, 'low_level_agent_player2_checkpoint.pth'))
+        if high_level_agent_player1:
+            high_level_agent_player1.load_checkpoint(os.path.join(CHECKPOINT_DIR, 'hla1_checkpoint.pth'))
+            tactical_agent_player1.load_checkpoint(os.path.join(CHECKPOINT_DIR, 'ta1_checkpoint.pth'))
+            low_level_agent_player1.load_checkpoint(os.path.join(CHECKPOINT_DIR, 'lla1_checkpoint.pth'))
+        if high_level_agent_player2:
+            high_level_agent_player2.load_checkpoint(os.path.join(CHECKPOINT_DIR, 'hla2_checkpoint.pth'))
+            tactical_agent_player2.load_checkpoint(os.path.join(CHECKPOINT_DIR, 'ta2_checkpoint.pth'))
+            low_level_agent_player2.load_checkpoint(os.path.join(CHECKPOINT_DIR, 'lla2_checkpoint.pth'))
 
     print("Starting main game loop")
-    
-    # Create deployment zones for visualization (for manual play)
-    if not game.do_ai_action:
-        # For manual play, just create the deployment zones without complex deployment system
-        # 18" from each edge, full battlefield height, 24" no-man's land in middle
-        battlefield_width, battlefield_height = game.get_battlefield_size()
-        deployment_depth = 18.0  # 18 inches from edge
-        
-        game.deployment_zones = {
-            player1.name: {
-                'x_range': (0, deployment_depth),  # Left edge to 18" in
-                'y_range': (0, battlefield_height)  # Full height
-            },
-            player2.name: {
-                'x_range': (battlefield_width - deployment_depth, battlefield_width),  # 18" from right edge to edge
-                'y_range': (0, battlefield_height)  # Full height
-            }
-        }
-        print(f"Created proper deployment zones: Player 1: 0-{deployment_depth}\", Player 2: {battlefield_width - deployment_depth}-{battlefield_width}\", No-man's land: {deployment_depth}-{battlefield_width - deployment_depth}\" ({battlefield_width - 2*deployment_depth}\" wide)")
+    print(f"🎮 Game mode: {player1.name} ({player1.type.name}) vs {player2.name} ({player2.type.name})")
+    print("Controls:")
+    if player1.type == PlayerType.HUMAN or player2.type == PlayerType.HUMAN:
+        print("  - SPACE: Start deployment and advance game phases")
+        print("  - A: Force AI action (if needed)")
+        print("  - ESC: Close panels/deselect units")
+        print("  - Mouse: Click units for details, drag to move in movement phase")
+    print("  - AI players will act automatically when it's their turn")
+    # Special case: If both players are AI, auto-start deployment immediately
+    if player1.type == PlayerType.AI and player2.type == PlayerType.AI:
+        print("🤖 Both players are AI - starting deployment automatically...")
+        try:
+            deployment_results = execute_official_deployment(game, player1, player2, 
+                                                            high_level_agent_player1, high_level_agent_player2, ui_interface)
+            print(f"✅ AI deployment completed! {deployment_results['first_turn_player']} will go first")
+            game_state = GameState.PLAYING
+        except Exception as e:
+            print(f"⚠️ AI deployment failed: {e}, using fallback")
+            auto_deploy_units(game, player1, player2)
+            game_state = GameState.PLAYING
+    else:
+        print("📋 Press SPACE to begin deployment sequence")
+
+    # Ensure pygame display is properly initialized
+    game_view.draw()
+    pygame.display.flip()
 
     running = True
     while running:
-        if game_state == GameState.PLAYING and game.do_ai_action:
-            # Auto-deploy units if not already deployed
-            if not all(unit.deployed for unit in player1.get_army().units + player2.get_army().units):
-                try:
-                    # Use official deployment for AI vs AI
-                    execute_official_deployment(game, player1, player2, 
-                                              high_level_agent_player1, high_level_agent_player2)
-                except Exception as e:
-                    logger.warning(f"Official deployment failed in main loop: {e}")
-                    # Fallback to legacy deployment
-                    auto_deploy_units(game, player1, player2)
+        # Handle deployment phase with alternating deployment
+        if game_state == GameState.PLAYING and game.is_deployment_phase():
+            current_deployment_player = game.get_current_deployment_player()
             
-            while not game.is_game_over():
-                current_player = game.get_current_player()
-                if current_player == player1:
-                    high_level_agent = high_level_agent_player1
-                    tactical_agent = tactical_agent_player1
-                    low_level_agent = low_level_agent_player1
-                else:
-                    high_level_agent = high_level_agent_player2
-                    tactical_agent = tactical_agent_player2
-                    low_level_agent = low_level_agent_player2
-
-                print(f"🎮 TURN {game.turn} | {current_player.name} | Phase: {game.phase.name}")
-
-                objective, command = high_level_agent.choose_objective_and_command()
-                print(f"{current_player.name} chose Objective: {objective.name}, Command: {command}")
-
-                # Record average distance at start of turn for high-level reward calculation
-                avg_distance_before =current_player.compute_average_distance(objective)
-
-                if game.is_command_phase():
-                    # Command phase - all players gain 1 CP at the start
-                    game.start_command_phase()
-                    # Update objective control at the end of each turn
-                    for obj in game.map.objectives:
-                        if isinstance(obj.location, ObjectivePoint):
-                            obj.location.update_control(game)
-                        if obj.check_completion(game):
-                            print(f"Objective {obj.name} completed!")
-                            current_player.add_score(obj.points)
-                    tactical_agent.command_phase(command)
-                    game.next_phase()
-                elif game.is_movement_phase():
-                    for unit in current_player.army.units:
-                        tactical_agent.movement_phase(unit, objective)
-                    game.next_phase()
-                elif game.is_shooting_phase():
-                    for unit in current_player.army.units:
-                        tactical_agent.shooting_phase(unit)
-                    game.next_phase()
-                elif game.is_charge_phase():
-                    for unit in current_player.army.units:
-                        tactical_agent.charge_phase(unit)
-                    game.next_phase()
-                elif game.is_fight_phase():
-                    for unit in current_player.army.units:
-                        tactical_agent.fight_phase(unit)
-                    game.next_phase()  # This will trigger next_turn() since it's the last phase
-
-                # Compute aggregated reward for the High Level Agent based on distance improvement.
-                avg_distance_after = current_player.compute_average_distance(objective)
-                high_level_reward = (avg_distance_before - avg_distance_after) * 1.0  # scale factor can be tuned
-                print(f"High Level Reward: {high_level_reward} (Avg before: {avg_distance_before}, Avg after: {avg_distance_after})")
-
-                high_level_agent.store_reward(high_level_reward)
-                high_level_agent.update_policy()
-                tactical_agent.update_policies()
-                low_level_agent.update_policy()
-                
-                # Clean up destroyed units from the map
-                cleanup_destroyed_units(game)
-
-                # Update the display
-                game_view.draw()
-                pygame.display.flip()
-
-                if game.is_game_over():
-                    print(f"Game over! Winner: {game.get_winner().name} with score: {game.get_winner().get_score()} vs {game.get_loser().get_score()}")
-                    if game.get_winner() == player1:
-                        high_level_agent_player1.store_reward(100)
-                        high_level_agent_player1.update_policy()
-                        high_level_agent_player2.store_reward(-100)
-                        high_level_agent_player2.update_policy()
+            # Check if current deployment player is AI and should auto-deploy
+            if current_deployment_player.type == PlayerType.AI:
+                # AI player needs to deploy a unit
+                deployable_units = game.get_deployable_units(current_deployment_player)
+                if deployable_units:
+                    unit_to_deploy = deployable_units[0]  # Deploy first available unit
+                    print(f"🤖 {current_deployment_player.name} (AI) deploying {unit_to_deploy.name}...")
+                    
+                    # Auto-deploy the unit
+                    success = game.auto_deploy_unit(unit_to_deploy)
+                    if success:
+                        unit_to_deploy.deployed = True
+                        print(f"✅ {unit_to_deploy.name} deployed successfully")
                     else:
-                        high_level_agent_player2.store_reward(100)
-                        high_level_agent_player2.update_policy()
-                        high_level_agent_player1.store_reward(-100)
-                        high_level_agent_player1.update_policy()
+                        print(f"❌ Failed to deploy {unit_to_deploy.name}, marking as deployed anyway")
+                        unit_to_deploy.deployed = True
+                    
+                    # Advance to next player's deployment turn
+                    game.advance_deployment_turn()
+                    
+                    if game.is_deployment_phase():
+                        next_player = game.get_current_deployment_player()
+                        print(f"📋 {next_player.name}'s turn to deploy")
+                    else:
+                        print("🎯 Deployment phase complete! Game starting...")
+        
+        # Check if current player is AI and should take action automatically (normal game phases)
+        elif game_state == GameState.PLAYING and not game.is_deployment_phase():
+            current_player = game.get_current_player()
+            should_do_ai_action = (current_player.type == PlayerType.AI and not game.is_game_over())
+            
+            # Auto-enable AI action for AI players
+            if should_do_ai_action:
+                game.do_ai_action = True
+                print(f"🤖 {current_player.name} (AI) taking action automatically...")
+        
+        if game_state == GameState.PLAYING and game.do_ai_action:
+            # Only do AI actions if at least one player is AI
+            if player1.type == PlayerType.AI or player2.type == PlayerType.AI:
+                
+                while not game.is_game_over():
+                    current_player = game.get_current_player()
+                    
+                    # Skip AI logic for human players
+                    if current_player.type == PlayerType.HUMAN:
+                        print(f"🎮 TURN {game.turn} | {current_player.name} (HUMAN) | Phase: {game.phase.name} - Waiting for human input...")
+                        game.do_ai_action = False  # Disable AI action for human players
+                        break  # Exit AI loop, let human player take control
+                    
+                    # AI player logic
+                    if current_player == player1:
+                        high_level_agent = high_level_agent_player1
+                        tactical_agent = tactical_agent_player1
+                        low_level_agent = low_level_agent_player1
+                    else:
+                        high_level_agent = high_level_agent_player2
+                        tactical_agent = tactical_agent_player2
+                        low_level_agent = low_level_agent_player2
+
+                    # Ensure we have AI agents for this player
+                    if not high_level_agent or not tactical_agent or not low_level_agent:
+                        print(f"⚠️ No AI agents found for {current_player.name} - skipping AI action")
+                        break
+
+                    print(f"🎮 TURN {game.turn} | {current_player.name} (AI) | Phase: {game.phase.name}")
+
+                    objective, command = high_level_agent.choose_objective_and_command()
+                    print(f"{current_player.name} chose Objective: {objective.name}, Command: {command}")
+
+                    # Record average distance at start of turn for high-level reward calculation
+                    avg_distance_before = current_player.compute_average_distance(objective)
+
+                    if game.is_command_phase():
+                        # Command phase - all players gain 1 CP at the start
+                        game.start_command_phase()
+                        # Update objective control at the end of each turn
+                        for obj in game.map.objectives:
+                            if isinstance(obj.location, ObjectivePoint):
+                                obj.location.update_control(game)
+                            if obj.check_completion(game):
+                                print(f"Objective {obj.name} completed!")
+                                current_player.add_score(obj.points)
+                        tactical_agent.command_phase(command)
+                        game.next_phase()
+                    elif game.is_movement_phase():
+                        for unit in current_player.army.units:
+                            tactical_agent.movement_phase(unit, objective)
+                        game.next_phase()
+                    elif game.is_shooting_phase():
+                        for unit in current_player.army.units:
+                            tactical_agent.shooting_phase(unit)
+                        game.next_phase()
+                    elif game.is_charge_phase():
+                        for unit in current_player.army.units:
+                            tactical_agent.charge_phase(unit)
+                        game.next_phase()
+                    elif game.is_fight_phase():
+                        for unit in current_player.army.units:
+                            tactical_agent.fight_phase(unit)
+                        game.next_phase()  # This will trigger next_turn() since it's the last phase
+
+                    # Compute aggregated reward for the High Level Agent based on distance improvement.
+                    avg_distance_after = current_player.compute_average_distance(objective)
+                    high_level_reward = (avg_distance_before - avg_distance_after) * 1.0  # scale factor can be tuned
+                    print(f"High Level Reward: {high_level_reward} (Avg before: {avg_distance_before}, Avg after: {avg_distance_after})")
+
+                    high_level_agent.store_reward(high_level_reward)
+                    high_level_agent.update_policy()
+                    tactical_agent.update_policies()
+                    low_level_agent.update_policy()
+                    
+                    # Clean up destroyed units from the map
+                    cleanup_destroyed_units(game)
+
+                    # Update the display
+                    game_view.draw()
+                    pygame.display.flip()
+
+                    if game.is_game_over():
+                        print(f"Game over! Winner: {game.get_winner().name} with score: {game.get_winner().get_score()} vs {game.get_loser().get_score()}")
+                        # Only update AI agents if they exist
+                        if high_level_agent_player1 and high_level_agent_player2:
+                            if game.get_winner() == player1:
+                                high_level_agent_player1.store_reward(100)
+                                high_level_agent_player1.update_policy()
+                                high_level_agent_player2.store_reward(-100)
+                                high_level_agent_player2.update_policy()
+                            else:
+                                high_level_agent_player2.store_reward(100)
+                                high_level_agent_player2.update_policy()
+                                high_level_agent_player1.store_reward(-100)
+                                high_level_agent_player1.update_policy()
             game.do_ai_action = False
 
         for event in pygame.event.get():
@@ -960,30 +1099,53 @@ def main_game_loop() -> None:
                 running = False
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if game_state == GameState.PLAYING and event.button == 1:  # Left mouse button
-                    if clicked_unit:
-                        if game.get_current_player().has_unit(clicked_unit):
-                            game_view.selected_unit = clicked_unit
+                    # Handle deployment phase clicks
+                    if game.is_deployment_phase():
+                        current_deployment_player = game.get_current_deployment_player()
+                        if current_deployment_player.type == PlayerType.HUMAN:
+                            # Let the UI handle deployment clicks, but check afterwards if deployment advanced
+                            units_before = len([u for u in current_deployment_player.get_army().units if u.deployed])
+                            game_view.on_mouse_press(*event.pos, event.button)
+                            units_after = len([u for u in current_deployment_player.get_army().units if u.deployed])
+                            
+                            # If a unit was deployed, advance deployment turn
+                            if units_after > units_before:
+                                print(f"✅ {current_deployment_player.name} deployed a unit")
+                                game.advance_deployment_turn()
+                                
+                                if game.is_deployment_phase():
+                                    next_player = game.get_current_deployment_player()
+                                    print(f"📋 {next_player.name}'s turn to deploy")
+                                else:
+                                    print("🎯 Deployment phase complete! Game starting...")
                         else:
-                            print("Unit not found in current player's army")
-
-                        if game_view.selected_unit:
-                            if game.is_movement_phase():
-                                # Convert screen coordinates to game coordinates
-                                game_x = (event.pos[0] - ROSTER_PANE_WIDTH - game_view.offset_x) / (TILE_SIZE * game_view.zoom_level)
-                                game_y = (event.pos[1] - game_view.offset_y) / (TILE_SIZE * game_view.zoom_level)
-                                game_z = 0.0
-                                # Move the selected unit
-                                success = game_view.selected_unit.move((game_x, game_y, game_z), game_view.game_map)
-                                game_view.selected_unit = None  # Deselect the unit after moving
-                        clicked_unit = None
-                        game_view.info_pane.selected_unit = clicked_unit
+                            print(f"⚠️ It's {current_deployment_player.name}'s turn to deploy (AI will auto-deploy)")
                     else:
-                        clicked_unit = game_view.get_unit_at_position(*event.pos)
+                        # Normal game phase handling
                         if clicked_unit:
+                            if game.get_current_player().has_unit(clicked_unit):
+                                game_view.selected_unit = clicked_unit
+                            else:
+                                print("Unit not found in current player's army")
+
+                            if game_view.selected_unit:
+                                if game.is_movement_phase():
+                                    # Convert screen coordinates to game coordinates
+                                    game_x = (event.pos[0] - ROSTER_PANE_WIDTH - game_view.offset_x) / (TILE_SIZE * game_view.zoom_level)
+                                    game_y = (event.pos[1] - game_view.offset_y) / (TILE_SIZE * game_view.zoom_level)
+                                    game_z = 0.0
+                                    # Move the selected unit
+                                    success = game_view.selected_unit.move((game_x, game_y, game_z), game_view.game_map)
+                                    game_view.selected_unit = None  # Deselect the unit after moving
+                            clicked_unit = None
                             game_view.info_pane.selected_unit = clicked_unit
-                            print(f"Selected unit: {clicked_unit.name}")
                         else:
-                            print("No unit at this position")
+                            clicked_unit = game_view.get_unit_at_position(*event.pos)
+                            if clicked_unit:
+                                game_view.info_pane.selected_unit = clicked_unit
+                                print(f"Selected unit: {clicked_unit.name}")
+                            else:
+                                print("No unit at this position")
                 else:
                     # Always allow game_view to handle mouse events (including during setup/deployment)
                     game_view.on_mouse_press(*event.pos, event.button)
@@ -1011,13 +1173,59 @@ def main_game_loop() -> None:
                     game_view.zoom_level = handle_zoom(game_view.zoom_level, event)
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE and game_state == GameState.SETUP:
-                    game_state = GameState.PLAYING
-                    print("Game started!")
+                    # Execute deployment sequence when user presses SPACE
+                    print("🚀 Starting deployment sequence...")
+                    deployment_completed = False
+                    try:
+                        # For mixed human/AI games, use proper alternating deployment
+                        if player1.type != player2.type:  # Mixed game
+                            print("🎮 Mixed Human/AI game - starting alternating deployment")
+                            # Set up deployment zones for visualization and validation
+                            battlefield_width, battlefield_height = game.get_battlefield_size()
+                            deployment_depth = 18.0  # 18 inches from edge
+                            
+                            game.deployment_zones = {
+                                player1.name: {
+                                    'x_range': (0, deployment_depth),  # Left edge to 18" in
+                                    'y_range': (0, battlefield_height)  # Full height
+                                },
+                                player2.name: {
+                                    'x_range': (battlefield_width - deployment_depth, battlefield_width),  # 18" from right edge to edge
+                                    'y_range': (0, battlefield_height)  # Full height
+                                }
+                            }
+                            
+                            # Start alternating deployment - defender (player1) goes first
+                            game.deployment_turn_index = 0  # Start with first player (defender)
+                            game_state = GameState.PLAYING  # Switch to playing state for deployment handling
+                            
+                            print(f"📋 {game.get_current_deployment_player().name} deploys first unit")
+                            print("Instructions:")
+                            print("  - Human players: Click on battlefield to place units")  
+                            print("  - AI players: Will auto-deploy when it's their turn")
+                            print("  - Zones are shown with colored overlay")
+                        else:
+                            # Pure AI vs AI or Human vs Human - use official system
+                            deployment_results = execute_official_deployment(game, player1, player2, 
+                                                                            high_level_agent_player1, high_level_agent_player2, ui_interface)
+                            print(f"✅ Deployment completed! {deployment_results['first_turn_player']} will go first")
+                            game_state = GameState.PLAYING
+                    except Exception as e:
+                        print(f"⚠️ Official deployment failed: {e}")
+                        print("Falling back to legacy deployment system...")
+                        auto_deploy_units(game, player1, player2)
+                        game_state = GameState.PLAYING
+                    
+                    if not game.is_deployment_phase():
+                        print("Game started! Press SPACE to advance phases.")
+                    else:
+                        print("Deployment in progress - place units by clicking on battlefield")
                 elif event.key == pygame.K_SPACE and game_state == GameState.PLAYING:
                     game.next_phase()
                     print(f"Advanced to {game.phase.name} phase")
                 elif event.key == pygame.K_a and game_state == GameState.PLAYING:
                     game.do_ai_action = True
+                    print("🤖 Manual AI action triggered")
                 elif event.key == pygame.K_ESCAPE:
                     # Close unit details panel or deselect units
                     game_view.close_unit_details()
@@ -1028,8 +1236,21 @@ def main_game_loop() -> None:
                     # Pass other key events to game_view for handling (including detail panel scrolling)
                     game_view.on_key_press(event.key)
 
-        keys_pressed = pygame.key.get_pressed()
-        game_view.offset_x, game_view.offset_y = handle_pan(keys_pressed, game_view.offset_x, game_view.offset_y, game_view.zoom_level)
+        # Only check keys if pygame is properly initialized
+        try:
+            keys_pressed = pygame.key.get_pressed()
+            game_view.offset_x, game_view.offset_y = handle_pan(keys_pressed, game_view.offset_x, game_view.offset_y, game_view.zoom_level)
+        except pygame.error as e:
+            # If pygame has issues, reinitialize the display
+            if "video system not initialized" in str(e):
+                print(f"⚠️ Pygame error detected: {e}")
+                print("🔄 Attempting to reinitialize pygame...")
+                pygame.display.set_mode((BATTLEFIELD_WIDTH + 2 * ROSTER_PANE_WIDTH, BATTLEFIELD_HEIGHT + INFO_PANE_HEIGHT))
+                pygame.display.set_caption('Warhammer 40,000 Battlefield')
+            else:
+                print(f"⚠️ Pygame error: {e}")
+                # Skip this frame
+                pass
 
         if game_state == GameState.PLAYING:
             # Update objective control after each human action
@@ -1037,15 +1258,52 @@ def main_game_loop() -> None:
                 if isinstance(objective, ObjectivePoint):
                     objective.update_control(game)
 
-        game_view.draw()
-        pygame.display.flip()
+        # Safe drawing with error recovery
+        try:
+            game_view.draw()
+            pygame.display.flip()
+        except pygame.error as e:
+            if "video system not initialized" in str(e):
+                print(f"⚠️ Display error: {e}")
+                print("🔄 Attempting to recover display...")
+                # Try to reinitialize
+                pygame.display.set_mode((BATTLEFIELD_WIDTH + 2 * ROSTER_PANE_WIDTH, BATTLEFIELD_HEIGHT + INFO_PANE_HEIGHT))
+                pygame.display.set_caption('Warhammer 40,000 Battlefield')
+                # Try drawing again
+                try:
+                    game_view.draw()
+                    pygame.display.flip()
+                except:
+                    print("❌ Could not recover display")
+            else:
+                print(f"⚠️ Drawing error: {e}")
 
     pygame.quit()
     sys.exit()
 
 if __name__ == "__main__":
     # Check command line arguments to determine mode
-    parser = argparse.ArgumentParser(description='Warhammer 40k AI Training and Game')
+    parser = argparse.ArgumentParser(
+        description='Warhammer 40k AI Training and Game',
+        epilog="""
+Examples:
+  # AI vs AI training (default)
+  python main.py --mode train --episodes 100
+  
+  # Human vs AI gameplay
+  python main.py --mode play --player1 human --player2 ai
+  
+  # AI vs AI gameplay
+  python main.py --mode play --player1 ai --player2 ai
+  
+  # Human vs Human gameplay  
+  python main.py --mode play --player1 human --player2 human
+  
+  # Custom army lists
+  python main.py --mode play --player1 human --player2 ai --player1-army my_army.txt --player2-army enemy_army.txt
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument('--mode', choices=['train', 'play'], default='train',
                         help='Run mode: train for AI training, play for manual play')
     parser.add_argument('--episodes', type=int, default=1000,
@@ -1054,6 +1312,14 @@ if __name__ == "__main__":
                         help='Save checkpoints every N episodes (default: 10)')
     parser.add_argument('--clear-checkpoints', action='store_true',
                         help='Clear existing checkpoints and start fresh (useful after model changes)')
+    parser.add_argument('--player1', choices=['ai', 'human'], default='ai',
+                        help='Player 1 type: ai or human (default: ai)')
+    parser.add_argument('--player2', choices=['ai', 'human'], default='ai',
+                        help='Player 2 type: ai or human (default: ai)')
+    parser.add_argument('--player1-army', type=str, default='army_lists/warhammer_app_dump.txt',
+                        help='Army list file for Player 1 (default: army_lists/warhammer_app_dump.txt)')
+    parser.add_argument('--player2-army', type=str, default='army_lists/chaos_daemons_GT2023.txt',
+                        help='Army list file for Player 2 (default: army_lists/chaos_daemons_GT2023.txt)')
     
     args = parser.parse_args()
     
@@ -1062,13 +1328,36 @@ if __name__ == "__main__":
     NUM_TRAINING_EPISODES = args.episodes
     CHECKPOINT_INTERVAL = args.checkpoint_interval
     
+    # Create player configuration dictionary
+    player_configs = {
+        'player1_type': args.player1,
+        'player2_type': args.player2,
+        'player1_army_file': args.player1_army,
+        'player2_army_file': args.player2_army
+    }
+    
+    # Validate player configurations
+    if TRAINING_MODE and (args.player1 != 'ai' or args.player2 != 'ai'):
+        print("⚠️ WARNING: Training mode works best with AI vs AI. Setting both players to AI for training.")
+        player_configs['player1_type'] = 'ai'
+        player_configs['player2_type'] = 'ai'
+    
+    # Display configuration
+    print(f"🎮 Game Configuration:")
+    print(f"   Mode: {args.mode.upper()}")
+    print(f"   Player 1: {player_configs['player1_type'].upper()} using {player_configs['player1_army_file']}")
+    print(f"   Player 2: {player_configs['player2_type'].upper()} using {player_configs['player2_army_file']}")
+    if TRAINING_MODE:
+        print(f"   Training Episodes: {NUM_TRAINING_EPISODES}")
+        print(f"   Checkpoint Interval: {CHECKPOINT_INTERVAL}")
+    
     try:
         if TRAINING_MODE:
-            print(f"Starting AI training mode for {NUM_TRAINING_EPISODES} episodes...")
-            run_training_loop(args.clear_checkpoints)
+            print(f"\nStarting AI training mode for {NUM_TRAINING_EPISODES} episodes...")
+            run_training_loop(args.clear_checkpoints, player_configs)
         else:
-            print("Starting manual play mode...")
-            main_game_loop()
+            print(f"\nStarting game mode...")
+            main_game_loop(player_configs)
     except KeyboardInterrupt:
         print("\nTraining/Game interrupted by user.")
         if TRAINING_MODE:

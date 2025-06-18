@@ -486,7 +486,25 @@ class InfoPane(pygame.sprite.Sprite):
         y_offset += 30
         
         # Player information or deployment status
-        if game_view and hasattr(game_view, 'selected_unit') and game_view.selected_unit and not game_view.selected_unit.deployed:
+        if game.is_deployment_phase():
+            # Show deployment phase information
+            deployment_player = game.get_current_deployment_player()
+            deployable_units = game.get_deployable_units(deployment_player)
+            
+            deployment_text = f"🚢 DEPLOYMENT: {deployment_player.name}'s turn ({len(deployable_units)} units left)"
+            deployment_surface = self.font_small.render(deployment_text, True, DEPLOY_BUTTON_BG)
+            deployment_rect = deployment_surface.get_rect(center=(x_center, y_offset))
+            surface.blit(deployment_surface, deployment_rect)
+            
+            # Show deployment zone info
+            if hasattr(game, 'deployment_zones') and deployment_player.name in game.deployment_zones:
+                zone = game.deployment_zones[deployment_player.name]
+                zone_text = f"Zone: X({zone['x_range'][0]:.0f}-{zone['x_range'][1]:.0f}) Y({zone['y_range'][0]:.0f}-{zone['y_range'][1]:.0f})"
+                zone_surface = self.font_small.render(zone_text, True, TEXT_SECONDARY)
+                zone_rect = zone_surface.get_rect(center=(x_center, y_offset + 20))
+                surface.blit(zone_surface, zone_rect)
+                y_offset += 20
+        elif game_view and hasattr(game_view, 'selected_unit') and game_view.selected_unit and not game_view.selected_unit.deployed:
             deployment_text = f"📍 Click battlefield to deploy: {game_view.selected_unit.name}"
             deployment_surface = self.font_small.render(deployment_text, True, DEPLOY_BUTTON_BG)
             deployment_rect = deployment_surface.get_rect(center=(x_center, y_offset))
@@ -2212,13 +2230,16 @@ def draw_deployment_zones(screen: pygame.Surface, deployment_zones: dict, player
                          zoom_level: float, offset_x: int, offset_y: int) -> None:
     """Draw deployment zones with transparency and appropriate colors for each player."""
     for player_name, zone in deployment_zones.items():
-        # Determine player color
+        # Determine player color with more vibrant colors during deployment
         if player_name == player1.name:
-            color = (0, 255, 0, 128)  # Semi-transparent green for player 1
+            color = (0, 255, 0, 160)  # More visible green for player 1
+            border_color = (0, 200, 0)
         elif player_name == player2.name:
-            color = (255, 0, 0, 128)  # Semi-transparent red for player 2
+            color = (255, 0, 0, 160)  # More visible red for player 2
+            border_color = (200, 0, 0)
         else:
-            color = (128, 128, 128, 128)  # Semi-transparent gray for unknown players
+            color = (128, 128, 128, 160)  # Semi-transparent gray for unknown players
+            border_color = (100, 100, 100)
         
         # Extract zone coordinates
         x_start, x_end = zone['x_range']
@@ -2234,6 +2255,10 @@ def draw_deployment_zones(screen: pygame.Surface, deployment_zones: dict, player
         zone_width = screen_x_end - screen_x_start
         zone_height = screen_y_end - screen_y_start
         
+        # Skip drawing if zone is off-screen or invalid
+        if zone_width <= 0 or zone_height <= 0:
+            continue
+        
         # Create a surface with per-pixel alpha for transparency
         zone_surface = pygame.Surface((zone_width, zone_height), pygame.SRCALPHA)
         zone_surface.fill(color)
@@ -2241,26 +2266,44 @@ def draw_deployment_zones(screen: pygame.Surface, deployment_zones: dict, player
         # Blit the transparent zone onto the battlefield
         screen.blit(zone_surface, (screen_x_start, screen_y_start))
         
-        # Draw a border around the deployment zone
-        border_color = (color[0], color[1], color[2])  # Same color but opaque
+        # Draw a thicker border around the deployment zone for better visibility
         pygame.draw.rect(screen, border_color, 
-                        (screen_x_start, screen_y_start, zone_width, zone_height), 3)
+                        (screen_x_start, screen_y_start, zone_width, zone_height), 4)
         
-        # Add zone label
-        font = pygame.font.SysFont('Arial', 16, bold=True)
+        # Draw corner markers for extra visibility
+        corner_size = max(8, int(8 * zoom_level))
+        corners = [
+            (screen_x_start, screen_y_start),  # Top-left
+            (screen_x_end - corner_size, screen_y_start),  # Top-right
+            (screen_x_start, screen_y_end - corner_size),  # Bottom-left
+            (screen_x_end - corner_size, screen_y_end - corner_size)  # Bottom-right
+        ]
+        
+        for corner_x, corner_y in corners:
+            pygame.draw.rect(screen, border_color, 
+                           (corner_x, corner_y, corner_size, corner_size))
+        
+        # Add zone label with better positioning
+        font = pygame.font.SysFont('Arial', max(14, int(16 * zoom_level)), bold=True)
         label_text = f"{player_name} Deployment Zone"
         text_surface = font.render(label_text, True, border_color)
         
-        # Position label at the top-left of the zone with some padding
-        label_x = screen_x_start + 10
-        label_y = screen_y_start + 10
+        # Position label at the center-top of the zone for better visibility
+        label_x = screen_x_start + (zone_width - text_surface.get_width()) // 2
+        label_y = screen_y_start + 15
         
-        # Draw a semi-transparent background for the text
-        text_bg = pygame.Surface((text_surface.get_width() + 8, text_surface.get_height() + 4), pygame.SRCALPHA)
-        text_bg.fill((255, 255, 255, 180))  # Semi-transparent white background
-        screen.blit(text_bg, (label_x - 4, label_y - 2))
+        # Draw a more prominent background for the text
+        text_bg = pygame.Surface((text_surface.get_width() + 12, text_surface.get_height() + 6), pygame.SRCALPHA)
+        text_bg.fill((255, 255, 255, 220))  # More opaque white background
+        screen.blit(text_bg, (label_x - 6, label_y - 3))
         
-        # Draw the text
+        # Draw black outline for better text visibility
+        outline_positions = [(-1, -1), (-1, 1), (1, -1), (1, 1)]
+        for dx, dy in outline_positions:
+            outline_surface = font.render(label_text, True, (0, 0, 0))
+            screen.blit(outline_surface, (label_x + dx, label_y + dy))
+        
+        # Draw the main text
         screen.blit(text_surface, (label_x, label_y))
 
 def draw_objective(screen: pygame.Surface, objective: Objective, zoom_level: float, offset_x: int, offset_y: int) -> None:
