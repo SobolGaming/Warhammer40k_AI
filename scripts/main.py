@@ -1195,8 +1195,8 @@ def main_game_loop(player_configs=None) -> None:
                                 }
                             }
                             
-                            # Start alternating deployment - defender (player1) goes first
-                            game.deployment_turn_index = 0  # Start with first player (defender)
+                            # Start alternating deployment - defender goes first
+                            game.deployment_turn_index = game.defender_index  # Start with defender
                             game_state = GameState.PLAYING  # Switch to playing state for deployment handling
                             
                             print(f"📋 {game.get_current_deployment_player().name} deploys first unit")

@@ -182,6 +182,11 @@ class RosterPane(pygame.sprite.Sprite):
                 if button_rect.collidepoint(x, y):
                     # Check if this is during deployment phase and unit is not deployed
                     if not unit.deployed and self.game_view and self.game_view.ui_interface:
+                        # Check if deployment zones are loaded (deployment has officially started)
+                        if not hasattr(self.game_view.game, 'deployment_zones') or not self.game_view.game.deployment_zones:
+                            print(f"📋 Press SPACE to begin deployment sequence first")
+                            return
+                        
                         # Check if it's this player's turn to deploy
                         if not self.game_view.game.can_player_deploy_unit(self.player):
                             # Not this player's turn - show message
@@ -475,14 +480,19 @@ class InfoPane(pygame.sprite.Sprite):
         x_right = self.rect.right - 15
 
         # Game status line 1: Turn and Phase (or Deployment Phase)
-        # Check if we're in deployment phase
+        # Check if we're in deployment phase AND deployment zones are loaded
         in_deployment_phase = game.is_deployment_phase()
+        deployment_zones_loaded = hasattr(game, 'deployment_zones') and game.deployment_zones
         
-        if in_deployment_phase:
+        if in_deployment_phase and deployment_zones_loaded:
             # Show whose turn it is to deploy
             deployment_player = game.get_current_deployment_player()
             game_status = f"DEPLOYMENT PHASE - {deployment_player.name}'s Turn"
             text_color = TEXT_ACCENT  # Use accent color to highlight deployment phase
+        elif in_deployment_phase and not deployment_zones_loaded:
+            # Show battlefield creation phase before deployment zones are loaded
+            game_status = "CREATING BATTLEFIELD"
+            text_color = TEXT_SECONDARY  # Different color to indicate pre-deployment state
         else:
             game_status = f"Turn {game.turn} - {game.phase.name.replace('_', ' ').title()}"
             text_color = TEXT_PRIMARY
@@ -494,7 +504,7 @@ class InfoPane(pygame.sprite.Sprite):
         y_offset += 30
         
         # Player information or deployment status
-        if game.is_deployment_phase():
+        if game.is_deployment_phase() and deployment_zones_loaded:
             # Show deployment phase information
             deployment_player = game.get_current_deployment_player()
             deployable_units = game.get_deployable_units(deployment_player)
@@ -512,6 +522,12 @@ class InfoPane(pygame.sprite.Sprite):
                 zone_rect = zone_surface.get_rect(center=(x_center, y_offset + 20))
                 surface.blit(zone_surface, zone_rect)
                 y_offset += 20
+        elif game.is_deployment_phase() and not deployment_zones_loaded:
+            # Show battlefield creation status
+            setup_text = "📋 Press SPACE to begin deployment sequence"
+            setup_surface = self.font_small.render(setup_text, True, TEXT_ACCENT)
+            setup_rect = setup_surface.get_rect(center=(x_center, y_offset))
+            surface.blit(setup_surface, setup_rect)
         elif game_view and hasattr(game_view, 'selected_unit') and game_view.selected_unit and not game_view.selected_unit.deployed:
             deployment_text = f"📍 Click battlefield to deploy: {game_view.selected_unit.name}"
             deployment_surface = self.font_small.render(deployment_text, True, DEPLOY_BUTTON_BG)
@@ -545,8 +561,13 @@ class InfoPane(pygame.sprite.Sprite):
             y_offset += 30
             
             # Show controls during deployment phase
-            if in_deployment_phase:
+            if in_deployment_phase and deployment_zones_loaded:
                 controls_text = "ENTER: Auto-deploy remaining | SPACE: Start game"
+                controls_surface = self.font_tiny.render(controls_text, True, TEXT_SECONDARY)
+                controls_rect = controls_surface.get_rect(center=(x_center, y_offset))
+                surface.blit(controls_surface, controls_rect)
+            elif in_deployment_phase and not deployment_zones_loaded:
+                controls_text = "SPACE: Begin deployment sequence"
                 controls_surface = self.font_tiny.render(controls_text, True, TEXT_SECONDARY)
                 controls_rect = controls_surface.get_rect(center=(x_center, y_offset))
                 surface.blit(controls_surface, controls_rect)
@@ -1874,6 +1895,11 @@ class GameView:
                 self.selected_unit = self.right_roster_pane.selected_unit
             # Check if click is on the battlefield and a unit is selected
             elif self.selected_unit and not self.selected_unit.deployed and ROSTER_PANE_WIDTH < x < BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH:
+                # Check if deployment zones are loaded (deployment has officially started)
+                if not hasattr(self.game, 'deployment_zones') or not self.game.deployment_zones:
+                    print(f"📋 Press SPACE to begin deployment sequence first")
+                    return
+                
                 # Convert screen coordinates to game coordinates (accounting for zoom and pan)
                 battlefield_x = (x - ROSTER_PANE_WIDTH - self.offset_x) / (TILE_SIZE * self.zoom_level)
                 battlefield_y = (y - self.offset_y) / (TILE_SIZE * self.zoom_level)
