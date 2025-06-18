@@ -28,6 +28,9 @@ class Player:
         self.command_points: int = 0  # Players start with 0 Command Points in 10th edition
         self.army: Army = army
         self.score: int = 0
+        # Set the player reference on the army
+        if self.army:
+            self.army.set_player(self)
         #print(f"Player {self.name} created with army: {self.army}")
     
     def set_army(self, army: Army) -> None:

@@ -107,6 +107,11 @@ class Game:
         self.commands = []
         self.phase = BattleRoundPhases.COMMAND_PHASE  # Initialize phase to COMMAND_PHASE
         self.do_ai_action = False  # Initialize AI action flag
+        
+        # Deployment tracking
+        self.deployment_turn_index = 0  # Track whose turn it is to deploy (0 = defender, 1 = attacker)
+        self.attacker_index = 0  # Index of the attacking player (will be set during setup)
+        self.defender_index = 1  # Index of the defending player (will be set during setup)
 
     def add_player(self, player: Player) -> None:
         """Add a player to the game."""
@@ -140,6 +145,112 @@ class Game:
 
     def get_battlefield_size(self) -> tuple[int, int]:
         return self.battlefield.width, self.battlefield.height
+    
+    def set_attacker_defender(self, attacker_index: int, defender_index: int) -> None:
+        """Set which player is the attacker and which is the defender."""
+        self.attacker_index = attacker_index
+        self.defender_index = defender_index
+        # Defender always starts deployment
+        self.deployment_turn_index = self.defender_index
+    
+    def get_current_deployment_player(self) -> Player:
+        """Get the player whose turn it is to deploy."""
+        return self.players[self.deployment_turn_index]
+    
+    def get_attacker(self) -> Player:
+        """Get the attacking player."""
+        return self.players[self.attacker_index]
+    
+    def get_defender(self) -> Player:
+        """Get the defending player."""
+        return self.players[self.defender_index]
+    
+    def is_deployment_phase(self) -> bool:
+        """Check if we're in the deployment phase."""
+        # We're in deployment phase if any units are not deployed and it's turn 1
+        if self.turn != 1:
+            return False
+        
+        for player in self.players:
+            army = player.get_army()
+            if army:
+                undeployed_units = [u for u in army.units if not u.deployed]
+                if undeployed_units:
+                    return True
+        return False
+    
+    def can_player_deploy_unit(self, player: Player) -> bool:
+        """Check if the given player can deploy a unit (i.e., it's their deployment turn)."""
+        if not self.is_deployment_phase():
+            return False
+        return player == self.get_current_deployment_player()
+    
+    def get_deployable_units(self, player: Player) -> List['Unit']:
+        """Get units that the player can deploy."""
+        if not player.get_army():
+            return []
+        return [u for u in player.get_army().units if not u.deployed]
+    
+    def advance_deployment_turn(self) -> None:
+        """Advance to the next player's deployment turn."""
+        if not self.is_deployment_phase():
+            return
+        
+        # Get current and next player's deployable units
+        current_player = self.get_current_deployment_player()
+        current_deployable = self.get_deployable_units(current_player)
+        
+        # Switch to the other player
+        self.deployment_turn_index = (self.deployment_turn_index + 1) % len(self.players)
+        next_player = self.get_current_deployment_player()
+        next_deployable = self.get_deployable_units(next_player)
+        
+        # If the next player has no units to deploy, keep switching until we find someone who does
+        # or until everyone is done
+        attempts = 0
+        while not next_deployable and attempts < len(self.players):
+            self.deployment_turn_index = (self.deployment_turn_index + 1) % len(self.players)
+            next_player = self.get_current_deployment_player()
+            next_deployable = self.get_deployable_units(next_player)
+            attempts += 1
+    
+    def complete_deployment_phase(self) -> None:
+        """Force complete the deployment phase by auto-deploying remaining units."""
+        for player in self.players:
+            army = player.get_army()
+            if army:
+                undeployed_units = [u for u in army.units if not u.deployed]
+                for unit in undeployed_units:
+                    # Auto-deploy at a random valid position
+                    self.auto_deploy_unit(unit)
+    
+    def auto_deploy_unit(self, unit: 'Unit') -> bool:
+        """Auto-deploy a unit at a random valid position."""
+        import random
+        
+        # Try to find a valid deployment position
+        battlefield_width, battlefield_height = self.get_battlefield_size()
+        
+        # Try random positions within the deployment zone
+        for _ in range(50):  # Max 50 attempts
+            x = random.uniform(5, battlefield_width - 5)
+            y = random.uniform(5, battlefield_height - 5)
+            z = 0.0
+            
+            # Simple validation - just check if position is within bounds
+            if 0 < x < battlefield_width and 0 < y < battlefield_height:
+                unit.set_position(x, y, z)
+                unit.deployed = True
+                logger.info(f"Auto-deployed {unit.name} at ({x:.1f}, {y:.1f})")
+                return True
+        
+        # If we can't find a valid position, just place it anyway
+        x = random.uniform(10, battlefield_width - 10)
+        y = random.uniform(10, battlefield_height - 10)
+        unit.set_position(x, y, 0.0)
+        unit.deployed = True
+        logger.info(f"Force-deployed {unit.name} at ({x:.1f}, {y:.1f})")
+        return True
 
     def get_distance_between_units(self, unit1: 'Unit', unit2: 'Unit') -> float:
         """Calculate the shortest distance between any two models in the units."""

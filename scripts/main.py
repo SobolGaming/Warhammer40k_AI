@@ -840,6 +840,15 @@ def display_final_analysis(training_stats: dict, all_episode_stats: list):
 def main_game_loop() -> None:
     screen, env, game, game_map, _, _, _, player1, player2 = initialize_game()
     
+    # Set up attacker/defender for proper deployment order (defender starts)
+    import random
+    attacker_index = random.randint(0, 1)  # Randomly choose attacker
+    defender_index = 1 - attacker_index    # Other player is defender
+    game.set_attacker_defender(attacker_index, defender_index)
+    
+    print(f"🎯 {game.get_defender().name} is the Defender (deploys first)")
+    print(f"⚔️  {game.get_attacker().name} is the Attacker")
+    
     # Create UI interface for human player interactions
     screen_width, screen_height = screen.get_size()
     ui_interface = HumanUIInterface(screen_width, screen_height)

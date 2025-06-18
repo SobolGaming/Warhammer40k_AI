@@ -147,6 +147,13 @@ class RosterPane(pygame.sprite.Sprite):
         self.create_buttons()
         self.game_map = None
         self.game_view = None  # Reference to GameView for deployment dialog
+        
+        # Find the player object from the units
+        self.player = None
+        for unit in roster:
+            if unit.parent_army and unit.parent_army.player:
+                self.player = unit.parent_army.player
+                break
 
     def create_buttons(self):
         self.buttons = []
@@ -175,6 +182,12 @@ class RosterPane(pygame.sprite.Sprite):
                 if button_rect.collidepoint(x, y):
                     # Check if this is during deployment phase and unit is not deployed
                     if not unit.deployed and self.game_view and self.game_view.ui_interface:
+                        # Check if it's this player's turn to deploy
+                        if not self.game_view.game.can_player_deploy_unit(self.player):
+                            # Not this player's turn - show message
+                            print(f"❌ Not {self.player_name}'s turn to deploy")
+                            return
+                        
                         # Show deployment choice dialog
                         def on_deployment_choice(choice):
                             if choice == 'deploy':
@@ -187,11 +200,15 @@ class RosterPane(pygame.sprite.Sprite):
                                 unit.deployed = False  # Not deployed, in reserves
                                 self.selected_unit = None
                                 self.game_view.selected_unit = None  # Clear GameView's selection
+                                # Advance to next player's deployment turn
+                                self.game_view.game.advance_deployment_turn()
                             elif choice == 'strategic_reserves':
                                 unit.set_reserve_status('strategic_reserves')
                                 unit.deployed = False  # Not deployed, in strategic reserves
                                 self.selected_unit = None
                                 self.game_view.selected_unit = None  # Clear GameView's selection
+                                # Advance to next player's deployment turn
+                                self.game_view.game.advance_deployment_turn()
                         
                         self.game_view.ui_interface.deployment_choice_dialog.show(unit, on_deployment_choice)
                         return
@@ -451,18 +468,13 @@ class InfoPane(pygame.sprite.Sprite):
         x_right = self.rect.right - 15
 
         # Game status line 1: Turn and Phase (or Deployment Phase)
-        # Check if we're in deployment phase by looking for undeployed units
-        current_army = current_player.get_army()
-        opponent_army = opponent.get_army()
-        
-        # Consider it deployment phase if any units are not deployed
-        in_deployment_phase = False
-        if current_army and opponent_army:
-            undeployed_units = [u for u in current_army.units + opponent_army.units if not u.deployed]
-            in_deployment_phase = len(undeployed_units) > 0 and game.turn == 1
+        # Check if we're in deployment phase
+        in_deployment_phase = game.is_deployment_phase()
         
         if in_deployment_phase:
-            game_status = "DEPLOYMENT PHASE"
+            # Show whose turn it is to deploy
+            deployment_player = game.get_current_deployment_player()
+            game_status = f"DEPLOYMENT PHASE - {deployment_player.name}'s Turn"
             text_color = TEXT_ACCENT  # Use accent color to highlight deployment phase
         else:
             game_status = f"Turn {game.turn} - {game.phase.name.replace('_', ' ').title()}"
@@ -505,7 +517,7 @@ class InfoPane(pygame.sprite.Sprite):
             army_rect = army_text.get_rect(center=(x_center, y_offset))
             surface.blit(army_text, army_rect)
             
-            y_offset += 20
+            y_offset += 30
             
             # Show controls during deployment phase
             if in_deployment_phase:
@@ -1858,6 +1870,8 @@ class GameView:
                     if self.game_map.place_unit(self.selected_unit):
                         print(f"Unit {self.selected_unit.name} placed with centroid at ({unit_x}, {unit_y})")
                         self.selected_unit.deployed = True
+                        # Advance to next player's deployment turn
+                        self.game.advance_deployment_turn()
                     else:
                         print("Failed to place unit")
                         self.reset_unit_position(self.selected_unit, original_unit_position, original_model_positions)
@@ -2088,40 +2102,7 @@ class GameView:
     
     def force_complete_deployment(self):
         """Force complete the deployment phase by auto-deploying remaining units"""
-        # Get all undeployed units from both players
-        all_units = self.player1.get_army().units + self.player2.get_army().units
-        undeployed_units = [unit for unit in all_units if not unit.deployed]
-        
-        if not undeployed_units:
-            print("All units already deployed!")
-            return
-        
-        print(f"Auto-deploying {len(undeployed_units)} remaining units...")
-        
-        # Simple auto-deployment: place units in their deployment zones
-        for unit in undeployed_units:
-            if unit in self.player1.get_army().units:
-                # Player 1 deployment zone (left side)
-                x = random.uniform(5, 25)
-                y = random.uniform(5, 40)
-            else:
-                # Player 2 deployment zone (right side)  
-                x = random.uniform(35, 55)
-                y = random.uniform(5, 40)
-            
-            # Try to place the unit
-            model_positions = unit.calculate_model_positions(x, y, self.game_map, 1.0)
-            if model_positions:
-                for model, position in zip(unit.models, model_positions):
-                    model.set_location(*position)
-                unit.set_position(x, y)
-                if self.game_map.place_unit(unit):
-                    unit.deployed = True
-                    print(f"Auto-deployed {unit.name} at ({x:.1f}, {y:.1f})")
-                else:
-                    print(f"Failed to auto-deploy {unit.name}")
-            else:
-                print(f"Could not find valid positions for {unit.name}")
+        self.game.complete_deployment_phase()
         
         # Clear any selected units
         self.selected_unit = None
