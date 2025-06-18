@@ -197,14 +197,14 @@ class RosterPane(pygame.sprite.Sprite):
                                 self.game_view.selected_unit = unit  # Also update GameView's selection
                             elif choice == 'reserves':
                                 unit.set_reserve_status('reserves')
-                                unit.deployed = False  # Not deployed, in reserves
+                                unit.deployed = True  # Deployed to reserves (deployment decision made)
                                 self.selected_unit = None
                                 self.game_view.selected_unit = None  # Clear GameView's selection
                                 # Advance to next player's deployment turn
                                 self.game_view.game.advance_deployment_turn()
                             elif choice == 'strategic_reserves':
                                 unit.set_reserve_status('strategic_reserves')
-                                unit.deployed = False  # Not deployed, in strategic reserves
+                                unit.deployed = True  # Deployed to strategic reserves (deployment decision made)
                                 self.selected_unit = None
                                 self.game_view.selected_unit = None  # Clear GameView's selection
                                 # Advance to next player's deployment turn
@@ -331,16 +331,15 @@ class RosterPane(pygame.sprite.Sprite):
             health_color = HEALTH_CRITICAL
         
         health_text = f"Health: {current_wounds}/{total_wounds}"
-        if not unit.deployed:
-            if unit.reserve_status == 'reserves':
-                health_text += " (Reserves)"
-                health_color = RESERVES_BUTTON_BG
-            elif unit.reserve_status == 'strategic_reserves':
-                health_text += " (Strategic Reserves)"
-                health_color = STRATEGIC_BUTTON_BG
-            else:
-                health_text += " (Not Deployed)"
-                health_color = TEXT_SECONDARY
+        if unit.reserve_status == 'reserves':
+            health_text += " (Reserves)"
+            health_color = RESERVES_BUTTON_BG
+        elif unit.reserve_status == 'strategic_reserves':
+            health_text += " (Strategic Reserves)"
+            health_color = STRATEGIC_BUTTON_BG
+        elif not unit.deployed:
+            health_text += " (Not Deployed)"
+            health_color = TEXT_SECONDARY
         
         health_surface = self.font_small.render(health_text, True, health_color)
         surface.blit(health_surface, (x_left + icon_size + 8, y_offset))

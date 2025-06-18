@@ -186,9 +186,11 @@ class Game:
         return player == self.get_current_deployment_player()
     
     def get_deployable_units(self, player: Player) -> List['Unit']:
-        """Get units that the player can deploy."""
+        """Get units that the player can deploy during the deployment phase."""
         if not player.get_army():
             return []
+        # Units with deployed=False still need deployment decisions made
+        # Units with deployed=True have been assigned (battlefield, reserves, or strategic reserves)
         return [u for u in player.get_army().units if not u.deployed]
     
     def advance_deployment_turn(self) -> None:
@@ -219,7 +221,10 @@ class Game:
         for player in self.players:
             army = player.get_army()
             if army:
-                undeployed_units = [u for u in army.units if not u.deployed]
+                # Only auto-deploy units that are meant to be deployed to battlefield
+                # (not units in reserves or strategic reserves)
+                undeployed_units = [u for u in army.units 
+                                  if not u.deployed and u.reserve_status == 'deployed']
                 for unit in undeployed_units:
                     # Auto-deploy at a random valid position
                     self.auto_deploy_unit(unit)
@@ -239,18 +244,83 @@ class Game:
             
             # Simple validation - just check if position is within bounds
             if 0 < x < battlefield_width and 0 < y < battlefield_height:
-                unit.set_position(x, y, z)
-                unit.deployed = True
-                logger.info(f"Auto-deployed {unit.name} at ({x:.1f}, {y:.1f})")
-                return True
+                # Use the proper deployment flow like manual deployment
+                if self._deploy_unit_at_position(unit, x, y, z):
+                    logger.info(f"Auto-deployed {unit.name} at ({x:.1f}, {y:.1f})")
+                    return True
         
         # If we can't find a valid position, just place it anyway
         x = random.uniform(10, battlefield_width - 10)
         y = random.uniform(10, battlefield_height - 10)
-        unit.set_position(x, y, 0.0)
-        unit.deployed = True
-        logger.info(f"Force-deployed {unit.name} at ({x:.1f}, {y:.1f})")
-        return True
+        
+        # Use the proper deployment flow like manual deployment
+        if self._deploy_unit_at_position(unit, x, y, 0.0):
+            logger.info(f"Force-deployed {unit.name} at ({x:.1f}, {y:.1f})")
+            return True
+        else:
+            logger.error(f"Failed to deploy {unit.name} at ({x:.1f}, {y:.1f})")
+            return False
+
+    def _deploy_unit_at_position(self, unit: 'Unit', x: float, y: float, z: float) -> bool:
+        """Deploy a unit at the specified position using the proper deployment flow."""
+        try:
+            # Calculate model positions (this is the same as manual deployment)
+            model_positions = unit.calculate_model_positions(x, y, self.map, 1.0, [])
+            
+            if not model_positions:
+                logger.warning(f"Could not calculate model positions for {unit.name}")
+                return False
+            
+            # Set individual model locations
+            for model, position in zip(unit.models, model_positions):
+                model_x, model_y, model_z, model_facing = position
+                model.set_location(model_x, model_y, model_z, model_facing)
+            
+            # Calculate unit centroid position
+            unit_x = sum(pos[0] for pos in model_positions) / len(model_positions)
+            unit_y = sum(pos[1] for pos in model_positions) / len(model_positions)
+            unit.set_position(unit_x, unit_y, z)
+            
+            # CRITICAL: Register unit with the game map (this makes it appear on battlefield)
+            if self.map and self.map.place_unit(unit):
+                unit.deployed = True
+                return True
+            else:
+                logger.warning(f"Failed to place {unit.name} on game map")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error deploying {unit.name}: {e}")
+            return False
+
+    def _auto_position_models(self, unit: 'Unit', center_x: float, center_y: float, center_z: float) -> None:
+        """Simple model positioning for auto-deployment without complex validation."""
+        import math
+        
+        if len(unit.models) == 1:
+            # Single model - place at center
+            unit.models[0].set_location(center_x, center_y, center_z, 0.0)
+        else:
+            # Multiple models - arrange in a simple circle or line
+            coherency_distance = unit.coherency_distance
+            models_per_row = min(len(unit.models), 5)  # Max 5 models per row
+            
+            for i, model in enumerate(unit.models):
+                if len(unit.models) <= 5:
+                    # Small unit - arrange in a line
+                    offset_x = (i - (len(unit.models) - 1) / 2) * (coherency_distance * 0.8)
+                    model_x = center_x + offset_x
+                    model_y = center_y
+                else:
+                    # Larger unit - arrange in rows
+                    row = i // models_per_row
+                    col = i % models_per_row
+                    offset_x = (col - (models_per_row - 1) / 2) * (coherency_distance * 0.8)
+                    offset_y = row * (coherency_distance * 0.8)
+                    model_x = center_x + offset_x
+                    model_y = center_y + offset_y
+                
+                model.set_location(model_x, model_y, center_z, 0.0)
 
     def get_distance_between_units(self, unit1: 'Unit', unit2: 'Unit') -> float:
         """Calculate the shortest distance between any two models in the units."""
