@@ -227,8 +227,16 @@ class RosterPane(pygame.sprite.Sprite):
         header_rect = pygame.Rect(self.rect.left, self.rect.top, self.rect.width, 35)
         pygame.draw.rect(surface, DARK_GREY, header_rect)
         
-        # Player name and army info
-        player_text = self.font_medium.render(f"{self.player_name}", True, TEXT_PRIMARY)
+        # Player name with AI/Human indicator
+        player_type_str = ""
+        if self.player and hasattr(self.player, 'type'):
+            if self.player.type.name == 'AI':
+                player_type_str = " (AI)"
+            elif self.player.type.name == 'HUMAN':
+                player_type_str = " (HUMAN)"
+        
+        player_display_name = f"{self.player_name}{player_type_str}"
+        player_text = self.font_medium.render(player_display_name, True, TEXT_PRIMARY)
         surface.blit(player_text, (self.rect.left + 10, self.rect.top + 5))
         
         # Army points total
@@ -531,7 +539,7 @@ class InfoPane(pygame.sprite.Sprite):
             
             army_status = f"Units: {current_units_alive} vs {opponent_units_alive}"
             army_text = self.font_small.render(army_status, True, TEXT_SECONDARY)
-            army_rect = army_text.get_rect(center=(x_center, y_offset - 20))
+            army_rect = army_text.get_rect(center=(x_center, y_offset))
             surface.blit(army_text, army_rect)
             
             y_offset += 30
