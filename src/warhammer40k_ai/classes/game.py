@@ -642,11 +642,14 @@ class Game:
             # 3. Within 9" of enemy models
             
             # For infiltrate units, we need to check each model's base at the proposed position
-            for i, model in enumerate(unit.models):
-                # Calculate where this model would be positioned relative to the unit center
-                model_offset_x, model_offset_y = model.relative_position[:2]
-                model_x = x + model_offset_x
-                model_y = y + model_offset_y
+            # Calculate model positions using the same logic as unit deployment
+            model_positions = unit.calculate_model_positions(x, y, self.map, 1.0, [])
+            
+            if not model_positions:
+                return False
+                
+            for model, position in zip(unit.models, model_positions):
+                model_x, model_y = position[0], position[1]
                 
                 # Check if any part of the model is in enemy deployment zone
                 if self.is_position_in_enemy_deployment_zone(model_x, model_y, player_name):
@@ -667,11 +670,14 @@ class Game:
         else:
             # Normal units must be WHOLLY within their own deployment zone
             # Check that every model's entire base would be within the deployment zone at the proposed position
-            for i, model in enumerate(unit.models):
-                # Calculate where this model would be positioned relative to the unit center
-                model_offset_x, model_offset_y = model.relative_position[:2]
-                model_x = x + model_offset_x
-                model_y = y + model_offset_y
+            # Calculate model positions using the same logic as unit deployment
+            model_positions = unit.calculate_model_positions(x, y, self.map, 1.0, [])
+            
+            if not model_positions:
+                return False
+                
+            for model, position in zip(unit.models, model_positions):
+                model_x, model_y = position[0], position[1]
                 
                 # Check if this model would be wholly within the deployment zone
                 if not self.is_position_wholly_in_deployment_zone(model_x, model_y, model.model_base, player_name):
