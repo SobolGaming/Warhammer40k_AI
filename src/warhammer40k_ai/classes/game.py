@@ -314,10 +314,12 @@ class Game:
                 y = random.uniform(y_min, y_max)
                 z = 0.0
                 
-                # Use the proper deployment flow with validation
-                if self._deploy_unit_at_position(unit, x, y, z):
-                    print(f"✅ Successfully auto-deployed {unit.name} at ({x:.1f}, {y:.1f})")
-                    return True
+                # Check if this position would place all models wholly within the deployment zone
+                if self._is_position_valid_for_deployment(unit, x, y, player_name):
+                    # Use the proper deployment flow
+                    if self._deploy_unit_at_position(unit, x, y, z):
+                        print(f"✅ Successfully auto-deployed {unit.name} at ({x:.1f}, {y:.1f})")
+                        return True
         
         print(f"❌ Failed to auto-deploy {unit.name}")
         return False
@@ -393,6 +395,39 @@ class Game:
                 return False
                 
         except Exception as e:
+            return False
+
+    def _is_position_valid_for_deployment(self, unit: 'Unit', x: float, y: float, player_name: str) -> bool:
+        """Simple check if placing a unit at this position would keep all models wholly within deployment zone."""
+        try:
+            # Get deployment zone for this player
+            if not hasattr(self, 'deployment_zones') or player_name not in self.deployment_zones:
+                return True  # No deployment zones defined - allow anywhere
+            
+            zone = self.deployment_zones[player_name]
+            x_min, x_max = zone['x_range']
+            y_min, y_max = zone['y_range']
+            
+            # Calculate where each model would be positioned
+            model_positions = unit.calculate_model_positions(x, y, self.map, 1.0, [])
+            
+            if not model_positions:
+                return False
+            
+            # Check each model's position with its base size
+            for model, position in zip(unit.models, model_positions):
+                model_x, model_y = position[0], position[1]
+                base = model.model_base
+                base_radius = base.get_radius()
+                
+                # Simple check: model center ± base radius must be within zone
+                if (model_x - base_radius < x_min or model_x + base_radius > x_max or
+                    model_y - base_radius < y_min or model_y + base_radius > y_max):
+                    return False
+            
+            return True
+            
+        except Exception:
             return False
 
     def _auto_position_models(self, unit: 'Unit', center_x: float, center_y: float, center_z: float) -> None:
