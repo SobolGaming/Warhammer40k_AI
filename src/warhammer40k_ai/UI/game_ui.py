@@ -514,7 +514,7 @@ class InfoPane(pygame.sprite.Sprite):
             
             army_status = f"Units: {current_units_alive} vs {opponent_units_alive}"
             army_text = self.font_small.render(army_status, True, TEXT_SECONDARY)
-            army_rect = army_text.get_rect(center=(x_center, y_offset))
+            army_rect = army_text.get_rect(center=(x_center, y_offset - 20))
             surface.blit(army_text, army_rect)
             
             y_offset += 30
@@ -855,7 +855,7 @@ class DeploymentChoiceDialog:
         button_spacing = 10
         
         start_x = self.x + (self.width - (3 * button_width + 2 * button_spacing)) // 2
-        button_y = self.y + self.height - 50
+        button_y = self.y + self.height - 110
         
         self.deploy_button = pygame.Rect(start_x, button_y, button_width, button_height)
         self.reserves_button = pygame.Rect(start_x + button_width + button_spacing, button_y, button_width, button_height)
@@ -977,7 +977,7 @@ class DeploymentChoiceDialog:
             help_text = "Reserves: Requires Deep Strike ability"
         
         help_surface = self.font_small.render(help_text, True, TEXT_SECONDARY)
-        help_rect = help_surface.get_rect(center=(self.x + self.width // 2, self.y + self.height - 20))
+        help_rect = help_surface.get_rect(center=(self.x + self.width // 2, self.y + self.height - 40))
         screen.blit(help_surface, help_rect)
     
     def draw_button(self, screen, rect, text, button_id, base_color, enabled=True):
