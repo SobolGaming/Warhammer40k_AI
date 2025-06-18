@@ -2046,6 +2046,11 @@ class GameView:
         for obstacle in self.game_map.obstacles:
             draw_obstacle(battlefield_surface, obstacle, self.zoom_level, self.offset_x, self.offset_y)
 
+        # Draw deployment zones (with transparency)
+        if hasattr(self.game, 'deployment_zones') and self.game.deployment_zones:
+            draw_deployment_zones(battlefield_surface, self.game.deployment_zones, self.player1, self.player2, 
+                                self.zoom_level, self.offset_x, self.offset_y)
+
         # Draw objectives on the battlefield
         for objective in self.game_map.objectives:
             draw_objective(battlefield_surface, objective, self.zoom_level, self.offset_x, self.offset_y)
@@ -2183,6 +2188,61 @@ def draw_obstacle(screen: pygame.Surface, obstacle: Obstacle, zoom_level: float,
 
     # Draw the outline of the polygon
     pygame.draw.polygon(screen, (0, 0, 0), screen_vertices, 2)  # Black outline with 2px width
+
+def draw_deployment_zones(screen: pygame.Surface, deployment_zones: dict, player1: Player, player2: Player, 
+                         zoom_level: float, offset_x: int, offset_y: int) -> None:
+    """Draw deployment zones with transparency and appropriate colors for each player."""
+    for player_name, zone in deployment_zones.items():
+        # Determine player color
+        if player_name == player1.name:
+            color = (0, 255, 0, 128)  # Semi-transparent green for player 1
+        elif player_name == player2.name:
+            color = (255, 0, 0, 128)  # Semi-transparent red for player 2
+        else:
+            color = (128, 128, 128, 128)  # Semi-transparent gray for unknown players
+        
+        # Extract zone coordinates
+        x_start, x_end = zone['x_range']
+        y_start, y_end = zone['y_range']
+        
+        # Convert to screen coordinates
+        screen_x_start = int(x_start * TILE_SIZE * zoom_level + offset_x)
+        screen_y_start = int(y_start * TILE_SIZE * zoom_level + offset_y)
+        screen_x_end = int(x_end * TILE_SIZE * zoom_level + offset_x)
+        screen_y_end = int(y_end * TILE_SIZE * zoom_level + offset_y)
+        
+        # Calculate width and height
+        zone_width = screen_x_end - screen_x_start
+        zone_height = screen_y_end - screen_y_start
+        
+        # Create a surface with per-pixel alpha for transparency
+        zone_surface = pygame.Surface((zone_width, zone_height), pygame.SRCALPHA)
+        zone_surface.fill(color)
+        
+        # Blit the transparent zone onto the battlefield
+        screen.blit(zone_surface, (screen_x_start, screen_y_start))
+        
+        # Draw a border around the deployment zone
+        border_color = (color[0], color[1], color[2])  # Same color but opaque
+        pygame.draw.rect(screen, border_color, 
+                        (screen_x_start, screen_y_start, zone_width, zone_height), 3)
+        
+        # Add zone label
+        font = pygame.font.SysFont('Arial', 16, bold=True)
+        label_text = f"{player_name} Deployment Zone"
+        text_surface = font.render(label_text, True, border_color)
+        
+        # Position label at the top-left of the zone with some padding
+        label_x = screen_x_start + 10
+        label_y = screen_y_start + 10
+        
+        # Draw a semi-transparent background for the text
+        text_bg = pygame.Surface((text_surface.get_width() + 8, text_surface.get_height() + 4), pygame.SRCALPHA)
+        text_bg.fill((255, 255, 255, 180))  # Semi-transparent white background
+        screen.blit(text_bg, (label_x - 4, label_y - 2))
+        
+        # Draw the text
+        screen.blit(text_surface, (label_x, label_y))
 
 def draw_objective(screen: pygame.Surface, objective: Objective, zoom_level: float, offset_x: int, offset_y: int) -> None:
     if isinstance(objective.location, ObjectivePoint):

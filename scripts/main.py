@@ -253,17 +253,18 @@ def auto_deploy_units(game: Game, player1: Player, player2: Player):
     """Legacy function - kept for compatibility. Use execute_official_deployment instead."""
     logger.warning("⚠️  Using legacy deployment system. Consider using execute_official_deployment for proper Warhammer 40k rules.")
     
-    # Quick fallback deployment for systems that haven't been updated yet
+    # Quick fallback deployment using proper Warhammer 40k deployment zones
     battlefield_width, battlefield_height = game.get_battlefield_size()
+    deployment_depth = 18.0  # 18 inches from edge
     
     player1_zone = {
-        'x_range': (2, battlefield_width * 0.4),
-        'y_range': (2, battlefield_height - 2)
+        'x_range': (0, deployment_depth),  # Left edge to 18" in
+        'y_range': (0, battlefield_height)  # Full height
     }
     
     player2_zone = {
-        'x_range': (battlefield_width * 0.6, battlefield_width - 2),
-        'y_range': (2, battlefield_height - 2)
+        'x_range': (battlefield_width - deployment_depth, battlefield_width),  # 18" from right edge to edge
+        'y_range': (0, battlefield_height)  # Full height
     }
     
     def quick_deploy(player: Player, zone: dict):
@@ -876,6 +877,30 @@ def main_game_loop() -> None:
         low_level_agent_player2.load_checkpoint(os.path.join(CHECKPOINT_DIR, 'low_level_agent_player2_checkpoint.pth'))
 
     print("Starting main game loop")
+    
+    # Create deployment zones for visualization (for manual play)
+    if not game.do_ai_action:
+        try:
+            # Execute deployment setup to create zones for visualization
+            execute_official_deployment(game, player1, player2, ui_interface=game_view)
+        except Exception as e:
+            logger.warning(f"Could not create deployment zones: {e}")
+            # Fallback: create proper Warhammer 40k deployment zones
+            # 18" from each edge, full battlefield height, 24" no-man's land in middle
+            battlefield_width, battlefield_height = game.get_battlefield_size()
+            deployment_depth = 18.0  # 18 inches from edge
+            
+            game.deployment_zones = {
+                player1.name: {
+                    'x_range': (0, deployment_depth),  # Left edge to 18" in
+                    'y_range': (0, battlefield_height)  # Full height
+                },
+                player2.name: {
+                    'x_range': (battlefield_width - deployment_depth, battlefield_width),  # 18" from right edge to edge
+                    'y_range': (0, battlefield_height)  # Full height
+                }
+            }
+            print(f"Created proper deployment zones: Player 1: 0-{deployment_depth}\", Player 2: {battlefield_width - deployment_depth}-{battlefield_width}\", No-man's land: {deployment_depth}-{battlefield_width - deployment_depth}\" ({battlefield_width - 2*deployment_depth}\" wide)")
 
     running = True
     while running:

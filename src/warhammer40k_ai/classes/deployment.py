@@ -77,6 +77,10 @@ class DeploymentManager:
         deployment_results['deployment_zones'][self.defender.name] = defender_zone
         deployment_results['deployment_zones'][self.attacker.name] = attacker_zone
         
+        # Store deployment zones in the game for visualization
+        self.game.deployment_zones[self.defender.name] = defender_zone
+        self.game.deployment_zones[self.attacker.name] = attacker_zone
+        
         logger.info(f"🎯 {self.defender.name} chose deployment zone, {self.attacker.name} gets the other")
         
         # Step 3: Declare Reserves & Strategic Reserves (simultaneously)

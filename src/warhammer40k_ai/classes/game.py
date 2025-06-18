@@ -112,6 +112,7 @@ class Game:
         self.deployment_turn_index = 0  # Track whose turn it is to deploy (0 = defender, 1 = attacker)
         self.attacker_index = 0  # Index of the attacking player (will be set during setup)
         self.defender_index = 1  # Index of the defending player (will be set during setup)
+        self.deployment_zones = {}  # Store deployment zones for visualization {player_name: zone_dict}
 
     def add_player(self, player: Player) -> None:
         """Add a player to the game."""
