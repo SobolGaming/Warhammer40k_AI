@@ -211,48 +211,6 @@ def execute_official_deployment(game: Game, player1: Player, player2: Player,
     
     return deployment_results
 
-
-def example_human_reserves_game():
-    """Example function showing how to use the reserves UI system."""
-    logger.info("🎮 Starting Human vs AI Game with Reserves UI")
-    
-    # Initialize the game
-    screen, env, game, game_map, zoom_level, offset_x, offset_y, player1, player2 = initialize_game()
-    
-    # Create UI interface for human player
-    screen_width = BATTLEFIELD_WIDTH + 2 * ROSTER_PANE_WIDTH
-    screen_height = BATTLEFIELD_HEIGHT + INFO_PANE_HEIGHT
-    ui_interface = HumanUIInterface(screen_width, screen_height)
-    
-    # Create game view with UI interface
-    game_view = GameView(screen, env, game, game_map, player1, player2, ui_interface)
-    
-    # For this example, let's manually trigger the reserves dialog
-    print("🪂 Click the 'Set Reserves' button in the bottom panel to configure reserves!")
-    print("🎯 During turns 2+, click 'Reserves' button to bring units from reserves!")
-    
-    clock = pygame.time.Clock()
-    running = True
-    
-    # Main game loop
-    while running:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-            else:
-                # Handle events through game view (includes reserves UI)
-                game_view.handle_pygame_event(event)
-        
-        # Clear screen and draw
-        screen.fill(BLACK)
-        game_view.draw()
-        
-        clock.tick(60)
-    
-    pygame.quit()
-    return
-
-
 def auto_deploy_units(game: Game, player1: Player, player2: Player):
     """Legacy function - kept for compatibility. Use execute_official_deployment instead."""
     logger.warning("⚠️  Using legacy deployment system. Consider using execute_official_deployment for proper Warhammer 40k rules.")
@@ -408,7 +366,6 @@ def run_training_episode(episode_num: int, agents: dict) -> dict:
         return player1_deaths, player2_deaths
     
     # Override the Unit.remove_model method to track deaths
-    import types
     original_remove_model = None
     
     def tracking_remove_model(self, model, fleed=False):
