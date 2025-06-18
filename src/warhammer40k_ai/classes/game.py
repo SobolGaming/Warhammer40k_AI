@@ -6,6 +6,7 @@ from .event_system import EventSystem
 from .map import Map, Objective
 from .player import Player
 from .unit import Unit
+from .model import Model
 from ..utility.calcs import get_dist
 from ..utility.dice import get_roll
 from ..utility.constants import TOTAL_ROUNDS
@@ -218,80 +219,180 @@ class Game:
             attempts += 1
     
     def complete_deployment_phase(self) -> None:
-        """Force complete the deployment phase by auto-deploying remaining units."""
-        for player in self.players:
-            army = player.get_army()
-            if army:
-                # Only auto-deploy units that are meant to be deployed to battlefield
-                # (not units in reserves or strategic reserves)
-                undeployed_units = [u for u in army.units 
-                                  if not u.deployed and u.reserve_status == 'deployed']
-                for unit in undeployed_units:
-                    # Auto-deploy at a random valid position
-                    self.auto_deploy_unit(unit)
+        """Force complete the deployment phase by auto-deploying remaining units one at a time."""
+        print("🚀 Starting auto-deployment...")
+        
+        # Deploy units one at a time, respecting the deployment turn system
+        max_attempts = 100  # Safety limit to prevent infinite loops
+        attempts = 0
+        
+        while self.is_deployment_phase() and attempts < max_attempts:
+            attempts += 1
+            current_player = self.get_current_deployment_player()
+            
+            if not current_player:
+                print("❌ No current deployment player found")
+                break
+            
+            # Get units that need to be deployed for the current player
+            undeployed_units = self.get_deployable_units(current_player)
+            
+            if not undeployed_units:
+                # Current player has no more units to deploy, advance to next player
+                print(f"Player {current_player.name} has no more units to deploy")
+                self.advance_deployment_turn()
+                continue
+            
+            # Auto-deploy the first undeployed unit for the current player
+            unit = undeployed_units[0]
+            print(f"Auto-deploying {unit.name} for {current_player.name}...")
+            
+            success = self.auto_deploy_unit(unit)
+            if success:
+                print(f"✅ Successfully auto-deployed {unit.name}")
+                # Mark unit as deployed and advance to next player's turn
+                unit.deployed = True
+                self.advance_deployment_turn()
+            else:
+                print(f"❌ Failed to auto-deploy {unit.name}, advancing anyway")
+                # Force deployment to prevent infinite loop
+                unit.deployed = True
+                unit.reserve_status = 'reserves'  # Put in reserves as fallback
+                self.advance_deployment_turn()
+        
+        if attempts >= max_attempts:
+            print(f"⚠️ Auto-deployment stopped after {max_attempts} attempts to prevent infinite loop")
+        
+        print(f"🎯 Auto-deployment complete after {attempts} deployment actions")
     
     def auto_deploy_unit(self, unit: 'Unit') -> bool:
-        """Auto-deploy a unit at a random valid position."""
+        """Auto-deploy a unit at a random valid position within deployment constraints."""
         import random
         
-        # Try to find a valid deployment position
+        # Get the unit's player for deployment zone lookup
+        player_name = unit.get_parent_army().player.name if unit.get_parent_army() and unit.get_parent_army().player else None
+        
+        if not player_name:
+            logger.error(f"Cannot auto-deploy {unit.name}: No player found")
+            return False
+        
+        # Get deployment constraints
         battlefield_width, battlefield_height = self.get_battlefield_size()
         
-        # Try random positions within the deployment zone
-        for _ in range(50):  # Max 50 attempts
-            x = random.uniform(5, battlefield_width - 5)
-            y = random.uniform(5, battlefield_height - 5)
-            z = 0.0
+        # Determine search area based on unit type and deployment zones
+        if unit.has_infiltrate():
+            # Infiltrate units can deploy anywhere except restricted areas
+            search_zones = self._get_infiltrate_search_zones(player_name, battlefield_width, battlefield_height)
+        else:
+            # Normal units must deploy within their deployment zone
+            if hasattr(self, 'deployment_zones') and player_name in self.deployment_zones:
+                zone = self.deployment_zones[player_name]
+                x_min, x_max = zone['x_range']
+                y_min, y_max = zone['y_range']
+                
+                # Add buffer for unit base size (use largest possible base as safety margin)
+                base_buffer = 2.0  # 2 inch buffer for safety
+                search_zones = [(
+                    max(x_min + base_buffer, 0), 
+                    min(x_max - base_buffer, battlefield_width),
+                    max(y_min + base_buffer, 0), 
+                    min(y_max - base_buffer, battlefield_height)
+                )]
+            else:
+                logger.error(f"No deployment zone found for {player_name}")
+                return False
+        
+        # Try to find a valid position within search zones
+        for zone_idx, zone in enumerate(search_zones):
+            x_min, x_max, y_min, y_max = zone
             
-            # Simple validation - just check if position is within bounds
-            if 0 < x < battlefield_width and 0 < y < battlefield_height:
-                # Use the proper deployment flow like manual deployment
+            if x_max <= x_min or y_max <= y_min:
+                continue  # Skip invalid zones
+            
+            for attempt in range(25):  # 25 attempts per zone
+                x = random.uniform(x_min, x_max)
+                y = random.uniform(y_min, y_max)
+                z = 0.0
+                
+                # Use the proper deployment flow with validation
                 if self._deploy_unit_at_position(unit, x, y, z):
-                    logger.info(f"Auto-deployed {unit.name} at ({x:.1f}, {y:.1f})")
+                    print(f"✅ Successfully auto-deployed {unit.name} at ({x:.1f}, {y:.1f})")
                     return True
         
-        # If we can't find a valid position, just place it anyway
-        x = random.uniform(10, battlefield_width - 10)
-        y = random.uniform(10, battlefield_height - 10)
+        print(f"❌ Failed to auto-deploy {unit.name}")
+        return False
+
+    def _get_infiltrate_search_zones(self, player_name: str, battlefield_width: float, battlefield_height: float) -> list:
+        """Get valid search zones for infiltrate units (avoiding enemy deployment zones and 9\" buffer)."""
+        zones = []
         
-        # Use the proper deployment flow like manual deployment
-        if self._deploy_unit_at_position(unit, x, y, 0.0):
-            logger.info(f"Force-deployed {unit.name} at ({x:.1f}, {y:.1f})")
-            return True
-        else:
-            logger.error(f"Failed to deploy {unit.name} at ({x:.1f}, {y:.1f})")
-            return False
+        if not hasattr(self, 'deployment_zones') or not self.deployment_zones:
+            # No deployment zones defined - use entire battlefield with buffer
+            return [(3.0, battlefield_width - 3.0, 3.0, battlefield_height - 3.0)]
+        
+        # For infiltrate, we need to avoid enemy deployment zones + 9" buffer
+        # Start with the entire battlefield and subtract restricted areas
+        
+        # Find enemy deployment zones
+        enemy_zones = []
+        for zone_player_name, zone in self.deployment_zones.items():
+            if zone_player_name != player_name:
+                enemy_zones.append(zone)
+        
+        if not enemy_zones:
+            # No enemy zones - use entire battlefield
+            return [(3.0, battlefield_width - 3.0, 3.0, battlefield_height - 3.0)]
+        
+        # Create zones that avoid enemy deployment zones + 9" buffer
+        # For simplicity, create zones on either side of enemy zones
+        for enemy_zone in enemy_zones:
+            ex_min, ex_max = enemy_zone['x_range']
+            ey_min, ey_max = enemy_zone['y_range']
+            
+            # Zone to the left of enemy zone (if space available)
+            if ex_min - 9.0 > 3.0:
+                zones.append((3.0, ex_min - 9.0, 3.0, battlefield_height - 3.0))
+            
+            # Zone to the right of enemy zone (if space available)
+            if ex_max + 9.0 < battlefield_width - 3.0:
+                zones.append((ex_max + 9.0, battlefield_width - 3.0, 3.0, battlefield_height - 3.0))
+        
+        # If no valid zones found, return a small safe zone in the center
+        if not zones:
+            center_x = battlefield_width / 2
+            center_y = battlefield_height / 2
+            zones.append((center_x - 5, center_x + 5, center_y - 5, center_y + 5))
+        
+        return zones
 
     def _deploy_unit_at_position(self, unit: 'Unit', x: float, y: float, z: float) -> bool:
-        """Deploy a unit at the specified position using the proper deployment flow."""
+        """Deploy a unit at the specified position using the same flow as manual deployment."""
         try:
+            # Use the exact same approach as manual deployment in GameView.on_mouse_press
             # Calculate model positions (this is the same as manual deployment)
             model_positions = unit.calculate_model_positions(x, y, self.map, 1.0, [])
             
             if not model_positions:
-                logger.warning(f"Could not calculate model positions for {unit.name}")
                 return False
             
-            # Set individual model locations
+            # Set individual model locations (same as manual)
             for model, position in zip(unit.models, model_positions):
                 model_x, model_y, model_z, model_facing = position
                 model.set_location(model_x, model_y, model_z, model_facing)
             
-            # Calculate unit centroid position
+            # Calculate unit centroid position (same as manual)
             unit_x = sum(pos[0] for pos in model_positions) / len(model_positions)
             unit_y = sum(pos[1] for pos in model_positions) / len(model_positions)
             unit.set_position(unit_x, unit_y, z)
             
-            # CRITICAL: Register unit with the game map (this makes it appear on battlefield)
+            # Place unit on map (same as manual)
             if self.map and self.map.place_unit(unit):
-                unit.deployed = True
+                # Don't set unit.deployed here - let the calling function handle it
                 return True
             else:
-                logger.warning(f"Failed to place {unit.name} on game map")
                 return False
                 
         except Exception as e:
-            logger.error(f"Error deploying {unit.name}: {e}")
             return False
 
     def _auto_position_models(self, unit: 'Unit', center_x: float, center_y: float, center_z: float) -> None:
@@ -322,6 +423,225 @@ class Game:
                     model_y = center_y + offset_y
                 
                 model.set_location(model_x, model_y, center_z, 0.0)
+
+    def is_position_in_deployment_zone(self, x: float, y: float, player_name: str) -> bool:
+        """Check if a position is within a player's deployment zone."""
+        if not hasattr(self, 'deployment_zones') or not self.deployment_zones:
+            return True  # If no deployment zones defined, allow anywhere
+        
+        if player_name not in self.deployment_zones:
+            return False
+        
+        zone = self.deployment_zones[player_name]
+        x_min, x_max = zone['x_range']
+        y_min, y_max = zone['y_range']
+        
+        return x_min <= x <= x_max and y_min <= y <= y_max
+
+    def is_model_wholly_in_deployment_zone(self, model: 'Model', player_name: str) -> bool:
+        """Check if a model's entire base is wholly within a player's deployment zone."""
+        if not hasattr(self, 'deployment_zones') or not self.deployment_zones:
+            return True  # If no deployment zones defined, allow anywhere
+        
+        if player_name not in self.deployment_zones:
+            return False
+        
+        zone = self.deployment_zones[player_name]
+        x_min, x_max = zone['x_range']
+        y_min, y_max = zone['y_range']
+        
+        # Get model position and base size
+        model_x, model_y = model.get_location()[:2]
+        base = model.model_base
+        base_radius = base.get_radius()
+        
+        # For circular bases, check that center +/- radius is within zone
+        if base.base_type.name == 'CIRCULAR':
+            return (x_min <= model_x - base_radius and 
+                    model_x + base_radius <= x_max and
+                    y_min <= model_y - base_radius and 
+                    model_y + base_radius <= y_max)
+        
+        # For elliptical bases, use the major axis as the effective radius
+        elif base.base_type.name == 'ELLIPTICAL':
+            major_radius = max(base.radius) if isinstance(base.radius, tuple) else base.radius
+            return (x_min <= model_x - major_radius and 
+                    model_x + major_radius <= x_max and
+                    y_min <= model_y - major_radius and 
+                    model_y + major_radius <= y_max)
+        
+        # For hull bases, use a rectangular approximation
+        elif base.base_type.name == 'HULL':
+            length, width = base.radius if isinstance(base.radius, tuple) else (base.radius, base.radius)
+            return (x_min <= model_x - length and 
+                    model_x + length <= x_max and
+                    y_min <= model_y - width and 
+                    model_y + width <= y_max)
+        
+        # Fallback: treat as circular with radius
+        else:
+            return (x_min <= model_x - base_radius and 
+                    model_x + base_radius <= x_max and
+                    y_min <= model_y - base_radius and 
+                    model_y + base_radius <= y_max)
+
+    def is_position_wholly_in_deployment_zone(self, x: float, y: float, base, player_name: str) -> bool:
+        """Check if a position with the given base would be wholly within the deployment zone."""
+        if not hasattr(self, 'deployment_zones') or not self.deployment_zones:
+            return True  # If no deployment zones defined, allow anywhere
+        
+        if player_name not in self.deployment_zones:
+            return False
+        
+        zone = self.deployment_zones[player_name]
+        x_min, x_max = zone['x_range']
+        y_min, y_max = zone['y_range']
+        
+        base_radius = base.get_radius()
+        
+        # For circular bases, check that center +/- radius is within zone
+        if base.base_type.name == 'CIRCULAR':
+            return (x_min <= x - base_radius and 
+                    x + base_radius <= x_max and
+                    y_min <= y - base_radius and 
+                    y + base_radius <= y_max)
+        
+        # For elliptical bases, use the major axis as the effective radius
+        elif base.base_type.name == 'ELLIPTICAL':
+            major_radius = max(base.radius) if isinstance(base.radius, tuple) else base.radius
+            return (x_min <= x - major_radius and 
+                    x + major_radius <= x_max and
+                    y_min <= y - major_radius and 
+                    y + major_radius <= y_max)
+        
+        # For hull bases, use a rectangular approximation
+        elif base.base_type.name == 'HULL':
+            length, width = base.radius if isinstance(base.radius, tuple) else (base.radius, base.radius)
+            return (x_min <= x - length and 
+                    x + length <= x_max and
+                    y_min <= y - width and 
+                    y + width <= y_max)
+        
+        # Fallback: treat as circular with radius
+        else:
+            return (x_min <= x - base_radius and 
+                    x + base_radius <= x_max and
+                    y_min <= y - base_radius and 
+                    y + base_radius <= y_max)
+
+    def is_position_in_enemy_deployment_zone(self, x: float, y: float, player_name: str) -> bool:
+        """Check if a position is within any enemy deployment zone."""
+        if not hasattr(self, 'deployment_zones') or not self.deployment_zones:
+            return False
+        
+        for zone_player_name, zone in self.deployment_zones.items():
+            if zone_player_name != player_name:
+                x_min, x_max = zone['x_range']
+                y_min, y_max = zone['y_range']
+                if x_min <= x <= x_max and y_min <= y <= y_max:
+                    return True
+        return False
+
+    def get_distance_to_enemy_deployment_zone(self, x: float, y: float, player_name: str) -> float:
+        """Get the minimum distance from a position to any enemy deployment zone."""
+        if not hasattr(self, 'deployment_zones') or not self.deployment_zones:
+            return float('inf')
+        
+        min_distance = float('inf')
+        
+        for zone_player_name, zone in self.deployment_zones.items():
+            if zone_player_name != player_name:
+                x_min, x_max = zone['x_range']
+                y_min, y_max = zone['y_range']
+                
+                # Calculate distance to the closest edge of the zone
+                if x < x_min:
+                    closest_x = x_min
+                elif x > x_max:
+                    closest_x = x_max
+                else:
+                    closest_x = x
+                
+                if y < y_min:
+                    closest_y = y_min
+                elif y > y_max:
+                    closest_y = y_max
+                else:
+                    closest_y = y
+                
+                distance = ((x - closest_x) ** 2 + (y - closest_y) ** 2) ** 0.5
+                min_distance = min(min_distance, distance)
+        
+        return min_distance
+
+    def get_distance_to_enemy_models(self, x: float, y: float, player_name: str) -> float:
+        """Get the minimum distance from a position to any enemy model."""
+        min_distance = float('inf')
+        
+        for player in self.players:
+            if player.name != player_name and player.get_army():
+                for unit in player.get_army().units:
+                    if unit.deployed and unit.reserve_status == 'deployed':
+                        for model in unit.models:
+                            model_x, model_y = model.get_location()[:2]
+                            distance = ((x - model_x) ** 2 + (y - model_y) ** 2) ** 0.5
+                            min_distance = min(min_distance, distance)
+        
+        return min_distance
+
+    def is_valid_deployment_position(self, unit: 'Unit', x: float, y: float, player_name: str) -> bool:
+        """Check if a position is valid for deploying a unit during deployment phase."""
+        # Units in reserves don't need position validation
+        if unit.reserve_status in ['reserves', 'strategic_reserves']:
+            return True
+        
+        # Temporarily position the unit to check if the proposed position is valid
+        # We need to calculate where each model would be positioned
+        unit.calculate_model_positions(x, y, self.map)  # This sets relative positions
+        
+        # Check if unit has Infiltrate ability
+        if unit.has_infiltrate():
+            # Infiltrate units can deploy anywhere except:
+            # 1. Inside enemy deployment zone
+            # 2. Within 9" of enemy deployment zone
+            # 3. Within 9" of enemy models
+            
+            # For infiltrate units, we need to check each model's base at the proposed position
+            for i, model in enumerate(unit.models):
+                # Calculate where this model would be positioned relative to the unit center
+                model_offset_x, model_offset_y = model.relative_position[:2]
+                model_x = x + model_offset_x
+                model_y = y + model_offset_y
+                
+                # Check if any part of the model is in enemy deployment zone
+                if self.is_position_in_enemy_deployment_zone(model_x, model_y, player_name):
+                    return False
+                
+                # Check 9" distance to enemy deployment zone (from model edge)
+                base_radius = model.model_base.get_radius()
+                distance_to_enemy_zone = self.get_distance_to_enemy_deployment_zone(model_x, model_y, player_name)
+                if distance_to_enemy_zone - base_radius < 9.0:
+                    return False
+                
+                # Check 9" distance to enemy models (from model edge)
+                distance_to_enemy_models = self.get_distance_to_enemy_models(model_x, model_y, player_name)
+                if distance_to_enemy_models - base_radius < 9.0:
+                    return False
+            
+            return True
+        else:
+            # Normal units must be WHOLLY within their own deployment zone
+            # Check that every model's entire base would be within the deployment zone at the proposed position
+            for i, model in enumerate(unit.models):
+                # Calculate where this model would be positioned relative to the unit center
+                model_offset_x, model_offset_y = model.relative_position[:2]
+                model_x = x + model_offset_x
+                model_y = y + model_offset_y
+                
+                # Check if this model would be wholly within the deployment zone
+                if not self.is_position_wholly_in_deployment_zone(model_x, model_y, model.model_base, player_name):
+                    return False
+            return True
 
     def get_distance_between_units(self, unit1: 'Unit', unit2: 'Unit') -> float:
         """Calculate the shortest distance between any two models in the units."""

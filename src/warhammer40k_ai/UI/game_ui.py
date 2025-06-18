@@ -1864,10 +1864,29 @@ class GameView:
                     
                     unit_x = sum(pos[0] for pos in model_positions) / len(model_positions)
                     unit_y = sum(pos[1] for pos in model_positions) / len(model_positions)
+                    
+                    # Get the current deployment player to check deployment zone restrictions
+                    current_deployment_player = self.game.get_current_deployment_player()
+                    player_name = current_deployment_player.name if current_deployment_player else None
+                    
+                    # Check if this is a valid deployment position during deployment phase
+                    if self.game.is_deployment_phase() and player_name:
+                        if not self.game.is_valid_deployment_position(self.selected_unit, unit_x, unit_y, player_name):
+                            # Invalid position - show error message and reset
+                            if self.selected_unit.has_infiltrate():
+                                print(f"❌ Invalid deployment position for {self.selected_unit.name} (Infiltrate): Cannot deploy within 9\" of enemy deployment zone or enemy models")
+                            else:
+                                print(f"❌ Invalid deployment position for {self.selected_unit.name}: Must deploy within your deployment zone")
+                            self.reset_unit_position(self.selected_unit, original_unit_position, original_model_positions)
+                            return
+                    
                     self.selected_unit.set_position(unit_x, unit_y)
                     
                     if self.game_map.place_unit(self.selected_unit):
-                        print(f"Unit {self.selected_unit.name} placed with centroid at ({unit_x}, {unit_y})")
+                        if self.selected_unit.has_infiltrate():
+                            print(f"Unit {self.selected_unit.name} (Infiltrate) placed at ({unit_x:.1f}, {unit_y:.1f})")
+                        else:
+                            print(f"Unit {self.selected_unit.name} placed with centroid at ({unit_x:.1f}, {unit_y:.1f})")
                         self.selected_unit.deployed = True
                         # Advance to next player's deployment turn
                         self.game.advance_deployment_turn()

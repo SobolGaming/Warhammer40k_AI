@@ -1379,6 +1379,44 @@ class Unit:
                         return True
         
         return False
+
+    def has_infiltrate(self) -> bool:
+        """Check if the unit has Infiltrate ability."""
+        # Check if the unit has Infiltrate keyword
+        if "Infiltrate" in self.keywords:
+            return True
+        
+        # Check possible_abilities for Infiltrate (unit-level abilities)
+        for ability in self.possible_abilities:
+            # Handle both string and ability object cases
+            if isinstance(ability, str):
+                if "infiltrate" in ability.lower():
+                    return True
+            else:
+                # Ability object with name and description attributes
+                if hasattr(ability, 'name') and ability.name:
+                    if "infiltrate" in ability.name.lower():
+                        return True
+                if hasattr(ability, 'description') and ability.description:
+                    if "infiltrate" in ability.description.lower():
+                        return True
+        
+        # Also check model-level abilities (self.abilities)
+        for ability in self.abilities:
+            # Handle both string and ability object cases
+            if isinstance(ability, str):
+                if "infiltrate" in ability.lower():
+                    return True
+            else:
+                # Ability object with name and description attributes
+                if hasattr(ability, 'name') and ability.name:
+                    if "infiltrate" in ability.name.lower():
+                        return True
+                if hasattr(ability, 'description') and ability.description:
+                    if "infiltrate" in ability.description.lower():
+                        return True
+        
+        return False
     
     def has_scout(self) -> Tuple[bool, float]:
         """Check if the unit has Scout ability and return the scout distance.
