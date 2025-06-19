@@ -126,16 +126,13 @@ class Model:
     ### Modifiers
     ################
     def take_damage(self, amount: int = 0, is_mortal: bool = False, weapon_profile: Optional['WargearProfile'] = None) -> int:
-        has_fnp, fnp_value, fnp_condition = self.parent_unit.has_feel_no_pain()
-        if has_fnp:
-            # Check if Feel No Pain condition is met (if any)
-            fnp_applies = True
-            if fnp_condition:
-                fnp_applies = self._check_fnp_condition(fnp_condition, weapon_profile, is_mortal)
-                if not fnp_applies:
-                    print(f"{self.name} Feel No Pain does not apply: condition '{fnp_condition}' not met")
+        fnp_abilities = self.parent_unit.has_feel_no_pain()
+        if fnp_abilities:
+            # Find the best applicable Feel No Pain ability (lowest dice value)
+            best_fnp = self._get_best_applicable_fnp(fnp_abilities, weapon_profile, is_mortal)
             
-            if fnp_applies:
+            if best_fnp:
+                fnp_value, fnp_condition = best_fnp
                 # Roll D6 for each point of damage to see if Feel No Pain saves it
                 fnp_saves = 0
                 condition_text = f" ({fnp_condition})" if fnp_condition else ""
@@ -151,6 +148,8 @@ class Model:
                 amount -= fnp_saves
                 if fnp_saves > 0:
                     print(f"{self.name} prevented {fnp_saves} damage with Feel No Pain{condition_text}")
+            else:
+                print(f"{self.name} has Feel No Pain abilities but none apply to this damage source")
         
         self.wounds -= amount
         print(f"{self.name} takes {amount} damage. It is {'Alive' if self.is_alive else 'Dead'}")
@@ -163,7 +162,30 @@ class Model:
         self._check_damaged_profile()
         return excess_damage
 
-    def _check_fnp_condition(self, condition: str, weapon_profile: Optional['WargearProfile'], is_mortal: bool) -> bool:
+    def _get_best_applicable_fnp(self, fnp_abilities: List[Tuple[int, Optional[str]]], weapon_profile: Optional['WargearProfile'], is_mortal: bool) -> Optional[Tuple[int, Optional[str]]]:
+        """Find the best applicable Feel No Pain ability (lowest dice value) for the current damage source.
+        
+        Args:
+            fnp_abilities: List of (dice_value, condition) tuples for all FNP abilities
+            weapon_profile: The weapon profile that caused the damage (None for non-weapon damage)
+            is_mortal: Whether the damage is mortal wounds
+            
+        Returns:
+            Optional[Tuple[int, Optional[str]]]: The best applicable FNP ability, or None if none apply
+        """
+        applicable_fnp = []
+        
+        for dice_value, condition in fnp_abilities:
+            if self._check_fnp_condition(condition, weapon_profile, is_mortal):
+                applicable_fnp.append((dice_value, condition))
+        
+        if not applicable_fnp:
+            return None
+        
+        # Return the FNP with the lowest dice value (best chance to save)
+        return min(applicable_fnp, key=lambda x: x[0])
+
+    def _check_fnp_condition(self, condition: Optional[str], weapon_profile: Optional['WargearProfile'], is_mortal: bool) -> bool:
         """Check if Feel No Pain condition is met for the current weapon profile.
         
         Args:
