@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .map import Map
     from .unit import Unit
+    from .wargear import WargearProfile
 
 logging.basicConfig(format="%(asctime)s %(levelname)-8s %(message)s")
 logger = logging.getLogger(__name__)
@@ -124,16 +125,90 @@ class Model:
     ################
     ### Modifiers
     ################
-    def take_damage(self, amount: int = 0, is_mortal: bool = False) -> int:
+    def take_damage(self, amount: int = 0, is_mortal: bool = False, weapon_profile: Optional['WargearProfile'] = None) -> int:
+        has_fnp, fnp_value, fnp_condition = self.parent_unit.has_feel_no_pain()
+        if has_fnp:
+            # Check if Feel No Pain condition is met (if any)
+            fnp_applies = True
+            if fnp_condition:
+                fnp_applies = self._check_fnp_condition(fnp_condition, weapon_profile, is_mortal)
+                if not fnp_applies:
+                    print(f"{self.name} Feel No Pain does not apply: condition '{fnp_condition}' not met")
+            
+            if fnp_applies:
+                # Roll D6 for each point of damage to see if Feel No Pain saves it
+                fnp_saves = 0
+                condition_text = f" ({fnp_condition})" if fnp_condition else ""
+                for i in range(amount):
+                    fnp_roll = get_roll("D6")
+                    if fnp_roll >= fnp_value:
+                        fnp_saves += 1
+                        print(f"{self.name} Feel No Pain{condition_text} save: rolled {fnp_roll}, needed {fnp_value}+ - SAVED")
+                    else:
+                        print(f"{self.name} Feel No Pain{condition_text} save: rolled {fnp_roll}, needed {fnp_value}+ - FAILED")
+                
+                # Reduce damage by the number of successful FNP saves
+                amount -= fnp_saves
+                if fnp_saves > 0:
+                    print(f"{self.name} prevented {fnp_saves} damage with Feel No Pain{condition_text}")
+        
         self.wounds -= amount
         print(f"{self.name} takes {amount} damage. It is {'Alive' if self.is_alive else 'Dead'}")
         excess_damage = 0
         if not self.is_alive:
             self.die()
+            # below is left-over from 9th edition - excess damage is lost in 10th edition
             if is_mortal and abs(self.wounds) > 0:
                 excess_damage = abs(self.wounds)
         self._check_damaged_profile()
         return excess_damage
+
+    def _check_fnp_condition(self, condition: str, weapon_profile: Optional['WargearProfile'], is_mortal: bool) -> bool:
+        """Check if Feel No Pain condition is met for the current weapon profile.
+        
+        Args:
+            condition: The FNP condition string (e.g., "against psychic attacks", "against mortal wounds")
+            weapon_profile: The weapon profile that caused the damage (None for non-weapon damage)
+            is_mortal: Whether the damage is mortal wounds
+            
+        Returns:
+            bool: True if the FNP condition is met and should apply
+        """
+        if not condition:
+            return True  # No condition means FNP always applies
+        
+        condition = condition.lower().strip()
+        
+        # Check for mortal wound conditions
+        if "mortal wound" in condition and is_mortal:
+            return True
+        
+        # If no weapon profile provided, can only check mortal wounds
+        if weapon_profile is None:
+            return False
+        
+        # Check for psychic attack conditions
+        if "psychic" in condition and weapon_profile.is_psychic():
+            return True
+        
+        # Check for ranged attack conditions
+        if "ranged" in condition and weapon_profile.get_type() == "ranged":
+            return True
+        
+        # Check for melee attack conditions
+        if "melee" in condition and weapon_profile.get_type() == "melee":
+            return True
+        
+        # Check for specific weapon keyword conditions
+        weapon_keywords = [keyword.lower() for keyword in weapon_profile.get_keywords()]
+        for keyword in weapon_keywords:
+            if keyword in condition:
+                return True
+        
+        # Add more condition checks as needed
+        # TODO: Implement more sophisticated condition parsing for complex rules
+        
+        return False  # Condition not met
 
     def die(self) -> None:
         print(f"{self.name} [{self.id}] has Died!!!")

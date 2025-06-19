@@ -1426,8 +1426,6 @@ class Unit:
                 - A boolean indicating if the unit has Scout ability
                 - The scout distance in inches (0.0 if no Scout ability)
         """
-        import re
-        
         # Check if the unit has Scout keyword
         for keyword in self.keywords:
             if "scout" in keyword.lower():
@@ -1435,8 +1433,8 @@ class Unit:
                 distance_match = re.search(r'scout\s*\(?(\d+)', keyword.lower())
                 if distance_match:
                     return True, float(distance_match.group(1))
-                # Default scout distance if no specific distance found
-                return True, 6.0
+                # Scout ability found but no distance value could be parsed
+                raise ValueError(f"Scout ability found in keyword '{keyword}' but could not extract distance value")
         
         # Check unit-level abilities (possible_abilities)
         for ability in self.possible_abilities:
@@ -1447,7 +1445,7 @@ class Unit:
                     distance_match = re.search(r'scout\s*\(?(\d+)', ability.lower())
                     if distance_match:
                         return True, float(distance_match.group(1))
-                    return True, 6.0
+                    raise ValueError(f"Scout ability found in ability string '{ability}' but could not extract distance value")
             else:
                 # Ability object with name and description attributes
                 if hasattr(ability, 'name') and ability.name and "scout" in ability.name.lower():
@@ -1455,14 +1453,14 @@ class Unit:
                     distance_match = re.search(r'scout\s*\(?(\d+)', ability.name.lower())
                     if distance_match:
                         return True, float(distance_match.group(1))
-                    return True, 6.0
+                    raise ValueError(f"Scout ability found in ability name '{ability.name}' but could not extract distance value")
                 
                 if hasattr(ability, 'description') and ability.description and "scout" in ability.description.lower():
                     # Try to extract distance from ability description
                     distance_match = re.search(r'scout\s*\(?(\d+)', ability.description.lower())
                     if distance_match:
                         return True, float(distance_match.group(1))
-                    return True, 6.0
+                    raise ValueError(f"Scout ability found in ability description '{ability.description}' but could not extract distance value")
         
         # Check model-level abilities
         for ability in self.abilities:
@@ -1473,7 +1471,7 @@ class Unit:
                     distance_match = re.search(r'scout\s*\(?(\d+)', ability.lower())
                     if distance_match:
                         return True, float(distance_match.group(1))
-                    return True, 6.0
+                    raise ValueError(f"Scout ability found in model ability string '{ability}' but could not extract distance value")
             else:
                 # Ability object with name and description attributes
                 if hasattr(ability, 'name') and ability.name and "scout" in ability.name.lower():
@@ -1481,14 +1479,14 @@ class Unit:
                     distance_match = re.search(r'scout\s*\(?(\d+)', ability.name.lower())
                     if distance_match:
                         return True, float(distance_match.group(1))
-                    return True, 6.0
+                    raise ValueError(f"Scout ability found in model ability name '{ability.name}' but could not extract distance value")
                 
                 if hasattr(ability, 'description') and ability.description and "scout" in ability.description.lower():
                     # Try to extract distance from ability description
                     distance_match = re.search(r'scout\s*\(?(\d+)', ability.description.lower())
                     if distance_match:
                         return True, float(distance_match.group(1))
-                    return True, 6.0
+                    raise ValueError(f"Scout ability found in model ability description '{ability.description}' but could not extract distance value")
         
         return False, 0.0
     
@@ -1506,6 +1504,97 @@ class Unit:
             return 0.0
         
         return min(scout_distance / max_scout_distance, 1.0)
+
+    def has_feel_no_pain(self) -> Tuple[bool, int, Optional[str]]:
+        """Check if the unit has Feel No Pain ability and return the dice roll needed and conditions.
+        
+        Returns:
+            Tuple[bool, int, Optional[str]]: A tuple containing:
+                - A boolean indicating if the unit has Feel No Pain ability
+                - The dice roll needed (e.g., 5 for "5+", 6 for "6+") (0 if no Feel No Pain ability)
+                - Optional condition string (e.g., "against psychic attacks", "against mortal wounds") (None if unconditional)
+        """
+        # Check if the unit has Feel No Pain keyword
+        for keyword in self.keywords:
+            if "feel no pain" in keyword.lower() or "fnp" in keyword.lower():
+                # Try to extract dice value and optional condition from keyword like "Feel No Pain (5+)" or "FNP 6+ against psychic attacks"
+                dice_match = re.search(r'(?:feel no pain|fnp)\s*\(?(\d+)\+(?:\)?)(?:\s+(.+))?', keyword.lower())
+                if dice_match:
+                    dice_value = int(dice_match.group(1))
+                    condition = dice_match.group(2).strip() if dice_match.group(2) else None
+                    return True, dice_value, condition
+                # Feel No Pain ability found but no dice value could be parsed
+                raise ValueError(f"Feel No Pain ability found in keyword '{keyword}' but could not extract dice value")
+        
+        # Check unit-level abilities (possible_abilities)
+        for ability in self.possible_abilities:
+            # Handle both string and ability object cases
+            if isinstance(ability, str):
+                if "feel no pain" in ability.lower() or "fnp" in ability.lower():
+                    # Try to extract dice value and optional condition from ability description
+                    dice_match = re.search(r'(?:feel no pain|fnp)\s*\(?(\d+)\+(?:\)?)(?:\s+(.+))?', ability.lower())
+                    if dice_match:
+                        dice_value = int(dice_match.group(1))
+                        condition = dice_match.group(2).strip() if dice_match.group(2) else None
+                        return True, dice_value, condition
+                    raise ValueError(f"Feel No Pain ability found in ability string '{ability}' but could not extract dice value")
+            else:
+                # Ability object with name and description attributes
+                if hasattr(ability, 'name') and ability.name:
+                    if "feel no pain" in ability.name.lower() or "fnp" in ability.name.lower():
+                        # Try to extract dice value and optional condition from ability name
+                        dice_match = re.search(r'(?:feel no pain|fnp)\s*\(?(\d+)\+(?:\)?)(?:\s+(.+))?', ability.name.lower())
+                        if dice_match:
+                            dice_value = int(dice_match.group(1))
+                            condition = dice_match.group(2).strip() if dice_match.group(2) else None
+                            return True, dice_value, condition
+                        raise ValueError(f"Feel No Pain ability found in ability name '{ability.name}' but could not extract dice value")
+                
+                if hasattr(ability, 'description') and ability.description:
+                    if "feel no pain" in ability.description.lower() or "fnp" in ability.description.lower():
+                        # Try to extract dice value and optional condition from ability description
+                        dice_match = re.search(r'(?:feel no pain|fnp)\s*\(?(\d+)\+(?:\)?)(?:\s+(.+))?', ability.description.lower())
+                        if dice_match:
+                            dice_value = int(dice_match.group(1))
+                            condition = dice_match.group(2).strip() if dice_match.group(2) else None
+                            return True, dice_value, condition
+                        raise ValueError(f"Feel No Pain ability found in ability description '{ability.description}' but could not extract dice value")
+        
+        # Check model-level abilities
+        for ability in self.abilities:
+            # Handle both string and ability object cases
+            if isinstance(ability, str):
+                if "feel no pain" in ability.lower() or "fnp" in ability.lower():
+                    # Try to extract dice value and optional condition from ability description
+                    dice_match = re.search(r'(?:feel no pain|fnp)\s*\(?(\d+)\+(?:\)?)(?:\s+(.+))?', ability.lower())
+                    if dice_match:
+                        dice_value = int(dice_match.group(1))
+                        condition = dice_match.group(2).strip() if dice_match.group(2) else None
+                        return True, dice_value, condition
+                    raise ValueError(f"Feel No Pain ability found in model ability string '{ability}' but could not extract dice value")
+            else:
+                # Ability object with name and description attributes
+                if hasattr(ability, 'name') and ability.name:
+                    if "feel no pain" in ability.name.lower() or "fnp" in ability.name.lower():
+                        # Try to extract dice value and optional condition from ability name
+                        dice_match = re.search(r'(?:feel no pain|fnp)\s*\(?(\d+)\+(?:\)?)(?:\s+(.+))?', ability.name.lower())
+                        if dice_match:
+                            dice_value = int(dice_match.group(1))
+                            condition = dice_match.group(2).strip() if dice_match.group(2) else None
+                            return True, dice_value, condition
+                        raise ValueError(f"Feel No Pain ability found in model ability name '{ability.name}' but could not extract dice value")
+                
+                if hasattr(ability, 'description') and ability.description:
+                    if "feel no pain" in ability.description.lower() or "fnp" in ability.description.lower():
+                        # Try to extract dice value and optional condition from ability description
+                        dice_match = re.search(r'(?:feel no pain|fnp)\s*\(?(\d+)\+(?:\)?)(?:\s+(.+))?', ability.description.lower())
+                        if dice_match:
+                            dice_value = int(dice_match.group(1))
+                            condition = dice_match.group(2).strip() if dice_match.group(2) else None
+                            return True, dice_value, condition
+                        raise ValueError(f"Feel No Pain ability found in model ability description '{ability.description}' but could not extract dice value")
+        
+        return False, 0, None
 
     def get_max_weapon_range(self) -> float:
         """Get the maximum range of all weapons in the unit."""

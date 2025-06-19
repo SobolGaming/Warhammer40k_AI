@@ -65,21 +65,47 @@ class DeploymentManager:
         deployment_results['defender'] = self.defender.name
         logger.info(f"📋 Attacker: {self.attacker.name}, Defender: {self.defender.name}")
         
-        # Step 2: Defender chooses deployment zone
-        available_zones = self.create_deployment_zones()
-        defender_decision_maker = decision_makers[self.defender.name]
-        chosen_zone = defender_decision_maker.choose_deployment_zone(available_zones)
-        
-        # Assign zones
-        defender_zone = chosen_zone
-        attacker_zone = next(zone for zone in available_zones if zone != chosen_zone)
-        
-        deployment_results['deployment_zones'][self.defender.name] = defender_zone
-        deployment_results['deployment_zones'][self.attacker.name] = attacker_zone
-        
-        # Store deployment zones in the game for visualization
-        self.game.deployment_zones[self.defender.name] = defender_zone
-        self.game.deployment_zones[self.attacker.name] = attacker_zone
+        # Step 2: Use pre-configured deployment zones (ensures consistency)
+        if hasattr(self.game, 'deployment_zones') and self.game.deployment_zones:
+            # Use zones already set up in the game (ensures consistency across all game types)
+            logger.info("📍 Using pre-configured deployment zones for consistency")
+            
+            # Convert the game's deployment zones to the format expected by the deployment system
+            available_zones = []
+            for player_name, zone in self.game.deployment_zones.items():
+                zone_copy = zone.copy()
+                zone_copy['name'] = f"{player_name}'s Zone"
+                available_zones.append(zone_copy)
+            
+            # Assign zones - defender chooses first
+            defender_decision_maker = decision_makers[self.defender.name]
+            chosen_zone = defender_decision_maker.choose_deployment_zone(available_zones)
+            
+            # Find which zone was chosen and assign accordingly
+            defender_zone = chosen_zone
+            attacker_zone = next(zone for zone in available_zones if zone != chosen_zone)
+            
+            deployment_results['deployment_zones'][self.defender.name] = defender_zone
+            deployment_results['deployment_zones'][self.attacker.name] = attacker_zone
+        else:
+            # Fallback: create standard zones if none exist
+            logger.warning("No pre-configured zones found, creating standard zones")
+            available_zones = self.create_deployment_zones()
+            defender_decision_maker = decision_makers[self.defender.name]
+            chosen_zone = defender_decision_maker.choose_deployment_zone(available_zones)
+            
+            # Assign zones
+            defender_zone = chosen_zone
+            attacker_zone = next(zone for zone in available_zones if zone != chosen_zone)
+            
+            deployment_results['deployment_zones'][self.defender.name] = defender_zone
+            deployment_results['deployment_zones'][self.attacker.name] = attacker_zone
+            
+            # Store deployment zones in the game for visualization
+            self.game.deployment_zones = {
+                self.defender.name: defender_zone,
+                self.attacker.name: attacker_zone
+            }
         
         logger.info(f"🎯 {self.defender.name} chose deployment zone, {self.attacker.name} gets the other")
         
@@ -133,20 +159,21 @@ class DeploymentManager:
             return self.game.players[1], self.game.players[0]  # Player 2 is attacker
     
     def create_deployment_zones(self) -> List[dict]:
-        """Create deployment zones based on battlefield size."""
+        """Create deployment zones based on battlefield size - using same 18\" zones as Human vs AI."""
         battlefield_width, battlefield_height = self.game.get_battlefield_size()
+        deployment_depth = 18.0  # 18 inches from edge - consistent with Human vs AI
         
-        # Standard deployment zones (opposite table edges)
+        # Standard deployment zones (18" from opposite table edges)
         zone1 = {
             'name': 'Zone 1',
-            'x_range': (2, battlefield_width * 0.4),
-            'y_range': (2, battlefield_height - 2)
+            'x_range': (0, deployment_depth),
+            'y_range': (0, battlefield_height)
         }
         
         zone2 = {
             'name': 'Zone 2', 
-            'x_range': (battlefield_width * 0.6, battlefield_width - 2),
-            'y_range': (2, battlefield_height - 2)
+            'x_range': (battlefield_width - deployment_depth, battlefield_width),
+            'y_range': (0, battlefield_height)
         }
         
         return [zone1, zone2]

@@ -164,12 +164,14 @@ class WargearProfile:
                 
             if attack_instance['mortal_wound'] or target_model.failed_saving_throw(attack_instance, self.ap):
                 dmg_value = self.damage_target(target_model, attacker, attack_instance)
+                
                 # 10th Edition: Apply damage to the target model, excess damage is lost
-                excess_damage = target_model.take_damage(dmg_value, attack_instance['mortal_wound'])
+                # Pass the weapon profile instance for Feel No Pain condition checking
+                excess_damage = target_model.take_damage(dmg_value, attack_instance['mortal_wound'], self)
                 print(f"{target_model.name} took {dmg_value}{' mortal' if attack_instance['mortal_wound'] else ''} damage")
                 # In 10th edition, excess damage is lost (no spillover to other models)
-                if excess_damage > 0:
-                    print(f"Excess damage of {excess_damage} is lost (10th edition rules)")
+                #if excess_damage > 0:
+                #    print(f"Excess damage of {excess_damage} is lost (10th edition rules)")
         return
 
     def hit_target(self, target: 'Unit', attacker: 'Model', attack_instance: Dict) -> bool:

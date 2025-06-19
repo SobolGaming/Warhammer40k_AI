@@ -935,6 +935,21 @@ def main_game_loop(player_configs=None) -> None:
     if player1.type == PlayerType.AI and player2.type == PlayerType.AI:
         print("🤖 Both players are AI - starting deployment automatically...")
         try:
+            # Set up the same 18" deployment zones that Human vs AI games use
+            battlefield_width, battlefield_height = game.get_battlefield_size()
+            deployment_depth = 18.0  # 18 inches from edge - same as Human vs AI
+            
+            game.deployment_zones = {
+                player1.name: {
+                    'x_range': (0, deployment_depth),  # Left edge to 18" in
+                    'y_range': (0, battlefield_height)  # Full height
+                },
+                player2.name: {
+                    'x_range': (battlefield_width - deployment_depth, battlefield_width),  # 18" from right edge to edge
+                    'y_range': (0, battlefield_height)  # Full height
+                }
+            }
+            
             deployment_results = execute_official_deployment(game, player1, player2, 
                                                             high_level_agent_player1, high_level_agent_player2, ui_interface)
             print(f"✅ AI deployment completed! {deployment_results['first_turn_player']} will go first")
@@ -1177,24 +1192,27 @@ def main_game_loop(player_configs=None) -> None:
                     print("🚀 Starting deployment sequence...")
                     deployment_completed = False
                     try:
-                        # For mixed human/AI games, use proper alternating deployment
+                        # ALL GAMES USE CONSISTENT DEPLOYMENT ZONES - ensures same zones for AI vs AI and Human vs AI
+                        print("🎮 Starting deployment sequence with consistent zones")
+                        
+                        # Set up standard deployment zones (18" from edges) for ALL game types
+                        battlefield_width, battlefield_height = game.get_battlefield_size()
+                        deployment_depth = 18.0  # 18 inches from edge - consistent for all games
+                        
+                        game.deployment_zones = {
+                            player1.name: {
+                                'x_range': (0, deployment_depth),  # Left edge to 18" in
+                                'y_range': (0, battlefield_height)  # Full height
+                            },
+                            player2.name: {
+                                'x_range': (battlefield_width - deployment_depth, battlefield_width),  # 18" from right edge to edge
+                                'y_range': (0, battlefield_height)  # Full height
+                            }
+                        }
+                        
+                        # For mixed human/AI games, use alternating deployment
                         if player1.type != player2.type:  # Mixed game
                             print("🎮 Mixed Human/AI game - starting alternating deployment")
-                            # Set up deployment zones for visualization and validation
-                            battlefield_width, battlefield_height = game.get_battlefield_size()
-                            deployment_depth = 18.0  # 18 inches from edge
-                            
-                            game.deployment_zones = {
-                                player1.name: {
-                                    'x_range': (0, deployment_depth),  # Left edge to 18" in
-                                    'y_range': (0, battlefield_height)  # Full height
-                                },
-                                player2.name: {
-                                    'x_range': (battlefield_width - deployment_depth, battlefield_width),  # 18" from right edge to edge
-                                    'y_range': (0, battlefield_height)  # Full height
-                                }
-                            }
-                            
                             # Start alternating deployment - defender goes first
                             game.deployment_turn_index = game.defender_index  # Start with defender
                             game_state = GameState.PLAYING  # Switch to playing state for deployment handling
@@ -1205,7 +1223,7 @@ def main_game_loop(player_configs=None) -> None:
                             print("  - AI players: Will auto-deploy when it's their turn")
                             print("  - Zones are shown with colored overlay")
                         else:
-                            # Pure AI vs AI or Human vs Human - use official system
+                            # Pure AI vs AI or Human vs Human - use official system but with the same zones
                             deployment_results = execute_official_deployment(game, player1, player2, 
                                                                             high_level_agent_player1, high_level_agent_player2, ui_interface)
                             print(f"✅ Deployment completed! {deployment_results['first_turn_player']} will go first")
