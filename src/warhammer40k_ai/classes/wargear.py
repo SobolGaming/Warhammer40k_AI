@@ -173,6 +173,22 @@ class WargearProfile:
                 # In 10th edition, excess damage is lost (no spillover to other models)
                 #if excess_damage > 0:
                 #    print(f"Excess damage of {excess_damage} is lost (10th edition rules)")
+        
+        # HAZARDOUS RULE (10th Edition)
+        # After resolving all attacks, if this weapon is hazardous,
+        # roll a D6 for the attacking model. On a 1, it suffers 3 mortal wounds.
+        if self.is_hazardous():
+            print(f"Hazardous weapon check for {attacker.name}")
+            hazard_roll = get_roll("D6")
+            print(f"Hazardous roll: {hazard_roll}")
+            if hazard_roll == 1:
+                print(f"Hazardous weapon backfires! {attacker.name} suffers 3 mortal wounds")
+                # Apply 3 mortal wounds to the attacking model
+                # Feel No Pain can be used against these mortal wounds, but saves don't apply
+                attacker.take_damage(3, is_mortal=True, weapon_profile=None)
+            else:
+                print(f"Hazardous weapon safe - no damage to {attacker.name}")
+                
         return
 
     def hit_target(self, target: 'Unit', attacker: 'Model', attack_instance: Dict) -> bool:
