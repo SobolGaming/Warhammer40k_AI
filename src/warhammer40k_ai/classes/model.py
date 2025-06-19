@@ -192,11 +192,11 @@ class Model:
             return True
         
         # Check for ranged attack conditions
-        if "ranged" in condition and weapon_profile.get_type() == "ranged":
+        if "ranged" in condition and weapon_profile.parent_wargear and weapon_profile.parent_wargear.is_ranged():
             return True
         
         # Check for melee attack conditions
-        if "melee" in condition and weapon_profile.get_type() == "melee":
+        if "melee" in condition and weapon_profile.parent_wargear and weapon_profile.parent_wargear.is_melee():
             return True
         
         # Check for specific weapon keyword conditions

@@ -13,8 +13,9 @@ if TYPE_CHECKING:
 
 
 class WargearProfile:
-    def __init__(self, profile_name: str, wargear_data: Dict):
+    def __init__(self, profile_name: str, wargear_data: Dict, parent_wargear: Optional['Wargear'] = None):
         self.name = profile_name
+        self.parent_wargear = parent_wargear
         self.range = self._parse_range(wargear_data.get('range', ''))
         self.attacks = self._parse_attacks(wargear_data.get('A', ''))
         self.skill = self._parse_attribute(wargear_data.get('BS_WS', ''))
@@ -386,10 +387,10 @@ class Wargear:
         else:
             profile_name = 'default'
         self.type = wargear_data.get('type', '')
-        self.profiles = { profile_name: WargearProfile(profile_name, wargear_data) }
+        self.profiles = { profile_name: WargearProfile(profile_name, wargear_data, self) }
 
     def add_profile(self, profile_name: str, wargear_data: Dict):
-        self.profiles[profile_name] = WargearProfile(profile_name, wargear_data)
+        self.profiles[profile_name] = WargearProfile(profile_name, wargear_data, self)
 
     def __str__(self):
         str = f"{self.name} ({self.type}): "
