@@ -830,41 +830,51 @@ def main_game_loop(player_configs=None) -> None:
     game_state = GameState.SETUP
     clicked_unit = None
 
-    # Initialize agents with objectives (only for AI players)
+    # Initialize agent variables (will be created after setup phases)
     high_level_agent_player1 = None
     tactical_agent_player1 = None
     low_level_agent_player1 = None
     high_level_agent_player2 = None
     tactical_agent_player2 = None
     low_level_agent_player2 = None
-    
-    # Create AI agents only for AI players
-    if player1.type == PlayerType.AI:
-        high_level_agent_player1 = HighLevelAgent(game, player1, player2, objectives=game.map.objectives, commands=game.commands)
-        tactical_agent_player1 = TacticalAgent(game, player1)
-        low_level_agent_player1 = LowLevelAgent(game, player1)
-        
-    if player2.type == PlayerType.AI:
-        high_level_agent_player2 = HighLevelAgent(game, player2, player1, objectives=game.map.objectives, commands=game.commands)
-        tactical_agent_player2 = TacticalAgent(game, player2)
-        low_level_agent_player2 = LowLevelAgent(game, player2)
 
-    # Load checkpoints for AI players only
-    if os.path.exists(CHECKPOINT_DIR):
-        print("Loading trained AI models...")
-        if high_level_agent_player1:
-            high_level_agent_player1.load_checkpoint(os.path.join(CHECKPOINT_DIR, 'hla1_checkpoint.pth'))
-            tactical_agent_player1.load_checkpoint(os.path.join(CHECKPOINT_DIR, 'ta1_checkpoint.pth'))
-            low_level_agent_player1.load_checkpoint(os.path.join(CHECKPOINT_DIR, 'lla1_checkpoint.pth'))
-        if high_level_agent_player2:
-            high_level_agent_player2.load_checkpoint(os.path.join(CHECKPOINT_DIR, 'hla2_checkpoint.pth'))
-            tactical_agent_player2.load_checkpoint(os.path.join(CHECKPOINT_DIR, 'ta2_checkpoint.pth'))
-            low_level_agent_player2.load_checkpoint(os.path.join(CHECKPOINT_DIR, 'lla2_checkpoint.pth'))
+    def create_ai_agents():
+        """Create AI agents after setup phases are complete and objectives/commands are available."""
+        nonlocal high_level_agent_player1, tactical_agent_player1, low_level_agent_player1
+        nonlocal high_level_agent_player2, tactical_agent_player2, low_level_agent_player2
+        
+        # Create AI agents only for AI players
+        if player1.type == PlayerType.AI:
+            high_level_agent_player1 = HighLevelAgent(game, player1, player2, objectives=game.map.objectives, commands=game.commands)
+            tactical_agent_player1 = TacticalAgent(game, player1)
+            low_level_agent_player1 = LowLevelAgent(game, player1)
+            
+        if player2.type == PlayerType.AI:
+            high_level_agent_player2 = HighLevelAgent(game, player2, player1, objectives=game.map.objectives, commands=game.commands)
+            tactical_agent_player2 = TacticalAgent(game, player2)
+            low_level_agent_player2 = LowLevelAgent(game, player2)
+        
+        # Load checkpoints for AI players only
+        if os.path.exists(CHECKPOINT_DIR):
+            print("Loading trained AI models...")
+            if high_level_agent_player1:
+                high_level_agent_player1.load_checkpoint(os.path.join(CHECKPOINT_DIR, 'hla1_checkpoint.pth'))
+                tactical_agent_player1.load_checkpoint(os.path.join(CHECKPOINT_DIR, 'ta1_checkpoint.pth'))
+                low_level_agent_player1.load_checkpoint(os.path.join(CHECKPOINT_DIR, 'lla1_checkpoint.pth'))
+            if high_level_agent_player2:
+                high_level_agent_player2.load_checkpoint(os.path.join(CHECKPOINT_DIR, 'hla2_checkpoint.pth'))
+                tactical_agent_player2.load_checkpoint(os.path.join(CHECKPOINT_DIR, 'ta2_checkpoint.pth'))
+                low_level_agent_player2.load_checkpoint(os.path.join(CHECKPOINT_DIR, 'lla2_checkpoint.pth'))
 
     print("Starting main game loop")
     print(f"🎮 Game mode: {player1.name} ({player1.type.name}) vs {player2.name} ({player2.type.name})")
     print("Controls:")
-    if player1.type == PlayerType.HUMAN or player2.type == PlayerType.HUMAN:
+    manual_phases_required = (player1.type == PlayerType.HUMAN or player2.type == PlayerType.HUMAN or 
+                             player_configs.get('manual_phases', False))
+    
+    if manual_phases_required:
+        if player_configs.get('manual_phases', False):
+            print("🔧 Manual phases mode enabled - SPACE required to advance phases")
         print("  - SPACE: Advance through setup phases and battle round phases")
         print("  - A: Force AI action (if needed)")
         print("  - ESC: Close panels/deselect units")
@@ -895,6 +905,9 @@ def main_game_loop(player_configs=None) -> None:
         
         print("✅ AI setup completed! Battle begins!")
         game_state = GameState.PLAYING
+        
+        # Create AI agents now that objectives and commands are available
+        create_ai_agents()
 
     # Ensure pygame display is properly initialized
     game_view.draw()
@@ -907,12 +920,15 @@ def main_game_loop(player_configs=None) -> None:
         # Check if current player is AI and should take action automatically (normal game phases)
         if game_state == GameState.PLAYING and not game.is_deployment_phase():
             current_player = game.get_current_player()
-            should_do_ai_action = (current_player.type == PlayerType.AI and not game.is_game_over())
+            manual_phases_required = player_configs.get('manual_phases', False)
+            should_do_ai_action = (current_player.type == PlayerType.AI and not game.is_game_over() and not manual_phases_required)
             
-            # Auto-enable AI action for AI players
+            # Auto-enable AI action for AI players (unless manual phases mode is enabled)
             if should_do_ai_action:
                 game.do_ai_action = True
                 print(f"🤖 {current_player.name} (AI) taking action automatically...")
+            elif manual_phases_required and current_player.type == PlayerType.AI:
+                print(f"🔧 {current_player.name} (AI) waiting for SPACE key (manual phases mode)")
         
         if game_state == GameState.PLAYING and game.do_ai_action:
             # Only do AI actions if at least one player is AI
@@ -923,7 +939,7 @@ def main_game_loop(player_configs=None) -> None:
                     
                     # Skip AI logic for human players
                     if current_player.type == PlayerType.HUMAN:
-                        print(f"🎮 TURN {game.turn} | {current_player.name} (HUMAN) | Phase: {game.phase.name} - Waiting for human input...")
+                        print(f"🎮 TURN {game.turn} | {current_player.name} ({current_player.type.name}) | Phase: {game.phase.name} - Waiting for human input...")
                         game.do_ai_action = False  # Disable AI action for human players
                         break  # Exit AI loop, let human player take control
                     
@@ -942,7 +958,7 @@ def main_game_loop(player_configs=None) -> None:
                         print(f"⚠️ No AI agents found for {current_player.name} - skipping AI action")
                         break
 
-                    print(f"🎮 TURN {game.turn} | {current_player.name} (AI) | Phase: {game.phase.name}")
+                    print(f"🎮 TURN {game.turn} | {current_player.name} ({current_player.type.name}) | Phase: {game.phase.name}")
 
                     objective, command = high_level_agent.choose_objective_and_command()
                     print(f"{current_player.name} chose Objective: {objective.name}, Command: {command}")
@@ -978,6 +994,12 @@ def main_game_loop(player_configs=None) -> None:
                         for unit in current_player.army.units:
                             tactical_agent.fight_phase(unit)
                         game.next_phase()  # This will trigger next_turn() since it's the last phase
+                    
+                    # In manual phases mode, pause after each phase and wait for SPACE
+                    if player_configs.get('manual_phases', False):
+                        game.do_ai_action = False  # Stop AI loop, wait for SPACE key
+                        print(f"🔧 Phase {game.phase.name} completed. Press SPACE to continue...")
+                        break  # Exit AI loop, wait for manual input
 
                     # Compute aggregated reward for the High Level Agent based on distance improvement.
                     avg_distance_after = current_player.compute_average_distance(objective)
@@ -1098,6 +1120,9 @@ def main_game_loop(player_configs=None) -> None:
                             game_state = GameState.PLAYING
                             print("🎉 All setup phases complete! Battle begins!")
                             print("Press SPACE to advance battle round phases.")
+                            
+                            # Create AI agents now that objectives and commands are available
+                            create_ai_agents()
                         else:
                             # Show next setup phase
                             print(f"📋 Next phase: {game.get_current_setup_phase().name}")
@@ -1105,8 +1130,15 @@ def main_game_loop(player_configs=None) -> None:
                     else:
                         print("⚠️ Setup is already complete")
                 elif event.key == pygame.K_SPACE and game_state == GameState.PLAYING:
-                    game.next_phase()
-                    print(f"Advanced to {game.phase.name} phase")
+                    # In manual phases mode, trigger AI action if current player is AI
+                    if player_configs.get('manual_phases', False) and game.get_current_player().type == PlayerType.AI:
+                        game.do_ai_action = True
+                        current_player = game.get_current_player()
+                        print(f"🔧 Manual trigger: {current_player.name} (AI) | Phase: {game.phase.name}")
+                    else:
+                        # Normal human player phase advancement
+                        game.next_phase()
+                        print(f"Advanced to {game.phase.name} phase")
                 elif event.key == pygame.K_a and game_state == GameState.PLAYING:
                     game.do_ai_action = True
                     print("🤖 Manual AI action triggered")
@@ -1163,6 +1195,9 @@ Examples:
   # AI vs AI gameplay
   python main.py --mode play --player1 ai --player2 ai
   
+  # AI vs AI with manual phase control (for debugging/demonstration)
+  python main.py --mode play --player1 ai --player2 ai --manual-phases
+  
   # Human vs Human gameplay  
   python main.py --mode play --player1 human --player2 human
   
@@ -1187,6 +1222,8 @@ Examples:
                         help='Army list file for Player 1 (default: army_lists/warhammer_app_dump.txt)')
     parser.add_argument('--player2-army', type=str, default='army_lists/chaos_daemons_GT2023.txt',
                         help='Army list file for Player 2 (default: army_lists/chaos_daemons_GT2023.txt)')
+    parser.add_argument('--manual-phases', action='store_true',
+                        help='Require SPACE key to advance phases even in AI vs AI matches (useful for debugging/demonstration)')
     
     args = parser.parse_args()
     
@@ -1200,7 +1237,8 @@ Examples:
         'player1_type': args.player1,
         'player2_type': args.player2,
         'player1_army_file': args.player1_army,
-        'player2_army_file': args.player2_army
+        'player2_army_file': args.player2_army,
+        'manual_phases': args.manual_phases
     }
     
     # Validate player configurations
@@ -1214,6 +1252,8 @@ Examples:
     print(f"   Mode: {args.mode.upper()}")
     print(f"   Player 1: {player_configs['player1_type'].upper()} using {player_configs['player1_army_file']}")
     print(f"   Player 2: {player_configs['player2_type'].upper()} using {player_configs['player2_army_file']}")
+    if args.manual_phases:
+        print(f"   Manual Phases: ENABLED (SPACE required to advance phases)")
     if TRAINING_MODE:
         print(f"   Training Episodes: {NUM_TRAINING_EPISODES}")
         print(f"   Checkpoint Interval: {CHECKPOINT_INTERVAL}")

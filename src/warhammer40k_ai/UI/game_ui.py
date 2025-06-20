@@ -480,22 +480,30 @@ class InfoPane(pygame.sprite.Sprite):
         x_center = self.rect.centerx
         x_right = self.rect.right - 15
 
-        # Game status line 1: Turn and Phase (or Deployment Phase)
-        # Check if we're in deployment phase AND deployment zones are loaded
+        # Game status line 1: Setup Phase, Deployment Phase, or Battle Round
+        # Define deployment phase variables for later use
         in_deployment_phase = game.is_deployment_phase()
         deployment_zones_loaded = hasattr(game, 'deployment_zones') and game.deployment_zones
         
-        if in_deployment_phase and deployment_zones_loaded:
-            # Show whose turn it is to deploy
-            deployment_player = game.get_current_deployment_player()
-            game_status = f"DEPLOYMENT PHASE - {deployment_player.name}'s Turn"
-            text_color = TEXT_ACCENT  # Use accent color to highlight deployment phase
-        elif in_deployment_phase and not deployment_zones_loaded:
-            # Show battlefield creation phase before deployment zones are loaded
-            game_status = "CREATING BATTLEFIELD"
-            text_color = TEXT_SECONDARY  # Different color to indicate pre-deployment state
+        if game.is_in_setup_phase():
+            # Show current setup phase
+            setup_phase_name = game.get_current_setup_phase().name.replace('_', ' ').title()
+            game_status = f"SETUP: {setup_phase_name}"
+            text_color = TEXT_ACCENT  # Use accent color to highlight setup phase
+        elif in_deployment_phase:
+            if deployment_zones_loaded:
+                # Show whose turn it is to deploy
+                deployment_player = game.get_current_deployment_player()
+                game_status = f"DEPLOYMENT PHASE - {deployment_player.name}'s Turn"
+                text_color = TEXT_ACCENT  # Use accent color to highlight deployment phase
+            else:
+                # Show battlefield creation phase before deployment zones are loaded
+                game_status = "CREATING BATTLEFIELD"
+                text_color = TEXT_SECONDARY  # Different color to indicate pre-deployment state
         else:
-            game_status = f"Turn {game.turn} - {game.phase.name.replace('_', ' ').title()}"
+            # Show battle round with current player
+            current_player_name = current_player.name if current_player else "Unknown"
+            game_status = f"Turn {game.turn} - {current_player_name} - {game.phase.name.replace('_', ' ').title()}"
             text_color = TEXT_PRIMARY
         
         game_text = self.font_medium.render(game_status, True, text_color)
@@ -504,31 +512,63 @@ class InfoPane(pygame.sprite.Sprite):
         
         y_offset += 30
         
-        # Player information or deployment status
-        if game.is_deployment_phase() and deployment_zones_loaded:
-            # Show deployment phase information
-            deployment_player = game.get_current_deployment_player()
-            deployable_units = game.get_deployable_units(deployment_player)
+        # Setup phase, deployment, or player information
+        if game.is_in_setup_phase():
+            # Show setup phase information
+            setup_phase = game.get_current_setup_phase()
+            setup_descriptions = {
+                'MUSTER_ARMIES': '🏗️ Loading army lists and preparing forces',
+                'SELECT_MISSION_OBJECTIVES': '🎯 Configuring mission objectives and commands',
+                'CREATE_BATTLEFIELD': '🗺️ Creating battlefield, terrain, and objectives',
+                'DETERMINE_ATTACKER_AND_DEFENDER': '⚔️ Rolling dice to determine attacker/defender roles',
+                'DECLARE_BATTLE_FORMATIONS': '📋 Declaring battle formations and reserves',
+                'DEPLOY_ARMIES': '🚢 Deploying armies to the battlefield',
+                'DETERMINE_FIRST_TURN_ORDER': '🎲 Rolling dice to determine who goes first'
+            }
             
-            deployment_text = f"🚢 DEPLOYMENT: {deployment_player.name}'s turn ({len(deployable_units)} units left)"
-            deployment_surface = self.font_small.render(deployment_text, True, DEPLOY_BUTTON_BG)
-            deployment_rect = deployment_surface.get_rect(center=(x_center, y_offset))
-            surface.blit(deployment_surface, deployment_rect)
-            
-            # Show deployment zone info
-            if hasattr(game, 'deployment_zones') and deployment_player.name in game.deployment_zones:
-                zone = game.deployment_zones[deployment_player.name]
-                zone_text = f"Zone: X({zone['x_range'][0]:.0f}-{zone['x_range'][1]:.0f}) Y({zone['y_range'][0]:.0f}-{zone['y_range'][1]:.0f})"
-                zone_surface = self.font_small.render(zone_text, True, TEXT_SECONDARY)
-                zone_rect = zone_surface.get_rect(center=(x_center, y_offset + 20))
-                surface.blit(zone_surface, zone_rect)
-                y_offset += 20
-        elif game.is_deployment_phase() and not deployment_zones_loaded:
-            # Show battlefield creation status
-            setup_text = "📋 Press SPACE to begin deployment sequence"
+            description = setup_descriptions.get(setup_phase.name, f"Executing {setup_phase.name}")
+            setup_text = description
             setup_surface = self.font_small.render(setup_text, True, TEXT_ACCENT)
             setup_rect = setup_surface.get_rect(center=(x_center, y_offset))
             surface.blit(setup_surface, setup_rect)
+            
+            # Show progress indicator
+            phase_number = setup_phase.value + 1
+            # Import SetupPhase to get total count
+            from ..classes.game import SetupPhase
+            total_phases = len(SetupPhase.__members__)
+            progress_text = f"Phase {phase_number}/{total_phases} - Press SPACE to continue"
+            progress_surface = self.font_tiny.render(progress_text, True, TEXT_SECONDARY)
+            progress_rect = progress_surface.get_rect(center=(x_center, y_offset + 20))
+            surface.blit(progress_surface, progress_rect)
+            y_offset += 20
+        elif game.is_deployment_phase():
+            deployment_zones_loaded = hasattr(game, 'deployment_zones') and game.deployment_zones
+            
+            if deployment_zones_loaded:
+                # Show deployment phase information
+                deployment_player = game.get_current_deployment_player()
+                deployable_units = game.get_deployable_units(deployment_player)
+                
+                deployment_text = f"🚢 DEPLOYMENT: {deployment_player.name}'s turn ({len(deployable_units)} units left)"
+                deployment_surface = self.font_small.render(deployment_text, True, DEPLOY_BUTTON_BG)
+                deployment_rect = deployment_surface.get_rect(center=(x_center, y_offset))
+                surface.blit(deployment_surface, deployment_rect)
+                
+                # Show deployment zone info
+                if hasattr(game, 'deployment_zones') and deployment_player.name in game.deployment_zones:
+                    zone = game.deployment_zones[deployment_player.name]
+                    zone_text = f"Zone: X({zone['x_range'][0]:.0f}-{zone['x_range'][1]:.0f}) Y({zone['y_range'][0]:.0f}-{zone['y_range'][1]:.0f})"
+                    zone_surface = self.font_small.render(zone_text, True, TEXT_SECONDARY)
+                    zone_rect = zone_surface.get_rect(center=(x_center, y_offset + 20))
+                    surface.blit(zone_surface, zone_rect)
+                    y_offset += 20
+            else:
+                # Show battlefield creation status
+                setup_text = "📋 Press SPACE to begin deployment sequence"
+                setup_surface = self.font_small.render(setup_text, True, TEXT_ACCENT)
+                setup_rect = setup_surface.get_rect(center=(x_center, y_offset))
+                surface.blit(setup_surface, setup_rect)
         elif game_view and hasattr(game_view, 'selected_unit') and game_view.selected_unit and not game_view.selected_unit.deployed:
             deployment_text = f"📍 Click battlefield to deploy: {game_view.selected_unit.name}"
             deployment_surface = self.font_small.render(deployment_text, True, DEPLOY_BUTTON_BG)
