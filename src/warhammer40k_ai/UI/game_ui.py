@@ -150,10 +150,11 @@ class RosterPane(pygame.sprite.Sprite):
         
         # Find the player object from the units
         self.player = None
-        for unit in roster:
-            if unit.parent_army and unit.parent_army.player:
-                self.player = unit.parent_army.player
-                break
+        if roster:  # Only try to find player if roster has units
+            for unit in roster:
+                if unit.parent_army and unit.parent_army.player:
+                    self.player = unit.parent_army.player
+                    break
 
     def create_buttons(self):
         self.buttons = []
@@ -1820,15 +1821,19 @@ class GameView:
         
         # Create roster panes with reference to all units for color correlation
         # Roster panes now extend to full battlefield height + info pane height
+        # Handle case where armies haven't been loaded yet (during setup phases)
         roster_pane_height = BATTLEFIELD_HEIGHT + INFO_PANE_HEIGHT
+        player1_units = player1.get_army().units if player1.get_army() else []
+        player2_units = player2.get_army().units if player2.get_army() else []
+        
         self.left_roster_pane = RosterPane(0, 0, ROSTER_PANE_WIDTH, roster_pane_height, 
-                                         player1.get_army().units, f"Player 1 ({player1.name})")
+                                         player1_units, f"Player 1 ({player1.name})")
         self.right_roster_pane = RosterPane(BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH, 0, ROSTER_PANE_WIDTH, 
-                                          roster_pane_height, player2.get_army().units, 
+                                          roster_pane_height, player2_units, 
                                           f"Player 2 ({player2.name})")
         
         # Pass all units to roster panes for color correlation
-        all_units = player1.get_army().units + player2.get_army().units
+        all_units = player1_units + player2_units
         self.left_roster_pane.all_units = all_units
         self.right_roster_pane.all_units = all_units
         
@@ -1839,6 +1844,33 @@ class GameView:
         # Position InfoPane between roster panes and below battlefield
         self.info_pane = InfoPane(ROSTER_PANE_WIDTH, BATTLEFIELD_HEIGHT, 
                                 BATTLEFIELD_WIDTH, INFO_PANE_HEIGHT, self.selected_unit)
+    
+    def refresh_roster_panes(self):
+        """Refresh roster panes when armies are loaded during setup phases."""
+        if self.player1 and self.player2:
+            player1_units = self.player1.get_army().units if self.player1.get_army() else []
+            player2_units = self.player2.get_army().units if self.player2.get_army() else []
+            
+            # Update roster units
+            self.left_roster_pane.roster = player1_units
+            self.right_roster_pane.roster = player2_units
+            
+            # Update player references
+            self.left_roster_pane.player = self.player1
+            self.right_roster_pane.player = self.player2
+            
+            # Update all_units for color correlation
+            all_units = player1_units + player2_units
+            self.left_roster_pane.all_units = all_units
+            self.right_roster_pane.all_units = all_units
+            
+            # Reset scroll positions
+            self.left_roster_pane.scroll_offset = 0
+            self.right_roster_pane.scroll_offset = 0
+            
+            # Recreate buttons with new roster data
+            self.left_roster_pane.create_buttons()
+            self.right_roster_pane.create_buttons()
 
     def handle_pygame_event(self, event):
         """Handle pygame events, including reserves UI integration."""
@@ -2048,10 +2080,12 @@ class GameView:
             
             for unit in self.game_map.units:
                 if unit.is_point_inside(battlefield_x, battlefield_y):
-                    # Determine which roster the unit belongs to
-                    if unit in self.player1.get_army().units:
+                    # Determine which roster the unit belongs to (only if armies are loaded)
+                    if (self.player1.get_army() and self.player1.get_army().units and 
+                        unit in self.player1.get_army().units):
                         return unit, self.left_roster_pane
-                    elif unit in self.player2.get_army().units:
+                    elif (self.player2.get_army() and self.player2.get_army().units and 
+                          unit in self.player2.get_army().units):
                         return unit, self.right_roster_pane
         
         return None, None
@@ -2064,11 +2098,12 @@ class GameView:
         print(f"Checking for unit at game coordinates: ({game_x}, {game_y})")
 
         for player in [self.player1, self.player2]:
-            for unit in [unit for unit in player.get_army().units if unit.deployed]:
-                #print(f"Checking unit: {unit.name}")
-                #print(f"Unit position: {unit.get_position()}")
-                if unit.is_point_inside(game_x, game_y):
-                    return unit
+            if player.get_army() and player.get_army().units:
+                for unit in [unit for unit in player.get_army().units if unit.deployed]:
+                    #print(f"Checking unit: {unit.name}")
+                    #print(f"Unit position: {unit.get_position()}")
+                    if unit.is_point_inside(game_x, game_y):
+                        return unit
         
         #print("No unit found at position")
         return None
@@ -2140,9 +2175,11 @@ class GameView:
             self.unit_detail_panel.draw(self.screen, self.detailed_unit, 
                                       self.detail_panel_pos[0], self.detail_panel_pos[1])
 
-        # Draw move paths for all units
-        for unit in self.game.get_current_player().get_army().units:
-            self.draw_move_path(unit)
+        # Draw move paths for all units (only if armies are loaded)
+        current_player = self.game.get_current_player()
+        if current_player and current_player.get_army() and current_player.get_army().units:
+            for unit in current_player.get_army().units:
+                self.draw_move_path(unit)
 
         # Draw UI interface components (reserves dialogs, etc.)
         if self.ui_interface:
@@ -2345,11 +2382,19 @@ def draw_objective(screen: pygame.Surface, objective: Objective, zoom_level: flo
         pygame.draw.circle(screen, PURPLE, (int(objective.location.x * TILE_SIZE * zoom_level + offset_x), int(objective.location.y * TILE_SIZE * zoom_level + offset_y)), int(objective.location.control_radius * TILE_SIZE * zoom_level))
 
 def draw_units(screen: pygame.Surface, unit: Unit, zoom_level: float, offset_x: int, offset_y: int, mouse_pos: Tuple[int, int], player1: Player, player2: Player) -> None:
-    # Determine the color based on which player the unit belongs to
-    color = GREEN if unit in player1.get_army().units else RED if unit in player2.get_army().units else BLUE
+    # Determine the color based on which player the unit belongs to (only if armies are loaded)
+    color = BLUE  # Default color
+    if (player1.get_army() and player1.get_army().units and unit in player1.get_army().units):
+        color = GREEN
+    elif (player2.get_army() and player2.get_army().units and unit in player2.get_army().units):
+        color = RED
     
-    # Get all units for color variation calculation
-    all_units = player1.get_army().units + player2.get_army().units
+    # Get all units for color variation calculation (only if armies are loaded)
+    all_units = []
+    if player1.get_army() and player1.get_army().units:
+        all_units.extend(player1.get_army().units)
+    if player2.get_army() and player2.get_army().units:
+        all_units.extend(player2.get_army().units)
 
     for model_index, model in enumerate(unit.models):
         x, y = model.get_location()[:2]

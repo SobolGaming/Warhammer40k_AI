@@ -16,8 +16,7 @@ from warhammer40k_ai.classes.player import Player, PlayerType
 from warhammer40k_ai.classes.army import parse_army_list
 from warhammer40k_ai.UI.game_ui import GameView, GameState, ROSTER_PANE_WIDTH, BATTLEFIELD_WIDTH, BATTLEFIELD_HEIGHT, INFO_PANE_HEIGHT, handle_zoom, handle_pan, TILE_SIZE, BLACK
 from warhammer40k_ai.waha_helper import WahaHelper
-from warhammer40k_ai.agents.hrl_agent import HighLevelAgent, TacticalAgent, LowLevelAgent, AIDeploymentDecisionMaker
-from warhammer40k_ai.classes.deployment import DeploymentManager, HumanDeploymentDecisionMaker
+from warhammer40k_ai.agents.hrl_agent import HighLevelAgent, TacticalAgent, LowLevelAgent
 from warhammer40k_ai.UI.game_ui import HumanUIInterface
 
 # Training configuration
@@ -167,55 +166,40 @@ def cleanup_destroyed_units(game: Game):
                 logger.debug(f"Removing destroyed unit {unit.name} from {player.name}'s army")
             player.get_army().units.remove(unit)
 
-def execute_official_deployment(game: Game, player1: Player, player2: Player, 
-                               player1_agent: HighLevelAgent = None, player2_agent: HighLevelAgent = None,
-                               ui_interface = None) -> dict:
-    """Execute the official Warhammer 40k deployment sequence."""
+def execute_simple_deployment(game: Game, player1: Player, player2: Player) -> dict:
+    """Execute deployment using the game's built-in complete_deployment_phase method."""
     
-    logger.info("🚀 Starting Official Warhammer 40k Deployment Sequence")
+    logger.info("🚀 Starting Simple Deployment Sequence")
     
-    # Create deployment manager
-    deployment_manager = DeploymentManager(game)
+    # Set up deployment zones first
+    battlefield_width, battlefield_height = game.get_battlefield_size()
+    deployment_depth = 18.0  # 18 inches from edge
     
-    # Create decision makers based on player types (not just agent existence)
-    decision_makers = {}
+    game.deployment_zones = {
+        player1.name: {
+            'x_range': (0, deployment_depth),  # Left edge to 18" in
+            'y_range': (0, battlefield_height)  # Full height
+        },
+        player2.name: {
+            'x_range': (battlefield_width - deployment_depth, battlefield_width),  # 18" from right edge to edge
+            'y_range': (0, battlefield_height)  # Full height
+        }
+    }
     
-    # Player 1 decision maker
-    if player1.type == PlayerType.AI and player1_agent:
-        # AI player with agent
-        decision_makers[player1.name] = AIDeploymentDecisionMaker(player1_agent)
-        logger.info(f"🤖 {player1.name} will use AI deployment decisions")
-    else:
-        # Human player with UI interface
-        decision_makers[player1.name] = HumanDeploymentDecisionMaker(ui_interface)
-        logger.info(f"👤 {player1.name} will use human deployment decisions")
+    # Use the game's built-in deployment method
+    game.complete_deployment_phase()
     
-    # Player 2 decision maker
-    if player2.type == PlayerType.AI and player2_agent:
-        # AI player with agent
-        decision_makers[player2.name] = AIDeploymentDecisionMaker(player2_agent)
-        logger.info(f"🤖 {player2.name} will use AI deployment decisions")
-    else:
-        # Human player with UI interface
-        decision_makers[player2.name] = HumanDeploymentDecisionMaker(ui_interface)
-        logger.info(f"👤 {player2.name} will use human deployment decisions")
+    logger.info("✅ Simple deployment complete!")
     
-    # Execute deployment
-    deployment_results = deployment_manager.execute_deployment_sequence(decision_makers)
-    
-    logger.info(f"✅ Deployment complete! {deployment_results['first_turn_player']} goes first")
-    
-    # Compute and store deployment rewards for AI agents
-    for player_name, decision_maker in decision_makers.items():
-        if isinstance(decision_maker, AIDeploymentDecisionMaker):
-            player_deployment = {
-                'selected_zone': deployment_results['deployment_zones'].get(player_name),
-                'reserves_decisions': deployment_results['reserves'].get(player_name, {}),
-                'deployment_order': deployment_results['deployment_order']
-            }
-            decision_maker.compute_deployment_reward(player_deployment)
-    
-    return deployment_results
+    # Return basic results for compatibility
+    return {
+        'attacker': game.get_attacker().name,
+        'defender': game.get_defender().name,
+        'first_turn_player': game.get_attacker().name,  # Attacker goes first by default
+        'deployment_zones': game.deployment_zones,
+        'reserves': {player1.name: {}, player2.name: {}},  # Empty for now
+        'deployment_order': []
+    }
 
 def auto_deploy_player_units(game: Game, player: Player, zone: dict):
     """Deploy all units for a single player within their deployment zone."""
@@ -243,8 +227,8 @@ def auto_deploy_player_units(game: Game, player: Player, zone: dict):
         print(f"  ✅ {unit.name} deployed at ({x:.1f}, {y:.1f})")
 
 def auto_deploy_units(game: Game, player1: Player, player2: Player):
-    """Legacy function - kept for compatibility. Use execute_official_deployment instead."""
-    logger.warning("⚠️  Using legacy deployment system. Consider using execute_official_deployment for proper Warhammer 40k rules.")
+    """Legacy function - kept for compatibility. Use execute_simple_deployment instead."""
+    logger.warning("⚠️  Using legacy deployment system. Consider using execute_simple_deployment for proper Warhammer 40k rules.")
     
     # Quick fallback deployment using proper Warhammer 40k deployment zones
     battlefield_width, battlefield_height = game.get_battlefield_size()
@@ -273,68 +257,33 @@ def validate_army_files(player1_army_file: str, player2_army_file: str):
 def initialize_game(player1_type: str = 'ai', player2_type: str = 'ai', 
                    player1_army_file: str = 'army_lists/warhammer_app_dump.txt',
                    player2_army_file: str = 'army_lists/chaos_daemons_GT2023.txt') -> Tuple[pygame.Surface, WarhammerEnv, Game, Map, float, int, int, Player, Player]:
+    """Initialize basic game structure - armies and setup will be handled in setup phases."""
     pygame.init()
     screen = pygame.display.set_mode((BATTLEFIELD_WIDTH + 2 * ROSTER_PANE_WIDTH, BATTLEFIELD_HEIGHT + INFO_PANE_HEIGHT))
     pygame.display.set_caption('Warhammer 40,000 Battlefield')
-
-    # Validate army files exist
-    validate_army_files(player1_army_file, player2_army_file)
 
     # Convert string types to PlayerType enum
     player1_player_type = PlayerType.HUMAN if player1_type.lower() == 'human' else PlayerType.AI
     player2_player_type = PlayerType.HUMAN if player2_type.lower() == 'human' else PlayerType.AI
 
-    # Create players with armies (suppress noisy parsing output)
-    with suppress_stdout():
-        player1 = Player("Player 1", player1_player_type, parse_army_list(player1_army_file, waha_helper))
-        player2 = Player("Player 2", player2_player_type, parse_army_list(player2_army_file, waha_helper))
+    # Create players WITHOUT armies - armies will be loaded in MUSTER_ARMIES phase
+    player1 = Player("Player 1", player1_player_type, None)
+    player2 = Player("Player 2", player2_player_type, None)
     
-    # Only print during first initialization
-    if hasattr(initialize_game, '_first_run'):
-        pass  # Skip printing on subsequent runs
-    else:
-        print(f"Player 1 ({player1_type.upper()}) army created with {len(player1.get_army().units)} units from {player1_army_file}")
-        print(f"Player 2 ({player2_type.upper()}) army created with {len(player2.get_army().units)} units from {player2_army_file}")
-        initialize_game._first_run = True
-
-    # Define obstacles
-    obstacles = [
-        Obstacle(vertices=[(3, 3), (3, 5), (5, 5), (5, 3)], terrain_type=ObstacleType.CRATER_AND_RUBBLE, height=3.0),
-        Obstacle(vertices=[(20, 7), (27, 9), (29, 9), (29, 7)], terrain_type=ObstacleType.DEBRIS_AND_STATUARY, height=6.0)
-    ]
-
+    # Create basic game structure
     env = WarhammerEnv(players=[player1, player2])
     game = env.game
     
-    # RANDOMIZE STARTING PLAYER TO REMOVE FIRST-PLAYER ADVANTAGE
-    game.current_player_index = random.randint(0, 1)
-    starting_player = game.get_current_player()
-    logger.debug(f"Randomized starting player: {starting_player.name}")
-    
-    # Define objectives - CENTER THE OBJECTIVE TO REMOVE BIAS
-    battlefield_width, battlefield_height = game.get_battlefield_size()
-    center_x = battlefield_width / 2.0
-    center_y = battlefield_height / 2.0
-
-    # Add some randomization to prevent predictable positioning
-    random_offset_x = random.uniform(-3, 3)
-    random_offset_y = random.uniform(-3, 3)
-    objective_x = center_x + random_offset_x
-    objective_y = center_y + random_offset_y
-
-    objective_point = ObjectivePoint(objective_x, objective_y, 0, 3.0)
-    objectives = [
-        Objective(name="Capture Central Point", location=objective_point, category=ObjectiveCategory.PRIMARY, points=10, 
-                  description="Capture the central point to gain control of the battlefield.", 
-                  conditions=lambda game: objective_point.controlling_player == game.get_current_player())
-    ]
-    commands = ["attack", "defend", "move"]
-    
+    # Create empty map - terrain/objectives will be added in CREATE_BATTLEFIELD phase
     game_map = Map(*game.get_battlefield_size())
     game.map = game_map
-    game.map.add_obstacles(obstacles)
-    game.map.add_objectives(objectives)
-    game.commands = commands
+    
+    # Store army file paths for use in setup phases
+    game.army_files = {
+        'player1': player1_army_file,
+        'player2': player2_army_file
+    }
+    
     zoom_level = 1.0
     offset_x, offset_y = ROSTER_PANE_WIDTH, 0  # Adjust initial offset to account for left pane
 
@@ -478,37 +427,33 @@ def run_training_episode(episode_num: int, agents: dict, player_configs: dict = 
         low_level_agent_player2.game = game
         logger.debug("All agents updated to use new game instance")
         
-        # Execute official deployment sequence (AFTER agents are initialized)
-        logger.debug("Starting official deployment sequence...")
-        try:
-            deployment_results = execute_official_deployment(
-                game, player1, player2, 
-                high_level_agent_player1, high_level_agent_player2
-            )
-            
-            # Store deployment information for later analysis
-            episode_stats['deployment'] = {
-                'attacker': deployment_results['attacker'],
-                'first_turn_player': deployment_results['first_turn_player'],
-                'deployment_zones': deployment_results['deployment_zones'],
-                'reserves_count': {
-                    player1.name: len([u for u, decision in deployment_results['reserves'].get(player1.name, {}).items() 
-                                     if decision in ['reserves', 'strategic_reserves']]),
-                    player2.name: len([u for u, decision in deployment_results['reserves'].get(player2.name, {}).items() 
-                                     if decision in ['reserves', 'strategic_reserves']])
-                }
+        # Execute setup phases (AFTER agents are initialized)
+        logger.debug("Starting setup phases...")
+        setup_kwargs = {
+            'player1_army_file': player_configs.get('player1_army_file'),
+            'player2_army_file': player_configs.get('player2_army_file')
+        }
+        
+        while game.is_in_setup_phase():
+            current_phase = game.get_current_setup_phase()
+            game.execute_current_setup_phase(**setup_kwargs)
+            setup_complete = game.advance_setup_phase()
+            if setup_complete:
+                break
+        
+        # Store deployment information for later analysis
+        episode_stats['deployment'] = {
+            'attacker': game.get_attacker().name if game.attacker_index is not None else 'Unknown',
+            'defender': game.get_defender().name if game.defender_index is not None else 'Unknown',
+            'first_turn_player': game.get_current_player().name,
+            'deployment_zones': game.deployment_zones,
+            'reserves_count': {
+                player1.name: 0,  # Simple deployment doesn't use reserves yet
+                player2.name: 0
             }
-            
-            logger.debug("Official deployment completed successfully")
-        except Exception as deploy_error:
-            logger.error(f"❌ DEPLOYMENT FAILED: {deploy_error}")
-            logger.error(f"Error type: {type(deploy_error).__name__}")
-            import traceback
-            logger.error(f"Full traceback: {traceback.format_exc()}")
-            # Fallback to legacy deployment
-            logger.warning("Falling back to legacy deployment system")
-            auto_deploy_units(game, player1, player2)
-            episode_stats['deployment'] = {'fallback': True}
+        }
+        
+        logger.debug("Setup phases completed successfully")
         
         # Run the game loop (suppress print statements during training)
         with suppress_stdout():
@@ -874,13 +819,8 @@ def main_game_loop(player_configs=None) -> None:
         player_configs['player2_army_file']
     )
     
-    # Set up attacker/defender for proper deployment order (defender starts)
-    attacker_index = random.randint(0, 1)  # Randomly choose attacker
-    defender_index = 1 - attacker_index    # Other player is defender
-    game.set_attacker_defender(attacker_index, defender_index)
-    
-    print(f"🎯 {game.get_defender().name} is the Defender (deploys first)")
-    print(f"⚔️  {game.get_attacker().name} is the Attacker")
+    # Setup phases will be handled by pressing SPACE to advance through each phase
+    print(f"📋 Game ready! Press SPACE to begin setup phase: {game.get_current_setup_phase().name}")
     
     # Create UI interface for human player interactions
     screen_width, screen_height = screen.get_size()
@@ -925,12 +865,36 @@ def main_game_loop(player_configs=None) -> None:
     print(f"🎮 Game mode: {player1.name} ({player1.type.name}) vs {player2.name} ({player2.type.name})")
     print("Controls:")
     if player1.type == PlayerType.HUMAN or player2.type == PlayerType.HUMAN:
-        print("  - SPACE: Start deployment and advance game phases")
+        print("  - SPACE: Advance through setup phases and battle round phases")
         print("  - A: Force AI action (if needed)")
         print("  - ESC: Close panels/deselect units")
         print("  - Mouse: Click units for details, drag to move in movement phase")
         print("  - AI players will act automatically when it's their turn")
-    print("📋 Press SPACE to begin deployment sequence")
+        print(f"📋 Press SPACE to begin setup phase: {game.get_current_setup_phase().name}")
+    else:
+        print("🤖 Both players are AI - executing setup phases automatically...")
+        # Execute all setup phases automatically for AI vs AI
+        setup_kwargs = {
+            'player1_army_file': player_configs.get('player1_army_file'),
+            'player2_army_file': player_configs.get('player2_army_file')
+        }
+        
+        while game.is_in_setup_phase():
+            current_phase = game.get_current_setup_phase()
+            print(f"🚀 AI executing setup phase: {current_phase.name}")
+            game.execute_current_setup_phase(**setup_kwargs)
+            
+            # Refresh UI after MUSTER_ARMIES phase
+            if current_phase.name == 'MUSTER_ARMIES':
+                game_view.refresh_roster_panes()
+                print("📋 Roster panes refreshed with loaded armies")
+            
+            setup_complete = game.advance_setup_phase()
+            if setup_complete:
+                break
+        
+        print("✅ AI setup completed! Battle begins!")
+        game_state = GameState.PLAYING
 
     # Ensure pygame display is properly initialized
     game_view.draw()
@@ -938,38 +902,10 @@ def main_game_loop(player_configs=None) -> None:
 
     running = True
     while running:
-        # Handle deployment phase with alternating deployment
-        if game_state == GameState.PLAYING and game.is_deployment_phase():
-            current_deployment_player = game.get_current_deployment_player()
-            
-            # Check if current deployment player is AI and should auto-deploy
-            if current_deployment_player.type == PlayerType.AI:
-                # AI player needs to deploy a unit
-                deployable_units = game.get_deployable_units(current_deployment_player)
-                if deployable_units:
-                    unit_to_deploy = deployable_units[0]  # Deploy first available unit
-                    print(f"🤖 {current_deployment_player.name} (AI) deploying {unit_to_deploy.name}...")
-                    
-                    # Auto-deploy the unit
-                    success = game.auto_deploy_unit(unit_to_deploy)
-                    if success:
-                        unit_to_deploy.deployed = True
-                        print(f"✅ {unit_to_deploy.name} deployed successfully")
-                    else:
-                        print(f"❌ Failed to deploy {unit_to_deploy.name}, marking as deployed anyway")
-                        unit_to_deploy.deployed = True
-                    
-                    # Advance to next player's deployment turn
-                    game.advance_deployment_turn()
-                    
-                    if game.is_deployment_phase():
-                        next_player = game.get_current_deployment_player()
-                        print(f"📋 {next_player.name}'s turn to deploy")
-                    else:
-                        print("🎯 Deployment phase complete! Game starting...")
+        # Deployment is now handled by execute_simple_deployment() - no manual handling needed
         
         # Check if current player is AI and should take action automatically (normal game phases)
-        elif game_state == GameState.PLAYING and not game.is_deployment_phase():
+        if game_state == GameState.PLAYING and not game.is_deployment_phase():
             current_player = game.get_current_player()
             should_do_ai_action = (current_player.type == PlayerType.AI and not game.is_game_over())
             
@@ -1085,53 +1021,31 @@ def main_game_loop(player_configs=None) -> None:
                 running = False
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if game_state == GameState.PLAYING and event.button == 1:  # Left mouse button
-                    # Handle deployment phase clicks
-                    if game.is_deployment_phase():
-                        current_deployment_player = game.get_current_deployment_player()
-                        if current_deployment_player.type == PlayerType.HUMAN:
-                            # Let the UI handle deployment clicks, but check afterwards if deployment advanced
-                            units_before = len([u for u in current_deployment_player.get_army().units if u.deployed])
-                            game_view.on_mouse_press(*event.pos, event.button)
-                            units_after = len([u for u in current_deployment_player.get_army().units if u.deployed])
-                            
-                            # If a unit was deployed, advance deployment turn
-                            if units_after > units_before:
-                                print(f"✅ {current_deployment_player.name} deployed a unit")
-                                game.advance_deployment_turn()
-                                
-                                if game.is_deployment_phase():
-                                    next_player = game.get_current_deployment_player()
-                                    print(f"📋 {next_player.name}'s turn to deploy")
-                                else:
-                                    print("🎯 Deployment phase complete! Game starting...")
+                    # Normal game phase handling (deployment is handled by execute_simple_deployment)
+                    if clicked_unit:
+                        if game.get_current_player().has_unit(clicked_unit):
+                            game_view.selected_unit = clicked_unit
                         else:
-                            print(f"⚠️ It's {current_deployment_player.name}'s turn to deploy (AI will auto-deploy)")
-                    else:
-                        # Normal game phase handling
-                        if clicked_unit:
-                            if game.get_current_player().has_unit(clicked_unit):
-                                game_view.selected_unit = clicked_unit
-                            else:
-                                print("Unit not found in current player's army")
+                            print("Unit not found in current player's army")
 
-                            if game_view.selected_unit:
-                                if game.is_movement_phase():
-                                    # Convert screen coordinates to game coordinates
-                                    game_x = (event.pos[0] - ROSTER_PANE_WIDTH - game_view.offset_x) / (TILE_SIZE * game_view.zoom_level)
-                                    game_y = (event.pos[1] - game_view.offset_y) / (TILE_SIZE * game_view.zoom_level)
-                                    game_z = 0.0
-                                    # Move the selected unit
-                                    success = game_view.selected_unit.move((game_x, game_y, game_z), game_view.game_map)
-                                    game_view.selected_unit = None  # Deselect the unit after moving
-                            clicked_unit = None
+                        if game_view.selected_unit:
+                            if game.is_movement_phase():
+                                # Convert screen coordinates to game coordinates
+                                game_x = (event.pos[0] - ROSTER_PANE_WIDTH - game_view.offset_x) / (TILE_SIZE * game_view.zoom_level)
+                                game_y = (event.pos[1] - game_view.offset_y) / (TILE_SIZE * game_view.zoom_level)
+                                game_z = 0.0
+                                # Move the selected unit
+                                success = game_view.selected_unit.move((game_x, game_y, game_z), game_view.game_map)
+                                game_view.selected_unit = None  # Deselect the unit after moving
+                        clicked_unit = None
+                        game_view.info_pane.selected_unit = clicked_unit
+                    else:
+                        clicked_unit = game_view.get_unit_at_position(*event.pos)
+                        if clicked_unit:
                             game_view.info_pane.selected_unit = clicked_unit
+                            print(f"Selected unit: {clicked_unit.name}")
                         else:
-                            clicked_unit = game_view.get_unit_at_position(*event.pos)
-                            if clicked_unit:
-                                game_view.info_pane.selected_unit = clicked_unit
-                                print(f"Selected unit: {clicked_unit.name}")
-                            else:
-                                print("No unit at this position")
+                            print("No unit at this position")
                 else:
                     # Always allow game_view to handle mouse events (including during setup/deployment)
                     game_view.on_mouse_press(*event.pos, event.button)
@@ -1159,45 +1073,37 @@ def main_game_loop(player_configs=None) -> None:
                     game_view.zoom_level = handle_zoom(game_view.zoom_level, event)
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE and game_state == GameState.SETUP:
-                    # Execute deployment sequence when user presses SPACE
-                    print("🚀 Starting deployment sequence...")
-                    deployment_completed = False
-
-                    # ALL GAMES USE CONSISTENT DEPLOYMENT ZONES - ensures same zones for AI vs AI and Human vs AI
-                    print("🎮 Starting deployment sequence with consistent zones")
-
-                    # Set up standard deployment zones (18" from edges) for ALL game types
-                    battlefield_width, battlefield_height = game.get_battlefield_size()
-                    deployment_depth = 18.0  # 18 inches from edge - consistent for all games
-                    
-                    game.deployment_zones = {
-                        player1.name: {
-                            'x_range': (0, deployment_depth),  # Left edge to 18" in
-                            'y_range': (0, battlefield_height)  # Full height
-                        },
-                        player2.name: {
-                            'x_range': (battlefield_width - deployment_depth, battlefield_width),  # 18" from right edge to edge
-                            'y_range': (0, battlefield_height)  # Full height
+                    # Advance through setup phases when user presses SPACE
+                    if game.is_in_setup_phase():
+                        current_phase = game.get_current_setup_phase()
+                        print(f"🚀 Executing setup phase: {current_phase.name}")
+                        
+                        # Execute current setup phase with necessary parameters
+                        setup_kwargs = {
+                            'player1_army_file': player_configs.get('player1_army_file'),
+                            'player2_army_file': player_configs.get('player2_army_file')
                         }
-                    }
-                    
-                    # use alternating deployment
-                    print("🎮 Starting alternating deployment")
-                    # Start alternating deployment - defender goes first
-                    game.deployment_turn_index = game.defender_index  # Start with defender
-                    game_state = GameState.PLAYING  # Switch to playing state for deployment handling
-                    
-                    print(f"📋 {game.get_current_deployment_player().name} deploys first unit")
-                    print("Instructions:")
-                    print("  - Human players: Click on battlefield to place units")  
-                    print("  - AI players: Will auto-deploy when it's their turn")
-                    print("  - Zones are shown with colored overlay")
-
-                    
-                    if not game.is_deployment_phase():
-                        print("Game started! Press SPACE to advance phases.")
+                        game.execute_current_setup_phase(**setup_kwargs)
+                        
+                        # Refresh UI after MUSTER_ARMIES phase
+                        if current_phase.name == 'MUSTER_ARMIES':
+                            game_view.refresh_roster_panes()
+                            print("📋 Roster panes refreshed with loaded armies")
+                        
+                        # Advance to next setup phase
+                        setup_complete = game.advance_setup_phase()
+                        
+                        if setup_complete:
+                            # Setup is complete, start battle rounds
+                            game_state = GameState.PLAYING
+                            print("🎉 All setup phases complete! Battle begins!")
+                            print("Press SPACE to advance battle round phases.")
+                        else:
+                            # Show next setup phase
+                            print(f"📋 Next phase: {game.get_current_setup_phase().name}")
+                            print("Press SPACE to continue setup.")
                     else:
-                        print("Deployment in progress - place units by clicking on battlefield")
+                        print("⚠️ Setup is already complete")
                 elif event.key == pygame.K_SPACE and game_state == GameState.PLAYING:
                     game.next_phase()
                     print(f"Advanced to {game.phase.name} phase")

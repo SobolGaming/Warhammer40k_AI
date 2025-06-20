@@ -109,11 +109,16 @@ class Game:
         self.phase = BattleRoundPhases.COMMAND_PHASE  # Initialize phase to COMMAND_PHASE
         self.do_ai_action = False  # Initialize AI action flag
         
+        # Setup phase tracking
+        self.setup_phase = SetupPhase.MUSTER_ARMIES  # Start with first setup phase
+        self.setup_complete = False  # Track when setup is finished
+        
         # Deployment tracking
         self.deployment_turn_index = 0  # Track whose turn it is to deploy (0 = defender, 1 = attacker)
-        self.attacker_index = 0  # Index of the attacking player (will be set during setup)
-        self.defender_index = 1  # Index of the defending player (will be set during setup)
+        self.attacker_index = None  # Index of the attacking player (will be set during DETERMINE_ATTACKER_AND_DEFENDER)
+        self.defender_index = None  # Index of the defending player (will be set during DETERMINE_ATTACKER_AND_DEFENDER)
         self.deployment_zones = {}  # Store deployment zones for visualization {player_name: zone_dict}
+        self.first_turn_player_index = None  # Index of player who goes first (will be set during DETERMINE_FIRST_TURN_ORDER)
 
     def add_player(self, player: Player) -> None:
         """Add a player to the game."""
@@ -149,7 +154,14 @@ class Game:
         return self.battlefield.width, self.battlefield.height
     
     def set_attacker_defender(self, attacker_index: int, defender_index: int) -> None:
-        """Set which player is the attacker and which is the defender."""
+        """DEPRECATED: Set which player is the attacker and which is the defender.
+        
+        This method should not be used - attacker/defender roles are determined
+        during the DETERMINE_ATTACKER_AND_DEFENDER setup phase only.
+        """
+        import warnings
+        warnings.warn("set_attacker_defender is deprecated. Roles are determined during setup phase.", 
+                     DeprecationWarning, stacklevel=2)
         self.attacker_index = attacker_index
         self.defender_index = defender_index
         # Defender always starts deployment
@@ -1030,3 +1042,230 @@ class Game:
                     return position
         
         return None  # No valid position found
+
+    def get_first_turn_player_index(self) -> int:
+        """Get the index of player who goes first (will be set during DETERMINE_FIRST_TURN_ORDER)"""
+        return self.first_turn_player_index
+    
+    def is_in_setup_phase(self) -> bool:
+        """Check if we're still in the setup phase."""
+        return not self.setup_complete
+    
+    def get_current_setup_phase(self) -> SetupPhase:
+        """Get the current setup phase."""
+        return self.setup_phase
+    
+    def advance_setup_phase(self) -> bool:
+        """Advance to the next setup phase. Returns True if setup is complete."""
+        if self.setup_complete:
+            return True
+        
+        current_phase_value = self.setup_phase.value
+        next_phase_value = current_phase_value + 1
+        
+        if next_phase_value >= len(SetupPhase):
+            # Setup is complete, start battle rounds
+            self.setup_complete = True
+            # Set current player to first turn player
+            if self.first_turn_player_index is not None:
+                self.current_player_index = self.first_turn_player_index
+            else:
+                # Fallback: attacker goes first
+                self.current_player_index = self.attacker_index if self.attacker_index is not None else 0
+            self.phase = BattleRoundPhases.COMMAND_PHASE
+            print(f"🎉 Setup complete! {self.get_current_player().name} goes first")
+            return True
+        else:
+            self.setup_phase = SetupPhase(next_phase_value)
+            print(f"📋 Advanced to setup phase: {self.setup_phase.name}")
+            return False
+
+    def execute_muster_armies_phase(self, player1_army_file: str = None, player2_army_file: str = None) -> None:
+        """Phase 1: Muster Armies - Load army lists for both players."""
+        print("📋 MUSTER ARMIES: Loading army lists...")
+        
+        # Use army files from game.army_files if not provided as parameters
+        if player1_army_file is None:
+            player1_army_file = getattr(self, 'army_files', {}).get('player1', 'army_lists/warhammer_app_dump.txt')
+        if player2_army_file is None:
+            player2_army_file = getattr(self, 'army_files', {}).get('player2', 'army_lists/chaos_daemons_GT2023.txt')
+        
+        # Validate army files exist
+        import os
+        if not os.path.exists(player1_army_file):
+            raise FileNotFoundError(f"Player 1 army file not found: {player1_army_file}")
+        if not os.path.exists(player2_army_file):
+            raise FileNotFoundError(f"Player 2 army file not found: {player2_army_file}")
+        
+        # Load armies for both players
+        from ..classes.army import parse_army_list
+        from ..waha_helper import WahaHelper
+        
+        waha_helper = WahaHelper()
+        
+        if len(self.players) >= 2:
+            # Load army for Player 1
+            player1_army = parse_army_list(player1_army_file, waha_helper)
+            self.players[0].set_army(player1_army)
+            
+            # Load army for Player 2  
+            player2_army = parse_army_list(player2_army_file, waha_helper)
+            self.players[1].set_army(player2_army)
+            
+            player1_units = len(self.players[0].get_army().units)
+            player2_units = len(self.players[1].get_army().units)
+            print(f"✅ {self.players[0].name}: {player1_units} units loaded from {player1_army_file}")
+            print(f"✅ {self.players[1].name}: {player2_units} units loaded from {player2_army_file}")
+        else:
+            print("⚠️ Not enough players loaded")
+    
+    def execute_select_mission_objectives_phase(self) -> None:
+        """Phase 2: Select Mission Objectives - Choose mission and objectives."""
+        print("📋 SELECT MISSION OBJECTIVES: Setting up mission...")
+        
+        # Set up available commands for high-level strategy
+        self.commands = ["attack", "defend", "move"]
+        print(f"✅ Commands configured: {self.commands}")
+        
+        # Mission objectives will be placed during CREATE_BATTLEFIELD phase
+        print("✅ Mission framework configured")
+    
+    def execute_create_battlefield_phase(self) -> None:
+        """Phase 3: Create Battlefield - Set up map, terrain, deployment zones, and objectives."""
+        print("📋 CREATE BATTLEFIELD: Setting up battlefield...")
+        
+        # 1. Create the Map (already done in __init__)
+        battlefield_width, battlefield_height = self.get_battlefield_size()
+        print(f"✅ Map created: {battlefield_width}\" x {battlefield_height}\"")
+        
+        # 2. Add terrain (obstacles)
+        from .map import Obstacle, ObstacleType
+        obstacles = [
+            Obstacle(vertices=[(3, 3), (3, 5), (5, 5), (5, 3)], terrain_type=ObstacleType.CRATER_AND_RUBBLE, height=3.0),
+            Obstacle(vertices=[(20, 7), (27, 9), (29, 9), (29, 7)], terrain_type=ObstacleType.DEBRIS_AND_STATUARY, height=6.0)
+        ]
+        self.map.add_obstacles(obstacles)
+        print(f"✅ Terrain added: {len(obstacles)} obstacles")
+        
+        # 3. Add deployment zones (18" from edges for Strike Force)
+        deployment_depth = 18.0  # 18 inches from edge
+        self.deployment_zones = {
+            self.players[0].name: {
+                'x_range': (0, deployment_depth),  # Left edge to 18" in
+                'y_range': (0, battlefield_height)  # Full height
+            },
+            self.players[1].name: {
+                'x_range': (battlefield_width - deployment_depth, battlefield_width),  # 18" from right edge to edge
+                'y_range': (0, battlefield_height)  # Full height
+            }
+        }
+        print(f"✅ Deployment zones created: 18\" depth zones")
+        
+        # 4. Add objectives
+        import random
+        from .map import ObjectivePoint
+        center_x = battlefield_width / 2.0
+        center_y = battlefield_height / 2.0
+        # Add some randomization to prevent predictable positioning
+        random_offset_x = random.uniform(-3, 3)
+        random_offset_y = random.uniform(-3, 3)
+        objective_x = center_x + random_offset_x
+        objective_y = center_y + random_offset_y
+        
+        objective_point = ObjectivePoint(objective_x, objective_y, 0, 3.0)
+        from .map import Objective, ObjectiveCategory
+        objectives = [
+            Objective(name="Capture Central Point", location=objective_point, category=ObjectiveCategory.PRIMARY, points=10, 
+                      description="Capture the central point to gain control of the battlefield.", 
+                      conditions=lambda game: objective_point.controlling_player == game.get_current_player())
+        ]
+        self.map.add_objectives(objectives)
+        self.objectives = objectives  # Store for game access
+        print(f"✅ Objectives placed: {len(objectives)} objectives")
+    
+    def execute_determine_attacker_defender_phase(self) -> None:
+        """Phase 4: Determine Attacker and Defender - Roll off to determine roles."""
+        print("📋 DETERMINE ATTACKER AND DEFENDER: Rolling off...")
+        
+        import random
+        from ..utility.dice import get_roll
+        
+        player1_roll = get_roll("1D6")
+        player2_roll = get_roll("1D6")
+        
+        print(f"🎲 {self.players[0].name} rolled: {player1_roll}")
+        print(f"🎲 {self.players[1].name} rolled: {player2_roll}")
+        
+        if player1_roll > player2_roll:
+            self.attacker_index = 0
+            self.defender_index = 1
+            print(f"⚔️ {self.players[0].name} is the Attacker")
+            print(f"🛡️ {self.players[1].name} is the Defender")
+        elif player2_roll > player1_roll:
+            self.attacker_index = 1
+            self.defender_index = 0
+            print(f"⚔️ {self.players[1].name} is the Attacker")
+            print(f"🛡️ {self.players[0].name} is the Defender")
+        else:
+            # Tie - re-roll
+            print("🎲 Tie! Re-rolling...")
+            return self.execute_determine_attacker_defender_phase()
+        
+        # Set deployment turn to defender (defender deploys first)
+        self.deployment_turn_index = self.defender_index
+    
+    def execute_declare_battle_formations_phase(self) -> None:
+        """Phase 5: Declare Battle Formations - Attach leaders, declare reserves, etc."""
+        print("📋 DECLARE BATTLE FORMATIONS: Configuring formations...")
+        # For now, this is empty - battle formations will be implemented later
+        print("✅ Battle formations declared")
+    
+    def execute_deploy_armies_phase(self) -> None:
+        """Phase 6: Deploy Armies - Execute the deployment phase."""
+        print("📋 DEPLOY ARMIES: Starting deployment sequence...")
+        
+        # Use the existing complete_deployment_phase method
+        self.complete_deployment_phase()
+        print("✅ Army deployment complete")
+    
+    def execute_determine_first_turn_order_phase(self) -> None:
+        """Phase 7: Determine First Turn Order - Attacker rolls to see who goes first."""
+        print("📋 DETERMINE FIRST TURN ORDER: Rolling for first turn...")
+        
+        from ..utility.dice import get_roll
+        
+        attacker = self.get_attacker()
+        defender = self.get_defender()
+        
+        # Attacker rolls 1D6
+        attacker_roll = get_roll("1D6")
+        print(f"🎲 {attacker.name} (Attacker) rolled: {attacker_roll}")
+        
+        if attacker_roll >= 4:
+            # Attacker chooses who goes first
+            self.first_turn_player_index = self.attacker_index  # For simplicity, attacker chooses themselves
+            print(f"✅ {attacker.name} goes first!")
+        else:
+            # Defender goes first
+            self.first_turn_player_index = self.defender_index
+            print(f"✅ {defender.name} goes first!")
+    
+    def execute_current_setup_phase(self, **kwargs) -> None:
+        """Execute the current setup phase with any necessary parameters."""
+        if self.setup_phase == SetupPhase.MUSTER_ARMIES:
+            self.execute_muster_armies_phase(
+                kwargs.get('player1_army_file'), 
+                kwargs.get('player2_army_file')
+            )
+        elif self.setup_phase == SetupPhase.SELECT_MISSION_OBJECTIVES:
+            self.execute_select_mission_objectives_phase()
+        elif self.setup_phase == SetupPhase.CREATE_BATTLEFIELD:
+            self.execute_create_battlefield_phase()
+        elif self.setup_phase == SetupPhase.DETERMINE_ATTACKER_AND_DEFENDER:
+            self.execute_determine_attacker_defender_phase()
+        elif self.setup_phase == SetupPhase.DECLARE_BATTLE_FORMATIONS:
+            self.execute_declare_battle_formations_phase()
+        elif self.setup_phase == SetupPhase.DEPLOY_ARMIES:
+            self.execute_deploy_armies_phase()
+        elif self.setup_phase == SetupPhase.DETERMINE_FIRST_TURN_ORDER:
+            self.execute_determine_first_turn_order_phase()
