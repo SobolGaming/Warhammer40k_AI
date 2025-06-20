@@ -875,7 +875,6 @@ def main_game_loop(player_configs=None) -> None:
     )
     
     # Set up attacker/defender for proper deployment order (defender starts)
-    import random
     attacker_index = random.randint(0, 1)  # Randomly choose attacker
     defender_index = 1 - attacker_index    # Other player is defender
     game.set_attacker_defender(attacker_index, defender_index)
@@ -930,36 +929,8 @@ def main_game_loop(player_configs=None) -> None:
         print("  - A: Force AI action (if needed)")
         print("  - ESC: Close panels/deselect units")
         print("  - Mouse: Click units for details, drag to move in movement phase")
-    print("  - AI players will act automatically when it's their turn")
-    # Special case: If both players are AI, auto-start deployment immediately
-    if player1.type == PlayerType.AI and player2.type == PlayerType.AI:
-        print("🤖 Both players are AI - starting deployment automatically...")
-        try:
-            # Set up the same 18" deployment zones that Human vs AI games use
-            battlefield_width, battlefield_height = game.get_battlefield_size()
-            deployment_depth = 18.0  # 18 inches from edge - same as Human vs AI
-            
-            game.deployment_zones = {
-                player1.name: {
-                    'x_range': (0, deployment_depth),  # Left edge to 18" in
-                    'y_range': (0, battlefield_height)  # Full height
-                },
-                player2.name: {
-                    'x_range': (battlefield_width - deployment_depth, battlefield_width),  # 18" from right edge to edge
-                    'y_range': (0, battlefield_height)  # Full height
-                }
-            }
-            
-            deployment_results = execute_official_deployment(game, player1, player2, 
-                                                            high_level_agent_player1, high_level_agent_player2, ui_interface)
-            print(f"✅ AI deployment completed! {deployment_results['first_turn_player']} will go first")
-            game_state = GameState.PLAYING
-        except Exception as e:
-            print(f"⚠️ AI deployment failed: {e}, using fallback")
-            auto_deploy_units(game, player1, player2)
-            game_state = GameState.PLAYING
-    else:
-        print("📋 Press SPACE to begin deployment sequence")
+        print("  - AI players will act automatically when it's their turn")
+    print("📋 Press SPACE to begin deployment sequence")
 
     # Ensure pygame display is properly initialized
     game_view.draw()
@@ -1191,48 +1162,37 @@ def main_game_loop(player_configs=None) -> None:
                     # Execute deployment sequence when user presses SPACE
                     print("🚀 Starting deployment sequence...")
                     deployment_completed = False
-                    try:
-                        # ALL GAMES USE CONSISTENT DEPLOYMENT ZONES - ensures same zones for AI vs AI and Human vs AI
-                        print("🎮 Starting deployment sequence with consistent zones")
-                        
-                        # Set up standard deployment zones (18" from edges) for ALL game types
-                        battlefield_width, battlefield_height = game.get_battlefield_size()
-                        deployment_depth = 18.0  # 18 inches from edge - consistent for all games
-                        
-                        game.deployment_zones = {
-                            player1.name: {
-                                'x_range': (0, deployment_depth),  # Left edge to 18" in
-                                'y_range': (0, battlefield_height)  # Full height
-                            },
-                            player2.name: {
-                                'x_range': (battlefield_width - deployment_depth, battlefield_width),  # 18" from right edge to edge
-                                'y_range': (0, battlefield_height)  # Full height
-                            }
+
+                    # ALL GAMES USE CONSISTENT DEPLOYMENT ZONES - ensures same zones for AI vs AI and Human vs AI
+                    print("🎮 Starting deployment sequence with consistent zones")
+
+                    # Set up standard deployment zones (18" from edges) for ALL game types
+                    battlefield_width, battlefield_height = game.get_battlefield_size()
+                    deployment_depth = 18.0  # 18 inches from edge - consistent for all games
+                    
+                    game.deployment_zones = {
+                        player1.name: {
+                            'x_range': (0, deployment_depth),  # Left edge to 18" in
+                            'y_range': (0, battlefield_height)  # Full height
+                        },
+                        player2.name: {
+                            'x_range': (battlefield_width - deployment_depth, battlefield_width),  # 18" from right edge to edge
+                            'y_range': (0, battlefield_height)  # Full height
                         }
-                        
-                        # For mixed human/AI games, use alternating deployment
-                        if player1.type != player2.type:  # Mixed game
-                            print("🎮 Mixed Human/AI game - starting alternating deployment")
-                            # Start alternating deployment - defender goes first
-                            game.deployment_turn_index = game.defender_index  # Start with defender
-                            game_state = GameState.PLAYING  # Switch to playing state for deployment handling
-                            
-                            print(f"📋 {game.get_current_deployment_player().name} deploys first unit")
-                            print("Instructions:")
-                            print("  - Human players: Click on battlefield to place units")  
-                            print("  - AI players: Will auto-deploy when it's their turn")
-                            print("  - Zones are shown with colored overlay")
-                        else:
-                            # Pure AI vs AI or Human vs Human - use official system but with the same zones
-                            deployment_results = execute_official_deployment(game, player1, player2, 
-                                                                            high_level_agent_player1, high_level_agent_player2, ui_interface)
-                            print(f"✅ Deployment completed! {deployment_results['first_turn_player']} will go first")
-                            game_state = GameState.PLAYING
-                    except Exception as e:
-                        print(f"⚠️ Official deployment failed: {e}")
-                        print("Falling back to legacy deployment system...")
-                        auto_deploy_units(game, player1, player2)
-                        game_state = GameState.PLAYING
+                    }
+                    
+                    # use alternating deployment
+                    print("🎮 Starting alternating deployment")
+                    # Start alternating deployment - defender goes first
+                    game.deployment_turn_index = game.defender_index  # Start with defender
+                    game_state = GameState.PLAYING  # Switch to playing state for deployment handling
+                    
+                    print(f"📋 {game.get_current_deployment_player().name} deploys first unit")
+                    print("Instructions:")
+                    print("  - Human players: Click on battlefield to place units")  
+                    print("  - AI players: Will auto-deploy when it's their turn")
+                    print("  - Zones are shown with colored overlay")
+
                     
                     if not game.is_deployment_phase():
                         print("Game started! Press SPACE to advance phases.")
@@ -1276,25 +1236,8 @@ def main_game_loop(player_configs=None) -> None:
                 if isinstance(objective, ObjectivePoint):
                     objective.update_control(game)
 
-        # Safe drawing with error recovery
-        try:
-            game_view.draw()
-            pygame.display.flip()
-        except pygame.error as e:
-            if "video system not initialized" in str(e):
-                print(f"⚠️ Display error: {e}")
-                print("🔄 Attempting to recover display...")
-                # Try to reinitialize
-                pygame.display.set_mode((BATTLEFIELD_WIDTH + 2 * ROSTER_PANE_WIDTH, BATTLEFIELD_HEIGHT + INFO_PANE_HEIGHT))
-                pygame.display.set_caption('Warhammer 40,000 Battlefield')
-                # Try drawing again
-                try:
-                    game_view.draw()
-                    pygame.display.flip()
-                except:
-                    print("❌ Could not recover display")
-            else:
-                print(f"⚠️ Drawing error: {e}")
+        game_view.draw()
+        pygame.display.flip()
 
     pygame.quit()
     sys.exit()
