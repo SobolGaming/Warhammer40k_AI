@@ -492,13 +492,14 @@ class InfoPane(pygame.sprite.Sprite):
             text_color = TEXT_ACCENT  # Use accent color to highlight setup phase
         elif in_deployment_phase:
             if deployment_zones_loaded:
-                # Show whose turn it is to deploy
+                # Show whose turn it is to deploy with enhanced visibility
                 deployment_player = game.get_current_deployment_player()
-                game_status = f"DEPLOYMENT PHASE - {deployment_player.name}'s Turn"
+                deployable_units = game.get_deployable_units(deployment_player)
+                game_status = f"🚢 DEPLOYMENT - {deployment_player.name}'s Turn ({len(deployable_units)} units left)"
                 text_color = TEXT_ACCENT  # Use accent color to highlight deployment phase
             else:
                 # Show battlefield creation phase before deployment zones are loaded
-                game_status = "CREATING BATTLEFIELD"
+                game_status = "🗺️ CREATING BATTLEFIELD"
                 text_color = TEXT_SECONDARY  # Different color to indicate pre-deployment state
         else:
             # Show battle round with current player
@@ -542,30 +543,43 @@ class InfoPane(pygame.sprite.Sprite):
             progress_rect = progress_surface.get_rect(center=(x_center, y_offset + 20))
             surface.blit(progress_surface, progress_rect)
             y_offset += 20
-        elif game.is_deployment_phase():
-            deployment_zones_loaded = hasattr(game, 'deployment_zones') and game.deployment_zones
-            
+        elif in_deployment_phase:
             if deployment_zones_loaded:
-                # Show deployment phase information
+                # Show detailed deployment phase information
                 deployment_player = game.get_current_deployment_player()
                 deployable_units = game.get_deployable_units(deployment_player)
                 
-                deployment_text = f"🚢 DEPLOYMENT: {deployment_player.name}'s turn ({len(deployable_units)} units left)"
-                deployment_surface = self.font_small.render(deployment_text, True, DEPLOY_BUTTON_BG)
-                deployment_rect = deployment_surface.get_rect(center=(x_center, y_offset))
-                surface.blit(deployment_surface, deployment_rect)
+                # Show player role and deployment status
+                player_role = "⚔️ Attacker" if deployment_player == game.get_attacker() else "🛡️ Defender"
+                role_text = f"{deployment_player.name} ({player_role}) - {len(deployable_units)} units to deploy"
+                role_surface = self.font_small.render(role_text, True, TEXT_ACCENT)
+                role_rect = role_surface.get_rect(center=(x_center, y_offset))
+                surface.blit(role_surface, role_rect)
+                y_offset += 20
                 
                 # Show deployment zone info
                 if hasattr(game, 'deployment_zones') and deployment_player.name in game.deployment_zones:
                     zone = game.deployment_zones[deployment_player.name]
-                    zone_text = f"Zone: X({zone['x_range'][0]:.0f}-{zone['x_range'][1]:.0f}) Y({zone['y_range'][0]:.0f}-{zone['y_range'][1]:.0f})"
+                    zone_text = f"📍 Zone: X({zone['x_range'][0]:.0f}\"-{zone['x_range'][1]:.0f}\") Y({zone['y_range'][0]:.0f}\"-{zone['y_range'][1]:.0f}\")"
                     zone_surface = self.font_small.render(zone_text, True, TEXT_SECONDARY)
-                    zone_rect = zone_surface.get_rect(center=(x_center, y_offset + 20))
+                    zone_rect = zone_surface.get_rect(center=(x_center, y_offset))
                     surface.blit(zone_surface, zone_rect)
                     y_offset += 20
+                
+                # Show deployment instructions
+                if deployment_player.type.name == 'HUMAN':
+                    instruction_text = "👆 Click units in roster to select, then click battlefield to deploy"
+                    instruction_surface = self.font_tiny.render(instruction_text, True, TEXT_SECONDARY)
+                    instruction_rect = instruction_surface.get_rect(center=(x_center, y_offset))
+                    surface.blit(instruction_surface, instruction_rect)
+                else:
+                    instruction_text = "🤖 AI is deploying units automatically..."
+                    instruction_surface = self.font_tiny.render(instruction_text, True, TEXT_SECONDARY)
+                    instruction_rect = instruction_surface.get_rect(center=(x_center, y_offset))
+                    surface.blit(instruction_surface, instruction_rect)
             else:
                 # Show battlefield creation status
-                setup_text = "📋 Press SPACE to begin deployment sequence"
+                setup_text = "🗺️ Preparing battlefield for deployment..."
                 setup_surface = self.font_small.render(setup_text, True, TEXT_ACCENT)
                 setup_rect = setup_surface.get_rect(center=(x_center, y_offset))
                 surface.blit(setup_surface, setup_rect)
@@ -603,12 +617,16 @@ class InfoPane(pygame.sprite.Sprite):
             
             # Show controls during deployment phase
             if in_deployment_phase and deployment_zones_loaded:
-                controls_text = "ENTER: Auto-deploy remaining | SPACE: Start game"
+                deployment_player = game.get_current_deployment_player()
+                if deployment_player.type.name == 'HUMAN':
+                    controls_text = "⌨️ ENTER: Auto-deploy remaining | ESC: Cancel selection"
+                else:
+                    controls_text = "⏳ Waiting for AI deployment to complete..."
                 controls_surface = self.font_tiny.render(controls_text, True, TEXT_SECONDARY)
                 controls_rect = controls_surface.get_rect(center=(x_center, y_offset))
                 surface.blit(controls_surface, controls_rect)
             elif in_deployment_phase and not deployment_zones_loaded:
-                controls_text = "SPACE: Begin deployment sequence"
+                controls_text = "⌨️ SPACE: Begin deployment sequence"
                 controls_surface = self.font_tiny.render(controls_text, True, TEXT_SECONDARY)
                 controls_rect = controls_surface.get_rect(center=(x_center, y_offset))
                 surface.blit(controls_surface, controls_rect)
