@@ -1525,7 +1525,7 @@ class Unit:
                     fnp_abilities.append((dice_value, condition))
                 else:
                     # Feel No Pain ability found but no dice value could be parsed
-                    raise ValueError(f"Feel No Pain ability found in keyword '{keyword}' but could not extract dice value")
+                    raise ValueError(f"Feel No Pain ability found in keyword '{keyword}' but could not extract dice value for unit '{self.name}'")
         
         # Check unit-level abilities (possible_abilities)
         for ability in self.possible_abilities:
@@ -1539,11 +1539,13 @@ class Unit:
                         condition = dice_match.group(2).strip() if dice_match.group(2) else None
                         fnp_abilities.append((dice_value, condition))
                     else:
-                        raise ValueError(f"Feel No Pain ability found in ability string '{ability}' but could not extract dice value")
+                        raise ValueError(f"Feel No Pain ability found in ability string '{ability}' but could not extract dice value for unit '{self.name}'")
             else:
                 # Ability object with name and description attributes
+                ability_name_has_fnp = False
                 if hasattr(ability, 'name') and ability.name:
                     if "feel no pain" in ability.name.lower() or "fnp" in ability.name.lower():
+                        ability_name_has_fnp = True
                         # Try to extract dice value and optional condition from ability name
                         dice_match = re.search(r'(?:feel no pain|fnp)\s*\(?(\d+)\+(?:\)?)(?:\s+(.+))?', ability.name.lower())
                         if dice_match:
@@ -1551,9 +1553,19 @@ class Unit:
                             condition = dice_match.group(2).strip() if dice_match.group(2) else None
                             fnp_abilities.append((dice_value, condition))
                         else:
-                            raise ValueError(f"Feel No Pain ability found in ability name '{ability.name}' but could not extract dice value")
+                            # Check if ability has a parameter attribute (e.g., "5+")
+                            if hasattr(ability, 'parameter') and ability.parameter:
+                                param_match = re.search(r'(\d+)\+', ability.parameter)
+                                if param_match:
+                                    dice_value = int(param_match.group(1))
+                                    fnp_abilities.append((dice_value, None))
+                                else:
+                                    raise ValueError(f"Feel No Pain ability found in ability name '{ability.name}' with parameter '{ability.parameter}' but could not extract dice value for unit '{self.name}'")
+                            else:
+                                raise ValueError(f"Feel No Pain ability found in ability name '{ability.name}' but could not extract dice value for unit '{self.name}'")
                 
-                if hasattr(ability, 'description') and ability.description:
+                # Only check description if ability name doesn't contain Feel No Pain
+                if not ability_name_has_fnp and hasattr(ability, 'description') and ability.description:
                     if "feel no pain" in ability.description.lower() or "fnp" in ability.description.lower():
                         # Try to extract dice value and optional condition from ability description
                         dice_match = re.search(r'(?:feel no pain|fnp)\s*\(?(\d+)\+(?:\)?)(?:\s+(.+))?', ability.description.lower())
@@ -1562,7 +1574,7 @@ class Unit:
                             condition = dice_match.group(2).strip() if dice_match.group(2) else None
                             fnp_abilities.append((dice_value, condition))
                         else:
-                            raise ValueError(f"Feel No Pain ability found in ability description '{ability.description}' but could not extract dice value")
+                            raise ValueError(f"Feel No Pain ability found in ability description '{ability.description}' but could not extract dice value for unit '{self.name}'")
         
         # Check model-level abilities
         for ability in self.abilities:
@@ -1576,11 +1588,13 @@ class Unit:
                         condition = dice_match.group(2).strip() if dice_match.group(2) else None
                         fnp_abilities.append((dice_value, condition))
                     else:
-                        raise ValueError(f"Feel No Pain ability found in model ability string '{ability}' but could not extract dice value")
+                        raise ValueError(f"Feel No Pain ability found in model ability string '{ability}' but could not extract dice value for unit '{self.name}'")
             else:
                 # Ability object with name and description attributes
+                ability_name_has_fnp = False
                 if hasattr(ability, 'name') and ability.name:
                     if "feel no pain" in ability.name.lower() or "fnp" in ability.name.lower():
+                        ability_name_has_fnp = True
                         # Try to extract dice value and optional condition from ability name
                         dice_match = re.search(r'(?:feel no pain|fnp)\s*\(?(\d+)\+(?:\)?)(?:\s+(.+))?', ability.name.lower())
                         if dice_match:
@@ -1588,9 +1602,19 @@ class Unit:
                             condition = dice_match.group(2).strip() if dice_match.group(2) else None
                             fnp_abilities.append((dice_value, condition))
                         else:
-                            raise ValueError(f"Feel No Pain ability found in model ability name '{ability.name}' but could not extract dice value")
+                            # Check if ability has a parameter attribute (e.g., "5+")
+                            if hasattr(ability, 'parameter') and ability.parameter:
+                                param_match = re.search(r'(\d+)\+', ability.parameter)
+                                if param_match:
+                                    dice_value = int(param_match.group(1))
+                                    fnp_abilities.append((dice_value, None))
+                                else:
+                                    raise ValueError(f"Feel No Pain ability found in model ability name '{ability.name}' with parameter '{ability.parameter}' but could not extract dice value for unit '{self.name}'")
+                            else:
+                                raise ValueError(f"Feel No Pain ability found in model ability name '{ability.name}' but could not extract dice value for unit '{self.name}'")
                 
-                if hasattr(ability, 'description') and ability.description:
+                # Only check description if ability name doesn't contain Feel No Pain
+                if not ability_name_has_fnp and hasattr(ability, 'description') and ability.description:
                     if "feel no pain" in ability.description.lower() or "fnp" in ability.description.lower():
                         # Try to extract dice value and optional condition from ability description
                         dice_match = re.search(r'(?:feel no pain|fnp)\s*\(?(\d+)\+(?:\)?)(?:\s+(.+))?', ability.description.lower())
@@ -1599,7 +1623,7 @@ class Unit:
                             condition = dice_match.group(2).strip() if dice_match.group(2) else None
                             fnp_abilities.append((dice_value, condition))
                         else:
-                            raise ValueError(f"Feel No Pain ability found in model ability description '{ability.description}' but could not extract dice value")
+                            raise ValueError(f"Feel No Pain ability found in model ability description '{ability.description}' but could not extract dice value for unit '{self.name}'")
         
         return fnp_abilities
 

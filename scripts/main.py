@@ -504,6 +504,7 @@ def run_training_episode(episode_num: int, agents: dict, player_configs: dict = 
         logger.debug("Setup phases completed successfully")
         
         # Run the game loop (suppress print statements during training)
+        score_progression = []  # Track scores after each phase
         with suppress_stdout():
             while not game.is_game_over():
                 current_player = game.get_current_player()
@@ -535,7 +536,7 @@ def run_training_episode(episode_num: int, agents: dict, player_configs: dict = 
                     
                     tactical_agent.command_phase(command)
                     game.next_phase()
-                    print_current_scores(game)
+                    score_progression.append(f"Turn {game.turn} - {game.phase.name}: Player 1: {player1.get_score()} | Player 2: {player2.get_score()}")
                     
                 elif game.is_movement_phase():
                     # Movement phase for all units
@@ -543,7 +544,7 @@ def run_training_episode(episode_num: int, agents: dict, player_configs: dict = 
                         if unit.is_alive():
                             tactical_agent.movement_phase(unit, objective)
                     game.next_phase()
-                    print_current_scores(game)
+                    score_progression.append(f"Turn {game.turn} - {game.phase.name}: Player 1: {player1.get_score()} | Player 2: {player2.get_score()}")
                     
                 elif game.is_shooting_phase():
                     # Shooting phase for all units
@@ -551,7 +552,7 @@ def run_training_episode(episode_num: int, agents: dict, player_configs: dict = 
                         if unit.is_alive():
                             tactical_agent.shooting_phase(unit)
                     game.next_phase()
-                    print_current_scores(game)
+                    score_progression.append(f"Turn {game.turn} - {game.phase.name}: Player 1: {player1.get_score()} | Player 2: {player2.get_score()}")
                     
                 elif game.is_charge_phase():
                     # Charge phase for all units
@@ -561,7 +562,7 @@ def run_training_episode(episode_num: int, agents: dict, player_configs: dict = 
                             if charge_reward:
                                 tactical_agent.movement_rewards.append(charge_reward)
                     game.next_phase()
-                    print_current_scores(game)
+                    score_progression.append(f"Turn {game.turn} - {game.phase.name}: Player 1: {player1.get_score()} | Player 2: {player2.get_score()}")
                     
                 elif game.is_fight_phase():
                     # Fight phase for all units
@@ -569,7 +570,7 @@ def run_training_episode(episode_num: int, agents: dict, player_configs: dict = 
                         if unit.is_alive():
                             tactical_agent.fight_phase(unit)
                     game.next_phase()  # This will advance to next player or next turn
-                    print_current_scores(game)
+                    score_progression.append(f"Turn {game.turn} - {game.phase.name}: Player 1: {player1.get_score()} | Player 2: {player2.get_score()}")
 
                 # Clean up destroyed units after each phase
                 cleanup_destroyed_units(game)
@@ -577,6 +578,12 @@ def run_training_episode(episode_num: int, agents: dict, player_configs: dict = 
                 # Update turn counter
                 episode_stats['total_turns'] = game.turn
 
+        # Print score progression after battle rounds complete
+        print("\n📊 SCORE PROGRESSION DURING BATTLE ROUNDS:")
+        for score_entry in score_progression:
+            print(f"   {score_entry}")
+        print()
+        
         # Update all agent policies after episode
         for agent_key, agent in agents.items():
             agent.update_policies() if hasattr(agent, 'update_policies') else agent.update_policy()
