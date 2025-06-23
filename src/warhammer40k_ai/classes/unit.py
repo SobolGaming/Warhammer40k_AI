@@ -1735,7 +1735,7 @@ class Unit:
                 model.set_location(model_pos[0], model_pos[1], model_pos[2], model_pos[3])
         except Exception as e:
             logger.warning(f"Could not calculate model positions for {self.name} arriving from reserves: {e}")
-            # Fallback: place all models at the unit position
+            # Default: place all models at the unit position
             for model in self.models:
                 model.set_location(position[0], position[1], position[2], 0.0)
         

@@ -292,7 +292,7 @@ class Game:
                 print(f"❌ Failed to auto-deploy {unit.name}, advancing anyway")
                 # Force deployment to prevent infinite loop
                 unit.deployed = True
-                unit.reserve_status = 'reserves'  # Put in reserves as fallback
+                unit.reserve_status = 'reserves'  # Mark as failed deployment
                 # Record reserves action
                 self.record_deployment_action(current_player, unit, 'reserves')
                 self.advance_deployment_turn()
@@ -360,7 +360,7 @@ class Game:
                 z = 0.0
                 
                 # Check if this position would place all models wholly within the deployment zone
-                if self._is_position_valid_for_deployment(unit, x, y, player_name):
+                if self.is_valid_deployment_position(unit, x, y, player_name):
                     # Use the proper deployment flow
                     if self._deploy_unit_at_position(unit, x, y, z):
                         print(f"✅ Successfully auto-deployed {unit.name} at ({x:.1f}, {y:.1f})")
@@ -442,38 +442,7 @@ class Game:
         except Exception as e:
             return False
 
-    def _is_position_valid_for_deployment(self, unit: 'Unit', x: float, y: float, player_name: str) -> bool:
-        """Simple check if placing a unit at this position would keep all models wholly within deployment zone."""
-        try:
-            # Get deployment zone for this player
-            if not hasattr(self, 'deployment_zones') or player_name not in self.deployment_zones:
-                return True  # No deployment zones defined - allow anywhere
-            
-            zone = self.deployment_zones[player_name]
-            x_min, x_max = zone['x_range']
-            y_min, y_max = zone['y_range']
-            
-            # Calculate where each model would be positioned
-            model_positions = unit.calculate_model_positions(x, y, self.map, 1.0, [])
-            
-            if not model_positions:
-                return False
-            
-            # Check each model's position with its base size
-            for model, position in zip(unit.models, model_positions):
-                model_x, model_y = position[0], position[1]
-                base = model.model_base
-                base_radius = base.get_radius()
-                
-                # Simple check: model center ± base radius must be within zone
-                if (model_x - base_radius < x_min or model_x + base_radius > x_max or
-                    model_y - base_radius < y_min or model_y + base_radius > y_max):
-                    return False
-            
-            return True
-            
-        except Exception:
-            return False
+
 
     def _auto_position_models(self, unit: 'Unit', center_x: float, center_y: float, center_z: float) -> None:
         """Simple model positioning for auto-deployment without complex validation."""
@@ -558,7 +527,7 @@ class Game:
                     y_min <= model_y - width and 
                     model_y + width <= y_max)
         
-        # Fallback: treat as circular with radius
+        # Default: treat as circular with radius
         else:
             return (x_min <= model_x - base_radius and 
                     model_x + base_radius <= x_max and
@@ -602,7 +571,7 @@ class Game:
                     y_min <= y - width and 
                     y + width <= y_max)
         
-        # Fallback: treat as circular with radius
+        # Default: treat as circular with radius
         else:
             return (x_min <= x - base_radius and 
                     x + base_radius <= x_max and
@@ -1014,7 +983,7 @@ class Game:
         # Force arrival of units that must arrive
         for unit in units_that_must_arrive:
             # Try to find a valid placement position
-            # This is a simple fallback - should be improved with proper AI integration
+            # Simple automatic deployment - AI agents handle their own deployment decisions
             valid_position = self.find_valid_reserves_position(unit)
             if valid_position:
                 if unit.arrive_from_reserves(valid_position, self.turn):
@@ -1103,7 +1072,7 @@ class Game:
             if self.first_turn_player_index is not None:
                 self.current_player_index = self.first_turn_player_index
             else:
-                # Fallback: attacker goes first
+                # Default: attacker goes first
                 self.current_player_index = self.attacker_index if self.attacker_index is not None else 0
             self.phase = BattleRoundPhases.COMMAND_PHASE
             print(f"🎉 Setup complete! {self.get_current_player().name} goes first")
@@ -1253,16 +1222,57 @@ class Game:
         # For now, this is empty - battle formations will be implemented later
         print("✅ Battle formations declared")
     
-    def execute_deploy_armies_phase(self, manual_phases: bool = False) -> None:
+    def execute_deploy_armies_phase(self, manual_phases: bool = False, decision_makers: dict = None) -> None:
         """Phase 6: Deploy Armies - Execute the deployment phase."""
         print("📋 DEPLOY ARMIES: Starting deployment sequence...")
         
-        # Use the existing complete_deployment_phase method
-        self.complete_deployment_phase(manual_phases=manual_phases)
+        # Check if we have human players that need UI-based deployment
+        has_human_players = any(player.type.name == 'HUMAN' for player in self.players)
         
-        # Only print completion message if not waiting for manual input
-        if not getattr(self, 'waiting_for_deployment_input', False):
+        if has_human_players and manual_phases:
+            # For human players in manual mode, set up deployment state but don't auto-deploy
+            # The UI will handle the actual deployment decisions
+            print("👤 Human deployment mode - use UI to deploy units")
+            
+            # Set up deployment zones if not already done
+            if not hasattr(self, 'deployment_zones') or not self.deployment_zones:
+                battlefield_width, battlefield_height = self.get_battlefield_size()
+                deployment_depth = 18.0
+                self.deployment_zones = {
+                    self.players[0].name: {
+                        'x_range': (0, deployment_depth),
+                        'y_range': (0, battlefield_height)
+                    },
+                    self.players[1].name: {
+                        'x_range': (battlefield_width - deployment_depth, battlefield_width),
+                        'y_range': (0, battlefield_height)
+                    }
+                }
+            
+            # Initialize deployment tracking
+            if not hasattr(self, 'deployment_turn_index'):
+                self.deployment_turn_index = getattr(self, 'defender_index', 0)
+            
+            # Mark that we're in deployment phase
+            self.waiting_for_deployment_input = False
+            print("✅ Deployment phase initialized - deploy units through UI")
+        
+        elif decision_makers:
+            # Use the proper deployment manager with decision makers for AI vs AI
+            from .deployment import DeploymentManager
+            deployment_manager = DeploymentManager(self)
+            deployment_results = deployment_manager.execute_deployment_sequence(decision_makers)
+            
+            # Store deployment results for reference
+            self.deployment_results = deployment_results
             print("✅ Army deployment complete")
+        else:
+            # Use the existing complete_deployment_phase method for fallback
+            self.complete_deployment_phase(manual_phases=manual_phases)
+            
+            # Only print completion message if not waiting for manual input
+            if not getattr(self, 'waiting_for_deployment_input', False):
+                print("✅ Army deployment complete")
     
     def execute_determine_first_turn_order_phase(self) -> None:
         """Phase 7: Determine First Turn Order - Attacker rolls to see who goes first."""
@@ -1305,6 +1315,9 @@ class Game:
         elif self.setup_phase == SetupPhase.DECLARE_BATTLE_FORMATIONS:
             self.execute_declare_battle_formations_phase()
         elif self.setup_phase == SetupPhase.DEPLOY_ARMIES:
-            self.execute_deploy_armies_phase(manual_phases=kwargs.get('manual_phases', False))
+            self.execute_deploy_armies_phase(
+                manual_phases=kwargs.get('manual_phases', False),
+                decision_makers=kwargs.get('decision_makers')
+            )
         elif self.setup_phase == SetupPhase.DETERMINE_FIRST_TURN_ORDER:
             self.execute_determine_first_turn_order_phase()

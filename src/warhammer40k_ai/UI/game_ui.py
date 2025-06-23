@@ -96,7 +96,7 @@ UNIT_COLOR_VARIATIONS = [
 ]
 
 def get_unit_color_variation(unit: Unit, all_units: List[Unit]) -> Tuple[int, int, int]:
-    """Get a unique color variation for units of the same type or different character units"""
+    """Get a color variation for a unit to distinguish it from others of the same type."""
     # For Characters (especially Epic Heroes), assign different colors to different units
     if unit.is_character:
         character_units = [u for u in all_units if u.is_character]
@@ -105,7 +105,7 @@ def get_unit_color_variation(unit: Unit, all_units: List[Unit]) -> Tuple[int, in
                 unit_index = character_units.index(unit)
                 return UNIT_COLOR_VARIATIONS[unit_index % len(UNIT_COLOR_VARIATIONS)]
             except (ValueError, IndexError):
-                return (255, 255, 255)  # Fallback to white
+                return (255, 255, 255)  # Default to white
     
     # For non-characters, use the original logic (same name units get different colors)
     same_type_units = [u for u in all_units if u.name == unit.name]
@@ -116,7 +116,7 @@ def get_unit_color_variation(unit: Unit, all_units: List[Unit]) -> Tuple[int, in
         unit_index = same_type_units.index(unit)
         return UNIT_COLOR_VARIATIONS[unit_index % len(UNIT_COLOR_VARIATIONS)]
     except (ValueError, IndexError):
-        return (255, 255, 255)  # Fallback to white
+        return (255, 255, 255)  # Default to white
 
 class RosterPane(pygame.sprite.Sprite):
     def __init__(self, left, bottom, width, height, roster, player_name):
@@ -134,7 +134,7 @@ class RosterPane(pygame.sprite.Sprite):
             self.font_small = pygame.font.SysFont('Arial', FONT_SMALL, bold=False)
             self.font_tiny = pygame.font.SysFont('Arial', FONT_TINY, bold=False)
         except:
-            # Fallback to default fonts if system fonts fail
+            # Use default fonts if system fonts fail
             self.font_large = pygame.font.Font(None, FONT_LARGE)
             self.font_medium = pygame.font.Font(None, FONT_MEDIUM)
             self.font_small = pygame.font.Font(None, FONT_SMALL)
@@ -300,7 +300,7 @@ class RosterPane(pygame.sprite.Sprite):
         x_right = button_rect.right - 8
         
         # Get unit color variation for visual correlation with battlefield
-        all_units = getattr(self, 'all_units', self.roster)  # Use all_units if available, otherwise fallback to roster
+        all_units = getattr(self, 'all_units', self.roster)  # Use all_units if available, otherwise use roster
         unit_color_tint = get_unit_color_variation(unit, all_units)
         
         # Draw unit type icon in the button with color tint
@@ -458,6 +458,7 @@ class InfoPane(pygame.sprite.Sprite):
             self.font_small = pygame.font.SysFont('Arial', FONT_SMALL, bold=False)
             self.font_tiny = pygame.font.SysFont('Arial', FONT_TINY, bold=False)
         except:
+            # Use default fonts if system fonts fail
             self.font_large = pygame.font.Font(None, FONT_LARGE)
             self.font_medium = pygame.font.Font(None, FONT_MEDIUM)
             self.font_small = pygame.font.Font(None, FONT_SMALL)
@@ -697,7 +698,7 @@ class UnitDetailPanel(pygame.sprite.Sprite):
             self.font_small = pygame.font.SysFont('Arial', FONT_SMALL, bold=False)
             self.font_tiny = pygame.font.SysFont('Arial', FONT_TINY, bold=False)
         except:
-            # Fallback to default fonts if system fonts fail
+            # Use default fonts if system fonts fail
             self.font_large = pygame.font.Font(None, FONT_LARGE)
             self.font_medium = pygame.font.Font(None, FONT_MEDIUM)
             self.font_small = pygame.font.Font(None, FONT_SMALL)
@@ -1777,7 +1778,7 @@ class HumanUIInterface:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     pygame.quit()
-                    # Return center of deployment zone as fallback
+                    # Return center of deployment zone as default
                     x_center = (deployment_zone['x_range'][0] + deployment_zone['x_range'][1]) / 2
                     y_center = (deployment_zone['y_range'][0] + deployment_zone['y_range'][1]) / 2
                     return x_center, y_center
@@ -2858,78 +2859,13 @@ def draw_facing_direction(screen: pygame.Surface, base: Base, screen_x: int, scr
         # Draw arrowhead
         pygame.draw.polygon(screen, (0, 0, 0), [(end_x, end_y), (left_x, left_y), (right_x, right_y)])
 
-def draw_base(screen: pygame.Surface, base: Base, screen_x: int, screen_y: int, zoom_level: float, color: Tuple[int, int, int]) -> None:
-    # Legacy function kept for compatibility - redirects to enhanced version
-    # This function is no longer used directly but kept in case other code references it
-    if base.base_type == BaseType.CIRCULAR:
-        draw_circular_base(screen, base, screen_x, screen_y, zoom_level, color)
-    elif base.base_type == BaseType.ELLIPTICAL:
-        draw_elliptical_base(screen, base, screen_x, screen_y, zoom_level, color)
-    elif base.base_type == BaseType.HULL:
-        draw_hull_base(screen, base, screen_x, screen_y, zoom_level, color)
+# Legacy draw_base function removed - use draw_enhanced_base instead
 
-def draw_circular_base(screen: pygame.Surface, base: Base, screen_x: int, screen_y: int, zoom_level: float, color: Tuple[int, int, int]) -> None:
-    # Legacy function for backward compatibility
-    radius = int(base.get_radius() * TILE_SIZE * zoom_level)
-    pygame.draw.circle(screen, color, (screen_x, screen_y), radius)
-    inner_radius = max(1, int(radius * 0.8))
-    pygame.draw.circle(screen, (255, 255, 255), (screen_x, screen_y), inner_radius)
+# Legacy draw_circular_base function removed - use draw_enhanced_circular_base instead
 
-def draw_elliptical_base(screen: pygame.Surface, base: Base, screen_x: int, screen_y: int, zoom_level: float, color: Tuple[int, int, int]) -> None:
-    # Legacy function for backward compatibility
-    width = int(base.radius[0] * 2 * TILE_SIZE * zoom_level)
-    height = int(base.radius[1] * 2 * TILE_SIZE * zoom_level)
-    
-    # Create a surface for the ellipse
-    ellipse_surface = pygame.Surface((width, height), pygame.SRCALPHA)
-    ellipse_surface.fill((0, 0, 0, 0))  # Transparent background
-    
-    # Draw the outer ellipse
-    pygame.draw.ellipse(ellipse_surface, color, (0, 0, width, height))
-    
-    # Draw the inner ellipse
-    inner_width, inner_height = max(1, int(width * 0.8)), max(1, int(height * 0.8))
-    inner_rect = pygame.Rect((width - inner_width) // 2, (height - inner_height) // 2, inner_width, inner_height)
-    pygame.draw.ellipse(ellipse_surface, (255, 255, 255), inner_rect)
-    
-    # Rotate the surface
-    angle_degrees = math.degrees(base.facing)
-    rotated_surface = pygame.transform.rotate(ellipse_surface, -angle_degrees)
-    
-    # Calculate the position to blit the rotated surface
-    blit_pos = (screen_x - rotated_surface.get_width() // 2, 
-                screen_y - rotated_surface.get_height() // 2)
-    
-    # Blit the rotated surface onto the screen
-    screen.blit(rotated_surface, blit_pos)
+# Legacy draw_elliptical_base function removed - use draw_enhanced_elliptical_base instead
 
-def draw_hull_base(screen: pygame.Surface, base: Base, screen_x: int, screen_y: int, zoom_level: float, color: Tuple[int, int, int]) -> None:
-    # Legacy function for backward compatibility
-    width = int(base.radius[0] * 2 * TILE_SIZE * zoom_level)
-    height = int(base.radius[1] * 2 * TILE_SIZE * zoom_level)
-    
-    # Create a surface for the hull
-    hull_surface = pygame.Surface((width, height), pygame.SRCALPHA)
-    hull_surface.fill((0, 0, 0, 0))  # Transparent background
-    
-    # Draw the outer hull
-    pygame.draw.rect(hull_surface, color, (0, 0, width, height))
-    
-    # Draw the inner hull
-    inner_width, inner_height = max(1, int(width * 0.8)), max(1, int(height * 0.8))
-    inner_rect = pygame.Rect((width - inner_width) // 2, (height - inner_height) // 2, inner_width, inner_height)
-    pygame.draw.rect(hull_surface, (255, 255, 255), inner_rect)
-    
-    # Rotate the surface
-    angle_degrees = math.degrees(base.facing)
-    rotated_surface = pygame.transform.rotate(hull_surface, -angle_degrees)
-    
-    # Calculate the position to blit the rotated surface
-    blit_pos = (screen_x - rotated_surface.get_width() // 2, 
-                screen_y - rotated_surface.get_height() // 2)
-    
-    # Blit the rotated surface onto the screen
-    screen.blit(rotated_surface, blit_pos)
+# Legacy draw_hull_base function removed - use draw_enhanced_hull_base instead
 
 def draw_unit_bounding_box(screen: pygame.Surface, unit: Unit, zoom_level: float, offset_x: int, offset_y: int, mouse_pos: Tuple[int, int]) -> None:
     position = unit.get_position()

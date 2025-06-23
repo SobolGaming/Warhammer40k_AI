@@ -88,7 +88,7 @@ class DeploymentManager:
             deployment_results['deployment_zones'][self.defender.name] = defender_zone
             deployment_results['deployment_zones'][self.attacker.name] = attacker_zone
         else:
-            # Fallback: create standard zones if none exist
+            # Default: create standard zones if none exist
             logger.warning("No pre-configured zones found, creating standard zones")
             available_zones = self.create_deployment_zones()
             defender_decision_maker = decision_makers[self.defender.name]
@@ -249,7 +249,7 @@ class DeploymentManager:
                 model_x, model_y, model_z, model_facing = pos
                 model.set_location(model_x, model_y, model_z, model_facing)
         else:
-            # Fallback positioning
+            # Default positioning
             for i, model in enumerate(unit.models):
                 model_x = x + (i % 3) * 0.5
                 model_y = y + (i // 3) * 0.5
@@ -305,7 +305,7 @@ class HumanDeploymentDecisionMaker(DeploymentDecisionMaker):
         if self.ui_interface:
             return self.ui_interface.choose_deployment_zone(available_zones)
         else:
-            # Fallback: choose first zone
+            # Default: choose first zone
             logger.warning("No UI interface available for human deployment zone selection, using first zone")
             return available_zones[0]
     
@@ -314,7 +314,7 @@ class HumanDeploymentDecisionMaker(DeploymentDecisionMaker):
         if self.ui_interface:
             return self.ui_interface.declare_reserves(player)
         else:
-            # Interactive fallback for console-based reserves selection
+            # Interactive console-based reserves selection
             logger.info(f"🪂 {player.name}: Choose reserves for your units")
             reserves_decisions = {}
             
@@ -356,7 +356,7 @@ class HumanDeploymentDecisionMaker(DeploymentDecisionMaker):
         if self.ui_interface:
             return self.ui_interface.choose_unit_deployment_position(unit, deployment_zone, already_deployed)
         else:
-            # Interactive fallback for console-based position selection
+            # Interactive console-based position selection
             print(f"\n🎯 Place {unit.name} in deployment zone:")
             print(f"   X range: {deployment_zone['x_range'][0]:.1f}\" to {deployment_zone['x_range'][1]:.1f}\"")
             print(f"   Y range: {deployment_zone['y_range'][0]:.1f}\" to {deployment_zone['y_range'][1]:.1f}\"")

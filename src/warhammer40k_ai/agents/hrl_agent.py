@@ -616,7 +616,7 @@ class HighLevelAgent:
         
         if torch.isnan(probs).any():
             throttled_warning(f"Warning: NaN values in unit deployment for {unit.name}")
-            # Fallback to center of deployment zone
+            # Default to center of deployment zone
             x_center = (deployment_zone['x_range'][0] + deployment_zone['x_range'][1]) / 2
             y_center = (deployment_zone['y_range'][0] + deployment_zone['y_range'][1]) / 2
             return x_center, y_center
@@ -2421,5 +2421,5 @@ class AIDeploymentDecisionMaker(DeploymentDecisionMaker):
         if high_level_agent and hasattr(high_level_agent, 'handle_reserves_arrival_phase'):
             return high_level_agent.handle_reserves_arrival_phase(self.game)
         else:
-            # Fallback to basic game logic
+            # Use basic game logic
             return self.game.process_player_reserves_arrivals(self.player)
