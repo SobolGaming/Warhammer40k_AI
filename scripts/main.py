@@ -166,7 +166,7 @@ def cleanup_destroyed_units(game: Game):
                 logger.debug(f"Removing destroyed unit {unit.name} from {player.name}'s army")
             player.get_army().units.remove(unit)
 
-def execute_simple_deployment(game: Game, player1: Player, player2: Player) -> dict:
+def execute_simple_deployment(game: Game, player1: Player, player2: Player, manual_phases: bool = False) -> dict:
     """Execute deployment using the game's built-in complete_deployment_phase method."""
     
     logger.info("🚀 Starting Simple Deployment Sequence")
@@ -187,7 +187,7 @@ def execute_simple_deployment(game: Game, player1: Player, player2: Player) -> d
     }
     
     # Use the game's built-in deployment method
-    game.complete_deployment_phase()
+    game.complete_deployment_phase(manual_phases=manual_phases)
     
     logger.info("✅ Simple deployment complete!")
     
@@ -1095,6 +1095,30 @@ def main_game_loop(player_configs=None) -> None:
                     game_view.zoom_level = handle_zoom(game_view.zoom_level, event)
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE and game_state == GameState.SETUP:
+                    # Check if we're waiting for deployment input during DEPLOY_ARMIES phase
+                    if getattr(game, 'waiting_for_deployment_input', False):
+                        # Continue deployment by calling complete_deployment_phase again
+                        print("🔧 Continuing deployment...")
+                        game.complete_deployment_phase(manual_phases=player_configs.get('manual_phases', False))
+                        
+                        # If deployment is now complete, advance to next setup phase
+                        if not getattr(game, 'waiting_for_deployment_input', False):
+                            setup_complete = game.advance_setup_phase()
+                            
+                            if setup_complete:
+                                # Setup is complete, start battle rounds
+                                game_state = GameState.PLAYING
+                                print("🎉 All setup phases complete! Battle begins!")
+                                print("Press SPACE to advance battle round phases.")
+                                
+                                # Create AI agents now that objectives and commands are available
+                                create_ai_agents()
+                            else:
+                                # Show next setup phase
+                                print(f"📋 Next phase: {game.get_current_setup_phase().name}")
+                                print("Press SPACE to continue setup.")
+                        continue
+                    
                     # Advance through setup phases when user presses SPACE
                     if game.is_in_setup_phase():
                         current_phase = game.get_current_setup_phase()
@@ -1103,7 +1127,8 @@ def main_game_loop(player_configs=None) -> None:
                         # Execute current setup phase with necessary parameters
                         setup_kwargs = {
                             'player1_army_file': player_configs.get('player1_army_file'),
-                            'player2_army_file': player_configs.get('player2_army_file')
+                            'player2_army_file': player_configs.get('player2_army_file'),
+                            'manual_phases': player_configs.get('manual_phases', False)
                         }
                         game.execute_current_setup_phase(**setup_kwargs)
                         
@@ -1111,6 +1136,11 @@ def main_game_loop(player_configs=None) -> None:
                         if current_phase.name == 'MUSTER_ARMIES':
                             game_view.refresh_roster_panes()
                             print("📋 Roster panes refreshed with loaded armies")
+                        
+                        # Check if we're waiting for deployment input (manual phases during DEPLOY_ARMIES)
+                        if getattr(game, 'waiting_for_deployment_input', False):
+                            # Don't advance setup phase yet, wait for more SPACE presses to continue deployment
+                            continue
                         
                         # Advance to next setup phase
                         setup_complete = game.advance_setup_phase()

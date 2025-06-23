@@ -538,7 +538,13 @@ class InfoPane(pygame.sprite.Sprite):
             # Import SetupPhase to get total count
             from ..classes.game import SetupPhase
             total_phases = len(SetupPhase.__members__)
-            progress_text = f"Phase {phase_number}/{total_phases} - Press SPACE to continue"
+            
+            # Check if we're waiting for deployment input
+            if getattr(game, 'waiting_for_deployment_input', False):
+                progress_text = f"Phase {phase_number}/{total_phases} - Manual Deployment Mode: Press SPACE to continue each deployment"
+            else:
+                progress_text = f"Phase {phase_number}/{total_phases} - Press SPACE to continue"
+            
             progress_surface = self.font_tiny.render(progress_text, True, TEXT_SECONDARY)
             progress_rect = progress_surface.get_rect(center=(x_center, y_offset + 20))
             surface.blit(progress_surface, progress_rect)

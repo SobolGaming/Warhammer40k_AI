@@ -118,6 +118,7 @@ class Game:
         self.attacker_index = None  # Index of the attacking player (will be set during DETERMINE_ATTACKER_AND_DEFENDER)
         self.defender_index = None  # Index of the defending player (will be set during DETERMINE_ATTACKER_AND_DEFENDER)
         self.deployment_zones = {}  # Store deployment zones for visualization {player_name: zone_dict}
+        self.waiting_for_deployment_input = False  # Flag for manual phases during deployment
         self.first_turn_player_index = None  # Index of player who goes first (will be set during DETERMINE_FIRST_TURN_ORDER)
 
     def add_player(self, player: Player) -> None:
@@ -230,7 +231,7 @@ class Game:
             next_deployable = self.get_deployable_units(next_player)
             attempts += 1
     
-    def complete_deployment_phase(self) -> None:
+    def complete_deployment_phase(self, manual_phases: bool = False) -> None:
         """Force complete the deployment phase by auto-deploying remaining units one at a time."""
         print("🚀 Starting auto-deployment...")
         
@@ -271,11 +272,19 @@ class Game:
                 unit.deployed = True
                 unit.reserve_status = 'reserves'  # Put in reserves as fallback
                 self.advance_deployment_turn()
+            
+            # In manual phases mode, pause after each deployment action and require SPACE to continue
+            if manual_phases and self.is_deployment_phase():  # Only pause if deployment isn't finished
+                print(f"🔧 Deployment action {attempts} completed. Press SPACE to continue deployment...")
+                # Set a flag to indicate we're waiting for manual input during deployment
+                self.waiting_for_deployment_input = True
+                return  # Exit and wait for manual input
         
         if attempts >= max_attempts:
             print(f"⚠️ Auto-deployment stopped after {max_attempts} attempts to prevent infinite loop")
         
         print(f"🎯 Auto-deployment complete after {attempts} deployment actions")
+        self.waiting_for_deployment_input = False
     
     def auto_deploy_unit(self, unit: 'Unit') -> bool:
         """Auto-deploy a unit at a random valid position within deployment constraints."""
@@ -1220,13 +1229,16 @@ class Game:
         # For now, this is empty - battle formations will be implemented later
         print("✅ Battle formations declared")
     
-    def execute_deploy_armies_phase(self) -> None:
+    def execute_deploy_armies_phase(self, manual_phases: bool = False) -> None:
         """Phase 6: Deploy Armies - Execute the deployment phase."""
         print("📋 DEPLOY ARMIES: Starting deployment sequence...")
         
         # Use the existing complete_deployment_phase method
-        self.complete_deployment_phase()
-        print("✅ Army deployment complete")
+        self.complete_deployment_phase(manual_phases=manual_phases)
+        
+        # Only print completion message if not waiting for manual input
+        if not getattr(self, 'waiting_for_deployment_input', False):
+            print("✅ Army deployment complete")
     
     def execute_determine_first_turn_order_phase(self) -> None:
         """Phase 7: Determine First Turn Order - Attacker rolls to see who goes first."""
@@ -1266,6 +1278,6 @@ class Game:
         elif self.setup_phase == SetupPhase.DECLARE_BATTLE_FORMATIONS:
             self.execute_declare_battle_formations_phase()
         elif self.setup_phase == SetupPhase.DEPLOY_ARMIES:
-            self.execute_deploy_armies_phase()
+            self.execute_deploy_armies_phase(manual_phases=kwargs.get('manual_phases', False))
         elif self.setup_phase == SetupPhase.DETERMINE_FIRST_TURN_ORDER:
             self.execute_determine_first_turn_order_phase()
