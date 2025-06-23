@@ -157,17 +157,19 @@ class HighLevelAgent:
                     obj_pos = (obj.location.x, obj.location.y, obj.location.z)
                     distance = get_dist(unit_pos[0] - obj_pos[0], unit_pos[1] - obj_pos[1], unit_pos[2] - obj_pos[2])
                     total_distance += distance
-        avg_distance = total_distance / (num_player_units * len(self.objectives)) if num_player_units > 0 else 0
+        avg_distance = total_distance / (num_player_units * len(self.objectives)) if num_player_units > 0 and len(self.objectives) > 0 else 0
         features.append(avg_distance)
 
-        # Control status of objectives
-        for obj in [obj for obj in self.objectives if isinstance(obj.location, ObjectivePoint)]:
-            if obj.location.controlling_player == self.game.get_current_player():
-                features.append(1)
-            elif obj.location.controlling_player == self.game.get_opponent():
-                features.append(-1)
-            else:
-                features.append(0)
+        # Control status of objectives (ensure we always add exactly 1 feature for now)
+        objective_control = 0
+        if self.objectives:
+            obj = self.objectives[0]  # Use first objective
+            if hasattr(obj, 'location') and hasattr(obj.location, 'controlling_player'):
+                if obj.location.controlling_player == self.game.get_current_player():
+                    objective_control = 1
+                elif obj.location.controlling_player == self.game.get_opponent():
+                    objective_control = -1
+        features.append(objective_control)
 
         # Current turn number
         features.append(self.game.turn)

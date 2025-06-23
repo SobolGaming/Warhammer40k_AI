@@ -148,23 +148,27 @@ def clear_checkpoints():
         print("📁 No checkpoint directory found")
 
 def cleanup_destroyed_units(game: Game):
-    """Remove destroyed units from the game map and player armies."""
-    # Clean up units from the map
-    destroyed_units = [unit for unit in game.map.units if not unit.is_alive()]
-    for unit in destroyed_units:
-        # Reduced logging - only log if many units destroyed
-        if len(destroyed_units) > 3:
-            logger.debug(f"Removing destroyed unit {unit.name} from the battlefield")
-        game.map.units.remove(unit)
-    
-    # Clean up units from player armies
+    """Remove destroyed units from the map and player armies."""
     for player in game.players:
-        destroyed_units = [unit for unit in player.get_army().units if not unit.is_alive()]
-        for unit in destroyed_units:
-            # Reduced logging - only log if many units destroyed
-            if len(destroyed_units) > 3:
-                logger.debug(f"Removing destroyed unit {unit.name} from {player.name}'s army")
+        units_to_remove = []
+        for unit in player.get_army().units:
+            if not unit.is_alive():
+                # Remove unit from map
+                if hasattr(unit, 'position') and unit.position:
+                    if hasattr(game.map, 'remove_unit'):
+                        game.map.remove_unit(unit)
+                units_to_remove.append(unit)
+        
+        # Remove destroyed units from army
+        for unit in units_to_remove:
             player.get_army().units.remove(unit)
+
+def print_current_scores(game: Game):
+    """Print the current scores for both players after each phase."""
+    if len(game.players) >= 2:
+        player1_score = game.players[0].get_score()
+        player2_score = game.players[1].get_score()
+        print(f"📊 SCORES: {game.players[0].name}: {player1_score} | {game.players[1].name}: {player2_score}")
 
 def execute_simple_deployment(game: Game, player1: Player, player2: Player, manual_phases: bool = False) -> dict:
     """Execute deployment using the game's built-in complete_deployment_phase method."""
@@ -420,14 +424,21 @@ def run_training_episode(episode_num: int, agents: dict, player_configs: dict = 
         # CRITICAL FIX: Update all agents to use the NEW game instance for this episode
         logger.debug("Updating agents to use new game instance...")
         high_level_agent_player1.game = game
+        high_level_agent_player1.player = player1
+        high_level_agent_player1.opponent = player2
         tactical_agent_player1.game = game
+        tactical_agent_player1.player = player1
         low_level_agent_player1.game = game
+        low_level_agent_player1.player = player1
         high_level_agent_player2.game = game
+        high_level_agent_player2.player = player2
+        high_level_agent_player2.opponent = player1
         tactical_agent_player2.game = game
+        tactical_agent_player2.player = player2
         low_level_agent_player2.game = game
-        logger.debug("All agents updated to use new game instance")
+        low_level_agent_player2.player = player2
         
-        # Execute setup phases (AFTER agents are initialized)
+        # Execute setup phases (BEFORE updating objectives/commands since they're created during setup)
         logger.debug("Starting setup phases...")
         setup_kwargs = {
             'player1_army_file': player_configs.get('player1_army_file'),
@@ -436,10 +447,47 @@ def run_training_episode(episode_num: int, agents: dict, player_configs: dict = 
         
         while game.is_in_setup_phase():
             current_phase = game.get_current_setup_phase()
+            
+            # For DEPLOY_ARMIES phase, we need to create AI deployment decision makers
+            if current_phase.name == 'DEPLOY_ARMIES':
+                from warhammer40k_ai.agents.hrl_agent import AIDeploymentDecisionMaker
+                
+                # Update objectives and commands BEFORE creating deployment decision makers
+                high_level_agent_player1.objectives = game.map.objectives
+                high_level_agent_player1.commands = game.commands
+                high_level_agent_player1.num_objectives = len(game.map.objectives)
+                high_level_agent_player1.num_commands = len(game.commands)
+                high_level_agent_player2.objectives = game.map.objectives
+                high_level_agent_player2.commands = game.commands
+                high_level_agent_player2.num_objectives = len(game.map.objectives)
+                high_level_agent_player2.num_commands = len(game.commands)
+                
+                decision_makers = {
+                    player1.name: AIDeploymentDecisionMaker(high_level_agent_player1),
+                    player2.name: AIDeploymentDecisionMaker(high_level_agent_player2)
+                }
+                setup_kwargs['decision_makers'] = decision_makers
+                
+                logger.debug(f"Updated agents for deployment - Objectives: {len(game.map.objectives)}, Commands: {len(game.commands)}")
+            
             game.execute_current_setup_phase(**setup_kwargs)
             setup_complete = game.advance_setup_phase()
             if setup_complete:
                 break
+        
+        # FINAL UPDATE: Ensure agents have the latest objectives and commands after all setup phases
+        high_level_agent_player1.objectives = game.map.objectives
+        high_level_agent_player1.commands = game.commands
+        high_level_agent_player1.num_objectives = len(game.map.objectives)
+        high_level_agent_player1.num_commands = len(game.commands)
+        high_level_agent_player2.objectives = game.map.objectives
+        high_level_agent_player2.commands = game.commands
+        high_level_agent_player2.num_objectives = len(game.map.objectives)
+        high_level_agent_player2.num_commands = len(game.commands)
+        
+        logger.debug(f"Final agent state - Objectives: {len(game.map.objectives)}, Commands: {len(game.commands)}")
+        logger.debug(f"Objective names: {[obj.name for obj in game.map.objectives]}")
+        logger.debug(f"Commands: {game.commands}")
         
         # Store deployment information for later analysis
         episode_stats['deployment'] = {
@@ -487,6 +535,7 @@ def run_training_episode(episode_num: int, agents: dict, player_configs: dict = 
                     
                     tactical_agent.command_phase(command)
                     game.next_phase()
+                    print_current_scores(game)
                     
                 elif game.is_movement_phase():
                     # Movement phase for all units
@@ -494,6 +543,7 @@ def run_training_episode(episode_num: int, agents: dict, player_configs: dict = 
                         if unit.is_alive():
                             tactical_agent.movement_phase(unit, objective)
                     game.next_phase()
+                    print_current_scores(game)
                     
                 elif game.is_shooting_phase():
                     # Shooting phase for all units
@@ -501,6 +551,7 @@ def run_training_episode(episode_num: int, agents: dict, player_configs: dict = 
                         if unit.is_alive():
                             tactical_agent.shooting_phase(unit)
                     game.next_phase()
+                    print_current_scores(game)
                     
                 elif game.is_charge_phase():
                     # Charge phase for all units
@@ -510,6 +561,7 @@ def run_training_episode(episode_num: int, agents: dict, player_configs: dict = 
                             if charge_reward:
                                 tactical_agent.movement_rewards.append(charge_reward)
                     game.next_phase()
+                    print_current_scores(game)
                     
                 elif game.is_fight_phase():
                     # Fight phase for all units
@@ -517,6 +569,7 @@ def run_training_episode(episode_num: int, agents: dict, player_configs: dict = 
                         if unit.is_alive():
                             tactical_agent.fight_phase(unit)
                     game.next_phase()  # This will advance to next player or next turn
+                    print_current_scores(game)
 
                 # Clean up destroyed units after each phase
                 cleanup_destroyed_units(game)
@@ -719,9 +772,12 @@ def display_final_analysis(training_stats: dict, all_episode_stats: list):
     
     print(f"\n📈 WIN STATISTICS:")
     print(f"   Total Episodes: {total_episodes}")
-    print(f"   Player 1 Wins: {p1_wins} ({p1_wins/total_episodes*100:.1f}%)")
-    print(f"   Player 2 Wins: {p2_wins} ({p2_wins/total_episodes*100:.1f}%)")
-    print(f"   Ties: {ties} ({ties/total_episodes*100:.1f}%)")
+    if total_episodes > 0:
+        print(f"   Player 1 Wins: {p1_wins} ({p1_wins/total_episodes*100:.1f}%)")
+        print(f"   Player 2 Wins: {p2_wins} ({p2_wins/total_episodes*100:.1f}%)")
+        print(f"   Ties: {ties} ({ties/total_episodes*100:.1f}%)")
+    else:
+        print("   No completed episodes to analyze.")
     
     # First player advantage analysis
     first_wins = training_stats['first_player_advantage']['starting_player_wins']
@@ -795,8 +851,11 @@ def display_final_analysis(training_stats: dict, all_episode_stats: list):
     avg_turns = training_stats['total_turns'] / total_episodes if total_episodes > 0 else 0
     print(f"\n⏱️ GAME LENGTH:")
     print(f"   Average turns per episode: {avg_turns:.1f}")
-    print(f"   Longest game: {max(stats['total_turns'] for stats in all_episode_stats)} turns")
-    print(f"   Shortest game: {min(stats['total_turns'] for stats in all_episode_stats)} turns")
+    if all_episode_stats:
+        print(f"   Longest game: {max(stats['total_turns'] for stats in all_episode_stats)} turns")
+        print(f"   Shortest game: {min(stats['total_turns'] for stats in all_episode_stats)} turns")
+    else:
+        print("   No episode data available.")
     
     print("\n" + "=" * 70)
     print("🎉 Training completed successfully!")
@@ -926,9 +985,9 @@ def main_game_loop(player_configs=None) -> None:
             # Auto-enable AI action for AI players (unless manual phases mode is enabled)
             if should_do_ai_action:
                 game.do_ai_action = True
-                print(f"🤖 {current_player.name} (AI) taking action automatically...")
-            elif manual_phases_required and current_player.type == PlayerType.AI:
-                print(f"🔧 {current_player.name} (AI) waiting for SPACE key (manual phases mode)")
+                #print(f"🤖 {current_player.name} (AI) taking action automatically...")
+            #elif manual_phases_required and current_player.type == PlayerType.AI:
+                #print(f"🔧 {current_player.name} (AI) waiting for SPACE key (manual phases mode)")
         
         if game_state == GameState.PLAYING and game.do_ai_action:
             # Only do AI actions if at least one player is AI
@@ -978,22 +1037,27 @@ def main_game_loop(player_configs=None) -> None:
                                 current_player.add_score(obj.points)
                         tactical_agent.command_phase(command)
                         game.next_phase()
+                        print_current_scores(game)
                     elif game.is_movement_phase():
                         for unit in current_player.army.units:
                             tactical_agent.movement_phase(unit, objective)
                         game.next_phase()
+                        print_current_scores(game)
                     elif game.is_shooting_phase():
                         for unit in current_player.army.units:
                             tactical_agent.shooting_phase(unit)
                         game.next_phase()
+                        print_current_scores(game)
                     elif game.is_charge_phase():
                         for unit in current_player.army.units:
                             tactical_agent.charge_phase(unit)
                         game.next_phase()
+                        print_current_scores(game)
                     elif game.is_fight_phase():
                         for unit in current_player.army.units:
                             tactical_agent.fight_phase(unit)
                         game.next_phase()  # This will trigger next_turn() since it's the last phase
+                        print_current_scores(game)
                     
                     # In manual phases mode, pause after each phase and wait for SPACE
                     if player_configs.get('manual_phases', False):
@@ -1174,6 +1238,7 @@ def main_game_loop(player_configs=None) -> None:
                         # Normal human player phase advancement
                         game.next_phase()
                         print(f"Advanced to {game.phase.name} phase")
+                        print_current_scores(game)
                 elif event.key == pygame.K_a and game_state == GameState.PLAYING:
                     game.do_ai_action = True
                     print("🤖 Manual AI action triggered")
