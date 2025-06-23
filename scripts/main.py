@@ -1137,6 +1137,11 @@ def main_game_loop(player_configs=None) -> None:
                             game_view.refresh_roster_panes()
                             print("📋 Roster panes refreshed with loaded armies")
                         
+                        # Update roster pane titles after attacker/defender determination
+                        if current_phase.name == 'DETERMINE_ATTACKER_AND_DEFENDER':
+                            game_view.update_roster_pane_titles()
+                            print("📋 Roster pane titles updated with Attacker/Defender roles")
+                        
                         # Check if we're waiting for deployment input (manual phases during DEPLOY_ARMIES)
                         if getattr(game, 'waiting_for_deployment_input', False):
                             # Don't advance setup phase yet, wait for more SPACE presses to continue deployment

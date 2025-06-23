@@ -206,6 +206,10 @@ class RosterPane(pygame.sprite.Sprite):
                                 unit.deployed = True  # Deployed to reserves (deployment decision made)
                                 self.selected_unit = None
                                 self.game_view.selected_unit = None  # Clear GameView's selection
+                                # Record reserves action
+                                current_deployment_player = self.game_view.game.get_current_deployment_player()
+                                if current_deployment_player:
+                                    self.game_view.game.record_deployment_action(current_deployment_player, unit, 'reserves')
                                 # Advance to next player's deployment turn
                                 self.game_view.game.advance_deployment_turn()
                             elif choice == 'strategic_reserves':
@@ -213,6 +217,10 @@ class RosterPane(pygame.sprite.Sprite):
                                 unit.deployed = True  # Deployed to strategic reserves (deployment decision made)
                                 self.selected_unit = None
                                 self.game_view.selected_unit = None  # Clear GameView's selection
+                                # Record strategic reserves action
+                                current_deployment_player = self.game_view.game.get_current_deployment_player()
+                                if current_deployment_player:
+                                    self.game_view.game.record_deployment_action(current_deployment_player, unit, 'strategic_reserves')
                                 # Advance to next player's deployment turn
                                 self.game_view.game.advance_deployment_turn()
                         
@@ -518,16 +526,30 @@ class InfoPane(pygame.sprite.Sprite):
             # Show setup phase information
             setup_phase = game.get_current_setup_phase()
             setup_descriptions = {
-                'MUSTER_ARMIES': '🏗️ Loading army lists and preparing forces',
-                'SELECT_MISSION_OBJECTIVES': '🎯 Configuring mission objectives and commands',
-                'CREATE_BATTLEFIELD': '🗺️ Creating battlefield, terrain, and objectives',
-                'DETERMINE_ATTACKER_AND_DEFENDER': '⚔️ Rolling dice to determine attacker/defender roles',
-                'DECLARE_BATTLE_FORMATIONS': '📋 Declaring battle formations and reserves',
-                'DEPLOY_ARMIES': '🚢 Deploying armies to the battlefield',
-                'DETERMINE_FIRST_TURN_ORDER': '🎲 Rolling dice to determine who goes first'
+                'MUSTER_ARMIES': 'Loading army lists and preparing forces',
+                'SELECT_MISSION_OBJECTIVES': 'Configuring mission objectives and commands',
+                'CREATE_BATTLEFIELD': 'Creating battlefield, terrain, and objectives',
+                'DETERMINE_ATTACKER_AND_DEFENDER': 'Rolling dice to determine attacker/defender roles',
+                'DECLARE_BATTLE_FORMATIONS': 'Declaring battle formations and reserves',
+                'DEPLOY_ARMIES': 'Deploying armies to the battlefield',
+                'DETERMINE_FIRST_TURN_ORDER': 'Rolling dice to determine who goes first'
             }
             
-            description = setup_descriptions.get(setup_phase.name, f"Executing {setup_phase.name}")
+            # Special handling for DEPLOY_ARMIES phase to show whose turn it is
+            if setup_phase.name == 'DEPLOY_ARMIES' and game.is_deployment_phase():
+                deployment_player = game.get_current_deployment_player()
+                if deployment_player:
+                    if deployment_player == game.get_attacker():
+                        description = 'DEPLOY ARMIES: Attacker\'s Turn'
+                    elif deployment_player == game.get_defender():
+                        description = 'DEPLOY ARMIES: Defender\'s Turn'
+                    else:
+                        description = f'DEPLOY ARMIES: {deployment_player.name}\'s Turn'
+                else:
+                    description = setup_descriptions.get(setup_phase.name, f"Executing {setup_phase.name}")
+            else:
+                description = setup_descriptions.get(setup_phase.name, f"Executing {setup_phase.name}")
+            
             setup_text = description
             setup_surface = self.font_small.render(setup_text, True, TEXT_ACCENT)
             setup_rect = setup_surface.get_rect(center=(x_center, y_offset))
@@ -605,6 +627,28 @@ class InfoPane(pygame.sprite.Sprite):
             surface.blit(opponent_surface, (x_right - opponent_rect.width, y_offset))
         
         y_offset += 25
+        
+        # Deployment actions display during deployment phase
+        if in_deployment_phase and hasattr(game, 'deployment_actions') and game.deployment_actions:
+            # Display deployment actions on the appropriate side of the InfoPane
+            # Left side for player 1, right side for player 2
+            player1 = game.players[0] if len(game.players) > 0 else None
+            player2 = game.players[1] if len(game.players) > 1 else None
+            
+            if player1 and player1.name in game.deployment_actions:
+                action_text = f"📍 {game.deployment_actions[player1.name]}"
+                action_surface = self.font_tiny.render(action_text, True, TEXT_ACCENT)
+                # Place on left side
+                surface.blit(action_surface, (x_left, y_offset))
+            
+            if player2 and player2.name in game.deployment_actions:
+                action_text = f"📍 {game.deployment_actions[player2.name]}"
+                action_surface = self.font_tiny.render(action_text, True, TEXT_ACCENT)
+                action_rect = action_surface.get_rect()
+                # Place on right side
+                surface.blit(action_surface, (x_right - action_rect.width, y_offset))
+            
+            y_offset += 18
         
         # Army status or controls
         current_army = current_player.get_army()
@@ -1935,6 +1979,17 @@ class GameView:
             # Recreate buttons with new roster data
             self.left_roster_pane.create_buttons()
             self.right_roster_pane.create_buttons()
+    
+    def update_roster_pane_titles(self):
+        """Update roster pane titles to show Attacker/Defender after roles are determined."""
+        if self.game and hasattr(self.game, 'attacker_index') and self.game.attacker_index is not None:
+            # Update player names to include role
+            if self.game.attacker_index == 0:  # Player 1 is attacker
+                self.left_roster_pane.player_name = f"{self.player1.name} (Attacker)"
+                self.right_roster_pane.player_name = f"{self.player2.name} (Defender)"
+            else:  # Player 2 is attacker
+                self.left_roster_pane.player_name = f"{self.player1.name} (Defender)"
+                self.right_roster_pane.player_name = f"{self.player2.name} (Attacker)"
 
     def handle_pygame_event(self, event):
         """Handle pygame events, including reserves UI integration."""
@@ -2036,6 +2091,12 @@ class GameView:
                         else:
                             print(f"Unit {self.selected_unit.name} placed with centroid at ({unit_x:.1f}, {unit_y:.1f})")
                         self.selected_unit.deployed = True
+                        
+                        # Record deployment action
+                        current_deployment_player = self.game.get_current_deployment_player()
+                        if current_deployment_player and self.selected_unit.position:
+                            self.game.record_deployment_action(current_deployment_player, self.selected_unit, 'deployed', self.selected_unit.position)
+                        
                         # Advance to next player's deployment turn
                         self.game.advance_deployment_turn()
                     else:

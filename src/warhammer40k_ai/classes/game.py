@@ -119,6 +119,7 @@ class Game:
         self.defender_index = None  # Index of the defending player (will be set during DETERMINE_ATTACKER_AND_DEFENDER)
         self.deployment_zones = {}  # Store deployment zones for visualization {player_name: zone_dict}
         self.waiting_for_deployment_input = False  # Flag for manual phases during deployment
+        self.deployment_actions = {}  # Track last deployment action for each player
         self.first_turn_player_index = None  # Index of player who goes first (will be set during DETERMINE_FIRST_TURN_ORDER)
 
     def add_player(self, player: Player) -> None:
@@ -208,6 +209,24 @@ class Game:
         # Units with deployed=True have been assigned (battlefield, reserves, or strategic reserves)
         return [u for u in player.get_army().units if not u.deployed]
     
+    def record_deployment_action(self, player: Player, unit: 'Unit', action: str, location: tuple = None) -> None:
+        """Record a deployment action for display in the InfoPane."""
+        if action == 'deployed' and location:
+            x, y, z = location
+            action_text = f"{unit.name} deployed at ({x:.1f}, {y:.1f})"
+        elif action == 'reserves':
+            action_text = f"{unit.name} placed in Reserves"
+        elif action == 'strategic_reserves':
+            action_text = f"{unit.name} placed in Strategic Reserves"
+        else:
+            action_text = f"{unit.name} - {action}"
+        
+        self.deployment_actions[player.name] = action_text
+
+    def clear_deployment_actions(self) -> None:
+        """Clear deployment action history after deployment phase ends."""
+        self.deployment_actions = {}
+
     def advance_deployment_turn(self) -> None:
         """Advance to the next player's deployment turn."""
         if not self.is_deployment_phase():
@@ -263,6 +282,9 @@ class Game:
             success = self.auto_deploy_unit(unit)
             if success:
                 print(f"✅ Successfully auto-deployed {unit.name}")
+                # Record deployment action
+                if unit.position:
+                    self.record_deployment_action(current_player, unit, 'deployed', unit.position)
                 # Mark unit as deployed and advance to next player's turn
                 unit.deployed = True
                 self.advance_deployment_turn()
@@ -271,6 +293,8 @@ class Game:
                 # Force deployment to prevent infinite loop
                 unit.deployed = True
                 unit.reserve_status = 'reserves'  # Put in reserves as fallback
+                # Record reserves action
+                self.record_deployment_action(current_player, unit, 'reserves')
                 self.advance_deployment_turn()
             
             # In manual phases mode, pause after each deployment action and require SPACE to continue
@@ -1261,6 +1285,9 @@ class Game:
             # Defender goes first
             self.first_turn_player_index = self.defender_index
             print(f"✅ {defender.name} goes first!")
+        
+        # Clear deployment actions since deployment phase is now complete
+        self.clear_deployment_actions()
     
     def execute_current_setup_phase(self, **kwargs) -> None:
         """Execute the current setup phase with any necessary parameters."""
