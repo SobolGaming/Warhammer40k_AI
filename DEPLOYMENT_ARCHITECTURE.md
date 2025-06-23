@@ -4,6 +4,200 @@
 
 The deployment system implements the official Warhammer 40k 10th Edition deployment sequence with full support for AI training, human interaction, and mixed gameplay. The architecture separates core game mechanics from player implementation, supporting manual phase control, deployment action tracking, and enhanced UI integration.
 
+## Deployment API Flow and Player Types
+
+### Core Architecture Principles
+
+The deployment system follows a **unified API architecture** that ensures consistent behavior across all game modes and player types:
+
+1. **Single Source of Truth**: All deployment logic flows through the same `DeploymentManager` class
+2. **Player Type Abstraction**: AI and Human players implement the same `DeploymentDecisionMaker` interface
+3. **Mode Independence**: Training and Play modes use identical core logic
+4. **Consistent Validation**: All players use the same rule validation functions
+
+### Player Type Decision Makers
+
+#### AI Players (`AIDeploymentDecisionMaker`)
+- **Implementation**: Neural network-based decisions via `HighLevelAgent`
+- **Zone Selection**: `deployment_zone_net` neural network
+- **Reserves Declaration**: `reserves_selection_net` with official 50% limits
+- **Unit Positioning**: `unit_deployment_net` for tactical placement
+- **Learning**: Stores rewards for reinforcement learning
+- **Speed**: Instant decisions
+- **Consistency**: Identical behavior in training and play modes
+
+#### Human Players (`HumanDeploymentDecisionMaker`)
+- **Implementation**: UI-based interactions with fallback console options
+- **Zone Selection**: Interactive dialog or console input
+- **Reserves Declaration**: Step-by-step unit selection dialogs
+- **Unit Positioning**: Mouse click positioning on battlefield
+- **Learning**: No learning component
+- **Speed**: Waits for human input
+- **UI Integration**: Full visual feedback and deployment zone highlighting
+
+### Game Mode API Flows
+
+#### Training Mode (`--mode train`)
+```
+Command Line: python scripts/main.py --mode train --episodes 1000
+
+Flow:
+1. Both players automatically set to AI (regardless of --player1/--player2 args)
+2. No pygame UI initialization
+3. execute_setup_phases() called automatically
+4. For DEPLOY_ARMIES phase:
+   - decision_makers[player.name] = AIDeploymentDecisionMaker(agent)
+   - game.execute_current_setup_phase(decision_makers=decision_makers)
+5. Pure AI vs AI execution with no rendering
+6. AI learning and checkpoint saving enabled
+```
+
+#### Play Mode - AI vs AI (`--mode play --player1 ai --player2 ai`)
+```
+Command Line: python scripts/main.py --mode play --player1 ai --player2 ai
+
+Flow:
+1. Both players set to AI
+2. Full pygame UI initialization
+3. Manual setup phase progression (SPACE key required)
+4. For DEPLOY_ARMIES phase:
+   - decision_makers[player.name] = AIDeploymentDecisionMaker(agent)
+   - game.execute_current_setup_phase(decision_makers=decision_makers, manual_phases=True)
+5. AI decisions with full UI rendering and visualization
+6. Deployment actions displayed in UI
+```
+
+#### Play Mode - Human vs AI (`--mode play --player1 human --player2 ai`)
+```
+Command Line: python scripts/main.py --mode play --player1 human --player2 ai
+
+Flow:
+1. Player 1 set to HUMAN, Player 2 set to AI
+2. Full pygame UI initialization with HumanUIInterface
+3. Manual setup phase progression (SPACE key required)
+4. For DEPLOY_ARMIES phase:
+   - decision_makers[player1.name] = HumanDeploymentDecisionMaker(ui_interface)
+   - decision_makers[player2.name] = AIDeploymentDecisionMaker(agent)
+   - game.execute_current_setup_phase(decision_makers=decision_makers, manual_phases=True)
+5. Mixed interaction: Human clicks for deployment, AI auto-deploys on their turns
+6. Full deployment action tracking and visualization
+```
+
+#### Play Mode - Human vs Human (`--mode play --player1 human --player2 human`)
+```
+Command Line: python scripts/main.py --mode play --player1 human --player2 human
+
+Flow:
+1. Both players set to HUMAN
+2. Full pygame UI initialization with HumanUIInterface
+3. Manual setup phase progression (SPACE key required)
+4. For DEPLOY_ARMIES phase:
+   - decision_makers[player1.name] = HumanDeploymentDecisionMaker(ui_interface)
+   - decision_makers[player2.name] = HumanDeploymentDecisionMaker(ui_interface)
+   - game.execute_current_setup_phase(decision_makers=decision_makers, manual_phases=True)
+5. Both players use UI for all deployment decisions
+6. Alternating human control with clear turn indicators
+```
+
+### Unified Deployment Execution
+
+Regardless of player types or game mode, all deployment flows through the same execution path:
+
+```python
+# Core execution - identical for all modes and player types
+class DeploymentManager:
+    def execute_deployment_sequence(self, decision_makers: Dict[str, DeploymentDecisionMaker]) -> dict:
+        # 1. Determine Attacker/Defender (dice roll)
+        self.attacker, self.defender = self.determine_attacker_and_defender()
+        
+        # 2. Defender chooses deployment zone
+        defender_decision_maker = decision_makers[self.defender.name]
+        chosen_zone = defender_decision_maker.choose_deployment_zone(available_zones)
+        
+        # 3. Declare reserves (both players simultaneously)
+        defender_reserves = defender_decision_maker.declare_reserves(self.defender)
+        attacker_reserves = attacker_decision_maker.declare_reserves(self.attacker)
+        
+        # 4. Alternating deployment (defender first)
+        self.execute_alternating_deployment(deployment_results, decision_makers)
+        
+        # 5. Determine first turn (attacker rolls)
+        first_turn_player = self.determine_first_turn()
+        
+        return deployment_results
+```
+
+### Decision Maker Interface Consistency
+
+All player types implement the same interface, ensuring API consistency:
+
+```python
+class DeploymentDecisionMaker(ABC):
+    @abstractmethod
+    def choose_deployment_zone(self, available_zones: List[dict]) -> dict:
+        """Choose deployment zone as the defender."""
+        pass
+    
+    @abstractmethod
+    def declare_reserves(self, player: Player) -> dict:
+        """Decide which units go into reserves, strategic reserves, or deploy normally."""
+        pass
+    
+    @abstractmethod
+    def choose_unit_deployment_position(self, unit: 'Unit', deployment_zone: dict, 
+                                       already_deployed: List['Unit']) -> Tuple[float, float]:
+        """Choose where to deploy a specific unit within the deployment zone."""
+        pass
+```
+
+### Validation Consistency
+
+**Critical**: All player types use identical validation functions, ensuring fair gameplay:
+
+- **Deployment Position**: `is_valid_deployment_position()` - same for AI and human
+- **Reserve Limits**: 50% unit/points limits enforced identically
+- **Zone Boundaries**: Same deployment zone validation
+- **Unit Restrictions**: Same infiltrate, deep strike, and positioning rules
+
+### Special Cases and Edge Conditions
+
+#### Human Players in Training Mode
+```python
+# If somehow --player1 human is specified with --mode train
+if player_configs.get('training_mode', False):
+    # Human players are converted to AI for training consistency
+    decision_makers[player.name] = AIDeploymentDecisionMaker(agent)
+```
+
+#### Manual Phases in Training Mode
+```python
+# Training with observation: python scripts/main.py --mode train --manual-phases
+# Allows step-by-step observation of AI training decisions
+if training_mode and manual_phases:
+    # Still pure AI vs AI, but with SPACE key progression for observation
+```
+
+#### UI Fallbacks for Human Players
+```python
+# If UI interface is not available, human players fall back to console input
+if self.ui_interface:
+    return self.ui_interface.choose_deployment_zone(available_zones)
+else:
+    # Console-based selection with text prompts
+    return self.console_choose_deployment_zone(available_zones)
+```
+
+### Performance and Learning Characteristics
+
+| **Mode** | **UI Rendering** | **AI Learning** | **Speed** | **Use Case** |
+|----------|------------------|-----------------|-----------|--------------|
+| **Training** | None | ✅ Active | Fast | AI development, automated learning |
+| **Play - AI vs AI** | Full | ⚠️ Passive | Medium | AI demonstration, debugging |
+| **Play - Human vs AI** | Full | ⚠️ Passive | Human-paced | Interactive gameplay, learning |
+| **Play - Human vs Human** | Full | None | Human-paced | Pure human gameplay |
+
+**Note**: In play mode, AI learning is "passive" - rewards are computed but policy updates are less frequent to maintain stable gameplay.
+
 ## Architecture Components
 
 ### 1. Core Deployment System (`src/warhammer40k_ai/classes/deployment.py`)
@@ -199,42 +393,42 @@ results = deployment_manager.execute_deployment_sequence(decision_makers)
 - Clear turn indication and progress display
 - Visual enhancements for better gameplay understanding
 
+### 6. **API Consistency**
+- Single source of truth for all deployment logic
+- Identical validation functions for all player types
+- Consistent behavior across training and play modes
+- Fair gameplay regardless of player type combination
+
 ## Recent Enhancements
 
 ### Deployment Action Tracking
 - Records all deployment decisions with locations
 - Displays actions in UI near appropriate player roster
-- Shows "Unit placed in Reserves" or "Be'lakor deployed at (15.3, 22.7)"
-- Clears actions when deployment phase ends
+- Clear turn indicators during alternating deployment
 
-### UI Improvements
-- Player names show roles: "Player 1 (Attacker) (AI)"
-- Turn indication: "DEPLOY ARMIES: Defender's Turn"
-- Manual deployment mode indicators
-- Enhanced visual zone boundaries and markers
+### Validation Unification
+- Removed duplicate deployment validation functions
+- All players now use `is_valid_deployment_position()`
+- Consistent rule enforcement across AI and human players
 
-### Manual Phase Enhancement
-- Individual deployment action control
-- SPACE key required between each deployment
-- Perfect for learning and demonstration
-- Works with all player type combinations
+### Mode-Independent Architecture
+- Training and play modes use identical core logic
+- AI behavior is 100% consistent between modes
+- Only UI rendering differs between modes
 
-## Integration Points
+## Troubleshooting
 
-### With Main Game Loop
-- Seven setup phases including deployment
-- Manual phase support throughout game
-- Proper state management and progression
+### Common Issues and Solutions
 
-### With UI System
-- Real-time deployment action display
-- Turn indication and progress tracking
-- Interactive deployment for human players
+**Deployment Validation Errors**: All players use the same validation functions, so if one player type can't deploy somewhere, neither can the other.
 
-### With AI Training
-- Deployment rewards integrated into learning
-- Strategic deployment decision making
-- Long-term tactical improvement
+**AI Inconsistency Between Modes**: AI uses identical neural networks and decision logic in both training and play modes.
+
+**Manual Phases Not Working**: Ensure you're using `--mode play` for interactive manual phases functionality.
+
+**Human UI Not Responding**: Check that `ui_interface` is properly passed to `HumanDeploymentDecisionMaker`.
+
+**Reserve Limits Not Enforced**: Both AI and human players enforce the same 50% unit/points limits through the decision maker interface.
 
 ## File Structure
 
