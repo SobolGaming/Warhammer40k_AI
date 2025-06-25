@@ -1188,55 +1188,146 @@ class Unit:
         distance = get_dist(x - center_x, y - center_y)
         return distance <= radius
 
-    def calculate_model_positions(self, start_x: float, start_y: float, game_map: 'Map', zoom_level: float = 1.0, seeded_positions: List[Tuple[float, float, float, float]] = []) -> List[Tuple[float, float, float, float]]:
-        positions = seeded_positions.copy()
-        max_attempts = 100  # Maximum number of attempts to place each model
+    def score_position(self, x, y, z, facing, game_map, model, placed_positions):
+        """
+        Score a candidate position for model placement.
+        Lower is better. 
+        You can enhance this to factor in more things: cover, distance to objective, edge, enemy, etc.
+        """
+        # Simple version: maximize coherency, avoid edge, avoid obstacles.
+        score = 0.0
+        battlefield_width, battlefield_height = game_map.width, game_map.height
 
-        # start_x and start_y are already in game coordinates from the UI
-        start_x_game = start_x
-        start_y_game = start_y
+        # Distance from board edge (prefer center)
+        min_x_dist = min(x, battlefield_width - x)
+        min_y_dist = min(y, battlefield_height - y)
+        edge_penalty = max(0, 6.0 - min(min_x_dist, min_y_dist)) * 10  # penalize <6" from edge
+
+        # Penalty if near obstacle/impassable (could use game_map.query_cover here)
+        cover_bonus = 0
+        # TODO: add more logic for proximity to cover/terrain if you want
+
+        # Coherency bonus (number of coherent neighbors)
+        coherent_neighbors = 0
+        for pos in placed_positions:
+            other_x, other_y, other_z, other_facing = pos
+            # Assume unit has .coherency_distance
+            dist = get_dist(x - other_x, y - other_y, z - other_z)
+            if dist <= self.coherency_distance:
+                coherent_neighbors += 1
+        # Encourage more neighbors
+        coherency_bonus = -coherent_neighbors * 20
+
+        return edge_penalty + cover_bonus + coherency_bonus
+
+    def calculate_strategic_facing(self, x: float, y: float, game_map: 'Map') -> float:
+        """Calculate strategic facing direction towards enemies or objectives"""
+        
+        # Get our army to determine enemies
+        army = self.get_parent_army()
+        if not army:
+            return 0.0  # Default facing if no army context
+        
+        best_target = None
+        min_distance = float('inf')
+        
+        # Priority 1: Face nearest visible enemy unit
+        for unit in game_map.units:
+            if unit != self and unit.get_parent_army() != army and unit.is_alive():
+                enemy_pos = unit.get_position()
+                if enemy_pos:
+                    distance = get_dist(x - enemy_pos[0], y - enemy_pos[1])
+                    if distance < min_distance:
+                        min_distance = distance
+                        best_target = enemy_pos
+        
+        # Priority 2: If no enemies, face towards objectives
+        if not best_target and hasattr(game_map, 'objectives'):
+            for objective in game_map.objectives:
+                obj_pos = (objective.location.x, objective.location.y)
+                distance = get_dist(x - obj_pos[0], y - obj_pos[1])
+                if distance < min_distance:
+                    min_distance = distance
+                    best_target = obj_pos
+        
+        # Priority 3: Face towards center of battlefield
+        if not best_target:
+            center_x = game_map.width / 2
+            center_y = game_map.height / 2
+            best_target = (center_x, center_y)
+        
+        # Calculate angle to target
+        dx = best_target[0] - x
+        dy = best_target[1] - y
+        return get_angle(dy, dx)
+
+    def calculate_model_positions(self, start_x: float, start_y: float, game_map: 'Map', zoom_level: float = 1.0, seeded_positions: list = []) -> list:
+        """
+        Place all models in a multi-model unit at strategic, legal positions near start_x/start_y.
+        Places first model at anchor, others in hex/spiral pattern, maximizing coherency and minimizing edge/obstacle risk.
+        Returns: [(x, y, z, facing), ...] for each model.
+        """
+        positions = seeded_positions.copy()
 
         for i, model in enumerate(self.models):
             placed = False
-            attempts = 0
-            
-            while not placed and attempts < max_attempts:
-                if not positions:  # First model
-                    x, y = start_x_game, start_y_game
-                    z = game_map.get_height_at_point(x, y)
-                    facing = 0.0
-                    # For the first model, check if the position is valid
-                    if self._is_valid_position(x, y, z, facing, game_map, positions, model):
-                        positions.append((x, y, z, facing))
-                        placed = True
-                    else:
-                        # Try to find a strategic position within coherency distance
-                        valid_positions = self._find_strategic_position(model, [(x, y, z, facing)], game_map)
-                        if valid_positions:
-                            positions.append(valid_positions[0])
-                            placed = True
-                else:
-                    # Try to find a strategic position within coherency distance
-                    valid_positions = self._find_strategic_position(model, positions, game_map)
-                    if valid_positions:
-                        positions.append(valid_positions[0])
-                        placed = True
 
+            if not positions:
+                # First model is the anchor with strategic facing
+                x, y = start_x, start_y
+                z = game_map.get_height_at_point(x, y)
+                strategic_facing = self.calculate_strategic_facing(x, y, game_map)
+                if self._is_valid_position(x, y, z, strategic_facing, game_map, positions, model):
+                    positions.append((x, y, z, strategic_facing))
+                    placed = True
+                else:
+                    # Try to find any legal anchor
+                    for try_radius in np.arange(0.5, 4.0, 0.5):
+                        for angle in np.linspace(0, 2 * math.pi, 8, endpoint=False):
+                            xx = x + try_radius * math.cos(angle)
+                            yy = y + try_radius * math.sin(angle)
+                            zz = game_map.get_height_at_point(xx, yy)
+                            strategic_facing = self.calculate_strategic_facing(xx, yy, game_map)
+                            if self._is_valid_position(xx, yy, zz, strategic_facing, game_map, positions, model):
+                                positions.append((xx, yy, zz, strategic_facing))
+                                placed = True
+                                break
+                        if placed: break
                 if not placed:
-                    attempts += 1
-                # Check collision with all models in the unit, including the current one
-                #for x, y, z, facing in valid_positions:
-                #    if not self._collides_with_unit_models(x, y, z, facing, positions):
-                #        if self._is_coherent_within_unit(x, y, z, facing, positions):
-                #            positions.append((x, y, z, facing))
-                #            placed = True
-                #            break
-                attempts += 1
+                    logger.error("Unable to place anchor model at start location or nearby.")
+                    return []
+                continue
+
+            # For subsequent models: try spiral/hex rings out from anchor
+            anchor_x, anchor_y, _, _ = positions[0]
+            best_score = float('inf')
+            best_pos = None
+            spiral_rings = 5  # how far to try
+            num_angles = max(12, len(positions) * 2)
+            for ring in range(1, spiral_rings + 1):
+                radius = model.model_base.get_radius() + self.coherency_distance * ring
+                for angle_idx in range(num_angles):
+                    angle = 2 * math.pi * angle_idx / num_angles
+                    candidate_x = anchor_x + radius * math.cos(angle)
+                    candidate_y = anchor_y + radius * math.sin(angle)
+                    candidate_z = game_map.get_height_at_point(candidate_x, candidate_y)
+                    candidate_facing = self.calculate_strategic_facing(candidate_x, candidate_y, game_map)  # Strategic facing
+
+                    if not self._is_valid_position(candidate_x, candidate_y, candidate_z, candidate_facing, game_map, positions, model):
+                        continue
+
+                    score = self.score_position(candidate_x, candidate_y, candidate_z, candidate_facing, game_map, model, positions)
+                    if score < best_score:
+                        best_score = score
+                        best_pos = (candidate_x, candidate_y, candidate_z, candidate_facing)
+            if best_pos:
+                positions.append(best_pos)
+                placed = True
 
             if not placed:
-                return []  # Unable to place all models
+                logger.error(f"Unable to place model #{i} ({model.name}).")
+                return []
 
-        # We return game coordinates, not screen coordinates
         return positions
 
     def _create_potential_base(self, x: float, y: float, z: float, facing: float, model: Model = None):
@@ -1287,27 +1378,6 @@ class Unit:
                 if found_neighbors >= current_neighbors_needed:
                     return True
         return False
-
-    def _find_strategic_position(self, model: Model, placed_positions: List[Tuple[float, float, float, float]], game_map: 'Map') -> List[Tuple[float, float, float, float]]:
-        last_x, last_y, last_z, facing = placed_positions[-1]
-        directions = [
-            (0, 1), (1, 1), (1, 0), (1, -1),
-            (0, -1), (-1, -1), (-1, 0), (-1, 1)
-        ]
-
-        valid_positions = []
-        for dx, dy in directions:
-            radius_at_facing = model.model_base.get_radius(angle=get_angle(dy, dx))
-            logger.debug(f"{model._id} {model.name} X: {last_x}, Y: {last_y}, Facing: {round(math.degrees(facing), 2)} :: {radius_at_facing} :: {dx} :: {dy}")
-            for distance in np.arange(radius_at_facing + 0.1, radius_at_facing + self.coherency_distance, 0.1):
-                x = last_x + distance * dx
-                y = last_y + distance * dy
-                z = game_map.get_height_at_point(x, y)
-                
-                if self._is_valid_position(x, y, z, facing, game_map, placed_positions, model):
-                    valid_positions.append((x, y, z, facing))
-                    #return valid_positions
-        return valid_positions
 
     def _is_valid_position(self, x: float, y: float, z: float, facing: float, game_map: 'Map', placed_positions: List[Tuple[float, float, float, float]], model: Model = None) -> bool:
         if model is None:

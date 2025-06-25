@@ -2759,8 +2759,8 @@ def draw_prominent_unit_icon(screen: pygame.Surface, center_x: int, center_y: in
     pygame.draw.circle(bg_surface, (0, 0, 0, 100), (bg_radius, bg_radius), bg_radius)
     screen.blit(bg_surface, (center_x - bg_radius, center_y - bg_radius))
     
-    # Draw the unit type icon with color tinting
-    draw_tinted_unit_icon(screen, center_x, center_y, icon_size, unit, icon_tint)
+    # Draw the unit type icon with color tinting and rotation
+    draw_rotated_tinted_unit_icon(screen, center_x, center_y, icon_size, unit, icon_tint, base.facing)
     
     # For multi-model units, draw individual model identifier
     if len(unit.models) > 1:
@@ -2770,11 +2770,11 @@ def draw_prominent_unit_icon(screen: pygame.Surface, center_x: int, center_y: in
     if not model.is_max_health:
         draw_prominent_wound_indicator(screen, center_x, center_y, icon_size, model)
 
-def draw_tinted_unit_icon(screen: pygame.Surface, center_x: int, center_y: int, size: int, unit: Unit, tint_color: Tuple[int, int, int]) -> None:
-    """Draw unit icon with color tinting for differentiation"""
-    # Create a surface for the icon with alpha
-    icon_surface = pygame.Surface((size * 2, size * 2), pygame.SRCALPHA)
-    icon_center = size  # Center of the icon surface
+def draw_rotated_tinted_unit_icon(screen: pygame.Surface, center_x: int, center_y: int, size: int, unit: Unit, tint_color: Tuple[int, int, int], angle: float) -> None:
+    """Draw unit icon with color tinting and rotation based on facing direction"""
+    # Create a surface for the icon with alpha - make it larger for rotation
+    icon_surface = pygame.Surface((size * 3, size * 3), pygame.SRCALPHA)
+    icon_center = size * 3 // 2  # Center of the larger icon surface
     
     # Draw the base icon on the surface - prioritize more distinctive unit types
     # Priority order: Vehicle > Monster > Aircraft > Beast > Psyker > Battleline > Character > Generic
@@ -2798,12 +2798,25 @@ def draw_tinted_unit_icon(screen: pygame.Surface, center_x: int, center_y: int, 
     # Apply color tint if it's not the default white
     if tint_color != (255, 255, 255):
         # Create tint overlay
-        tint_surface = pygame.Surface((size * 2, size * 2), pygame.SRCALPHA)
+        tint_surface = pygame.Surface((size * 3, size * 3), pygame.SRCALPHA)
         tint_surface.fill((*tint_color, 120))  # Semi-transparent tint
         icon_surface.blit(tint_surface, (0, 0), special_flags=pygame.BLEND_MULT)
     
-    # Blit the tinted icon to the screen
-    screen.blit(icon_surface, (center_x - size, center_y - size))
+    # Rotate the icon surface based on the model's facing direction
+    angle_degrees = math.degrees(angle)
+    rotated_surface = pygame.transform.rotate(icon_surface, -angle_degrees)  # Negative for correct rotation
+    
+    # Calculate the position to blit the rotated surface (centered)
+    blit_x = center_x - rotated_surface.get_width() // 2
+    blit_y = center_y - rotated_surface.get_height() // 2
+    
+    # Blit the rotated icon to the screen
+    screen.blit(rotated_surface, (blit_x, blit_y))
+
+def draw_tinted_unit_icon(screen: pygame.Surface, center_x: int, center_y: int, size: int, unit: Unit, tint_color: Tuple[int, int, int]) -> None:
+    """Draw unit icon with color tinting (backward compatibility function for roster)"""
+    # Just call the rotated version with 0 rotation for backward compatibility
+    draw_rotated_tinted_unit_icon(screen, center_x, center_y, size, unit, tint_color, 0.0)
 
 def draw_model_identifier(screen: pygame.Surface, center_x: int, center_y: int, icon_size: int, model_index: int, unit: Unit) -> None:
     """Draw individual model identifier for multi-model units"""
