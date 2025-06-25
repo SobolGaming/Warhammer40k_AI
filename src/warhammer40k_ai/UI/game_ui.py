@@ -2,7 +2,7 @@ import pygame
 import textwrap
 import math
 import random
-from typing import Optional, Tuple, Dict, List
+from typing import Optional, Tuple, Dict, List, Protocol
 from warhammer40k_ai.classes.unit import Unit
 from warhammer40k_ai.classes.model import Model
 from warhammer40k_ai.utility.model_base import Base, BaseType
@@ -363,6 +363,12 @@ class RosterPane(pygame.sprite.Sprite):
             health_text += " (Not Deployed)"
             health_color = TEXT_SECONDARY
         
+        # Add movement status indicator
+        if (hasattr(unit, 'round_state') and hasattr(unit.round_state, 'moved_this_round') and 
+            unit.round_state.moved_this_round):
+            health_text += " • Moved"
+            health_color = (0, 150, 200)  # Blue to indicate moved
+        
         health_surface = self.font_small.render(health_text, True, health_color)
         surface.blit(health_surface, (x_left + icon_size + 8, y_offset))
         
@@ -666,23 +672,70 @@ class InfoPane(pygame.sprite.Sprite):
             
             y_offset += 30
             
-            # Show controls during deployment phase
-            if in_deployment_phase and deployment_zones_loaded:
-                deployment_player = game.get_current_deployment_player()
-                if deployment_player.type.name == 'HUMAN':
-                    controls_text = "⌨️ ENTER: Auto-deploy remaining | ESC: Cancel selection"
-                else:
-                    controls_text = "⏳ Waiting for AI deployment to complete..."
-                controls_surface = self.font_tiny.render(controls_text, True, TEXT_SECONDARY)
-                controls_rect = controls_surface.get_rect(center=(x_center, y_offset))
-                surface.blit(controls_surface, controls_rect)
-            elif in_deployment_phase and not deployment_zones_loaded:
-                controls_text = "⌨️ SPACE: Begin deployment sequence"
-                controls_surface = self.font_tiny.render(controls_text, True, TEXT_SECONDARY)
-                controls_rect = controls_surface.get_rect(center=(x_center, y_offset))
-                surface.blit(controls_surface, controls_rect)
+            # Show phase-specific controls and allowed actions
+            if game_view and hasattr(game_view, 'phase_manager'):
+                allowed_actions = game_view.phase_manager.get_current_allowed_actions()
+                self._draw_allowed_actions(surface, allowed_actions, x_center, y_offset)
+            else:
+                # Fallback to old control display
+                if in_deployment_phase and deployment_zones_loaded:
+                    deployment_player = game.get_current_deployment_player()
+                    if deployment_player.type.name == 'HUMAN':
+                        controls_text = "⌨️ ENTER: Auto-deploy remaining | ESC: Cancel selection"
+                    else:
+                        controls_text = "⏳ Waiting for AI deployment to complete..."
+                    controls_surface = self.font_tiny.render(controls_text, True, TEXT_SECONDARY)
+                    controls_rect = controls_surface.get_rect(center=(x_center, y_offset))
+                    surface.blit(controls_surface, controls_rect)
+                elif in_deployment_phase and not deployment_zones_loaded:
+                    controls_text = "⌨️ SPACE: Begin deployment sequence"
+                    controls_surface = self.font_tiny.render(controls_text, True, TEXT_SECONDARY)
+                    controls_rect = controls_surface.get_rect(center=(x_center, y_offset))
+                    surface.blit(controls_surface, controls_rect)
         
         # No reserves button anymore - reserves selection happens in roster pane
+    
+    def _draw_allowed_actions(self, surface: pygame.Surface, allowed_actions: List[str], x_center: int, y_offset: int) -> None:
+        """Draw phase-specific allowed actions"""
+        if not allowed_actions:
+            return
+        
+        # Action descriptions for user-friendly display (no emojis)
+        action_descriptions = {
+            "advance_setup_phase": "SPACE: Continue setup",
+            "view_unit_details": "Right-click: Unit details",
+            "select_unit": "Click: Select unit",
+            "deploy_unit": "Click battlefield: Deploy",
+            "choose_reserves": "Click unit: Deployment options",
+            "complete_deployment": "ENTER: Auto-deploy remaining",
+            "move_unit": "Click: Move unit",
+            "advance_unit": "Double movement",
+            "shoot_weapon": "Select weapon/target",
+            "target_unit": "Click: Target enemy",
+            "declare_charge": "Declare charge",
+            "charge_move": "Move into combat",
+            "pile_in": "Move closer",
+            "fight": "Select target",
+            "consolidate": "Move after combat"
+        }
+        
+        # Show only 1 most relevant action to save space
+        priority_actions = ["advance_setup_phase", "deploy_unit", "move_unit", "shoot_weapon", "fight"]
+        displayed_actions = []
+        
+        # First, add priority actions that are available
+        for action in priority_actions:
+            if action in allowed_actions and len(displayed_actions) < 1:
+                displayed_actions.append(action)
+                break  # Only show one action
+        
+        # Draw action descriptions
+        for i, action in enumerate(displayed_actions):
+            if action in action_descriptions:
+                action_text = action_descriptions[action]
+                action_surface = self.font_tiny.render(action_text, True, TEXT_SECONDARY)
+                action_rect = action_surface.get_rect(center=(x_center, y_offset + i * 12))
+                surface.blit(action_surface, action_rect)
 
 
 class UnitDetailPanel(pygame.sprite.Sprite):
@@ -980,6 +1033,222 @@ class UnitDetailPanel(pygame.sprite.Sprite):
             lines.append(current_line)
         
         return lines
+
+
+class MovementChoiceDialog:
+    """Dialog for choosing movement option for a unit during movement phase"""
+    def __init__(self, screen_width: int, screen_height: int):
+        self.screen_width = screen_width
+        self.screen_height = screen_height
+        self.width = 520
+        self.height = 220
+        self.visible = False
+        self.unit = None
+        self.callback = None
+        self.game_map = None
+        self.available_actions = []
+        
+        # Calculate position (center of screen)
+        self.x = (screen_width - self.width) // 2
+        self.y = (screen_height - self.height) // 2
+        
+        # Fonts
+        try:
+            self.font_medium = pygame.font.SysFont('Arial', FONT_MEDIUM, bold=True)
+            self.font_small = pygame.font.SysFont('Arial', FONT_SMALL, bold=False)
+        except:
+            self.font_medium = pygame.font.Font(None, FONT_MEDIUM)
+            self.font_small = pygame.font.Font(None, FONT_SMALL)
+        
+        # Button rectangles
+        button_width = 95
+        button_height = 32
+        button_spacing = 12
+        
+        start_x = self.x + (self.width - (4 * button_width + 3 * button_spacing)) // 2
+        button_y = self.y + self.height - 120
+        
+        self.move_button = pygame.Rect(start_x, button_y, button_width, button_height)
+        self.advance_button = pygame.Rect(start_x + button_width + button_spacing, button_y, button_width, button_height)
+        self.fall_back_button = pygame.Rect(start_x + 2 * (button_width + button_spacing), button_y, button_width, button_height)
+        self.stationary_button = pygame.Rect(start_x + 3 * (button_width + button_spacing), button_y, button_width, button_height)
+        
+        self.hovered_button = None
+    
+    def show(self, unit, callback, game_map=None):
+        """Show the dialog for the given unit"""
+        self.unit = unit
+        self.callback = callback
+        self.game_map = game_map
+        self.visible = True
+        
+        # Get available actions based on engagement state
+        if game_map:
+            engagement_state = unit.get_engagement_state(game_map)
+            self.available_actions = unit.get_available_move_actions(engagement_state.value)
+        else:
+            # Fallback - assume all actions available
+            from warhammer40k_ai.classes.unit import MovementAction
+            self.available_actions = [
+                MovementAction.REMAIN_STATIONARY.value,
+                MovementAction.MOVE.value,
+                MovementAction.ADVANCE.value,
+                MovementAction.FALL_BACK.value
+            ]
+    
+    def hide(self):
+        """Hide the dialog"""
+        self.visible = False
+        self.unit = None
+        self.callback = None
+        self.game_map = None
+        self.available_actions = []
+    
+    def is_action_available(self, action_name: str) -> bool:
+        """Check if a movement action is available for the current unit"""
+        from warhammer40k_ai.classes.unit import MovementAction
+        
+        action_map = {
+            'move': MovementAction.MOVE.value,
+            'advance': MovementAction.ADVANCE.value,
+            'fall_back': MovementAction.FALL_BACK.value,
+            'stationary': MovementAction.REMAIN_STATIONARY.value
+        }
+        
+        if action_name not in action_map:
+            return False
+            
+        return action_map[action_name] in self.available_actions
+    
+    def handle_event(self, event):
+        """Handle pygame events"""
+        if not self.visible:
+            return False
+        
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            return self.handle_click(event.pos)
+        elif event.type == pygame.MOUSEMOTION:
+            self.update_hover(event.pos)
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                self.hide()
+                return True
+        
+        return True  # Consume all events when visible
+    
+    def handle_click(self, mouse_pos):
+        """Handle mouse clicks"""
+        if self.move_button.collidepoint(mouse_pos) and self.is_action_available('move'):
+            if self.callback:
+                self.callback('move')
+            self.hide()
+            return True
+        elif self.advance_button.collidepoint(mouse_pos) and self.is_action_available('advance'):
+            if self.callback:
+                self.callback('advance')
+            self.hide()
+            return True
+        elif self.fall_back_button.collidepoint(mouse_pos) and self.is_action_available('fall_back'):
+            if self.callback:
+                self.callback('fall_back')
+            self.hide()
+            return True
+        elif self.stationary_button.collidepoint(mouse_pos) and self.is_action_available('stationary'):
+            if self.callback:
+                self.callback('stationary')
+            self.hide()
+            return True
+        
+        # Click outside dialog - close it
+        dialog_rect = pygame.Rect(self.x, self.y, self.width, self.height)
+        if not dialog_rect.collidepoint(mouse_pos):
+            self.hide()
+            return True
+        
+        return True
+    
+    def update_hover(self, mouse_pos):
+        """Update hover state"""
+        if self.move_button.collidepoint(mouse_pos):
+            self.hovered_button = 'move'
+        elif self.advance_button.collidepoint(mouse_pos):
+            self.hovered_button = 'advance'
+        elif self.fall_back_button.collidepoint(mouse_pos):
+            self.hovered_button = 'fall_back'
+        elif self.stationary_button.collidepoint(mouse_pos):
+            self.hovered_button = 'stationary'
+        else:
+            self.hovered_button = None
+    
+    def draw(self, screen):
+        """Draw the dialog"""
+        if not self.visible or not self.unit:
+            return
+        
+        # Draw semi-transparent overlay
+        overlay = pygame.Surface((self.screen_width, self.screen_height))
+        overlay.set_alpha(128)
+        overlay.fill((0, 0, 0))
+        screen.blit(overlay, (0, 0))
+        
+        # Draw dialog background
+        dialog_rect = pygame.Rect(self.x, self.y, self.width, self.height)
+        pygame.draw.rect(screen, PANEL_BG, dialog_rect)
+        pygame.draw.rect(screen, PANEL_BORDER, dialog_rect, 3)
+        
+        # Draw title
+        title_text = self.font_medium.render(f"Move {self.unit.name}", True, TEXT_PRIMARY)
+        title_rect = title_text.get_rect(center=(self.x + self.width // 2, self.y + 30))
+        screen.blit(title_text, title_rect)
+        
+        # Draw movement info
+        movement_info = f"Movement: {self.unit.models[0].movement}\""
+        info_text = self.font_small.render(movement_info, True, TEXT_SECONDARY)
+        info_rect = info_text.get_rect(center=(self.x + self.width // 2, self.y + 55))
+        screen.blit(info_text, info_rect)
+        
+        # Draw buttons - only enabled if action is available
+        self.draw_button(screen, self.move_button, "Move", 'move', BUTTON_BG, enabled=self.is_action_available('move'))
+        self.draw_button(screen, self.advance_button, "Advance", 'advance', BUTTON_BG, enabled=self.is_action_available('advance'))
+        self.draw_button(screen, self.fall_back_button, "Fall Back", 'fall_back', BUTTON_BG, enabled=self.is_action_available('fall_back'))
+        self.draw_button(screen, self.stationary_button, "Stationary", 'stationary', BUTTON_BG, enabled=self.is_action_available('stationary'))
+        
+        # Draw help text based on available actions
+        help_parts = []
+        if self.is_action_available('move'):
+            help_parts.append("Move: Normal")
+        if self.is_action_available('advance'):
+            help_parts.append("Advance: +D6\" no shoot")
+        if self.is_action_available('fall_back'):
+            help_parts.append("Fall Back: Exit combat")
+        
+        if help_parts:
+            help_text = " | ".join(help_parts)
+        else:
+            help_text = "Only Stationary available"
+            
+        help_surface = self.font_small.render(help_text, True, TEXT_SECONDARY)
+        help_rect = help_surface.get_rect(center=(self.x + self.width // 2, self.y + self.height - 30))
+        screen.blit(help_surface, help_rect)
+    
+    def draw_button(self, screen, rect, text, button_id, base_color, enabled=True):
+        """Draw a button with hover effects"""
+        if not enabled:
+            color = BUTTON_DISABLED
+            text_color = TEXT_DISABLED
+        elif self.hovered_button == button_id:
+            color = BUTTON_HOVER
+            text_color = TEXT_PRIMARY
+        else:
+            color = base_color
+            text_color = TEXT_PRIMARY
+        
+        pygame.draw.rect(screen, color, rect)
+        pygame.draw.rect(screen, PANEL_BORDER, rect, 2)
+        
+        button_text = self.font_small.render(text, True, text_color)
+        text_rect = button_text.get_rect(center=rect.center)
+        screen.blit(button_text, text_rect)
 
 
 class DeploymentChoiceDialog:
@@ -1723,7 +1992,6 @@ class HumanUIInterface:
     
     def declare_reserves(self, player) -> dict:
         """Human declares reserves via UI dialog."""
-        import pygame
         
         # Set up the reserves selection dialog
         reserves_decisions = {}
@@ -1759,7 +2027,6 @@ class HumanUIInterface:
     def choose_unit_deployment_position(self, unit: 'Unit', deployment_zone: dict, 
                                        already_deployed: List['Unit']) -> Tuple[float, float]:
         """Human chooses unit position via UI clicking."""
-        import pygame
         
         # Set up for position selection
         self.current_unit_for_placement = unit
@@ -1923,6 +2190,9 @@ class GameView:
         # UI interface for human player interaction
         self.ui_interface = ui_interface
         
+        # Phase-based event handling system
+        self.phase_manager = PhaseManager(self)
+        
         # Mouse panning support
         self.panning = False
         self.pan_start_pos = (0, 0)
@@ -1960,6 +2230,8 @@ class GameView:
             player1_units = self.player1.get_army().units if self.player1.get_army() else []
             player2_units = self.player2.get_army().units if self.player2.get_army() else []
             
+            print(f"🔄 Refreshing roster panes: Player1 has {len(player1_units)} units, Player2 has {len(player2_units)} units")
+            
             # Update roster units
             self.left_roster_pane.roster = player1_units
             self.right_roster_pane.roster = player2_units
@@ -1980,6 +2252,8 @@ class GameView:
             # Recreate buttons with new roster data
             self.left_roster_pane.create_buttons()
             self.right_roster_pane.create_buttons()
+            
+            print(f"✅ Roster panes refreshed successfully")
     
     def update_roster_pane_titles(self):
         """Update roster pane titles to show Attacker/Defender after roles are determined."""
@@ -1993,21 +2267,29 @@ class GameView:
                 self.right_roster_pane.player_name = f"{self.player2.name} (Attacker)"
 
     def handle_pygame_event(self, event):
-        """Handle pygame events, including reserves UI integration."""
-        # Let UI interface handle reserves-related events first
-        if self.ui_interface:
-            # Check deployment choice dialog first (highest priority)
-            if hasattr(self.ui_interface, 'deployment_choice_dialog') and self.ui_interface.deployment_choice_dialog.visible:
-                if self.ui_interface.deployment_choice_dialog.handle_event(event):
-                    return True
-            
-            # Then check other UI components
-            if self.ui_interface.handle_event(event):
-                return True  # Event was handled by reserves UI
+        """Handle pygame events using phase-based routing."""
+        # PRIORITY 1: Let phase manager handle phase-specific events first
+        if self.phase_manager.handle_event(event):
+            return True
         
-        # Handle regular game events
+        # PRIORITY 2: Handle universal UI events that apply to all phases
         if event.type == pygame.MOUSEBUTTONDOWN:
-            self.on_mouse_press(event.pos[0], event.pos[1], event.button)
+            # Check for unit detail panel clicks (highest priority)
+            if self.detailed_unit and event.button == 1:  # Left click
+                if hasattr(self.unit_detail_panel, 'rect') and self.unit_detail_panel.rect:
+                    if self.unit_detail_panel.rect.collidepoint(event.pos):
+                        return True  # Consume the click on detail panel
+                    else:
+                        self.close_unit_details()
+                        return True
+            # Check for middle mouse button panning
+            elif event.button == 2:  # Middle mouse button - start panning
+                x, y = event.pos
+                if ROSTER_PANE_WIDTH < x < BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH:
+                    self.panning = True
+                    self.pan_start_pos = (x, y)
+                    self.pan_start_offset = (self.offset_x, self.offset_y)
+                    return True
         elif event.type == pygame.MOUSEBUTTONUP:
             self.on_mouse_release(event.pos[0], event.pos[1], event.button)
         elif event.type == pygame.MOUSEMOTION:
@@ -2016,117 +2298,36 @@ class GameView:
             mouse_x, mouse_y = pygame.mouse.get_pos()
             self.on_mouse_scroll(mouse_x, mouse_y, event.y)
         elif event.type == pygame.KEYDOWN:
-            self.on_key_press(event.key)
+            # Handle universal keyboard shortcuts
+            if event.key == pygame.K_ESCAPE:
+                # Close unit details panel if open
+                if self.detailed_unit:
+                    self.close_unit_details()
+                    return True
+            # Handle unit detail panel scrolling
+            elif self.detailed_unit:
+                if event.key == pygame.K_UP or event.key == pygame.K_w:
+                    self.unit_detail_panel.scroll(-30)  # Scroll up
+                    return True
+                elif event.key == pygame.K_DOWN or event.key == pygame.K_s:
+                    self.unit_detail_panel.scroll(30)   # Scroll down
+                    return True
+                elif event.key == pygame.K_PAGEUP:
+                    self.unit_detail_panel.scroll(-150)  # Page up
+                    return True
+                elif event.key == pygame.K_PAGEDOWN:
+                    self.unit_detail_panel.scroll(150)   # Page down
+                    return True
+                elif event.key == pygame.K_HOME:
+                    self.unit_detail_panel.scroll_offset = 0  # Go to top
+                    return True
+                elif event.key == pygame.K_END:
+                    self.unit_detail_panel.scroll_offset = self.unit_detail_panel.max_scroll  # Go to bottom
+                    return True
         
         return False
 
-    def on_mouse_press(self, x, y, button):
-        # PRIORITY 1: Check if click is on unit detail panel first (highest priority)
-        if self.detailed_unit and button == 1:  # Left click
-            # Use the rect that was set during drawing (if it exists)
-            if hasattr(self.unit_detail_panel, 'rect') and self.unit_detail_panel.rect:
-                # Check if click is on the unit detail panel using the actual rect
-                if self.unit_detail_panel.rect.collidepoint(x, y):
-                    return  # CRITICAL: Exit early to prevent other actions
-                else:
-                    self.close_unit_details()
-                    return  # Exit early since we handled the click
-        
-        if button == 1:  # Left mouse button
-            # Check if click is in info pane (reserves button)
-            if self.info_pane.rect.collidepoint(x, y):
-                if self.info_pane.handle_click(x, y, self):
-                    return  # Click was handled by info pane
-            # Check if click is in player1's roster pane
-            elif self.left_roster_pane.rect.collidepoint(x, y):
-                self.left_roster_pane.on_mouse_press(x, y, button)
-                self.selected_unit = self.left_roster_pane.selected_unit
-            # Check if click is in player2's roster pane
-            elif self.right_roster_pane.rect.collidepoint(x, y):
-                self.right_roster_pane.on_mouse_press(x, y, button)
-                self.selected_unit = self.right_roster_pane.selected_unit
-            # Check if click is on the battlefield and a unit is selected
-            elif self.selected_unit and not self.selected_unit.deployed and ROSTER_PANE_WIDTH < x < BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH:
-                # Check if deployment zones are loaded (deployment has officially started)
-                if not hasattr(self.game, 'deployment_zones') or not self.game.deployment_zones:
-                    print(f"📋 Press SPACE to begin deployment sequence first")
-                    return
-                
-                # Convert screen coordinates to game coordinates (accounting for zoom and pan)
-                battlefield_x = (x - ROSTER_PANE_WIDTH - self.offset_x) / (TILE_SIZE * self.zoom_level)
-                battlefield_y = (y - self.offset_y) / (TILE_SIZE * self.zoom_level)
-                
-                original_unit_position = self.selected_unit.get_position() if self.selected_unit.position else None
-                original_model_positions = [model.get_location() for model in self.selected_unit.models] if self.selected_unit else []
-                
-                model_positions = self.selected_unit.calculate_model_positions(battlefield_x, battlefield_y, self.game_map, self.zoom_level)
-                
-                if model_positions:
-                    for model, position in zip(self.selected_unit.models, model_positions):
-                        model_x, model_y, model_z, model_facing = position
-                        model.set_location(model_x, model_y, model_z, model_facing)
-                    
-                    unit_x = sum(pos[0] for pos in model_positions) / len(model_positions)
-                    unit_y = sum(pos[1] for pos in model_positions) / len(model_positions)
-                    
-                    # Get the current deployment player to check deployment zone restrictions
-                    current_deployment_player = self.game.get_current_deployment_player()
-                    player_name = current_deployment_player.name if current_deployment_player else None
-                    
-                    # Check if this is a valid deployment position during deployment phase
-                    if self.game.is_deployment_phase() and player_name:
-                        if not self.game.is_valid_deployment_position(self.selected_unit, unit_x, unit_y, player_name):
-                            # Invalid position - show error message and reset
-                            if self.selected_unit.has_infiltrate():
-                                print(f"❌ Invalid deployment position for {self.selected_unit.name} (Infiltrate): Cannot deploy within 9\" of enemy deployment zone or enemy models")
-                            else:
-                                print(f"❌ Invalid deployment position for {self.selected_unit.name}: Must deploy within your deployment zone")
-                            self.reset_unit_position(self.selected_unit, original_unit_position, original_model_positions)
-                            return
-                    
-                    self.selected_unit.set_position(unit_x, unit_y)
-                    
-                    if self.game_map.place_unit(self.selected_unit):
-                        if self.selected_unit.has_infiltrate():
-                            print(f"Unit {self.selected_unit.name} (Infiltrate) placed at ({unit_x:.1f}, {unit_y:.1f})")
-                        else:
-                            print(f"Unit {self.selected_unit.name} placed with centroid at ({unit_x:.1f}, {unit_y:.1f})")
-                        self.selected_unit.deployed = True
-                        
-                        # Record deployment action
-                        current_deployment_player = self.game.get_current_deployment_player()
-                        if current_deployment_player and self.selected_unit.position:
-                            self.game.record_deployment_action(current_deployment_player, self.selected_unit, 'deployed', self.selected_unit.position)
-                        
-                        # Advance to next player's deployment turn
-                        self.game.advance_deployment_turn()
-                    else:
-                        print("Failed to place unit")
-                        self.reset_unit_position(self.selected_unit, original_unit_position, original_model_positions)
-                else:
-                    print("Unable to place all models in the unit")
-                    self.reset_unit_position(self.selected_unit, original_unit_position, original_model_positions)
-                
-                self.selected_unit = None
-                self.left_roster_pane.selected_unit = None
-                self.right_roster_pane.selected_unit = None
-            else:
-                # Click outside of everything - close unit details if open
-                if self.detailed_unit:
-                    self.close_unit_details()
-        
-        elif button == 2:  # Middle mouse button - start panning
-            # Only allow panning if mouse is over the battlefield
-            if ROSTER_PANE_WIDTH < x < BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH:
-                self.panning = True
-                self.pan_start_pos = (x, y)
-                self.pan_start_offset = (self.offset_x, self.offset_y)
-        
-        elif button == 3:  # Right mouse button - show unit details
-            hovered_unit, _ = self.get_hovered_unit(x, y)
-            if hovered_unit:
-                self.detailed_unit = hovered_unit
-                self.detail_panel_pos = (x, y)
+    # Note: on_mouse_press is now handled by phase-specific handlers in PhaseManager
 
     def on_mouse_release(self, x, y, button):
         """Handle mouse button release events"""
@@ -2291,6 +2492,14 @@ class GameView:
         for unit in self.game_map.units:
             draw_units(battlefield_surface, unit, self.zoom_level, self.offset_x, self.offset_y, pygame.mouse.get_pos(), self.player1, self.player2)
         
+        # Draw movement range indicator if a unit is selected for movement
+        if (hasattr(self, 'selected_unit_for_movement') and 
+            self.selected_unit_for_movement and 
+            hasattr(self, 'movement_action') and 
+            self.movement_action):
+            draw_movement_range(battlefield_surface, self.selected_unit_for_movement, 
+                              self.movement_action, self.zoom_level, self.offset_x, self.offset_y)
+        
         self.screen.blit(battlefield_surface, (ROSTER_PANE_WIDTH, 0))
 
         # Draw enhanced InfoPane
@@ -2310,33 +2519,15 @@ class GameView:
         # Draw UI interface components (reserves dialogs, etc.)
         if self.ui_interface:
             self.ui_interface.update(self.screen)
+        
+        # Draw movement choice dialog if visible
+        if hasattr(self, 'movement_choice_dialog') and self.movement_choice_dialog.visible:
+            self.movement_choice_dialog.draw(self.screen)
 
         pygame.display.update()
 
-    def on_key_press(self, key):
-        """Handle keyboard events"""
-        if key == pygame.K_ESCAPE:
-            # Close unit details panel if open
-            if self.detailed_unit:
-                self.close_unit_details()
-        elif key == pygame.K_RETURN or key == pygame.K_KP_ENTER:
-            # ENTER key: Force complete deployment phase
-            # Deploy all remaining undeployed units automatically
-            self.force_complete_deployment()
-        elif self.detailed_unit:
-            # Keyboard scrolling in unit detail panel
-            if key == pygame.K_UP or key == pygame.K_w:
-                self.unit_detail_panel.scroll(-30)  # Scroll up
-            elif key == pygame.K_DOWN or key == pygame.K_s:
-                self.unit_detail_panel.scroll(30)   # Scroll down
-            elif key == pygame.K_PAGEUP:
-                self.unit_detail_panel.scroll(-150)  # Page up
-            elif key == pygame.K_PAGEDOWN:
-                self.unit_detail_panel.scroll(150)   # Page down
-            elif key == pygame.K_HOME:
-                self.unit_detail_panel.scroll_offset = 0  # Go to top
-            elif key == pygame.K_END:
-                self.unit_detail_panel.scroll_offset = self.unit_detail_panel.max_scroll  # Go to bottom
+    # Note: on_key_press is now handled by phase-specific handlers in PhaseManager
+    # Detail panel scrolling is still handled in handle_pygame_event for universal access
     
     def force_complete_deployment(self):
         """Force complete the deployment phase by auto-deploying remaining units"""
@@ -2363,6 +2554,20 @@ class GameView:
         limited_offset_x = max(-max_offset_x, min(0, offset_x))
         limited_offset_y = max(-max_offset_y, min(0, offset_y))
         return limited_offset_x, limited_offset_y
+
+    def get_phase_status(self) -> dict:
+        """Get current phase status and allowed actions for debugging/testing"""
+        if hasattr(self, 'phase_manager'):
+            current_handler = self.phase_manager.get_current_handler()
+            return {
+                'current_phase': type(current_handler).__name__,
+                'game_phase': self.game.phase.name if hasattr(self.game.phase, 'name') else str(self.game.phase),
+                'setup_phase': self.game.get_current_setup_phase().name if self.game.is_in_setup_phase() else None,
+                'is_deployment': self.game.is_deployment_phase(),
+                'allowed_actions': self.phase_manager.get_current_allowed_actions()
+            }
+        else:
+            return {'error': 'Phase manager not initialized'}
 
 
 ### Battlefield drawing functions
@@ -3105,3 +3310,669 @@ def draw_generic_icon(surface: pygame.Surface, center_x: int, center_y: int, siz
     ]
     pygame.draw.polygon(surface, generic_color, diamond_points)
     pygame.draw.polygon(surface, outline_color, diamond_points, 2)
+
+# Add these new classes and imports after the existing imports
+from abc import ABC, abstractmethod
+
+# Phase-specific event handler protocol
+class PhaseEventHandler(Protocol):
+    """Protocol for phase-specific event handlers"""
+    def handle_event(self, event: pygame.event.Event, game_view: 'GameView') -> bool:
+        """Handle pygame event for this phase. Returns True if event was consumed."""
+        ...
+    
+    def get_allowed_actions(self) -> List[str]:
+        """Get list of allowed actions for this phase"""
+        ...
+
+class BasePhaseHandler(ABC):
+    """Base class for phase-specific event handlers"""
+    
+    def __init__(self, game_view: 'GameView'):
+        self.game_view = game_view
+        self.game = game_view.game
+    
+    @abstractmethod
+    def handle_event(self, event: pygame.event.Event) -> bool:
+        """Handle pygame event for this phase. Returns True if event was consumed."""
+        pass
+    
+    @abstractmethod
+    def get_allowed_actions(self) -> List[str]:
+        """Get list of allowed actions for this phase"""
+        pass
+    
+    def is_valid_action(self, action: str) -> bool:
+        """Check if an action is valid for this phase"""
+        return action in self.get_allowed_actions()
+
+class SetupPhaseHandler(BasePhaseHandler):
+    """Handles events during setup phases"""
+    
+    def handle_event(self, event: pygame.event.Event) -> bool:
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_SPACE:
+                # Handle setup phase advancement
+                current_phase = self.game.get_current_setup_phase()
+                
+                # Check if we're in deployment phase and waiting for deployment input
+                if (current_phase.name == 'DEPLOY_ARMIES' and 
+                    hasattr(self.game, 'waiting_for_deployment_input') and 
+                    self.game.waiting_for_deployment_input):
+                    # Continue deployment
+                    self.game.waiting_for_deployment_input = False
+                    return True
+                
+                # Execute the current setup phase
+                setup_kwargs = {
+                    'player1_army_file': None,  # These would come from game config
+                    'player2_army_file': None,
+                    'manual_phases': True
+                }
+                
+                # For DEPLOY_ARMIES phase, handle based on player types
+                if current_phase.name == 'DEPLOY_ARMIES':
+                    has_human_players = any(player.type.name == 'HUMAN' for player in self.game.players)
+                    if has_human_players:
+                        setup_kwargs['manual_phases'] = True
+                
+                # Store which phase we're executing to know when to refresh UI
+                current_phase_before = self.game.get_current_setup_phase()
+                
+                self.game.execute_current_setup_phase(**setup_kwargs)
+                setup_complete = self.game.advance_setup_phase()
+                
+                # Update UI after specific phases that change game state
+                if current_phase_before.name == 'MUSTER_ARMIES':
+                    # Armies were just loaded - refresh roster panes
+                    self.game_view.refresh_roster_panes()
+                    print("📋 UI updated after armies loaded")
+                elif current_phase_before.name == 'DETERMINE_ATTACKER_AND_DEFENDER':
+                    # Attacker/Defender roles determined - update titles
+                    self.game_view.update_roster_pane_titles()
+                    print("📋 UI updated after attacker/defender determined")
+                
+                if setup_complete:
+                    # Final update after all setup phases complete
+                    self.game_view.refresh_roster_panes()
+                    self.game_view.update_roster_pane_titles()
+                    print("📋 UI updated after setup completion")
+                
+                return True
+        
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:  # Right click - show unit details
+            hovered_unit, _ = self.game_view.get_hovered_unit(event.pos[0], event.pos[1])
+            if hovered_unit:
+                self.game_view.detailed_unit = hovered_unit
+                self.game_view.detail_panel_pos = event.pos
+                return True
+        
+        return False
+    
+    def get_allowed_actions(self) -> List[str]:
+        return ["advance_setup_phase", "view_unit_details"]
+
+class DeploymentPhaseHandler(BasePhaseHandler):
+    """Handles events during deployment phase"""
+    
+    def handle_event(self, event: pygame.event.Event) -> bool:
+        # Handle deployment choice dialog first (highest priority)
+        if (self.game_view.ui_interface and 
+            hasattr(self.game_view.ui_interface, 'deployment_choice_dialog') and 
+            self.game_view.ui_interface.deployment_choice_dialog.visible):
+            return self.game_view.ui_interface.deployment_choice_dialog.handle_event(event)
+        
+        # Handle UI interface events
+        if self.game_view.ui_interface and self.game_view.ui_interface.handle_event(event):
+            return True
+        
+        # Handle deployment-specific mouse events
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            return self._handle_deployment_click(event.pos)
+        
+        # Handle deployment-specific keyboard events
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_RETURN or event.key == pygame.K_KP_ENTER:
+                # Force complete deployment phase
+                self.game_view.force_complete_deployment()
+                return True
+            elif event.key == pygame.K_ESCAPE:
+                # Cancel current unit selection
+                self.game_view.selected_unit = None
+                self.game_view.left_roster_pane.selected_unit = None
+                self.game_view.right_roster_pane.selected_unit = None
+                return True
+        
+        # Handle right-click for unit details (works in all phases)
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:  # Right click - show unit details
+            hovered_unit, _ = self.game_view.get_hovered_unit(event.pos[0], event.pos[1])
+            if hovered_unit:
+                self.game_view.detailed_unit = hovered_unit
+                self.game_view.detail_panel_pos = event.pos
+                return True
+        
+        return False
+    
+    def _handle_deployment_click(self, mouse_pos) -> bool:
+        """Handle mouse clicks during deployment phase"""
+        x, y = mouse_pos
+        
+        # Check roster pane clicks first
+        if self.game_view.left_roster_pane.rect.collidepoint(x, y):
+            self.game_view.left_roster_pane.on_mouse_press(x, y, 1)
+            self.game_view.selected_unit = self.game_view.left_roster_pane.selected_unit
+            return True
+        elif self.game_view.right_roster_pane.rect.collidepoint(x, y):
+            self.game_view.right_roster_pane.on_mouse_press(x, y, 1)
+            self.game_view.selected_unit = self.game_view.right_roster_pane.selected_unit
+            return True
+        
+        # Handle battlefield deployment clicks
+        elif (self.game_view.selected_unit and not self.game_view.selected_unit.deployed and 
+              ROSTER_PANE_WIDTH < x < BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH):
+            return self._handle_battlefield_deployment(x, y)
+        
+        return False
+    
+    def _handle_battlefield_deployment(self, x: int, y: int) -> bool:
+        """Handle unit deployment on battlefield"""
+        # Check if deployment zones are loaded
+        if not hasattr(self.game, 'deployment_zones') or not self.game.deployment_zones:
+            print(f"📋 Press SPACE to begin deployment sequence first")
+            return True
+        
+        # Convert screen coordinates to game coordinates
+        battlefield_x = (x - ROSTER_PANE_WIDTH - self.game_view.offset_x) / (TILE_SIZE * self.game_view.zoom_level)
+        battlefield_y = (y - self.game_view.offset_y) / (TILE_SIZE * self.game_view.zoom_level)
+        
+        # Attempt to deploy the unit
+        original_unit_position = self.game_view.selected_unit.get_position() if self.game_view.selected_unit.position else None
+        original_model_positions = [model.get_location() for model in self.game_view.selected_unit.models]
+        
+        model_positions = self.game_view.selected_unit.calculate_model_positions(
+            battlefield_x, battlefield_y, self.game_view.game_map, self.game_view.zoom_level)
+        
+        if model_positions:
+            # Set model positions
+            for model, position in zip(self.game_view.selected_unit.models, model_positions):
+                model_x, model_y, model_z, model_facing = position
+                model.set_location(model_x, model_y, model_z, model_facing)
+            
+            unit_x = sum(pos[0] for pos in model_positions) / len(model_positions)
+            unit_y = sum(pos[1] for pos in model_positions) / len(model_positions)
+            
+            # Validate deployment position
+            current_deployment_player = self.game.get_current_deployment_player()
+            player_name = current_deployment_player.name if current_deployment_player else None
+            
+            if player_name and not self.game.is_valid_deployment_position(
+                self.game_view.selected_unit, unit_x, unit_y, player_name):
+                # Invalid position - reset and show error
+                if self.game_view.selected_unit.has_infiltrate():
+                    print(f"❌ Invalid deployment position for {self.game_view.selected_unit.name} (Infiltrate)")
+                else:
+                    print(f"❌ Invalid deployment position for {self.game_view.selected_unit.name}")
+                self.game_view.reset_unit_position(self.game_view.selected_unit, 
+                                                 original_unit_position, original_model_positions)
+                return True
+            
+            # Valid deployment
+            self.game_view.selected_unit.set_position(unit_x, unit_y)
+            
+            if self.game_view.game_map.place_unit(self.game_view.selected_unit):
+                print(f"Unit {self.game_view.selected_unit.name} deployed at ({unit_x:.1f}, {unit_y:.1f})")
+                self.game_view.selected_unit.deployed = True
+                
+                # Record deployment action
+                if current_deployment_player and self.game_view.selected_unit.position:
+                    self.game.record_deployment_action(current_deployment_player, 
+                                                     self.game_view.selected_unit, 'deployed', 
+                                                     self.game_view.selected_unit.position)
+                
+                # Advance to next player's deployment turn
+                self.game.advance_deployment_turn()
+                
+                # Clear selection
+                self.game_view.selected_unit = None
+                self.game_view.left_roster_pane.selected_unit = None
+                self.game_view.right_roster_pane.selected_unit = None
+            else:
+                print("Failed to place unit")
+                self.game_view.reset_unit_position(self.game_view.selected_unit, 
+                                                 original_unit_position, original_model_positions)
+        
+        return True
+    
+    def get_allowed_actions(self) -> List[str]:
+        return ["select_unit", "deploy_unit", "choose_reserves", "view_unit_details", "complete_deployment"]
+
+class BattlePhaseHandler(BasePhaseHandler):
+    """Handles events during battle phases (movement, shooting, etc.)"""
+    
+    def handle_event(self, event: pygame.event.Event) -> bool:
+        # Handle movement choice dialog first (highest priority)
+        if hasattr(self.game_view, 'movement_choice_dialog') and self.game_view.movement_choice_dialog.visible:
+            if self.game_view.movement_choice_dialog.handle_event(event):
+                return True
+        
+        # Check which battle phase we're in
+        current_phase = self.game.phase
+        
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_SPACE:
+                # Manual phase advancement
+                current_player = self.game.get_current_player()
+                print(f"⌨️ SPACE pressed - Current player: {current_player.name} ({current_player.type.name}), Phase: {current_phase.name}")
+                
+                if current_player.type.name == 'AI':
+                    # Execute AI turn - for now, just advance phase
+                    print(f"🤖 AI {current_player.name} taking turn in {current_phase.name}")
+                    # TODO: Implement actual AI decision making here
+                    self.game.next_phase()
+                    print(f"✅ Advanced to next phase: {self.game.phase.name}")
+                else:
+                    # Human player - advance phase
+                    print(f"👤 Human {current_player.name} advancing phase from {current_phase.name}")
+                    self.game.next_phase()
+                    print(f"✅ Advanced to next phase: {self.game.phase.name}")
+                return True
+            elif event.key == pygame.K_ESCAPE:
+                # Cancel current movement selection if active
+                if (hasattr(self.game_view, 'selected_unit_for_movement') and 
+                    self.game_view.selected_unit_for_movement and 
+                    hasattr(self.game_view, 'movement_action') and 
+                    self.game_view.movement_action):
+                    
+                    unit_name = self.game_view.selected_unit_for_movement.name
+                    action_name = self.game_view.movement_action.name.lower().replace('_', ' ')
+                    print(f"❌ Cancelled {action_name} for {unit_name}")
+                    
+                    # Clear movement selection
+                    self.game_view.selected_unit_for_movement = None
+                    self.game_view.movement_action = None
+                    return True
+        
+        # Handle phase-specific mouse events
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            return self._handle_battle_click(event.pos, event.button)
+        
+        return False
+    
+    def _handle_battle_click(self, mouse_pos, button) -> bool:
+        """Handle mouse clicks during battle phases"""
+        x, y = mouse_pos
+        
+        # Handle unit selection and actions based on current phase
+        if button == 1:  # Left click
+            # Check roster pane clicks
+            if self.game_view.left_roster_pane.rect.collidepoint(x, y):
+                self.game_view.left_roster_pane.on_mouse_press(x, y, button)
+                selected_unit = self.game_view.left_roster_pane.selected_unit
+                if selected_unit:
+                    self.game_view.selected_unit = selected_unit
+                    self._handle_unit_selection(selected_unit)
+                return True
+            elif self.game_view.right_roster_pane.rect.collidepoint(x, y):
+                self.game_view.right_roster_pane.on_mouse_press(x, y, button)
+                selected_unit = self.game_view.right_roster_pane.selected_unit
+                if selected_unit:
+                    self.game_view.selected_unit = selected_unit
+                    self._handle_unit_selection(selected_unit)
+                return True
+            
+            # Handle battlefield clicks based on current phase
+            elif ROSTER_PANE_WIDTH < x < BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH:
+                return self._handle_battlefield_action(x, y)
+        
+        elif button == 3:  # Right click - show unit details
+            hovered_unit, _ = self.game_view.get_hovered_unit(x, y)
+            if hovered_unit:
+                self.game_view.detailed_unit = hovered_unit
+                self.game_view.detail_panel_pos = (x, y)
+                return True
+        
+        return False
+    
+    def _handle_unit_selection(self, unit) -> None:
+        """Handle unit selection based on current phase"""
+        current_phase = self.game.phase
+        current_player = self.game.get_current_player()
+        
+        # Only show movement dialog during movement phase for human player's units
+        if (current_phase.name == 'MOVEMENT_PHASE' and 
+            current_player.type.name == 'HUMAN' and
+            unit.parent_army and unit.parent_army.player == current_player):
+            
+            # Check if unit has already moved this round
+            if hasattr(unit.round_state, 'moved_this_round') and unit.round_state.moved_this_round:
+                print(f"❌ {unit.name} has already moved this round")
+                return
+            
+            def on_movement_choice(choice):
+                self._handle_movement_choice(unit, choice)
+            
+            self.game_view.movement_choice_dialog.show(unit, on_movement_choice, self.game.map)
+    
+    def _handle_movement_choice(self, unit, choice: str) -> None:
+        """Handle movement choice selection using Unit's movement system"""
+        from warhammer40k_ai.classes.unit import MovementAction
+        
+        # Map UI choices to Unit's MovementAction enum
+        choice_mapping = {
+            'move': MovementAction.MOVE,
+            'advance': MovementAction.ADVANCE,
+            'fall_back': MovementAction.FALL_BACK,
+            'stationary': MovementAction.REMAIN_STATIONARY
+        }
+        
+        if choice not in choice_mapping:
+            print(f"❌ Invalid movement choice: {choice}")
+            return
+        
+        # Get the unit's current engagement state
+        engagement_state = unit.get_engagement_state(self.game.map)
+        available_actions = unit.get_available_move_actions(engagement_state.value)
+        
+        # Check if the chosen action is available
+        chosen_action = choice_mapping[choice]
+        if chosen_action.value not in available_actions:
+            print(f"❌ {choice.title()} action not available for {unit.name}")
+            return
+        
+        # Store the chosen action for battlefield click handling
+        self.game_view.selected_unit_for_movement = unit
+        self.game_view.movement_action = chosen_action
+        
+        if choice == 'stationary':
+            # Execute stationary action immediately (no destination needed)
+            success = unit._execute_action(chosen_action.value, (0, 0, 0), self.game.map)
+            if success:
+                print(f"🛑 {unit.name} remains stationary")
+            # Clear selection since action is complete
+            self.game_view.selected_unit_for_movement = None
+            self.game_view.movement_action = None
+        else:
+            print(f"📍 Click on the battlefield to {choice} {unit.name}")
+            # Action will be executed when user clicks battlefield
+    
+    def _handle_battlefield_action(self, x: int, y: int) -> bool:
+        """Handle battlefield actions based on current battle phase"""
+        current_phase = self.game.phase
+        
+        # Phase-specific actions
+        if current_phase.name == 'MOVEMENT_PHASE':
+            return self._handle_movement_action(x, y)
+        elif current_phase.name == 'SHOOTING_PHASE':
+            return self._handle_shooting_action(x, y)
+        elif current_phase.name == 'CHARGE_PHASE':
+            return self._handle_charge_action(x, y)
+        elif current_phase.name == 'FIGHT_PHASE':
+            return self._handle_fight_action(x, y)
+        
+        return False
+    
+    def _handle_movement_action(self, x: int, y: int) -> bool:
+        """Handle movement phase actions using Unit's movement system"""
+        # Only process if we have a unit selected for movement
+        if (hasattr(self.game_view, 'selected_unit_for_movement') and 
+            self.game_view.selected_unit_for_movement and 
+            hasattr(self.game_view, 'movement_action') and 
+            self.game_view.movement_action):
+            
+            unit = self.game_view.selected_unit_for_movement
+            action = self.game_view.movement_action
+            
+            # Convert to game coordinates
+            battlefield_x = (x - ROSTER_PANE_WIDTH - self.game_view.offset_x) / (TILE_SIZE * self.game_view.zoom_level)
+            battlefield_y = (y - self.game_view.offset_y) / (TILE_SIZE * self.game_view.zoom_level)
+            battlefield_z = self.game.map.get_height_at_point(battlefield_x, battlefield_y)
+            
+            destination = (battlefield_x, battlefield_y, battlefield_z)
+            
+            # Pre-validate the movement destination
+            validation_result = self._validate_movement_destination(unit, action, destination)
+            
+            if not validation_result["valid"]:
+                # Invalid move - show feedback and keep selection active for retry
+                print(f"❌ Invalid {action.name.lower().replace('_', ' ')}: {validation_result['reason']}")
+                print(f"📍 Click on the battlefield to {action.name.lower().replace('_', ' ')} {unit.name} (try a closer location)")
+                return True  # Keep the movement selection active
+            
+            # Destination is valid, attempt the movement
+            success = unit._execute_action(action.value, destination, self.game.map)
+            
+            if success:
+                # Unit movement system now provides its own detailed feedback
+                # Clear movement selection only on successful move
+                self.game_view.selected_unit_for_movement = None
+                self.game_view.movement_action = None
+            else:
+                # Move execution failed for some other reason - allow retry
+                print(f"📍 Click on the battlefield to {action.name.lower().replace('_', ' ')} {unit.name} (try a different location)")
+            
+            return True
+        
+        return False
+    
+    def _validate_movement_destination(self, unit, action, destination: Tuple[float, float, float]) -> dict:
+        """Validate if a movement destination is reachable and provide feedback"""
+        from warhammer40k_ai.classes.unit import MovementAction
+        from warhammer40k_ai.utility.calcs import get_dist
+        
+        current_position = unit.get_position()
+        if current_position is None:
+            return {"valid": False, "reason": "Unit has no current position"}
+        
+        # Calculate straight-line distance to destination
+        distance_to_destination = get_dist(
+            destination[0] - current_position[0],
+            destination[1] - current_position[1],
+            destination[2] - current_position[2] if len(current_position) > 2 else 0
+        )
+        
+        # Get movement range based on action type
+        base_movement = unit.movement
+        if action == MovementAction.REMAIN_STATIONARY:
+            max_distance = 0
+        elif action == MovementAction.MOVE:
+            max_distance = base_movement
+        elif action == MovementAction.ADVANCE:
+            # For advance, assume maximum possible roll (6) for validation
+            # This prevents false negatives where player clicks within advance range
+            max_distance = base_movement + 6
+        elif action == MovementAction.FALL_BACK:
+            max_distance = base_movement
+        else:
+            return {"valid": False, "reason": "Unknown movement action"}
+        
+        # Check if destination is within maximum possible range
+        if distance_to_destination > max_distance:
+            if action == MovementAction.ADVANCE:
+                return {
+                    "valid": False, 
+                    "reason": f"Destination is {distance_to_destination:.1f}\" away, max advance is {base_movement}\" + D6 (up to {max_distance}\")"
+                }
+            else:
+                return {
+                    "valid": False, 
+                    "reason": f"Destination is {distance_to_destination:.1f}\" away, max {action.name.lower().replace('_', ' ')} is {max_distance}\""
+                }
+        
+        # Additional validation could be added here for:
+        # - Terrain obstacles blocking the path
+        # - Enemy units blocking the destination
+        # - Unit coherency issues
+        # - Engagement range restrictions
+        
+        return {"valid": True, "reason": "Destination is reachable"}
+    
+    def _handle_shooting_action(self, x: int, y: int) -> bool:
+        """Handle shooting phase actions"""
+        if self.game_view.selected_unit:
+            # Get target unit at click position
+            target_unit = self.game_view.get_unit_at_position(x, y)
+            if target_unit:
+                # TODO: Implement shooting validation and execution
+                print(f"Shooting action: {self.game_view.selected_unit.name} targets {target_unit.name}")
+                return True
+        
+        return False
+    
+    def _handle_charge_action(self, x: int, y: int) -> bool:
+        """Handle charge phase actions"""
+        if self.game_view.selected_unit:
+            # Get target unit at click position
+            target_unit = self.game_view.get_unit_at_position(x, y)
+            if target_unit:
+                # TODO: Implement charge validation and execution
+                print(f"Charge action: {self.game_view.selected_unit.name} charges {target_unit.name}")
+                return True
+        
+        return False
+    
+    def _handle_fight_action(self, x: int, y: int) -> bool:
+        """Handle fight phase actions"""
+        if self.game_view.selected_unit:
+            # Get target unit at click position
+            target_unit = self.game_view.get_unit_at_position(x, y)
+            if target_unit:
+                # TODO: Implement fight validation and execution
+                print(f"Fight action: {self.game_view.selected_unit.name} fights {target_unit.name}")
+                return True
+        
+        return False
+    
+    def get_allowed_actions(self) -> List[str]:
+        current_phase = self.game.phase
+        
+        if current_phase.name == 'MOVEMENT_PHASE':
+            return ["select_unit", "move_unit", "advance_unit", "view_unit_details"]
+        elif current_phase.name == 'SHOOTING_PHASE':
+            return ["select_unit", "shoot_weapon", "target_unit", "view_unit_details"]
+        elif current_phase.name == 'CHARGE_PHASE':
+            return ["select_unit", "declare_charge", "charge_move", "view_unit_details"]
+        elif current_phase.name == 'FIGHT_PHASE':
+            return ["select_unit", "pile_in", "fight", "consolidate", "view_unit_details"]
+        else:
+            return ["select_unit", "view_unit_details"]
+
+class PhaseManager:
+    """Manages phase-specific event handling"""
+    
+    def __init__(self, game_view: 'GameView'):
+        self.game_view = game_view
+        self.game = game_view.game
+        
+        # Initialize phase handlers
+        self.setup_handler = SetupPhaseHandler(game_view)
+        self.deployment_handler = DeploymentPhaseHandler(game_view)
+        self.battle_handler = BattlePhaseHandler(game_view)
+        
+        # Movement system state
+        self.game_view.movement_choice_dialog = MovementChoiceDialog(game_view.screen.get_width(), game_view.screen.get_height())
+        self.game_view.selected_unit_for_movement = None
+        self.game_view.movement_action = None  # MovementAction enum value
+    
+    def get_current_handler(self) -> BasePhaseHandler:
+        """Get the appropriate handler for the current game phase"""
+        if self.game.is_in_setup_phase():
+            # Check if we're in the DEPLOY_ARMIES setup phase specifically
+            current_setup_phase = self.game.get_current_setup_phase()
+            if current_setup_phase.name == 'DEPLOY_ARMIES':
+                return self.deployment_handler
+            else:
+                return self.setup_handler
+        elif self.game.is_deployment_phase():
+            return self.deployment_handler
+        else:
+            return self.battle_handler
+    
+    def handle_event(self, event: pygame.event.Event) -> bool:
+        """Route event to appropriate phase handler"""
+        handler = self.get_current_handler()
+        return handler.handle_event(event)
+    
+    def get_current_allowed_actions(self) -> List[str]:
+        """Get allowed actions for current phase"""
+        handler = self.get_current_handler()
+        return handler.get_allowed_actions()
+    
+    def is_action_allowed(self, action: str) -> bool:
+        """Check if an action is allowed in the current phase"""
+        return action in self.get_current_allowed_actions()
+
+
+def draw_movement_range(screen: pygame.Surface, unit, movement_action, zoom_level: float, offset_x: int, offset_y: int) -> None:
+    """Draw a visual indicator showing the movement range for a selected unit"""
+    from warhammer40k_ai.classes.unit import MovementAction
+    # TILE_SIZE is defined at the top of this file
+    
+    current_position = unit.get_position()
+    if not current_position:
+        return
+    
+    # Get movement range based on action type
+    base_movement = unit.movement
+    if movement_action == MovementAction.REMAIN_STATIONARY:
+        max_distance = 0
+    elif movement_action == MovementAction.MOVE:
+        max_distance = base_movement
+    elif movement_action == MovementAction.ADVANCE:
+        # Show maximum possible advance range (base + 6)
+        max_distance = base_movement + 6
+    elif movement_action == MovementAction.FALL_BACK:
+        max_distance = base_movement
+    else:
+        return
+    
+    if max_distance <= 0:
+        return
+    
+    # Convert unit position to screen coordinates
+    center_x = int(current_position[0] * TILE_SIZE * zoom_level + offset_x)
+    center_y = int(current_position[1] * TILE_SIZE * zoom_level + offset_y)
+    
+    # Calculate radius in screen pixels
+    radius = int(max_distance * TILE_SIZE * zoom_level)
+    
+    # Choose color based on movement type
+    if movement_action == MovementAction.MOVE:
+        color = (0, 255, 0, 64)  # Green for normal move
+        border_color = (0, 200, 0)
+    elif movement_action == MovementAction.ADVANCE:
+        color = (255, 255, 0, 64)  # Yellow for advance
+        border_color = (200, 200, 0)
+    elif movement_action == MovementAction.FALL_BACK:
+        color = (255, 128, 0, 64)  # Orange for fall back
+        border_color = (200, 100, 0)
+    else:
+        color = (128, 128, 128, 64)  # Gray for other actions
+        border_color = (100, 100, 100)
+    
+    # Create a surface with per-pixel alpha for the range circle
+    if radius > 0:
+        range_surface = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
+        pygame.draw.circle(range_surface, color, (radius, radius), radius)
+        
+        # Blit the transparent range circle onto the battlefield
+        screen.blit(range_surface, (center_x - radius, center_y - radius))
+        
+        # Draw the border circle
+        pygame.draw.circle(screen, border_color, (center_x, center_y), radius, 3)
+        
+        # Draw action text at the bottom of the circle
+        try:
+            font = pygame.font.SysFont('Arial', max(16, int(20 * zoom_level)), bold=True)
+            action_text = movement_action.name.replace('_', ' ').title()
+            if movement_action == MovementAction.ADVANCE:
+                action_text += f" (up to {max_distance}\")"
+            else:
+                action_text += f" ({max_distance}\")"
+            
+            text_surface = font.render(action_text, True, border_color)
+            text_rect = text_surface.get_rect()
+            text_rect.center = (center_x, center_y + radius + text_rect.height // 2 + 5)
+            screen.blit(text_surface, text_rect)
+        except:
+            # Fallback if font creation fails
+            pass

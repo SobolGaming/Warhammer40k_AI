@@ -33,6 +33,7 @@ class UnitRoundState:
     fell_back_this_round: bool = False
     reinforced_this_round: bool = False
     declared_charge_this_round: bool = False
+    moved_this_round: bool = False  # Track if unit has moved during movement phase
     num_lost_models_this_round: int = 0
 
 
@@ -790,21 +791,33 @@ class Unit:
 
     def _execute_action(self, action: int, destination: Tuple[float, float, float], game_map: 'Map') -> bool:
         """Execute the chosen action."""
+        # Check if unit has already moved this round
+        if self.round_state.moved_this_round:
+            print(f"❌ {self.name} has already moved this round")
+            return False
+        
+        success = False
         if action == MovementAction.REMAIN_STATIONARY.value:
             print(f"{self.name} remains stationary")
-            return self.remain_stationary()
+            success = self.remain_stationary()
         elif action == MovementAction.MOVE.value:
             print(f"{self.name} moves to {destination}")
-            return self.move(destination, game_map)
+            success = self.move(destination, game_map)
         elif action == MovementAction.ADVANCE.value:
             print(f"{self.name} advances to {destination}")
-            return self.advance(destination, game_map)
+            success = self.advance(destination, game_map)
         elif action == MovementAction.FALL_BACK.value:
             print(f"{self.name} falls back")
             # Provide an empty path list for fall back action
-            return self.fall_back(destination, [], game_map)
+            success = self.fall_back(destination, [], game_map)
         else:
             raise ValueError(f"Invalid action: {action}")
+        
+        # Mark unit as having moved this round if action was successful
+        if success:
+            self.round_state.moved_this_round = True
+        
+        return success
 
     def remain_stationary(self) -> bool:
         self.round_state.remained_stationary_this_round = True
@@ -833,6 +846,10 @@ class Unit:
             logger.error(f"Cannot move unit {self.name}: current position is None")
             return False
 
+        # Store starting position for feedback
+        start_x, start_y = current_position[0], current_position[1]
+        start_z = current_position[2] if len(current_position) > 2 else 0
+
         # Get the movement range from the first model (assuming all models have the same movement)
         movement_range = self.movement
 
@@ -845,47 +862,129 @@ class Unit:
                 return False
             movement_range += advance_roll
 
+        # Calculate straight-line distance to destination
+        from warhammer40k_ai.utility.calcs import get_dist
+        distance_to_destination = get_dist(
+            destination[0] - start_x,
+            destination[1] - start_y,
+            destination[2] - start_z
+        )
+
+        # Check if destination is within movement range
+        if distance_to_destination > movement_range:
+            print(f"❌ {self.name} cannot reach destination {distance_to_destination:.1f}\" away (max {'advance' if advance else 'move'}: {movement_range}\")")
+            return False
+
         # Generate potential positions for models
         potential_positions = self.calculate_model_positions(destination[0], destination[1], game_map)
-        distance = 0.0
+        actual_distance_moved = 0.0
+        successful_moves = 0
 
-        for model, model_destination in zip(self.models, potential_positions):  # Fixed variable name
-            logging.debug(f"Model {model._id} {model.name} moving to {model_destination}")
+        for model, model_destination in zip(self.models, potential_positions):
+            model_start = model.get_location()
+            logging.debug(f"Model {model._id} {model.name} attempting to move from {model_start} to {model_destination}")
+            
+            # Calculate straight-line distance for this model
+            model_distance = get_dist(
+                model_destination[0] - model_start[0],
+                model_destination[1] - model_start[1],
+                model_destination[2] - model_start[2] if len(model_start) > 2 else 0
+            )
+            
+            # Check if this model can reach its destination
+            if model_distance > movement_range:
+                logger.debug(f"Model {model._id} cannot reach destination {model_distance:.1f}\" away (max: {movement_range}\")")
+                continue  # Skip this model, don't move it
+            
+            # Try pathfinding
             shortest_path = a_star(model, game_map.obstacles, model_destination)
+            
             if not shortest_path:
-                logger.debug(f"Cannot move unit {self.name} - model {model._id} path is None, using direct position")
-                # If pathfinding fails, just move directly to the destination
-                model.set_location(*model_destination)
+                logger.debug(f"Model {model._id} pathfinding failed, checking if direct move is within range")
+                if model_distance <= movement_range:
+                    # Move directly if within range
+                    model.set_location(*model_destination)
+                    actual_distance_moved = max(actual_distance_moved, model_distance)
+                    successful_moves += 1
+                    logger.debug(f"Model {model._id} moved directly to {model_destination}, distance: {model_distance:.1f}\"")
                 continue
+            
+            # Calculate path distance
             path_distance = sum(get_dist(shortest_path[i][0] - shortest_path[i-1][0], shortest_path[i][1] - shortest_path[i-1][1]) for i in range(1, len(shortest_path)))
-            if path_distance > model.movement:
-                logger.debug(f"Cannot move unit {self.name} - model {model._id} path distance {path_distance} is greater than movement {model.movement}, using direct position")
-                # If path is too long, just move directly to the destination 
-                model.set_location(*model_destination)
-                continue
-            last_node = model.get_location()
-            model.last_move_path = [last_node]
-            direction_to_destination = get_angle(model_destination[0] - model.model_base.x, model_destination[1] - model.model_base.y)
-            distance = 0.0
-            for node in shortest_path[1:]:
+            
+            if path_distance > movement_range:
+                logger.debug(f"Model {model._id} path distance {path_distance:.1f}\" exceeds movement {movement_range}\"")
+                # Try to move as far as possible along the path
+                last_node = model_start
+                model.last_move_path = [last_node]
+                distance_along_path = 0.0
+                direction_to_destination = get_angle(model_destination[0] - model.model_base.x, model_destination[1] - model.model_base.y)
+                
+                for node in shortest_path[1:]:
                     dx = node[0] - last_node[0]
                     dy = node[1] - last_node[1]
                     dz = node[2] - last_node[2] if len(node) > 2 else 0
                     segment_distance = get_dist(dx, dy, dz)
-                    if distance + segment_distance > movement_range:
+                    
+                    if distance_along_path + segment_distance > movement_range:
+                        # Stop here, can't go further
                         break
-                    distance += segment_distance
+                    
+                    distance_along_path += segment_distance
                     last_node = (node[0], node[1], node[2] if len(node) > 2 else 0, direction_to_destination)
                     model.last_move_path.append(last_node)
-            # ALWAYS update the model position
-            model.set_location(*model_destination)
-            logger.debug(f"Model {model._id} {model.name} moved to {model_destination} travelling {distance} inches")
-            logger.debug(f"Model {model._id} path: {model.last_move_path}")
+                
+                # Move to the furthest reachable position
+                if distance_along_path > 0:
+                    final_position = model.last_move_path[-1]
+                    model.set_location(final_position[0], final_position[1], final_position[2], final_position[3])
+                    actual_distance_moved = max(actual_distance_moved, distance_along_path)
+                    successful_moves += 1
+                    logger.debug(f"Model {model._id} moved along path to {final_position[:3]}, distance: {distance_along_path:.1f}\"")
+            else:
+                # Path is within range, move to destination
+                model.set_location(*model_destination)
+                last_node = model_start
+                model.last_move_path = [last_node]
+                direction_to_destination = get_angle(model_destination[0] - model.model_base.x, model_destination[1] - model.model_base.y)
+                distance_along_path = 0.0
+                
+                for node in shortest_path[1:]:
+                    dx = node[0] - last_node[0]
+                    dy = node[1] - last_node[1]
+                    dz = node[2] - last_node[2] if len(node) > 2 else 0
+                    segment_distance = get_dist(dx, dy, dz)
+                    distance_along_path += segment_distance
+                    last_node = (node[0], node[1], node[2] if len(node) > 2 else 0, direction_to_destination)
+                    model.last_move_path.append(last_node)
+                
+                actual_distance_moved = max(actual_distance_moved, distance_along_path)
+                successful_moves += 1
+                logger.debug(f"Model {model._id} moved to {model_destination}, path distance: {distance_along_path:.1f}\"")
 
         # Update unit centroid
         self.reset_position()
+        
+        # Check if any movement occurred
+        if successful_moves == 0:
+            print(f"❌ {self.name} could not move - no models could reach any valid positions")
+            return False
 
-        logger.info(f"Unit {self.name} {'advanced' if advance else 'moved'} towards {destination} : Distance {distance}")
+        # Get final position for feedback
+        final_position = self.get_position()
+        end_x, end_y = final_position[0], final_position[1]
+        
+        # Calculate actual distance the unit moved
+        unit_distance_moved = get_dist(end_x - start_x, end_y - start_y)
+        
+        # Provide detailed feedback
+        action_name = 'advanced' if advance else 'moved'
+        print(f"✅ {self.name} {action_name} from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
+        
+        if successful_moves < len(self.models):
+            print(f"⚠️  Note: Only {successful_moves}/{len(self.models)} models could move to valid positions")
+
+        logger.info(f"Unit {self.name} {action_name} from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
         self.round_state.advanced_this_round = advance
         return True
 

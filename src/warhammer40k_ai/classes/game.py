@@ -725,6 +725,13 @@ class Game:
         next_phase_value = (current_phase_value + 1) % len(BattleRoundPhases)
         self.phase = BattleRoundPhases(next_phase_value)
         
+        # Reset movement tracking when entering Movement Phase
+        if self.phase == BattleRoundPhases.MOVEMENT_PHASE:
+            current_player = self.get_current_player()
+            for unit in current_player.get_army().units:
+                if hasattr(unit.round_state, 'moved_this_round'):
+                    unit.round_state.moved_this_round = False
+        
         if next_phase_value == 0:  # If we've wrapped around to COMMAND_PHASE
             # This means we've finished all phases for the current player
             # Switch to the next player
