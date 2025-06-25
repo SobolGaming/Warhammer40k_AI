@@ -417,7 +417,7 @@ class Game:
         try:
             # Use the exact same approach as manual deployment in GameView.on_mouse_press
             # Calculate model positions (this is the same as manual deployment)
-            model_positions = unit.calculate_model_positions(x, y, self.map, 1.0, [])
+            model_positions = unit.calculate_model_positions(x, y, self.map)
             
             if not model_positions:
                 return False
@@ -657,7 +657,7 @@ class Game:
             
             # For infiltrate units, we need to check each model's base at the proposed position
             # Calculate model positions using the same logic as unit deployment
-            model_positions = unit.calculate_model_positions(x, y, self.map, 1.0, [])
+            model_positions = unit.calculate_model_positions(x, y, self.map)
             
             if not model_positions:
                 return False
@@ -685,7 +685,7 @@ class Game:
             # Normal units must be WHOLLY within their own deployment zone
             # Check that every model's entire base would be within the deployment zone at the proposed position
             # Calculate model positions using the same logic as unit deployment
-            model_positions = unit.calculate_model_positions(x, y, self.map, 1.0, [])
+            model_positions = unit.calculate_model_positions(x, y, self.map)
             
             if not model_positions:
                 return False

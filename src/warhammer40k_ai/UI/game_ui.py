@@ -3503,7 +3503,7 @@ class DeploymentPhaseHandler(BasePhaseHandler):
         original_model_positions = [model.get_location() for model in self.game_view.selected_unit.models]
         
         model_positions = self.game_view.selected_unit.calculate_model_positions(
-            battlefield_x, battlefield_y, self.game_view.game_map, self.game_view.zoom_level)
+            battlefield_x, battlefield_y, self.game_view.game_map, 0.0, self.game_view.zoom_level)
         
         if model_positions:
             # Set model positions
