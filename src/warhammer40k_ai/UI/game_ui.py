@@ -676,6 +676,17 @@ class InfoPane(pygame.sprite.Sprite):
             if game_view and hasattr(game_view, 'phase_manager'):
                 allowed_actions = game_view.phase_manager.get_current_allowed_actions()
                 self._draw_allowed_actions(surface, allowed_actions, x_center, y_offset)
+                
+                # Show advance roll if active
+                if (hasattr(game_view, 'selected_unit_for_movement') and game_view.selected_unit_for_movement):
+                    unit = game_view.selected_unit_for_movement
+                    advance_roll = unit.get_advance_roll()
+                    if advance_roll is not None:
+                        y_offset += 15
+                        advance_info = f"🎲 Advance Roll: {advance_roll}\" (Total: {unit.movement + advance_roll}\")"
+                        advance_surface = self.font_tiny.render(advance_info, True, TEXT_ACCENT)
+                        advance_rect = advance_surface.get_rect(center=(x_center, y_offset))
+                        surface.blit(advance_surface, advance_rect)
             else:
                 # Fallback to old control display
                 if in_deployment_phase and deployment_zones_loaded:
@@ -1249,6 +1260,289 @@ class MovementChoiceDialog:
         button_text = self.font_small.render(text, True, text_color)
         text_rect = button_text.get_rect(center=rect.center)
         screen.blit(button_text, text_rect)
+
+
+class WeaponChoiceDialog:
+    """Dialog for choosing weapon and profile for a unit during shooting phase"""
+    def __init__(self, screen_width: int, screen_height: int):
+        self.screen_width = screen_width
+        self.screen_height = screen_height
+        self.width = 600
+        self.height = 400
+        self.visible = False
+        self.unit = None
+        self.callback = None
+        self.game_map = None
+        self.available_weapons = []
+        self.scroll_offset = 0
+        self.max_scroll = 0
+        
+        # Calculate position (center of screen)
+        self.x = (screen_width - self.width) // 2
+        self.y = (screen_height - self.height) // 2
+        
+        # Fonts
+        try:
+            self.font_medium = pygame.font.SysFont('Arial', FONT_MEDIUM, bold=True)
+            self.font_small = pygame.font.SysFont('Arial', FONT_SMALL, bold=False)
+            self.font_tiny = pygame.font.SysFont('Arial', FONT_TINY, bold=False)
+        except:
+            self.font_medium = pygame.font.Font(None, FONT_MEDIUM)
+            self.font_small = pygame.font.Font(None, FONT_SMALL)
+            self.font_tiny = pygame.font.Font(None, FONT_TINY)
+        
+        self.hovered_weapon = None
+        self.weapon_buttons = []
+    
+    def show(self, unit, callback, game_map=None):
+        """Show the dialog for the given unit"""
+        self.unit = unit
+        self.callback = callback
+        self.game_map = game_map
+        self.visible = True
+        self.scroll_offset = 0
+        
+        # Collect all available weapons and profiles
+        self.available_weapons = []
+        for model in unit.models:
+            if not model.is_alive:
+                continue
+            
+            for wargear in model.wargear:
+                if wargear.is_ranged():
+                    for profile_name, profile in wargear.profiles.items():
+                        # Check if unit can shoot this weapon
+                        can_shoot = True
+                        if unit.round_state.advanced_this_round and not unit.can_shoot_after_advance(profile):
+                            can_shoot = False
+                        if unit.round_state.fell_back_this_round:
+                            can_shoot = False
+                        
+                        weapon_info = {
+                            'wargear': wargear,
+                            'profile': profile,
+                            'profile_name': profile_name,
+                            'model': model,
+                            'can_shoot': can_shoot,
+                            'models_with_weapon': self._count_models_with_weapon(unit, wargear)
+                        }
+                        
+                        # Avoid duplicates (same weapon/profile combo)
+                        if not any(w['wargear'] == wargear and w['profile_name'] == profile_name 
+                                 for w in self.available_weapons):
+                            self.available_weapons.append(weapon_info)
+        
+        # Create button rectangles
+        self._create_weapon_buttons()
+    
+    def _count_models_with_weapon(self, unit, wargear):
+        """Count how many models in the unit have this weapon"""
+        count = 0
+        for model in unit.models:
+            if model.is_alive and wargear in model.wargear:
+                count += 1
+        return count
+    
+    def _create_weapon_buttons(self):
+        """Create button rectangles for weapon selection"""
+        self.weapon_buttons = []
+        button_height = 60  # Increased from 45 to 60 to prevent text overflow
+        button_spacing = 5
+        start_y = self.y + 60
+        
+        for i, weapon in enumerate(self.available_weapons):
+            button_rect = pygame.Rect(
+                self.x + 20, 
+                start_y + i * (button_height + button_spacing) - self.scroll_offset,
+                self.width - 40, 
+                button_height
+            )
+            self.weapon_buttons.append(button_rect)
+        
+        # Calculate scroll limits
+        total_height = len(self.available_weapons) * (button_height + button_spacing)
+        visible_height = self.height - 100  # Account for title and padding
+        self.max_scroll = max(0, total_height - visible_height)
+    
+    def hide(self):
+        """Hide the dialog"""
+        self.visible = False
+        self.unit = None
+        self.callback = None
+        self.game_map = None
+        self.available_weapons = []
+        self.weapon_buttons = []
+        self.scroll_offset = 0
+    
+    def handle_event(self, event):
+        """Handle pygame events"""
+        if not self.visible:
+            return False
+        
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1:  # Left click
+                return self.handle_click(event.pos)
+            elif event.button == 4:  # Scroll up
+                self.scroll(-30)
+                return True
+            elif event.button == 5:  # Scroll down
+                self.scroll(30)
+                return True
+        elif event.type == pygame.MOUSEMOTION:
+            self.update_hover(event.pos)
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                self.hide()
+                return True
+        
+        return True  # Consume all events when visible
+    
+    def handle_click(self, mouse_pos):
+        """Handle mouse clicks"""
+        # Check weapon button clicks
+        for i, button_rect in enumerate(self.weapon_buttons):
+            if button_rect.collidepoint(mouse_pos) and i < len(self.available_weapons):
+                weapon_info = self.available_weapons[i]
+                if weapon_info['can_shoot']:
+                    if self.callback:
+                        self.callback(weapon_info['profile'])
+                    self.hide()
+                    return True
+        
+        # Click outside dialog - close it
+        dialog_rect = pygame.Rect(self.x, self.y, self.width, self.height)
+        if not dialog_rect.collidepoint(mouse_pos):
+            self.hide()
+            return True
+        
+        return True
+    
+    def scroll(self, delta):
+        """Scroll the weapon list"""
+        self.scroll_offset = max(0, min(self.max_scroll, self.scroll_offset + delta))
+        self._create_weapon_buttons()  # Recreate buttons with new scroll position
+    
+    def update_hover(self, mouse_pos):
+        """Update hover state"""
+        self.hovered_weapon = None
+        for i, button_rect in enumerate(self.weapon_buttons):
+            if button_rect.collidepoint(mouse_pos) and i < len(self.available_weapons):
+                self.hovered_weapon = i
+                break
+    
+    def draw(self, screen):
+        """Draw the dialog"""
+        if not self.visible or not self.unit or not self.available_weapons:
+            return
+        
+        # Draw semi-transparent overlay
+        overlay = pygame.Surface((self.screen_width, self.screen_height))
+        overlay.set_alpha(128)
+        overlay.fill((0, 0, 0))
+        screen.blit(overlay, (0, 0))
+        
+        # Draw dialog background
+        dialog_rect = pygame.Rect(self.x, self.y, self.width, self.height)
+        pygame.draw.rect(screen, PANEL_BG, dialog_rect)
+        pygame.draw.rect(screen, PANEL_BORDER, dialog_rect, 3)
+        
+        # Draw title
+        title_text = self.font_medium.render(f"Select Weapon - {self.unit.name}", True, TEXT_PRIMARY)
+        title_rect = title_text.get_rect(center=(self.x + self.width // 2, self.y + 25))
+        screen.blit(title_text, title_rect)
+        
+        # Create clipping rect for scrollable content
+        content_rect = pygame.Rect(self.x + 10, self.y + 50, self.width - 20, self.height - 70)
+        screen.set_clip(content_rect)
+        
+        # Draw weapon buttons
+        for i, (weapon_info, button_rect) in enumerate(zip(self.available_weapons, self.weapon_buttons)):
+            if button_rect.bottom < self.y + 50 or button_rect.top > self.y + self.height - 20:
+                continue  # Skip buttons outside visible area
+            
+            self.draw_weapon_button(screen, button_rect, weapon_info, i)
+        
+        # Remove clipping
+        screen.set_clip(None)
+        
+        # Draw scroll indicator if needed
+        if self.max_scroll > 0:
+            self.draw_scroll_indicator(screen)
+    
+    def draw_weapon_button(self, screen, rect, weapon_info, index):
+        """Draw a weapon selection button"""
+        wargear = weapon_info['wargear']
+        profile = weapon_info['profile']
+        can_shoot = weapon_info['can_shoot']
+        model_count = weapon_info['models_with_weapon']
+        
+        # Choose colors based on state
+        if not can_shoot:
+            bg_color = BUTTON_DISABLED
+            text_color = TEXT_DISABLED
+            border_color = PANEL_BORDER
+        elif self.hovered_weapon == index:
+            bg_color = BUTTON_HOVER
+            text_color = TEXT_PRIMARY
+            border_color = BUTTON_SELECTED
+        else:
+            bg_color = BUTTON_BG
+            text_color = TEXT_PRIMARY
+            border_color = PANEL_BORDER
+        
+        # Draw button background
+        pygame.draw.rect(screen, bg_color, rect)
+        pygame.draw.rect(screen, border_color, rect, 2)
+        
+        # Draw weapon name and profile
+        weapon_name = f"{wargear.name}"
+        if len(wargear.profiles) > 1:
+            weapon_name += f" ({weapon_info['profile_name']})"
+        
+        name_text = self.font_small.render(weapon_name, True, text_color)
+        name_rect = pygame.Rect(rect.x + 10, rect.y + 6, rect.width - 20, 16)
+        screen.blit(name_text, name_rect)
+        
+        # Draw weapon stats
+        stats_text = f"Range {profile.range.max}\" | A {profile.attacks} | BS {profile.skill}+ | S {profile.strength} | AP {profile.ap} | D {profile.damage}"
+        stats_surface = self.font_tiny.render(stats_text, True, text_color)
+        stats_rect = pygame.Rect(rect.x + 10, rect.y + 26, rect.width - 20, 14)
+        screen.blit(stats_surface, stats_rect)
+        
+        # Draw model count and availability
+        if can_shoot:
+            count_text = f"{model_count} model(s)"
+            count_color = TEXT_SECONDARY
+        else:
+            count_text = "Cannot shoot"  
+            count_color = TEXT_DISABLED
+        
+        count_surface = self.font_tiny.render(count_text, True, count_color)
+        count_rect = pygame.Rect(rect.x + 10, rect.y + 44, rect.width - 20, 12)
+        screen.blit(count_surface, count_rect)
+    
+    def draw_scroll_indicator(self, screen):
+        """Draw scroll indicator"""
+        if self.max_scroll <= 0:
+            return
+        
+        # Calculate scroll bar dimensions
+        scroll_bar_height = 100
+        scroll_bar_width = 8
+        scroll_bar_x = self.x + self.width - scroll_bar_width - 5
+        scroll_bar_y = self.y + 60
+        
+        # Draw scroll track
+        track_rect = pygame.Rect(scroll_bar_x, scroll_bar_y, scroll_bar_width, scroll_bar_height)
+        pygame.draw.rect(screen, (100, 100, 100), track_rect)
+        
+        # Draw scroll thumb
+        thumb_ratio = (self.height - 100) / (self.max_scroll + self.height - 100)
+        thumb_height = max(20, int(scroll_bar_height * thumb_ratio))
+        thumb_y = scroll_bar_y + int((scroll_bar_height - thumb_height) * (self.scroll_offset / self.max_scroll))
+        
+        thumb_rect = pygame.Rect(scroll_bar_x, thumb_y, scroll_bar_width, thumb_height)
+        pygame.draw.rect(screen, (200, 200, 200), thumb_rect)
 
 
 class DeploymentChoiceDialog:
@@ -2497,8 +2791,15 @@ class GameView:
             self.selected_unit_for_movement and 
             hasattr(self, 'movement_action') and 
             self.movement_action):
+            advance_roll = getattr(self, 'advance_roll', None)
             draw_movement_range(battlefield_surface, self.selected_unit_for_movement, 
-                              self.movement_action, self.zoom_level, self.offset_x, self.offset_y)
+                              self.movement_action, self.zoom_level, self.offset_x, self.offset_y, advance_roll)
+        
+        # Draw weapon range indicator if a unit is selected for shooting
+        if (hasattr(self, 'selected_unit') and self.selected_unit and 
+            hasattr(self, 'selected_weapon_profile') and self.selected_weapon_profile):
+            draw_weapon_ranges(battlefield_surface, self.selected_unit, 
+                             self.selected_weapon_profile, self.zoom_level, self.offset_x, self.offset_y)
         
         self.screen.blit(battlefield_surface, (ROSTER_PANE_WIDTH, 0))
 
@@ -2523,6 +2824,10 @@ class GameView:
         # Draw movement choice dialog if visible
         if hasattr(self, 'movement_choice_dialog') and self.movement_choice_dialog.visible:
             self.movement_choice_dialog.draw(self.screen)
+        
+        # Draw weapon choice dialog if visible
+        if hasattr(self, 'weapon_choice_dialog') and self.weapon_choice_dialog.visible:
+            self.weapon_choice_dialog.draw(self.screen)
 
         pygame.display.update()
 
@@ -3563,7 +3868,11 @@ class BattlePhaseHandler(BasePhaseHandler):
     """Handles events during battle phases (movement, shooting, etc.)"""
     
     def handle_event(self, event: pygame.event.Event) -> bool:
-        # Handle movement choice dialog first (highest priority)
+        # Handle weapon choice dialog first (highest priority)
+        if hasattr(self.game_view, 'weapon_choice_dialog') and self.game_view.weapon_choice_dialog.visible:
+            return self.game_view.weapon_choice_dialog.handle_event(event)
+        
+        # Handle movement choice dialog second (high priority)
         if hasattr(self.game_view, 'movement_choice_dialog') and self.game_view.movement_choice_dialog.visible:
             if self.game_view.movement_choice_dialog.handle_event(event):
                 return True
@@ -3590,20 +3899,38 @@ class BattlePhaseHandler(BasePhaseHandler):
                     print(f"✅ Advanced to next phase: {self.game.phase.name}")
                 return True
             elif event.key == pygame.K_ESCAPE:
-                # Cancel current movement selection if active
-                if (hasattr(self.game_view, 'selected_unit_for_movement') and 
-                    self.game_view.selected_unit_for_movement and 
-                    hasattr(self.game_view, 'movement_action') and 
-                    self.game_view.movement_action):
-                    
-                    unit_name = self.game_view.selected_unit_for_movement.name
-                    action_name = self.game_view.movement_action.name.lower().replace('_', ' ')
-                    print(f"❌ Cancelled {action_name} for {unit_name}")
-                    
-                    # Clear movement selection
-                    self.game_view.selected_unit_for_movement = None
-                    self.game_view.movement_action = None
-                    return True
+                # Cancel current selections based on phase
+                if current_phase.name == 'MOVEMENT_PHASE':
+                    # Cancel current movement selection if active
+                    if (hasattr(self.game_view, 'selected_unit_for_movement') and 
+                        self.game_view.selected_unit_for_movement and 
+                        hasattr(self.game_view, 'movement_action') and 
+                        self.game_view.movement_action):
+                        
+                        unit_name = self.game_view.selected_unit_for_movement.name
+                        action_name = self.game_view.movement_action.name.lower().replace('_', ' ')
+                        print(f"❌ Cancelled {action_name} for {unit_name}")
+                        
+                        # Clear movement selection
+                        self.game_view.selected_unit_for_movement = None
+                        self.game_view.movement_action = None
+                        return True
+                
+                elif current_phase.name == 'SHOOTING_PHASE':
+                    # Cancel current shooting selection if active
+                    if (hasattr(self.game_view, 'selected_weapon_profile') and 
+                        self.game_view.selected_weapon_profile):
+                        
+                        weapon_name = self.game_view.selected_weapon_profile.parent_wargear.name
+                        unit_name = self.game_view.selected_unit.name if self.game_view.selected_unit else "Unknown unit"
+                        print(f"❌ Cancelled shooting with {weapon_name} for {unit_name}")
+                        
+                        # Clear shooting selection
+                        self._clear_shooting_selection()
+                        return True
+                
+                # Cancel other phase selections as needed
+                # TODO: Add charge/fight phase cancellations when implemented
         
         # Handle phase-specific mouse events
         if event.type == pygame.MOUSEBUTTONDOWN:
@@ -3622,14 +3949,12 @@ class BattlePhaseHandler(BasePhaseHandler):
                 self.game_view.left_roster_pane.on_mouse_press(x, y, button)
                 selected_unit = self.game_view.left_roster_pane.selected_unit
                 if selected_unit:
-                    self.game_view.selected_unit = selected_unit
                     self._handle_unit_selection(selected_unit)
                 return True
             elif self.game_view.right_roster_pane.rect.collidepoint(x, y):
                 self.game_view.right_roster_pane.on_mouse_press(x, y, button)
                 selected_unit = self.game_view.right_roster_pane.selected_unit
                 if selected_unit:
-                    self.game_view.selected_unit = selected_unit
                     self._handle_unit_selection(selected_unit)
                 return True
             
@@ -3646,25 +3971,141 @@ class BattlePhaseHandler(BasePhaseHandler):
         
         return False
     
+    def _synchronize_unit_selection(self, unit) -> None:
+        """Synchronize unit selection between RosterPane and battlefield"""
+        # Update the main selected unit
+        self.game_view.selected_unit = unit
+        
+        # Update roster pane selections to match
+        # Find which roster pane this unit belongs to and update its selection
+        if unit.parent_army:
+            if unit.parent_army.player == self.game_view.player1:
+                self.game_view.left_roster_pane.selected_unit = unit
+                self.game_view.right_roster_pane.selected_unit = None
+            elif unit.parent_army.player == self.game_view.player2:
+                self.game_view.right_roster_pane.selected_unit = unit
+                self.game_view.left_roster_pane.selected_unit = None
+    
     def _handle_unit_selection(self, unit) -> None:
         """Handle unit selection based on current phase"""
         current_phase = self.game.phase
         current_player = self.game.get_current_player()
         
-        # Only show movement dialog during movement phase for human player's units
-        if (current_phase.name == 'MOVEMENT_PHASE' and 
-            current_player.type.name == 'HUMAN' and
-            unit.parent_army and unit.parent_army.player == current_player):
+        # Check if this unit belongs to the current player
+        if not (unit.parent_army and unit.parent_army.player == current_player):
+            print(f"❌ {unit.name} does not belong to current player {current_player.name}")
+            return
+        
+        # Only allow human players to interact with units during their turn
+        if current_player.type.name != 'HUMAN':
+            print(f"❌ Current player {current_player.name} is AI - no unit interaction allowed")
+            return
+        
+        # Synchronize selection across UI components
+        self._synchronize_unit_selection(unit)
+        
+        # Handle phase-specific unit selection
+        if current_phase.name == 'MOVEMENT_PHASE':
+            self._handle_movement_phase_selection(unit)
+        elif current_phase.name == 'SHOOTING_PHASE':
+            self._handle_shooting_phase_selection(unit)
+        elif current_phase.name == 'CHARGE_PHASE':
+            self._handle_charge_phase_selection(unit)
+        elif current_phase.name == 'FIGHT_PHASE':
+            self._handle_fight_phase_selection(unit)
+        else:
+            print(f"❌ Unit selection not available in {current_phase.name}")
+    
+    def _handle_movement_phase_selection(self, unit) -> None:
+        """Handle unit selection during movement phase"""
+        # Check if unit has already moved this round
+        if hasattr(unit.round_state, 'moved_this_round') and unit.round_state.moved_this_round:
+            print(f"❌ {unit.name} has already moved this round")
+            return
+        
+        def on_movement_choice(choice):
+            self._handle_movement_choice(unit, choice)
+        
+        self.game_view.movement_choice_dialog.show(unit, on_movement_choice, self.game.map)
+    
+    def _handle_shooting_phase_selection(self, unit) -> None:
+        """Handle unit selection during shooting phase"""
+        # Check if unit has already shot this round
+        if hasattr(unit.round_state, 'shot_this_round') and unit.round_state.shot_this_round:
+            print(f"❌ {unit.name} has already shot this round")
+            return
+        
+        # Check if unit can shoot (not advanced unless allowed, not fell back, etc.)
+        if unit.round_state.advanced_this_round:
+            # Check if any weapons can shoot after advancing
+            can_shoot_any = False
+            for model in unit.models:
+                if not model.is_alive:
+                    continue
+                for wargear in model.wargear:
+                    if wargear.is_ranged():
+                        for profile in wargear.profiles.values():
+                            if unit.can_shoot_after_advance(profile):
+                                can_shoot_any = True
+                                break
+                        if can_shoot_any:
+                            break
+                if can_shoot_any:
+                    break
             
-            # Check if unit has already moved this round
-            if hasattr(unit.round_state, 'moved_this_round') and unit.round_state.moved_this_round:
-                print(f"❌ {unit.name} has already moved this round")
+            if not can_shoot_any:
+                print(f"❌ {unit.name} advanced and has no weapons that can shoot")
                 return
-            
-            def on_movement_choice(choice):
-                self._handle_movement_choice(unit, choice)
-            
-            self.game_view.movement_choice_dialog.show(unit, on_movement_choice, self.game.map)
+        
+        if unit.round_state.fell_back_this_round:
+            print(f"❌ {unit.name} fell back and cannot shoot")
+            return
+        
+        # Check if unit has any ranged weapons
+        has_ranged_weapons = any(
+            wargear.is_ranged() 
+            for model in unit.models if model.is_alive
+            for wargear in model.wargear
+        )
+        
+        if not has_ranged_weapons:
+            print(f"❌ {unit.name} has no ranged weapons")
+            return
+        
+        # Clear any previous weapon selection when changing units
+        self._clear_shooting_selection()
+        
+        # Show weapon choice dialog
+        self._show_weapon_choice_dialog(unit)
+        print(f"🎯 Select weapon for {unit.name}")
+    
+    def _handle_charge_phase_selection(self, unit) -> None:
+        """Handle unit selection during charge phase"""
+        # Check if unit has already charged this round
+        if hasattr(unit.round_state, 'declared_charge_this_round') and unit.round_state.declared_charge_this_round:
+            print(f"❌ {unit.name} has already declared a charge this round")
+            return
+        
+        # Check if unit can charge (not advanced unless allowed, not fell back, etc.)
+        if unit.round_state.fell_back_this_round:
+            print(f"❌ {unit.name} fell back and cannot charge")
+            return
+        
+        # TODO: Add more charge validation logic
+        print(f"⚔️ Click on enemy unit to charge with {unit.name}")
+    
+    def _handle_fight_phase_selection(self, unit) -> None:
+        """Handle unit selection during fight phase"""
+        # Check if unit is in engagement range
+        is_engaged = any(self.game.map.is_within_engagement_range(unit.get_position(), enemy)
+                        for enemy in self.game.map.get_enemy_units(unit) if enemy.is_alive())
+        
+        if not is_engaged:
+            print(f"❌ {unit.name} is not in engagement range")
+            return
+        
+        # TODO: Add fight phase logic
+        print(f"👊 Click on engaged enemy to fight with {unit.name}")
     
     def _handle_movement_choice(self, unit, choice: str) -> None:
         """Handle movement choice selection using Unit's movement system"""
@@ -3696,6 +4137,10 @@ class BattlePhaseHandler(BasePhaseHandler):
         self.game_view.selected_unit_for_movement = unit
         self.game_view.movement_action = chosen_action
         
+        # Roll advance dice immediately if advancing
+        if choice == 'advance':
+            advance_roll = unit.prepare_advance()
+        
         if choice == 'stationary':
             # Execute stationary action immediately (no destination needed)
             success = unit._execute_action(chosen_action.value, (0, 0, 0), self.game.map)
@@ -3726,7 +4171,15 @@ class BattlePhaseHandler(BasePhaseHandler):
     
     def _handle_movement_action(self, x: int, y: int) -> bool:
         """Handle movement phase actions using Unit's movement system"""
-        # Only process if we have a unit selected for movement
+        # Check if we clicked on a unit first for selection
+        clicked_unit = self.game_view.get_unit_at_position(x, y)
+        if clicked_unit:
+            # Try to select this unit for movement
+            self.game_view.selected_unit = clicked_unit
+            self._handle_unit_selection(clicked_unit)
+            return True
+        
+        # Only process movement destination if we have a unit selected for movement
         if (hasattr(self.game_view, 'selected_unit_for_movement') and 
             self.game_view.selected_unit_for_movement and 
             hasattr(self.game_view, 'movement_action') and 
@@ -3790,9 +4243,13 @@ class BattlePhaseHandler(BasePhaseHandler):
         elif action == MovementAction.MOVE:
             max_distance = base_movement
         elif action == MovementAction.ADVANCE:
-            # For advance, assume maximum possible roll (6) for validation
-            # This prevents false negatives where player clicks within advance range
-            max_distance = base_movement + 6
+            # Use the unit's advance roll if available
+            advance_roll = unit.get_advance_roll()
+            if advance_roll is not None:
+                max_distance = base_movement + advance_roll
+            else:
+                # Fallback to maximum possible if no roll stored (shouldn't happen)
+                max_distance = base_movement + 6
         elif action == MovementAction.FALL_BACK:
             max_distance = base_movement
         else:
@@ -3821,15 +4278,140 @@ class BattlePhaseHandler(BasePhaseHandler):
     
     def _handle_shooting_action(self, x: int, y: int) -> bool:
         """Handle shooting phase actions"""
+        # Check if we clicked on a unit first for selection
+        clicked_unit = self.game_view.get_unit_at_position(x, y)
+        
+        # If we have a weapon selected and clicked a unit, handle targeting
+        if (hasattr(self.game_view, 'selected_weapon_profile') and 
+            self.game_view.selected_weapon_profile and 
+            self.game_view.selected_unit and 
+            clicked_unit):
+            
+            # If clicked unit is different from selected unit, treat as target
+            if clicked_unit != self.game_view.selected_unit:
+                # Validate shooting at this target
+                validation_result = self._validate_shooting_target(
+                    self.game_view.selected_unit, 
+                    clicked_unit, 
+                    self.game_view.selected_weapon_profile
+                )
+                
+                if validation_result["valid"]:
+                    print(f"Shooting action: {self.game_view.selected_unit.name} targets {clicked_unit.name} with {self.game_view.selected_weapon_profile.parent_wargear.name}")
+                    # TODO: Execute actual shooting mechanics
+                    self._clear_shooting_selection()
+                    return True
+                else:
+                    print(f"Invalid target: {validation_result['reason']}")
+                    return False
+            # If clicked same unit as selected, just re-select it (no weapon change needed)
+            else:
+                return True
+        
+        # If clicked on a unit (either no weapon selected or no unit selected), handle unit selection
+        if clicked_unit:
+            # Clear any previous weapon selection since we're changing units
+            self._clear_shooting_selection()
+            # Select the clicked unit
+            self._handle_unit_selection(clicked_unit)
+            return True
+        
+        # If we have a selected unit but no weapon selected, show weapon choice dialog
         if self.game_view.selected_unit:
-            # Get target unit at click position
-            target_unit = self.game_view.get_unit_at_position(x, y)
-            if target_unit:
-                # TODO: Implement shooting validation and execution
-                print(f"Shooting action: {self.game_view.selected_unit.name} targets {target_unit.name}")
+            # If we have a selected weapon, clicking empty space clears selection
+            if hasattr(self.game_view, 'selected_weapon_profile') and self.game_view.selected_weapon_profile:
+                self._clear_shooting_selection()
+                return True
+            else:
+                # No weapon selected, show weapon choice dialog
+                self._show_weapon_choice_dialog(self.game_view.selected_unit)
                 return True
         
         return False
+    
+    def _show_weapon_choice_dialog(self, unit):
+        """Show weapon selection dialog for the unit"""
+        if not hasattr(self.game_view, 'weapon_choice_dialog'):
+            self.game_view.weapon_choice_dialog = WeaponChoiceDialog(
+                self.game_view.screen.get_width(), 
+                self.game_view.screen.get_height()
+            )
+        
+        def on_weapon_choice(weapon_profile):
+            self.game_view.selected_weapon_profile = weapon_profile
+            # Clear any previous shooting selection state
+            if hasattr(self.game_view, 'selected_shooting_models'):
+                self.game_view.selected_shooting_models = []
+        
+        self.game_view.weapon_choice_dialog.show(unit, on_weapon_choice, self.game.map)
+    
+    def _clear_shooting_selection(self):
+        """Clear shooting selection state"""
+        if hasattr(self.game_view, 'selected_weapon_profile'):
+            self.game_view.selected_weapon_profile = None
+        if hasattr(self.game_view, 'selected_shooting_models'):
+            self.game_view.selected_shooting_models = []
+    
+    def _validate_shooting_target(self, shooting_unit, target_unit, weapon_profile) -> dict:
+        """Validate if shooting unit can target the enemy unit with the selected weapon"""
+        # Check if target is an enemy unit
+        if target_unit.get_parent_army() == shooting_unit.get_parent_army():
+            return {"valid": False, "reason": "Cannot target friendly units"}
+        
+        # Check if target is alive
+        if not target_unit.is_alive():
+            return {"valid": False, "reason": "Target unit is destroyed"}
+        
+        # Check if unit can shoot (not advanced unless allowed, not fell back, etc.)
+        if shooting_unit.round_state.advanced_this_round and not shooting_unit.can_shoot_after_advance(weapon_profile):
+            return {"valid": False, "reason": "Unit advanced and cannot shoot with this weapon"}
+        
+        if shooting_unit.round_state.fell_back_this_round:
+            return {"valid": False, "reason": "Unit fell back and cannot shoot"}
+        
+        # Check if any models in the unit can shoot this weapon at the target
+        models_in_range = []
+        for model in shooting_unit.models:
+            if not model.is_alive:
+                continue
+                
+            # Check if this model has the weapon
+            has_weapon = False
+            for wargear in model.wargear:
+                if weapon_profile.parent_wargear == wargear:
+                    has_weapon = True
+                    break
+            
+            if not has_weapon:
+                continue
+            
+            # Check range to target
+            closest_target_model, distance = model.return_closest_model_in_unit(target_unit)
+            if distance <= weapon_profile.range.max:
+                # Check line of sight (placeholder)
+                if self._has_line_of_sight(model, closest_target_model):
+                    models_in_range.append(model)
+        
+        if not models_in_range:
+            return {"valid": False, "reason": "No models in range with line of sight"}
+        
+        # Check engagement range restrictions
+        is_engaged = any(self.game.map.is_within_engagement_range(shooting_unit.get_position(), enemy)
+                        for enemy in self.game.map.get_enemy_units(shooting_unit) if enemy.is_alive())
+        
+        if is_engaged and not shooting_unit.can_shoot_in_engagement_range(weapon_profile):
+            return {"valid": False, "reason": "Unit is engaged and weapon cannot shoot in engagement range"}
+        
+        return {"valid": True, "reason": f"{len(models_in_range)} models can shoot"}
+    
+    def _has_line_of_sight(self, shooting_model, target_model) -> bool:
+        """Placeholder line of sight check - always returns True for now"""
+        # TODO: Implement proper line of sight calculations considering:
+        # - Terrain blocking
+        # - Other units blocking  
+        # - Model height and visibility
+        # - Special rules (e.g., Indirect Fire)
+        return True
     
     def _handle_charge_action(self, x: int, y: int) -> bool:
         """Handle charge phase actions"""
@@ -3857,17 +4439,38 @@ class BattlePhaseHandler(BasePhaseHandler):
     
     def get_allowed_actions(self) -> List[str]:
         current_phase = self.game.phase
+        current_player = self.game.get_current_player()
         
+        # Base actions available in all phases
+        base_actions = ["view_unit_details", "advance_phase"]
+        
+        # Only allow unit selection for human players
+        if current_player.type.name == 'HUMAN':
+            base_actions.append("select_unit")
+        
+        # Phase-specific actions
         if current_phase.name == 'MOVEMENT_PHASE':
-            return ["select_unit", "move_unit", "advance_unit", "view_unit_details"]
+            if current_player.type.name == 'HUMAN':
+                return base_actions + ["move_unit", "advance_unit", "remain_stationary", "fall_back"]
+            else:
+                return base_actions + ["ai_movement_phase"]
         elif current_phase.name == 'SHOOTING_PHASE':
-            return ["select_unit", "shoot_weapon", "target_unit", "view_unit_details"]
+            if current_player.type.name == 'HUMAN':
+                return base_actions + ["select_weapon", "target_unit", "cancel_shooting"]
+            else:
+                return base_actions + ["ai_shooting_phase"]
         elif current_phase.name == 'CHARGE_PHASE':
-            return ["select_unit", "declare_charge", "charge_move", "view_unit_details"]
+            if current_player.type.name == 'HUMAN':
+                return base_actions + ["declare_charge", "charge_move"]
+            else:
+                return base_actions + ["ai_charge_phase"]
         elif current_phase.name == 'FIGHT_PHASE':
-            return ["select_unit", "pile_in", "fight", "consolidate", "view_unit_details"]
+            if current_player.type.name == 'HUMAN':
+                return base_actions + ["pile_in", "fight", "consolidate"]
+            else:
+                return base_actions + ["ai_fight_phase"]
         else:
-            return ["select_unit", "view_unit_details"]
+            return base_actions
 
 class PhaseManager:
     """Manages phase-specific event handling"""
@@ -3915,7 +4518,7 @@ class PhaseManager:
         return action in self.get_current_allowed_actions()
 
 
-def draw_movement_range(screen: pygame.Surface, unit, movement_action, zoom_level: float, offset_x: int, offset_y: int) -> None:
+def draw_movement_range(screen: pygame.Surface, unit, movement_action, zoom_level: float, offset_x: int, offset_y: int, advance_roll=None) -> None:
     """Draw a visual indicator showing the movement range for a selected unit"""
     from warhammer40k_ai.classes.unit import MovementAction
     # TILE_SIZE is defined at the top of this file
@@ -3931,8 +4534,12 @@ def draw_movement_range(screen: pygame.Surface, unit, movement_action, zoom_leve
     elif movement_action == MovementAction.MOVE:
         max_distance = base_movement
     elif movement_action == MovementAction.ADVANCE:
-        # Show maximum possible advance range (base + 6)
-        max_distance = base_movement + 6
+        # Use the unit's stored advance roll
+        unit_advance_roll = unit.get_advance_roll()
+        if unit_advance_roll is not None:
+            max_distance = base_movement + unit_advance_roll
+        else:
+            max_distance = base_movement + 6
     elif movement_action == MovementAction.FALL_BACK:
         max_distance = base_movement
     else:
@@ -3978,13 +4585,107 @@ def draw_movement_range(screen: pygame.Surface, unit, movement_action, zoom_leve
             font = pygame.font.SysFont('Arial', max(16, int(20 * zoom_level)), bold=True)
             action_text = movement_action.name.replace('_', ' ').title()
             if movement_action == MovementAction.ADVANCE:
-                action_text += f" (up to {max_distance}\")"
+                unit_advance_roll = unit.get_advance_roll()
+                if unit_advance_roll is not None:
+                    action_text += f" ({unit.movement}\" + {unit_advance_roll}\" = {max_distance}\")"
+                else:
+                    action_text += f" (up to {max_distance}\")"
             else:
                 action_text += f" ({max_distance}\")"
             
             text_surface = font.render(action_text, True, border_color)
             text_rect = text_surface.get_rect()
             text_rect.center = (center_x, center_y + radius + text_rect.height // 2 + 5)
+            screen.blit(text_surface, text_rect)
+        except:
+            # Fallback if font creation fails
+            pass
+
+
+def draw_weapon_ranges(screen: pygame.Surface, unit, selected_weapon_profile, zoom_level: float, offset_x: int, offset_y: int) -> None:
+    """Draw visual indicators showing the weapon range for each model that has the selected weapon"""
+    if not selected_weapon_profile or not unit or not unit.models:
+        return
+    
+    # TILE_SIZE is defined at the top of this file
+    weapon_range = selected_weapon_profile.range.max
+    if weapon_range <= 0:
+        return  # Skip melee weapons
+    
+    # Choose color based on weapon type and special rules
+    if selected_weapon_profile.is_pistol():
+        range_color = (255, 100, 255, 64)  # Magenta for pistols
+        border_color = (200, 50, 200)
+    elif selected_weapon_profile.is_assault():
+        range_color = (255, 255, 0, 64)  # Yellow for assault
+        border_color = (200, 200, 0)  
+    elif selected_weapon_profile.is_heavy():
+        range_color = (255, 128, 0, 64)  # Orange for heavy
+        border_color = (200, 100, 0)
+    elif selected_weapon_profile.is_rapid_fire():
+        range_color = (0, 255, 255, 64)  # Cyan for rapid fire
+        border_color = (0, 200, 200)
+    else:
+        range_color = (0, 255, 0, 64)  # Green for other ranged weapons
+        border_color = (0, 200, 0)
+    
+    # Draw range circle for each model that has this weapon
+    models_with_weapon = []
+    for model in unit.models:
+        if not model.is_alive:
+            continue
+        
+        # Check if this model has the selected weapon
+        has_weapon = False
+        for wargear in model.wargear:
+            if wargear == selected_weapon_profile.parent_wargear:
+                has_weapon = True
+                break
+        
+        if has_weapon:
+            models_with_weapon.append(model)
+            
+            # Get model position
+            model_pos = model.get_location()
+            
+            # Convert model position to screen coordinates
+            center_x = int(model_pos[0] * TILE_SIZE * zoom_level + offset_x)
+            center_y = int(model_pos[1] * TILE_SIZE * zoom_level + offset_y)
+            
+            # Calculate radius in screen pixels
+            radius = int(weapon_range * TILE_SIZE * zoom_level)
+            
+            if radius > 0:
+                # Create a surface with per-pixel alpha for the range circle
+                range_surface = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
+                pygame.draw.circle(range_surface, range_color, (radius, radius), radius)
+                
+                # Blit the transparent range circle onto the battlefield
+                screen.blit(range_surface, (center_x - radius, center_y - radius))
+                
+                # Draw the border circle with thinner line for individual models
+                pygame.draw.circle(screen, border_color, (center_x, center_y), radius, 1)
+    
+    # Draw weapon information text
+    if models_with_weapon:
+        try:
+            font = pygame.font.SysFont('Arial', max(14, int(16 * zoom_level)), bold=True)
+            weapon_name = selected_weapon_profile.parent_wargear.name
+            if len(selected_weapon_profile.parent_wargear.profiles) > 1:
+                weapon_name += f" ({selected_weapon_profile.name})"
+            
+            info_text = f"{weapon_name} - Range {weapon_range}\" ({len(models_with_weapon)} models)"
+            text_surface = font.render(info_text, True, border_color)
+            
+            # Position text at top of screen
+            text_rect = text_surface.get_rect()
+            text_rect.center = (screen.get_width() // 2, 30)
+            
+            # Draw background for text
+            bg_rect = text_rect.inflate(20, 10)
+            pygame.draw.rect(screen, (0, 0, 0, 128), bg_rect)
+            pygame.draw.rect(screen, border_color, bg_rect, 2)
+            
             screen.blit(text_surface, text_rect)
         except:
             # Fallback if font creation fails

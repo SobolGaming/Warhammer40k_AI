@@ -281,7 +281,6 @@ class Game:
             
             success = self.auto_deploy_unit(unit)
             if success:
-                print(f"✅ Successfully auto-deployed {unit.name}")
                 # Record deployment action
                 if unit.position:
                     self.record_deployment_action(current_player, unit, 'deployed', unit.position)

@@ -35,6 +35,7 @@ class UnitRoundState:
     declared_charge_this_round: bool = False
     moved_this_round: bool = False  # Track if unit has moved during movement phase
     num_lost_models_this_round: int = 0
+    advance_roll: int = None  # Store advance roll for the round
 
 
 class MovementAction(Enum):
@@ -789,13 +790,8 @@ class Unit:
         else:
             return [MovementAction.REMAIN_STATIONARY.value, MovementAction.MOVE.value, MovementAction.ADVANCE.value]
 
-    def _execute_action(self, action: int, destination: Tuple[float, float, float], game_map: 'Map') -> bool:
-        """Execute the chosen action."""
-        # Check if unit has already moved this round
-        if self.round_state.moved_this_round:
-            print(f"❌ {self.name} has already moved this round")
-            return False
-        
+    def _execute_action(self, action: int, destination: Tuple[float, float, float], game_map: 'Map', advance_roll: int = None) -> bool:
+        """Execute a movement action for the unit."""
         success = False
         if action == MovementAction.REMAIN_STATIONARY.value:
             print(f"{self.name} remains stationary")
@@ -822,6 +818,19 @@ class Unit:
     def remain_stationary(self) -> bool:
         self.round_state.remained_stationary_this_round = True
         return True
+
+    def prepare_advance(self) -> int:
+        """Pre-roll advance dice for UI display. Returns the advance roll."""
+        if not hasattr(self.round_state, 'advance_roll') or self.round_state.advance_roll is None:
+            advance_roll = get_roll("D6")
+            self.round_state.advance_roll = advance_roll
+            print(f"🎲 {self.name} advance roll: {advance_roll}\" (Move {self.movement}\" + {advance_roll}\" = {self.movement + advance_roll}\")")
+            return advance_roll
+        return self.round_state.advance_roll
+
+    def get_advance_roll(self) -> int:
+        """Get the current advance roll, or None if not rolled yet."""
+        return getattr(self.round_state, 'advance_roll', None)
 
     def advance(self, destination: Tuple[float, float, float], game_map: 'Map') -> bool:
         # Check if unit can advance after arriving from reserves
@@ -853,10 +862,17 @@ class Unit:
         # Get the movement range from the first model (assuming all models have the same movement)
         movement_range = self.movement
 
-        # If advancing, add D6 to the movement range
+        # If advancing, use stored advance roll or roll new one
         if advance:
-            advance_roll = get_roll("D6")
-            print(f"Advance roll: {advance_roll}")
+            # Use stored advance roll if available, otherwise roll new one
+            if not hasattr(self.round_state, 'advance_roll') or self.round_state.advance_roll is None:
+                advance_roll = get_roll("D6")
+                self.round_state.advance_roll = advance_roll
+                print(f"Advance roll: {advance_roll}")
+            else:
+                advance_roll = self.round_state.advance_roll
+                print(f"Using stored advance roll: {advance_roll}")
+            
             if advance_roll is None:
                 logger.error(f"Failed to roll dice for advancing unit {self.name}")
                 return False
