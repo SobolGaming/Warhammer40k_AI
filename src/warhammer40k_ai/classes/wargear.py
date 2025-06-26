@@ -34,7 +34,12 @@ class WargearProfile:
 
     def _parse_attribute(self, attribute_value: str) -> Union[int, DiceCollection]:
         # Remove " and + from the attribute value
-        attribute_value = attribute_value.replace("\"", "").replace("+", "")
+        attribute_value = attribute_value.replace("\"", "")
+        
+        # Remove trailing + if it exists
+        if attribute_value.endswith("+"):
+            attribute_value = attribute_value[:-1]
+            
         if "D" in attribute_value:
             return DiceCollection.from_string(attribute_value)
         elif 'N/A' == attribute_value:
@@ -394,6 +399,21 @@ class WargearProfile:
                     return parts[1].lower(), int(parts[2])
         return "", 0
 
+    def is_split_fire(self) -> bool:
+        """Check if this weapon has split fire ability"""
+        # Check weapon keywords for split fire
+        keywords = self.get_keywords()
+        if 'Split Fire' in keywords:
+            return True
+        
+        # Check if the weapon profile has split fire in its parent wargear
+        if hasattr(self, 'parent_wargear') and self.parent_wargear:
+            wargear_keywords = self.parent_wargear.get_keywords()
+            if 'Split Fire' in wargear_keywords:
+                return True
+        
+        return False
+
 
 class Wargear:
     def __init__(self, wargear_data: Dict):
@@ -430,24 +450,44 @@ class Wargear:
         return self.type
 
     def get_range(self, profile_name: str = 'default') -> Range:
+        if profile_name not in self.profiles and self.profiles:
+            profile_name = next(iter(self.profiles.keys()))
         return self.profiles[profile_name].range
 
     def get_attacks(self, profile_name: str = 'default') -> Count:
+        if profile_name not in self.profiles and self.profiles:
+            profile_name = next(iter(self.profiles.keys()))
         return self.profiles[profile_name].attacks
 
     def get_skill(self, profile_name: str = 'default') -> int:
+        if profile_name not in self.profiles and self.profiles:
+            profile_name = next(iter(self.profiles.keys()))
         return self.profiles[profile_name].skill
 
     def get_strength(self, profile_name: str = 'default') -> int:
+        if profile_name not in self.profiles and self.profiles:
+            profile_name = next(iter(self.profiles.keys()))
         return self.profiles[profile_name].strength
 
     def get_ap(self, profile_name: str = 'default') -> int:
+        if profile_name not in self.profiles and self.profiles:
+            profile_name = next(iter(self.profiles.keys()))
         return self.profiles[profile_name].ap
 
     def get_damage(self, profile_name: str = 'default') -> int:
+        if profile_name not in self.profiles and self.profiles:
+            profile_name = next(iter(self.profiles.keys()))
         return self.profiles[profile_name].damage
 
     def get_keywords(self, profile_name: str = 'default') -> List[str]:
+        # If the requested profile doesn't exist, try to use the first available profile
+        if profile_name not in self.profiles:
+            if self.profiles:
+                # Use the first available profile
+                profile_name = next(iter(self.profiles.keys()))
+            else:
+                # No profiles available, return empty list
+                return []
         return self.profiles[profile_name].keywords
 
     def get_damage_potential(self, target_unit: Optional['Unit'] = None) -> float:

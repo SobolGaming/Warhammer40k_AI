@@ -124,8 +124,30 @@ def create_ai_agents(game: Game, player1: Player, player2: Player) -> dict:
     for i, player in enumerate([player1, player2]):
         if player.type == PlayerType.AI:
             opponent = player2 if player == player1 else player1
-            objectives = getattr(game, 'objectives', game.map.objectives if hasattr(game, 'map') else [])
+            
+            # Get objectives and commands, with fallbacks if not available yet
+            objectives = getattr(game, 'objectives', [])
+            if not objectives and hasattr(game, 'map') and hasattr(game.map, 'objectives'):
+                objectives = game.map.objectives
+            
             commands = getattr(game, 'commands', ['attack', 'defend', 'move'])
+            
+            # Ensure we have at least some objectives and commands
+            if not objectives:
+                print("⚠️ No objectives available yet - creating default objective")
+                from warhammer40k_ai.classes.map import Objective, ObjectiveCategory, ObjectivePoint
+                default_objective = Objective(
+                    name="Default Objective",
+                    location=ObjectivePoint(30, 22, 0, 3.0),  # Center of battlefield
+                    category=ObjectiveCategory.PRIMARY,
+                    points=10,
+                    description="Default objective for AI training",
+                    conditions=lambda game: True  # Always true for now
+                )
+                objectives = [default_objective]
+            
+            if not commands:
+                commands = ['attack', 'defend', 'move']
             
             agents[f'hla{i+1}'] = HighLevelAgent(game, player, opponent, objectives, commands)
             agents[f'ta{i+1}'] = TacticalAgent(game, player)

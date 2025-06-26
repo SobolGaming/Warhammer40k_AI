@@ -1054,6 +1054,197 @@ class Unit:
     ###########################################################################
     ### Shooting Phase Actions
     ###########################################################################
+    def execute_shooting_declarations(self, weapon_declarations: List[dict], game_map: 'Map') -> bool:
+        """
+        Execute shooting declarations according to Warhammer 40k rules.
+        
+        Args:
+            weapon_declarations: List of dicts with keys:
+                - 'weapon_profile': WargearProfile to use
+                - 'target_unit': Unit to target
+                - 'models': List of models using this weapon
+            game_map: Map instance for line of sight and range checks
+            
+        Returns:
+            bool: True if any attacks were successful
+        """
+        if not weapon_declarations:
+            print(f"❌ {self.name}: No shooting declarations to execute")
+            return False
+            
+        # Check if unit can shoot
+        if self.round_state.shot_this_round:
+            print(f"❌ {self.name} has already shot this round")
+            return False
+            
+        if self.round_state.fell_back_this_round:
+            print(f"❌ {self.name} cannot shoot after falling back")
+            return False
+            
+        print(f"🎯 {self.name} executing {len(weapon_declarations)} shooting declarations...")
+        
+        successful_attacks = 0
+        
+        # Execute each weapon declaration
+        for declaration in weapon_declarations:
+            weapon_profile = declaration['weapon_profile']
+            target_unit = declaration['target_unit']
+            models_with_weapon = declaration['models']
+            
+            # Validate this declaration
+            validation = self._validate_shooting_declaration(weapon_profile, target_unit, models_with_weapon, game_map)
+            if not validation['valid']:
+                print(f"❌ {self.name} - {weapon_profile.name}: {validation['reason']}")
+                continue
+                
+            # Execute attacks with this weapon
+            weapon_attacks = self._execute_weapon_attacks(weapon_profile, target_unit, models_with_weapon, game_map)
+            successful_attacks += weapon_attacks
+            
+        # Mark unit as having shot if any attacks were made
+        if successful_attacks > 0:
+            self.round_state.shot_this_round = True
+            print(f"✅ {self.name} completed shooting with {successful_attacks} successful attacks")
+            
+            # Check if target unit was destroyed
+            if not target_unit.is_alive():
+                print(f"💀 {target_unit.name} has been destroyed!")
+        else:
+            print(f"❌ {self.name} failed to execute any attacks")
+            
+        return successful_attacks > 0
+    
+    def _validate_shooting_declaration(self, weapon_profile, target_unit, models_with_weapon, game_map) -> dict:
+        """Validate a shooting declaration"""
+        # Check if target is an enemy unit
+        if target_unit.get_parent_army() == self.get_parent_army():
+            return {"valid": False, "reason": "Cannot target friendly units"}
+        
+        # Check if target is alive
+        if not target_unit.is_alive():
+            return {"valid": False, "reason": "Target unit is destroyed"}
+        
+        # Check if unit can shoot after advancing
+        if self.round_state.advanced_this_round and not self.can_shoot_after_advance(weapon_profile):
+            return {"valid": False, "reason": "Unit advanced and cannot shoot with this weapon"}
+        
+        # Check if any models can actually shoot this weapon at the target
+        models_in_range = []
+        for model in models_with_weapon:
+            if not model.is_alive:
+                continue
+                
+            # Check if this model has the weapon
+            has_weapon = False
+            for wargear in model.wargear:
+                if weapon_profile.parent_wargear == wargear:
+                    has_weapon = True
+                    break
+            
+            if not has_weapon:
+                continue
+                
+            # Check range and line of sight
+            if self._can_model_shoot_weapon_at_target(model, weapon_profile, target_unit, game_map):
+                models_in_range.append(model)
+        
+        if not models_in_range:
+            return {"valid": False, "reason": "No models in range or line of sight"}
+            
+        return {"valid": True, "reason": "Valid shooting declaration"}
+    
+    def _can_model_shoot_weapon_at_target(self, model, weapon_profile, target_unit, game_map) -> bool:
+        """Check if a specific model can shoot a weapon at a target"""
+        # Check range
+        target_position = target_unit.get_position()
+        if not target_position:
+            return False
+            
+        model_position = model.get_location()
+        distance = get_dist(
+            target_position[0] - model_position[0],
+            target_position[1] - model_position[1],
+            target_position[2] - model_position[2] if len(target_position) > 2 else 0
+        )
+        
+        if distance > weapon_profile.range.max:
+            return False
+            
+        # Check line of sight
+        if not self._has_line_of_sight_to_target(model, target_unit, game_map):
+            return False
+            
+        # Check engagement range restrictions
+        if not self._can_shoot_while_engaged(model, weapon_profile, target_unit, game_map):
+            return False
+            
+        return True
+    
+    def _has_line_of_sight_to_target(self, shooting_model, target_unit, game_map) -> bool:
+        """Check if shooting model has line of sight to target unit"""
+        # Simplified line of sight check - can be enhanced with terrain
+        shooting_pos = shooting_model.get_location()
+        target_pos = target_unit.get_position()
+        
+        if not shooting_pos or not target_pos:
+            return False
+            
+        # For now, assume line of sight unless blocked by terrain
+        # TODO: Implement proper line of sight checking with terrain
+        return True
+    
+    def _can_shoot_while_engaged(self, model, weapon_profile, target_unit, game_map) -> bool:
+        """Check if model can shoot while engaged with other units"""
+        # Check if unit is in engagement range
+        unit_position = self.get_position()
+        if not unit_position:
+            return True
+            
+        is_engaged = any(game_map.is_within_engagement_range(unit_position, enemy)
+                        for enemy in game_map.get_enemy_units(self) if enemy.is_alive())
+        
+        if not is_engaged:
+            return True
+            
+        # If engaged, check weapon type and target
+        if weapon_profile.is_pistol():
+            return True
+            
+        if weapon_profile.is_indirect_fire():
+            return True
+            
+        if self.is_vehicle:
+            return True
+            
+        # Check if target is the unit we're engaged with
+        if game_map.is_within_engagement_range(unit_position, target_unit):
+            return weapon_profile.is_pistol()
+            
+        # If target is different from engaged unit, only vehicles can shoot
+        return self.is_vehicle
+    
+    def _execute_weapon_attacks(self, weapon_profile, target_unit, models_with_weapon, game_map) -> int:
+        """Execute attacks with a specific weapon profile"""
+        successful_attacks = 0
+        
+        for model in models_with_weapon:
+            if not model.is_alive:
+                continue
+                
+            # Check if this model can still shoot this weapon at this target
+            if not self._can_model_shoot_weapon_at_target(model, weapon_profile, target_unit, game_map):
+                continue
+                
+            try:
+                # Execute the attack using the weapon profile
+                attack_result = weapon_profile.attack(target_unit, model)
+                if attack_result:
+                    successful_attacks += 1
+            except Exception as e:
+                print(f"❌ Error executing attack with {weapon_profile.name}: {e}")
+                
+        return successful_attacks
+
     def shoot(self, target_unit: 'Unit') -> None:
         if self.round_state.advanced_this_round:
             print(f"{self.name} cannot shoot after advancing.")
