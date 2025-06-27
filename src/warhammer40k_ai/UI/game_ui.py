@@ -2694,20 +2694,32 @@ class GameView:
         if hovered_unit:
             return hovered_unit, self.right_roster_pane
         
-        # Check if hovering over a unit on the battlefield
+        # Check if hovering over a model on the battlefield
         if ROSTER_PANE_WIDTH < x < BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH:
             battlefield_x = (x - ROSTER_PANE_WIDTH) / TILE_SIZE / self.zoom_level - self.offset_x / TILE_SIZE
             battlefield_y = y / TILE_SIZE / self.zoom_level - self.offset_y / TILE_SIZE
             
+            # Create a point for the mouse position
+            from shapely.geometry import Point
+            mouse_point = Point(battlefield_x, battlefield_y)
+            
+            # Check all models in all units
             for unit in self.game_map.units:
-                if unit.is_point_inside(battlefield_x, battlefield_y):
-                    # Determine which roster the unit belongs to (only if armies are loaded)
-                    if (self.player1.get_army() and self.player1.get_army().units and 
-                        unit in self.player1.get_army().units):
-                        return unit, self.left_roster_pane
-                    elif (self.player2.get_army() and self.player2.get_army().units and 
-                          unit in self.player2.get_army().units):
-                        return unit, self.right_roster_pane
+                for model in unit.models:
+                    if not model.is_alive:
+                        continue
+                    # Get the model's base shape and check if mouse point is inside
+                    model_shape = model.model_base.get_base_shape()
+                    if model_shape.contains(mouse_point):
+                        # Use the model's parent_unit to get the unit reference
+                        parent_unit = model.parent_unit
+                        # Determine which roster the unit belongs to (only if armies are loaded)
+                        if (self.player1.get_army() and self.player1.get_army().units and 
+                            parent_unit in self.player1.get_army().units):
+                            return parent_unit, self.left_roster_pane
+                        elif (self.player2.get_army() and self.player2.get_army().units and 
+                              parent_unit in self.player2.get_army().units):
+                            return parent_unit, self.right_roster_pane
         
         return None, None
 
@@ -2716,17 +2728,53 @@ class GameView:
         game_x = (x - ROSTER_PANE_WIDTH - self.offset_x) / (TILE_SIZE * self.zoom_level)
         game_y = (y - self.offset_y) / (TILE_SIZE * self.zoom_level)
         
-        print(f"Checking for unit at game coordinates: ({game_x}, {game_y})")
+        print(f"Checking for model at game coordinates: ({game_x}, {game_y})")
+
+        # Create a point for the game position
+        from shapely.geometry import Point
+        game_point = Point(game_x, game_y)
 
         for player in [self.player1, self.player2]:
             if player.get_army() and player.get_army().units:
                 for unit in [unit for unit in player.get_army().units if unit.deployed]:
-                    #print(f"Checking unit: {unit.name}")
-                    #print(f"Unit position: {unit.get_position()}")
-                    if unit.is_point_inside(game_x, game_y):
-                        return unit
+                    for model in unit.models:
+                        if not model.is_alive:
+                            continue
+                        # Get the model's base shape and check if game point is inside
+                        model_shape = model.model_base.get_base_shape()
+                        if model_shape.contains(game_point):
+                            # Use the model's parent_unit to get the unit reference
+                            print(f"Found model {model.name} from unit {model.parent_unit.name}")
+                            return model.parent_unit
         
-        #print("No unit found at position")
+        print("No model found at position")
+        return None
+    
+    def get_model_at_position(self, x: float, y: float) -> Optional['Model']:
+        """Get the specific model at the given position"""
+        # Convert screen coordinates to game coordinates
+        game_x = (x - ROSTER_PANE_WIDTH - self.offset_x) / (TILE_SIZE * self.zoom_level)
+        game_y = (y - self.offset_y) / (TILE_SIZE * self.zoom_level)
+        
+        print(f"Checking for model at game coordinates: ({game_x}, {game_y})")
+
+        # Create a point for the game position
+        from shapely.geometry import Point
+        game_point = Point(game_x, game_y)
+
+        for player in [self.player1, self.player2]:
+            if player.get_army() and player.get_army().units:
+                for unit in [unit for unit in player.get_army().units if unit.deployed]:
+                    for model in unit.models:
+                        if not model.is_alive:
+                            continue
+                        # Get the model's base shape and check if game point is inside
+                        model_shape = model.model_base.get_base_shape()
+                        if model_shape.contains(game_point):
+                            print(f"Found model {model.name} from unit {model.parent_unit.name}")
+                            return model
+        
+        print("No model found at position")
         return None
 
     def draw_move_path(self, unit: Unit):
@@ -2801,8 +2849,9 @@ class GameView:
             hasattr(self, 'movement_action') and 
             self.movement_action):
             advance_roll = getattr(self, 'advance_roll', None)
+            selected_model = getattr(self, 'selected_model_for_movement', None)
             draw_movement_range(battlefield_surface, self.selected_unit_for_movement, 
-                              self.movement_action, self.zoom_level, self.offset_x, self.offset_y, advance_roll)
+                              self.movement_action, self.zoom_level, self.offset_x, self.offset_y, advance_roll, selected_model)
         
         # Draw weapon range indicator if a unit is selected for shooting
         if (hasattr(self, 'selected_unit') and self.selected_unit and 
@@ -4128,6 +4177,9 @@ class BattlePhaseHandler(BasePhaseHandler):
         # Store the chosen action for battlefield click handling
         self.game_view.selected_unit_for_movement = unit
         self.game_view.movement_action = chosen_action
+        # Keep the selected model if one was previously selected
+        if not hasattr(self.game_view, 'selected_model_for_movement'):
+            self.game_view.selected_model_for_movement = None
         
         # Roll advance dice immediately if advancing
         if choice == 'advance':
@@ -4141,6 +4193,7 @@ class BattlePhaseHandler(BasePhaseHandler):
             # Clear selection since action is complete
             self.game_view.selected_unit_for_movement = None
             self.game_view.movement_action = None
+            self.game_view.selected_model_for_movement = None
         else:
             print(f"📍 Click on the battlefield to {choice} {unit.name}")
             # Action will be executed when user clicks battlefield
@@ -4163,11 +4216,13 @@ class BattlePhaseHandler(BasePhaseHandler):
     
     def _handle_movement_action(self, x: int, y: int) -> bool:
         """Handle movement phase actions using Unit's movement system"""
-        # Check if we clicked on a unit first for selection
-        clicked_unit = self.game_view.get_unit_at_position(x, y)
-        if clicked_unit:
-            # Try to select this unit for movement
+        # Check if we clicked on a model first for selection
+        clicked_model = self.game_view.get_model_at_position(x, y)
+        if clicked_model:
+            # Try to select this unit for movement and track the specific model
+            clicked_unit = clicked_model.parent_unit
             self.game_view.selected_unit = clicked_unit
+            self.game_view.selected_model_for_movement = clicked_model  # Track the specific model
             self._handle_unit_selection(clicked_unit)
             return True
         
@@ -4204,6 +4259,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                 # Clear movement selection only on successful move
                 self.game_view.selected_unit_for_movement = None
                 self.game_view.movement_action = None
+                self.game_view.selected_model_for_movement = None
             else:
                 # Move execution failed for some other reason - allow retry
                 print(f"📍 Click on the battlefield to {action.name.lower().replace('_', ' ')} {unit.name} (try a different location)")
@@ -4503,12 +4559,18 @@ class PhaseManager:
         return action in self.get_current_allowed_actions()
 
 
-def draw_movement_range(screen: pygame.Surface, unit, movement_action, zoom_level: float, offset_x: int, offset_y: int, advance_roll=None) -> None:
-    """Draw a visual indicator showing the movement range for a selected unit"""
+def draw_movement_range(screen: pygame.Surface, unit, movement_action, zoom_level: float, offset_x: int, offset_y: int, advance_roll=None, selected_model=None) -> None:
+    """Draw a visual indicator showing the movement range for a selected unit or specific model"""
     from warhammer40k_ai.classes.unit import MovementAction
     # TILE_SIZE is defined at the top of this file
     
-    current_position = unit.get_position()
+    # Use selected model's position if available, otherwise use unit's position
+    if selected_model:
+        model_location = selected_model.get_location()
+        current_position = (model_location[0], model_location[1], model_location[2])
+    else:
+        current_position = unit.get_position()
+    
     if not current_position:
         return
     
@@ -4577,6 +4639,11 @@ def draw_movement_range(screen: pygame.Surface, unit, movement_action, zoom_leve
                     action_text += f" (up to {max_distance}\")"
             else:
                 action_text += f" ({max_distance}\")"
+            
+            # Add model identifier if a specific model is selected
+            if selected_model and len(unit.models) > 1:
+                model_index = unit.models.index(selected_model) + 1
+                action_text += f" [Model {model_index}]"
             
             text_surface = font.render(action_text, True, border_color)
             text_rect = text_surface.get_rect()

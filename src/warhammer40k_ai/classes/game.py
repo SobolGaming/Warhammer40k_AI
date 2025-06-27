@@ -121,6 +121,7 @@ class Game:
         self.waiting_for_deployment_input = False  # Flag for manual phases during deployment
         self.deployment_actions = {}  # Track last deployment action for each player
         self.first_turn_player_index = None  # Index of player who goes first (will be set during DETERMINE_FIRST_TURN_ORDER)
+        self.battle_round_starting_player_index = None  # Track who started the current battle round
 
     def add_player(self, player: Player) -> None:
         """Add a player to the game."""
@@ -736,9 +737,16 @@ class Game:
             # Switch to the next player
             self.current_player_index = (self.current_player_index + 1) % len(self.players)
             
-            # If we've gone through all players, start a new turn
-            if self.current_player_index == 0:
+            # Track who started this battle round if not already set
+            if self.battle_round_starting_player_index is None:
+                # This is the first player switch of the game - the previous player started the round
+                self.battle_round_starting_player_index = (self.current_player_index - 1) % len(self.players)
+            
+            # Check if we've completed a full battle round (both players have had their turn)
+            if self.current_player_index == self.battle_round_starting_player_index:
+                # We've cycled back to the player who started this battle round
                 self.turn += 1
+                self.battle_round_starting_player_index = self.current_player_index  # This player starts the next round
                 # Reset round state for all units at the start of a new turn
                 for player in self.players:
                     for unit in player.get_army().units:
@@ -1080,6 +1088,9 @@ class Game:
             else:
                 # Default: attacker goes first
                 self.current_player_index = self.attacker_index if self.attacker_index is not None else 0
+            
+            # Set the battle round starting player to whoever goes first
+            self.battle_round_starting_player_index = self.current_player_index
             self.phase = BattleRoundPhases.COMMAND_PHASE
             print(f"🎉 Setup complete! {self.get_current_player().name} goes first")
             return True
