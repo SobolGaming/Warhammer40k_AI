@@ -732,6 +732,13 @@ class Game:
                 if hasattr(unit.round_state, 'moved_this_round'):
                     unit.round_state.moved_this_round = False
         
+        # Reset shooting tracking when entering Shooting Phase
+        elif self.phase == BattleRoundPhases.SHOOTING_PHASE:
+            current_player = self.get_current_player()
+            for unit in current_player.get_army().units:
+                if hasattr(unit.round_state, 'shot_this_round'):
+                    unit.round_state.shot_this_round = False
+        
         if next_phase_value == 0:  # If we've wrapped around to COMMAND_PHASE
             # This means we've finished all phases for the current player
             # Switch to the next player

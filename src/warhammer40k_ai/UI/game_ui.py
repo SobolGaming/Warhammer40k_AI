@@ -363,11 +363,25 @@ class RosterPane(pygame.sprite.Sprite):
             health_text += " (Not Deployed)"
             health_color = TEXT_SECONDARY
         
-        # Add movement status indicator
+        # Add movement and shooting status indicators
+        status_indicators = []
         if (hasattr(unit, 'round_state') and hasattr(unit.round_state, 'moved_this_round') and 
             unit.round_state.moved_this_round):
-            health_text += " • Moved"
+            status_indicators.append("Moved")
             health_color = (0, 150, 200)  # Blue to indicate moved
+        
+        if (hasattr(unit, 'round_state') and hasattr(unit.round_state, 'shot_this_round') and 
+            unit.round_state.shot_this_round):
+            status_indicators.append("Shot")
+            health_color = (200, 100, 0)  # Orange to indicate shot
+        
+        # If both moved and shot, use purple color and show both
+        if len(status_indicators) == 2:
+            health_color = (150, 0, 150)  # Purple for both actions
+        
+        # Add status indicators to health text
+        if status_indicators:
+            health_text += " • " + " • ".join(status_indicators)
         
         health_surface = self.font_small.render(health_text, True, health_color)
         surface.blit(health_surface, (x_left + icon_size + 8, y_offset))

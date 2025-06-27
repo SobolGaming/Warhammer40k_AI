@@ -1083,6 +1083,9 @@ class Unit:
             
         print(f"🎯 {self.name} executing {len(weapon_declarations)} shooting declarations...")
         
+        # Mark unit as having shot this round (regardless of success)
+        self.round_state.shot_this_round = True
+        
         successful_attacks = 0
         
         # Execute each weapon declaration
@@ -1101,9 +1104,8 @@ class Unit:
             weapon_attacks = self._execute_weapon_attacks(weapon_profile, target_unit, models_with_weapon, game_map)
             successful_attacks += weapon_attacks
             
-        # Mark unit as having shot if any attacks were made
+        # Report shooting results
         if successful_attacks > 0:
-            self.round_state.shot_this_round = True
             print(f"✅ {self.name} completed shooting with {successful_attacks} successful attacks")
             
             # Check if target unit was destroyed
