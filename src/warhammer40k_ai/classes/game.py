@@ -756,9 +756,18 @@ class Game:
         return self.phase == BattleRoundPhases.COMMAND_PHASE
     
     def start_command_phase(self) -> None:
-        """Start the command phase - all players gain 1 Command Point"""
+        """Start the command phase - all players gain 1 Command Point and evaluate objectives"""
         for player in self.players:
             player.gain_command_point()
+        
+        # Update and evaluate objectives for the current player
+        current_player = self.get_current_player()
+        for obj in self.map.objectives:
+            if hasattr(obj, 'location') and hasattr(obj.location, 'update_control'):
+                obj.location.update_control(self)
+            if obj.check_completion(self):
+                current_player.add_score(obj.points)
+                print(f"🎯 {current_player.name} scored {obj.points} points for {obj.name}!")
 
     def is_movement_phase(self) -> bool:
         return self.phase == BattleRoundPhases.MOVEMENT_PHASE

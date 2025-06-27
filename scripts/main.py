@@ -221,12 +221,6 @@ def execute_ai_turn(game: Game, player: Player, agents: dict, episode_stats: dic
     # Execute current phase
     if game.is_command_phase():
         game.start_command_phase()
-        # Update objectives
-        for obj in game.map.objectives:
-            if hasattr(obj, 'location') and hasattr(obj.location, 'update_control'):
-                obj.location.update_control(game)
-            if obj.check_completion(game):
-                player.add_score(obj.points)
         tactical_agent.command_phase(command)
         game.next_phase()
     elif game.is_movement_phase():
@@ -309,13 +303,9 @@ def run_unified_game_loop(player_configs: dict) -> dict:
             cleanup_destroyed_units(game)
             episode_stats['total_turns'] = game.turn
     else:
-        # Play mode - handle both AI and human players with UI
-        from warhammer40k_ai.UI.game_ui import GameState
-        import pygame
-        
+        # Play mode - handle both AI and human players with UI        
         running = True
         setup_complete = False
-        waiting_for_setup_input = False
         
         while running and not game.is_game_over():
             # Handle pygame events for human players
@@ -384,7 +374,7 @@ def run_unified_game_loop(player_configs: dict) -> dict:
                                 # Check whose turn it is to deploy
                                 current_deployment_player = game.get_current_deployment_player()
                                 
-                                if current_deployment_player and current_deployment_player.type.name == 'AI':
+                                if current_deployment_player and current_deployment_player.type == PlayerType.AI:
                                     # It's AI's turn - deploy one unit
                                     undeployed_units = game.get_deployable_units(current_deployment_player)
                                     if undeployed_units:
@@ -446,7 +436,11 @@ def run_unified_game_loop(player_configs: dict) -> dict:
                             if current_player.type == PlayerType.AI:
                                 execute_ai_turn(game, current_player, agents)
                             else:
-                                # Human player - just advance phase
+                                # Human player - handle phase progression
+                                if game.is_command_phase():
+                                    game.start_command_phase()
+                                
+                                # Advance phase
                                 game.next_phase()
                     elif event.key == pygame.K_ESCAPE:
                         if game_view:
@@ -457,6 +451,10 @@ def run_unified_game_loop(player_configs: dict) -> dict:
                 current_player = game.get_current_player()
                 if current_player.type == PlayerType.AI:
                     execute_ai_turn(game, current_player, agents)
+                else:
+                    # For human players, handle phase progression
+                    if game.is_command_phase():
+                        game.start_command_phase()
             
             # Auto-execute setup phases if not manual phases mode
             if not manual_phases and game.is_in_setup_phase() and not setup_complete:

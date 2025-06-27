@@ -624,14 +624,24 @@ class InfoPane(pygame.sprite.Sprite):
             deployment_rect = deployment_surface.get_rect(center=(x_center, y_offset))
             surface.blit(deployment_surface, deployment_rect)
         else:
-            current_player_text = f"{current_player.name}: {current_player.command_points} CP | Score: {current_player.score}"
-            player_surface = self.font_small.render(current_player_text, True, TEXT_ACCENT)
-            surface.blit(player_surface, (x_left, y_offset))
+            # Always display Player 1 on the left and Player 2 on the right
+            player1 = game.players[0] if len(game.players) > 0 else None
+            player2 = game.players[1] if len(game.players) > 1 else None
             
-            opponent_text = f"{opponent.name}: {opponent.command_points} CP | Score: {opponent.score}"
-            opponent_surface = self.font_small.render(opponent_text, True, TEXT_SECONDARY)
-            opponent_rect = opponent_surface.get_rect()
-            surface.blit(opponent_surface, (x_right - opponent_rect.width, y_offset))
+            if player1:
+                # Highlight current player with accent color
+                player1_color = TEXT_ACCENT if current_player == player1 else TEXT_SECONDARY
+                player1_text = f"{player1.name}: {player1.command_points} CP | Score: {player1.score}"
+                player1_surface = self.font_small.render(player1_text, True, player1_color)
+                surface.blit(player1_surface, (x_left, y_offset))
+            
+            if player2:
+                # Highlight current player with accent color
+                player2_color = TEXT_ACCENT if current_player == player2 else TEXT_SECONDARY
+                player2_text = f"{player2.name}: {player2.command_points} CP | Score: {player2.score}"
+                player2_surface = self.font_small.render(player2_text, True, player2_color)
+                player2_rect = player2_surface.get_rect()
+                surface.blit(player2_surface, (x_right - player2_rect.width, y_offset))
         
         y_offset += 25
         

@@ -290,23 +290,55 @@ class ObjectivePoint:
         self.controlling_player = None
 
     def update_control(self, game_state: 'Game') -> None:
-        # Determine which player controls the objective based on nearby units
+        # Determine which player controls the objective based on base overlap
         player_oc = {player: 0 for player in game_state.players}  # Initialize all players with 0 OC
+        
+        from shapely.geometry import Point
+        # Create objective area as a circle
+        objective_area = Point(self.x, self.y).buffer(self.control_radius)
+        
         for player in game_state.players:
+            if not player.army:
+                continue
             for unit in player.army.units:
+                if not unit.deployed or not unit.is_alive():
+                    continue
                 for model in unit.models:
-                    if get_dist(self.x - model.model_base.x, self.y - model.model_base.y) <= self.control_radius:
-                        player_oc[player] += model.objective_control
+                    if not model.is_alive:
+                        continue
+                    
+                    # Get model's base shape and check for overlap with objective area
+                    try:
+                        model_base_shape = model.model_base.get_base_shape()
+                        if model_base_shape.intersects(objective_area):
+                            player_oc[player] += model.objective_control
+                            print(f"🎯 {model.name} (OC: {model.objective_control}) overlaps objective at ({self.x:.1f}, {self.y:.1f})")
+                    except Exception as e:
+                        # Fallback to distance check if base shape fails
+                        distance = get_dist(self.x - model.model_base.x, self.y - model.model_base.y)
+                        model_base_radius = getattr(model.model_base, 'get_radius', lambda: 1.0)()
+                        if distance <= (self.control_radius + model_base_radius):
+                            player_oc[player] += model.objective_control
+                            print(f"🎯 {model.name} (OC: {model.objective_control}) near objective (fallback calculation)")
 
+        # Determine controlling player based on OC values
         if any(oc > 0 for oc in player_oc.values()):
             max_oc = max(player_oc.values())
             max_players = [player for player, oc in player_oc.items() if oc == max_oc]
-            self.controlling_player = max_players[0] if len(max_players) == 1 else None
+            if len(max_players) == 1:
+                self.controlling_player = max_players[0]
+            else:
+                # Tie - no one controls the objective
+                self.controlling_player = None
         else:
             self.controlling_player = None
         
-        print(f"ObjectivePoint {self.x}, {self.y} controlled by {self.controlling_player}")
-        #print(f"Player OC values: {player_oc}")  # Debug print
+        # Debug output
+        oc_summary = {player.name: oc for player, oc in player_oc.items() if oc > 0}
+        if oc_summary:
+            print(f"ObjectivePoint ({self.x:.1f}, {self.y:.1f}) OC values: {oc_summary} -> controlled by {self.controlling_player.name if self.controlling_player else 'None'}")
+        else:
+            print(f"ObjectivePoint ({self.x:.1f}, {self.y:.1f}) controlled by None (no models in range)")
 
 
 class ObjectiveCategory(Enum):
