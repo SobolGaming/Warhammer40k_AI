@@ -6,7 +6,7 @@ from ..utility.model_base import Base, BaseType
 from .wargear import Wargear, WargearOption, parse_option_string, parse_alternate_3
 from .ability import Ability
 from ..utility.range import Range
-from ..utility.calcs import get_dist, get_angle, convert_mm_to_inches, a_star
+from ..utility.calcs import get_dist, get_angle, convert_mm_to_inches, a_star, a_star_enhanced
 from ..utility.dice import get_roll
 from .status_effects import StatusEffect
 import math
@@ -911,17 +911,14 @@ class Unit:
                 print(f"Model {model._id} cannot reach destination {model_distance:.1f}\" away (max: {movement_range}\")")
                 continue  # Skip this model, don't move it
             
-            # Try pathfinding
-            shortest_path = a_star(model, game_map.obstacles, model_destination)
+            # Try enhanced pathfinding that accounts for Warhammer 40k movement rules
+            shortest_path = a_star_enhanced(model, game_map, model_destination)
             
             if not shortest_path:
-                logger.debug(f"Model {model._id} pathfinding failed, checking if direct move is within range")
-                if model_distance <= movement_range:
-                    # Move directly if within range
-                    model.set_location(*model_destination)
-                    actual_distance_moved = max(actual_distance_moved, model_distance)
-                    successful_moves += 1
-                    logger.debug(f"Model {model._id} moved directly to {model_destination}, distance: {model_distance:.1f}\"")
+                logger.debug(f"Model {model._id} enhanced pathfinding failed - destination may violate movement rules")
+                # Don't allow direct movement if enhanced pathfinding fails, as it means the destination
+                # likely violates Warhammer 40k movement rules (engagement range, enemy collision, etc.)
+                logger.debug(f"Model {model._id} cannot move to {model_destination} due to movement restrictions")
                 continue
             
             # Calculate path distance
