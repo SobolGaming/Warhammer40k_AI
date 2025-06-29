@@ -3992,25 +3992,13 @@ class BattlePhaseHandler(BasePhaseHandler):
     def _handle_battle_click(self, mouse_pos, button) -> bool:
         """Handle battlefield clicks during battle phases"""
         x, y = mouse_pos
-        print(f"🔍 _handle_battle_click called at ({x}, {y}) with button {button}")
-        
         # Check if shooting declaration dialog is in targeting mode
         if (hasattr(self.game_view, 'shooting_declaration_dialog') and
             self.game_view.shooting_declaration_dialog.is_targeting_mode):
-            
-            print(f"🎯 BattlePhaseHandler: Dialog in targeting mode, routing click to targeting handler")
             # Handle battlefield targeting for shooting declaration
             handled = self.game_view.shooting_declaration_dialog.handle_battlefield_targeting(x, y)
             if handled:
-                print(f"🎯 BattlePhaseHandler: Targeting handled successfully")
                 return True
-            else:
-                print(f"🎯 BattlePhaseHandler: Targeting not handled, continuing with normal battlefield handling")
-        else:
-            if hasattr(self.game_view, 'shooting_declaration_dialog'):
-                print(f"🔍 BattlePhaseHandler: Dialog exists but not in targeting mode (is_targeting_mode={self.game_view.shooting_declaration_dialog.is_targeting_mode})")
-            else:
-                print(f"🔍 BattlePhaseHandler: No shooting declaration dialog found")
         
         # Handle unit selection and actions based on current phase
         if button == 1:  # Left click

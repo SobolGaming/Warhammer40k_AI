@@ -306,7 +306,7 @@ def add_unit_to_army(army: Army, unit: Unit, model_count: int, wargear_dict: Dic
     for model_name, wargear_list in wargear_dict.items():
         for wargear_name, _ in wargear_list:
             gear_name = wargear_name.lower().replace("'","")
-            matching_gear = next((gear for gear in unit.possible_wargear if gear.name.lower() == gear_name), None)
+            matching_gear = next((gear for gear in unit.possible_wargear if gear.name.lower().replace("'","") == gear_name), None)
             if matching_gear:
                 unit.add_wargear([matching_gear if gear.name.lower() == gear_name else None for gear in unit.possible_wargear], model_name)
             else:
@@ -314,7 +314,7 @@ def add_unit_to_army(army: Army, unit: Unit, model_count: int, wargear_dict: Dic
                 if matching_gear:
                     unit.apply_wargear_options(gear_name)
                 else:
-                    matching_ability = next((ability for ability in unit.possible_abilities if ability.name.lower() == gear_name and ability.type == 'Wargear'), None)
+                    matching_ability = next((ability for ability in unit.possible_abilities if ability.name.lower().replace("'","") == gear_name and ability.type == 'Wargear'), None)
                     if matching_ability:
                         unit.add_ability(matching_ability, model_name)
                     else:
