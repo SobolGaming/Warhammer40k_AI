@@ -8,7 +8,7 @@ from shapely.affinity import translate
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ..classes.map import Obstacle, ObstacleType
-    from ..classes.unit import Unit
+    from ..classes.unit import Unit, MovementAction
     from ..classes.model import Model
     from ..classes.map import Map
 
@@ -198,7 +198,8 @@ def get_neighbors(current, obstacles, ellipse, goal):
             valid_neighbors.append((n[0], n[1], z))
     return valid_neighbors
 
-def check_engagement_range_violation(model: 'Model', position: Tuple[float, float, float], game_map: 'Map') -> bool:
+def check_engagement_range_violation(model: 'Model', position: Tuple[float, float, float], game_map: 'Map', 
+                                   movement_action: 'MovementAction' = None, is_ending_position: bool = False) -> bool:
     """
     Check if a position would put the model within engagement range of any enemy unit.
     
@@ -206,10 +207,15 @@ def check_engagement_range_violation(model: 'Model', position: Tuple[float, floa
         model: The model to check
         position: The position to test (x, y, z)
         game_map: The game map containing enemy units
+        movement_action: MovementAction enum value (MOVE, ADVANCE, FALL_BACK)
+        is_ending_position: Whether this is the final destination
         
     Returns:
-        bool: True if position violates engagement range rules
+        bool: True if position violates engagement range rules for the given movement action
     """
+    # Import here to avoid circular imports
+    from ..classes.unit import MovementAction
+    
     # Create a temporary base at the test position
     from ..utility.model_base import Base, BaseType
     temp_base = model.model_base.__class__(model.model_base.base_type, model.model_base.radius)
@@ -233,29 +239,41 @@ def check_engagement_range_violation(model: 'Model', position: Tuple[float, floa
             # Check if within engagement range
             if (horizontal_distance <= ENGAGEMENT_RANGE_HORIZONTAL and 
                 vertical_distance <= ENGAGEMENT_RANGE_VERTICAL):
+                
+                # Fall Back rules: Can move within engagement range but cannot end within it
+                if movement_action == MovementAction.FALL_BACK:
+                    return is_ending_position  # Only violation if ending position
+                
+                # Normal/Advance rules: Cannot move within engagement range at all
                 return True
                 
     return False
 
 def check_enemy_model_collision(model: 'Model', start_pos: Tuple[float, float, float], 
-                               end_pos: Tuple[float, float, float], game_map: 'Map') -> bool:
+                               end_pos: Tuple[float, float, float], game_map: 'Map', 
+                               movement_action: 'MovementAction' = None) -> Tuple[bool, List['Model']]:
     """
-    Check if movement path would intersect with any enemy model bases.
+    Check if the movement path would collide with enemy models.
     
     Args:
         model: The model moving
         start_pos: Starting position (x, y, z)
-        end_pos: Ending position (x, y, z)
+        end_pos: Ending position (x, y, z) 
         game_map: The game map containing enemy units
+        movement_action: MovementAction enum value (MOVE, ADVANCE, FALL_BACK)
         
     Returns:
-        bool: True if path intersects with enemy model bases
+        Tuple[bool, List[Model]]: (collision_detected, list_of_enemy_models_moved_over)
     """
-    # Create movement line
-    movement_line = LineString([start_pos[:2], end_pos[:2]])
+    # Import here to avoid circular imports
+    from ..classes.unit import MovementAction
+    from shapely.geometry import LineString
     
-    # Get enemy units
+    # Create movement line
+    movement_line = LineString([(start_pos[0], start_pos[1]), (end_pos[0], end_pos[1])])
+    
     enemy_units = game_map.get_enemy_units(model.parent_unit)
+    enemy_models_moved_over = []
     
     for enemy_unit in enemy_units:
         if not enemy_unit.is_alive() or not enemy_unit.deployed:
@@ -265,13 +283,23 @@ def check_enemy_model_collision(model: 'Model', start_pos: Tuple[float, float, f
             if not enemy_model.is_alive:
                 continue
                 
+            # Check if model has FLY keyword - can move over enemy models freely
+            if model.parent_unit.is_flying:
+                continue
+                
             # Get enemy model's base shape
             enemy_base_shape = enemy_model.model_base.get_base_shape()
             
             # Check if movement line intersects with enemy base
             if movement_line.intersects(enemy_base_shape):
-                return True
-                
+                # For Fall Back moves, allow moving over enemies but track them
+                if movement_action == MovementAction.FALL_BACK:
+                    enemy_models_moved_over.append(enemy_model)
+                    continue
+                else:
+                    # Normal/Advance moves: collision blocks movement
+                    return True, []
+            
             # Also check if our model's base would intersect at any point along the path
             # Sample points along the path for more thorough checking
             num_samples = max(10, int(sqrt((end_pos[0] - start_pos[0])**2 + (end_pos[1] - start_pos[1])**2) * 10))
@@ -288,9 +316,16 @@ def check_enemy_model_collision(model: 'Model', start_pos: Tuple[float, float, f
                 
                 # Check collision with enemy model
                 if temp_base.collides_with(enemy_model.model_base):
-                    return True
-                    
-    return False
+                    if movement_action == MovementAction.FALL_BACK:
+                        # Track enemy models being moved over
+                        if enemy_model not in enemy_models_moved_over:
+                            enemy_models_moved_over.append(enemy_model)
+                    else:
+                        # Normal/Advance moves: collision blocks movement
+                        return True, []
+    
+    # Return collision status and list of enemy models moved over
+    return len(enemy_models_moved_over) > 0 and movement_action != MovementAction.FALL_BACK, enemy_models_moved_over
 
 def check_vehicle_monster_restrictions(model: 'Model', start_pos: Tuple[float, float, float], 
                                      end_pos: Tuple[float, float, float], game_map: 'Map') -> bool:
@@ -399,7 +434,7 @@ def check_friendly_ending_collision(model: 'Model', end_pos: Tuple[float, float,
 
 def is_position_valid_for_movement(model: 'Model', position: Tuple[float, float, float], 
                                   start_pos: Tuple[float, float, float], game_map: 'Map', 
-                                  is_ending_position: bool = False) -> bool:
+                                  is_ending_position: bool = False, movement_action: 'MovementAction' = None) -> Tuple[bool, List['Model']]:
     """
     Comprehensive validation of a position for movement according to Warhammer 40k rules.
     
@@ -409,38 +444,72 @@ def is_position_valid_for_movement(model: 'Model', position: Tuple[float, float,
         start_pos: The starting position for path checking
         game_map: The game map
         is_ending_position: Whether this is the final destination
+        movement_action: MovementAction enum value (MOVE, ADVANCE, FALL_BACK)
         
     Returns:
-        bool: True if position is valid for movement
+        Tuple[bool, List[Model]]: (is_valid, list_of_enemy_models_moved_over)
     """
     # 1. Check battlefield boundaries
     if not game_map.is_within_boundary(model, position[:2]):
-        return False
+        return False, []
         
     # 2. Check obstacle collisions
     if game_map.check_collision_with_obstacles(model, position[:2]):
-        return False
+        return False, []
         
-    # 3. Check engagement range violations
-    if check_engagement_range_violation(model, position, game_map):
-        return False
+    # 3. Check engagement range violations (modified for Fall Back rules)
+    if check_engagement_range_violation(model, position, game_map, movement_action, is_ending_position):
+        return False, []
         
-    # 4. Check enemy model base collisions along path
-    if check_enemy_model_collision(model, start_pos, position, game_map):
-        return False
+    # 4. Check enemy model base collisions along path (modified for Fall Back rules)
+    collision_detected, enemy_models_moved_over = check_enemy_model_collision(model, start_pos, position, game_map, movement_action)
+    if collision_detected:
+        return False, []
         
     # 5. Check vehicle/monster restrictions
     if check_vehicle_monster_restrictions(model, start_pos, position, game_map):
-        return False
+        return False, []
         
     # 6. Check friendly model collisions (only for ending position)
     if is_ending_position and check_friendly_ending_collision(model, position, game_map):
-        return False
+        return False, []
+    
+    # 7. Special FLY keyword rules
+    if model.parent_unit.is_flying and is_ending_position:
+        # FLY models cannot end on top of any other model (friendly or enemy)
+        if check_model_overlap_at_position(model, position, game_map):
+            return False, []
         
-    return True
+    return True, enemy_models_moved_over
+
+def check_model_overlap_at_position(model: 'Model', position: Tuple[float, float, float], game_map: 'Map') -> bool:
+    """
+    Check if a model would overlap with any other model (friendly or enemy) at the given position.
+    Used for FLY keyword validation.
+    """
+    # Create temporary base at test position
+    temp_base = model.model_base.__class__(model.model_base.base_type, model.model_base.radius)
+    temp_base.set_position(position[0], position[1], position[2])
+    temp_base.set_facing(model.model_base.facing)
+    
+    # Check against all other units on the map
+    for unit in game_map.units:
+        if not unit.is_alive() or not unit.deployed or unit == model.parent_unit:
+            continue
+            
+        for other_model in unit.models:
+            if not other_model.is_alive:
+                continue
+                
+            # Check if bases would overlap
+            if temp_base.collides_with(other_model.model_base):
+                return True
+                
+    return False
 
 def get_enhanced_neighbors(current: Tuple[float, float, float], model: 'Model', obstacles: List['Obstacle'], 
-                          game_map: 'Map', goal: Tuple[float, float, float]) -> List[Tuple[float, float, float]]:
+                          game_map: 'Map', goal: Tuple[float, float, float], 
+                          movement_action: 'MovementAction' = None) -> List[Tuple[Tuple[float, float, float], List['Model']]]:
     """
     Get valid neighboring points with comprehensive Warhammer 40k movement validation.
     
@@ -450,9 +519,10 @@ def get_enhanced_neighbors(current: Tuple[float, float, float], model: 'Model', 
         obstacles: List of terrain obstacles
         game_map: The game map
         goal: The target destination
+        movement_action: MovementAction enum value (MOVE, ADVANCE, FALL_BACK)
         
     Returns:
-        List of valid neighboring positions
+        List of tuples containing (valid_neighboring_position, enemy_models_moved_over)
     """
     x, y, z = current
     step_size = adaptive_step_size(current, obstacles, goal)
@@ -491,39 +561,43 @@ def get_enhanced_neighbors(current: Tuple[float, float, float], model: 'Model', 
     # Validate each neighbor according to Warhammer 40k rules
     valid_neighbors = []
     for neighbor in potential_neighbors:
-        if is_position_valid_for_movement(model, neighbor, current, game_map, 
-                                        is_ending_position=(neighbor == goal)):
-            valid_neighbors.append(neighbor)
+        is_valid, enemy_models_moved_over = is_position_valid_for_movement(
+            model, neighbor, current, game_map, 
+            is_ending_position=(neighbor == goal), movement_action=movement_action
+        )
+        if is_valid:
+            valid_neighbors.append((neighbor, enemy_models_moved_over))
     
     return valid_neighbors
 
 def a_star_enhanced(model: 'Model', game_map: 'Map', target: Tuple[float, float, float], 
-                   max_iterations: int = 15000) -> Optional[List[Tuple[float, float, float]]]:
+                   max_iterations: int = 15000, movement_action: 'MovementAction' = None) -> Optional[Tuple[List[Tuple[float, float, float]], List['Model']]]:
     """
     Enhanced A* pathfinding algorithm that accounts for all Warhammer 40k movement rules.
     
-    This implementation is both efficient and exhaustive, checking:
-    - Engagement range restrictions (cannot get within 1" of enemy units)
-    - Enemy model base collision (cannot move through enemy bases)
-    - Battlefield boundary limits
-    - Friendly model ending collision (can move through but not end on)
-    - Vehicle/Monster movement restrictions
+    This implementation handles:
+    - Normal/Advance movement: Cannot move within engagement range or through enemy models
+    - Fall Back movement: Can move within engagement range and over enemy models, but cannot end within engagement range
+    - FLY keyword: Can move over models but cannot end on them or within engagement range
     
     Args:
         model: The model to pathfind for
         game_map: The game map containing all units and obstacles
         target: Target position (x, y, z, facing)
         max_iterations: Maximum iterations to prevent infinite loops
+        movement_action: MovementAction enum value (MOVE, ADVANCE, FALL_BACK)
         
     Returns:
-        List of positions forming the path, or None if no path exists
+        Tuple containing (path, enemy_models_moved_over) or None if no path exists
     """
     start = (model.model_base.x, model.model_base.y, model.model_base.z)
     goal = target[:3]
     
     # Early validation - check if goal is reachable at all
-    if not is_position_valid_for_movement(model, goal, start, game_map, is_ending_position=True):
-        logger.debug(f"Goal position {goal} is invalid for {model.name}")
+    goal_valid, _ = is_position_valid_for_movement(model, goal, start, game_map, 
+                                                  is_ending_position=True, movement_action=movement_action)
+    if not goal_valid:
+        logger.debug(f"Goal position {goal} is invalid for {model.name} (movement action: {movement_action})")
         return None
     
     # Initialize A* data structures
@@ -534,8 +608,11 @@ def a_star_enhanced(model: 'Model', game_map: 'Map', target: Tuple[float, float,
     f_score = {start: heuristic(start, goal)}
     closed_set = set()
     
+    # Track enemy models moved over for each path
+    path_enemy_models = {start: []}
+    
     iterations = 0
-    logger.debug(f"Starting enhanced A* pathfinding for {model.name} from {start} to {goal}")
+    logger.debug(f"Starting enhanced A* pathfinding for {model.name} from {start} to {goal} (movement action: {movement_action})")
     
     while open_set and iterations < max_iterations:
         current = heapq.heappop(open_set)[1]
@@ -548,22 +625,34 @@ def a_star_enhanced(model: 'Model', game_map: 'Map', target: Tuple[float, float,
         
         # Check if we've reached the goal
         if heuristic(current, goal) < 0.1:  # Close enough to goal
-            # Reconstruct path
+            # Reconstruct path and enemy models moved over
             path = []
-            while current in came_from:
-                path.append(current)
-                current = came_from[current]
+            all_enemy_models_moved_over = []
+            
+            # Trace back through the path
+            path_node = current
+            while path_node in came_from:
+                path.append(path_node)
+                all_enemy_models_moved_over.extend(path_enemy_models.get(path_node, []))
+                path_node = came_from[path_node]
+                
             path.append(start)
             path.reverse()
             path.append(goal)  # Ensure we end exactly at goal
             
-            logger.debug(f"Enhanced path found after {iterations} iterations, length: {len(path)}")
-            return path
+            # Remove duplicates from enemy models moved over
+            unique_enemy_models = []
+            for enemy_model in all_enemy_models_moved_over:
+                if enemy_model not in unique_enemy_models:
+                    unique_enemy_models.append(enemy_model)
+            
+            logger.debug(f"Enhanced path found after {iterations} iterations, length: {len(path)}, enemy models moved over: {len(unique_enemy_models)}")
+            return path, unique_enemy_models
         
         # Get valid neighbors according to Warhammer 40k rules
-        neighbors = get_enhanced_neighbors(current, model, game_map.obstacles, game_map, goal)
+        neighbors_with_enemies = get_enhanced_neighbors(current, model, game_map.obstacles, game_map, goal, movement_action)
         
-        for neighbor in neighbors:
+        for neighbor, enemy_models_moved_over in neighbors_with_enemies:
             if neighbor in closed_set:
                 continue
                 
@@ -577,6 +666,10 @@ def a_star_enhanced(model: 'Model', game_map: 'Map', target: Tuple[float, float,
                 g_score[neighbor] = tentative_g_score
                 f_score[neighbor] = g_score[neighbor] + heuristic(neighbor, goal)
                 
+                # Track enemy models moved over for this path
+                current_enemy_models = path_enemy_models.get(current, [])
+                path_enemy_models[neighbor] = current_enemy_models + enemy_models_moved_over
+                
                 # Add to open set if not already there with worse score
                 heapq.heappush(open_set, (f_score[neighbor], neighbor))
         
@@ -584,9 +677,9 @@ def a_star_enhanced(model: 'Model', game_map: 'Map', target: Tuple[float, float,
         
         # Progress logging for long pathfinding
         if iterations % 1000 == 0:
-            logger.debug(f"Enhanced A* iteration {iterations}, open set size: {len(open_set)}")
+            logger.debug(f"Enhanced A* iteration {iterations}, open set size: {len(open_set)} (movement action: {movement_action})")
     
-    logger.debug(f"No enhanced path found after {iterations} iterations for {model.name}")
+    logger.debug(f"No enhanced path found after {iterations} iterations for {model.name} (movement action: {movement_action})")
     return None
 
 # Keep the original a_star function for backwards compatibility

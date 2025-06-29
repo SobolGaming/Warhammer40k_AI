@@ -529,6 +529,15 @@ class Unit:
             starting_wounds = self.starting_total_wounds
             return current_wounds < (starting_wounds / 2.0)
 
+    def is_battle_shocked(self) -> bool:
+        """
+        Check if the unit is currently battle-shocked.
+        
+        Returns:
+            bool: True if the unit has a BattleShockEffect status effect
+        """
+        return any(isinstance(effect, BattleShockEffect) for effect in self.status_effects)
+
     def pass_leadership_check(self) -> bool:
         """Perform a Leadership test by rolling 2D6 against the unit's Leadership characteristic.
         
@@ -964,14 +973,21 @@ class Unit:
                 continue  # Skip this model, don't move it
             
             # Try enhanced pathfinding that accounts for Warhammer 40k movement rules
-            shortest_path = a_star_enhanced(model, game_map, model_destination)
+            movement_action = MovementAction.ADVANCE if advance else MovementAction.MOVE
+            pathfinding_result = a_star_enhanced(model, game_map, model_destination, movement_action=movement_action)
             
-            if not shortest_path:
+            if not pathfinding_result:
                 logger.debug(f"Model {model._id} enhanced pathfinding failed - destination may violate movement rules")
                 # Don't allow direct movement if enhanced pathfinding fails, as it means the destination
                 # likely violates Warhammer 40k movement rules (engagement range, enemy collision, etc.)
                 logger.debug(f"Model {model._id} cannot move to {model_destination} due to movement restrictions")
                 continue
+            
+            shortest_path, enemy_models_moved_over = pathfinding_result
+            
+            # Enhanced pathfinding should never return enemy models moved over for normal/advance moves
+            if enemy_models_moved_over:
+                logger.warning(f"Enhanced pathfinding returned enemy models moved over for {movement_action} movement - this should not happen")
             
             # Calculate path distance
             path_distance = sum(get_dist(shortest_path[i][0] - shortest_path[i-1][0], shortest_path[i][1] - shortest_path[i-1][1]) for i in range(1, len(shortest_path)))
@@ -1053,9 +1069,178 @@ class Unit:
         return True
 
     def fall_back(self, destination: Tuple[float, float, float], path: List[Tuple[float, float, float]], game_map: 'Map') -> bool:
-        """Falls back from close combat."""
-        # Logic to move the unit out of engagement range
-        logger.debug(f"{self.name} falls back from combat.")
+        """Falls back from close combat.
+        
+        Battle-Shocked units that fall back must take Desperate Escape Tests.
+        Units that fall back can move within engagement range and over enemy models,
+        but cannot end within engagement range of any enemy models.
+        """
+        print(f"🏃 {self.name} falls back from combat")
+        
+        # Check if unit is Battle-Shocked and must take Desperate Escape Test
+        if self.is_battle_shocked():
+            models_lost = self.take_desperate_escape_test()
+            
+            # Check if unit was wiped out during Desperate Escape Test
+            if not self.is_alive():
+                print(f"💀 {self.name} was completely destroyed during Desperate Escape Test!")
+                return False
+        
+        # Execute Fall Back movement for each model
+        if not self.models:
+            logger.error(f"Cannot fall back unit {self.name}: no models in unit")
+            return False
+        
+        current_position = self.get_position()
+        if current_position is None:
+            logger.error(f"Cannot fall back unit {self.name}: current position is None")
+            return False
+        
+        # Store starting position for feedback
+        start_x, start_y = current_position[0], current_position[1]
+        start_z = current_position[2] if len(current_position) > 2 else 0
+        
+        # Fall Back movement distance is the unit's Move characteristic
+        movement_range = self.movement
+        
+        # Calculate straight-line distance to destination
+        distance_to_destination = get_dist(
+            destination[0] - start_x,
+            destination[1] - start_y,
+            destination[2] - start_z
+        )
+        
+        # Check if destination is within movement range
+        if distance_to_destination > movement_range:
+            print(f"❌ {self.name} cannot reach fall back destination {distance_to_destination:.1f}\" away (max move: {movement_range}\")")
+            return False
+        
+        # Generate potential positions for models
+        potential_positions = self.calculate_model_positions(destination[0], destination[1], game_map, movement_range)
+        successful_moves = 0
+        total_models_moved_over_enemies = 0
+        
+        for model, model_destination in zip(self.models, potential_positions):
+            model_start = model.get_location()
+            logging.debug(f"Model {model._id} {model.name} attempting to fall back from {model_start} to {model_destination}")
+            
+            # Calculate straight-line distance for this model
+            model_distance = get_dist(
+                model_destination[0] - model_start[0],
+                model_destination[1] - model_start[1],
+                model_destination[2] - model_start[2] if len(model_start) > 2 else 0
+            )
+            
+            # Check if this model can reach its destination
+            if model_distance > movement_range:
+                print(f"Model {model._id} cannot reach fall back destination {model_distance:.1f}\" away (max: {movement_range}\")")
+                continue  # Skip this model, don't move it
+            
+            # Try enhanced pathfinding for Fall Back movement
+            pathfinding_result = a_star_enhanced(model, game_map, model_destination, movement_action=MovementAction.FALL_BACK)
+            
+            if not pathfinding_result:
+                logger.debug(f"Model {model._id} enhanced pathfinding failed for fall back - destination may be invalid")
+                continue
+            
+            shortest_path, enemy_models_moved_over = pathfinding_result
+            
+            # Calculate path distance
+            path_distance = sum(get_dist(shortest_path[i][0] - shortest_path[i-1][0], shortest_path[i][1] - shortest_path[i-1][1]) for i in range(1, len(shortest_path)))
+            
+            # Check for Desperate Escape Tests (models that move over enemy models)
+            if enemy_models_moved_over and not self.is_titanic and not self.is_flying:
+                print(f"⚠️  Model {model._id} must take Desperate Escape Test for moving over {len(enemy_models_moved_over)} enemy model(s)")
+                
+                # Take Desperate Escape Test for this model
+                roll = get_roll("D6")
+                if roll <= 2:
+                    print(f"🎲 Model {model._id}: Rolled {roll} on Desperate Escape Test - DESTROYED! 💀")
+                    self.remove_model(model, fleed=True)
+                    continue  # Model is destroyed, don't move it
+                else:
+                    print(f"🎲 Model {model._id}: Rolled {roll} on Desperate Escape Test - Survives ✅")
+                    total_models_moved_over_enemies += 1
+            
+            if path_distance > movement_range:
+                print(f"Model {model._id} path distance {path_distance:.1f}\" exceeds movement {movement_range}\"")
+                # Try to move as far as possible along the path
+                last_node = model_start
+                model.last_move_path = [last_node]
+                distance_along_path = 0.0
+                direction_to_destination = get_angle(model_destination[0] - model.model_base.x, model_destination[1] - model.model_base.y)
+                
+                for node in shortest_path[1:]:
+                    dx = node[0] - last_node[0]
+                    dy = node[1] - last_node[1]
+                    dz = node[2] - last_node[2] if len(node) > 2 else 0
+                    segment_distance = get_dist(dx, dy, dz)
+                    
+                    if distance_along_path + segment_distance > movement_range:
+                        # Stop here, can't go further
+                        break
+                    
+                    distance_along_path += segment_distance
+                    last_node = (node[0], node[1], node[2] if len(node) > 2 else 0, direction_to_destination)
+                    model.last_move_path.append(last_node)
+                
+                # Move to the furthest reachable position
+                if distance_along_path > 0:
+                    final_position = model.last_move_path[-1]
+                    model.set_location(final_position[0], final_position[1], final_position[2], final_position[3])
+                    successful_moves += 1
+                    logger.debug(f"Model {model._id} fell back along path to {final_position[:3]}, distance: {distance_along_path:.1f}\"")
+            else:
+                # Path is within range, move to destination
+                model.set_location(*model_destination)
+                last_node = model_start
+                model.last_move_path = [last_node]
+                direction_to_destination = get_angle(model_destination[0] - model.model_base.x, model_destination[1] - model.model_base.y)
+                distance_along_path = 0.0
+                
+                for node in shortest_path[1:]:
+                    dx = node[0] - last_node[0]
+                    dy = node[1] - last_node[1]
+                    dz = node[2] - last_node[2] if len(node) > 2 else 0
+                    segment_distance = get_dist(dx, dy, dz)
+                    distance_along_path += segment_distance
+                    last_node = (node[0], node[1], node[2] if len(node) > 2 else 0, direction_to_destination)
+                    model.last_move_path.append(last_node)
+                
+                successful_moves += 1
+                logger.debug(f"Model {model._id} fell back to {model_destination}, path distance: {distance_along_path:.1f}\"")
+        
+        # Update unit centroid
+        self.reset_position()
+        
+        # Check if any movement occurred
+        if successful_moves == 0:
+            print(f"❌ {self.name} could not fall back - no models could reach valid positions")
+            return False
+        
+        # Check if unit was wiped out during Desperate Escape Tests
+        if not self.is_alive():
+            print(f"💀 {self.name} was completely destroyed during Fall Back Desperate Escape Tests!")
+            return False
+        
+        # Get final position for feedback
+        final_position = self.get_position()
+        end_x, end_y = final_position[0], final_position[1]
+        
+        # Calculate actual distance the unit moved
+        unit_distance_moved = get_dist(end_x - start_x, end_y - start_y)
+        
+        # Provide detailed feedback
+        print(f"✅ {self.name} fell back from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
+        
+        if total_models_moved_over_enemies > 0:
+            print(f"⚔️  {total_models_moved_over_enemies} model(s) moved over enemy models and survived Desperate Escape Tests")
+        
+        if successful_moves < len(self.models):
+            remaining_models = len(self.models)
+            print(f"⚠️  Note: Only {successful_moves} models could fall back to valid positions, {remaining_models} models remain")
+        
+        logger.info(f"Unit {self.name} fell back from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
         self.round_state.fell_back_this_round = True
         return True
 
@@ -2334,6 +2519,37 @@ class Unit:
                     return False
         
         return True  # Default: can charge after arriving from reserves
+
+    def take_desperate_escape_test(self) -> int:
+        """
+        Take a Desperate Escape Test - rolling D6 for each model, destroying on 1-2.
+        This is required for Battle-Shocked units that fall back.
+        
+        Returns:
+            int: Number of models destroyed during the test
+        """
+        print(f"💀 {self.name} is Battle-Shocked and falling back - taking Desperate Escape Test!")
+        
+        models_to_test = self.models.copy()  # Copy to avoid modifying list while iterating
+        models_destroyed = 0
+        
+        for i, model in enumerate(models_to_test):
+            roll = get_roll("D6")
+            if roll <= 2:
+                # Model is destroyed
+                print(f"🎲 Model {i+1}: Rolled {roll} - DESTROYED! 💀")
+                self.remove_model(model, fleed=True)  # Mark as fled, not killed in combat
+                models_destroyed += 1
+            else:
+                # Model survives
+                print(f"🎲 Model {i+1}: Rolled {roll} - Survives ✅")
+        
+        if models_destroyed > 0:
+            print(f"💥 Desperate Escape Test complete: {models_destroyed} model(s) destroyed, {len(self.models)} remain")
+        else:
+            print(f"✅ Desperate Escape Test complete: All models survived!")
+        
+        return models_destroyed
 
 
 
