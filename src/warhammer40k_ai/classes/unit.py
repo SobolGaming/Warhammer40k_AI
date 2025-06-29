@@ -8,7 +8,7 @@ from .ability import Ability
 from ..utility.range import Range
 from ..utility.calcs import get_dist, get_angle, convert_mm_to_inches, a_star, a_star_enhanced
 from ..utility.dice import get_roll
-from .status_effects import StatusEffect
+from .status_effects import StatusEffect, BattleShockEffect
 import math
 import uuid
 import copy
@@ -109,6 +109,10 @@ class Unit:
 
         self.position = None  # Initialize position as None
         self.update_coherency()  # Sets coherency_distance and required_neighbors
+        
+        # Track starting strength for Battle-Shock tests
+        self.starting_model_count = len(self.models)
+        self.starting_total_wounds = sum(model._base_wounds for model in self.models)
 
     def _parse_attribute(self, attribute_value: str) -> int:
         # Remove " and + from the attribute value
@@ -503,8 +507,45 @@ class Unit:
                 return False, model
         return True, None
 
-    def make_leadership_check(self) -> bool:
-        return get_roll("2D6") < self.leadership
+    def is_below_half_strength(self) -> bool:
+        """
+        Check if the unit is below half its starting strength for Battle-Shock purposes.
+        
+        For multi-model units: Check if current model count is less than half starting count
+        For single-model units: Check if current wounds are less than half starting wounds
+        
+        Returns:
+            bool: True if unit is below half strength and should take Battle-Shock tests
+        """
+        if self.starting_model_count > 1:
+            # Multi-model unit: check model count
+            current_model_count = len(self.models)
+            return current_model_count < (self.starting_model_count / 2.0)
+        else:
+            # Single-model unit: check wounds
+            if not self.models:
+                return True  # Unit is destroyed, definitely below half strength
+            current_wounds = self.models[0].wounds
+            starting_wounds = self.starting_total_wounds
+            return current_wounds < (starting_wounds / 2.0)
+
+    def pass_leadership_check(self) -> bool:
+        """Perform a Leadership test by rolling 2D6 against the unit's Leadership characteristic.
+        
+        Returns:
+            bool: True if the test is passed, False if failed
+        """
+        roll_result = get_roll("2D6")
+        leadership_value = self.leadership
+        passed = roll_result >= leadership_value
+        
+        # Provide detailed feedback
+        if passed:
+            print(f"🎲 {self.name} Leadership test: 2D6 rolled {roll_result} vs Ld {leadership_value} - PASSED! ✅")
+        else:
+            print(f"🎲 {self.name} Leadership test: 2D6 rolled {roll_result} vs Ld {leadership_value} - FAILED! ❌")
+        
+        return passed
 
     @property
     def is_epic_hero(self) -> bool:
@@ -760,9 +801,20 @@ class Unit:
     ###########################################################################
     ### Command
     ###########################################################################
-    def do_command_action(self, game_map: 'Map') -> bool:
-        """Executes the command action for the unit."""
+    def do_command_action(self, game_map: 'Map', current_turn: int = 1) -> bool:
+        """Executes the command action for the unit.
+        
+        Args:
+            game_map: The game map
+            current_turn: The current battle round number
+        """
         self.initialize_round()
+
+        # Do Battle Shock Test for appropriate units
+        if self.is_below_half_strength():
+            print(f"⚠️  {self.name} is below half strength - taking Battle-Shock test")
+            self.take_battle_shock_test(current_turn)
+
         return True
 
     ###########################################################################
@@ -1305,15 +1357,25 @@ class Unit:
         print(f"{self.name} consolidates after combat.")
 
     # Battle-shock Phase Actions
-    def take_battle_shock_test(self):
-        """Takes a battle shock test."""
-        test_result = get_roll("2D6")  # 2D6 roll
-        leadership = self.models[0].leadership
-        if test_result > leadership:
-            self.status_effects.append('battle_shocked')
-            print(f"{self.name} has failed the battle shock test and is battle shocked.")
-        else:
-            print(f"{self.name} passes the battle shock test.")
+    def take_battle_shock_test(self, current_turn: int = 1):
+        """Takes a battle shock test.
+        
+        Args:
+            current_turn: The current battle round number (used for status effect duration)
+        """
+        # Check if unit is already battle-shocked
+        is_already_battle_shocked = any(
+            isinstance(effect, BattleShockEffect) for effect in self.status_effects
+        )
+        
+        if is_already_battle_shocked:
+            print(f"⚡ {self.name} is already battle-shocked, no test needed")
+            return
+
+        if not self.pass_leadership_check():
+            battle_shock_effect = BattleShockEffect(current_turn)
+            self.apply_status_effect(battle_shock_effect)
+            print(f"💥 {self.name} has failed the battle shock test and is battle-shocked!")
 
     def use_ability(self, ability: Ability, target: 'Unit', game_map: 'Map'):
         """Uses a special ability."""

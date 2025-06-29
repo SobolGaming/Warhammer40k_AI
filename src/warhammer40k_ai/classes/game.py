@@ -712,10 +712,6 @@ class Game:
         self.current_player_index = (self.current_player_index + 1) % len(self.players)
         if self.current_player_index == 0:
             self.turn += 1
-            # Reset round state for all units
-            for player in self.players:
-                for unit in player.get_army().units:
-                    unit.initialize_round()
             # Reset phase to COMMAND_PHASE at the start of a new turn
             self.phase = BattleRoundPhases.COMMAND_PHASE
 
@@ -754,10 +750,6 @@ class Game:
                 # We've cycled back to the player who started this battle round
                 self.turn += 1
                 self.battle_round_starting_player_index = self.current_player_index  # This player starts the next round
-                # Reset round state for all units at the start of a new turn
-                for player in self.players:
-                    for unit in player.get_army().units:
-                        unit.initialize_round()
 
     def is_command_phase(self) -> bool:
         return self.phase == BattleRoundPhases.COMMAND_PHASE
@@ -766,7 +758,11 @@ class Game:
         """Start the command phase - all players gain 1 Command Point and evaluate objectives"""
         for player in self.players:
             player.gain_command_point()
-        
+
+        # Reset round state for all units of current player
+        for unit in self.get_current_player().get_army().units:
+            unit.do_command_action(self.map, self.turn)
+
         # Update and evaluate objectives for the current player
         current_player = self.get_current_player()
         for obj in self.map.objectives:
