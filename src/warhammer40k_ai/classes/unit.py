@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 class UnitRoundState:
-    remained_stationary_this_round: bool = False
+    remained_stationary_this_round: bool = True  # Units are stationary by default until they move
     advanced_this_round: bool = False
     shot_this_round: bool = False
     fell_back_this_round: bool = False
@@ -871,12 +871,18 @@ class Unit:
             raise ValueError(f"Invalid action: {action}")
         
         # Mark unit as having moved this round if action was successful
+        # AND set remained_stationary_this_round to False if the unit actually moved
         if success:
             self.round_state.moved_this_round = True
+            # If the unit performed any movement action (not remain stationary), 
+            # it did not remain stationary this round
+            if action != MovementAction.REMAIN_STATIONARY.value:
+                self.round_state.remained_stationary_this_round = False
         
         return success
 
     def remain_stationary(self) -> bool:
+        # Unit explicitly chose to remain stationary, so mark it as such
         self.round_state.remained_stationary_this_round = True
         return True
 
