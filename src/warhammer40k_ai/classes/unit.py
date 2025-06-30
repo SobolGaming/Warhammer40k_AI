@@ -7,7 +7,7 @@ from .wargear import Wargear, WargearOption, parse_option_string, parse_alternat
 from .ability import Ability
 from ..utility.range import Range
 from ..utility.calcs import get_dist, get_angle, convert_mm_to_inches, a_star, a_star_enhanced
-from ..utility.dice import get_roll
+from ..utility.dice import get_roll, DiceCollection
 from .status_effects import StatusEffect, BattleShockEffect
 import math
 import uuid
@@ -2229,6 +2229,185 @@ class Unit:
             return 0.0
         
         return min(scout_distance / max_scout_distance, 1.0)
+    
+    def has_firing_deck(self) -> Tuple[bool, int]:
+        """Check if the unit has Firing Deck ability and return the number of weapons.
+        
+        Returns:
+            Tuple[bool, int]: A tuple containing:
+                - A boolean indicating if the unit has Firing Deck ability
+                - The number of weapons that can fire from the deck (0 if no Firing Deck ability)
+        """
+        # Check if the unit has Firing Deck keyword
+        for keyword in self.keywords:
+            if "firing deck" in keyword.lower():
+                # Try to extract number from keyword like "Firing Deck 6" or "Firing Deck (6)"
+                number_match = re.search(r'firing deck\s*\(?(\d+)', keyword.lower())
+                if number_match:
+                    return True, int(number_match.group(1))
+                # Firing Deck ability found but no number could be parsed
+                raise ValueError(f"Firing Deck ability found in keyword '{keyword}' but could not extract number value")
+        
+        # Check unit-level abilities (possible_abilities)
+        for ability in self.possible_abilities:
+            # Handle both string and ability object cases
+            if isinstance(ability, str):
+                if "firing deck" in ability.lower():
+                    # Try to extract number from ability description
+                    number_match = re.search(r'firing deck\s*\(?(\d+)', ability.lower())
+                    if number_match:
+                        return True, int(number_match.group(1))
+                    raise ValueError(f"Firing Deck ability found in ability string '{ability}' but could not extract number value")
+            else:
+                # Ability object with name and description attributes
+                if hasattr(ability, 'name') and ability.name and "firing deck" in ability.name.lower():
+                    # Try to extract number from ability name
+                    number_match = re.search(r'firing deck\s*\(?(\d+)', ability.name.lower())
+                    if number_match:
+                        return True, int(number_match.group(1))
+                    raise ValueError(f"Firing Deck ability found in ability name '{ability.name}' but could not extract number value")
+                
+                if hasattr(ability, 'description') and ability.description and "firing deck" in ability.description.lower():
+                    # Try to extract number from ability description
+                    number_match = re.search(r'firing deck\s*\(?(\d+)', ability.description.lower())
+                    if number_match:
+                        return True, int(number_match.group(1))
+                    raise ValueError(f"Firing Deck ability found in ability description '{ability.description}' but could not extract number value")
+        
+        # Check model-level abilities
+        for ability in self.abilities:
+            # Handle both string and ability object cases
+            if isinstance(ability, str):
+                if "firing deck" in ability.lower():
+                    # Try to extract number from ability description
+                    number_match = re.search(r'firing deck\s*\(?(\d+)', ability.lower())
+                    if number_match:
+                        return True, int(number_match.group(1))
+                    raise ValueError(f"Firing Deck ability found in model ability string '{ability}' but could not extract number value")
+            else:
+                # Ability object with name and description attributes
+                if hasattr(ability, 'name') and ability.name and "firing deck" in ability.name.lower():
+                    # Try to extract number from ability name
+                    number_match = re.search(r'firing deck\s*\(?(\d+)', ability.name.lower())
+                    if number_match:
+                        return True, int(number_match.group(1))
+                    raise ValueError(f"Firing Deck ability found in model ability name '{ability.name}' but could not extract number value")
+                
+                if hasattr(ability, 'description') and ability.description and "firing deck" in ability.description.lower():
+                    # Try to extract number from ability description
+                    number_match = re.search(r'firing deck\s*\(?(\d+)', ability.description.lower())
+                    if number_match:
+                        return True, int(number_match.group(1))
+                    raise ValueError(f"Firing Deck ability found in model ability description '{ability.description}' but could not extract number value")
+        
+        return False, 0
+    
+    def has_deadly_demise(self) -> Tuple[bool, DiceCollection]:
+        """Check if the unit has Deadly Demise ability and return the damage value.
+        
+        Returns:
+            Tuple[bool, DiceCollection]: A tuple containing:
+                - A boolean indicating if the unit has Deadly Demise ability
+                - A DiceCollection object representing the damage value (e.g., "3", "D3", "D6") or None if no Deadly Demise ability
+        """
+        # Check if the unit has Deadly Demise keyword
+        for keyword in self.keywords:
+            if "deadly demise" in keyword.lower():
+                # Try to extract damage value from keyword like "Deadly Demise 3" or "Deadly Demise (D3)"
+                damage_match = re.search(r'deadly demise\s*\(?(\d+|D\d+)', keyword.lower())
+                if damage_match:
+                    damage_value = damage_match.group(1)
+                    try:
+                        dice_collection = DiceCollection.from_string(damage_value)
+                        return True, dice_collection
+                    except ValueError:
+                        raise ValueError(f"Deadly Demise ability found in keyword '{keyword}' but could not parse damage value '{damage_value}'")
+                # Deadly Demise ability found but no damage value could be parsed
+                raise ValueError(f"Deadly Demise ability found in keyword '{keyword}' but could not extract damage value")
+        
+        # Check unit-level abilities (possible_abilities)
+        for ability in self.possible_abilities:
+            # Handle both string and ability object cases
+            if isinstance(ability, str):
+                if "deadly demise" in ability.lower():
+                    # Try to extract damage value from ability description
+                    damage_match = re.search(r'deadly demise\s*\(?(\d+|D\d+)', ability.lower())
+                    if damage_match:
+                        damage_value = damage_match.group(1)
+                        try:
+                            dice_collection = DiceCollection.from_string(damage_value)
+                            return True, dice_collection
+                        except ValueError:
+                            raise ValueError(f"Deadly Demise ability found in ability string '{ability}' but could not parse damage value '{damage_value}'")
+                    raise ValueError(f"Deadly Demise ability found in ability string '{ability}' but could not extract damage value")
+            else:
+                # Ability object with name and description attributes
+                if hasattr(ability, 'name') and ability.name and "deadly demise" in ability.name.lower():
+                    # Try to extract damage value from ability name
+                    damage_match = re.search(r'deadly demise\s*\(?(\d+|D\d+)', ability.name.lower())
+                    if damage_match:
+                        damage_value = damage_match.group(1)
+                        try:
+                            dice_collection = DiceCollection.from_string(damage_value)
+                            return True, dice_collection
+                        except ValueError:
+                            raise ValueError(f"Deadly Demise ability found in ability name '{ability.name}' but could not parse damage value '{damage_value}'")
+                    raise ValueError(f"Deadly Demise ability found in ability name '{ability.name}' but could not extract damage value")
+                
+                if hasattr(ability, 'description') and ability.description and "deadly demise" in ability.description.lower():
+                    # Try to extract damage value from ability description
+                    damage_match = re.search(r'deadly demise\s*\(?(\d+|D\d+)', ability.description.lower())
+                    if damage_match:
+                        damage_value = damage_match.group(1)
+                        try:
+                            dice_collection = DiceCollection.from_string(damage_value)
+                            return True, dice_collection
+                        except ValueError:
+                            raise ValueError(f"Deadly Demise ability found in ability description '{ability.description}' but could not parse damage value '{damage_value}'")
+                    raise ValueError(f"Deadly Demise ability found in ability description '{ability.description}' but could not extract damage value")
+        
+        # Check model-level abilities
+        for ability in self.abilities:
+            # Handle both string and ability object cases
+            if isinstance(ability, str):
+                if "deadly demise" in ability.lower():
+                    # Try to extract damage value from ability description
+                    damage_match = re.search(r'deadly demise\s*\(?(\d+|D\d+)', ability.lower())
+                    if damage_match:
+                        damage_value = damage_match.group(1)
+                        try:
+                            dice_collection = DiceCollection.from_string(damage_value)
+                            return True, dice_collection
+                        except ValueError:
+                            raise ValueError(f"Deadly Demise ability found in model ability string '{ability}' but could not parse damage value '{damage_value}'")
+                    raise ValueError(f"Deadly Demise ability found in model ability string '{ability}' but could not extract damage value")
+            else:
+                # Ability object with name and description attributes
+                if hasattr(ability, 'name') and ability.name and "deadly demise" in ability.name.lower():
+                    # Try to extract damage value from ability name
+                    damage_match = re.search(r'deadly demise\s*\(?(\d+|D\d+)', ability.name.lower())
+                    if damage_match:
+                        damage_value = damage_match.group(1)
+                        try:
+                            dice_collection = DiceCollection.from_string(damage_value)
+                            return True, dice_collection
+                        except ValueError:
+                            raise ValueError(f"Deadly Demise ability found in model ability name '{ability.name}' but could not parse damage value '{damage_value}'")
+                    raise ValueError(f"Deadly Demise ability found in model ability name '{ability.name}' but could not extract damage value")
+                
+                if hasattr(ability, 'description') and ability.description and "deadly demise" in ability.description.lower():
+                    # Try to extract damage value from ability description
+                    damage_match = re.search(r'deadly demise\s*\(?(\d+|D\d+)', ability.description.lower())
+                    if damage_match:
+                        damage_value = damage_match.group(1)
+                        try:
+                            dice_collection = DiceCollection.from_string(damage_value)
+                            return True, dice_collection
+                        except ValueError:
+                            raise ValueError(f"Deadly Demise ability found in model ability description '{ability.description}' but could not parse damage value '{damage_value}'")
+                    raise ValueError(f"Deadly Demise ability found in model ability description '{ability.description}' but could not extract damage value")
+        
+        return False, None
 
     def has_feel_no_pain(self) -> List[Tuple[int, Optional[str]]]:
         """Check if the unit has Feel No Pain abilities and return all of them.
