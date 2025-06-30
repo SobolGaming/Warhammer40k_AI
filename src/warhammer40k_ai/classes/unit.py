@@ -1422,8 +1422,23 @@ class Unit:
         #     return True
         return False
 
-    def can_shoot_in_engagement_range(self, profile) -> bool:
+    def can_shoot_in_engagement_range(self, game_map: 'Map', profile=None) -> bool:
         """Check if this unit can shoot while in engagement range with the given weapon profile."""
+        # Check if unit is in engagement range
+        unit_position = self.get_position()
+        if not unit_position:
+            return True
+            
+        is_engaged = any(game_map.is_within_engagement_range(unit_position, enemy)
+                        for enemy in game_map.get_enemy_units(self) if enemy.is_alive())
+        
+        if not is_engaged:
+            return True
+            
+        # If engaged and no profile provided, assume cannot shoot
+        if profile is None:
+            return False
+            
         # Check for Pistol weapons
         if profile.is_pistol():
             return True
