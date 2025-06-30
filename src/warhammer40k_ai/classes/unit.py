@@ -723,6 +723,10 @@ class Unit:
         return "Dedicated Transport" in self.keywords
 
     @property
+    def is_transport(self) -> bool:
+        return "Transport" in self.keywords
+
+    @property
     def is_leader(self) -> bool:
         return len(self.can_be_attached_to) > 0
 
@@ -773,6 +777,10 @@ class Unit:
     @property
     def is_flying(self) -> bool:
         return "Fly" in self.keywords
+
+    @property
+    def is_smoke(self) -> bool:
+        return "Smoke" in self.keywords
 
     @property
     def is_belisarius_cawl(self) -> bool:
