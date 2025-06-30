@@ -446,8 +446,12 @@ class Unit:
             count += 1
 
     # Remove a Model from a Unit (e.g., when it dies)
-    def remove_model(self, model: Model, fleed: bool = False) -> None:
+    def remove_model(self, model: Model, fleed: bool = False, game_map: Optional['Map'] = None) -> None:
         assert model in self.models
+
+        # Check for Deadly Demise ability before removing the model
+        if not fleed and game_map is not None:
+            self._trigger_deadly_demise(model, game_map)
 
         # Remove model itself
         self.round_state.num_lost_models_this_round += 1
@@ -460,6 +464,156 @@ class Unit:
         #        self.callbacks[hook_events.ENEMY_UNIT_KILLED].append(logger.error(self))
         #    self.parent_detachment.removeUnit(self)
         self.update_coherency()
+
+    def _trigger_deadly_demise(self, dying_model: Model, game_map: 'Map') -> None:
+        """Trigger Deadly Demise ability when a model is killed.
+        
+        Args:
+            dying_model: The model that is being killed
+            game_map: The game map to find nearby units
+        """
+        # Check if the unit has Deadly Demise ability
+        has_deadly_demise, damage_dice = self.has_deadly_demise()
+        if not has_deadly_demise:
+            return
+        
+        print(f"💥 {self.name} has Deadly Demise {damage_dice} - checking for explosion!")
+        
+        # Roll D6 to see if Deadly Demise triggers
+        trigger_roll = get_roll("D6")
+        if trigger_roll != 6:
+            print(f"🎲 Deadly Demise trigger roll: {trigger_roll} (needed 6) - No explosion!")
+            return
+        
+        print(f"🎲 Deadly Demise trigger roll: {trigger_roll} - EXPLOSION! 💥")
+        
+        # Get the dying model's position
+        model_position = dying_model.get_location()
+        if not model_position:
+            print(f"❌ Cannot determine position of dying model for Deadly Demise")
+            return
+        
+        # Find all units within 6 inches of the dying model
+        nearby_units = self._get_units_within_range(model_position, 6.0, game_map)
+        
+        if not nearby_units:
+            print(f"💥 Deadly Demise triggered but no units within 6\" - no damage dealt")
+            return
+        
+        # Apply damage to each nearby unit
+        total_damage_dealt = 0
+        for target_unit in nearby_units:
+            # Roll damage independently for each unit (if it's a dice roll)
+            if damage_dice.number > 0:  # It's a dice roll like D3, D6
+                damage_amount = damage_dice.roll()
+            else:  # It's a fixed number
+                damage_amount = damage_dice.modifier
+            
+            print(f"💥 {target_unit.name} suffers {damage_amount} mortal wounds from Deadly Demise!")
+            
+            # Apply mortal wounds to the target unit
+            models_destroyed = self._apply_mortal_wounds_to_unit(target_unit, damage_amount)
+            total_damage_dealt += damage_amount
+            
+            if models_destroyed > 0:
+                print(f"💀 Deadly Demise destroyed {models_destroyed} model(s) in {target_unit.name}")
+        
+        print(f"💥 Deadly Demise complete: {total_damage_dealt} total mortal wounds dealt to {len(nearby_units)} unit(s)")
+
+    def trigger_deadly_demise_manually(self, dying_model: Model, game_map: 'Map') -> None:
+        """Manually trigger Deadly Demise for testing or when game context is available.
+        
+        This method can be called from the UI or game context when a model is killed
+        and the game_map is available.
+        
+        Args:
+            dying_model: The model that is being killed
+            game_map: The game map to find nearby units
+        """
+        self._trigger_deadly_demise(dying_model, game_map)
+
+    def _get_units_within_range(self, position: Tuple[float, float, float, float], range_inches: float, game_map: 'Map') -> List['Unit']:
+        """Get all units within the specified range of a position.
+        
+        Args:
+            position: (x, y, z, facing) position to check from
+            range_inches: Range in inches to check
+            game_map: The game map containing all units
+            
+        Returns:
+            List of units within range (excluding the unit containing the position)
+        """
+        units_within_range = []
+        x, y, z = position[0], position[1], position[2]
+        
+        for unit in game_map.units:
+            if unit == self:  # Skip our own unit
+                continue
+            
+            if not unit.is_alive():  # Skip destroyed units
+                continue
+            
+            # Get the closest model in the unit to our position
+            unit_position = unit.get_position()
+            if not unit_position:
+                continue
+            
+            # Calculate distance between positions
+            distance = get_dist(
+                x - unit_position[0],
+                y - unit_position[1],
+                z - unit_position[2] if len(unit_position) > 2 else 0
+            )
+            
+            if distance <= range_inches:
+                units_within_range.append(unit)
+        
+        return units_within_range
+
+    def _apply_mortal_wounds_to_unit(self, target_unit: 'Unit', mortal_wound_amount: int) -> int:
+        """Apply mortal wounds to a unit, distributing them among models.
+        
+        Args:
+            target_unit: The unit to apply mortal wounds to
+            mortal_wound_amount: Number of mortal wounds to apply
+            
+        Returns:
+            Number of models destroyed by the mortal wounds
+        """
+        models_destroyed = 0
+        
+        # Apply mortal wounds one at a time to models in the unit
+        for _ in range(mortal_wound_amount):
+            if not target_unit.is_alive():
+                break  # Unit is destroyed, stop applying wounds
+            
+            # Find a model to apply the wound to (prioritize damaged models)
+            target_model = None
+            for model in target_unit.models:
+                if not model.is_alive:
+                    continue
+                if not model.is_max_health:
+                    target_model = model
+                    break
+            
+            # If no damaged models, apply to the first alive model
+            if target_model is None:
+                for model in target_unit.models:
+                    if model.is_alive:
+                        target_model = model
+                        break
+            
+            if target_model is None:
+                break  # No models to apply wounds to
+            
+            # Apply the mortal wound
+            target_model.take_damage(1, is_mortal=True, weapon_profile=None)
+            
+            # Check if the model was destroyed
+            if not target_model.is_alive:
+                models_destroyed += 1
+        
+        return models_destroyed
 
     def add_model(self, model: Model) -> None:
         assert model not in self.models
@@ -1085,7 +1239,7 @@ class Unit:
         
         # Check if unit is Battle-Shocked and must take Desperate Escape Test
         if self.is_battle_shocked():
-            models_lost = self.take_desperate_escape_test()
+            models_lost = self.take_desperate_escape_test(game_map)
             
             # Check if unit was wiped out during Desperate Escape Test
             if not self.is_alive():
@@ -1162,7 +1316,7 @@ class Unit:
                 roll = get_roll("D6")
                 if roll <= 2:
                     print(f"🎲 Model {model._id}: Rolled {roll} on Desperate Escape Test - DESTROYED! 💀")
-                    self.remove_model(model, fleed=True)
+                    self.remove_model(model, fleed=True, game_map=game_map)
                     continue  # Model is destroyed, don't move it
                 else:
                     print(f"🎲 Model {model._id}: Rolled {roll} on Desperate Escape Test - Survives ✅")
@@ -2705,7 +2859,7 @@ class Unit:
         
         return True  # Default: can charge after arriving from reserves
 
-    def take_desperate_escape_test(self) -> int:
+    def take_desperate_escape_test(self, game_map: Optional['Map'] = None) -> int:
         """
         Take a Desperate Escape Test - rolling D6 for each model, destroying on 1-2.
         This is required for Battle-Shocked units that fall back.
@@ -2723,7 +2877,7 @@ class Unit:
             if roll <= 2:
                 # Model is destroyed
                 print(f"🎲 Model {i+1}: Rolled {roll} - DESTROYED! 💀")
-                self.remove_model(model, fleed=True)  # Mark as fled, not killed in combat
+                self.remove_model(model, fleed=True, game_map=game_map)  # Mark as fled, not killed in combat
                 models_destroyed += 1
             else:
                 # Model survives
