@@ -170,38 +170,27 @@ class Base:
 
     ### Measurement functions
     def edge_to_edge_distance(self, other: 'Base') -> float:
-        # Calculate the distance between two models using their bases
-        # Note: we round to 2 decimal precision (we can increase that if necessary)
-        delta_x = other.x - self.x
-        delta_y = other.y - self.y
-        angle = get_angle(delta_y, delta_x)
-        if self.z == other.z:
-            return max(0, round(
-                get_dist(delta_x, delta_y)
-                - self.get_radius(angle)
-                - other.get_radius(angle)
-            , 2))
-        elif self.z + self.model_height < other.z:
-            xy_dist = max(0,
-                get_dist(delta_x, delta_y)
-                - self.get_radius(angle)
-                - other.get_radius(angle)
-            )
-            return get_dist(xy_dist, other.z - self.z - self.model_height)
-        elif other.z + other.model_height < self.z:
-            xy_dist = max(0,
-                get_dist(delta_x, delta_y)
-                - self.get_radius(angle)
-                - other.get_radius(angle)
-            )
-            return round(get_dist(xy_dist, self.z - other.z - other.model_height), 2)
-        # otherwise treat it the same as if on the same z-axis since parts of the model overlap in the z-space
+        # --- 2D distance via Shapely ---
+        # true minimal distance between the two rotated polygons
+        base_shape = self.get_base_shape()
+        other_base_shape = other.get_base_shape()
+
+        xy_dist = base_shape.distance(other_base_shape)
+
+        # --- vertical separation ---
+        top_z = self.z + self.model_height
+        other_top = other.z + other.model_height
+
+        if top_z < other.z:
+            dz = other.z - top_z
+        elif other_top < self.z:
+            dz = self.z - other_top
         else:
-            return max(0, round(
-                get_dist(delta_x, delta_y)
-                - self.get_radius(angle)
-                - other.get_radius(angle)
-            , 2))
+            dz = 0.0
+
+        # --- combine and round once at the end ---
+        return round(get_dist(xy_dist, dz), 2)
+
 
     def vertical_distance(self, other: 'Base') -> float:
         """Calculate the distance between two models in vertical space."""
