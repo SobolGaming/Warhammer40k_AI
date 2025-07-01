@@ -148,7 +148,7 @@ class UnitDetailPanel(pygame.sprite.Sprite):
             surface.blit(abilities_header, (x_left, y_pos))
             y_pos += 25
             
-            for ability in unit.possible_abilities[:5]:  # Show first 5 abilities
+            for ability in unit.possible_abilities:  # Show all abilities
                 # Include parameter in ability name if available (e.g., "Feel No Pain 5+")
                 ability_display_name = ability.name
                 if hasattr(ability, 'parameter') and ability.parameter:
@@ -160,12 +160,14 @@ class UnitDetailPanel(pygame.sprite.Sprite):
                 
                 # Wrap ability description
                 if ability.description:
-                    desc_wrapped = self.wrap_text(ability.description, self.font_tiny, self.width - 40)
-                    for line in desc_wrapped[:3]:  # Show first 3 lines
+                    # Strip trailing semicolon if present
+                    description = ability.description.rstrip(';')
+                    desc_wrapped = self.wrap_text(description, self.font_tiny, self.width - 40)
+                    for line in desc_wrapped:  # Show all lines
                         desc_text = self.font_tiny.render(line, True, TEXT_SECONDARY)
                         surface.blit(desc_text, (x_left + 10, y_pos))
                         y_pos += 12
-                    y_pos += 5
+                    y_pos += 5  # Extra spacing after each ability
         
         # Enhancement
         if unit.enhancement:
@@ -282,6 +284,13 @@ class UnitDetailPanel(pygame.sprite.Sprite):
         stats_surface = self.font_tiny.render(f"      {stats_text}", True, TEXT_SECONDARY)
         surface.blit(stats_surface, (x_pos, y_pos))
         y_pos += 12
+        
+        # Keywords
+        if hasattr(profile, 'get_keywords') and profile.get_keywords():
+            keywords_text = f"      Keywords: {', '.join(profile.get_keywords())}"
+            keywords_surface = self.font_tiny.render(keywords_text, True, TEXT_ACCENT)
+            surface.blit(keywords_surface, (x_pos, y_pos))
+            y_pos += 12
         
         # Special abilities
         if hasattr(profile, 'abilities') and profile.abilities:

@@ -9,6 +9,7 @@ BUTTON_HOVER = (100, 100, 100)
 BUTTON_SELECTED = (120, 120, 120)
 TEXT_PRIMARY = (255, 255, 255)
 TEXT_SECONDARY = (200, 200, 200)
+TEXT_ACCENT = (100, 149, 237)  # Blue accent color for keywords
 
 
 class ShootingDeclarationDialog:
@@ -20,7 +21,7 @@ class ShootingDeclarationDialog:
     def __init__(self, screen_width: int, screen_height: int):
         self.screen_width = screen_width
         self.screen_height = screen_height
-        self.width = 500
+        self.width = 625  # Increased from 500 (25% wider)
         self.height = 600
         self.x = 50
         self.y = 50
@@ -463,7 +464,7 @@ class ShootingDeclarationDialog:
         
         # Draw weapons
         for i, weapon_info in enumerate(available_weapons):
-            weapon_y = y + i * 50  # Larger spacing
+            weapon_y = y + i * 60  # Increased spacing for 3 lines
             
             # Handle both dictionary and WargearProfile formats
             if isinstance(weapon_info, dict):
@@ -498,26 +499,76 @@ class ShootingDeclarationDialog:
                 bg_color = (60, 60, 60)  # Darker gray for unavailable weapons
             
             # Draw weapon background
-            pygame.draw.rect(screen, bg_color, (x, weapon_y, self.width - 20, 40))
-            pygame.draw.rect(screen, self.border_color, (x, weapon_y, self.width - 20, 40), 1)
+            pygame.draw.rect(screen, bg_color, (x, weapon_y, self.width - 20, 50))
+            pygame.draw.rect(screen, self.border_color, (x, weapon_y, self.width - 20, 50), 1)
             
-            # Draw weapon name
+            # Line 1: Weapon name with model count and keywords
             weapon_name = weapon_profile.parent_wargear.name
             if weapon_profile.name != 'default':
                 weapon_name += f" - {weapon_profile.name}"
-            weapon_name += f" ({models_count} models)"
+            weapon_name += f" (x{models_count})"  # Changed from "(X models)" to "(xX)"
             
-            if existing_declaration:
-                weapon_name += f" → {existing_declaration['target_unit'].name[:15]}..."
-                if has_split_fire:
-                    weapon_name += " (Split)"
+            # Render weapon name first
             weapon_surface = font_small.render(weapon_name, True, self.text_color)
             screen.blit(weapon_surface, (x + 5, weapon_y + 5))
             
-            # Draw weapon stats
-            stats = f"Range: {weapon_profile.range.max}\" | A: {weapon_profile.attacks}"
+            # Add keywords in blue color if they exist
+            keywords = weapon_profile.get_keywords()
+            if keywords:
+                keywords_text = f" | {', '.join(keywords)}"
+                keywords_surface = font_small.render(keywords_text, True, TEXT_ACCENT)
+                # Position keywords after the weapon name
+                keywords_x = x + 5 + weapon_surface.get_width()
+                screen.blit(keywords_surface, (keywords_x, weapon_y + 5))
+            
+            # Line 2: Full weapon stats
+            stats_parts = []
+            
+            # Range
+            if hasattr(weapon_profile, 'range'):
+                if weapon_profile.range.max == 0:
+                    stats_parts.append("Melee")
+                else:
+                    stats_parts.append(f"Range: {weapon_profile.range.max}\"")
+            
+            # Attacks
+            if hasattr(weapon_profile, 'attacks'):
+                if hasattr(weapon_profile.attacks, 'value'):
+                    stats_parts.append(f"A: {weapon_profile.attacks.value}")
+                else:
+                    stats_parts.append(f"A: {weapon_profile.attacks}")
+            
+            # Skill (BS for ranged, WS for melee)
+            if hasattr(weapon_profile, 'skill'):
+                if weapon_profile.range.max == 0:
+                    stats_parts.append(f"WS: {weapon_profile.skill}+")
+                else:
+                    stats_parts.append(f"BS: {weapon_profile.skill}+")
+            
+            # Strength
+            if hasattr(weapon_profile, 'strength'):
+                stats_parts.append(f"S: {weapon_profile.strength}")
+            
+            # AP
+            if hasattr(weapon_profile, 'ap'):
+                ap_val = weapon_profile.ap
+                if ap_val == 0:
+                    stats_parts.append("AP: -")
+                else:
+                    stats_parts.append(f"AP: {ap_val}")
+            
+            # Damage
+            if hasattr(weapon_profile, 'damage'):
+                if hasattr(weapon_profile.damage, 'value'):
+                    stats_parts.append(f"D: {weapon_profile.damage.value}")
+                else:
+                    stats_parts.append(f"D: {weapon_profile.damage}")
+            
+            # Add split fire indicator
             if has_split_fire:
-                stats += " | Split Fire"
+                stats_parts.append("Split Fire")
+            
+            stats = " | ".join(stats_parts)
             stats_surface = font_small.render(stats, True, self.text_color)
             screen.blit(stats_surface, (x + 5, weapon_y + 20))
     
@@ -544,7 +595,7 @@ class ShootingDeclarationDialog:
             if declaration['weapon_profile'].name != 'default':
                 weapon_name += f" - {declaration['weapon_profile'].name}"
             target_name = declaration['target_unit'].name[:15] + "..." if len(declaration['target_unit'].name) > 15 else declaration['target_unit'].name
-            declaration_text = f"{weapon_name} → {target_name}"
+            declaration_text = f"{weapon_name} -> {target_name}"
             text_surface = font_small.render(declaration_text, True, self.text_color)
             screen.blit(text_surface, (x + 5, declaration_y + 5))
     
