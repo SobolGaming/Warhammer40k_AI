@@ -1,6 +1,5 @@
 from typing import List, Dict, Any, Optional, Tuple
-from enum import Enum, auto
-from dataclasses import dataclass
+from enum import Enum
 import logging
 from .event_system import EventSystem
 from .map import Map, Objective
@@ -24,6 +23,7 @@ class SetupPhase(Enum):
     DECLARE_BATTLE_FORMATIONS = 4  # Attach leaders to units if you want; declare reserve; declare embarked unts
     DEPLOY_ARMIES = 5
     DETERMINE_FIRST_TURN_ORDER = 6
+    RESOLVE_PREBATTLE_RULES = 7  # Resolve any pre-battle rules, abilities, or stratagems
 
 
 class BattleRoundPhases(Enum):
@@ -1328,6 +1328,12 @@ class Game:
         # Clear deployment actions since deployment phase is now complete
         self.clear_deployment_actions()
     
+    def execute_resolve_prebattle_rules_phase(self) -> None:
+        """Phase 8: Resolve Pre-battle Rules - Resolve any pre-battle rules, abilities, or stratagems."""
+        print("📋 RESOLVE PREBATTLE RULES: Resolving pre-battle rules...")
+        # For now, this is a stub - pre-battle rules will be implemented later
+        print("✅ Pre-battle rules resolved")
+    
     def execute_current_setup_phase(self, **kwargs) -> None:
         """Execute the current setup phase with any necessary parameters."""
         if self.setup_phase == SetupPhase.MUSTER_ARMIES:
@@ -1350,3 +1356,5 @@ class Game:
             )
         elif self.setup_phase == SetupPhase.DETERMINE_FIRST_TURN_ORDER:
             self.execute_determine_first_turn_order_phase()
+        elif self.setup_phase == SetupPhase.RESOLVE_PREBATTLE_RULES:
+            self.execute_resolve_prebattle_rules_phase()

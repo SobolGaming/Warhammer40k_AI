@@ -14,9 +14,7 @@ Key principles:
 """
 
 import pygame
-import sys
 import os
-import random
 import argparse
 import logging
 from typing import Tuple, Optional
