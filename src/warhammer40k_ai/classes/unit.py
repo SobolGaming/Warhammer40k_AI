@@ -2244,81 +2244,142 @@ class Unit:
         
         return ranged_threat * distance_modifier
     
+    def _find_ability_with_patterns(self, patterns: List[str], extract_value: bool = False, value_pattern: str = None) -> Tuple[bool, Optional[str]]:
+        """
+        Helper method to find abilities matching given patterns and optionally extract values.
+        
+        Args:
+            patterns: List of patterns to search for (case-insensitive)
+            extract_value: Whether to extract a value from the matched text
+            value_pattern: Regex pattern to extract value (e.g., r'(\d+)' for numbers, r'(\d+|D\d+)' for dice)
+        
+        Returns:
+            Tuple[bool, Optional[str]]: (found, extracted_value)
+        """
+        # Check keywords first
+        for keyword in self.keywords:
+            for pattern in patterns:
+                if pattern.lower() in keyword.lower():
+                    if extract_value and value_pattern:
+                        match = re.search(f'{pattern.lower()}\\s*\\(?{value_pattern}', keyword.lower())
+                        if match:
+                            return True, match.group(1)
+                        else:
+                            raise ValueError(f"{pattern} ability found in keyword '{keyword}' but could not extract value for unit '{self.name}'")
+                    else:
+                        return True, None
+        
+        # Check unit-level abilities (possible_abilities)
+        for ability in self.possible_abilities:
+            if isinstance(ability, str):
+                for pattern in patterns:
+                    if pattern.lower() in ability.lower():
+                        if extract_value and value_pattern:
+                            match = re.search(f'{pattern.lower()}\\s*\\(?{value_pattern}', ability.lower())
+                            if match:
+                                return True, match.group(1)
+                            else:
+                                raise ValueError(f"{pattern} ability found in ability string '{ability}' but could not extract value for unit '{self.name}'")
+                        else:
+                            return True, None
+            else:
+                # Ability object with name and description attributes
+                ability_name_matched = False
+                if hasattr(ability, 'name') and ability.name:
+                    for pattern in patterns:
+                        if pattern.lower() in ability.name.lower():
+                            ability_name_matched = True
+                            if extract_value and value_pattern:
+                                match = re.search(f'{pattern.lower()}\\s*\\(?{value_pattern}', ability.name.lower())
+                                if match:
+                                    return True, match.group(1)
+                                else:
+                                    # Check if ability has a parameter attribute
+                                    if hasattr(ability, 'parameter') and ability.parameter:
+                                        param_match = re.search(value_pattern, ability.parameter)
+                                        if param_match:
+                                            return True, param_match.group(1)
+                                        else:
+                                            raise ValueError(f"{pattern} ability found in ability name '{ability.name}' with parameter '{ability.parameter}' but could not extract value for unit '{self.name}'")
+                                    else:
+                                        raise ValueError(f"{pattern} ability found in ability name '{ability.name}' but could not extract value for unit '{self.name}'")
+                            else:
+                                return True, None
+                
+                # Only check description if ability name didn't match
+                if not ability_name_matched and hasattr(ability, 'description') and ability.description:
+                    for pattern in patterns:
+                        if pattern.lower() in ability.description.lower():
+                            if extract_value and value_pattern:
+                                match = re.search(f'{pattern.lower()}\\s*\\(?{value_pattern}', ability.description.lower())
+                                if match:
+                                    return True, match.group(1)
+                                else:
+                                    raise ValueError(f"{pattern} ability found in ability description '{ability.description}' but could not extract value for unit '{self.name}'")
+                            else:
+                                return True, None
+        
+        # Check model-level abilities
+        for ability in self.abilities:
+            if isinstance(ability, str):
+                for pattern in patterns:
+                    if pattern.lower() in ability.lower():
+                        if extract_value and value_pattern:
+                            match = re.search(f'{pattern.lower()}\\s*\\(?{value_pattern}', ability.lower())
+                            if match:
+                                return True, match.group(1)
+                            else:
+                                raise ValueError(f"{pattern} ability found in model ability string '{ability}' but could not extract value for unit '{self.name}'")
+                        else:
+                            return True, None
+            else:
+                # Ability object with name and description attributes
+                ability_name_matched = False
+                if hasattr(ability, 'name') and ability.name:
+                    for pattern in patterns:
+                        if pattern.lower() in ability.name.lower():
+                            ability_name_matched = True
+                            if extract_value and value_pattern:
+                                match = re.search(f'{pattern.lower()}\\s*\\(?{value_pattern}', ability.name.lower())
+                                if match:
+                                    return True, match.group(1)
+                                else:
+                                    # Check if ability has a parameter attribute
+                                    if hasattr(ability, 'parameter') and ability.parameter:
+                                        param_match = re.search(value_pattern, ability.parameter)
+                                        if param_match:
+                                            return True, param_match.group(1)
+                                        else:
+                                            raise ValueError(f"{pattern} ability found in model ability name '{ability.name}' with parameter '{ability.parameter}' but could not extract value for unit '{self.name}'")
+                                    else:
+                                        raise ValueError(f"{pattern} ability found in model ability name '{ability.name}' but could not extract value for unit '{self.name}'")
+                            else:
+                                return True, None
+                
+                # Only check description if ability name didn't match
+                if not ability_name_matched and hasattr(ability, 'description') and ability.description:
+                    for pattern in patterns:
+                        if pattern.lower() in ability.description.lower():
+                            if extract_value and value_pattern:
+                                match = re.search(f'{pattern.lower()}\\s*\\(?{value_pattern}', ability.description.lower())
+                                if match:
+                                    return True, match.group(1)
+                                else:
+                                    raise ValueError(f"{pattern} ability found in model ability description '{ability.description}' but could not extract value for unit '{self.name}'")
+                            else:
+                                return True, None
+        
+        return False, None
+
     def has_deep_strike(self) -> bool:
         """Check if the unit has Deep Strike ability."""
-        # Check if the unit has Deep Strike keyword or ability
-        if "Deep Strike" in self.keywords:
-            return True
-        
-        # Check possible_abilities for Deep Strike (unit-level abilities)
-        for ability in self.possible_abilities:
-            # Handle both string and ability object cases
-            if isinstance(ability, str):
-                if "deep strike" in ability.lower() or "deepstrike" in ability.lower():
-                    return True
-            else:
-                # Ability object with name and description attributes
-                if hasattr(ability, 'name') and ability.name:
-                    if "deep strike" in ability.name.lower() or "deepstrike" in ability.name.lower():
-                        return True
-                if hasattr(ability, 'description') and ability.description:
-                    if "deep strike" in ability.description.lower() or "deepstrike" in ability.description.lower():
-                        return True
-        
-        # Also check model-level abilities (self.abilities)
-        for ability in self.abilities:
-            # Handle both string and ability object cases
-            if isinstance(ability, str):
-                if "deep strike" in ability.lower() or "deepstrike" in ability.lower():
-                    return True
-            else:
-                # Ability object with name and description attributes
-                if hasattr(ability, 'name') and ability.name:
-                    if "deep strike" in ability.name.lower() or "deepstrike" in ability.name.lower():
-                        return True
-                if hasattr(ability, 'description') and ability.description:
-                    if "deep strike" in ability.description.lower() or "deepstrike" in ability.description.lower():
-                        return True
-        
-        return False
+        found, _ = self._find_ability_with_patterns(["deep strike", "deepstrike"])
+        return found
 
     def has_infiltrate(self) -> bool:
         """Check if the unit has Infiltrate ability."""
-        # Check if the unit has Infiltrate keyword
-        if "Infiltrate" in self.keywords:
-            return True
-        
-        # Check possible_abilities for Infiltrate (unit-level abilities)
-        for ability in self.possible_abilities:
-            # Handle both string and ability object cases
-            if isinstance(ability, str):
-                if "infiltrate" in ability.lower():
-                    return True
-            else:
-                # Ability object with name and description attributes
-                if hasattr(ability, 'name') and ability.name:
-                    if "infiltrate" in ability.name.lower():
-                        return True
-                if hasattr(ability, 'description') and ability.description:
-                    if "infiltrate" in ability.description.lower():
-                        return True
-        
-        # Also check model-level abilities (self.abilities)
-        for ability in self.abilities:
-            # Handle both string and ability object cases
-            if isinstance(ability, str):
-                if "infiltrate" in ability.lower():
-                    return True
-            else:
-                # Ability object with name and description attributes
-                if hasattr(ability, 'name') and ability.name:
-                    if "infiltrate" in ability.name.lower():
-                        return True
-                if hasattr(ability, 'description') and ability.description:
-                    if "infiltrate" in ability.description.lower():
-                        return True
-        
-        return False
+        found, _ = self._find_ability_with_patterns(["infiltrate"])
+        return found
     
     def has_scout(self) -> Tuple[bool, float]:
         """Check if the unit has Scout ability and return the scout distance.
@@ -2328,68 +2389,9 @@ class Unit:
                 - A boolean indicating if the unit has Scout ability
                 - The scout distance in inches (0.0 if no Scout ability)
         """
-        # Check if the unit has Scout keyword
-        for keyword in self.keywords:
-            if "scout" in keyword.lower():
-                # Try to extract distance from keyword like "Scout 6\"" or "Scout (6\")"
-                distance_match = re.search(r'scout\s*\(?(\d+)', keyword.lower())
-                if distance_match:
-                    return True, float(distance_match.group(1))
-                # Scout ability found but no distance value could be parsed
-                raise ValueError(f"Scout ability found in keyword '{keyword}' but could not extract distance value")
-        
-        # Check unit-level abilities (possible_abilities)
-        for ability in self.possible_abilities:
-            # Handle both string and ability object cases
-            if isinstance(ability, str):
-                if "scout" in ability.lower():
-                    # Try to extract distance from ability description
-                    distance_match = re.search(r'scout\s*\(?(\d+)', ability.lower())
-                    if distance_match:
-                        return True, float(distance_match.group(1))
-                    raise ValueError(f"Scout ability found in ability string '{ability}' but could not extract distance value")
-            else:
-                # Ability object with name and description attributes
-                if hasattr(ability, 'name') and ability.name and "scout" in ability.name.lower():
-                    # Try to extract distance from ability name
-                    distance_match = re.search(r'scout\s*\(?(\d+)', ability.name.lower())
-                    if distance_match:
-                        return True, float(distance_match.group(1))
-                    raise ValueError(f"Scout ability found in ability name '{ability.name}' but could not extract distance value")
-                
-                if hasattr(ability, 'description') and ability.description and "scout" in ability.description.lower():
-                    # Try to extract distance from ability description
-                    distance_match = re.search(r'scout\s*\(?(\d+)', ability.description.lower())
-                    if distance_match:
-                        return True, float(distance_match.group(1))
-                    raise ValueError(f"Scout ability found in ability description '{ability.description}' but could not extract distance value")
-        
-        # Check model-level abilities
-        for ability in self.abilities:
-            # Handle both string and ability object cases
-            if isinstance(ability, str):
-                if "scout" in ability.lower():
-                    # Try to extract distance from ability description
-                    distance_match = re.search(r'scout\s*\(?(\d+)', ability.lower())
-                    if distance_match:
-                        return True, float(distance_match.group(1))
-                    raise ValueError(f"Scout ability found in model ability string '{ability}' but could not extract distance value")
-            else:
-                # Ability object with name and description attributes
-                if hasattr(ability, 'name') and ability.name and "scout" in ability.name.lower():
-                    # Try to extract distance from ability name
-                    distance_match = re.search(r'scout\s*\(?(\d+)', ability.name.lower())
-                    if distance_match:
-                        return True, float(distance_match.group(1))
-                    raise ValueError(f"Scout ability found in model ability name '{ability.name}' but could not extract distance value")
-                
-                if hasattr(ability, 'description') and ability.description and "scout" in ability.description.lower():
-                    # Try to extract distance from ability description
-                    distance_match = re.search(r'scout\s*\(?(\d+)', ability.description.lower())
-                    if distance_match:
-                        return True, float(distance_match.group(1))
-                    raise ValueError(f"Scout ability found in model ability description '{ability.description}' but could not extract distance value")
-        
+        found, distance_str = self._find_ability_with_patterns(["scout"], extract_value=True, value_pattern=r'(\d+)')
+        if found:
+            return True, float(distance_str)
         return False, 0.0
     
     def get_scout_distance_normalized(self, max_scout_distance: float = 12.0) -> float:
@@ -2415,68 +2417,9 @@ class Unit:
                 - A boolean indicating if the unit has Firing Deck ability
                 - The number of weapons that can fire from the deck (0 if no Firing Deck ability)
         """
-        # Check if the unit has Firing Deck keyword
-        for keyword in self.keywords:
-            if "firing deck" in keyword.lower():
-                # Try to extract number from keyword like "Firing Deck 6" or "Firing Deck (6)"
-                number_match = re.search(r'firing deck\s*\(?(\d+)', keyword.lower())
-                if number_match:
-                    return True, int(number_match.group(1))
-                # Firing Deck ability found but no number could be parsed
-                raise ValueError(f"Firing Deck ability found in keyword '{keyword}' but could not extract number value")
-        
-        # Check unit-level abilities (possible_abilities)
-        for ability in self.possible_abilities:
-            # Handle both string and ability object cases
-            if isinstance(ability, str):
-                if "firing deck" in ability.lower():
-                    # Try to extract number from ability description
-                    number_match = re.search(r'firing deck\s*\(?(\d+)', ability.lower())
-                    if number_match:
-                        return True, int(number_match.group(1))
-                    raise ValueError(f"Firing Deck ability found in ability string '{ability}' but could not extract number value")
-            else:
-                # Ability object with name and description attributes
-                if hasattr(ability, 'name') and ability.name and "firing deck" in ability.name.lower():
-                    # Try to extract number from ability name
-                    number_match = re.search(r'firing deck\s*\(?(\d+)', ability.name.lower())
-                    if number_match:
-                        return True, int(number_match.group(1))
-                    raise ValueError(f"Firing Deck ability found in ability name '{ability.name}' but could not extract number value")
-                
-                if hasattr(ability, 'description') and ability.description and "firing deck" in ability.description.lower():
-                    # Try to extract number from ability description
-                    number_match = re.search(r'firing deck\s*\(?(\d+)', ability.description.lower())
-                    if number_match:
-                        return True, int(number_match.group(1))
-                    raise ValueError(f"Firing Deck ability found in ability description '{ability.description}' but could not extract number value")
-        
-        # Check model-level abilities
-        for ability in self.abilities:
-            # Handle both string and ability object cases
-            if isinstance(ability, str):
-                if "firing deck" in ability.lower():
-                    # Try to extract number from ability description
-                    number_match = re.search(r'firing deck\s*\(?(\d+)', ability.lower())
-                    if number_match:
-                        return True, int(number_match.group(1))
-                    raise ValueError(f"Firing Deck ability found in model ability string '{ability}' but could not extract number value")
-            else:
-                # Ability object with name and description attributes
-                if hasattr(ability, 'name') and ability.name and "firing deck" in ability.name.lower():
-                    # Try to extract number from ability name
-                    number_match = re.search(r'firing deck\s*\(?(\d+)', ability.name.lower())
-                    if number_match:
-                        return True, int(number_match.group(1))
-                    raise ValueError(f"Firing Deck ability found in model ability name '{ability.name}' but could not extract number value")
-                
-                if hasattr(ability, 'description') and ability.description and "firing deck" in ability.description.lower():
-                    # Try to extract number from ability description
-                    number_match = re.search(r'firing deck\s*\(?(\d+)', ability.description.lower())
-                    if number_match:
-                        return True, int(number_match.group(1))
-                    raise ValueError(f"Firing Deck ability found in model ability description '{ability.description}' but could not extract number value")
-        
+        found, number_str = self._find_ability_with_patterns(["firing deck"], extract_value=True, value_pattern=r'(\d+)')
+        if found:
+            return True, int(number_str)
         return False, 0
     
     def has_deadly_demise(self) -> Tuple[bool, DiceCollection]:
@@ -2487,104 +2430,138 @@ class Unit:
                 - A boolean indicating if the unit has Deadly Demise ability
                 - A DiceCollection object representing the damage value (e.g., "3", "D3", "D6") or None if no Deadly Demise ability
         """
-        # Check if the unit has Deadly Demise keyword
+        found, damage_str = self._find_ability_with_patterns(["deadly demise"], extract_value=True, value_pattern=r'(\d+|D\d+)')
+        if found:
+            try:
+                dice_collection = DiceCollection.from_string(damage_str)
+                return True, dice_collection
+            except ValueError:
+                raise ValueError(f"Deadly Demise ability found but could not parse damage value '{damage_str}' for unit '{self.name}'")
+        return False, None
+
+    def _find_all_abilities_with_patterns(self, patterns: List[str], value_pattern: str) -> List[Tuple[int, Optional[str]]]:
+        """
+        Helper method to find all instances of abilities matching given patterns and extract values with conditions.
+        Used specifically for Feel No Pain which can have multiple instances with conditions.
+        
+        Args:
+            patterns: List of patterns to search for (case-insensitive)
+            value_pattern: Regex pattern to extract value and optional condition
+        
+        Returns:
+            List[Tuple[int, Optional[str]]]: List of (dice_value, condition) tuples
+        """
+        found_abilities = []
+        
+        # Check keywords first
         for keyword in self.keywords:
-            if "deadly demise" in keyword.lower():
-                # Try to extract damage value from keyword like "Deadly Demise 3" or "Deadly Demise (D3)"
-                damage_match = re.search(r'deadly demise\s*\(?(\d+|D\d+)', keyword.lower())
-                if damage_match:
-                    damage_value = damage_match.group(1)
-                    try:
-                        dice_collection = DiceCollection.from_string(damage_value)
-                        return True, dice_collection
-                    except ValueError:
-                        raise ValueError(f"Deadly Demise ability found in keyword '{keyword}' but could not parse damage value '{damage_value}'")
-                # Deadly Demise ability found but no damage value could be parsed
-                raise ValueError(f"Deadly Demise ability found in keyword '{keyword}' but could not extract damage value")
+            for pattern in patterns:
+                if pattern.lower() in keyword.lower():
+                    match = re.search(value_pattern, keyword.lower())
+                    if match:
+                        dice_value = int(match.group(1))
+                        condition = match.group(2).strip() if match.group(2) else None
+                        found_abilities.append((dice_value, condition))
+                    else:
+                        raise ValueError(f"{pattern} ability found in keyword '{keyword}' but could not extract dice value for unit '{self.name}'")
         
         # Check unit-level abilities (possible_abilities)
         for ability in self.possible_abilities:
-            # Handle both string and ability object cases
             if isinstance(ability, str):
-                if "deadly demise" in ability.lower():
-                    # Try to extract damage value from ability description
-                    damage_match = re.search(r'deadly demise\s*\(?(\d+|D\d+)', ability.lower())
-                    if damage_match:
-                        damage_value = damage_match.group(1)
-                        try:
-                            dice_collection = DiceCollection.from_string(damage_value)
-                            return True, dice_collection
-                        except ValueError:
-                            raise ValueError(f"Deadly Demise ability found in ability string '{ability}' but could not parse damage value '{damage_value}'")
-                    raise ValueError(f"Deadly Demise ability found in ability string '{ability}' but could not extract damage value")
+                for pattern in patterns:
+                    if pattern.lower() in ability.lower():
+                        match = re.search(value_pattern, ability.lower())
+                        if match:
+                            dice_value = int(match.group(1))
+                            condition = match.group(2).strip() if match.group(2) else None
+                            found_abilities.append((dice_value, condition))
+                        else:
+                            raise ValueError(f"{pattern} ability found in ability string '{ability}' but could not extract dice value for unit '{self.name}'")
             else:
                 # Ability object with name and description attributes
-                if hasattr(ability, 'name') and ability.name and "deadly demise" in ability.name.lower():
-                    # Try to extract damage value from ability name
-                    damage_match = re.search(r'deadly demise\s*\(?(\d+|D\d+)', ability.name.lower())
-                    if damage_match:
-                        damage_value = damage_match.group(1)
-                        try:
-                            dice_collection = DiceCollection.from_string(damage_value)
-                            return True, dice_collection
-                        except ValueError:
-                            raise ValueError(f"Deadly Demise ability found in ability name '{ability.name}' but could not parse damage value '{damage_value}'")
-                    raise ValueError(f"Deadly Demise ability found in ability name '{ability.name}' but could not extract damage value")
+                ability_name_matched = False
+                if hasattr(ability, 'name') and ability.name:
+                    for pattern in patterns:
+                        if pattern.lower() in ability.name.lower():
+                            ability_name_matched = True
+                            match = re.search(value_pattern, ability.name.lower())
+                            if match:
+                                dice_value = int(match.group(1))
+                                condition = match.group(2).strip() if match.group(2) else None
+                                found_abilities.append((dice_value, condition))
+                            else:
+                                # Check if ability has a parameter attribute (e.g., "5+")
+                                if hasattr(ability, 'parameter') and ability.parameter:
+                                    param_match = re.search(r'(\d+)\+', ability.parameter)
+                                    if param_match:
+                                        dice_value = int(param_match.group(1))
+                                        found_abilities.append((dice_value, None))
+                                    else:
+                                        raise ValueError(f"{pattern} ability found in ability name '{ability.name}' with parameter '{ability.parameter}' but could not extract dice value for unit '{self.name}'")
+                                else:
+                                    raise ValueError(f"{pattern} ability found in ability name '{ability.name}' but could not extract dice value for unit '{self.name}'")
                 
-                if hasattr(ability, 'description') and ability.description and "deadly demise" in ability.description.lower():
-                    # Try to extract damage value from ability description
-                    damage_match = re.search(r'deadly demise\s*\(?(\d+|D\d+)', ability.description.lower())
-                    if damage_match:
-                        damage_value = damage_match.group(1)
-                        try:
-                            dice_collection = DiceCollection.from_string(damage_value)
-                            return True, dice_collection
-                        except ValueError:
-                            raise ValueError(f"Deadly Demise ability found in ability description '{ability.description}' but could not parse damage value '{damage_value}'")
-                    raise ValueError(f"Deadly Demise ability found in ability description '{ability.description}' but could not extract damage value")
+                # Only check description if ability name didn't match
+                if not ability_name_matched and hasattr(ability, 'description') and ability.description:
+                    for pattern in patterns:
+                        if pattern.lower() in ability.description.lower():
+                            match = re.search(value_pattern, ability.description.lower())
+                            if match:
+                                dice_value = int(match.group(1))
+                                condition = match.group(2).strip() if match.group(2) else None
+                                found_abilities.append((dice_value, condition))
+                            else:
+                                raise ValueError(f"{pattern} ability found in ability description '{ability.description}' but could not extract dice value for unit '{self.name}'")
         
         # Check model-level abilities
         for ability in self.abilities:
-            # Handle both string and ability object cases
             if isinstance(ability, str):
-                if "deadly demise" in ability.lower():
-                    # Try to extract damage value from ability description
-                    damage_match = re.search(r'deadly demise\s*\(?(\d+|D\d+)', ability.lower())
-                    if damage_match:
-                        damage_value = damage_match.group(1)
-                        try:
-                            dice_collection = DiceCollection.from_string(damage_value)
-                            return True, dice_collection
-                        except ValueError:
-                            raise ValueError(f"Deadly Demise ability found in model ability string '{ability}' but could not parse damage value '{damage_value}'")
-                    raise ValueError(f"Deadly Demise ability found in model ability string '{ability}' but could not extract damage value")
+                for pattern in patterns:
+                    if pattern.lower() in ability.lower():
+                        match = re.search(value_pattern, ability.lower())
+                        if match:
+                            dice_value = int(match.group(1))
+                            condition = match.group(2).strip() if match.group(2) else None
+                            found_abilities.append((dice_value, condition))
+                        else:
+                            raise ValueError(f"{pattern} ability found in model ability string '{ability}' but could not extract dice value for unit '{self.name}'")
             else:
                 # Ability object with name and description attributes
-                if hasattr(ability, 'name') and ability.name and "deadly demise" in ability.name.lower():
-                    # Try to extract damage value from ability name
-                    damage_match = re.search(r'deadly demise\s*\(?(\d+|D\d+)', ability.name.lower())
-                    if damage_match:
-                        damage_value = damage_match.group(1)
-                        try:
-                            dice_collection = DiceCollection.from_string(damage_value)
-                            return True, dice_collection
-                        except ValueError:
-                            raise ValueError(f"Deadly Demise ability found in model ability name '{ability.name}' but could not parse damage value '{damage_value}'")
-                    raise ValueError(f"Deadly Demise ability found in model ability name '{ability.name}' but could not extract damage value")
+                ability_name_matched = False
+                if hasattr(ability, 'name') and ability.name:
+                    for pattern in patterns:
+                        if pattern.lower() in ability.name.lower():
+                            ability_name_matched = True
+                            match = re.search(value_pattern, ability.name.lower())
+                            if match:
+                                dice_value = int(match.group(1))
+                                condition = match.group(2).strip() if match.group(2) else None
+                                found_abilities.append((dice_value, condition))
+                            else:
+                                # Check if ability has a parameter attribute (e.g., "5+")
+                                if hasattr(ability, 'parameter') and ability.parameter:
+                                    param_match = re.search(r'(\d+)\+', ability.parameter)
+                                    if param_match:
+                                        dice_value = int(param_match.group(1))
+                                        found_abilities.append((dice_value, None))
+                                    else:
+                                        raise ValueError(f"{pattern} ability found in model ability name '{ability.name}' with parameter '{ability.parameter}' but could not extract dice value for unit '{self.name}'")
+                                else:
+                                    raise ValueError(f"{pattern} ability found in model ability name '{ability.name}' but could not extract dice value for unit '{self.name}'")
                 
-                if hasattr(ability, 'description') and ability.description and "deadly demise" in ability.description.lower():
-                    # Try to extract damage value from ability description
-                    damage_match = re.search(r'deadly demise\s*\(?(\d+|D\d+)', ability.description.lower())
-                    if damage_match:
-                        damage_value = damage_match.group(1)
-                        try:
-                            dice_collection = DiceCollection.from_string(damage_value)
-                            return True, dice_collection
-                        except ValueError:
-                            raise ValueError(f"Deadly Demise ability found in model ability description '{ability.description}' but could not parse damage value '{damage_value}'")
-                    raise ValueError(f"Deadly Demise ability found in model ability description '{ability.description}' but could not extract damage value")
+                # Only check description if ability name didn't match
+                if not ability_name_matched and hasattr(ability, 'description') and ability.description:
+                    for pattern in patterns:
+                        if pattern.lower() in ability.description.lower():
+                            match = re.search(value_pattern, ability.description.lower())
+                            if match:
+                                dice_value = int(match.group(1))
+                                condition = match.group(2).strip() if match.group(2) else None
+                                found_abilities.append((dice_value, condition))
+                            else:
+                                raise ValueError(f"{pattern} ability found in model ability description '{ability.description}' but could not extract dice value for unit '{self.name}'")
         
-        return False, None
+        return found_abilities
 
     def has_feel_no_pain(self) -> List[Tuple[int, Optional[str]]]:
         """Check if the unit has Feel No Pain abilities and return all of them.
@@ -2594,119 +2571,10 @@ class Unit:
                 - The dice roll needed (e.g., 5 for "5+", 6 for "6+")
                 - Optional condition string (e.g., "against psychic attacks", "against mortal wounds") (None if unconditional)
         """
-        fnp_abilities = []
-        # Check if the unit has Feel No Pain keyword
-        for keyword in self.keywords:
-            if "feel no pain" in keyword.lower() or "fnp" in keyword.lower():
-                # Try to extract dice value and optional condition from keyword like "Feel No Pain (5+)" or "FNP 6+ against psychic attacks"
-                dice_match = re.search(r'(?:feel no pain|fnp)\s*\(?(\d+)\+(?:\)?)(?:\s+(.+))?', keyword.lower())
-                if dice_match:
-                    dice_value = int(dice_match.group(1))
-                    condition = dice_match.group(2).strip() if dice_match.group(2) else None
-                    fnp_abilities.append((dice_value, condition))
-                else:
-                    # Feel No Pain ability found but no dice value could be parsed
-                    raise ValueError(f"Feel No Pain ability found in keyword '{keyword}' but could not extract dice value for unit '{self.name}'")
-        
-        # Check unit-level abilities (possible_abilities)
-        for ability in self.possible_abilities:
-            # Handle both string and ability object cases
-            if isinstance(ability, str):
-                if "feel no pain" in ability.lower() or "fnp" in ability.lower():
-                    # Try to extract dice value and optional condition from ability description
-                    dice_match = re.search(r'(?:feel no pain|fnp)\s*\(?(\d+)\+(?:\)?)(?:\s+(.+))?', ability.lower())
-                    if dice_match:
-                        dice_value = int(dice_match.group(1))
-                        condition = dice_match.group(2).strip() if dice_match.group(2) else None
-                        fnp_abilities.append((dice_value, condition))
-                    else:
-                        raise ValueError(f"Feel No Pain ability found in ability string '{ability}' but could not extract dice value for unit '{self.name}'")
-            else:
-                # Ability object with name and description attributes
-                ability_name_has_fnp = False
-                if hasattr(ability, 'name') and ability.name:
-                    if "feel no pain" in ability.name.lower() or "fnp" in ability.name.lower():
-                        ability_name_has_fnp = True
-                        # Try to extract dice value and optional condition from ability name
-                        dice_match = re.search(r'(?:feel no pain|fnp)\s*\(?(\d+)\+(?:\)?)(?:\s+(.+))?', ability.name.lower())
-                        if dice_match:
-                            dice_value = int(dice_match.group(1))
-                            condition = dice_match.group(2).strip() if dice_match.group(2) else None
-                            fnp_abilities.append((dice_value, condition))
-                        else:
-                            # Check if ability has a parameter attribute (e.g., "5+")
-                            if hasattr(ability, 'parameter') and ability.parameter:
-                                param_match = re.search(r'(\d+)\+', ability.parameter)
-                                if param_match:
-                                    dice_value = int(param_match.group(1))
-                                    fnp_abilities.append((dice_value, None))
-                                else:
-                                    raise ValueError(f"Feel No Pain ability found in ability name '{ability.name}' with parameter '{ability.parameter}' but could not extract dice value for unit '{self.name}'")
-                            else:
-                                raise ValueError(f"Feel No Pain ability found in ability name '{ability.name}' but could not extract dice value for unit '{self.name}'")
-                
-                # Only check description if ability name doesn't contain Feel No Pain
-                if not ability_name_has_fnp and hasattr(ability, 'description') and ability.description:
-                    if "feel no pain" in ability.description.lower() or "fnp" in ability.description.lower():
-                        # Try to extract dice value and optional condition from ability description
-                        dice_match = re.search(r'(?:feel no pain|fnp)\s*\(?(\d+)\+(?:\)?)(?:\s+(.+))?', ability.description.lower())
-                        if dice_match:
-                            dice_value = int(dice_match.group(1))
-                            condition = dice_match.group(2).strip() if dice_match.group(2) else None
-                            fnp_abilities.append((dice_value, condition))
-                        else:
-                            raise ValueError(f"Feel No Pain ability found in ability description '{ability.description}' but could not extract dice value for unit '{self.name}'")
-        
-        # Check model-level abilities
-        for ability in self.abilities:
-            # Handle both string and ability object cases
-            if isinstance(ability, str):
-                if "feel no pain" in ability.lower() or "fnp" in ability.lower():
-                    # Try to extract dice value and optional condition from ability description
-                    dice_match = re.search(r'(?:feel no pain|fnp)\s*\(?(\d+)\+(?:\)?)(?:\s+(.+))?', ability.lower())
-                    if dice_match:
-                        dice_value = int(dice_match.group(1))
-                        condition = dice_match.group(2).strip() if dice_match.group(2) else None
-                        fnp_abilities.append((dice_value, condition))
-                    else:
-                        raise ValueError(f"Feel No Pain ability found in model ability string '{ability}' but could not extract dice value for unit '{self.name}'")
-            else:
-                # Ability object with name and description attributes
-                ability_name_has_fnp = False
-                if hasattr(ability, 'name') and ability.name:
-                    if "feel no pain" in ability.name.lower() or "fnp" in ability.name.lower():
-                        ability_name_has_fnp = True
-                        # Try to extract dice value and optional condition from ability name
-                        dice_match = re.search(r'(?:feel no pain|fnp)\s*\(?(\d+)\+(?:\)?)(?:\s+(.+))?', ability.name.lower())
-                        if dice_match:
-                            dice_value = int(dice_match.group(1))
-                            condition = dice_match.group(2).strip() if dice_match.group(2) else None
-                            fnp_abilities.append((dice_value, condition))
-                        else:
-                            # Check if ability has a parameter attribute (e.g., "5+")
-                            if hasattr(ability, 'parameter') and ability.parameter:
-                                param_match = re.search(r'(\d+)\+', ability.parameter)
-                                if param_match:
-                                    dice_value = int(param_match.group(1))
-                                    fnp_abilities.append((dice_value, None))
-                                else:
-                                    raise ValueError(f"Feel No Pain ability found in model ability name '{ability.name}' with parameter '{ability.parameter}' but could not extract dice value for unit '{self.name}'")
-                            else:
-                                raise ValueError(f"Feel No Pain ability found in model ability name '{ability.name}' but could not extract dice value for unit '{self.name}'")
-                
-                # Only check description if ability name doesn't contain Feel No Pain
-                if not ability_name_has_fnp and hasattr(ability, 'description') and ability.description:
-                    if "feel no pain" in ability.description.lower() or "fnp" in ability.description.lower():
-                        # Try to extract dice value and optional condition from ability description
-                        dice_match = re.search(r'(?:feel no pain|fnp)\s*\(?(\d+)\+(?:\)?)(?:\s+(.+))?', ability.description.lower())
-                        if dice_match:
-                            dice_value = int(dice_match.group(1))
-                            condition = dice_match.group(2).strip() if dice_match.group(2) else None
-                            fnp_abilities.append((dice_value, condition))
-                        else:
-                            raise ValueError(f"Feel No Pain ability found in model ability description '{ability.description}' but could not extract dice value for unit '{self.name}'")
-        
-        return fnp_abilities
+        return self._find_all_abilities_with_patterns(
+            ["feel no pain", "fnp"], 
+            r'(?:feel no pain|fnp)\s*\(?(\d+)\+(?:\)?)(?:\s+(.+))?'
+        )
 
     def get_max_weapon_range(self) -> float:
         """Get the maximum range of all weapons in the unit."""
