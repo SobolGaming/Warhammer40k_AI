@@ -1334,6 +1334,8 @@ class Game:
         
         # Handle Scout moves for all players
         self._handle_scout_moves()
+
+        # TODO - other pre-battle rules (e.g., Detachment stuff like WE dice rolls, etc.)
         
         print("✅ Pre-battle rules resolved")
     
@@ -1371,19 +1373,26 @@ class Game:
             if player != first_turn_player:
                 players_in_order.append(player)
         
-        for player in players_in_order:
-            if player in scout_units_by_player:
-                print(f"🔍 {player.name}'s Scout moves:")
-                for unit, scout_distance in scout_units_by_player[player]:
-                    print(f"  - {unit.name} (Scout {scout_distance}\")")
-                    
-                    # For now, auto-skip scout moves
-                    # In the future, this could integrate with UI for human players
-                    # or AI decision making for AI players
-                    print(f"    Skipping scout move (auto-skip for now)")
-                    unit.scout_move_made = True  # Mark as skipped
+        # Check if we have human players that need UI-based scout moves
+        has_human_players = any(player.type.name == 'HUMAN' for player in self.players)
         
-        print("✅ Scout moves processed")
+        if has_human_players:
+            # For human players, let the UI handle scout moves
+            # The PreBattlePhaseHandler will manage the scout move sequence
+            print("👤 Human scout moves will be handled by UI")
+            print("✅ Scout phase initialized - use UI to make scout moves")
+        else:
+            # For AI-only games, auto-skip scout moves for now
+            # In the future, this could integrate with AI decision making
+            for player in players_in_order:
+                if player in scout_units_by_player:
+                    print(f"🔍 {player.name}'s Scout moves:")
+                    for unit, scout_distance in scout_units_by_player[player]:
+                        print(f"  - {unit.name} (Scout {scout_distance}\")")
+                        print(f"    Skipping scout move (auto-skip for AI)")
+                        unit.scout_move_made = True  # Mark as skipped
+            
+            print("✅ Scout moves processed (auto-skipped for AI)")
     
     def execute_current_setup_phase(self, **kwargs) -> None:
         """Execute the current setup phase with any necessary parameters."""

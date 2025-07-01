@@ -56,6 +56,7 @@ class ScoutChoiceDialog:
     
     def show(self, unit, callback, game_map=None):
         """Show the dialog for the given unit"""
+        print(f"🔍 ScoutChoiceDialog.show called for {unit.name}")
         self.unit = unit
         self.callback = callback
         self.game_map = game_map
@@ -63,6 +64,7 @@ class ScoutChoiceDialog:
         
         # Get scout distance from unit
         has_scout, scout_distance = unit.has_scout()
+        print(f"🔍 {unit.name} has_scout={has_scout}, scout_distance={scout_distance}")
         if has_scout:
             self.scout_distance = scout_distance
         else:
@@ -79,21 +81,26 @@ class ScoutChoiceDialog:
     def can_scout(self) -> bool:
         """Check if the unit can make a scout move"""
         if not self.unit:
+            print("🔍 can_scout: No unit")
             return False
         
         # Check if unit has scout ability
         has_scout, _ = self.unit.has_scout()
         if not has_scout:
+            print(f"🔍 can_scout: {self.unit.name} has no scout ability")
             return False
         
         # Check if unit is deployed (not in reserves)
         if not self.unit.deployed or self.unit.reserve_status != 'deployed':
+            print(f"🔍 can_scout: {self.unit.name} not deployed (deployed={self.unit.deployed}, reserve_status={self.unit.reserve_status})")
             return False
         
         # Check if unit hasn't already made a scout move
         if hasattr(self.unit, 'scout_move_made') and self.unit.scout_move_made:
+            print(f"🔍 can_scout: {self.unit.name} already made scout move")
             return False
         
+        print(f"🔍 can_scout: {self.unit.name} can scout")
         return True
     
     def handle_event(self, event):
@@ -158,6 +165,8 @@ class ScoutChoiceDialog:
         """Draw the dialog"""
         if not self.visible or not self.unit:
             return
+        
+        print(f"🔍 Drawing scout dialog for {self.unit.name}")
         
         # Draw semi-transparent overlay only around the dialog area
         overlay = pygame.Surface((self.width + 40, self.height + 40))

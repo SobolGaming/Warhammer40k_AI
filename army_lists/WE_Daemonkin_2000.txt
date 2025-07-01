@@ -6,17 +6,17 @@ Strike Force (2,000 Points)
 
 CHARACTERS
 
-World Eaters Daemon Prince (230 Points)
+Daemon Prince of Khorne (230 Points)
   • Warlord
   • 1x Hellforged weapons
   • 1x Infernal cannon
   • Enhancements: Blade of Endless Bloodshed
 
-Khârn The Betrayer (85 Points)
+Khârn the Betrayer (85 Points)
   • 1x Gorechild
-  • 1x Khârn's Plasma pistol
+  • 1x Plasma pistol
 
-World Eaters Lord On Juggernaut (105 Points)
+Lord on Juggernaut (105 Points)
   • 1x Bladed horn
   • 1x Exalted chainblade
   • 1x Plasma pistol
@@ -104,4 +104,4 @@ Helbrute (120 Points)
   • 1x Helbrute fist
   • 1x Helbrute fist
 
-  Exported with App Version: v1.36.1 (1), Data Version: v640
+Exported with App Version: v1.36.1 (1), Data Version: v640
