@@ -37,6 +37,10 @@ class Player:
         self.army = army
         army.set_player(self)
 
+    def set_game(self, game) -> None:
+        """Set the game reference for this player."""
+        self.game = game
+
     def get_army(self) -> Army | None:
         return self.army
 

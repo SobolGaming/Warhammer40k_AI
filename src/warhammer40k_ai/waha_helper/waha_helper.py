@@ -155,17 +155,26 @@ class WahaHelper:
         # Convert to lowercase and strip
         return text.lower().strip()
 
-    def get_datasheet(self, name: str, datasheet_id: str = None):
+    def get_datasheet(self, name: str, datasheet_id: str = None, faction_id: str = None):
         """
         Returns a specific datasheet by name, using case-insensitive and partial matching.
         Also aggregates keywords and faction keywords.
+        
+        Args:
+            name: The name of the datasheet to search for
+            datasheet_id: Optional specific datasheet ID to match
+            faction_id: Optional faction ID to ensure correct faction match
         """
         normalized_name = self.strip_special_chars(name)
         
         for datasheet in self.datasheets.values():
             if 'name' in datasheet:
                 normalized_datasheet_name = self.strip_special_chars(datasheet['name'])
-                if normalized_name in normalized_datasheet_name and (datasheet_id is None or datasheet['id'] == datasheet_id):
+                name_matches = normalized_name in normalized_datasheet_name
+                id_matches = datasheet_id is None or datasheet['id'] == datasheet_id
+                faction_matches = faction_id is None or datasheet.get('faction_id') == faction_id
+                
+                if name_matches and id_matches and faction_matches:
                     result = SimpleNamespace(**datasheet)
                     if 'datasheets_keywords' in datasheet:
                         keywords, faction_keywords = self.aggregate_keywords(datasheet['datasheets_keywords'])
@@ -174,12 +183,12 @@ class WahaHelper:
                     return result
         return None
 
-    def get_full_datasheet_info_by_name(self, name: str, datasheet_id: str = None):
+    def get_full_datasheet_info_by_name(self, name: str, datasheet_id: str = None, faction_id: str = None):
         """
         Returns the full datasheet information for a given name.
         This method is an alias for get_datasheet to match the expected method name in the test.
         """
-        return self.get_datasheet(name, datasheet_id)
+        return self.get_datasheet(name, datasheet_id, faction_id)
 
     def search_datasheets(self, query):
         """
@@ -192,6 +201,31 @@ class WahaHelper:
                 normalized_name = self.strip_special_chars(datasheet['name'])
                 if query in normalized_name:
                     results.append(datasheet['name'])
+        return results
+
+    def get_datasheets_by_name(self, name: str):
+        """
+        Returns all datasheets with the given name, grouped by faction.
+        Useful for debugging when multiple datasheets exist with the same name.
+        """
+        normalized_name = self.strip_special_chars(name)
+        results = {}
+        
+        for datasheet in self.datasheets.values():
+            if 'name' in datasheet:
+                normalized_datasheet_name = self.strip_special_chars(datasheet['name'])
+                if normalized_name in normalized_datasheet_name:
+                    faction_id = datasheet.get('faction_id', 'Unknown')
+                    if faction_id not in results:
+                        results[faction_id] = []
+                    results[faction_id].append({
+                        'id': datasheet['id'],
+                        'name': datasheet['name'],
+                        'faction_id': faction_id,
+                        'source_id': datasheet.get('source_id', ''),
+                        'role': datasheet.get('role', '')
+                    })
+        
         return results
 
     def get_all_datasheet_names(self):

@@ -61,7 +61,8 @@ class Unit:
         try:
             self.unit_composition = self._parse_unit_composition(datasheet.datasheets_unit_composition)
         except Exception as e:
-            #print(f"{self.name} - NEED TO HANDLE - ERROR PARSING UNIT COMPOSITION: {e}")
+            print(f"{self.name} - NEED TO HANDLE - ERROR PARSING UNIT COMPOSITION: {e}")
+            self.unit_composition = {}
             return
         try:
             self.models_cost = self._parse_models_cost(datasheet.datasheets_models_cost)
@@ -1421,6 +1422,194 @@ class Unit:
         # Example: if self.has_ability("advance_and_shoot"):
         #     return True
         return False
+
+    def scout_move(self, destination: Tuple[float, float, float], game_map: 'Map') -> bool:
+        """Execute a scout move for the unit during pre-battle rules phase.
+        
+        Scout moves have special restrictions:
+        - Cannot move within engagement range of enemy units
+        - Cannot end within 9" of enemy units
+        - Cannot charge or advance during scout move
+        - Considered a normal move action (terrain rules apply)
+        
+        Args:
+            destination: Target position (x, y, z)
+            game_map: The game map for validation and movement
+            
+        Returns:
+            bool: True if scout move was successful
+        """
+        if not self.models:
+            logger.error(f"Cannot scout move unit {self.name}: no models in unit")
+            return False
+        
+        # Check if unit has scout ability
+        has_scout, scout_distance = self.has_scout()
+        if not has_scout:
+            logger.error(f"Unit {self.name} does not have Scout ability")
+            return False
+        
+        # Check if unit has already made a scout move
+        if hasattr(self, 'scout_move_made') and self.scout_move_made:
+            logger.error(f"Unit {self.name} has already made a scout move")
+            return False
+        
+        # Check if unit is deployed (not in reserves)
+        if not self.deployed or self.reserve_status != 'deployed':
+            logger.error(f"Unit {self.name} is not deployed and cannot make scout move")
+            return False
+        
+        current_position = self.get_position()
+        if current_position is None:
+            logger.error(f"Cannot scout move unit {self.name}: current position is None")
+            return False
+        
+        # Store starting position for feedback
+        start_x, start_y = current_position[0], current_position[1]
+        start_z = current_position[2] if len(current_position) > 2 else 0
+        
+        # Calculate straight-line distance to destination
+        distance_to_destination = get_dist(
+            destination[0] - start_x,
+            destination[1] - start_y,
+            destination[2] - start_z
+        )
+        
+        # Check if destination is within scout distance
+        if distance_to_destination > scout_distance:
+            print(f"❌ {self.name} cannot reach scout destination {distance_to_destination:.1f}\" away (max scout: {scout_distance}\")")
+            return False
+        
+        # Check if destination would end within 9" of enemy units
+        enemy_units = game_map.get_enemy_units(self)
+        for enemy_unit in enemy_units:
+            if not enemy_unit.is_alive() or not enemy_unit.deployed:
+                continue
+            
+            enemy_position = enemy_unit.get_position()
+            if enemy_position:
+                distance_to_enemy = get_dist(
+                    destination[0] - enemy_position[0],
+                    destination[1] - enemy_position[1],
+                    destination[2] - enemy_position[2] if len(enemy_position) > 2 else 0
+                )
+                
+                if distance_to_enemy < 9.0:
+                    print(f"❌ {self.name} cannot scout move to destination - would end within 9\" of {enemy_unit.name}")
+                    return False
+        
+        # Generate potential positions for models
+        potential_positions = self.calculate_model_positions(destination[0], destination[1], game_map, scout_distance)
+        successful_moves = 0
+        
+        for model, model_destination in zip(self.models, potential_positions):
+            model_start = model.get_location()
+            logging.debug(f"Model {model._id} {model.name} attempting scout move from {model_start} to {model_destination}")
+            
+            # Calculate straight-line distance for this model
+            model_distance = get_dist(
+                model_destination[0] - model_start[0],
+                model_destination[1] - model_start[1],
+                model_destination[2] - model_start[2] if len(model_start) > 2 else 0
+            )
+            
+            # Check if this model can reach its destination
+            if model_distance > scout_distance:
+                print(f"Model {model._id} cannot reach scout destination {model_distance:.1f}\" away (max: {scout_distance}\")")
+                continue  # Skip this model, don't move it
+            
+            # Try enhanced pathfinding for scout move (treat as normal move)
+            from .unit import MovementAction
+            pathfinding_result = a_star_enhanced(model, game_map, model_destination, movement_action=MovementAction.MOVE)
+            
+            if not pathfinding_result:
+                logger.debug(f"Model {model._id} enhanced pathfinding failed for scout move - destination may be invalid")
+                continue
+            
+            shortest_path, enemy_models_moved_over = pathfinding_result
+            
+            # Scout moves cannot move over enemy models (unlike fall back)
+            if enemy_models_moved_over:
+                logger.debug(f"Model {model._id} cannot scout move over enemy models")
+                continue
+            
+            # Calculate path distance
+            path_distance = sum(get_dist(shortest_path[i][0] - shortest_path[i-1][0], shortest_path[i][1] - shortest_path[i-1][1]) for i in range(1, len(shortest_path)))
+            
+            if path_distance > scout_distance:
+                print(f"Model {model._id} path distance {path_distance:.1f}\" exceeds scout distance {scout_distance}\"")
+                # Try to move as far as possible along the path
+                last_node = model_start
+                model.last_move_path = [last_node]
+                distance_along_path = 0.0
+                direction_to_destination = get_angle(model_destination[0] - model.model_base.x, model_destination[1] - model.model_base.y)
+                
+                for node in shortest_path[1:]:
+                    dx = node[0] - last_node[0]
+                    dy = node[1] - last_node[1]
+                    dz = node[2] - last_node[2] if len(node) > 2 else 0
+                    segment_distance = get_dist(dx, dy, dz)
+                    
+                    if distance_along_path + segment_distance > scout_distance:
+                        # Stop here, can't go further
+                        break
+                    
+                    distance_along_path += segment_distance
+                    last_node = (node[0], node[1], node[2] if len(node) > 2 else 0, direction_to_destination)
+                    model.last_move_path.append(last_node)
+                
+                # Move to the furthest reachable position
+                if distance_along_path > 0:
+                    final_position = model.last_move_path[-1]
+                    model.set_location(final_position[0], final_position[1], final_position[2], final_position[3])
+                    successful_moves += 1
+                    logger.debug(f"Model {model._id} scout moved along path to {final_position[:3]}, distance: {distance_along_path:.1f}\"")
+            else:
+                # Path is within range, move to destination
+                model.set_location(*model_destination)
+                last_node = model_start
+                model.last_move_path = [last_node]
+                direction_to_destination = get_angle(model_destination[0] - model.model_base.x, model_destination[1] - model.model_base.y)
+                distance_along_path = 0.0
+                
+                for node in shortest_path[1:]:
+                    dx = node[0] - last_node[0]
+                    dy = node[1] - last_node[1]
+                    dz = node[2] - last_node[2] if len(node) > 2 else 0
+                    segment_distance = get_dist(dx, dy, dz)
+                    distance_along_path += segment_distance
+                    last_node = (node[0], node[1], node[2] if len(node) > 2 else 0, direction_to_destination)
+                    model.last_move_path.append(last_node)
+                
+                successful_moves += 1
+                logger.debug(f"Model {model._id} scout moved to {model_destination}, path distance: {distance_along_path:.1f}\"")
+        
+        # Update unit centroid
+        self.reset_position()
+        
+        # Check if any movement occurred
+        if successful_moves == 0:
+            print(f"❌ {self.name} could not scout move - no models could reach valid positions")
+            return False
+        
+        # Get final position for feedback
+        final_position = self.get_position()
+        end_x, end_y = final_position[0], final_position[1]
+        
+        # Calculate actual distance the unit moved
+        unit_distance_moved = get_dist(end_x - start_x, end_y - start_y)
+        
+        # Mark unit as having made a scout move
+        self.scout_move_made = True
+        
+        # Provide detailed feedback
+        print(f"🔍 {self.name} scout moved from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
+        
+        if successful_moves < len(self.models):
+            print(f"⚠️  Note: Only {successful_moves}/{len(self.models)} models could scout move to valid positions")
+        
+        logger.info(f"Unit {self.name} scout moved from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
+        return True
 
     def can_shoot_in_engagement_range(self, game_map: 'Map', profile=None) -> bool:
         """Check if this unit can shoot while in engagement range with the given weapon profile."""

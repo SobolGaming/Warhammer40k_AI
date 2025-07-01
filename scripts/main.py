@@ -541,9 +541,9 @@ def main():
                         help='Player 1 type: ai or human (default: ai)')
     parser.add_argument('--player2', choices=['ai', 'human'], default='ai', 
                         help='Player 2 type: ai or human (default: ai)')
-    parser.add_argument('--player1-army', type=str, default='army_lists/warhammer_app_dump.txt',
+    parser.add_argument('--player1-army', type=str, default='army_lists/WE_Daemonkin_2000.txt',
                         help='Army list file for Player 1')
-    parser.add_argument('--player2-army', type=str, default='army_lists/chaos_daemons_GT2023.txt',
+    parser.add_argument('--player2-army', type=str, default='army_lists/warhammer_app_dump.txt',
                         help='Army list file for Player 2')
     parser.add_argument('--manual-phases', action='store_true',
                         help='Require SPACE key to advance phases')

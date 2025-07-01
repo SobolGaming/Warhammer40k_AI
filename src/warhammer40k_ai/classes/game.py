@@ -1331,8 +1331,59 @@ class Game:
     def execute_resolve_prebattle_rules_phase(self) -> None:
         """Phase 8: Resolve Pre-battle Rules - Resolve any pre-battle rules, abilities, or stratagems."""
         print("📋 RESOLVE PREBATTLE RULES: Resolving pre-battle rules...")
-        # For now, this is a stub - pre-battle rules will be implemented later
+        
+        # Handle Scout moves for all players
+        self._handle_scout_moves()
+        
         print("✅ Pre-battle rules resolved")
+    
+    def _handle_scout_moves(self) -> None:
+        """Handle scout moves for all players during pre-battle rules phase."""
+        print("🔍 Processing Scout moves...")
+        
+        # Get all units with Scout ability from both players
+        scout_units = []
+        for player in self.players:
+            if player.get_army():
+                for unit in player.get_army().units:
+                    has_scout, scout_distance = unit.has_scout()
+                    if has_scout and unit.deployed and unit.reserve_status == 'deployed':
+                        scout_units.append((player, unit, scout_distance))
+        
+        if not scout_units:
+            print("✅ No units with Scout ability found")
+            return
+        
+        print(f"🔍 Found {len(scout_units)} units with Scout ability")
+        
+        # Sort units by player (first turn player goes first)
+        first_turn_player = self.get_current_player()
+        scout_units_by_player = {}
+        
+        for player, unit, scout_distance in scout_units:
+            if player not in scout_units_by_player:
+                scout_units_by_player[player] = []
+            scout_units_by_player[player].append((unit, scout_distance))
+        
+        # Process scout moves in turn order (first turn player first)
+        players_in_order = [first_turn_player]
+        for player in self.players:
+            if player != first_turn_player:
+                players_in_order.append(player)
+        
+        for player in players_in_order:
+            if player in scout_units_by_player:
+                print(f"🔍 {player.name}'s Scout moves:")
+                for unit, scout_distance in scout_units_by_player[player]:
+                    print(f"  - {unit.name} (Scout {scout_distance}\")")
+                    
+                    # For now, auto-skip scout moves
+                    # In the future, this could integrate with UI for human players
+                    # or AI decision making for AI players
+                    print(f"    Skipping scout move (auto-skip for now)")
+                    unit.scout_move_made = True  # Mark as skipped
+        
+        print("✅ Scout moves processed")
     
     def execute_current_setup_phase(self, **kwargs) -> None:
         """Execute the current setup phase with any necessary parameters."""

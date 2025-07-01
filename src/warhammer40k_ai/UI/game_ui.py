@@ -3,6 +3,7 @@ import textwrap
 import math
 import random
 from typing import Optional, Tuple, Dict, List, Protocol
+from abc import ABC, abstractmethod
 from warhammer40k_ai.classes.unit import Unit
 from warhammer40k_ai.classes.model import Model
 from warhammer40k_ai.utility.model_base import Base, BaseType
@@ -764,6 +765,8 @@ class HumanUIInterface:
         self.deployment_choice_dialog = DeploymentChoiceDialog(screen_width, screen_height)
         from .dialogs import ReservesSelectionDialog
         self.reserves_dialog = ReservesSelectionDialog(screen_width, screen_height)
+        from .dialogs import ScoutChoiceDialog
+        self.scout_choice_dialog = ScoutChoiceDialog(screen_width, screen_height)
         self.reserves_arrival_panel = ReservesArrivalPanel()
         
         # State for handling UI interactions
@@ -955,6 +958,10 @@ class HumanUIInterface:
             handled = self.reserves_arrival_panel.handle_event(event)
         
         return handled
+
+    def show_scout_dialog(self, unit, callback, game_map=None):
+        """Show the scout move dialog for a unit."""
+        self.scout_choice_dialog.show(unit, callback, game_map)
 
 
 class GameView:
@@ -1401,6 +1408,12 @@ class GameView:
         # Draw shooting declaration dialog
         if hasattr(self, 'shooting_declaration_dialog') and self.shooting_declaration_dialog.visible:
             self.shooting_declaration_dialog.draw(self.screen)
+        
+        # Draw scout visual feedback if in scout phase
+        if hasattr(self, 'phase_manager') and self.phase_manager:
+            current_handler = self.phase_manager.get_current_handler()
+            if isinstance(current_handler, PreBattlePhaseHandler):
+                current_handler.draw_scout_visual_feedback(self.screen)
 
         pygame.display.update()
 
@@ -3017,10 +3030,10 @@ class PhaseManager:
     def __init__(self, game_view: 'GameView'):
         self.game_view = game_view
         self.game = game_view.game
-        
         # Initialize phase handlers
         self.setup_handler = SetupPhaseHandler(game_view)
         self.deployment_handler = DeploymentPhaseHandler(game_view)
+        self.prebattle_handler = PreBattlePhaseHandler(game_view)
         self.battle_handler = BattlePhaseHandler(game_view)
         
         # Movement system state
@@ -3036,10 +3049,14 @@ class PhaseManager:
     def get_current_handler(self) -> BasePhaseHandler:
         """Get the appropriate handler for the current game phase"""
         if self.game.is_in_setup_phase():
-            # Check if we're in the DEPLOY_ARMIES setup phase specifically
             current_setup_phase = self.game.get_current_setup_phase()
             if current_setup_phase.name == 'DEPLOY_ARMIES':
                 return self.deployment_handler
+            elif current_setup_phase.name == 'RESOLVE_PREBATTLE_RULES':
+                # Start the scout phase if not already started for this phase
+                if not getattr(self.prebattle_handler, 'scout_units_queue', None):
+                    self.prebattle_handler.start_scout_phase()
+                return self.prebattle_handler
             else:
                 return self.setup_handler
         elif self.game.is_deployment_phase():
@@ -3246,3 +3263,195 @@ def draw_weapon_ranges(screen: pygame.Surface, unit, selected_weapon_profile, zo
         except:
             # Fallback if font creation fails
             pass
+
+class PreBattlePhaseHandler(BasePhaseHandler):
+    """Handles events during the RESOLVE_PREBATTLE_RULES phase (e.g., Scout moves)"""
+    def __init__(self, game_view: 'GameView'):
+        super().__init__(game_view)
+        self.scout_units_queue = []  # List of (unit, player) tuples
+        self.current_scout_unit = None
+        self.awaiting_battlefield_click = False
+        self.scout_callback = None
+        self.scout_distance = 0
+        self.mouse_pos = None  # Track mouse position for visual feedback
+
+    def start_scout_phase(self):
+        """Initialize the queue of eligible human scout units."""
+        self.scout_units_queue = []
+        self.current_scout_unit = None
+        self.awaiting_battlefield_click = False
+        self.scout_callback = None
+        self.scout_distance = 0
+        self.mouse_pos = None
+        # Get all eligible human scout units in correct order
+        game = self.game_view.game
+        first_turn_player = game.get_current_player()
+        players_in_order = [first_turn_player] + [p for p in game.players if p != first_turn_player]
+        for player in players_in_order:
+            if player.type.name == 'HUMAN' and player.get_army():
+                for unit in player.get_army().units:
+                    has_scout, scout_distance = unit.has_scout()
+                    if has_scout and unit.deployed and unit.reserve_status == 'deployed' and not getattr(unit, 'scout_move_made', False):
+                        self.scout_units_queue.append((unit, player, scout_distance))
+        self._next_scout_unit()
+
+    def _next_scout_unit(self):
+        if self.scout_units_queue:
+            unit, player, scout_distance = self.scout_units_queue.pop(0)
+            self.current_scout_unit = unit
+            self.scout_distance = scout_distance
+            self.awaiting_battlefield_click = False
+            self._show_scout_dialog(unit)
+        else:
+            self.current_scout_unit = None
+            self.awaiting_battlefield_click = False
+            self.scout_callback = None
+            self.scout_distance = 0
+            self.mouse_pos = None
+            #print("✅ All human SCOUT moves complete. Press SPACE to continue.")
+
+    def _show_scout_dialog(self, unit):
+        def on_scout_choice(choice):
+            if choice == 'scout':
+                self.awaiting_battlefield_click = True
+                print(f"Click on the battlefield to select a destination for {unit.name}'s Scout move.")
+            else:
+                unit.scout_move_made = True
+                self._next_scout_unit()
+        self.game_view.ui_interface.show_scout_dialog(unit, on_scout_choice, self.game_view.game.map)
+
+    def _validate_scout_destination(self, unit, destination: Tuple[float, float]) -> dict:
+        """Validate if a destination is valid for a scout move."""
+        game_x, game_y = destination
+        
+        # Check if destination is within battlefield bounds
+        battlefield_width, battlefield_height = self.game_view.game.get_battlefield_size()
+        if game_x < 0 or game_x >= battlefield_width or game_y < 0 or game_y >= battlefield_height:
+            return {'valid': False, 'reason': 'Outside battlefield bounds'}
+        
+        # Check if destination is within scout distance
+        unit_pos = unit.get_position()
+        distance = ((game_x - unit_pos[0]) ** 2 + (game_y - unit_pos[1]) ** 2) ** 0.5
+        if distance > self.scout_distance:
+            return {'valid': False, 'reason': f'Too far ({distance:.1f}\" > {self.scout_distance}\")'}
+        
+        # Check if destination is too close to enemy units (9" restriction)
+        enemy_units = self.game_view.game.get_enemy_units(unit.get_parent_army().player)
+        for enemy_unit in enemy_units:
+            if enemy_unit.is_alive() and enemy_unit.deployed:
+                enemy_pos = enemy_unit.get_position()
+                enemy_distance = ((game_x - enemy_pos[0]) ** 2 + (game_y - enemy_pos[1]) ** 2) ** 0.5
+                if enemy_distance < 9.0:
+                    return {'valid': False, 'reason': f'Too close to {enemy_unit.name} ({enemy_distance:.1f}\")'}
+        
+        return {'valid': True, 'reason': 'Valid destination'}
+
+    def handle_event(self, event: pygame.event.Event) -> bool:
+        # Track mouse position for visual feedback
+        if event.type == pygame.MOUSEMOTION and self.awaiting_battlefield_click:
+            self.mouse_pos = event.pos
+        
+        # If a scout dialog is visible, let it handle the event
+        if self.game_view.ui_interface.scout_choice_dialog.visible:
+            return self.game_view.ui_interface.scout_choice_dialog.handle_event(event)
+        
+        # If awaiting battlefield click for scout move
+        if self.awaiting_battlefield_click and self.current_scout_unit:
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                x, y = event.pos
+                # Convert to game coordinates
+                battlefield_x = (x - ROSTER_PANE_WIDTH - self.game_view.offset_x) / (TILE_SIZE * self.game_view.zoom_level)
+                battlefield_y = (y - self.game_view.offset_y) / (TILE_SIZE * self.game_view.zoom_level)
+                
+                # Validate the destination
+                validation = self._validate_scout_destination(self.current_scout_unit, (battlefield_x, battlefield_y))
+                
+                if validation['valid']:
+                    battlefield_z = self.game_view.game.map.get_height_at_point(battlefield_x, battlefield_y)
+                    destination = (battlefield_x, battlefield_y, battlefield_z)
+                    # Try the scout move
+                    success = self.current_scout_unit.scout_move(destination, self.game_view.game.map)
+                    if success:
+                        print(f"✅ {self.current_scout_unit.name} completed its Scout move.")
+                        self.awaiting_battlefield_click = False
+                        self._next_scout_unit()
+                    else:
+                        print(f"❌ Scout move failed. Try a different location.")
+                else:
+                    print(f"❌ Invalid Scout move: {validation['reason']}")
+                return True
+        
+        # Allow SPACE to skip to next phase if all done
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
+            if not self.scout_units_queue and not self.awaiting_battlefield_click:
+                print("Proceeding to next phase...")
+                return False  # Let the main loop advance the phase
+        return False
+
+    def draw_scout_visual_feedback(self, screen: pygame.Surface):
+        """Draw visual feedback for scout moves."""
+        if not self.awaiting_battlefield_click or not self.current_scout_unit or not self.mouse_pos:
+            return
+        
+        # Get unit position
+        unit_pos = self.current_scout_unit.get_position()
+        unit_screen_x, unit_screen_y = self.game_view.game_to_screen_coords(unit_pos[0], unit_pos[1])
+        
+        # Get mouse position in game coordinates
+        mouse_game_x, mouse_game_y = self.game_view.screen_to_game_coords(self.mouse_pos)
+        
+        # Calculate distance from unit to mouse
+        distance = ((mouse_game_x - unit_pos[0]) ** 2 + (mouse_game_y - unit_pos[1]) ** 2) ** 0.5
+        
+        # Validate the destination
+        validation = self._validate_scout_destination(self.current_scout_unit, (mouse_game_x, mouse_game_y))
+        
+        # Choose color based on validation
+        if validation['valid']:
+            color = (0, 255, 0)  # Green for valid
+            alpha = 100
+        else:
+            color = (255, 0, 0)  # Red for invalid
+            alpha = 150
+        
+        # Create a surface for the visual feedback
+        feedback_surface = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+        
+        # Draw scout range circle around unit
+        pygame.draw.circle(feedback_surface, (*color, 50), (unit_screen_x, unit_screen_y), 
+                          int(self.scout_distance * TILE_SIZE * self.game_view.zoom_level), 2)
+        
+        # Draw line from unit to mouse position
+        if distance <= self.scout_distance:
+            pygame.draw.line(feedback_surface, (*color, alpha), 
+                           (unit_screen_x, unit_screen_y), self.mouse_pos, 3)
+        
+        # Draw destination indicator at mouse position
+        pygame.draw.circle(feedback_surface, (*color, alpha), self.mouse_pos, 8, 2)
+        
+        # Draw distance text
+        font = pygame.font.Font(None, 24)
+        distance_text = f"{distance:.1f}\""
+        text_surface = font.render(distance_text, True, color)
+        text_rect = text_surface.get_rect(center=(self.mouse_pos[0], self.mouse_pos[1] - 20))
+        feedback_surface.blit(text_surface, text_rect)
+        
+        # Draw validation message
+        if not validation['valid']:
+            error_font = pygame.font.Font(None, 20)
+            error_text = validation['reason']
+            # Wrap text if too long
+            if len(error_text) > 40:
+                error_text = error_text[:37] + "..."
+            error_surface = error_font.render(error_text, True, (255, 255, 255))
+            error_rect = error_surface.get_rect(center=(self.mouse_pos[0], self.mouse_pos[1] + 20))
+            # Draw background for error text
+            pygame.draw.rect(feedback_surface, (0, 0, 0, 180), 
+                           error_rect.inflate(10, 5))
+            feedback_surface.blit(error_surface, error_rect)
+        
+        # Blit the feedback surface onto the screen
+        screen.blit(feedback_surface, (0, 0))
+
+    def get_allowed_actions(self) -> List[str]:
+        return ["scout_move", "skip_scout", "advance_setup_phase"]

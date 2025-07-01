@@ -1,6 +1,5 @@
-from typing import Tuple, Dict, Set, List
+from typing import Tuple, Dict, Set, List, Optional
 from warhammer40k_ai.classes.unit import Unit
-from warhammer40k_ai.classes.wargear import Wargear
 from warhammer40k_ai.classes.enhancement import Enhancement
 from warhammer40k_ai.waha_helper import WahaHelper
 import codecs
@@ -10,6 +9,41 @@ import uuid
 # Define custom exception for validation errors
 class ArmyValidationError(Exception):
     pass
+
+
+def get_faction_id_from_name(faction_name: str) -> Optional[str]:
+    """
+    Map faction names from army list files to faction IDs used in datasheets.
+    This mapping helps ensure the correct faction-specific datasheet is loaded.
+    """
+    import json
+    import os
+    
+    # Normalize faction name for comparison
+    faction_name_lower = faction_name.lower().strip()
+    
+    # Load factions from the JSON file
+    factions_file = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'wahapedia_data', 'Factions.json')
+    try:
+        with open(factions_file, 'r', encoding='utf-8') as f:
+            factions = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        print(f"Warning: Could not load Factions.json: {e}")
+        return None
+    
+    # Try exact match first
+    for faction in factions:
+        if faction['name'].lower() == faction_name_lower:
+            return faction['id']
+    
+    # Try partial matches for more flexible matching
+    for faction in factions:
+        faction_name_json = faction['name'].lower()
+        if faction_name_json in faction_name_lower or faction_name_lower in faction_name_json:
+            return faction['id']
+    
+    # If no match found, return None (will use generic lookup)
+    return None
 
 
 class Army:
@@ -28,8 +62,9 @@ class Army:
     def add_unit(self, unit: Unit) -> bool:
         if not self.faction_keyword:
             self.faction_keyword = unit.faction_keywords
-        elif unit.faction_keywords != self.faction_keyword:
-            raise ArmyValidationError(f"Unit {unit.name} does not match army faction {self.faction}.")
+        # TODO - fix once support for things like World Eaters Daemonkin Detachment is added
+        #elif unit.faction_keywords != self.faction_keyword:
+        #    raise ArmyValidationError(f"Unit {unit.name} does not match army faction {self.faction}.")
         unit.set_parent_army(self)
         self.units.append(unit)
         return True
@@ -221,6 +256,13 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
 
     # Create the Army object
     army = Army(faction=faction_keyword, detachment_type=detachment_type, points_limit=points_limit)
+    
+    # Map faction names to faction IDs for datasheet lookup
+    faction_id = get_faction_id_from_name(faction_keyword)
+    if faction_id:
+        print(f"Using faction ID: {faction_id} for datasheet lookups")
+    else:
+        print(f"Warning: Could not determine faction ID for '{faction_keyword}', using generic lookup")
 
     current_unit = None
     current_model_count = 0
@@ -253,7 +295,16 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
             unit_info = line.split(' (')
             unit_name = unit_info[0].strip()
             
-            datasheet = waha_helper.get_full_datasheet_info_by_name(unit_name)
+            # Use faction-specific datasheet lookup if faction_id is available
+            if faction_id:
+                datasheet = waha_helper.get_full_datasheet_info_by_name(unit_name, faction_id=faction_id)
+                if not datasheet:
+                    # Fallback to generic lookup if faction-specific lookup fails
+                    print(f"Warning: Faction-specific datasheet not found for {unit_name} (faction: {faction_id}), trying generic lookup")
+                    datasheet = waha_helper.get_full_datasheet_info_by_name(unit_name)
+            else:
+                datasheet = waha_helper.get_full_datasheet_info_by_name(unit_name)
+            
             if datasheet:
                 current_unit = Unit(datasheet)
             else:
