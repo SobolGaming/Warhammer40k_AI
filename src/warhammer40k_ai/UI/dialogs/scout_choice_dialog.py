@@ -56,7 +56,7 @@ class ScoutChoiceDialog:
     
     def show(self, unit, callback, game_map=None):
         """Show the dialog for the given unit"""
-        print(f"🔍 ScoutChoiceDialog.show called for {unit.name}")
+        #print(f"🔍 ScoutChoiceDialog.show called for {unit.name}")
         self.unit = unit
         self.callback = callback
         self.game_map = game_map
@@ -100,7 +100,7 @@ class ScoutChoiceDialog:
             print(f"🔍 can_scout: {self.unit.name} already made scout move")
             return False
         
-        print(f"🔍 can_scout: {self.unit.name} can scout")
+        #print(f"🔍 can_scout: {self.unit.name} can scout")
         return True
     
     def handle_event(self, event):
@@ -166,7 +166,7 @@ class ScoutChoiceDialog:
         if not self.visible or not self.unit:
             return
         
-        print(f"🔍 Drawing scout dialog for {self.unit.name}")
+        #print(f"🔍 Drawing scout dialog for {self.unit.name}")
         
         # Draw semi-transparent overlay only around the dialog area
         overlay = pygame.Surface((self.width + 40, self.height + 40))

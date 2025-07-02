@@ -355,11 +355,13 @@ def add_unit_to_army(army: Army, unit: Unit, model_count: int, wargear_dict: Dic
 
     # Add wargear to the unit
     for model_name, wargear_list in wargear_dict.items():
-        for wargear_name, _ in wargear_list:
+        for wargear_name, quantity in wargear_list:
             gear_name = wargear_name.lower().replace("’","'")
             matching_gear = next((gear for gear in unit.possible_wargear if gear.name.lower().replace("’","'") == gear_name), None)
             if matching_gear:
-                unit.add_wargear([matching_gear if gear.name.lower() == gear_name else None for gear in unit.possible_wargear], model_name)
+                # Add the wargear multiple times based on quantity
+                for _ in range(quantity):
+                    unit.add_wargear([matching_gear if gear.name.lower() == gear_name else None for gear in unit.possible_wargear], model_name)
             else:
                 matching_gear = next((gear for gear in unit.wargear_options if gear_name in gear.wargear_to), None)
                 if matching_gear:

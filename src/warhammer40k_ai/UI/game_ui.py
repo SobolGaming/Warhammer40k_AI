@@ -903,7 +903,7 @@ class HumanUIInterface:
         
         # Draw scout choice dialog if visible
         if self.scout_choice_dialog.visible:
-            print(f"🔍 Drawing scout choice dialog in HumanUIInterface.update")
+            #print(f"🔍 Drawing scout choice dialog in HumanUIInterface.update")
             self.scout_choice_dialog.draw(screen)
         
         # Draw placement indicator if in placement mode
@@ -1424,6 +1424,10 @@ class GameView:
         # Draw shooting declaration dialog
         if hasattr(self, 'shooting_declaration_dialog') and self.shooting_declaration_dialog.visible:
             self.shooting_declaration_dialog.draw(self.screen)
+        
+        # Draw charge declaration dialog
+        if hasattr(self, 'charge_declaration_dialog') and self.charge_declaration_dialog.visible:
+            self.charge_declaration_dialog.draw(self.screen)
 
         pygame.display.update()
 
@@ -2470,6 +2474,11 @@ class BattlePhaseHandler(BasePhaseHandler):
             if self.game_view.shooting_declaration_dialog.handle_event(event):
                 return True
         
+        # Handle charge declaration dialog
+        if (hasattr(self.game_view, 'charge_declaration_dialog') and
+            self.game_view.charge_declaration_dialog.visible):
+            return self.game_view.charge_declaration_dialog.handle_event(event)
+        
         # Handle movement choice dialog
         if (hasattr(self.game_view, 'movement_choice_dialog') and
             self.game_view.movement_choice_dialog.visible):
@@ -2650,8 +2659,17 @@ class BattlePhaseHandler(BasePhaseHandler):
             print(f"❌ {unit.name} fell back and cannot charge")
             return
         
-        # TODO: Add more charge validation logic
-        print(f"⚔️ Click on enemy unit to charge with {unit.name}")
+        # Show charge declaration dialog
+        def on_charge_declaration(charging_unit, target_unit):
+            # Execute the charge
+            success = self.game.attempt_charge(charging_unit, target_unit)
+            if success:
+                print(f"⚔️ Charge successful: {charging_unit.name} charged {target_unit.name}")
+            else:
+                print(f"❌ Charge failed: {charging_unit.name} could not reach {target_unit.name}")
+            return success
+        
+        self.game_view.charge_declaration_dialog.show(unit, on_charge_declaration, self.game.map, self.game_view)
     
     def _handle_fight_phase_selection(self, unit) -> None:
         """Handle unit selection during fight phase"""
@@ -2951,12 +2969,25 @@ class BattlePhaseHandler(BasePhaseHandler):
     
     def _handle_charge_action(self, x: int, y: int) -> bool:
         """Handle charge phase actions"""
+        # Check if we have a selected unit for charging
         if self.game_view.selected_unit:
-            # Get target unit at click position
-            target_unit = self.game_view.get_unit_at_position(x, y)
-            if target_unit:
-                # TODO: Implement charge validation and execution
-                print(f"Charge action: {self.game_view.selected_unit.name} charges {target_unit.name}")
+            # Check if the selected unit belongs to the current player
+            current_player = self.game.get_current_player()
+            if self.game_view.selected_unit.get_parent_army() and self.game_view.selected_unit.get_parent_army().player == current_player:
+                # Show charge declaration dialog for the selected unit
+                self._handle_charge_phase_selection(self.game_view.selected_unit)
+                return True
+        
+        # If no unit is selected, try to select a unit at the clicked position
+        clicked_unit = self.game_view.get_unit_at_position(x, y)
+        if clicked_unit:
+            # Check if the clicked unit belongs to the current player
+            current_player = self.game.get_current_player()
+            if clicked_unit.get_parent_army() and clicked_unit.get_parent_army().player == current_player:
+                # Select the unit and show charge dialog
+                self.game_view.selected_unit = clicked_unit
+                self._synchronize_unit_selection(clicked_unit)
+                self._handle_charge_phase_selection(clicked_unit)
                 return True
         
         return False
@@ -3055,6 +3086,10 @@ class PhaseManager:
         # Shooting system state
         from .dialogs import ShootingDeclarationDialog
         self.game_view.shooting_declaration_dialog = ShootingDeclarationDialog(game_view.screen.get_width(), game_view.screen.get_height())
+        
+        # Charge system state
+        from .dialogs import ChargeDeclarationDialog
+        self.game_view.charge_declaration_dialog = ChargeDeclarationDialog(game_view.screen.get_width(), game_view.screen.get_height())
     
     def get_current_handler(self) -> BasePhaseHandler:
         """Get the appropriate handler for the current game phase"""

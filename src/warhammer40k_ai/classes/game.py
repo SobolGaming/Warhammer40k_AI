@@ -824,21 +824,90 @@ class Game:
         dy = target_pos[1] - current_pos[1]
         distance = get_dist(dx, dy)
 
-        # Roll 2D6 for charge distance
-        charge_roll = get_roll("2D6")
+        # Roll 2D6 for charge distance with modifiers
+        base_charge_roll = get_roll("2D6")
+        charge_roll = self._apply_charge_modifiers(charging_unit, base_charge_roll)
+        
+        print(f"⚔️ {charging_unit.name} charging {target_unit.name}")
+        print(f"⚔️ Distance needed: {distance:.1f}\"")
+        print(f"⚔️ Charge roll: {base_charge_roll} (modified: {charge_roll})")
+        
         if charge_roll < distance:
+            print(f"❌ Charge failed: {charge_roll} < {distance:.1f}")
             return False
 
         # Calculate the actual movement vector
-        scale = charge_roll / distance
+        # Move as close as possible to the target while staying within charge distance
+        scale = min(1.0, charge_roll / distance)
         new_x = current_pos[0] + dx * scale
         new_y = current_pos[1] + dy * scale
         new_z = self.map.get_height_at_point(new_x, new_y)
         
         # Move the unit
-        charging_unit.move((new_x, new_y, new_z), self.map)
-        charging_unit.round_state.declared_charge_this_round = True
-        return True
+        success = charging_unit.move((new_x, new_y, new_z), self.map)
+        if success:
+            charging_unit.round_state.declared_charge_this_round = True
+            print(f"✅ Charge successful: {charging_unit.name} moved to within {self.map.get_distance_between_units(charging_unit, target_unit):.1f}\" of {target_unit.name}")
+        else:
+            print(f"❌ Charge failed: could not move unit")
+        
+        return success
+    
+    def _apply_charge_modifiers(self, charging_unit: 'Unit', base_roll: int) -> int:
+        """Apply charge roll modifiers based on unit abilities, stratagems, etc."""
+        modified_roll = base_roll
+        
+        # Check for charge modifiers from abilities
+        # TODO: Implement ability-based charge modifiers
+        # Examples:
+        # - Shock Assault Stratagem: +1" to charge roll
+        # - Swift and Deadly ability: re-roll one dice
+        # - Relentless Advance trait: roll 3 dice and drop the lowest
+        
+        # For now, just return the base roll
+        return modified_roll
+    
+    def get_eligible_charging_units(self, player: Player) -> List['Unit']:
+        """Get all units belonging to a player that are eligible to declare charges."""
+        eligible_units = []
+        
+        for unit in player.get_army().units:
+            if not unit.is_alive() or not unit.deployed:
+                continue
+            
+            # Check if unit has already charged this round
+            if unit.round_state.declared_charge_this_round:
+                continue
+            
+            # Check if unit advanced this round (unless special abilities allow charging after advance)
+            if unit.round_state.advanced_this_round:
+                # TODO: Check for special abilities that allow charging after advance
+                continue
+            
+            # Check if unit fell back this round (unless special abilities allow charging after fall back)
+            if unit.round_state.fell_back_this_round:
+                # TODO: Check for special abilities that allow charging after fall back
+                continue
+            
+            # Check if unit is already in engagement range
+            enemy_units = self.get_enemy_units(player)
+            is_engaged = any(self.map.is_within_engagement_range(unit.get_position(), enemy) 
+                           for enemy in enemy_units if enemy.is_alive())
+            if is_engaged:
+                continue
+            
+            # Check if there are any valid charge targets
+            has_valid_targets = any(unit.can_declare_charge_against(target, self) 
+                                  for target in enemy_units if target.is_alive())
+            if has_valid_targets:
+                eligible_units.append(unit)
+        
+        return eligible_units
+    
+    def is_charge_phase_complete(self, player: Player) -> bool:
+        """Check if the charge phase is complete for the current player."""
+        eligible_units = self.get_eligible_charging_units(player)
+        return len(eligible_units) == 0
 
     ###########################################################################
     ### Reserves System
