@@ -138,7 +138,8 @@ class TestChargeTracking(unittest.TestCase):
         """Test that charge distance calculation follows 10th edition rules.
         
         According to 10th edition, a successful charge requires at least one model
-        to end within 1" of the target, not base-to-base contact.
+        of the charging unit to end with edge-to-edge distance of 1" or less from
+        at least one model in the target unit.
         """
         # Position units with a known distance
         if self.unit.models:
@@ -154,21 +155,21 @@ class TestChargeTracking(unittest.TestCase):
         print(f"DEBUG: Current edge-to-edge distance: {current_distance}\"")
         
         # According to 10th edition rules, the distance needed should be current_distance - 1"
-        # because we need to get within 1" of the target
+        # because we need to achieve edge-to-edge distance of 1" or less
         expected_distance_needed = max(0, current_distance - 1.0)
-        print(f"DEBUG: Expected distance needed to get within 1\": {expected_distance_needed}\"")
+        print(f"DEBUG: Expected distance needed to achieve ≤1\" edge-to-edge: {expected_distance_needed}\"")
         
         # Test with a charge roll that should succeed
-        # If current_distance is 5", we need to roll at least 4" to get within 1"
+        # If current_distance is 5", we need to roll at least 4" to achieve ≤1" edge-to-edge
         test_charge_roll = 4.0
         if test_charge_roll >= expected_distance_needed:
             print(f"DEBUG: Charge roll {test_charge_roll}\" should succeed (>= {expected_distance_needed}\")")
         else:
             print(f"DEBUG: Charge roll {test_charge_roll}\" should fail (< {expected_distance_needed}\")")
         
-        # Verify the logic: if we roll enough to get within 1", the charge should be possible
+        # Verify the logic: if we roll enough to achieve ≤1" edge-to-edge, the charge should be possible
         self.assertTrue(test_charge_roll >= expected_distance_needed,
-                       f"Charge roll {test_charge_roll}\" should be sufficient to get within 1\" of target")
+                       f"Charge roll {test_charge_roll}\" should be sufficient to achieve ≤1\" edge-to-edge distance")
         
         # Test with a charge roll that should fail
         test_charge_roll_fail = 2.0
@@ -178,7 +179,7 @@ class TestChargeTracking(unittest.TestCase):
             print(f"DEBUG: Charge roll {test_charge_roll_fail}\" should succeed (>= {expected_distance_needed}\")")
         
         self.assertTrue(test_charge_roll_fail < expected_distance_needed,
-                       f"Charge roll {test_charge_roll_fail}\" should be insufficient to get within 1\" of target")
+                       f"Charge roll {test_charge_roll_fail}\" should be insufficient to achieve ≤1\" edge-to-edge distance")
 
 
 if __name__ == '__main__':

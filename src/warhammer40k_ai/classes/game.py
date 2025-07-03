@@ -814,30 +814,33 @@ class Game:
         """Attempt a charge move with the given unit against the target.
         
         According to 10th edition rules, a successful charge requires at least one model
-        of the charging unit to end their charge within 1" of the target unit.
+        of the charging unit to end their charge with edge-to-edge distance of 1" or less
+        from at least one model in the target unit.
         """
         if not charging_unit.can_declare_charge_against(target_unit, self):
             return False
 
-        # Calculate charge distance needed to get within 1" of the target
-        # This is the current edge-to-edge distance minus 1 inch
+        # Calculate current edge-to-edge distance between units
         current_distance = self.map.get_distance_between_units(charging_unit, target_unit)
-        distance_needed = max(0, current_distance - 1.0)  # Need to move this far to get within 1"
+        
+        # For a successful charge, we need to achieve edge-to-edge distance of 1" or less
+        # So we need to move: current_distance - 1.0 inches
+        distance_needed = max(0, current_distance - 1.0)
 
         # Roll 2D6 for charge distance with modifiers
         base_charge_roll = get_roll("2D6")
         charge_roll = self._apply_charge_modifiers(charging_unit, base_charge_roll)
         
         print(f"⚔️ {charging_unit.name} charging {target_unit.name}")
-        print(f"⚔️ Current distance: {current_distance:.1f}\"")
-        print(f"⚔️ Distance needed to get within 1\": {distance_needed:.1f}\"")
+        print(f"⚔️ Current edge-to-edge distance: {current_distance:.1f}\"")
+        print(f"⚔️ Distance needed to achieve ≤1\" edge-to-edge: {distance_needed:.1f}\"")
         print(f"⚔️ Charge roll: {base_charge_roll} (modified: {charge_roll})")
         
         if charge_roll < distance_needed:
             print(f"❌ Charge failed: {charge_roll} < {distance_needed:.1f}")
             return False
 
-        # Calculate movement vector towards target
+        # Charge roll is sufficient - now attempt the movement
         charging_pos = charging_unit.get_position()
         target_pos = target_unit.get_position()
         
@@ -859,18 +862,18 @@ class Game:
         dy /= distance_to_target
         
         # Move the charging unit towards the target
-        # Move as far as the charge roll allows, but not beyond getting within 1"
+        # Move as far as the charge roll allows, but not beyond achieving ≤1" edge-to-edge distance
         movement_distance = min(charge_roll, distance_needed)
         new_x = charging_pos[0] + dx * movement_distance
         new_y = charging_pos[1] + dy * movement_distance
         new_z = self.map.get_height_at_point(new_x, new_y)
         
-        # Move the unit
+        # Attempt to move the unit
         success = charging_unit.move((new_x, new_y, new_z), self.map)
         if success:
             charging_unit.round_state.declared_charge_this_round = True
             final_distance = self.map.get_distance_between_units(charging_unit, target_unit)
-            print(f"✅ Charge successful: {charging_unit.name} moved to within {final_distance:.1f}\" of {target_unit.name}")
+            print(f"✅ Charge successful: {charging_unit.name} achieved {final_distance:.1f}\" edge-to-edge distance with {target_unit.name}")
         else:
             print(f"❌ Charge failed: could not move unit")
         
