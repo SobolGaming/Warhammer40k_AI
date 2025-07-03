@@ -119,7 +119,7 @@ class ChargeDeclarationDialog:
         target_count = len(self.available_targets)
         target_height = 60
         total_height = target_count * target_height
-        visible_height = self.height - 250  # Account for header, unit info, and buttons
+        visible_height = self.height - 240  # Account for header, unit info, and buttons (160 + 240 = 400)
         self.max_scroll = max(0, total_height - visible_height)
         
         print(f"⚔️ ChargeDeclarationDialog shown for {unit.name}")
@@ -315,9 +315,9 @@ class ChargeDeclarationDialog:
         
         # Calculate target list area
         list_x = self.x + 20
-        list_y = self.y + 140  # Increased from 120 to avoid overlap
+        list_y = self.y + 160  # Increased to avoid overlap with unit info
         list_width = self.width - 40
-        list_height = self.height - 220  # Adjusted for new layout
+        list_height = self.height - 240  # Adjusted for new layout
         
         if not (list_x <= mouse_pos[0] <= list_x + list_width and 
                 list_y <= mouse_pos[1] <= list_y + list_height):
@@ -371,9 +371,9 @@ class ChargeDeclarationDialog:
         
         # Calculate target list area
         list_x = self.x + 20
-        list_y = self.y + 140  # Increased from 120
+        list_y = self.y + 160  # Increased to avoid overlap with unit info
         list_width = self.width - 40
-        list_height = self.height - 220  # Adjusted
+        list_height = self.height - 240  # Adjusted for new layout
         
         if not (list_x <= mouse_pos[0] <= list_x + list_width and 
                 list_y <= mouse_pos[1] <= list_y + list_height):
@@ -401,11 +401,11 @@ class ChargeDeclarationDialog:
         if not self.visible or not self.unit:
             return
         
-        # Draw semi-transparent overlay
-        overlay = pygame.Surface((self.screen_width, self.screen_height))
+        # Draw semi-transparent overlay - only over the dialog area to avoid affecting battlefield
+        overlay = pygame.Surface((self.width, self.height))
         overlay.set_alpha(128)
         overlay.fill((0, 0, 0))
-        screen.blit(overlay, (0, 0))
+        screen.blit(overlay, (self.x, self.y))
         
         # Draw dialog background
         dialog_rect = pygame.Rect(self.x, self.y, self.width, self.height)
@@ -473,30 +473,33 @@ class ChargeDeclarationDialog:
     def _draw_target_list(self, screen):
         """Draw the list of available targets"""
         list_x = self.x + 20
-        list_y = self.y + 140  # Increased from 120 to avoid overlap with unit info
+        list_y = self.y + 160  # Fixed position for header and list
         list_width = self.width - 40
-        list_height = self.height - 220  # Adjusted for new layout
-        
-        # Draw section title
+        target_height = 60
+        max_visible_targets = 5
+        list_height = target_height * max_visible_targets  # Fixed height for 5 targets
+
+        # Draw section title - always fixed
         title_text = self.font_medium.render("Available Targets", True, TEXT_PRIMARY)
         screen.blit(title_text, (list_x, list_y - 25))
-        
+
         if not self.available_targets:
             no_targets_text = self.font_small.render("No targets available", True, TEXT_DISABLED)
             screen.blit(no_targets_text, (list_x, list_y + 20))
             return
-        
-        # Draw targets
-        target_height = 60
-        scroll_y = list_y - self.scroll_offset
-        
-        for i, target in enumerate(self.available_targets):
-            target_rect = pygame.Rect(list_x, scroll_y + i * target_height, list_width, target_height)
-            
-            # Skip targets that are outside the visible area
-            if scroll_y + i * target_height + target_height < list_y or scroll_y + i * target_height > list_y + list_height:
-                continue
-            
+
+        # Clamp scroll_offset to valid range
+        max_scroll_offset = max(0, len(self.available_targets) - max_visible_targets)
+        self.scroll_offset = max(0, min(self.scroll_offset, max_scroll_offset))
+
+        # Draw only the visible targets
+        start_idx = self.scroll_offset
+        end_idx = min(start_idx + max_visible_targets, len(self.available_targets))
+        visible_targets = self.available_targets[start_idx:end_idx]
+
+        for i, target in enumerate(visible_targets):
+            target_rect = pygame.Rect(list_x, list_y + i * target_height, list_width, target_height)
+
             # Determine target color based on validity
             if target in self.valid_targets:
                 bg_color = (40, 60, 40) if target == self.selected_target else (30, 45, 30)
@@ -504,50 +507,48 @@ class ChargeDeclarationDialog:
             else:
                 bg_color = (60, 40, 40) if target == self.selected_target else (45, 30, 30)
                 border_color = INVALID_TARGET_COLOR if target == self.selected_target else (150, 0, 0)
-            
+
             # Highlight hovered target
-            if i == self.hovered_target:
+            global_idx = start_idx + i
+            if global_idx == self.hovered_target:
                 bg_color = tuple(min(255, c + 20) for c in bg_color)
-            
+
             # Draw target background
             pygame.draw.rect(screen, bg_color, target_rect)
             pygame.draw.rect(screen, border_color, target_rect, 2)
-            
+
             # Draw target name
             name_color = TEXT_PRIMARY if target in self.valid_targets else TEXT_DISABLED
             name_text = self.font_medium.render(target.name, True, name_color)
-            screen.blit(name_text, (list_x + 10, scroll_y + i * target_height + 5))
-            
+            screen.blit(name_text, (list_x + 10, list_y + i * target_height + 5))
+
             # Draw target info
             info_color = TEXT_SECONDARY if target in self.valid_targets else TEXT_DISABLED
             validation_info = self._get_target_validation_info(target)
             info_text = self.font_small.render(validation_info["reason"], True, info_color)
-            screen.blit(info_text, (list_x + 10, scroll_y + i * target_height + 25))
-            
+            screen.blit(info_text, (list_x + 10, list_y + i * target_height + 25))
+
             # Draw target health and position
             health_text = f"Health: {target.health_percent:.0f}%"
             health_color = TEXT_SECONDARY if target in self.valid_targets else TEXT_DISABLED
             health_surface = self.font_small.render(health_text, True, health_color)
-            screen.blit(health_surface, (list_x + 10, scroll_y + i * target_height + 40))
-            
+            screen.blit(health_surface, (list_x + 10, list_y + i * target_height + 40))
+
             # Draw target position if available
             if target.get_position():
                 pos = target.get_position()
                 pos_text = f"Pos: ({pos[0]:.1f}, {pos[1]:.1f})"
                 pos_surface = self.font_small.render(pos_text, True, info_color)
-                screen.blit(pos_surface, (list_x + 250, scroll_y + i * target_height + 25))  # Moved right
-            
+                screen.blit(pos_surface, (list_x + 250, list_y + i * target_height + 25))  # Moved right
+
             # Draw target movement if valid
             if target in self.valid_targets:
                 movement_text = f"Move: {target.movement}\""
                 movement_surface = self.font_small.render(movement_text, True, info_color)
-                screen.blit(movement_surface, (list_x + 250, scroll_y + i * target_height + 40))  # Moved right
-        
-        # Draw scroll indicator if needed
-        if self.max_scroll > 0:
-            scroll_indicator_text = f"Scroll: {self.scroll_offset}/{self.max_scroll}"
-            indicator_surface = self.font_small.render(scroll_indicator_text, True, TEXT_SECONDARY)
-            screen.blit(indicator_surface, (list_x, list_y + list_height + 5))
+                screen.blit(movement_surface, (list_x + 250, list_y + i * target_height + 40))  # Moved right
+
+        # Update max_scroll for mouse wheel logic
+        self.max_scroll = max_scroll_offset
     
     def _draw_buttons(self, screen):
         """Draw the dialog buttons"""

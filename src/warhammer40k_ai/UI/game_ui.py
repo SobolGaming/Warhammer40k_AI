@@ -370,7 +370,7 @@ class RosterPane(pygame.sprite.Sprite):
             health_text += " (Not Deployed)"
             health_color = TEXT_SECONDARY
         
-        # Add movement and shooting status indicators
+        # Add movement, shooting, and charge status indicators
         status_indicators = []
         if (hasattr(unit, 'round_state') and hasattr(unit.round_state, 'moved_this_round') and 
             unit.round_state.moved_this_round):
@@ -382,9 +382,21 @@ class RosterPane(pygame.sprite.Sprite):
             status_indicators.append("Shot")
             health_color = (200, 100, 0)  # Orange to indicate shot
         
-        # If both moved and shot, use purple color and show both
+        if (hasattr(unit, 'round_state') and hasattr(unit.round_state, 'declared_charge_this_round') and 
+            unit.round_state.declared_charge_this_round):
+            status_indicators.append("Charged")
+            health_color = (200, 0, 0)  # Red to indicate charged
+        
+        # Handle multiple status indicators with appropriate colors
         if len(status_indicators) == 2:
-            health_color = (150, 0, 150)  # Purple for both actions
+            if "Moved" in status_indicators and "Shot" in status_indicators:
+                health_color = (150, 0, 150)  # Purple for moved + shot
+            elif "Moved" in status_indicators and "Charged" in status_indicators:
+                health_color = (150, 0, 150)  # Purple for moved + charged
+            elif "Shot" in status_indicators and "Charged" in status_indicators:
+                health_color = (200, 50, 0)  # Dark orange for shot + charged
+        elif len(status_indicators) == 3:
+            health_color = (100, 0, 100)  # Dark purple for all three actions
         
         # Add status indicators to health text
         if status_indicators:
@@ -1191,9 +1203,9 @@ class GameView:
 
     def reset_unit_position(self, unit, original_unit_position, original_model_positions):
         if original_unit_position:
-            unit.set_position(original_unit_position[0], original_unit_position[1], original_unit_position[2])
             for model, original_position in zip(unit.models, original_model_positions):
                 model.set_location(*original_position)
+            unit.reset_position()
         else:
             unit.position = None
 
@@ -2426,8 +2438,8 @@ class DeploymentPhaseHandler(BasePhaseHandler):
                                                  original_unit_position, original_model_positions)
                 return True
             
-            # Valid deployment
-            self.game_view.selected_unit.set_position(unit_x, unit_y)
+            # Valid deployment - recalculate unit position from model positions
+            self.game_view.selected_unit.reset_position()
             
             if self.game_view.game_map.place_unit(self.game_view.selected_unit):
                 print(f"Unit {self.game_view.selected_unit.name} deployed at ({unit_x:.1f}, {unit_y:.1f})")
@@ -2969,27 +2981,19 @@ class BattlePhaseHandler(BasePhaseHandler):
     
     def _handle_charge_action(self, x: int, y: int) -> bool:
         """Handle charge phase actions"""
-        # Check if we have a selected unit for charging
+        # Always check if a unit was clicked on the battlefield first
+        clicked_unit = self.game_view.get_unit_at_position(x, y)
+        current_player = self.game.get_current_player()
+        if clicked_unit and clicked_unit.get_parent_army() and clicked_unit.get_parent_army().player == current_player:
+            self.game_view.selected_unit = clicked_unit
+            self._synchronize_unit_selection(clicked_unit)
+            self._handle_charge_phase_selection(clicked_unit)
+            return True
+        # If no unit was clicked, fall back to selected unit (e.g., from RosterPane)
         if self.game_view.selected_unit:
-            # Check if the selected unit belongs to the current player
-            current_player = self.game.get_current_player()
             if self.game_view.selected_unit.get_parent_army() and self.game_view.selected_unit.get_parent_army().player == current_player:
-                # Show charge declaration dialog for the selected unit
                 self._handle_charge_phase_selection(self.game_view.selected_unit)
                 return True
-        
-        # If no unit is selected, try to select a unit at the clicked position
-        clicked_unit = self.game_view.get_unit_at_position(x, y)
-        if clicked_unit:
-            # Check if the clicked unit belongs to the current player
-            current_player = self.game.get_current_player()
-            if clicked_unit.get_parent_army() and clicked_unit.get_parent_army().player == current_player:
-                # Select the unit and show charge dialog
-                self.game_view.selected_unit = clicked_unit
-                self._synchronize_unit_selection(clicked_unit)
-                self._handle_charge_phase_selection(clicked_unit)
-                return True
-        
         return False
     
     def _handle_fight_action(self, x: int, y: int) -> bool:

@@ -428,9 +428,7 @@ class Game:
                 model.set_location(model_x, model_y, model_z, model_facing)
             
             # Calculate unit centroid position (same as manual)
-            unit_x = sum(pos[0] for pos in model_positions) / len(model_positions)
-            unit_y = sum(pos[1] for pos in model_positions) / len(model_positions)
-            unit.set_position(unit_x, unit_y, z)
+            unit.reset_position()
             
             # Place unit on map (same as manual)
             if self.map and self.map.place_unit(unit):
@@ -817,12 +815,8 @@ class Game:
         if not charging_unit.can_declare_charge_against(target_unit, self):
             return False
 
-        # Calculate charge distance needed
-        current_pos = charging_unit.get_position()
-        target_pos = target_unit.get_position()
-        dx = target_pos[0] - current_pos[0]
-        dy = target_pos[1] - current_pos[1]
-        distance = get_dist(dx, dy)
+        # Calculate charge distance needed using edge-to-edge distance
+        distance = self.map.get_distance_between_units(charging_unit, target_unit)
 
         # Roll 2D6 for charge distance with modifiers
         base_charge_roll = get_roll("2D6")

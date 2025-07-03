@@ -58,6 +58,9 @@ class ShootingDeclarationDialog:
         self.available_weapons = []
         self.available_targets = []
         self.selected_weapon_profile = None
+        
+        # Weapon group expansion state
+        self.expanded_weapon_groups = set()  # Set of weapon profile IDs that are expanded
     
     def show(self, unit, callback, game_map=None, game_view=None):
         """Show the shooting declaration dialog."""
@@ -109,10 +112,12 @@ class ShootingDeclarationDialog:
         self.selected_weapon = None
         self.scroll_offset = 0
         self.is_targeting_mode = False
+        self.expanded_weapon_groups.clear()  # Clear expansion state
     
     def _get_available_weapons(self):
-        """Get all available weapon profiles for the unit."""
-        weapons = []
+        """Get all available weapon profiles for the unit, grouped by type."""
+        # First, collect all individual weapons
+        individual_weapons = []
         
         for model in self.unit.models:
             if not model.is_alive:
@@ -123,16 +128,70 @@ class ShootingDeclarationDialog:
                     for profile_name, profile in wargear.profiles.items():
                         # Check if weapon can be used
                         if self._can_use_weapon(profile):
-                            weapon_info = {
+                            individual_weapons.append({
                                 'profile': profile,
                                 'wargear': wargear,
                                 'profile_name': profile_name,
-                                'models': self._get_models_with_weapon(profile)
-                            }
-                            
-                            # Avoid duplicates
-                            if not any(w['profile'] == profile for w in weapons):
-                                weapons.append(weapon_info)
+                                'model': model,
+                                'weapon_instance': len([w for w in individual_weapons if w['profile'] == profile]) + 1
+                            })
+        
+        # Group weapons by profile
+        weapon_groups = {}
+        for weapon in individual_weapons:
+            profile_id = id(weapon['profile'])
+            if profile_id not in weapon_groups:
+                weapon_groups[profile_id] = {
+                    'profile': weapon['profile'],
+                    'wargear': weapon['wargear'],
+                    'profile_name': weapon['profile_name'],
+                    'individual_weapons': [],
+                    'is_group': True
+                }
+            weapon_groups[profile_id]['individual_weapons'].append(weapon)
+        
+        # Build the final weapons list
+        weapons = []
+        for profile_id, group in weapon_groups.items():
+            if len(group['individual_weapons']) == 1:
+                # Single weapon - add as individual entry
+                weapon = group['individual_weapons'][0]
+                weapons.append({
+                    'profile': weapon['profile'],
+                    'wargear': weapon['wargear'],
+                    'profile_name': weapon['profile_name'],
+                    'models': [weapon['model']],
+                    'weapon_instance': weapon['weapon_instance'],
+                    'is_group': False,
+                    'group_id': None
+                })
+            else:
+                # Multiple weapons - add as group
+                if profile_id in self.expanded_weapon_groups:
+                    # Group is expanded - add individual weapons
+                    for weapon in group['individual_weapons']:
+                        weapons.append({
+                            'profile': weapon['profile'],
+                            'wargear': weapon['wargear'],
+                            'profile_name': weapon['profile_name'],
+                            'models': [weapon['model']],
+                            'weapon_instance': weapon['weapon_instance'],
+                            'is_group': False,
+                            'group_id': profile_id
+                        })
+                else:
+                    # Group is collapsed - add as single group entry
+                    all_models = [w['model'] for w in group['individual_weapons']]
+                    weapons.append({
+                        'profile': group['profile'],
+                        'wargear': group['wargear'],
+                        'profile_name': group['profile_name'],
+                        'models': all_models,
+                        'count': len(group['individual_weapons']),
+                        'is_group': True,
+                        'group_id': profile_id,
+                        'individual_weapons': group['individual_weapons']
+                    })
         
         return weapons
     
@@ -285,33 +344,68 @@ class ShootingDeclarationDialog:
             weapon_info = available_weapons[weapon_index]
             weapon_profile = weapon_info['profile']
             
-            # Check if weapon can be used and hasn't been declared already
-            if self._can_use_weapon(weapon_profile) and not self._is_weapon_already_declared(weapon_profile.parent_wargear):
-                print(f"🎯 Selected weapon: {weapon_profile.parent_wargear.name}")
-                self.select_weapon_for_targeting(weapon_profile)
-                return True
+            # Check if this is a click on the expand/collapse button
+            if weapon_info.get('is_group', False):
+                # Check if click is on the expand/collapse button area (right side)
+                button_x = self.width - 40  # 40 pixels from right edge
+                if x >= button_x:
+                    group_id = weapon_info['group_id']
+                    self._toggle_weapon_group_expansion(group_id)
+                    print(f"🔄 Toggled weapon group expansion for {weapon_profile.parent_wargear.name}")
+                    return True
+            
+            # Handle individual weapon selection
+            if not weapon_info.get('is_group', False):
+                weapon_instance = weapon_info.get('weapon_instance', 1)
+                
+                # Check if weapon can be used and hasn't been declared already
+                if self._can_use_weapon(weapon_profile) and not self._is_weapon_already_declared(weapon_profile.parent_wargear, weapon_instance):
+                    print(f"🎯 Selected weapon: {weapon_profile.parent_wargear.name} #{weapon_instance}")
+                    self.select_weapon_for_targeting(weapon_profile, weapon_instance)
+                    return True
+                else:
+                    print(f"❌ Cannot use {weapon_profile.parent_wargear.name} #{weapon_instance} - already declared or unavailable")
             else:
-                print(f"❌ Cannot use {weapon_profile.parent_wargear.name} - already declared or unavailable")
+                # Handle grouped weapon selection - all weapons in group target the same enemy
+                if self._can_use_weapon(weapon_profile):
+                    print(f"🎯 Selected weapon group: {weapon_profile.parent_wargear.name} (x{weapon_info['count']})")
+                    self.select_weapon_group_for_targeting(weapon_info)
+                    return True
+                else:
+                    print(f"❌ Cannot use weapon group {weapon_profile.parent_wargear.name} - unavailable")
         
         return False
     
-    def _find_existing_declaration(self, weapon_profile):
+    def _find_existing_declaration(self, weapon_profile, weapon_instance=1):
         """Find if a weapon profile is already declared"""
         for declaration in self.weapon_declarations:
-            if declaration['weapon_profile'] == weapon_profile:
+            if (declaration['weapon_profile'] == weapon_profile and 
+                declaration.get('weapon_instance', 1) == weapon_instance):
                 return declaration
         return None
     
-    def _is_weapon_already_declared(self, wargear):
-        """Check if any profile of this weapon has already been declared"""
+    def _is_weapon_already_declared(self, wargear, weapon_instance=1):
+        """Check if a specific instance of this weapon has already been declared"""
         for declaration in self.weapon_declarations:
-            if declaration['weapon_profile'].parent_wargear == wargear:
+            if (declaration['weapon_profile'].parent_wargear == wargear and 
+                declaration.get('weapon_instance', 1) == weapon_instance):
                 return True
         return False
     
     def _has_split_fire(self, weapon_profile):
         """Check if a weapon has split fire ability"""
         return weapon_profile.is_split_fire()
+    
+    def _toggle_weapon_group_expansion(self, group_id):
+        """Toggle the expansion state of a weapon group"""
+        if group_id in self.expanded_weapon_groups:
+            self.expanded_weapon_groups.remove(group_id)
+        else:
+            self.expanded_weapon_groups.add(group_id)
+    
+    def _is_weapon_group_expanded(self, group_id):
+        """Check if a weapon group is expanded"""
+        return group_id in self.expanded_weapon_groups
     
     def _handle_declaration_click(self, x, y):
         """Handle clicks on the declarations list"""
@@ -466,24 +560,20 @@ class ShootingDeclarationDialog:
         for i, weapon_info in enumerate(available_weapons):
             weapon_y = y + i * 60  # Increased spacing for 3 lines
             
-            # Handle both dictionary and WargearProfile formats
-            if isinstance(weapon_info, dict):
-                weapon_profile = weapon_info['profile']
-                models_count = len(weapon_info['models'])
-            else:
-                # weapon_info is a WargearProfile object
-                weapon_profile = weapon_info
-                # Count models with this weapon
-                models_count = 0
-                for model in self.unit.models:
-                    if model.is_alive:
-                        for wargear in model.wargear:
-                            if wargear == weapon_profile.parent_wargear:
-                                models_count += 1
-                                break
+            weapon_profile = weapon_info['profile']
+            is_group = weapon_info.get('is_group', False)
             
-            # Check if this weapon is already declared
-            existing_declaration = self._find_existing_declaration(weapon_profile)
+            # Check if this weapon/group is already declared
+            if is_group:
+                # For groups, check if any individual weapon is declared
+                existing_declaration = any(
+                    self._find_existing_declaration(w['profile'], w['weapon_instance']) 
+                    for w in weapon_info['individual_weapons']
+                )
+            else:
+                weapon_instance = weapon_info.get('weapon_instance', 1)
+                existing_declaration = self._find_existing_declaration(weapon_profile, weapon_instance)
+            
             has_split_fire = weapon_profile.is_split_fire()
             
             # Background color
@@ -502,11 +592,16 @@ class ShootingDeclarationDialog:
             pygame.draw.rect(screen, bg_color, (x, weapon_y, self.width - 20, 50))
             pygame.draw.rect(screen, self.border_color, (x, weapon_y, self.width - 20, 50), 1)
             
-            # Line 1: Weapon name with model count and keywords
+            # Line 1: Weapon name with count/instance and keywords
             weapon_name = weapon_profile.parent_wargear.name
             if weapon_profile.name != 'default':
                 weapon_name += f" - {weapon_profile.name}"
-            weapon_name += f" (x{models_count})"  # Changed from "(X models)" to "(xX)"
+            
+            if is_group:
+                weapon_name += f" (x{weapon_info['count']})"  # Show count for groups
+            else:
+                weapon_instance = weapon_info.get('weapon_instance', 1)
+                weapon_name += f" #{weapon_instance}"  # Show instance number for individuals
             
             # Render weapon name first
             weapon_surface = font_small.render(weapon_name, True, self.text_color)
@@ -516,10 +611,26 @@ class ShootingDeclarationDialog:
             keywords = weapon_profile.get_keywords()
             if keywords:
                 keywords_text = f" | {', '.join(keywords)}"
-                keywords_surface = font_small.render(keywords_text, True, TEXT_ACCENT)
+                keywords_surface = font_small.render(keywords_text, True, (100, 149, 237))  # Blue accent color
                 # Position keywords after the weapon name
                 keywords_x = x + 5 + weapon_surface.get_width()
                 screen.blit(keywords_surface, (keywords_x, weapon_y + 5))
+            
+            # Draw expand/collapse button for groups
+            if is_group:
+                button_x = self.width - 35
+                button_y = weapon_y + 5
+                button_size = 20
+                
+                # Draw button background
+                pygame.draw.rect(screen, (80, 80, 80), (button_x, button_y, button_size, button_size))
+                pygame.draw.rect(screen, (100, 100, 100), (button_x, button_y, button_size, button_size), 1)
+                
+                # Draw + or - symbol
+                symbol = "-" if self._is_weapon_group_expanded(weapon_info['group_id']) else "+"
+                symbol_surface = font_small.render(symbol, True, self.text_color)
+                symbol_rect = symbol_surface.get_rect(center=(button_x + button_size//2, button_y + button_size//2))
+                screen.blit(symbol_surface, symbol_rect)
             
             # Line 2: Full weapon stats
             stats_parts = []
@@ -568,6 +679,10 @@ class ShootingDeclarationDialog:
             if has_split_fire:
                 stats_parts.append("Split Fire")
             
+            # Add group indicator for collapsed groups
+            if is_group:
+                stats_parts.append("Click to target all")
+            
             stats = " | ".join(stats_parts)
             stats_surface = font_small.render(stats, True, self.text_color)
             screen.blit(stats_surface, (x + 5, weapon_y + 20))
@@ -594,6 +709,8 @@ class ShootingDeclarationDialog:
             weapon_name = declaration['weapon_profile'].parent_wargear.name
             if declaration['weapon_profile'].name != 'default':
                 weapon_name += f" - {declaration['weapon_profile'].name}"
+            weapon_instance = declaration.get('weapon_instance', 1)
+            weapon_name += f" #{weapon_instance}"
             target_name = declaration['target_unit'].name[:15] + "..." if len(declaration['target_unit'].name) > 15 else declaration['target_unit'].name
             declaration_text = f"{weapon_name} -> {target_name}"
             text_surface = font_small.render(declaration_text, True, self.text_color)
@@ -629,14 +746,27 @@ class ShootingDeclarationDialog:
         text_rect = cancel_surface.get_rect(center=(cancel_x + cancel_width//2, cancel_y + cancel_height//2))
         screen.blit(cancel_surface, text_rect)
 
-    def select_weapon_for_targeting(self, weapon_profile):
+    def select_weapon_for_targeting(self, weapon_profile, weapon_instance=1):
         """Select a weapon and enter targeting mode"""
-        print(f"🎯 select_weapon_for_targeting called with {weapon_profile.parent_wargear.name}")
+        print(f"🎯 select_weapon_for_targeting called with {weapon_profile.parent_wargear.name} #{weapon_instance}")
         self.selected_weapon = weapon_profile
+        self.selected_weapon_instance = weapon_instance
+        self.selected_weapon_group = None
         self.is_targeting_mode = True
         self.visible = False  # Close dialog
         print(f"🎯 Targeting mode set: is_targeting_mode={self.is_targeting_mode}, selected_weapon={self.selected_weapon}")
-        print(f"🎯 Selected {weapon_profile.parent_wargear.name} for targeting - click on battlefield")
+        print(f"🎯 Selected {weapon_profile.parent_wargear.name} #{weapon_instance} for targeting - click on battlefield")
+    
+    def select_weapon_group_for_targeting(self, weapon_group_info):
+        """Select a weapon group and enter targeting mode"""
+        print(f"🎯 select_weapon_group_for_targeting called with {weapon_group_info['profile'].parent_wargear.name} (x{weapon_group_info['count']})")
+        self.selected_weapon = weapon_group_info['profile']
+        self.selected_weapon_group = weapon_group_info
+        self.selected_weapon_instance = None
+        self.is_targeting_mode = True
+        self.visible = False  # Close dialog
+        print(f"🎯 Targeting mode set: is_targeting_mode={self.is_targeting_mode}, selected_weapon_group={self.selected_weapon_group}")
+        print(f"🎯 Selected weapon group {weapon_group_info['profile'].parent_wargear.name} (x{weapon_group_info['count']}) for targeting - click on battlefield")
     
     def handle_battlefield_targeting(self, x: float, y: float) -> bool:
         """Handle clicking on the battlefield for targeting."""
@@ -658,13 +788,26 @@ class ShootingDeclarationDialog:
             print(f"❌ {clicked_unit.name} is not a valid target for {self.selected_weapon.name}")
             return False
 
-        # Add the target to our shooting declarations
-        self.weapon_declarations.append({
-            'weapon_profile': self.selected_weapon,
-            'target_unit': clicked_unit,
-            'models': self._get_models_with_weapon(self.selected_weapon)
-        })
-        print(f"✅ {self.unit.name} targeting {clicked_unit.name} with {self.selected_weapon.parent_wargear.name}")
+        # Handle weapon group targeting
+        if self.selected_weapon_group:
+            # Add all weapons in the group to target the same enemy
+            for weapon_info in self.selected_weapon_group['individual_weapons']:
+                self.weapon_declarations.append({
+                    'weapon_profile': weapon_info['profile'],
+                    'target_unit': clicked_unit,
+                    'models': [weapon_info['model']],
+                    'weapon_instance': weapon_info['weapon_instance']
+                })
+            print(f"✅ {self.unit.name} targeting {clicked_unit.name} with {self.selected_weapon.parent_wargear.name} group (x{self.selected_weapon_group['count']})")
+        else:
+            # Handle individual weapon targeting
+            self.weapon_declarations.append({
+                'weapon_profile': self.selected_weapon,
+                'target_unit': clicked_unit,
+                'models': self._get_models_with_weapon(self.selected_weapon),
+                'weapon_instance': getattr(self, 'selected_weapon_instance', 1)
+            })
+            print(f"✅ {self.unit.name} targeting {clicked_unit.name} with {self.selected_weapon.parent_wargear.name} #{getattr(self, 'selected_weapon_instance', 1)}")
         
         # Clear targeting mode and return success
         self.clear_targeting_mode()
@@ -675,5 +818,7 @@ class ShootingDeclarationDialog:
         if self.is_targeting_mode:
             self.is_targeting_mode = False
             self.selected_weapon = None
+            self.selected_weapon_instance = None
+            self.selected_weapon_group = None
             self.visible = True  # Reopen dialog
             print("❌ Targeting mode cleared") 

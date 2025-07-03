@@ -1763,19 +1763,16 @@ class Unit:
     
     def _can_model_shoot_weapon_at_target(self, model, weapon_profile, target_unit, game_map) -> bool:
         """Check if a specific model can shoot a weapon at a target"""
-        # Check range
-        target_position = target_unit.get_position()
-        if not target_position:
-            return False
-            
-        model_position = model.get_location()
-        distance = get_dist(
-            target_position[0] - model_position[0],
-            target_position[1] - model_position[1],
-            target_position[2] - model_position[2] if len(target_position) > 2 else 0
-        )
+        # Check range using edge-to-edge distance (not centroid-to-centroid)
+        min_distance = float('inf')
+        for target_model in target_unit.models:
+            if not target_model.is_alive:
+                continue
+            # Calculate edge-to-edge distance between model bases
+            distance = model.model_base.edge_to_edge_distance(target_model.model_base)
+            min_distance = min(min_distance, distance)
         
-        if distance > weapon_profile.range.max:
+        if min_distance > weapon_profile.range.max:
             return False
             
         # Check line of sight
@@ -1974,10 +1971,6 @@ class Unit:
     def is_alive(self) -> bool:
         return len(self.models) > 0
 
-    def set_position(self, x: float, y: float, z: float = 0.0):
-        """Set the position of the unit on the map."""
-        self.position = (x, y, z)
-
     def get_position(self):
         if self.position is not None:
             return self.position
@@ -1996,7 +1989,9 @@ class Unit:
             x_sum = sum(model.get_location()[0] for model in self.models)
             y_sum = sum(model.get_location()[1] for model in self.models)
             z_sum = sum(model.get_location()[2] for model in self.models)
-            self.set_position(x_sum / len(self.models), y_sum / len(self.models), z_sum / len(self.models))
+            self.x = x_sum / len(self.models)
+            self.y = y_sum / len(self.models)
+            self.z = z_sum / len(self.models)
         else:
             self.position = None
 
@@ -2019,7 +2014,6 @@ class Unit:
         You can enhance this to factor in more things: cover, distance to objective, edge, enemy, etc.
         """
         # Simple version: maximize coherency, avoid edge, avoid obstacles.
-        score = 0.0
         battlefield_width, battlefield_height = game_map.width, game_map.height
 
         # Distance from board edge (prefer center)
@@ -2372,6 +2366,10 @@ class Unit:
     def can_declare_charge_against(self, target_unit: 'Unit', game: 'Game') -> bool:
         """Check if this unit can declare a charge against the target unit."""
         if not self.is_alive() or not target_unit.is_alive():
+            return False
+            
+        # Check if unit has already charged this round
+        if self.round_state.declared_charge_this_round:
             return False
             
         if self.round_state.advanced_this_round or self.round_state.fell_back_this_round:
@@ -2860,9 +2858,6 @@ class Unit:
         if not self.can_arrive_from_reserves(turn):
             return False
         
-        # Place the unit at the specified position
-        self.set_position(position[0], position[1], position[2])
-        
         # Deploy all models at calculated positions
         try:
             # Use the existing model positioning logic
@@ -2876,6 +2871,9 @@ class Unit:
             # Default: place all models at the unit position
             for model in self.models:
                 model.set_location(position[0], position[1], position[2], 0.0)
+        
+        # Calculate unit position from model positions
+        self.reset_position()
         
         # Update unit status
         self.deployed = True

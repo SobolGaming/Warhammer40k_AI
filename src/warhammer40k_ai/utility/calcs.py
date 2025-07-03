@@ -217,7 +217,6 @@ def check_engagement_range_violation(model: 'Model', position: Tuple[float, floa
     from ..classes.unit import MovementAction
     
     # Create a temporary base at the test position
-    from ..utility.model_base import Base, BaseType
     temp_base = model.model_base.__class__(model.model_base.base_type, model.model_base.radius)
     temp_base.set_position(position[0], position[1], position[2])
     temp_base.set_facing(model.model_base.facing)
