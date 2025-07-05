@@ -821,9 +821,10 @@ class HighLevelAgent:
 ###############################################################################
 class TacticalAgent:
     """Tactical Layer: Handles per-phase unit actions."""
-    def __init__(self, game: Game, player: Player, learning_rate=0.01) -> None:
+    def __init__(self, game: Game, player: Player, learning_rate=0.01, ui_interface=None) -> None:
         self.game = game
         self.player = player
+        self.ui_interface = ui_interface
 
         # Policy networks and optimizers for different phases
         self.movement_policy_net = PolicyNetwork(input_size=self.get_movement_state_size(), output_size=NUM_MOVEMENT_ACTIONS)
@@ -1440,6 +1441,267 @@ class TacticalAgent:
     ###########################################################################
     # Fight Phase
     ###########################################################################
+    def execute_fight_phase(self, current_player: Player, opponent_player: Player) -> None:
+        """Execute the complete Fight Phase with proper two-stage structure.
+        
+        The Fight Phase consists of two sub-stages:
+        1. Fight First Stage - Units with Fight First abilities or that charged
+        2. Remaining Combatants Stage - All other eligible units
+        
+        Within each stage, players alternate selecting units to fight.
+        """
+        self.game.event_system.publish("fight_phase_start", game_state=self.game.get_state())
+        
+        # Execute Fight First Stage
+        self._execute_fight_first_stage(current_player, opponent_player)
+        
+        # Execute Remaining Combatants Stage
+        self._execute_remaining_combatants_stage(current_player, opponent_player)
+        
+        self.game.event_system.publish("fight_phase_end", game_state=self.game.get_state())
+    
+    def _execute_fight_first_stage(self, current_player: Player, opponent_player: Player) -> None:
+        """Execute the Fight First stage of the Fight Phase."""
+        print("⚔️ Starting Fight First Stage")
+        
+        # Get Fight First units for both players
+        current_player_units = self.game.get_fight_first_units(current_player)
+        opponent_units = self.game.get_fight_first_units(opponent_player)
+        
+        if not current_player_units and not opponent_units:
+            print("📋 No units with Fight First abilities or charges this turn")
+            return
+        
+        # Fight First stage: units that charged or have Fight First abilities
+        # Players alternate selecting units to fight
+        self._execute_alternating_fights(current_player, opponent_player, 
+                                       current_player_units, opponent_units, 
+                                       "Fight First")
+    
+    def _execute_remaining_combatants_stage(self, current_player: Player, opponent_player: Player) -> None:
+        """Execute the Remaining Combatants stage of the Fight Phase."""
+        print("⚔️ Starting Remaining Combatants Stage")
+        
+        # Get remaining combatant units for both players
+        current_player_units = self.game.get_remaining_combatant_units(current_player)
+        opponent_units = self.game.get_remaining_combatant_units(opponent_player)
+        
+        if not current_player_units and not opponent_units:
+            print("📋 No remaining combatant units eligible to fight")
+            return
+        
+        # Remaining combatants stage: all other eligible units
+        self._execute_alternating_fights(current_player, opponent_player, 
+                                       current_player_units, opponent_units, 
+                                       "Remaining Combatants")
+    
+    def _execute_alternating_fights(self, current_player: Player, opponent_player: Player,
+                                  current_player_units: List[Unit], opponent_units: List[Unit],
+                                  stage_name: str) -> None:
+        """Execute alternating unit selection and fighting within a stage."""
+        print(f"⚔️ {stage_name} Stage - Current Player: {len(current_player_units)} units, Opponent: {len(opponent_units)} units")
+        
+        # Track which units have already fought this stage
+        fought_units = set()
+        
+        # IMPORTANT: In Fight Phase, the player whose turn is NOT taking place goes first
+        # So the opponent goes first, not the current player
+        active_player = opponent_player
+        active_units = opponent_units
+        other_player = current_player
+        other_units = current_player_units
+        
+        while True:
+            # Get remaining units for active player
+            remaining_units = [unit for unit in active_units if unit not in fought_units and unit.is_alive()]
+            
+            if not remaining_units:
+                # Active player has no more units - switch to other player
+                # But first check if other player has units
+                other_remaining = [unit for unit in other_units if unit not in fought_units and unit.is_alive()]
+                if not other_remaining:
+                    break  # No more units for either player
+                
+                # Switch active player
+                if active_player == current_player:
+                    active_player = opponent_player
+                    active_units = opponent_units
+                    other_player = current_player
+                    other_units = current_player_units
+                else:
+                    active_player = current_player
+                    active_units = current_player_units
+                    other_player = opponent_player
+                    other_units = opponent_units
+                
+                # Update remaining units after switch
+                remaining_units = [unit for unit in active_units if unit not in fought_units and unit.is_alive()]
+                
+                # If the switched player also has no units, we're done
+                if not remaining_units:
+                    break
+                
+                # Check if other player (who we just switched from) has any units left
+                other_remaining_after_switch = [unit for unit in other_units if unit not in fought_units and unit.is_alive()]
+                
+                # If other player has no units left, active player fights with ALL remaining units
+                if not other_remaining_after_switch:
+                    print(f"🔥 {other_player.name} has no more units - {active_player.name} fights with all remaining units")
+                    for unit in remaining_units:
+                        print(f"🤖 {active_player.name} fights with {unit.name}")
+                        self._execute_complete_fight_sequence(unit)
+                        fought_units.add(unit)
+                    break
+            
+            # Select and fight with one unit
+            selected_unit = self._select_unit_to_fight(remaining_units, stage_name)
+            if selected_unit:
+                print(f"🤖 {active_player.name} selects {selected_unit.name} to fight")
+                self._execute_complete_fight_sequence(selected_unit)
+                fought_units.add(selected_unit)
+            else:
+                # This shouldn't happen if remaining_units is not empty
+                break
+            
+            # After fighting, switch to other player for next selection
+            # (unless other player has no units, then current player continues)
+            other_remaining = [unit for unit in other_units if unit not in fought_units and unit.is_alive()]
+            if other_remaining:
+                # Switch players for alternating selection
+                if active_player == current_player:
+                    active_player = opponent_player
+                    active_units = opponent_units
+                    other_player = current_player
+                    other_units = current_player_units
+                else:
+                    active_player = current_player
+                    active_units = current_player_units
+                    other_player = opponent_player
+                    other_units = opponent_units
+            # If other player has no units, active player continues without switching
+        
+        print(f"✅ {stage_name} Stage complete")
+    
+    def _execute_complete_fight_sequence(self, unit: Unit) -> None:
+        """Execute the complete fight sequence: Pile-in → Make Melee Attacks → Consolidate"""
+        # Step 1: Pile-in
+        self._execute_pile_in(unit)
+
+        # Step 2: Make Melee Attacks (existing fight_phase logic)
+        if self.player.type.name == 'HUMAN' and self.ui_interface:
+            # Use dialog to collect melee attack declarations from the human player
+            attack_declarations = None
+            selection_complete = False
+            def on_melee_declaration(declarations):
+                nonlocal attack_declarations, selection_complete
+                attack_declarations = declarations
+                selection_complete = True
+                logger.info(f"⚔️ Human player declared melee attacks for {unit.name}")
+            self.ui_interface.show_melee_weapon_declaration_dialog(unit, on_melee_declaration, self.game.map)
+            import pygame
+            clock = pygame.time.Clock()
+            while not selection_complete and self.ui_interface.melee_weapon_declaration_dialog.visible:
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        pygame.quit()
+                        return
+                    if self.ui_interface.handle_event(event):
+                        continue
+                clock.tick(60)
+            # Now resolve the attacks using the declarations
+            if attack_declarations:
+                self._resolve_attack_declarations(attack_declarations)
+        else:
+            # AI or non-human: use existing logic
+            self._execute_melee_attacks(unit)
+
+        # Step 3: Consolidate
+        self._execute_consolidate(unit)
+    
+    def _execute_pile_in(self, unit: Unit) -> None:
+        """Execute pile-in move - up to 3 inches towards nearest enemy unit"""
+        if not unit.is_alive():
+            return
+        
+        print(f"📍 {unit.name} piles in...")
+        success = unit.pile_in_towards_enemies(self.game.map)
+        if not success:
+            print(f"   {unit.name} could not pile in")
+    
+    def _execute_consolidate(self, unit: Unit) -> None:
+        """Execute consolidate move - up to 3 inches further into enemy lines"""
+        if not unit.is_alive():
+            return
+        
+        print(f"🔄 {unit.name} consolidates...")
+        success = unit.consolidate_towards_enemies(self.game.map)
+        if not success:
+            print(f"   {unit.name} could not consolidate")
+    
+    def _select_unit_to_fight(self, eligible_units: List[Unit], stage_name: str = "") -> Optional[Unit]:
+        """Select which unit should fight next.
+        
+        For human players, shows a dialog for unit selection.
+        For AI players, uses heuristic-based selection.
+        """
+        if not eligible_units:
+            return None
+        
+        # Check if this is a human player
+        if self.player.type.name == 'HUMAN' and self.ui_interface:
+            # Use UI dialog for human player selection
+            selected_unit = None
+            selection_complete = False
+            
+            def on_unit_selected(unit: Unit):
+                nonlocal selected_unit, selection_complete
+                selected_unit = unit
+                selection_complete = True
+                logger.info(f"⚔️ Human player selected {unit.name} to fight in {stage_name} stage")
+            
+            def on_cancel():
+                nonlocal selection_complete
+                selection_complete = True
+                logger.info(f"⚔️ Human player cancelled unit selection for {stage_name} stage")
+            
+            # Show the fight unit selection dialog
+            self.ui_interface.show_fight_unit_selection_dialog(
+                stage_name, eligible_units, on_unit_selected, on_cancel
+            )
+            
+            # Wait for user selection
+            import pygame
+            clock = pygame.time.Clock()
+            while not selection_complete and self.ui_interface.fight_unit_selection_dialog.visible:
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        pygame.quit()
+                        return None
+                    
+                    # Let the UI interface handle the event
+                    if self.ui_interface.handle_event(event):
+                        continue
+                
+                # Draw the current screen (this would be called by the main game loop)
+                # For now, we'll assume the screen is being drawn elsewhere
+                clock.tick(60)
+            
+            return selected_unit
+        
+        else:
+            # AI logic: simple heuristic - could be enhanced with ML
+            # Prioritize units that charged this turn, then highest threat
+            charged_units = [unit for unit in eligible_units if unit.round_state.declared_charge_this_round]
+            if charged_units:
+                selected_unit = max(charged_units, key=lambda u: u.get_threat_value())
+                logger.info(f"🤖 AI selected {selected_unit.name} to fight in {stage_name} stage (charged this turn)")
+                return selected_unit
+            
+            # Otherwise, select unit with highest threat value
+            selected_unit = max(eligible_units, key=lambda u: u.get_threat_value())
+            logger.info(f"🤖 AI selected {selected_unit.name} to fight in {stage_name} stage (highest threat)")
+            return selected_unit
+
     def find_enemies_in_melee_range(self, unit: Unit) -> List[Unit]:
         """Find all enemy units within engagement range of the given unit."""
         enemies_in_range = []
@@ -1569,7 +1831,7 @@ class TacticalAgent:
         return MAX_TARGETS
 
     def fight_phase(self, unit: Unit) -> None:
-        """Resolve melee combat."""
+        """Resolve melee combat according to official Warhammer 40k rules."""
         if not unit.deployed or not unit.is_alive():
             return
 
@@ -1585,59 +1847,259 @@ class TacticalAgent:
             self.game.event_system.publish("fight_phase_end", unit=unit, game_state=self.game.get_state())
             return
 
-        # For each model in the unit, resolve melee attacks
+        # Step 1: Determine which models can fight
+        models_that_can_fight = self._get_models_that_can_fight(unit, enemies_in_range)
+        
+        if not models_that_can_fight:
+            logger.info(f"{unit.name} has no models that can fight.")
+            self.game.event_system.publish("fight_phase_end", unit=unit, game_state=self.game.get_state())
+            return
+        
+        print(f"⚔️ {unit.name} - {len(models_that_can_fight)} models can fight")
+        
+        # Step 2: Collect all attack declarations before resolving any
+        attack_declarations = self._collect_attack_declarations(models_that_can_fight, enemies_in_range)
+        
+        if not attack_declarations:
+            logger.info(f"{unit.name} has no valid attack declarations.")
+            self.game.event_system.publish("fight_phase_end", unit=unit, game_state=self.game.get_state())
+            return
+        
+        # Step 3: Resolve all attacks by target unit and weapon profile
+        self._resolve_attack_declarations(attack_declarations)
+
+        self.game.event_system.publish("fight_phase_end", unit=unit, game_state=self.game.get_state())
+    
+    def _get_models_that_can_fight(self, unit: Unit, enemies_in_range: List[Unit]) -> List['Model']:
+        """Determine which models in the unit can fight.
+        
+        Models can fight if they are:
+        - Within Engagement Range of an enemy unit, OR
+        - In base-to-base contact with another model from the same unit that is itself in base-to-base contact with an enemy unit
+        """
+        models_that_can_fight = []
+        
         for model in unit.models:
             if not model.is_alive:
                 continue
+            
+            # Check if model is within engagement range of any enemy
+            model_position = (model.x, model.y, model.z, model.facing)
+            is_in_engagement_range = any(
+                self.game.map.is_within_engagement_range(model_position, enemy)
+                for enemy in enemies_in_range
+            )
+            
+            if is_in_engagement_range:
+                models_that_can_fight.append(model)
+                continue
+            
+            # Check if model is in base-to-base contact with another model that can fight
+            # This is a simplified check - in full implementation would check actual base contact
+            for other_model in unit.models:
+                if other_model == model or not other_model.is_alive:
+                    continue
                 
+                # Check if other model is in engagement range
+                other_position = (other_model.x, other_model.y, other_model.z, other_model.facing)
+                other_can_fight = any(
+                    self.game.map.is_within_engagement_range(other_position, enemy)
+                    for enemy in enemies_in_range
+                )
+                
+                if other_can_fight:
+                    # Check if this model is in base-to-base contact with the other model
+                    # Simplified: check if they're very close (within 1")
+                    dx = other_model.x - model.x
+                    dy = other_model.y - model.y
+                    distance = (dx*dx + dy*dy) ** 0.5
+                    
+                    if distance <= 1.0:  # Base-to-base contact threshold
+                        models_that_can_fight.append(model)
+                        break
+        
+        return models_that_can_fight
+    
+    def _collect_attack_declarations(self, models_that_can_fight: List['Model'], enemies_in_range: List[Unit]) -> List[dict]:
+        """Collect all attack declarations before resolving any attacks.
+        
+        Each declaration includes:
+        - attacking_model: The model making the attack
+        - weapon: The melee weapon being used
+        - profile: The weapon profile being used
+        - target_unit: The target unit
+        - num_attacks: Number of attacks to make
+        """
+        attack_declarations = []
+        
+        for model in models_that_can_fight:
             # Find melee weapons for this model
             melee_weapons = [wargear for wargear in model.wargear if wargear.is_melee()]
             
             if not melee_weapons:
                 continue
-                
-            for wargear_item in melee_weapons:
+            
+            # Select weapons to use (respecting EXTRA ATTACKS rule)
+            weapons_to_use = self._select_weapons_for_model(model, melee_weapons)
+            
+            for weapon in weapons_to_use:
                 # Choose which profile to use if the weapon has multiple profiles
-                selected_profile = self.choose_melee_weapon_profile(model, wargear_item)
+                selected_profile = self.choose_melee_weapon_profile(model, weapon)
                 if selected_profile is None:
                     continue
                 
-                # Agent decides on the target
-                target_idx = self.choose_fight_target(model, selected_profile, enemies_in_range)
-                target = enemies_in_range[target_idx]
-
-                # Double-check that target is still alive before attacking
-                if not target.is_alive():
-                    logger.info(f"Fight target {target.name} was destroyed before attack could be executed")
-                    reward = -0.5 * FIGHT_REWARD_SCALING
-                    self.fight_profile_selection_rewards.append(reward)
-                    self.fight_target_rewards.append(reward)
+                # Get number of attacks from weapon profile
+                num_attacks = selected_profile.attacks
+                if num_attacks <= 0:
                     continue
-
-                # Record the target's health before attack
-                target_health_before = target.health_percent
-
-                # Execute the melee attack
-                logger.info(f"{model.name} of {unit.name} fights {target.name} with {wargear_item.name} ({selected_profile.name})")
+                
+                # Select targets for all attacks
+                target_declarations = self._select_targets_for_attacks(
+                    model, selected_profile, num_attacks, enemies_in_range
+                )
+                
+                # Add declarations for each target
+                for target_unit, target_attacks in target_declarations.items():
+                    attack_declarations.append({
+                        'attacking_model': model,
+                        'weapon': weapon,
+                        'profile': selected_profile,
+                        'target_unit': target_unit,
+                        'num_attacks': target_attacks
+                    })
+        
+        return attack_declarations
+    
+    def _select_weapons_for_model(self, model: 'Model', melee_weapons: List) -> List:
+        """Select which weapons the model will use for attacks.
+        
+        Rules:
+        - Model can only use ONE melee weapon (unless it has EXTRA ATTACKS)
+        - Weapons with EXTRA ATTACKS keyword can be used in addition to another weapon
+        """
+        weapons_to_use = []
+        
+        # Find weapons with EXTRA ATTACKS keyword
+        extra_attack_weapons = []
+        regular_weapons = []
+        
+        for weapon in melee_weapons:
+            # Check if weapon has EXTRA ATTACKS keyword
+            has_extra_attacks = False
+            if hasattr(weapon, 'keywords'):
+                has_extra_attacks = 'EXTRA ATTACKS' in weapon.keywords
+            elif hasattr(weapon, 'name'):
+                has_extra_attacks = 'extra attacks' in weapon.name.lower()
+            
+            if has_extra_attacks:
+                extra_attack_weapons.append(weapon)
+            else:
+                regular_weapons.append(weapon)
+        
+        # Select one regular weapon (if any)
+        if regular_weapons:
+            # For AI, select the weapon with the most attacks
+            selected_regular = max(regular_weapons, key=lambda w: self._get_weapon_attack_value(w))
+            weapons_to_use.append(selected_regular)
+        
+        # Add all extra attack weapons
+        weapons_to_use.extend(extra_attack_weapons)
+        
+        return weapons_to_use
+    
+    def _get_weapon_attack_value(self, weapon) -> int:
+        """Get the attack value for a weapon (for selection purposes)."""
+        if hasattr(weapon, 'profiles') and weapon.profiles:
+            # Return the highest attack value from all profiles
+            return max(profile.attacks for profile in weapon.profiles if hasattr(profile, 'attacks'))
+        elif hasattr(weapon, 'attacks'):
+            return weapon.attacks
+        else:
+            return 0
+    
+    def _select_targets_for_attacks(self, model: 'Model', profile, num_attacks: int, enemies_in_range: List[Unit]) -> dict:
+        """Select targets for all attacks from a weapon profile.
+        
+        Rules:
+        - All attacks can go to the same target OR be split between eligible targets
+        - Target declaration must be completed before any attacks are resolved
+        - Model must follow engagement range restrictions for target selection
+        """
+        target_declarations = {}
+        
+        # For AI, we'll use a simple strategy: put all attacks on the highest priority target
+        # In a more sophisticated implementation, this could split attacks between targets
+        
+        # Find the best target (highest threat value)
+        best_target = max(enemies_in_range, key=lambda enemy: enemy.get_threat_value())
+        
+        # Check if the target is still valid (within engagement range)
+        model_position = (model.x, model.y, model.z, model.facing)
+        if self.game.map.is_within_engagement_range(model_position, best_target):
+            target_declarations[best_target] = num_attacks
+        else:
+            # Fallback: find any valid target
+            for enemy in enemies_in_range:
+                if self.game.map.is_within_engagement_range(model_position, enemy):
+                    target_declarations[enemy] = num_attacks
+                    break
+        
+        return target_declarations
+    
+    def _resolve_attack_declarations(self, attack_declarations: List[dict]) -> None:
+        """Resolve all attack declarations.
+        
+        Rules:
+        - Resolve all attacks against one unit before moving to the next
+        - Resolve all attacks with the same weapon profile before resolving any with a different profile
+        - All declared attacks are resolved even if models are no longer in engagement range
+        """
+        # Group attacks by target unit and weapon profile
+        grouped_attacks = {}
+        
+        for declaration in attack_declarations:
+            target_unit = declaration['target_unit']
+            profile = declaration['profile']
+            key = (target_unit, profile)
+            
+            if key not in grouped_attacks:
+                grouped_attacks[key] = []
+            
+            grouped_attacks[key].append(declaration)
+        
+        # Resolve attacks by group
+        for (target_unit, profile), declarations in grouped_attacks.items():
+            print(f"⚔️ Resolving {len(declarations)} attack declarations against {target_unit.name} with {profile.name}")
+            
+            # Record target health before all attacks
+            target_health_before = target_unit.health_percent
+            
+            for declaration in declarations:
+                attacking_model = declaration['attacking_model']
+                weapon = declaration['weapon']
+                num_attacks = declaration['num_attacks']
+                
+                print(f"   {attacking_model.name} attacks {target_unit.name} with {weapon.name} ({num_attacks} attacks)")
+                
+                # Execute the attacks
                 try:
-                    model.melee_attack(target, selected_profile)
+                    # For now, use the existing melee_attack method
+                    # In a full implementation, this would resolve hit/wound/save/damage/feel-no-pain
+                    attacking_model.melee_attack(target_unit, profile)
                 except Exception as e:
                     logger.error(f"Error during melee attack: {e}")
-                    reward = -1.0 * FIGHT_REWARD_SCALING
-                    self.fight_profile_selection_rewards.append(reward)
-                    self.fight_target_rewards.append(reward)
                     continue
-
-                # Record the target's health after attack
-                target_health_after = target.health_percent
-
-                # Compute the reward (damage inflicted)
-                damage = target_health_before - target_health_after
-                reward = FIGHT_REWARD_SCALING * damage
-                self.fight_profile_selection_rewards.append(reward)
-                self.fight_target_rewards.append(reward)
-
-        self.game.event_system.publish("fight_phase_end", unit=unit, game_state=self.game.get_state())
+            
+            # Record target health after all attacks
+            target_health_after = target_unit.health_percent
+            damage = target_health_before - target_health_after
+            
+            # Compute rewards for this group of attacks
+            reward = FIGHT_REWARD_SCALING * damage
+            self.fight_profile_selection_rewards.append(reward)
+            self.fight_target_rewards.append(reward)
+            
+            print(f"   {target_unit.name} took {damage:.1f}% damage")
 
     ###########################################################################
     # Policy Updates

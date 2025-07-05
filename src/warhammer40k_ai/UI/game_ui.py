@@ -2,7 +2,7 @@ import pygame
 import textwrap
 import math
 import random
-from typing import Optional, Tuple, Dict, List, Protocol
+from typing import Optional, Tuple, Dict, List, Protocol, Callable
 from abc import ABC, abstractmethod
 from warhammer40k_ai.classes.unit import Unit
 from warhammer40k_ai.classes.model import Model
@@ -779,6 +779,10 @@ class HumanUIInterface:
         self.reserves_dialog = ReservesSelectionDialog(screen_width, screen_height)
         from .dialogs import ScoutChoiceDialog
         self.scout_choice_dialog = ScoutChoiceDialog(screen_width, screen_height)
+        from .dialogs import FightUnitSelectionDialog
+        self.fight_unit_selection_dialog = FightUnitSelectionDialog(screen_width, screen_height)
+        from .dialogs import MeleeWeaponDeclarationDialog
+        self.melee_weapon_declaration_dialog = MeleeWeaponDeclarationDialog(screen_width, screen_height)
         self.reserves_arrival_panel = ReservesArrivalPanel()
         
         # State for handling UI interactions
@@ -918,6 +922,10 @@ class HumanUIInterface:
             #print(f"🔍 Drawing scout choice dialog in HumanUIInterface.update")
             self.scout_choice_dialog.draw(screen)
         
+        # Draw fight unit selection dialog if visible
+        if self.fight_unit_selection_dialog.visible:
+            self.fight_unit_selection_dialog.draw(screen)
+        
         # Draw placement indicator if in placement mode
         if self.placement_mode and self.current_unit_for_placement:
             self.draw_placement_indicator(screen)
@@ -933,8 +941,8 @@ class HumanUIInterface:
         y_min, y_max = zone['y_range']
         
         # Convert to screen coordinates
-        screen_x_min = int(x_min * TILE_SIZE)
-        screen_y_min = int(y_min * TILE_SIZE)
+        screen_x_min = int(x_min * TILE_SIZE * self.zoom_level)
+        screen_y_min = int(y_min * TILE_SIZE * self.zoom_level)
         screen_width = int((x_max - x_min) * TILE_SIZE)
         screen_height = int((y_max - y_min) * TILE_SIZE)
         
@@ -978,12 +986,28 @@ class HumanUIInterface:
         if not handled and self.scout_choice_dialog.visible:
             handled = self.scout_choice_dialog.handle_event(event)
         
+        # Let fight unit selection dialog handle events
+        if not handled and self.fight_unit_selection_dialog.visible:
+            handled = self.fight_unit_selection_dialog.handle_event(event)
+        
         return handled
 
     def show_scout_dialog(self, unit, callback, game_map=None):
         """Show the scout move dialog for a unit."""
         print(f"🔍 HumanUIInterface.show_scout_dialog called for {unit.name}")
         self.scout_choice_dialog.show(unit, callback, game_map)
+    
+    def show_fight_unit_selection_dialog(self, stage_name: str, eligible_units: List['Unit'], 
+                                        on_unit_selected: Callable[['Unit'], None], 
+                                        on_cancel: Callable[[], None] = None):
+        """Show the fight unit selection dialog for a stage."""
+        print(f"⚔️ HumanUIInterface.show_fight_unit_selection_dialog called for {stage_name} stage with {len(eligible_units)} units")
+        self.fight_unit_selection_dialog.show(stage_name, eligible_units, on_unit_selected, on_cancel)
+
+    def show_melee_weapon_declaration_dialog(self, unit, callback, game_map=None):
+        """Show the melee weapon declaration dialog for a unit."""
+        print(f"⚔️ HumanUIInterface.show_melee_weapon_declaration_dialog called for {unit.name}")
+        self.melee_weapon_declaration_dialog.show(unit, callback, game_map)
 
 
 class GameView:
@@ -1440,6 +1464,10 @@ class GameView:
         # Draw charge declaration dialog
         if hasattr(self, 'charge_declaration_dialog') and self.charge_declaration_dialog.visible:
             self.charge_declaration_dialog.draw(self.screen)
+
+        # Draw melee weapon declaration dialog if visible
+        if hasattr(self, 'melee_weapon_declaration_dialog') and self.melee_weapon_declaration_dialog.visible:
+            self.melee_weapon_declaration_dialog.draw(self.screen)
 
         pygame.display.update()
 
@@ -2685,16 +2713,74 @@ class BattlePhaseHandler(BasePhaseHandler):
     
     def _handle_fight_phase_selection(self, unit) -> None:
         """Handle unit selection during fight phase"""
-        # Check if unit is in engagement range
-        is_engaged = any(self.game.map.is_within_engagement_range(unit.get_position(), enemy)
-                        for enemy in self.game.map.get_enemy_units(unit) if enemy.is_alive())
+        current_player = self.game.get_current_player()
         
-        if not is_engaged:
-            print(f"❌ {unit.name} is not in engagement range")
+        # Check if unit is eligible to fight
+        if not unit.is_eligible_to_fight(self.game.map):
+            print(f"❌ {unit.name} is not eligible to fight")
             return
         
-        # TODO: Add fight phase logic
-        print(f"👊 Click on engaged enemy to fight with {unit.name}")
+        # Determine which stage we're in and show appropriate information
+        fight_first_units = self.game.get_fight_first_units(current_player)
+        remaining_combatant_units = self.game.get_remaining_combatant_units(current_player)
+        
+        # Check which stage this unit belongs to
+        if unit in fight_first_units:
+            print(f"⚔️ {unit.name} is eligible for Fight First stage")
+            if unit.round_state.declared_charge_this_round:
+                print(f"  🏃 Unit charged this turn")
+            if unit.has_fight_first():
+                print(f"  ⚡ Unit has Fight First ability")
+        elif unit in remaining_combatant_units:
+            print(f"👊 {unit.name} is eligible for Remaining Combatants stage")
+        else:
+            print(f"❌ {unit.name} is not eligible to fight this phase")
+            return
+        
+        # Show which enemies are in engagement range
+        enemies_in_range = []
+        unit_position = unit.get_position()
+        if unit_position:
+            enemy_units = self.game.map.get_enemy_units(unit)
+            for enemy_unit in enemy_units:
+                if enemy_unit.is_alive() and self.game.map.is_within_engagement_range(unit_position, enemy_unit):
+                    enemies_in_range.append(enemy_unit)
+        
+        if enemies_in_range:
+            enemy_names = [enemy.name for enemy in enemies_in_range]
+            print(f"🎯 {unit.name} can fight: {', '.join(enemy_names)}")
+            print(f"👊 Click on an enemy unit to fight with {unit.name}")
+        else:
+            print(f"❌ {unit.name} has no enemies in engagement range")
+    
+    def get_fight_phase_status(self) -> dict:
+        """Get the current fight phase status for UI display"""
+        current_player = self.game.get_current_player()
+        opponent = self.game.get_opponent()
+        
+        # Get units by stage for both players
+        current_fight_first = self.game.get_fight_first_units(current_player)
+        current_remaining = self.game.get_remaining_combatant_units(current_player)
+        opponent_fight_first = self.game.get_fight_first_units(opponent)
+        opponent_remaining = self.game.get_remaining_combatant_units(opponent)
+        
+        # Determine current stage
+        if current_fight_first or opponent_fight_first:
+            current_stage = "Fight First"
+        elif current_remaining or opponent_remaining:
+            current_stage = "Remaining Combatants"
+        else:
+            current_stage = "Complete"
+        
+        return {
+            "current_stage": current_stage,
+            "current_player_fight_first": len(current_fight_first),
+            "current_player_remaining": len(current_remaining),
+            "opponent_fight_first": len(opponent_fight_first),
+            "opponent_remaining": len(opponent_remaining),
+            "fight_first_units": current_fight_first,
+            "remaining_units": current_remaining
+        }
     
     def _handle_movement_choice(self, unit, choice: str) -> None:
         """Handle movement choice selection using Unit's movement system"""

@@ -224,6 +224,44 @@ class InfoPane(pygame.sprite.Sprite):
         
         y_offset += 25
         
+        # Fight phase status display
+        if game.is_fight_phase() and game_view and hasattr(game_view, 'get_fight_phase_status'):
+            fight_status = game_view.get_fight_phase_status()
+            if fight_status:
+                # Display current fight stage
+                stage_text = f"⚔️ Stage: {fight_status['current_stage']}"
+                stage_surface = self.font_small.render(stage_text, True, TEXT_ACCENT)
+                stage_rect = stage_surface.get_rect(center=(x_center, y_offset))
+                surface.blit(stage_surface, stage_rect)
+                y_offset += 20
+                
+                # Show unit counts for each stage
+                if fight_status['current_stage'] != 'Complete':
+                    # Current player units
+                    current_fight_first = fight_status['current_player_fight_first']
+                    current_remaining = fight_status['current_player_remaining']
+                    
+                    # Opponent units
+                    opponent_fight_first = fight_status['opponent_fight_first']
+                    opponent_remaining = fight_status['opponent_remaining']
+                    
+                    # Display unit counts
+                    if current_fight_first > 0 or opponent_fight_first > 0:
+                        fight_first_text = f"⚡ Fight First: {current_fight_first} vs {opponent_fight_first}"
+                        fight_first_surface = self.font_tiny.render(fight_first_text, True, TEXT_SECONDARY)
+                        fight_first_rect = fight_first_surface.get_rect(center=(x_center, y_offset))
+                        surface.blit(fight_first_surface, fight_first_rect)
+                        y_offset += 15
+                    
+                    if current_remaining > 0 or opponent_remaining > 0:
+                        remaining_text = f"👊 Remaining: {current_remaining} vs {opponent_remaining}"
+                        remaining_surface = self.font_tiny.render(remaining_text, True, TEXT_SECONDARY)
+                        remaining_rect = remaining_surface.get_rect(center=(x_center, y_offset))
+                        surface.blit(remaining_surface, remaining_rect)
+                        y_offset += 15
+                
+                y_offset += 10
+        
         # Deployment actions display during deployment phase
         if in_deployment_phase and hasattr(game, 'deployment_actions') and game.deployment_actions:
             # Display deployment actions on the appropriate side of the InfoPane

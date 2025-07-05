@@ -120,25 +120,42 @@ class UnitDetailPanel(pygame.sprite.Sprite):
             surface.blit(model_text, (x_left + 5, y_pos))
             y_pos += 18
             
-            # Show wargear for this model type
+            # Show wargear for this model type - group by wargear type and show count
             if models and models[0].wargear:
                 wargear_header = self.font_tiny.render("  Wargear:", True, TEXT_ACCENT)
                 surface.blit(wargear_header, (x_left + 10, y_pos))
                 y_pos += 14
                 
-                for wargear in models[0].wargear:
-                    if wargear:
-                        # Wargear name
+                # Group wargear by type across all models of this type
+                wargear_counts = {}
+                for model in models:
+                    for wargear in model.wargear:
+                        if wargear:
+                            wargear_key = wargear.name
+                            if wargear_key not in wargear_counts:
+                                wargear_counts[wargear_key] = {'wargear': wargear, 'count': 0}
+                            wargear_counts[wargear_key]['count'] += 1
+                
+                # Display grouped wargear
+                for wargear_name, wargear_info in wargear_counts.items():
+                    wargear = wargear_info['wargear']
+                    count = wargear_info['count']
+                    
+                    # Wargear name with count
+                    if count > 1:
+                        wargear_text = f"    • {wargear.name} (x{count})"
+                    else:
                         wargear_text = f"    • {wargear.name}"
-                        wargear_surface = self.font_tiny.render(wargear_text, True, TEXT_SECONDARY)
-                        surface.blit(wargear_surface, (x_left + 15, y_pos))
-                        y_pos += 12
-                        
-                        # Show wargear profiles
-                        if hasattr(wargear, 'profiles') and wargear.profiles:
-                            for profile_name, profile in wargear.profiles.items():
-                                y_pos = self.draw_wargear_profile(surface, profile, profile_name, x_left + 25, y_pos)
-                        y_pos += 5  # Extra spacing between wargear items
+                    
+                    wargear_surface = self.font_tiny.render(wargear_text, True, TEXT_SECONDARY)
+                    surface.blit(wargear_surface, (x_left + 15, y_pos))
+                    y_pos += 12
+                    
+                    # Show wargear profiles
+                    if hasattr(wargear, 'profiles') and wargear.profiles:
+                        for profile_name, profile in wargear.profiles.items():
+                            y_pos = self.draw_wargear_profile(surface, profile, profile_name, x_left + 25, y_pos)
+                    y_pos += 5  # Extra spacing between wargear items
         
         y_pos += 15
         

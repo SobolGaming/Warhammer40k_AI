@@ -114,15 +114,19 @@ def initialize_game(player1_type: str, player2_type: str,
 
     return screen, env, game, game_map, player1, player2
 
-def create_ai_agents(game: Game, player1: Player, player2: Player) -> dict:
+def create_ai_agents(game: Game, player1: Player, player2: Player, ui_interface=None) -> dict:
     """Create AI agents for players that need them."""
     agents = {}
     
-    # Create agents for each AI player
+    # Create agents for each player (both AI and human need TacticalAgent for fight phase)
     for i, player in enumerate([player1, player2]):
+        opponent = player2 if player == player1 else player1
+        
+        # Create TacticalAgent for all players (needed for fight phase)
+        agents[f'ta{i+1}'] = TacticalAgent(game, player, ui_interface=ui_interface)
+        
+        # Create other agents only for AI players
         if player.type == PlayerType.AI:
-            opponent = player2 if player == player1 else player1
-            
             # Get objectives and commands, with fallbacks if not available yet
             objectives = getattr(game, 'objectives', [])
             if not objectives and hasattr(game, 'map') and hasattr(game.map, 'objectives'):
@@ -148,7 +152,6 @@ def create_ai_agents(game: Game, player1: Player, player2: Player) -> dict:
                 commands = ['attack', 'defend', 'move']
             
             agents[f'hla{i+1}'] = HighLevelAgent(game, player, opponent, objectives, commands)
-            agents[f'ta{i+1}'] = TacticalAgent(game, player)
             agents[f'lla{i+1}'] = LowLevelAgent(game, player)
     
     # Load checkpoints if available
@@ -237,9 +240,9 @@ def execute_ai_turn(game: Game, player: Player, agents: dict, episode_stats: dic
                 tactical_agent.charge_phase(unit)
         game.next_phase()
     elif game.is_fight_phase():
-        for unit in player.army.units:
-            if unit.is_alive():
-                tactical_agent.fight_phase(unit)
+        # Execute the complete Fight Phase with proper two-stage structure
+        opponent = game.get_opponent()
+        tactical_agent.execute_fight_phase(player, opponent)
         game.next_phase()
     
     # Update AI policies
@@ -247,6 +250,28 @@ def execute_ai_turn(game: Game, player: Player, agents: dict, episode_stats: dic
     tactical_agent.update_policies()
     if f'lla{player_num}' in agents:
         agents[f'lla{player_num}'].update_policy()
+
+def execute_human_turn(game: Game, player: Player, agents: dict, ui_interface=None) -> None:
+    """Execute a single human player's turn."""
+    player_num = 1 if player == game.players[0] else 2
+    current_player_key = f'player{player_num}'
+    
+    # For human players, we need to handle the fight phase specially
+    if game.is_fight_phase():
+        # Execute the complete Fight Phase with proper two-stage structure
+        opponent = game.get_opponent()
+        
+        # Get the tactical agent for this player (even if human, we need it for fight phase logic)
+        tactical_agent = agents.get(f'ta{player_num}')
+        if tactical_agent:
+            tactical_agent.execute_fight_phase(player, opponent)
+        else:
+            # If no tactical agent, just advance the phase
+            game.next_phase()
+    else:
+        # For other phases, just advance to next phase
+        # Human players will handle their actions through the UI
+        game.next_phase()
 
 def run_unified_game_loop(player_configs: dict) -> dict:
     """Unified game loop that works for both training and play modes."""
@@ -262,9 +287,6 @@ def run_unified_game_loop(player_configs: dict) -> dict:
         training_mode
     )
     
-    # Create AI agents after basic setup
-    agents = create_ai_agents(game, player1, player2)
-    
     # Initialize UI components early for play mode so they can be updated during setup
     game_view = None
     ui_interface = None
@@ -274,6 +296,9 @@ def run_unified_game_loop(player_configs: dict) -> dict:
         ui_interface = HumanUIInterface(screen_width, screen_height)
         game_view = GameView(screen, env, game, game_map, player1, player2, ui_interface)
         # Initial roster panes will be empty until armies are loaded
+    
+    # Create AI agents after basic setup
+    agents = create_ai_agents(game, player1, player2, ui_interface)
     
     # Game statistics
     episode_stats = {
@@ -434,12 +459,8 @@ def run_unified_game_loop(player_configs: dict) -> dict:
                             if current_player.type == PlayerType.AI:
                                 execute_ai_turn(game, current_player, agents)
                             else:
-                                # Human player - handle phase progression
-                                if game.is_command_phase():
-                                    game.start_command_phase()
-                                
-                                # Advance phase
-                                game.next_phase()
+                                # Human player - execute turn with fight phase support
+                                execute_human_turn(game, current_player, agents, ui_interface)
                     elif event.key == pygame.K_ESCAPE:
                         if game_view:
                             game_view.close_unit_details()
@@ -450,9 +471,8 @@ def run_unified_game_loop(player_configs: dict) -> dict:
                 if current_player.type == PlayerType.AI:
                     execute_ai_turn(game, current_player, agents)
                 else:
-                    # For human players, handle phase progression
-                    if game.is_command_phase():
-                        game.start_command_phase()
+                    # For human players, execute turn with fight phase support
+                    execute_human_turn(game, current_player, agents, ui_interface)
             
             # Auto-execute setup phases if not manual phases mode
             if not manual_phases and game.is_in_setup_phase() and not setup_complete:

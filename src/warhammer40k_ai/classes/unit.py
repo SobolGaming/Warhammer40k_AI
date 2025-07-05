@@ -1909,6 +1909,416 @@ class Unit:
         """Moves up to 3 inches after fighting."""
         # Logic to move further into enemy lines
         print(f"{self.name} consolidates after combat.")
+    
+    def pile_in_towards_enemies(self, game_map: 'Map') -> bool:
+        """Execute a pile-in move according to official Warhammer 40k rules.
+        
+        Pile-In Rules:
+        - Only models NOT already in base-to-base contact with enemy models can move
+        - Each model can move up to 3 inches
+        - Unit must end within Engagement Range of one or more enemy units
+        - Unit must maintain Unit Coherency after all moves
+        - Each model must end closer to the CLOSEST enemy model
+        - Models must get into base-to-base contact if possible while satisfying conditions
+        - If conditions cannot be met, NO models can pile in
+        
+        Args:
+            game_map: The game map to find enemy units and calculate distances
+            
+        Returns:
+            bool: True if pile-in was executed successfully
+        """
+        if not self.is_alive() or not self.deployed:
+            return False
+        
+        # Find all enemy units
+        enemy_units = game_map.get_enemy_units(self)
+        alive_enemies = [enemy for enemy in enemy_units if enemy.is_alive()]
+        
+        if not alive_enemies:
+            print(f"   {self.name} has no enemies to pile in towards")
+            return False
+        
+        # Get all enemy models for distance calculations
+        all_enemy_models = []
+        for enemy_unit in alive_enemies:
+            all_enemy_models.extend([model for model in enemy_unit.models if model.is_alive])
+        
+        if not all_enemy_models:
+            print(f"   {self.name} has no enemy models to pile in towards")
+            return False
+        
+        # Identify models that can pile in (not already in base-to-base contact)
+        models_that_can_pile_in = []
+        for model in self.models:
+            if not model.is_alive:
+                continue
+            
+            # Check if this model is already in base-to-base contact with any enemy model
+            is_in_base_contact = self._is_model_in_base_to_base_contact(model, all_enemy_models, game_map)
+            
+            if not is_in_base_contact:
+                models_that_can_pile_in.append(model)
+        
+        if not models_that_can_pile_in:
+            print(f"   {self.name} has no models that can pile in (all already in base-to-base contact)")
+            return True  # This is successful - unit is already fully engaged
+        
+        # Check if pile-in is possible while maintaining coherency and engagement range
+        # For now, this is a simplified check - a full implementation would require 
+        # complex pathfinding and collision detection
+        if not self._can_pile_in_while_maintaining_conditions(models_that_can_pile_in, all_enemy_models, game_map):
+            print(f"   {self.name} cannot pile in while maintaining unit coherency and engagement range")
+            return False
+        
+        # Execute pile-in moves (simplified implementation)
+        print(f"   {self.name} executes pile-in moves:")
+        successful_moves = 0
+        
+        # Player chooses order - for AI, we'll use a simple heuristic (closest models first)
+        models_that_can_pile_in.sort(key=lambda m: self._get_distance_to_closest_enemy_model(m, all_enemy_models))
+        
+        for model in models_that_can_pile_in:
+            success = self._execute_model_pile_in(model, all_enemy_models, game_map)
+            if success:
+                successful_moves += 1
+                print(f"     {model.name} piles in towards closest enemy")
+            else:
+                print(f"     {model.name} cannot pile in")
+        
+        if successful_moves > 0:
+            print(f"   {successful_moves}/{len(models_that_can_pile_in)} models successfully piled in")
+            return True
+        else:
+            print(f"   No models could successfully pile in")
+            return False
+    
+    def _is_model_in_base_to_base_contact(self, model: 'Model', enemy_models: List['Model'], game_map: 'Map') -> bool:
+        """Check if a model is in base-to-base (edge-to-edge) contact with any enemy model."""
+        # For now, use engagement range as a proxy for base-to-base contact
+        # A full implementation would check actual base edge distances
+        model_position = (model.x, model.y, model.z, model.facing)
+        
+        for enemy_model in enemy_models:
+            enemy_position = (enemy_model.x, enemy_model.y, enemy_model.z, enemy_model.facing)
+            if game_map.is_within_engagement_range(model_position, enemy_model.parent_unit):
+                # Further check if they're actually touching (1" or less edge-to-edge)
+                # Calculate model-to-model distance directly
+                dx = enemy_model.x - model.x
+                dy = enemy_model.y - model.y
+                dz = enemy_model.z - model.z
+                distance = (dx*dx + dy*dy + dz*dz) ** 0.5
+                
+                if distance <= 1.0:  # Base-to-base contact threshold
+                    return True
+        
+        return False
+    
+    def _can_pile_in_while_maintaining_conditions(self, models: List['Model'], enemy_models: List['Model'], game_map: 'Map') -> bool:
+        """Check if the unit can pile in while maintaining coherency and engagement range."""
+        # Simplified check - in a full implementation this would simulate the moves
+        # and verify all conditions are met
+        
+        # Basic check: ensure unit will still be in engagement range after pile-in
+        # This is a placeholder for more complex logic
+        return True
+    
+    def _get_distance_to_closest_enemy_model(self, model: 'Model', enemy_models: List['Model']) -> float:
+        """Get the distance from a model to the closest enemy model."""
+        min_distance = float('inf')
+        
+        for enemy_model in enemy_models:
+            # Calculate distance between models
+            dx = enemy_model.x - model.x
+            dy = enemy_model.y - model.y
+            dz = enemy_model.z - model.z
+            distance = (dx*dx + dy*dy + dz*dz) ** 0.5
+            
+            if distance < min_distance:
+                min_distance = distance
+        
+        return min_distance
+    
+    def _execute_model_pile_in(self, model: 'Model', enemy_models: List['Model'], game_map: 'Map') -> bool:
+        """Execute pile-in move for a single model."""
+        # Find the closest enemy model
+        closest_enemy = None
+        closest_distance = float('inf')
+        
+        for enemy_model in enemy_models:
+            distance = self._get_distance_to_closest_enemy_model(model, [enemy_model])
+            if distance < closest_distance:
+                closest_distance = distance
+                closest_enemy = enemy_model
+        
+        if not closest_enemy:
+            return False
+        
+        # Calculate direction towards closest enemy
+        dx = closest_enemy.x - model.x
+        dy = closest_enemy.y - model.y
+        distance_to_enemy = (dx*dx + dy*dy) ** 0.5
+        
+        if distance_to_enemy == 0:
+            return False  # Already at same position
+        
+        # Normalize direction
+        dx /= distance_to_enemy
+        dy /= distance_to_enemy
+        
+        # Move up to 3" towards the closest enemy, but ensure we get closer
+        max_move_distance = 3.0
+        actual_move_distance = min(max_move_distance, distance_to_enemy - 0.1)  # Get closer but don't overshoot
+        
+        if actual_move_distance <= 0:
+            return False
+        
+        # Calculate new position
+        new_x = model.x + dx * actual_move_distance
+        new_y = model.y + dy * actual_move_distance
+        new_z = game_map.get_height_at_point(new_x, new_y)
+        
+        # For now, just update the model position
+        # In a full implementation, this would check for collisions, coherency, etc.
+        model.set_location(new_x, new_y, new_z, model.facing)
+        
+        return True
+    
+    def consolidate_towards_enemies(self, game_map: 'Map') -> bool:
+        """Execute a consolidate move according to official Warhammer 40k rules.
+        
+        Consolidation Rules:
+        - Only models NOT already in base-to-base contact with enemy models can move
+        - Each model can move up to 3 inches
+        - Unit must end within Engagement Range of one or more enemy units AND in Unit Coherency
+        - If enemy consolidation impossible, try consolidating towards closest OBJECTIVE marker
+        - If objective consolidation also impossible, no consolidation occurs
+        - Each model MUST end closer to the closest enemy model (or objective)
+        - Models must get into base-to-base contact if possible while satisfying conditions
+        - Player chooses the ORDER in which to move models
+        
+        Args:
+            game_map: The game map to find enemy units and calculate distances
+            
+        Returns:
+            bool: True if consolidation was executed successfully
+        """
+        if not self.is_alive() or not self.deployed:
+            return False
+        
+        # Find enemy units to consolidate towards
+        enemy_units = game_map.get_enemy_units(self)
+        alive_enemies = [enemy for enemy in enemy_units if enemy.is_alive()]
+        
+        # Get all enemy models
+        all_enemy_models = []
+        for enemy_unit in alive_enemies:
+            all_enemy_models.extend([model for model in enemy_unit.models if model.is_alive])
+        
+        # Identify models that can consolidate (not already in base-to-base contact)
+        models_that_can_consolidate = []
+        for model in self.models:
+            if not model.is_alive:
+                continue
+            
+            # Check if this model is already in base-to-base contact with any enemy model
+            is_in_base_contact = self._is_model_in_base_to_base_contact(model, all_enemy_models, game_map)
+            
+            if not is_in_base_contact:
+                models_that_can_consolidate.append(model)
+        
+        if not models_that_can_consolidate:
+            print(f"   {self.name} has no models that can consolidate (all already in base-to-base contact)")
+            return True  # This is successful - unit is already fully engaged
+        
+        # Try consolidating towards enemies first
+        if all_enemy_models and self._can_consolidate_towards_enemies(models_that_can_consolidate, all_enemy_models, game_map):
+            return self._execute_enemy_consolidation(models_that_can_consolidate, all_enemy_models, game_map)
+        
+        # If enemy consolidation impossible, try consolidating towards objectives
+        objectives = game_map.objectives if hasattr(game_map, 'objectives') else []
+        if objectives:
+            closest_objective = self._find_closest_objective(objectives)
+            if closest_objective and self._can_consolidate_towards_objective(models_that_can_consolidate, closest_objective, game_map):
+                return self._execute_objective_consolidation(models_that_can_consolidate, closest_objective, game_map)
+        
+        # If neither enemy nor objective consolidation is possible, no consolidation occurs
+        print(f"   {self.name} cannot consolidate towards enemies or objectives while maintaining conditions")
+        return False
+    
+    def _can_consolidate_towards_enemies(self, models: List['Model'], enemy_models: List['Model'], game_map: 'Map') -> bool:
+        """Check if the unit can consolidate towards enemies while maintaining conditions."""
+        # Simplified check - in a full implementation this would simulate the moves
+        # and verify engagement range and coherency are maintained
+        
+        # Basic check: ensure unit will still be in engagement range after consolidation
+        # This is a placeholder for more complex logic
+        return True
+    
+    def _can_consolidate_towards_objective(self, models: List['Model'], objective, game_map: 'Map') -> bool:
+        """Check if the unit can consolidate towards an objective while maintaining conditions."""
+        # Simplified check - verify unit can end within range of objective and maintain coherency
+        # This is a placeholder for more complex logic
+        return True
+    
+    def _find_closest_objective(self, objectives: List) -> Optional[object]:
+        """Find the closest objective to this unit."""
+        if not objectives:
+            return None
+        
+        unit_position = self.get_position()
+        if not unit_position:
+            return objectives[0]  # Fallback to first objective
+        
+        closest_objective = None
+        closest_distance = float('inf')
+        
+        for objective in objectives:
+            if hasattr(objective, 'location') and hasattr(objective.location, 'x'):
+                dx = objective.location.x - unit_position[0]
+                dy = objective.location.y - unit_position[1]
+                distance = (dx*dx + dy*dy) ** 0.5
+                
+                if distance < closest_distance:
+                    closest_distance = distance
+                    closest_objective = objective
+        
+        return closest_objective
+    
+    def _execute_enemy_consolidation(self, models: List['Model'], enemy_models: List['Model'], game_map: 'Map') -> bool:
+        """Execute consolidation towards enemy models."""
+        print(f"   {self.name} consolidates towards enemies:")
+        successful_moves = 0
+        
+        # Player chooses order - for AI, we'll use a simple heuristic (closest models first)
+        models.sort(key=lambda m: self._get_distance_to_closest_enemy_model(m, enemy_models))
+        
+        for model in models:
+            success = self._execute_model_enemy_consolidate(model, enemy_models, game_map)
+            if success:
+                successful_moves += 1
+                print(f"     {model.name} consolidates towards closest enemy")
+            else:
+                print(f"     {model.name} cannot consolidate towards enemies")
+        
+        if successful_moves > 0:
+            print(f"   {successful_moves}/{len(models)} models successfully consolidated towards enemies")
+            return True
+        else:
+            print(f"   No models could consolidate towards enemies")
+            return False
+    
+    def _execute_objective_consolidation(self, models: List['Model'], objective, game_map: 'Map') -> bool:
+        """Execute consolidation towards an objective marker."""
+        print(f"   {self.name} consolidates towards objective '{objective.name}':")
+        successful_moves = 0
+        
+        # Player chooses order - for AI, we'll use distance to objective
+        models.sort(key=lambda m: self._get_distance_to_objective(m, objective))
+        
+        for model in models:
+            success = self._execute_model_objective_consolidate(model, objective, game_map)
+            if success:
+                successful_moves += 1
+                print(f"     {model.name} consolidates towards objective")
+            else:
+                print(f"     {model.name} cannot consolidate towards objective")
+        
+        if successful_moves > 0:
+            print(f"   {successful_moves}/{len(models)} models successfully consolidated towards objective")
+            return True
+        else:
+            print(f"   No models could consolidate towards objective")
+            return False
+    
+    def _execute_model_enemy_consolidate(self, model: 'Model', enemy_models: List['Model'], game_map: 'Map') -> bool:
+        """Execute consolidate move for a single model towards enemies."""
+        # Find the closest enemy model
+        closest_enemy = None
+        closest_distance = float('inf')
+        
+        for enemy_model in enemy_models:
+            distance = self._get_distance_to_closest_enemy_model(model, [enemy_model])
+            if distance < closest_distance:
+                closest_distance = distance
+                closest_enemy = enemy_model
+        
+        if not closest_enemy:
+            return False
+        
+        # Calculate direction towards closest enemy
+        dx = closest_enemy.x - model.x
+        dy = closest_enemy.y - model.y
+        distance_to_enemy = (dx*dx + dy*dy) ** 0.5
+        
+        if distance_to_enemy == 0:
+            return False  # Already at same position
+        
+        # Normalize direction
+        dx /= distance_to_enemy
+        dy /= distance_to_enemy
+        
+        # Move up to 3" towards the closest enemy, but ensure we get closer
+        max_move_distance = 3.0
+        actual_move_distance = min(max_move_distance, distance_to_enemy - 0.1)  # Get closer but don't overshoot
+        
+        if actual_move_distance <= 0:
+            return False
+        
+        # Calculate new position
+        new_x = model.x + dx * actual_move_distance
+        new_y = model.y + dy * actual_move_distance
+        new_z = game_map.get_height_at_point(new_x, new_y)
+        
+        # Update model position
+        # In a full implementation, this would check for collisions, coherency, etc.
+        model.set_location(new_x, new_y, new_z, model.facing)
+        
+        return True
+    
+    def _execute_model_objective_consolidate(self, model: 'Model', objective, game_map: 'Map') -> bool:
+        """Execute consolidate move for a single model towards an objective."""
+        if not hasattr(objective, 'location') or not hasattr(objective.location, 'x'):
+            return False
+        
+        # Calculate direction towards objective
+        dx = objective.location.x - model.x
+        dy = objective.location.y - model.y
+        distance_to_objective = (dx*dx + dy*dy) ** 0.5
+        
+        if distance_to_objective == 0:
+            return False  # Already at same position
+        
+        # Normalize direction
+        dx /= distance_to_objective
+        dy /= distance_to_objective
+        
+        # Move up to 3" towards the objective, but ensure we get closer
+        max_move_distance = 3.0
+        actual_move_distance = min(max_move_distance, distance_to_objective - 0.1)  # Get closer but don't overshoot
+        
+        if actual_move_distance <= 0:
+            return False
+        
+        # Calculate new position
+        new_x = model.x + dx * actual_move_distance
+        new_y = model.y + dy * actual_move_distance
+        new_z = game_map.get_height_at_point(new_x, new_y)
+        
+        # Update model position
+        # In a full implementation, this would check for collisions, coherency, etc.
+        model.set_location(new_x, new_y, new_z, model.facing)
+        
+        return True
+    
+    def _get_distance_to_objective(self, model: 'Model', objective) -> float:
+        """Get the distance from a model to an objective."""
+        if not hasattr(objective, 'location') or not hasattr(objective.location, 'x'):
+            return float('inf')
+        
+        dx = objective.location.x - model.x
+        dy = objective.location.y - model.y
+        return (dx*dx + dy*dy) ** 0.5
 
     # Battle-shock Phase Actions
     def take_battle_shock_test(self, current_turn: int = 1):
@@ -2608,6 +3018,79 @@ class Unit:
         if found:
             return True, int(number_str)
         return False, 0
+    
+    def has_fight_first(self) -> bool:
+        """Check if the unit has Fight First ability.
+        
+        Fight First abilities can come from various sources:
+        - Unit keywords like "Fight First"
+        - Ability names like "Fights First", "Combat Reflexes", etc.
+        - Descriptions containing fight first rules
+        
+        Returns:
+            bool: True if the unit has any Fight First ability
+        """
+        found, _ = self._find_ability_with_patterns([
+            "fight first", 
+            "fights first", 
+            "combat reflexes",
+            "lightning reflexes",
+            "swift strike",
+            "martial prowess"
+        ])
+        return found
+    
+    def is_eligible_to_fight(self, game_map: 'Map') -> bool:
+        """Check if the unit is eligible to fight in the Fight Phase.
+        
+        A unit is eligible to fight if:
+        a) it is within engagement range of one or more enemy units, OR
+        b) it made a charge move this turn (current player's turn)
+        
+        Args:
+            game_map: The game map to check for enemy units and engagement range
+            
+        Returns:
+            bool: True if the unit is eligible to fight
+        """
+        if not self.is_alive() or not self.deployed:
+            return False
+        
+        # Check if unit charged this turn - units that charged can always fight
+        if self.round_state.declared_charge_this_round:
+            return True
+        
+        # Check if unit is within engagement range of any enemy unit
+        unit_position = self.get_position()
+        if not unit_position:
+            return False
+        
+        enemy_units = game_map.get_enemy_units(self)
+        for enemy_unit in enemy_units:
+            if enemy_unit.is_alive() and game_map.is_within_engagement_range(unit_position, enemy_unit):
+                return True
+        
+        return False
+    
+    def should_fight_first(self) -> bool:
+        """Check if this unit should fight in the Fight First stage.
+        
+        Units fight first if they:
+        1. Have an inherent Fight First ability, OR
+        2. Charged this turn
+        
+        Returns:
+            bool: True if the unit should fight in the Fight First stage
+        """
+        # Units that charged this turn fight first
+        if self.round_state.declared_charge_this_round:
+            return True
+            
+        # Units with Fight First abilities fight first
+        if self.has_fight_first():
+            return True
+        
+        return False
     
     def has_deadly_demise(self) -> Tuple[bool, DiceCollection]:
         """Check if the unit has Deadly Demise ability and return the damage value.
