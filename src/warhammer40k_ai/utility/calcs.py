@@ -1,9 +1,12 @@
 from math import sqrt, atan2, pi, cos, sin
 from typing import Tuple, List, Optional
 import heapq
+import numpy as np
 from ..utility.constants import MM_TO_INCHES, FREELY_CLIMBABLE_RANGE, ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VERTICAL
 from shapely.geometry import LineString, Point
 from shapely.affinity import translate
+from shapely.ops import unary_union
+from shapely.strtree import STRtree
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -775,3 +778,82 @@ def can_end_move_on_terrain(model: 'Model', obstacle: 'Obstacle') -> bool:
 def base_overhangs_obstacle(model: 'Model', obstacle: 'Obstacle') -> bool:
     base_shape = model.model_base.get_base_shape_at(model.model_base.x, model.model_base.y, model.model_base.facing)
     return not obstacle.polygon.contains(base_shape) and obstacle.polygon.intersects(base_shape)
+
+def build_formation_templates(N, spacing):
+    """
+    Returns dict of {formation_name: np.ndarray[N×2]} offsets.
+    """
+    templates = {}
+    # BLOCK: fill rows of width = ceil(sqrt(N))
+    w = int(np.ceil(np.sqrt(N)))
+    coords = [(i % w, i // w) for i in range(N)]
+    block = np.array(coords, dtype=float) * spacing
+    # center
+    block -= block.mean(axis=0)
+    templates['block'] = block
+
+    # WEDGE: triangular stacks
+    wedge = []
+    row = 0
+    placed = 0
+    while placed < N:
+        for i in range(row+1):
+            if placed >= N: break
+            x = (i - row/2)*spacing
+            y = -row*spacing
+            wedge.append((x,y))
+            placed += 1
+        row += 1
+    wedge = np.array(wedge)[:N]
+    wedge -= wedge.mean(axis=0)
+    templates['wedge'] = wedge
+
+    # CIRCLE: petals around a circle
+    angles = np.linspace(0, 2*np.pi, N, endpoint=False)
+    circle = np.stack([np.cos(angles), np.sin(angles)], axis=1) * spacing
+    templates['circle'] = circle
+
+    # COLUMN: single file along +Y
+    col = np.stack([np.zeros(N), np.arange(N)*spacing], axis=1)
+    col -= col.mean(axis=0)
+    templates['column'] = col
+
+    return templates
+
+def footprint_from_offsets(offsets, unit):
+    """
+    Given an (N×2) offsets array and unit, reconstruct
+    the convex-hull-buffer footprint Polygon.
+    """
+    polys = []
+    cx, cy = unit.get_position()[:2]
+    for (dx,dy), m in zip(offsets, unit.models):
+        base = m.model_base.get_base_shape()
+        polys.append(translate(base, cx+dx - m.model_base.x,
+                                cy+dy - m.model_base.y))
+    hull = unary_union(polys).convex_hull
+    return hull.buffer(unit.coherency_distance)
+
+def build_spatial_index(obstacles, enemies):
+    """
+    Build an STRtree index of blocking polygons from terrain obstacles and enemy models.
+
+    Parameters:
+        obstacles: iterable of objects with a `.polygon` attribute (Shapely Polygon)
+        enemies: iterable of model objects with `.model_base.get_base_shape()` and `.is_alive()`.
+
+    Returns:
+        STRtree instance containing all blocker polygons.
+    """
+    blocker_polys = []
+    # Add terrain obstacle polygons
+    for obs in obstacles:
+        blocker_polys.append(obs.polygon)
+
+    # Add live enemy base shapes
+    for enemy in enemies:
+        if enemy.is_alive:
+            blocker_polys.append(enemy.model_base.get_base_shape())
+
+    # Build and return the spatial index
+    return STRtree(blocker_polys)

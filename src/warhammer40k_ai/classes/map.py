@@ -257,6 +257,55 @@ class Map:
         
         return False  # Path is clear
 
+    def get_battlefield_edge_repulsors(self) -> List:
+        """Generate battlefield edge repulsors for movement collision detection.
+        
+        Returns:
+            List of Shapely polygons representing battlefield edge repulsors
+        """
+        from shapely.geometry import Polygon
+        
+        repulsors = []
+        repulsor_thickness = 0.5  # 0.5 inch thick repulsor zones
+        
+        # Left battlefield edge repulsor
+        left_edge = Polygon([
+            (-repulsor_thickness, -repulsor_thickness),
+            (0, -repulsor_thickness),
+            (0, self.height + repulsor_thickness),
+            (-repulsor_thickness, self.height + repulsor_thickness)
+        ])
+        repulsors.append(left_edge)
+        
+        # Right battlefield edge repulsor
+        right_edge = Polygon([
+            (self.width, -repulsor_thickness),
+            (self.width + repulsor_thickness, -repulsor_thickness),
+            (self.width + repulsor_thickness, self.height + repulsor_thickness),
+            (self.width, self.height + repulsor_thickness)
+        ])
+        repulsors.append(right_edge)
+        
+        # Bottom battlefield edge repulsor
+        bottom_edge = Polygon([
+            (-repulsor_thickness, -repulsor_thickness),
+            (self.width + repulsor_thickness, -repulsor_thickness),
+            (self.width + repulsor_thickness, 0),
+            (-repulsor_thickness, 0)
+        ])
+        repulsors.append(bottom_edge)
+        
+        # Top battlefield edge repulsor
+        top_edge = Polygon([
+            (-repulsor_thickness, self.height),
+            (self.width + repulsor_thickness, self.height),
+            (self.width + repulsor_thickness, self.height + repulsor_thickness),
+            (-repulsor_thickness, self.height + repulsor_thickness)
+        ])
+        repulsors.append(top_edge)
+        
+        return repulsors
+
 
 
 class ObstacleType(Enum):

@@ -2558,7 +2558,6 @@ class AIDeploymentDecisionMaker(DeploymentDecisionMaker):
         Returns:
             List of units that arrived from reserves this turn
         """
-        from warhammer40k_ai.classes.game import Game
         assert isinstance(game, Game)
         
         units_arrived = []
@@ -2570,7 +2569,7 @@ class AIDeploymentDecisionMaker(DeploymentDecisionMaker):
         # Always bring in units that must arrive (to avoid destruction)
         for unit in units_that_must_arrive:
             position, edge = self.choose_reserves_arrival_position(unit, game, forced=True)
-            if position and unit.arrive_from_reserves(position, game.turn):
+            if position and unit.arrive_from_reserves(position, game.turn, game.map):
                 units_arrived.append(unit)
                 game.map.units.append(unit)
                 logger.info(f"✅ {unit.name} forced arrival from reserves at turn {game.turn}")
@@ -2589,7 +2588,7 @@ class AIDeploymentDecisionMaker(DeploymentDecisionMaker):
             
             if should_arrive:
                 position, edge = self.choose_reserves_arrival_position(unit, game, forced=False)
-                if position and unit.arrive_from_reserves(position, game.turn):
+                if position and unit.arrive_from_reserves(position, game.turn, game.map):
                     units_arrived.append(unit)
                     game.map.units.append(unit)
                     logger.info(f"🎯 {unit.name} strategic arrival from reserves at turn {game.turn}")
@@ -2868,20 +2867,3 @@ class AIDeploymentDecisionMaker(DeploymentDecisionMaker):
         
         return reward
 
-    ###########################################################################
-    # Reserves Phase (end of Movement Phase)
-    ###########################################################################
-    def handle_reserves_arrival_phase(self, high_level_agent: 'HighLevelAgent') -> List['Unit']:
-        """Handle reserves arrivals at the end of the movement phase.
-        
-        Args:
-            high_level_agent: The high-level agent to make reserves decisions
-        
-        Returns:
-            List of units that arrived from reserves
-        """
-        if high_level_agent and hasattr(high_level_agent, 'handle_reserves_arrival_phase'):
-            return high_level_agent.handle_reserves_arrival_phase(self.game)
-        else:
-            # Use basic game logic
-            return self.game.process_player_reserves_arrivals(self.player)

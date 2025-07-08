@@ -6,15 +6,15 @@ from ..utility.model_base import Base, BaseType
 from .wargear import Wargear, WargearOption, parse_option_string, parse_alternate_3
 from .ability import Ability
 from ..utility.range import Range
-from ..utility.calcs import get_dist, get_angle, convert_mm_to_inches, a_star, a_star_enhanced
+from ..utility.calcs import get_dist, get_angle, convert_mm_to_inches, a_star_enhanced, build_spatial_index, footprint_from_offsets, build_formation_templates
 from ..utility.dice import get_roll, DiceCollection
 from .status_effects import StatusEffect, BattleShockEffect
-import math
 import uuid
 import copy
 import re
 import numpy as np
 from enum import Enum, auto
+from shapely.affinity import translate
 
 # Forward declarations
 if TYPE_CHECKING:
@@ -1120,8 +1120,9 @@ class Unit:
             print(f"❌ {self.name} cannot reach destination {distance_to_destination:.1f}\" away (max {'advance' if advance else 'move'}: {movement_range}\")")
             return False
 
-        # Generate potential positions for models
-        potential_positions = self.calculate_model_positions(destination[0], destination[1], game_map, movement_range)
+        # Generate potential positions for models with battlefield edge repulsors
+        boundary_repulsors = game_map.get_battlefield_edge_repulsors()
+        potential_positions = self.calculate_model_positions(destination[0], destination[1], game_map, boundary_repulsors=boundary_repulsors)
         actual_distance_moved = 0.0
         successful_moves = 0
 
@@ -1279,13 +1280,14 @@ class Unit:
             destination[2] - start_z
         )
         
-        # Check if destination is within movement range
+                # Check if destination is within movement range
         if distance_to_destination > movement_range:
             print(f"❌ {self.name} cannot reach fall back destination {distance_to_destination:.1f}\" away (max move: {movement_range}\")")
             return False
-        
-        # Generate potential positions for models
-        potential_positions = self.calculate_model_positions(destination[0], destination[1], game_map, movement_range)
+
+        # Generate potential positions for models with battlefield edge repulsors
+        boundary_repulsors = game_map.get_battlefield_edge_repulsors()
+        potential_positions = self.calculate_model_positions(destination[0], destination[1], game_map, boundary_repulsors=boundary_repulsors)
         successful_moves = 0
         total_models_moved_over_enemies = 0
         
@@ -1498,8 +1500,9 @@ class Unit:
                     print(f"❌ {self.name} cannot scout move to destination - would end within 9\" of {enemy_unit.name}")
                     return False
         
-        # Generate potential positions for models
-        potential_positions = self.calculate_model_positions(destination[0], destination[1], game_map, scout_distance)
+        # Generate potential positions for models with battlefield edge repulsors
+        boundary_repulsors = game_map.get_battlefield_edge_repulsors()
+        potential_positions = self.calculate_model_positions(destination[0], destination[1], game_map, boundary_repulsors=boundary_repulsors)
         successful_moves = 0
         
         for model, model_destination in zip(self.models, potential_positions):
@@ -2490,171 +2493,212 @@ class Unit:
         return get_angle(dy, dx)
 
     def calculate_model_positions(self,
-                              start_x: float,
-                              start_y: float,
-                              game_map: 'Map',
-                              max_distance_from_current: float = 0.0,
-                              zoom_level: float = 1.0,
-                              seeded_positions: list = []) -> list:
+                                start_x: float,
+                                start_y: float,
+                                game_map: 'Map',
+                                grid_step=0.5,
+                                relax_iters=5,
+                                avoid_friendly_units=True,
+                                boundary_repulsors=None):
         """
-        Place all models in a multi-model unit in a coherent, non-overlapping cluster:
-        - First model anchors at (start_x, start_y) or nearest valid spot.
-        - For units ≥6, new models sample positions that are within coherency distance
-        of two existing models (edge-to-edge).
-        - Fallback for smaller units or when needed: sample around single anchors.
-        - Choose the best valid candidate by score.
-        Coherency is edge-to-edge: distance between bases must lie in [sum_radii, sum_radii+coherency].
+        Computes (x, y, z, facing) for each model in self.models.
+        Tries formation templates (block, wedge, circle, column) built 
+        with safe spacing based on base size; falls back to per-model A*.
         
         Args:
-            max_distance_from_current: Maximum distance each model can move from its current position (0.0 = no limit)
+            start_x: Target X coordinate for unit placement
+            start_y: Target Y coordinate for unit placement
+            game_map: The game map containing terrain and units
+            grid_step: Step size for collision resolution (default: 0.5)
+            relax_iters: Number of iterations for collision resolution (default: 5)
+            avoid_friendly_units: Whether to avoid collisions with friendly units (default: True)
+                                 - True: For deployment and movement (avoid all friendlies)
+                                 - False: Only for special cases where friendly overlap is allowed
+            boundary_repulsors: List of Shapely polygons representing boundary repulsors (default: None)
+                               - For deployment: deployment zone boundaries
+                               - For movement: battlefield edge boundaries
+                               - None: No boundary constraints
         """
-        positions = seeded_positions.copy()
-        max_candidates = 200
-        unit_size = len(self.models)
 
-        # Precompute each model's bounding-circle radius
-        base_radii = self.models[0].model_base.get_radius()
+        # FAST PATH FOR SINGLE-MODEL UNITS (avoid terrain & enemy models)
+        if len(self.models) == 1:
+            # initial drop
+            z = game_map.get_height_at_point(start_x, start_y)
+            f = self.calculate_strategic_facing(start_x, start_y, game_map)
+            pos = [start_x, start_y, z, f]
+            m = self.models[0]
 
-        for idx, model in enumerate(self.models):
-            # Get current model position for distance checking
-            current_pos = None
-            if max_distance_from_current > 0.0:
-                current_pos = (getattr(model, 'x', start_x), getattr(model, 'y', start_y))
+            # Build list of blocking models (enemies + optionally friendlies)
+            blocking_models = game_map.get_enemy_models(self)
+            if avoid_friendly_units:
+                # Add friendly models from other units (excluding self)
+                friendly_models = []
+                for unit in game_map.get_friendly_units(self):
+                    if unit != self:  # Don't include models from the unit being positioned
+                        friendly_models.extend(unit.models)
+                blocking_models.extend(friendly_models)
             
-            # Anchor the first model
-            if not positions:
-                x0, y0 = start_x, start_y
-                z0 = game_map.get_height_at_point(x0, y0)
-                f0 = self.calculate_strategic_facing(x0, y0, game_map)
-                
-                # Check distance constraint for first model
-                valid_distance = True
-                if current_pos and max_distance_from_current > 0.0:
-                    distance = get_dist(x0 - current_pos[0], y0 - current_pos[1], 0)
-                    valid_distance = distance <= max_distance_from_current
-                
-                if valid_distance and self._is_valid_position(x0, y0, z0, f0, game_map, positions, model):
-                    positions.append((x0, y0, z0, f0))
-                else:
-                    # Spiral out until we find a valid anchor
-                    found = False
-                    for r in np.arange(0.5, 6.1, 0.5):
-                        for ang in np.linspace(0, 2*math.pi, 24, endpoint=False):
-                            xx = x0 + r * math.cos(ang)
-                            yy = y0 + r * math.sin(ang)
-                            zz = game_map.get_height_at_point(xx, yy)
-                            ff = self.calculate_strategic_facing(xx, yy, game_map)
-                            
-                            # Check distance constraint
-                            valid_distance = True
-                            if current_pos and max_distance_from_current > 0.0:
-                                distance = get_dist(xx - current_pos[0], yy - current_pos[1], 0)
-                                valid_distance = distance <= max_distance_from_current
-                            
-                            if valid_distance and self._is_valid_position(xx, yy, zz, ff, game_map, positions, model):
-                                positions.append((xx, yy, zz, ff))
-                                found = True
-                                break
-                        if found:
-                            break
-                    if not found:
-                        logger.error("Cannot place the anchor model.")
-                        return []
+            # Use provided boundary repulsors or default to empty list
+            if boundary_repulsors is None:
+                boundary_repulsors = []
+            
+            # one-off spatial index of terrain + blocking models + boundary repulsors
+            tree = build_spatial_index(game_map.obstacles + boundary_repulsors, blocking_models)
+
+            # relax away from any collisions
+            for _ in range(relax_iters):
+                # build the model’s polygon at its trial spot
+                base = m.model_base.get_base_shape()
+                poly = translate(base,
+                                pos[0] - base.centroid.x,
+                                pos[1] - base.centroid.y)
+
+                # check for collisions with terrain/enemy/friendly/boundary blockers
+                hits = list(tree.query(poly))
+                # if no intersection, we’re done
+                if not any(poly.intersects(b) for b in hits):
+                    break
+
+                # repel vector from first blocker
+                b = next(b for b in hits if poly.intersects(b))
+                vx = poly.centroid.x - b.centroid.x
+                vy = poly.centroid.y - b.centroid.y
+                norm = get_dist(vx, vy) or 1.0
+                pos[0] += (vx / norm) * grid_step
+                pos[1] += (vy / norm) * grid_step
+                pos[2] = game_map.get_height_at_point(pos[0], pos[1])
+
+            # commit and return
+            m.set_location(*pos)
+            return [(pos[0], pos[1], pos[2], pos[3])]
+
+        # SLOW PATH FOR MULTI-MODEL UNITS
+        # 1) Build list of blocking models (enemies + optionally friendlies)
+        blocking_models = game_map.get_enemy_models(self)
+        if avoid_friendly_units:
+            # Add friendly models from other units (excluding self)
+            friendly_models = []
+            for unit in game_map.get_friendly_units(self):
+                if unit != self:  # Don't include models from the unit being positioned
+                    friendly_models.extend(unit.models)
+            blocking_models.extend(friendly_models)
+        
+        # 2) Use provided boundary repulsors or default to empty list
+        if boundary_repulsors is None:
+            boundary_repulsors = []
+        
+        # 3) Spatial index of obstacles + blocking models + boundary repulsors
+        tree = build_spatial_index(game_map.obstacles + boundary_repulsors, blocking_models)
+
+        # 4) Compute safe spacing from the model base shape
+        spacing = 2 * self.models[0].model_base.radius[0]
+
+        # 5) Build formation templates
+        templates = build_formation_templates(len(self.models), spacing)
+
+        origin_2d = np.array((start_x, start_y), float)
+
+        # 6) Try each template
+        for name, offsets in templates.items():
+            # world positions in 2D & then lift to 3D + facing
+            world = []
+            pts2d = offsets + origin_2d
+            for x, y in pts2d:
+                z = game_map.get_height_at_point(x, y)
+                f = self.calculate_strategic_facing(x, y, game_map)
+                world.append([x, y, z, f])
+
+            # Quick footprint collision vs terrain/enemies/friendlies/boundaries
+            footprint = footprint_from_offsets(offsets, self)
+            if len(list(tree.query(footprint))) > 0:
                 continue
 
-            # Generate candidates
-            candidates = []
+            # Relaxation loop (terrain + self-collisions)
+            for _ in range(relax_iters):
+                collided = False
+                
+                # precompute friendly polys at current trial positions
+                friendly = []
+                for idx, pos in enumerate(world):
+                    base = self.models[idx].model_base.get_base_shape()
+                    friendly.append(
+                        translate(base, 
+                                pos[0] - base.centroid.x, 
+                                pos[1] - base.centroid.y)
+                    )
 
-            # Two-anchor mode for large units
-            if unit_size >= 6 and len(positions) >= 2:
-                for i in range(len(positions)-1):
-                    x1, y1, _, _ = positions[i]
-                    Rmin1 = base_radii * 2
-                    Rmax1 = Rmin1 + self.coherency_distance
-                    for j in range(i+1, len(positions)):
-                        x2, y2, _, _ = positions[j]
-                        Rmin2 = base_radii * 2
-                        Rmax2 = Rmin2 + self.coherency_distance
+                for i, pos in enumerate(world):
+                    poly_i = friendly[i]
+                    # gather blockers as a pure Python list
+                    hits = list(tree.query(poly_i)) \
+                        + [p for j,p in enumerate(friendly) if j != i]
 
-                        # Sample around anchor i
-                        for ang in np.linspace(0, 2*math.pi, 12, endpoint=False):
-                            for frac in (0.3, 0.6, 1.0):
-                                r = Rmin1 + frac * self.coherency_distance
-                                px = x1 + r * math.cos(ang)
-                                py = y1 + r * math.sin(ang)
-                                # Check coherency to second anchor
-                                d2 = math.hypot(px - x2, py - y2)
-                                if not (Rmin2 <= d2 <= Rmax2):
-                                    continue
-                                
-                                # Check distance constraint
-                                valid_distance = True
-                                if current_pos and max_distance_from_current > 0.0:
-                                    distance = get_dist(px - current_pos[0], py - current_pos[1], 0)
-                                    valid_distance = distance <= max_distance_from_current
-                                
-                                if not valid_distance:
-                                    continue
-                                    
-                                pz = game_map.get_height_at_point(px, py)
-                                pf = self.calculate_strategic_facing(px, py, game_map)
-                                if self._is_valid_position(px, py, pz, pf, game_map, positions, model):
-                                    candidates.append((px, py, pz, pf))
-                                if len(candidates) >= max_candidates:
-                                    break
-                            if len(candidates) >= max_candidates:
-                                break
-                        if len(candidates) >= max_candidates:
-                            break
-                    if len(candidates) >= max_candidates:
+                    if any(poly_i.intersects(b) for b in hits):
+                        # repel along the vector between centroids
+                        b = next(b for b in hits if poly_i.intersects(b))
+                        vx = poly_i.centroid.x - b.centroid.x
+                        vy = poly_i.centroid.y - b.centroid.y
+                        norm = get_dist(vx, vy) or 1.0
+                        pos[0] += (vx / norm) * grid_step
+                        pos[1] += (vy / norm) * grid_step
+                        pos[2] = game_map.get_height_at_point(pos[0], pos[1])
+                        collided = True
+                if not collided:
+                    break
+
+            # after you’ve cleared collisions…
+            attract_iters = 5
+            attract_step = 0.2
+            target_min = 0.25
+            for _ in range(attract_iters):
+                moved = False
+                for i, m1 in enumerate(self.models):
+                    for j, m2 in enumerate(self.models[i+1:], start=i+1):
+                        d = m1.model_base.edge_to_edge_distance(m2.model_base)
+                        if d > target_min + 1e-6:
+                            # move each halfway toward the other
+                            dx = (m2.x - m1.x)
+                            dy = (m2.y - m1.y)
+                            norm = get_dist(dx, dy)
+                            shift = min(attract_step, d/2) / norm
+                            m1.model_base.x += dx * shift
+                            m1.model_base.y += dy * shift
+                            m2.model_base.x -= dx * shift
+                            m2.model_base.y -= dy * shift
+                            moved = True
+                if not moved:
+                    break
+
+            # Final overlap catcher
+            final_polys = []
+            for idx, pos in enumerate(world):
+                base = self.models[idx].model_base.get_base_shape()
+                final_polys.append(
+                    translate(base,
+                            pos[0] - base.centroid.x,
+                            pos[1] - base.centroid.y)
+                )
+
+            # if any true-area overlap, reject this template
+            ok = True
+            for i in range(len(final_polys)):
+                for j in range(i+1, len(final_polys)):
+                    if final_polys[i].overlaps(final_polys[j]):
+                        ok = False
                         break
+                if not ok:
+                    break
+            if not ok:
+                continue
 
-            # Fallback single-anchor ring search
-            if not candidates:
-                for (ax, ay, _, _) in positions:
-                    Rmin = base_radii * 2
-                    Rmax = Rmin + self.coherency_distance
-                    for ang in np.linspace(0, 2*math.pi, 16, endpoint=False):
-                        for frac in (0.5, 1.0):
-                            r = Rmin + frac * self.coherency_distance
-                            px = ax + r * math.cos(ang)
-                            py = ay + r * math.sin(ang)
-                            
-                            # Check distance constraint
-                            valid_distance = True
-                            if current_pos and max_distance_from_current > 0.0:
-                                distance = get_dist(px - current_pos[0], py - current_pos[1], 0)
-                                valid_distance = distance <= max_distance_from_current
-                            
-                            if not valid_distance:
-                                continue
-                                
-                            pz = game_map.get_height_at_point(px, py)
-                            pf = self.calculate_strategic_facing(px, py, game_map)
-                            if self._is_valid_position(px, py, pz, pf, game_map, positions, model):
-                                candidates.append((px, py, pz, pf))
-                            if len(candidates) >= max_candidates:
-                                break
-                        if len(candidates) >= max_candidates:
-                            break
-                    if len(candidates) >= max_candidates:
-                        break
+            # Commit & coherency‐graph check
+            for m, pos in zip(self.models, world):
+                m.set_location(*pos)
+            if self.check_coherency_graph():
+                return [(x, y, z, f) for x, y, z, f in world]
 
-            # Score and pick best candidate
-            best_score = float('inf')
-            best = None
-            for (px, py, pz, pf) in candidates:
-                sc = self.score_position(px, py, pz, pf, game_map, model, positions)
-                if sc < best_score:
-                    best_score = sc
-                    best = (px, py, pz, pf)
-            if best:
-                positions.append(best)
-            else:
-                logger.warning(f"Failed to place model #{idx+1} ({model.name}); incomplete formation.")
-                return []
-
-        return positions
+        # 7) If none fit, raise or fallback
+        raise RuntimeError("No valid formation found for calculate_model_positions()")
 
     def _create_potential_base(self, x: float, y: float, z: float, facing: float, model: Model = None):
         # Create a new base with the same properties as the specified model's base
@@ -2704,6 +2748,35 @@ class Unit:
                 if found_neighbors >= current_neighbors_needed:
                     return True
         return False
+
+    def check_coherency_graph(self):
+        """
+        Returns True if every model in the unit
+        has the required number of neighbors within edge-to-edge
+        coherency_distance.
+
+        - Units of 1–5 models: each model needs at least 1 neighbor.
+        - Units of 6+ models: each model needs at least 2 neighbors.
+        """
+        models = self.models
+
+        for i, m1 in enumerate(models):
+            neighbors = 0
+            for j, m2 in enumerate(models):
+                if i == j:
+                    continue
+                # use the real edge-to-edge distance between bases
+                d = m1.model_base.edge_to_edge_distance(m2.model_base)
+                if d <= self.coherency_distance + 1e-6:
+                    neighbors += 1
+                if neighbors >= self.required_neighbors:
+                    break
+
+            if neighbors < self.required_neighbors:
+                return False
+
+        return True
+
 
     def _is_valid_position(self, x: float, y: float, z: float, facing: float, game_map: 'Map', placed_positions: List[Tuple[float, float, float, float]], model: Model = None) -> bool:
         if model is None:
@@ -2842,7 +2915,7 @@ class Unit:
         return ranged_threat * distance_modifier
     
     def _find_ability_with_patterns(self, patterns: List[str], extract_value: bool = False, value_pattern: str = None) -> Tuple[bool, Optional[str]]:
-        """
+        r"""
         Helper method to find abilities matching given patterns and optionally extract values.
         
         Args:
@@ -2858,7 +2931,7 @@ class Unit:
             for pattern in patterns:
                 if pattern.lower() in keyword.lower():
                     if extract_value and value_pattern:
-                        match = re.search(f'{pattern.lower()}\\s*\\(?{value_pattern}', keyword.lower())
+                        match = re.search(rf'{pattern.lower()}\s*\(?{value_pattern}', keyword.lower())
                         if match:
                             return True, match.group(1)
                         else:
@@ -2872,7 +2945,7 @@ class Unit:
                 for pattern in patterns:
                     if pattern.lower() in ability.lower():
                         if extract_value and value_pattern:
-                            match = re.search(f'{pattern.lower()}\\s*\\(?{value_pattern}', ability.lower())
+                            match = re.search(rf'{pattern.lower()}\s*\(?{value_pattern}', ability.lower())
                             if match:
                                 return True, match.group(1)
                             else:
@@ -2887,7 +2960,7 @@ class Unit:
                         if pattern.lower() in ability.name.lower():
                             ability_name_matched = True
                             if extract_value and value_pattern:
-                                match = re.search(f'{pattern.lower()}\\s*\\(?{value_pattern}', ability.name.lower())
+                                match = re.search(rf'{pattern.lower()}\s*\(?{value_pattern}', ability.name.lower())
                                 if match:
                                     return True, match.group(1)
                                 else:
@@ -2908,7 +2981,7 @@ class Unit:
                     for pattern in patterns:
                         if pattern.lower() in ability.description.lower():
                             if extract_value and value_pattern:
-                                match = re.search(f'{pattern.lower()}\\s*\\(?{value_pattern}', ability.description.lower())
+                                match = re.search(rf'{pattern.lower()}\s*\(?{value_pattern}', ability.description.lower())
                                 if match:
                                     return True, match.group(1)
                                 else:
@@ -2922,7 +2995,7 @@ class Unit:
                 for pattern in patterns:
                     if pattern.lower() in ability.lower():
                         if extract_value and value_pattern:
-                            match = re.search(f'{pattern.lower()}\\s*\\(?{value_pattern}', ability.lower())
+                            match = re.search(rf'{pattern.lower()}\s*\(?{value_pattern}', ability.lower())
                             if match:
                                 return True, match.group(1)
                             else:
@@ -2937,7 +3010,7 @@ class Unit:
                         if pattern.lower() in ability.name.lower():
                             ability_name_matched = True
                             if extract_value and value_pattern:
-                                match = re.search(f'{pattern.lower()}\\s*\\(?{value_pattern}', ability.name.lower())
+                                match = re.search(rf'{pattern.lower()}\s*\(?{value_pattern}', ability.name.lower())
                                 if match:
                                     return True, match.group(1)
                                 else:
@@ -2958,7 +3031,7 @@ class Unit:
                     for pattern in patterns:
                         if pattern.lower() in ability.description.lower():
                             if extract_value and value_pattern:
-                                match = re.search(f'{pattern.lower()}\\s*\\(?{value_pattern}', ability.description.lower())
+                                match = re.search(rf'{pattern.lower()}\s*\(?{value_pattern}', ability.description.lower())
                                 if match:
                                     return True, match.group(1)
                                 else:
@@ -3328,7 +3401,7 @@ class Unit:
         """
         return self.is_in_reserves() and current_turn >= 3
     
-    def arrive_from_reserves(self, position: Tuple[float, float, float], turn: int) -> bool:
+    def arrive_from_reserves(self, position: Tuple[float, float, float], turn: int, game_map: Optional['Map'] = None) -> bool:
         """Deploy the unit from reserves at the specified position.
         
         Args:
@@ -3343,9 +3416,9 @@ class Unit:
         
         # Deploy all models at calculated positions
         try:
-            # Use the existing model positioning logic
-            battlefield_width, battlefield_height = 60, 44  # Default battlefield size, should be passed from game
-            model_positions = self.calculate_model_positions(position[0], position[1], None, 1.0, [])
+            # Use the existing model positioning logic with battlefield edge repulsors
+            boundary_repulsors = game_map.get_battlefield_edge_repulsors() if game_map else []
+            model_positions = self.calculate_model_positions(position[0], position[1], game_map, boundary_repulsors=boundary_repulsors)
             
             for model, model_pos in zip(self.models, model_positions):
                 model.set_location(model_pos[0], model_pos[1], model_pos[2], model_pos[3])

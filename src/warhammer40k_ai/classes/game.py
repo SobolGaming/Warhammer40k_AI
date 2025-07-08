@@ -354,7 +354,7 @@ class Game:
             if x_max <= x_min or y_max <= y_min:
                 continue  # Skip invalid zones
             
-            for attempt in range(25):  # 25 attempts per zone
+            for attempt in range(50):  # 50 attempts per zone
                 x = random.uniform(x_min, x_max)
                 y = random.uniform(y_min, y_max)
                 z = 0.0
@@ -416,16 +416,13 @@ class Game:
         """Deploy a unit at the specified position using the same flow as manual deployment."""
         try:
             # Use the exact same approach as manual deployment in GameView.on_mouse_press
-            # Calculate model positions (this is the same as manual deployment)
-            model_positions = unit.calculate_model_positions(x, y, self.map)
+            # Calculate model positions (this also sets the positions internally)
+            # Get deployment zone boundary repulsors for deployment phase
+            boundary_repulsors = self.get_boundary_repulsors(unit, 'deployment')
+            model_positions = unit.calculate_model_positions(x, y, self.map, boundary_repulsors=boundary_repulsors)
             
             if not model_positions:
                 return False
-            
-            # Set individual model locations (same as manual)
-            for model, position in zip(unit.models, model_positions):
-                model_x, model_y, model_z, model_facing = position
-                model.set_location(model_x, model_y, model_z, model_facing)
             
             # Calculate unit centroid position (same as manual)
             unit.reset_position()
@@ -636,15 +633,119 @@ class Game:
         
         return min_distance
 
+    def get_boundary_repulsors(self, unit: 'Unit', context: str = 'deployment') -> List:
+        """Generate boundary repulsors for spatial collision detection.
+        
+        Args:
+            unit: The unit being positioned
+            context: 'deployment' or 'movement' - determines which boundaries to include
+            
+        Returns:
+            List of Shapely polygons representing boundary repulsors
+        """
+        from shapely.geometry import Polygon, Point
+        from shapely.affinity import scale
+        
+        repulsors = []
+        battlefield_width, battlefield_height = self.get_battlefield_size()
+        player_name = unit.get_parent_army().player.name if unit.get_parent_army() and unit.get_parent_army().player else None
+        
+        if context == 'deployment':
+            # For deployment, add deployment zone boundaries as repulsors
+            if hasattr(self, 'deployment_zones') and self.deployment_zones and player_name:
+                if player_name in self.deployment_zones:
+                    zone = self.deployment_zones[player_name]
+                    x_min, x_max = zone['x_range']
+                    y_min, y_max = zone['y_range']
+                    
+                    # Create repulsor polygons just outside the deployment zone boundaries
+                    # This will push units away from the edges if they get too close
+                    repulsor_thickness = 0.5  # 0.5 inch thick repulsor zones
+                    
+                    # Left boundary repulsor (negative x direction)
+                    left_repulsor = Polygon([
+                        (x_min - repulsor_thickness, y_min - repulsor_thickness),
+                        (x_min, y_min - repulsor_thickness),
+                        (x_min, y_max + repulsor_thickness),
+                        (x_min - repulsor_thickness, y_max + repulsor_thickness)
+                    ])
+                    repulsors.append(left_repulsor)
+                    
+                    # Right boundary repulsor (positive x direction)
+                    right_repulsor = Polygon([
+                        (x_max, y_min - repulsor_thickness),
+                        (x_max + repulsor_thickness, y_min - repulsor_thickness),
+                        (x_max + repulsor_thickness, y_max + repulsor_thickness),
+                        (x_max, y_max + repulsor_thickness)
+                    ])
+                    repulsors.append(right_repulsor)
+                    
+                    # Bottom boundary repulsor (negative y direction)
+                    bottom_repulsor = Polygon([
+                        (x_min - repulsor_thickness, y_min - repulsor_thickness),
+                        (x_max + repulsor_thickness, y_min - repulsor_thickness),
+                        (x_max + repulsor_thickness, y_min),
+                        (x_min - repulsor_thickness, y_min)
+                    ])
+                    repulsors.append(bottom_repulsor)
+                    
+                    # Top boundary repulsor (positive y direction)
+                    top_repulsor = Polygon([
+                        (x_min - repulsor_thickness, y_max),
+                        (x_max + repulsor_thickness, y_max),
+                        (x_max + repulsor_thickness, y_max + repulsor_thickness),
+                        (x_min - repulsor_thickness, y_max + repulsor_thickness)
+                    ])
+                    repulsors.append(top_repulsor)
+        
+        elif context == 'movement':
+            # For movement, add battlefield edge boundaries as repulsors
+            # This prevents units from moving off the battlefield
+            repulsor_thickness = 0.5  # 0.5 inch thick repulsor zones
+            
+            # Left battlefield edge repulsor
+            left_edge = Polygon([
+                (-repulsor_thickness, -repulsor_thickness),
+                (0, -repulsor_thickness),
+                (0, battlefield_height + repulsor_thickness),
+                (-repulsor_thickness, battlefield_height + repulsor_thickness)
+            ])
+            repulsors.append(left_edge)
+            
+            # Right battlefield edge repulsor
+            right_edge = Polygon([
+                (battlefield_width, -repulsor_thickness),
+                (battlefield_width + repulsor_thickness, -repulsor_thickness),
+                (battlefield_width + repulsor_thickness, battlefield_height + repulsor_thickness),
+                (battlefield_width, battlefield_height + repulsor_thickness)
+            ])
+            repulsors.append(right_edge)
+            
+            # Bottom battlefield edge repulsor
+            bottom_edge = Polygon([
+                (-repulsor_thickness, -repulsor_thickness),
+                (battlefield_width + repulsor_thickness, -repulsor_thickness),
+                (battlefield_width + repulsor_thickness, 0),
+                (-repulsor_thickness, 0)
+            ])
+            repulsors.append(bottom_edge)
+            
+            # Top battlefield edge repulsor
+            top_edge = Polygon([
+                (-repulsor_thickness, battlefield_height),
+                (battlefield_width + repulsor_thickness, battlefield_height),
+                (battlefield_width + repulsor_thickness, battlefield_height + repulsor_thickness),
+                (-repulsor_thickness, battlefield_height + repulsor_thickness)
+            ])
+            repulsors.append(top_edge)
+        
+        return repulsors
+
     def is_valid_deployment_position(self, unit: 'Unit', x: float, y: float, player_name: str) -> bool:
         """Check if a position is valid for deploying a unit during deployment phase."""
         # Units in reserves don't need position validation
         if unit.reserve_status in ['reserves', 'strategic_reserves']:
             return True
-        
-        # Temporarily position the unit to check if the proposed position is valid
-        # We need to calculate where each model would be positioned
-        unit.calculate_model_positions(x, y, self.map)  # This sets relative positions
         
         # Check if unit has Infiltrate ability
         if unit.has_infiltrate():
@@ -655,7 +756,8 @@ class Game:
             
             # For infiltrate units, we need to check each model's base at the proposed position
             # Calculate model positions using the same logic as unit deployment
-            model_positions = unit.calculate_model_positions(x, y, self.map)
+            boundary_repulsors = self.get_boundary_repulsors(unit, 'deployment')
+            model_positions = unit.calculate_model_positions(x, y, self.map, boundary_repulsors=boundary_repulsors)
             
             if not model_positions:
                 return False
@@ -683,7 +785,8 @@ class Game:
             # Normal units must be WHOLLY within their own deployment zone
             # Check that every model's entire base would be within the deployment zone at the proposed position
             # Calculate model positions using the same logic as unit deployment
-            model_positions = unit.calculate_model_positions(x, y, self.map)
+            boundary_repulsors = self.get_boundary_repulsors(unit, 'deployment')
+            model_positions = unit.calculate_model_positions(x, y, self.map, boundary_repulsors=boundary_repulsors)
             
             if not model_positions:
                 return False
@@ -1201,7 +1304,7 @@ class Game:
             # Simple automatic deployment - AI agents handle their own deployment decisions
             valid_position = self.find_valid_reserves_position(unit)
             if valid_position:
-                if unit.arrive_from_reserves(valid_position, self.turn):
+                if unit.arrive_from_reserves(valid_position, self.turn, self.map):
                     units_arrived.append(unit)
                     self.map.units.append(unit)  # Add to map
                 else:
