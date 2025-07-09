@@ -6,7 +6,7 @@ from ..utility.model_base import Base, BaseType
 from .wargear import Wargear, WargearOption, parse_option_string, parse_alternate_3
 from .ability import Ability
 from ..utility.range import Range
-from ..utility.calcs import get_dist, get_angle, convert_mm_to_inches, a_star_enhanced, build_spatial_index, footprint_from_offsets, build_formation_templates
+from ..utility.calcs import get_dist, get_angle, convert_mm_to_inches, a_star_enhanced, build_spatial_index, footprint_from_offsets, build_formation_templates, query_spatial_index
 from ..utility.dice import get_roll, DiceCollection
 from .status_effects import StatusEffect, BattleShockEffect
 import uuid
@@ -1120,9 +1120,15 @@ class Unit:
             print(f"❌ {self.name} cannot reach destination {distance_to_destination:.1f}\" away (max {'advance' if advance else 'move'}: {movement_range}\")")
             return False
 
-        # Generate potential positions for models with battlefield edge repulsors
-        boundary_repulsors = game_map.get_battlefield_edge_repulsors()
+        # Generate potential positions for models with reduced boundary repulsors for better formation finding
+        boundary_repulsors = self._get_reduced_boundary_repulsors(game_map)
         potential_positions = self.calculate_model_positions(destination[0], destination[1], game_map, boundary_repulsors=boundary_repulsors)
+        
+        # Check if formation finding failed
+        if potential_positions is None:
+            print(f"❌ {self.name} cannot move - no valid formation found at destination")
+            return False
+            
         actual_distance_moved = 0.0
         successful_moves = 0
 
@@ -1285,9 +1291,15 @@ class Unit:
             print(f"❌ {self.name} cannot reach fall back destination {distance_to_destination:.1f}\" away (max move: {movement_range}\")")
             return False
 
-        # Generate potential positions for models with battlefield edge repulsors
-        boundary_repulsors = game_map.get_battlefield_edge_repulsors()
+        # Generate potential positions for models with reduced boundary repulsors for better formation finding
+        boundary_repulsors = self._get_reduced_boundary_repulsors(game_map)
         potential_positions = self.calculate_model_positions(destination[0], destination[1], game_map, boundary_repulsors=boundary_repulsors)
+        
+        # Check if formation finding failed
+        if potential_positions is None:
+            print(f"❌ {self.name} cannot fall back - no valid formation found at destination")
+            return False
+            
         successful_moves = 0
         total_models_moved_over_enemies = 0
         
@@ -1500,9 +1512,15 @@ class Unit:
                     print(f"❌ {self.name} cannot scout move to destination - would end within 9\" of {enemy_unit.name}")
                     return False
         
-        # Generate potential positions for models with battlefield edge repulsors
-        boundary_repulsors = game_map.get_battlefield_edge_repulsors()
+        # Generate potential positions for models with reduced boundary repulsors for better formation finding
+        boundary_repulsors = self._get_reduced_boundary_repulsors(game_map)
         potential_positions = self.calculate_model_positions(destination[0], destination[1], game_map, boundary_repulsors=boundary_repulsors)
+        
+        # Check if formation finding failed
+        if potential_positions is None:
+            print(f"❌ {self.name} cannot scout move - no valid formation found at destination")
+            return False
+            
         successful_moves = 0
         
         for model, model_destination in zip(self.models, potential_positions):
@@ -2451,6 +2469,56 @@ class Unit:
 
         return edge_penalty + cover_bonus + coherency_bonus
 
+    def _get_reduced_boundary_repulsors(self, game_map: 'Map') -> List:
+        """Get reduced boundary repulsors for formation finding during movement.
+        
+        These are smaller than the full battlefield edge repulsors to allow better
+        formation finding in crowded areas while still preventing units from going
+        off the battlefield.
+        """
+        from shapely.geometry import Polygon
+        
+        repulsors = []
+        repulsor_thickness = 0.25  # Reduced from 0.5 to 0.25 inches
+        
+        # Left battlefield edge repulsor (reduced)
+        left_edge = Polygon([
+            (-repulsor_thickness, -repulsor_thickness),
+            (0, -repulsor_thickness),
+            (0, game_map.height + repulsor_thickness),
+            (-repulsor_thickness, game_map.height + repulsor_thickness)
+        ])
+        repulsors.append(left_edge)
+        
+        # Right battlefield edge repulsor (reduced)
+        right_edge = Polygon([
+            (game_map.width, -repulsor_thickness),
+            (game_map.width + repulsor_thickness, -repulsor_thickness),
+            (game_map.width + repulsor_thickness, game_map.height + repulsor_thickness),
+            (game_map.width, game_map.height + repulsor_thickness)
+        ])
+        repulsors.append(right_edge)
+        
+        # Bottom battlefield edge repulsor (reduced)
+        bottom_edge = Polygon([
+            (-repulsor_thickness, -repulsor_thickness),
+            (game_map.width + repulsor_thickness, -repulsor_thickness),
+            (game_map.width + repulsor_thickness, 0),
+            (-repulsor_thickness, 0)
+        ])
+        repulsors.append(bottom_edge)
+        
+        # Top battlefield edge repulsor (reduced)
+        top_edge = Polygon([
+            (-repulsor_thickness, game_map.height),
+            (game_map.width + repulsor_thickness, game_map.height),
+            (game_map.width + repulsor_thickness, game_map.height + repulsor_thickness),
+            (-repulsor_thickness, game_map.height + repulsor_thickness)
+        ])
+        repulsors.append(top_edge)
+        
+        return repulsors
+
     def calculate_strategic_facing(self, x: float, y: float, game_map: 'Map') -> float:
         """Calculate strategic facing direction towards enemies or objectives"""
         
@@ -2508,20 +2576,35 @@ class Unit:
         Args:
             start_x: Target X coordinate for unit placement
             start_y: Target Y coordinate for unit placement
-            game_map: The game map containing terrain and units
-            grid_step: Step size for collision resolution (default: 0.5)
-            relax_iters: Number of iterations for collision resolution (default: 5)
-            avoid_friendly_units: Whether to avoid collisions with friendly units (default: True)
-                                 - True: For deployment and movement (avoid all friendlies)
-                                 - False: Only for special cases where friendly overlap is allowed
-            boundary_repulsors: List of Shapely polygons representing boundary repulsors (default: None)
-                               - For deployment: deployment zone boundaries
-                               - For movement: battlefield edge boundaries
-                               - None: No boundary constraints
+            game_map: The game map
+            grid_step: Step size for pathfinding grid (default 0.5)
+            relax_iters: Number of relaxation iterations (default 5)
+            avoid_friendly_units: Whether to avoid collisions with friendly units
+            boundary_repulsors: Optional list of boundary repulsor polygons to avoid
+            
+        Returns:
+            List of (x, y, z, facing) tuples for each model, or None if failed
         """
+        if not self.models:
+            return []
+
+        if boundary_repulsors is None:
+            boundary_repulsors = []
+
+        # Single model - use fast path
+        if len(self.models) == 1:
+            z = game_map.get_height_at_point(start_x, start_y)
+            self.models[0].set_location(start_x, start_y, z, 0.0)
+            return [(start_x, start_y, z, 0.0)]
+
+        print(f"🔍 DEBUG: calculate_model_positions for {self.name} ({len(self.models)} models)")
+        print(f"🔍 DEBUG: start position: ({start_x:.1f}, {start_y:.1f})")
+        print(f"🔍 DEBUG: avoid_friendly_units: {avoid_friendly_units}")
+        print(f"🔍 DEBUG: boundary_repulsors: {len(boundary_repulsors) if boundary_repulsors else 0}")
 
         # FAST PATH FOR SINGLE-MODEL UNITS (avoid terrain & enemy models)
         if len(self.models) == 1:
+            print(f"🔍 DEBUG: Using single-model fast path")
             # initial drop
             z = game_map.get_height_at_point(start_x, start_y)
             f = self.calculate_strategic_facing(start_x, start_y, game_map)
@@ -2547,17 +2630,30 @@ class Unit:
 
             # relax away from any collisions
             for _ in range(relax_iters):
-                # build the model’s polygon at its trial spot
+                # build the model's polygon at its trial spot
                 base = m.model_base.get_base_shape()
                 poly = translate(base,
                                 pos[0] - base.centroid.x,
                                 pos[1] - base.centroid.y)
 
                 # check for collisions with terrain/enemy/friendly/boundary blockers
-                hits = list(tree.query(poly))
-                # if no intersection, we’re done
-                if not any(poly.intersects(b) for b in hits):
-                    break
+                hits = query_spatial_index(tree, poly)
+                # if no intersection, we're done
+                # DEBUG: Add defensive programming to catch geometry type errors
+                try:
+                    if not any(poly.intersects(b) for b in hits):
+                        break
+                except TypeError as e:
+                    print(f"DEBUG: TypeError in single-model intersects check: {e}")
+                    print(f"DEBUG: poly type: {type(poly)}")
+                    print(f"DEBUG: hits count: {len(hits)}")
+                    for i, hit in enumerate(hits):
+                        print(f"DEBUG: hit {i}: {type(hit)} - {hit}")
+                        if hasattr(hit, 'geom_type'):
+                            print(f"DEBUG:   geom_type: {hit.geom_type}")
+                        if hasattr(hit, 'is_valid'):
+                            print(f"DEBUG:   is_valid: {hit.is_valid}")
+                    raise
 
                 # repel vector from first blocker
                 b = next(b for b in hits if poly.intersects(b))
@@ -2570,8 +2666,10 @@ class Unit:
 
             # commit and return
             m.set_location(*pos)
+            print(f"🔍 DEBUG: Single-model positioning successful")
             return [(pos[0], pos[1], pos[2], pos[3])]
 
+        print(f"🔍 DEBUG: Using multi-model formation templates")
         # SLOW PATH FOR MULTI-MODEL UNITS
         # 1) Build list of blocking models (enemies + optionally friendlies)
         blocking_models = game_map.get_enemy_models(self)
@@ -2583,6 +2681,8 @@ class Unit:
                     friendly_models.extend(unit.models)
             blocking_models.extend(friendly_models)
         
+        print(f"🔍 DEBUG: Found {len(blocking_models)} blocking models")
+        
         # 2) Use provided boundary repulsors or default to empty list
         if boundary_repulsors is None:
             boundary_repulsors = []
@@ -2591,15 +2691,22 @@ class Unit:
         tree = build_spatial_index(game_map.obstacles + boundary_repulsors, blocking_models)
 
         # 4) Compute safe spacing from the model base shape
-        spacing = 2 * self.models[0].model_base.radius[0]
+        # Use tighter spacing for deployment to allow formations to fit in crowded areas
+        # Models can be in base-to-base contact (spacing = 2 * radius) but we allow slightly tighter
+        base_radius = self.models[0].model_base.radius[0]
+        spacing = 2 * base_radius * 0.8  # 80% of full spacing allows for tighter formations
+        print(f"🔍 DEBUG: Computed spacing: {spacing:.2f} inches (base radius: {base_radius:.2f})")
 
         # 5) Build formation templates
         templates = build_formation_templates(len(self.models), spacing)
+        print(f"🔍 DEBUG: Generated {len(templates)} formation templates: {list(templates.keys())}")
 
         origin_2d = np.array((start_x, start_y), float)
 
         # 6) Try each template
-        for name, offsets in templates.items():
+        for template_name, offsets in templates.items():
+            print(f"🔍 DEBUG: Trying template '{template_name}' with {len(offsets)} positions")
+            
             # world positions in 2D & then lift to 3D + facing
             world = []
             pts2d = offsets + origin_2d
@@ -2610,11 +2717,15 @@ class Unit:
 
             # Quick footprint collision vs terrain/enemies/friendlies/boundaries
             footprint = footprint_from_offsets(offsets, self)
-            if len(list(tree.query(footprint))) > 0:
+            footprint_hits = query_spatial_index(tree, footprint)
+            if len(footprint_hits) > 0:
+                print(f"🔍 DEBUG: Template '{template_name}' rejected - footprint collision with {len(footprint_hits)} objects")
                 continue
 
+            print(f"🔍 DEBUG: Template '{template_name}' passed footprint check, starting relaxation")
+
             # Relaxation loop (terrain + self-collisions)
-            for _ in range(relax_iters):
+            for relax_iter in range(relax_iters):
                 collided = False
                 
                 # precompute friendly polys at current trial positions
@@ -2630,10 +2741,25 @@ class Unit:
                 for i, pos in enumerate(world):
                     poly_i = friendly[i]
                     # gather blockers as a pure Python list
-                    hits = list(tree.query(poly_i)) \
+                    hits = query_spatial_index(tree, poly_i) \
                         + [p for j,p in enumerate(friendly) if j != i]
 
-                    if any(poly_i.intersects(b) for b in hits):
+                    # DEBUG: Add defensive programming to catch geometry type errors
+                    try:
+                        intersects_any = any(poly_i.intersects(b) for b in hits)
+                    except TypeError as e:
+                        print(f"DEBUG: TypeError in multi-model intersects check: {e}")
+                        print(f"DEBUG: poly_i type: {type(poly_i)}")
+                        print(f"DEBUG: hits count: {len(hits)}")
+                        for idx, hit in enumerate(hits):
+                            print(f"DEBUG: hit {idx}: {type(hit)} - {hit}")
+                            if hasattr(hit, 'geom_type'):
+                                print(f"DEBUG:   geom_type: {hit.geom_type}")
+                            if hasattr(hit, 'is_valid'):
+                                print(f"DEBUG:   is_valid: {hit.is_valid}")
+                        raise
+                    
+                    if intersects_any:
                         # repel along the vector between centroids
                         b = next(b for b in hits if poly_i.intersects(b))
                         vx = poly_i.centroid.x - b.centroid.x
@@ -2643,10 +2769,14 @@ class Unit:
                         pos[1] += (vy / norm) * grid_step
                         pos[2] = game_map.get_height_at_point(pos[0], pos[1])
                         collided = True
+                        
                 if not collided:
+                    print(f"🔍 DEBUG: Template '{template_name}' completed relaxation after {relax_iter + 1} iterations")
                     break
+                elif relax_iter == relax_iters - 1:
+                    print(f"🔍 DEBUG: Template '{template_name}' still had collisions after {relax_iters} relaxation iterations")
 
-            # after you’ve cleared collisions…
+            # after you've cleared collisions…
             attract_iters = 5
             attract_step = 0.2
             target_min = 0.25
@@ -2689,16 +2819,27 @@ class Unit:
                 if not ok:
                     break
             if not ok:
+                print(f"🔍 DEBUG: Template '{template_name}' rejected - final overlap check failed")
                 continue
 
             # Commit & coherency‐graph check
             for m, pos in zip(self.models, world):
                 m.set_location(*pos)
-            if self.check_coherency_graph():
+                
+            coherency_ok = self.check_coherency_graph()
+            print(f"🔍 DEBUG: Template '{template_name}' coherency check: {'✅ PASSED' if coherency_ok else '❌ FAILED'}")
+            
+            if coherency_ok:
+                print(f"🔍 DEBUG: Successfully found formation using template '{template_name}'")
                 return [(x, y, z, f) for x, y, z, f in world]
+            else:
+                print(f"🔍 DEBUG: Template '{template_name}' rejected - coherency check failed")
 
         # 7) If none fit, raise or fallback
-        raise RuntimeError("No valid formation found for calculate_model_positions()")
+        print(f"🔍 DEBUG: All {len(templates)} templates failed - no valid formation found")
+        # No valid formation found - return None instead of raising exception
+        # This allows auto-deployment to try other positions
+        return None
 
     def _create_potential_base(self, x: float, y: float, z: float, facing: float, model: Model = None):
         # Create a new base with the same properties as the specified model's base
@@ -3420,8 +3561,15 @@ class Unit:
             boundary_repulsors = game_map.get_battlefield_edge_repulsors() if game_map else []
             model_positions = self.calculate_model_positions(position[0], position[1], game_map, boundary_repulsors=boundary_repulsors)
             
-            for model, model_pos in zip(self.models, model_positions):
-                model.set_location(model_pos[0], model_pos[1], model_pos[2], model_pos[3])
+            # Check if formation finding failed
+            if model_positions is None:
+                logger.warning(f"Could not find valid formation for {self.name} arriving from reserves - using default placement")
+                # Default: place all models at the unit position
+                for model in self.models:
+                    model.set_location(position[0], position[1], position[2], 0.0)
+            else:
+                for model, model_pos in zip(self.models, model_positions):
+                    model.set_location(model_pos[0], model_pos[1], model_pos[2], model_pos[3])
         except Exception as e:
             logger.warning(f"Could not calculate model positions for {self.name} arriving from reserves: {e}")
             # Default: place all models at the unit position

@@ -1,12 +1,12 @@
 from math import sqrt, atan2, pi, cos, sin
-from typing import Tuple, List, Optional
+from typing import Tuple, List, Optional, Union
 import heapq
 import numpy as np
 from ..utility.constants import MM_TO_INCHES, FREELY_CLIMBABLE_RANGE, ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VERTICAL
-from shapely.geometry import LineString, Point
+from shapely.geometry import LineString, Point, Polygon
 from shapely.affinity import translate
 from shapely.ops import unary_union
-from shapely.strtree import STRtree
+from shapely import STRtree
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -832,14 +832,17 @@ def footprint_from_offsets(offsets, unit):
         polys.append(translate(base, cx+dx - m.model_base.x,
                                 cy+dy - m.model_base.y))
     hull = unary_union(polys).convex_hull
-    return hull.buffer(unit.coherency_distance)
+    # Use a smaller buffer for footprint collision detection during deployment
+    # Full coherency distance (2.0") is too large and causes false collisions
+    buffer_distance = min(0.5, unit.coherency_distance * 0.25)  # 0.5" max buffer
+    return hull.buffer(buffer_distance)
 
 def build_spatial_index(obstacles, enemies):
     """
     Build an STRtree index of blocking polygons from terrain obstacles and enemy models.
 
     Parameters:
-        obstacles: iterable of objects with a `.polygon` attribute (Shapely Polygon)
+        obstacles: iterable of objects with a `.polygon` attribute (Shapely Polygon) or Shapely Polygon objects directly
         enemies: iterable of model objects with `.model_base.get_base_shape()` and `.is_alive()`.
 
     Returns:
@@ -848,7 +851,12 @@ def build_spatial_index(obstacles, enemies):
     blocker_polys = []
     # Add terrain obstacle polygons
     for obs in obstacles:
-        blocker_polys.append(obs.polygon)
+        # Handle both Obstacle objects (with .polygon attribute) and direct Polygon objects
+        if hasattr(obs, 'polygon'):
+            blocker_polys.append(obs.polygon)
+        else:
+            # Assume it's already a Shapely Polygon (e.g., boundary repulsors)
+            blocker_polys.append(obs)
 
     # Add live enemy base shapes
     for enemy in enemies:
@@ -857,3 +865,31 @@ def build_spatial_index(obstacles, enemies):
 
     # Build and return the spatial index
     return STRtree(blocker_polys)
+
+def query_spatial_index(tree: STRtree, query_geom) -> List:
+    """Query spatial index and return geometry objects (not indices).
+    
+    In Shapely 2.0+, STRtree.query() returns indices instead of geometry objects.
+    This helper function handles both the old and new API for compatibility.
+    
+    Args:
+        tree: STRtree spatial index
+        query_geom: Geometry to query with
+        
+    Returns:
+        List of geometry objects that intersect with query_geom
+    """
+    indices = tree.query(query_geom)
+    
+    # In Shapely 2.0+, query() returns indices (numpy arrays of integers)
+    # We need to use tree.geometries[index] to get the actual geometry objects
+    if hasattr(tree, 'geometries') and len(indices) > 0:
+        # Check if indices are actually indices (integers) rather than geometry objects
+        if hasattr(indices, '__iter__') and len(indices) > 0:
+            first_result = indices[0] if hasattr(indices, '__getitem__') else next(iter(indices))
+            # If it's an integer type, we need to convert indices to geometries
+            if isinstance(first_result, (int, np.integer)):
+                return [tree.geometries[i] for i in indices]
+    
+    # Fallback: if indices are actually geometry objects (old API), return as-is
+    return list(indices) if hasattr(indices, '__iter__') else [indices]

@@ -3088,8 +3088,23 @@ class BattlePhaseHandler(BasePhaseHandler):
             # Get target unit at click position
             target_unit = self.game_view.get_unit_at_position(x, y)
             if target_unit:
-                # TODO: Implement fight validation and execution
-                print(f"Fight action: {self.game_view.selected_unit.name} fights {target_unit.name}")
+                # Validate that the target is an enemy unit
+                if target_unit.get_parent_army() == self.game_view.selected_unit.get_parent_army():
+                    print(f"❌ Cannot fight friendly unit: {self.game_view.selected_unit.name} cannot fight {target_unit.name} (same army)")
+                    return False
+                
+                # Validate that the target is alive
+                if not target_unit.is_alive():
+                    print(f"❌ Cannot fight destroyed unit: {target_unit.name} is destroyed")
+                    return False
+                
+                # Validate that the fighting unit is in engagement range of the target
+                if not self.game.map.is_within_engagement_range(self.game_view.selected_unit.get_position(), target_unit):
+                    print(f"❌ Not in engagement range: {self.game_view.selected_unit.name} is not in engagement range of {target_unit.name}")
+                    return False
+                
+                # All validations passed - execute the fight
+                print(f"⚔️ Fight action: {self.game_view.selected_unit.name} fights {target_unit.name}")
                 return True
         
         return False

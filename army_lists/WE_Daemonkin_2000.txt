@@ -60,12 +60,12 @@ OTHER DATASHEETS
 Bloodcrushers (220 Points)
   • 1x Bloodhunter
      ◦ 1x Hellblade
-     ◦ 1x Juggernaut’s bladed horn
+     ◦ 1x Bladed horn
   • 5x Bloodcrusher
      ◦ 1x Daemonic Icon
      ◦ 5x Hellblade
      ◦ 1x Instrument of Chaos
-     ◦ 5x Juggernaut’s bladed horn
+     ◦ 5x Bladed horn
 
 Chaos Spawn (80 Points)
   • 2x Chaos Spawn

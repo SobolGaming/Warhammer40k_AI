@@ -361,7 +361,7 @@ def add_unit_to_army(army: Army, unit: Unit, model_count: int, wargear_dict: Dic
             if matching_gear:
                 # Add the wargear multiple times based on quantity
                 for _ in range(quantity):
-                    unit.add_wargear([matching_gear if gear.name.lower() == gear_name else None for gear in unit.possible_wargear], model_name)
+                    unit.add_wargear([matching_gear if gear.name.lower().replace("’","'") == gear_name else None for gear in unit.possible_wargear], model_name)
             else:
                 matching_gear = next((gear for gear in unit.wargear_options if gear_name in gear.wargear_to), None)
                 if matching_gear:

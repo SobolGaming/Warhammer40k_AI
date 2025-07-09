@@ -311,7 +311,7 @@ class Game:
         self.waiting_for_deployment_input = False
     
     def auto_deploy_unit(self, unit: 'Unit') -> bool:
-        """Auto-deploy a unit at a random valid position within deployment constraints."""
+        """Auto-deploy a unit using systematic grid-based search to avoid crowded areas."""
         import random
         
         # Get the unit's player for deployment zone lookup
@@ -335,38 +335,86 @@ class Game:
                 x_min, x_max = zone['x_range']
                 y_min, y_max = zone['y_range']
                 
-                # Add buffer for unit base size (use largest possible base as safety margin)
-                base_buffer = 2.0  # 2 inch buffer for safety
+                # Reduce formation buffer - smaller units need less space
+                formation_buffer = max(1.5, len(unit.models) * 0.3)  # Much smaller buffer
                 search_zones = [(
-                    max(x_min + base_buffer, 0), 
-                    min(x_max - base_buffer, battlefield_width),
-                    max(y_min + base_buffer, 0), 
-                    min(y_max - base_buffer, battlefield_height)
+                    max(x_min + formation_buffer, 0), 
+                    min(x_max - formation_buffer, battlefield_width),
+                    max(y_min + formation_buffer, 0), 
+                    min(y_max - formation_buffer, battlefield_height)
                 )]
             else:
                 logger.error(f"No deployment zone found for {player_name}")
                 return False
         
-        # Try to find a valid position within search zones
+        # Use systematic grid-based search instead of random
         for zone_idx, zone in enumerate(search_zones):
             x_min, x_max, y_min, y_max = zone
             
             if x_max <= x_min or y_max <= y_min:
                 continue  # Skip invalid zones
             
-            for attempt in range(50):  # 50 attempts per zone
-                x = random.uniform(x_min, x_max)
-                y = random.uniform(y_min, y_max)
+            # Create a finer grid of potential positions
+            grid_spacing = 1.0  # Reduced from 2.0 to 1.0 for finer search
+            x_positions = []
+            y_positions = []
+            
+            # Generate grid positions
+            x = x_min
+            while x <= x_max:
+                x_positions.append(x)
+                x += grid_spacing
+            
+            y = y_min
+            while y <= y_max:
+                y_positions.append(y)
+                y += grid_spacing
+            
+            # Shuffle the positions to avoid predictable patterns
+            test_positions = [(x, y) for x in x_positions for y in y_positions]
+            random.shuffle(test_positions)
+            
+            # Test positions systematically
+            for x, y in test_positions:
                 z = 0.0
                 
+                # Quick check: is this position too close to existing units?
+                if self._is_position_too_crowded(x, y, unit, player_name):
+                    continue
+                
                 # Check if this position would place all models wholly within the deployment zone
-                if self.is_valid_deployment_position(unit, x, y, player_name):
-                    # Use the proper deployment flow
-                    if self._deploy_unit_at_position(unit, x, y, z):
-                        print(f"✅ Successfully auto-deployed {unit.name} at ({x:.1f}, {y:.1f})")
+                try:
+                    if self.is_valid_deployment_position(unit, x, y, player_name):
+                        # Use the proper deployment flow
+                        if self._deploy_unit_at_position(unit, x, y, z):
+                            print(f"✅ Successfully auto-deployed {unit.name} at ({x:.1f}, {y:.1f})")
+                            return True
+                except Exception as e:
+                    # If formation finding fails, continue to next position
+                    continue
+        
+        print(f"❌ Failed to auto-deploy {unit.name} - no valid positions found")
+        return False
+    
+    def _is_position_too_crowded(self, x: float, y: float, unit: 'Unit', player_name: str) -> bool:
+        """Quick check if a position is too close to existing units to likely succeed."""
+        # Much more reasonable minimum distance - just need to avoid immediate overlap
+        min_distance = max(2.0, len(unit.models) * 0.4)  # Reduced from 4.0 and 0.8
+        
+        # Check distance to all deployed units
+        for player in self.players:
+            if not player.get_army():
+                continue
+            for existing_unit in player.get_army().units:
+                if not existing_unit.deployed or existing_unit.reserve_status != 'deployed':
+                    continue
+                
+                existing_pos = existing_unit.get_position()
+                if existing_pos:
+                    distance = ((x - existing_pos[0]) ** 2 + (y - existing_pos[1]) ** 2) ** 0.5
+                    if distance < min_distance:
                         return True
         
-        print(f"❌ Failed to auto-deploy {unit.name}")
         return False
 
     def _get_infiltrate_search_zones(self, player_name: str, battlefield_width: float, battlefield_height: float) -> list:
@@ -417,9 +465,9 @@ class Game:
         try:
             # Use the exact same approach as manual deployment in GameView.on_mouse_press
             # Calculate model positions (this also sets the positions internally)
-            # Get deployment zone boundary repulsors for deployment phase
-            boundary_repulsors = self.get_boundary_repulsors(unit, 'deployment')
-            model_positions = unit.calculate_model_positions(x, y, self.map, boundary_repulsors=boundary_repulsors)
+            # NOTE: Do NOT use boundary_repulsors during deployment - they make formation finding too restrictive
+            # Deployment zone validation is handled separately by is_valid_deployment_position()
+            model_positions = unit.calculate_model_positions(x, y, self.map)
             
             if not model_positions:
                 return False
@@ -756,8 +804,8 @@ class Game:
             
             # For infiltrate units, we need to check each model's base at the proposed position
             # Calculate model positions using the same logic as unit deployment
-            boundary_repulsors = self.get_boundary_repulsors(unit, 'deployment')
-            model_positions = unit.calculate_model_positions(x, y, self.map, boundary_repulsors=boundary_repulsors)
+            # NOTE: Don't use boundary_repulsors for validation - they make formation finding too restrictive
+            model_positions = unit.calculate_model_positions(x, y, self.map)
             
             if not model_positions:
                 return False
@@ -785,8 +833,8 @@ class Game:
             # Normal units must be WHOLLY within their own deployment zone
             # Check that every model's entire base would be within the deployment zone at the proposed position
             # Calculate model positions using the same logic as unit deployment
-            boundary_repulsors = self.get_boundary_repulsors(unit, 'deployment')
-            model_positions = unit.calculate_model_positions(x, y, self.map, boundary_repulsors=boundary_repulsors)
+            # NOTE: Don't use boundary_repulsors for validation - they make formation finding too restrictive
+            model_positions = unit.calculate_model_positions(x, y, self.map)
             
             if not model_positions:
                 return False
