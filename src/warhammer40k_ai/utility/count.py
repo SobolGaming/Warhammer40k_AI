@@ -26,6 +26,13 @@ class Count:
     def resolve(self) -> int:
         return self.value if self.ctype is CountType.FLAT else self.value.roll()
 
+    def resolve_detailed(self) -> tuple[int, list[int]]:
+        """Resolve count and return both total and individual dice results"""
+        if self.ctype is CountType.FLAT:
+            return self.value, []  # No dice for flat values
+        else:
+            return self.value.roll_detailed()
+
     def min(self) -> int:
         return self.value if self.ctype is CountType.FLAT else self.value.min()
 

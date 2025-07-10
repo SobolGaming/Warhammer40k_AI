@@ -47,6 +47,12 @@ class DiceCollection:
         #print(f"Roll of {self}: {roll_value}")
         return roll_value
 
+    def roll_detailed(self) -> tuple[int, list[int]]:
+        """Roll dice and return both total and individual dice results"""
+        individual_rolls = [get_dice_roll(self.die_faces) for _ in range(self.number)]
+        total = sum(individual_rolls) + self.modifier
+        return total, individual_rolls
+
     def min(self) -> int:
         return self.number + self.modifier
 

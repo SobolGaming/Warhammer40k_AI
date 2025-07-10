@@ -3084,27 +3084,42 @@ class BattlePhaseHandler(BasePhaseHandler):
     
     def _handle_fight_action(self, x: int, y: int) -> bool:
         """Handle fight phase actions"""
+        # Always check if a unit was clicked on the battlefield first
+        clicked_unit = self.game_view.get_unit_at_position(x, y)
+        current_player = self.game.get_current_player()
+        
+        # If a unit was clicked, check if it's a friendly unit to select for fighting
+        if clicked_unit and clicked_unit.get_parent_army() and clicked_unit.get_parent_army().player == current_player:
+            self.game_view.selected_unit = clicked_unit
+            self._synchronize_unit_selection(clicked_unit)
+            self._handle_fight_phase_selection(clicked_unit)
+            return True
+        
+        # If an enemy unit was clicked and we have a selected unit, try to fight it
+        if clicked_unit and self.game_view.selected_unit:
+            # Validate that the target is an enemy unit
+            if clicked_unit.get_parent_army() == self.game_view.selected_unit.get_parent_army():
+                print(f"❌ Cannot fight friendly unit: {self.game_view.selected_unit.name} cannot fight {clicked_unit.name} (same army)")
+                return False
+            
+            # Validate that the target is alive
+            if not clicked_unit.is_alive():
+                print(f"❌ Cannot fight destroyed unit: {clicked_unit.name} is destroyed")
+                return False
+            
+            # Validate that the fighting unit is in engagement range of the target
+            if not self.game.map.is_within_engagement_range(self.game_view.selected_unit.get_position(), clicked_unit):
+                print(f"❌ Not in engagement range: {self.game_view.selected_unit.name} is not in engagement range of {clicked_unit.name}")
+                return False
+            
+            # All validations passed - execute the fight
+            print(f"⚔️ Fight action: {self.game_view.selected_unit.name} fights {clicked_unit.name}")
+            return True
+        
+        # If no unit was clicked, fall back to selected unit (e.g., from RosterPane)
         if self.game_view.selected_unit:
-            # Get target unit at click position
-            target_unit = self.game_view.get_unit_at_position(x, y)
-            if target_unit:
-                # Validate that the target is an enemy unit
-                if target_unit.get_parent_army() == self.game_view.selected_unit.get_parent_army():
-                    print(f"❌ Cannot fight friendly unit: {self.game_view.selected_unit.name} cannot fight {target_unit.name} (same army)")
-                    return False
-                
-                # Validate that the target is alive
-                if not target_unit.is_alive():
-                    print(f"❌ Cannot fight destroyed unit: {target_unit.name} is destroyed")
-                    return False
-                
-                # Validate that the fighting unit is in engagement range of the target
-                if not self.game.map.is_within_engagement_range(self.game_view.selected_unit.get_position(), target_unit):
-                    print(f"❌ Not in engagement range: {self.game_view.selected_unit.name} is not in engagement range of {target_unit.name}")
-                    return False
-                
-                # All validations passed - execute the fight
-                print(f"⚔️ Fight action: {self.game_view.selected_unit.name} fights {target_unit.name}")
+            if self.game_view.selected_unit.get_parent_army() and self.game_view.selected_unit.get_parent_army().player == current_player:
+                self._handle_fight_phase_selection(self.game_view.selected_unit)
                 return True
         
         return False

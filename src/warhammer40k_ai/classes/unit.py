@@ -114,6 +114,9 @@ class Unit:
         # Track starting strength for Battle-Shock tests
         self.starting_model_count = len(self.models)
         self.starting_total_wounds = sum(model._base_wounds for model in self.models)
+        
+        # Ability cache for performance optimization
+        self._ability_cache = {}
 
     def _parse_attribute(self, attribute_value: str) -> int:
         # Remove " and + from the attribute value
@@ -445,6 +448,13 @@ class Unit:
             else:
                 model.add_ability(ability)
             count += 1
+        # Invalidate ability cache since abilities changed
+        self._invalidate_ability_cache()
+
+    def _invalidate_ability_cache(self) -> None:
+        """Invalidate ability cache when unit state changes."""
+        if hasattr(self, '_ability_cache'):
+            self._ability_cache.clear()
 
     # Remove a Model from a Unit (e.g., when it dies)
     def remove_model(self, model: Model, fleed: bool = False, game_map: Optional['Map'] = None) -> None:
@@ -458,6 +468,9 @@ class Unit:
         self.round_state.num_lost_models_this_round += 1
         self.models_lost.append(model)
         self.models.remove(model)
+
+        # Invalidate ability cache since unit composition changed
+        self._invalidate_ability_cache()
 
         logger.info(f"Unit has {len(self.models)} models left!")
         #if len(self.models) < 1:
@@ -620,6 +633,8 @@ class Unit:
         assert model not in self.models
         model.set_parent_unit(self)
         self.models.append(model)
+        # Invalidate ability cache since unit composition changed
+        self._invalidate_ability_cache()
         self.update_coherency()
 
     def update_coherency(self) -> None:
@@ -1861,13 +1876,29 @@ class Unit:
             if not self._can_model_shoot_weapon_at_target(model, weapon_profile, target_unit, game_map):
                 continue
                 
-            try:
-                # Execute the attack using the weapon profile
-                attack_result = weapon_profile.attack(target_unit, model)
-                if attack_result:
-                    successful_attacks += 1
-            except Exception as e:
-                print(f"❌ Error executing attack with {weapon_profile.name}: {e}")
+            # Count how many weapons of this type the model has
+            weapon_count = 0
+            for wargear in model.wargear:
+                # Check if this wargear has the specific weapon profile we're looking for
+                for profile_name, profile in wargear.profiles.items():
+                    if profile == weapon_profile:
+                        weapon_count += 1
+                        break  # Only count once per wargear item
+            
+            # If no weapons found, skip this model
+            if weapon_count == 0:
+                continue
+                
+            # Execute attacks for each weapon instance separately
+            for weapon_instance in range(weapon_count):
+                try:
+                    print(f"🎯 {model.name} attacking with {weapon_profile.parent_wargear.name} #{weapon_instance + 1}")
+                    # Execute the attack using the weapon profile - each weapon rolls independently
+                    attack_result = weapon_profile.attack(target_unit, model)
+                    if attack_result:
+                        successful_attacks += 1
+                except Exception as e:
+                    print(f"❌ Error executing attack with {weapon_profile.name} #{weapon_instance + 1}: {e}")
                 
         return successful_attacks
 
@@ -3184,12 +3215,47 @@ class Unit:
 
     def has_deep_strike(self) -> bool:
         """Check if the unit has Deep Strike ability."""
+        # Use cached result if available
+        if 'deep_strike' in getattr(self, '_ability_cache', {}):
+            return self._ability_cache['deep_strike']
+        
         found, _ = self._find_ability_with_patterns(["deep strike", "deepstrike"])
+        
+        # Cache the result
+        if not hasattr(self, '_ability_cache'):
+            self._ability_cache = {}
+        self._ability_cache['deep_strike'] = found
+        
         return found
 
     def has_infiltrate(self) -> bool:
         """Check if the unit has Infiltrate ability."""
+        # Use cached result if available
+        if 'infiltrate' in getattr(self, '_ability_cache', {}):
+            return self._ability_cache['infiltrate']
+        
         found, _ = self._find_ability_with_patterns(["infiltrate"])
+        
+        # Cache the result
+        if not hasattr(self, '_ability_cache'):
+            self._ability_cache = {}
+        self._ability_cache['infiltrate'] = found
+        
+        return found
+    
+    def has_stealth(self) -> bool:
+        """Check if the unit has Stealth ability."""
+        # Use cached result if available
+        if 'stealth' in getattr(self, '_ability_cache', {}):
+            return self._ability_cache['stealth']
+        
+        found, _ = self._find_ability_with_patterns(["stealth"])
+        
+        # Cache the result
+        if not hasattr(self, '_ability_cache'):
+            self._ability_cache = {}
+        self._ability_cache['stealth'] = found
+        
         return found
     
     def has_scout(self) -> Tuple[bool, float]:
@@ -3200,10 +3266,19 @@ class Unit:
                 - A boolean indicating if the unit has Scout ability
                 - The scout distance in inches (0.0 if no Scout ability)
         """
+        # Use cached result if available
+        if 'scout' in getattr(self, '_ability_cache', {}):
+            return self._ability_cache['scout']
+        
         found, distance_str = self._find_ability_with_patterns(["scout"], extract_value=True, value_pattern=r'(\d+)')
-        if found:
-            return True, float(distance_str)
-        return False, 0.0
+        result = (True, float(distance_str)) if found else (False, 0.0)
+        
+        # Cache the result
+        if not hasattr(self, '_ability_cache'):
+            self._ability_cache = {}
+        self._ability_cache['scout'] = result
+        
+        return result
     
     def get_scout_distance_normalized(self, max_scout_distance: float = 12.0) -> float:
         """Get the normalized scout distance for deployment considerations.
@@ -3244,6 +3319,10 @@ class Unit:
         Returns:
             bool: True if the unit has any Fight First ability
         """
+        # Use cached result if available
+        if 'fight_first' in getattr(self, '_ability_cache', {}):
+            return self._ability_cache['fight_first']
+        
         found, _ = self._find_ability_with_patterns([
             "fight first", 
             "fights first", 
@@ -3252,6 +3331,12 @@ class Unit:
             "swift strike",
             "martial prowess"
         ])
+        
+        # Cache the result
+        if not hasattr(self, '_ability_cache'):
+            self._ability_cache = {}
+        self._ability_cache['fight_first'] = found
+        
         return found
     
     def is_eligible_to_fight(self, game_map: 'Map') -> bool:
@@ -3314,14 +3399,26 @@ class Unit:
                 - A boolean indicating if the unit has Deadly Demise ability
                 - A DiceCollection object representing the damage value (e.g., "3", "D3", "D6") or None if no Deadly Demise ability
         """
+        # Use cached result if available
+        if 'deadly_demise' in getattr(self, '_ability_cache', {}):
+            return self._ability_cache['deadly_demise']
+        
         found, damage_str = self._find_ability_with_patterns(["deadly demise"], extract_value=True, value_pattern=r'(\d+|D\d+)')
         if found:
             try:
                 dice_collection = DiceCollection.from_string(damage_str)
-                return True, dice_collection
+                result = (True, dice_collection)
             except ValueError:
                 raise ValueError(f"Deadly Demise ability found but could not parse damage value '{damage_str}' for unit '{self.name}'")
-        return False, None
+        else:
+            result = (False, None)
+        
+        # Cache the result
+        if not hasattr(self, '_ability_cache'):
+            self._ability_cache = {}
+        self._ability_cache['deadly_demise'] = result
+        
+        return result
 
     def _find_all_abilities_with_patterns(self, patterns: List[str], value_pattern: str) -> List[Tuple[int, Optional[str]]]:
         """
@@ -3455,10 +3552,21 @@ class Unit:
                 - The dice roll needed (e.g., 5 for "5+", 6 for "6+")
                 - Optional condition string (e.g., "against psychic attacks", "against mortal wounds") (None if unconditional)
         """
-        return self._find_all_abilities_with_patterns(
+        # Use cached result if available
+        if 'feel_no_pain' in getattr(self, '_ability_cache', {}):
+            return self._ability_cache['feel_no_pain']
+        
+        result = self._find_all_abilities_with_patterns(
             ["feel no pain", "fnp"], 
             r'(?:feel no pain|fnp)\s*\(?(\d+)\+(?:\)?)(?:\s+(.+))?'
         )
+        
+        # Cache the result
+        if not hasattr(self, '_ability_cache'):
+            self._ability_cache = {}
+        self._ability_cache['feel_no_pain'] = result
+        
+        return result
 
     def get_max_weapon_range(self) -> float:
         """Get the maximum range of all weapons in the unit."""

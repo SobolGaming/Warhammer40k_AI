@@ -5,11 +5,43 @@ import re
 from warhammer40k_ai.utility.dice import DiceCollection, get_roll
 from warhammer40k_ai.utility.range import Range
 from warhammer40k_ai.utility.count import Count
+from dataclasses import dataclass
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .model import Model
     from .unit import Unit
+
+# Attack result data structure for comprehensive reporting
+@dataclass
+class AttackResult:
+    """Comprehensive attack result tracking"""
+    weapon_name: str
+    attacker_name: str
+    target_unit_name: str
+    
+    # Attack generation
+    attacks_rolled: int
+    attacks_dice_expression: str
+    attacks_dice_rolls: List[int]  # Actual dice rolled for attacks
+    attacks_special_modifiers: List[str]
+    
+    # Individual attack results
+    hit_results: List[Dict]  # Each dict contains: roll, needed, hit, special_effects
+    wound_results: List[Dict]  # Each dict contains: roll, needed, wound, special_effects
+    save_results: List[Dict]  # Each dict contains: roll, needed, saved, save_type
+    damage_results: List[Dict]  # Each dict contains: damage_rolled, damage_applied, target_model, excess
+    
+    # Weapon effects
+    hazardous_roll: Optional[int]
+    hazardous_damage: int
+    
+    # Summary
+    total_hits: int
+    total_wounds: int
+    total_saves_failed: int
+    total_damage_dealt: int
+    models_killed: int
 
 
 class WargearProfile:
@@ -119,180 +151,548 @@ class WargearProfile:
         return expected_damage
 
     def attack(self, target: 'Unit', attacker: 'Model') -> None:
+        # Initialize attack result tracking
+        # Build proper weapon name: parent weapon + profile (if not default)
+        weapon_display_name = self.name
+        if hasattr(self, 'parent_wargear') and self.parent_wargear:
+            if self.name == 'default':
+                weapon_display_name = self.parent_wargear.name
+            else:
+                weapon_display_name = f"{self.parent_wargear.name} - {self.name}"
+        
+        attack_result = AttackResult(
+            weapon_name=weapon_display_name,
+            attacker_name=attacker.name,
+            target_unit_name=target.name,
+            attacks_rolled=0,
+            attacks_dice_expression=str(self.attacks),
+            attacks_dice_rolls=[],
+            attacks_special_modifiers=[],
+            hit_results=[],
+            wound_results=[],
+            save_results=[],
+            damage_results=[],
+            hazardous_roll=None,
+            hazardous_damage=0,
+            total_hits=0,
+            total_wounds=0,
+            total_saves_failed=0,
+            total_damage_dealt=0,
+            models_killed=0
+        )
+        
         wound_instances = []
         hit_instances = []
         num_attacks = 0
 
+        # Roll attacks for this specific weapon instance
         if isinstance(self.attacks, Count):
-            num_attacks = self.attacks.resolve()
+            num_attacks, dice_rolls = self.attacks.resolve_detailed()
+            attack_result.attacks_rolled = num_attacks
+            attack_result.attacks_dice_rolls = dice_rolls
         else:
             num_attacks = self.attacks or 0
+            attack_result.attacks_rolled = num_attacks
+            attack_result.attacks_dice_rolls = []
 
         closest_target, closest_dist = attacker.return_closest_model_in_unit(target)
+        
+        # Apply attack modifiers
         if closest_dist <= (self.range.max / 2) and self.is_rapid_fire() > 0:
-            print(f"Rapid fire: +{self.is_rapid_fire()} attacks")
-            num_attacks = self.is_rapid_fire()
+            attack_result.attacks_special_modifiers.append(f"Rapid Fire +{self.is_rapid_fire()}")
+            num_attacks += self.is_rapid_fire()
 
         if self.is_blast():
             target_model_count = len(target.models)
             num_attacks_modifier = int(target_model_count / 5)
-            print(f"Blast: +{num_attacks_modifier} attacks")
+            attack_result.attacks_special_modifiers.append(f"Blast +{num_attacks_modifier}")
             num_attacks += num_attacks_modifier
 
-        for _ in range(num_attacks):
-            print(f"Attack {_ + 1} of {num_attacks}")
+        # Process each attack
+        for attack_num in range(num_attacks):
             attack_instance = {
                 'crit_hit': False,
                 'crit_wound': False,
                 'mortal_wound': False,
-                'below_half_distanct': closest_dist <= (self.range.max / 2),
+                'below_half_distance': closest_dist <= (self.range.max / 2),
                 'damage': 0
             }
-            # check if we hit
-            if self.hit_target(target, attacker, attack_instance):
+            
+            # Check if we hit
+            hit_result = self._hit_target_with_tracking(target, attacker, attack_instance)
+            attack_result.hit_results.append(hit_result)
+            
+            if hit_result['hit']:
                 hit_instances.append(attack_instance)
-            if hasattr(attack_instance, 'sustained_hit'):
-                for _ in range(attack_instance['sustained_hit']):
-                    hit_instances.append(attack_instance)
+                attack_result.total_hits += 1
+                
+                # Handle sustained hits
+                if attack_instance.get('sustained_hit', 0) > 0:
+                    for _ in range(attack_instance['sustained_hit']):
+                        hit_instances.append(attack_instance.copy())
+                        attack_result.total_hits += 1
 
-        for _, hit_instance in enumerate(hit_instances):
-            # check if we wound
-            print(f"Wound Evaluation: {_ + 1} of {len(hit_instances)}")
-            if self.wound_target(target, attacker, hit_instance):
+        # Process wound rolls
+        for hit_instance in hit_instances:
+            wound_result = self._wound_target_with_tracking(target, attacker, hit_instance)
+            attack_result.wound_results.append(wound_result)
+            
+            if wound_result['wound']:
                 wound_instances.append(hit_instance)
+                attack_result.total_wounds += 1
 
-        for _, attack_instance in enumerate(wound_instances):
+        # Process saves and damage
+        for wound_instance in wound_instances:
             # Allocate damage instances to the target unit
             target_model = self.opponent_wound_allocation(target)
             if target_model is None:
-                print(f"No valid target model found in unit {target.name} - unit may be destroyed")
                 continue
                 
-            if attack_instance['mortal_wound'] or target_model.failed_saving_throw(attack_instance, self.ap):
-                dmg_value = self.damage_target(target_model, attacker, attack_instance)
+            save_result = None
+            if not wound_instance['mortal_wound']:
+                save_result = self._save_with_tracking(target_model, wound_instance, self.ap)
+                attack_result.save_results.append(save_result)
+            
+            # Apply damage if save failed or mortal wound
+            if wound_instance['mortal_wound'] or (save_result and not save_result['saved']):
+                if save_result and not save_result['saved']:
+                    attack_result.total_saves_failed += 1
                 
-                # 10th Edition: Apply damage to the target model, excess damage is lost
-                # Pass the weapon profile instance for Feel No Pain condition checking
-                excess_damage = target_model.take_damage(dmg_value, attack_instance['mortal_wound'], self)
-                print(f"{target_model.name} took {dmg_value}{' mortal' if attack_instance['mortal_wound'] else ''} damage")
-                # In 10th edition, excess damage is lost (no spillover to other models)
-                #if excess_damage > 0:
-                #    print(f"Excess damage of {excess_damage} is lost (10th edition rules)")
+                damage_result = self._damage_target_with_tracking(target_model, attacker, wound_instance)
+                attack_result.damage_results.append(damage_result)
+                attack_result.total_damage_dealt += damage_result['damage_applied']
+                
+                if damage_result['model_killed']:
+                    attack_result.models_killed += 1
         
-        # HAZARDOUS RULE (10th Edition)
-        # After resolving all attacks, if this weapon is hazardous,
-        # roll a D6 for the attacking model. On a 1, it suffers 3 mortal wounds.
+        # Handle hazardous weapon effects
         if self.is_hazardous():
-            print(f"Hazardous weapon check for {attacker.name}")
             hazard_roll = get_roll("D6")
-            print(f"Hazardous roll: {hazard_roll}")
+            attack_result.hazardous_roll = hazard_roll
             if hazard_roll == 1:
-                print(f"Hazardous weapon backfires! {attacker.name} suffers 3 mortal wounds")
-                # Apply 3 mortal wounds to the attacking model
-                # Feel No Pain can be used against these mortal wounds, but saves don't apply
+                attack_result.hazardous_damage = 3
                 attacker.take_damage(3, is_mortal=True, weapon_profile=None)
-            else:
-                print(f"Hazardous weapon safe - no damage to {attacker.name}")
-                
+        
+        # Print comprehensive attack summary
+        self._print_attack_summary(attack_result)
+        
         return
 
-    def hit_target(self, target: 'Unit', attacker: 'Model', attack_instance: Dict) -> bool:
-        # TODO - handle cover
-        # TODO - handle stealth and other keyword on target unit
-        # TODO - handle positive skill modifiers on shooter
-
+    def _hit_target_with_tracking(self, target: 'Unit', attacker: 'Model', attack_instance: Dict) -> Dict:
+        """Hit resolution with detailed tracking"""
+        hit_result = {
+            'roll': None,
+            'needed': None,
+            'base_skill': self.skill,
+            'modifiers': [],
+            'final_needed': None,
+            'hit': False,
+            'special_effects': []
+        }
+        
         if self.is_torrent():
-            print("\tTorrent: always hits")
-            return True
+            hit_result['hit'] = True
+            hit_result['special_effects'].append("Torrent (auto-hit)")
+            return hit_result
 
-        dice_roll = get_roll("D6")
-        if dice_roll == 1:  # unmodified dice roll of 1 is always a miss
-            print("\tunmodified dice roll of 1 is always a miss")
-            return False
-        elif dice_roll == 6:  # unmodified dice roll of 6 is always a hit
-            print("\tunmodified dice roll of 6 is a crit hit")
-            attack_instance['crit_hit'] = True
-            if self.is_lethal_hits():
-                print("\t\tLethal hits: crit hit is lethal")
-                attack_instance['lethal_hit'] = True
-            if self.is_sustained_hits() > 0:
-                print(f"\t\tSustained hits: +{self.is_sustained_hits()} hits")
-                attack_instance['sustained_hit'] = self.is_sustained_hits()
-            return True
-
+        # Calculate modifiers first (always do this)
         dice_modifier = 0
         if self.is_heavy() and attacker.parent_unit.round_state.remained_stationary_this_round:
-            print("\tHeavy: +1 to hit modifier since unit remained stationary this round")
             dice_modifier += 1
+            hit_result['modifiers'].append("+1 from Heavy (stationary)")
+        
+        # Check for target modifiers (like Stealth)
+        if hasattr(target, 'has_stealth') and target.has_stealth():
+            dice_modifier -= 1
+            hit_result['modifiers'].append("-1 from target Stealth")
+        
+        # Add other potential modifiers here
+        # TODO: Add more hit modifiers (cover, moving, etc.)
+        
         dice_modifier = min(max(dice_modifier, -1), 1)  # modifications are capped between -1 and 1
-        print(f"\t\tSkill: {self.skill}, dice_modifier: {dice_modifier}, dice_roll: {dice_roll} -> {self.skill > 0 and dice_roll >= (self.skill + dice_modifier)}")
-        return self.skill > 0 and dice_roll >= (self.skill + dice_modifier)
+        final_needed = self.skill - dice_modifier  # Note: negative dice_modifier makes it harder (higher final_needed)
+        
+        hit_result['needed'] = self.skill
+        hit_result['final_needed'] = final_needed
 
-    def wound_target(self, target: 'Unit', attacker: 'Model', attack_instance: Dict) -> bool:
-        if hasattr(attack_instance, 'lethal_hit') and attack_instance['lethal_hit']:
-            print("\tLethal hit: always wounds")
-            return True
+        dice_roll = get_roll("D6")
+        hit_result['roll'] = dice_roll
+        
+        if dice_roll == 1:  # unmodified dice roll of 1 is always a miss
+            hit_result['hit'] = False
+            hit_result['special_effects'].append("Natural 1 (auto-miss)")
+            return hit_result
+        elif dice_roll == 6:  # unmodified dice roll of 6 is always a hit
+            hit_result['hit'] = True
+            hit_result['special_effects'].append("Natural 6 (auto-hit)")
+            attack_instance['crit_hit'] = True
+            
+            if self.is_lethal_hits():
+                hit_result['special_effects'].append("Lethal Hits")
+                attack_instance['lethal_hit'] = True
+            if self.is_sustained_hits() > 0:
+                hit_result['special_effects'].append(f"Sustained Hits {self.is_sustained_hits()}")
+                attack_instance['sustained_hit'] = self.is_sustained_hits()
+            return hit_result
+
+        # Normal hit resolution
+        hit_result['hit'] = self.skill > 0 and dice_roll >= final_needed
+        
+        return hit_result
+
+    def _wound_target_with_tracking(self, target: 'Unit', attacker: 'Model', attack_instance: Dict) -> Dict:
+        """Wound resolution with detailed tracking"""
+        wound_result = {
+            'roll': None,
+            'needed': None,
+            'base_strength': self.strength,
+            'target_toughness': None,
+            'modifiers': [],
+            'final_needed': None,
+            'wound': False,
+            'special_effects': []
+        }
+        
+        if attack_instance.get('lethal_hit', False):
+            wound_result['wound'] = True
+            wound_result['special_effects'].append("Lethal Hit (auto-wound)")
+            return wound_result
 
         # Check if target unit still has models before accessing properties
         if not target.models:
-            print(f"\tTarget unit {target.name} has no models left - cannot wound")
-            return False
+            wound_result['special_effects'].append("No valid targets")
+            return wound_result
 
         target_toughness = target.toughness
+        wound_result['target_toughness'] = target_toughness
         strength = self.strength
         dice_roll = get_roll("D6")
-
-        if self.is_twin_linked():
-            # TODO - you can re-roll the wound roll
-            pass
+        wound_result['roll'] = dice_roll
 
         if dice_roll == 1:  # unmodified dice roll of 1 is always a miss
-            print("\t\tunmodified dice roll of 1 is always a miss")
-            return False
+            wound_result['wound'] = False
+            wound_result['special_effects'].append("Natural 1 (auto-fail)")
+            return wound_result
         elif dice_roll == 6:  # unmodified dice roll of 6 is always a hit
-            print("\t\tunmodified dice roll of 6 is a crit wound")
+            wound_result['wound'] = True
+            wound_result['special_effects'].append("Natural 6 (auto-wound)")
             attack_instance['crit_wound'] = True
             if self.is_devastating_wounds():
-                print("\t\tDevastating wounds: crit wound is mortal")
+                wound_result['special_effects'].append("Devastating Wounds")
                 attack_instance['mortal_wound'] = True
-            return True
+            return wound_result
 
         anti_keyword, anti_value = self.is_anti()
         if anti_keyword and target.has_keyword(anti_keyword):
             if dice_roll >= anti_value:
-                print(f"\t\tAnti-{anti_keyword}: +{anti_value} to wound modifier")
+                wound_result['wound'] = True
+                wound_result['special_effects'].append(f"Anti-{anti_keyword} {anti_value}+")
                 attack_instance['crit_wound'] = True
                 if self.is_devastating_wounds():
-                    print("\t\t\tDevastating wounds: crit wound is mortal")
+                    wound_result['special_effects'].append("Devastating Wounds")
                     attack_instance['mortal_wound'] = True
-                return True
+                return wound_result
 
-        dice_modifier = 0
-        # TODO - handle positive and negative modifiers for wounding
-        dice_modifier = min(max(dice_modifier, -1), 1)  # modifications are capped between -1 and 1
-        dice_roll += dice_modifier
-
+        # Determine base wound threshold based on S vs T
+        base_needed = None
+        strength_comparison = ""
         if strength >= (target_toughness * 2):
-            print(f"\t\tStrength: {strength}, Toughness: {target_toughness}, dice_roll: {dice_roll} -> {dice_roll >= 2}")
-            return dice_roll >= 2
+            base_needed = 2
+            strength_comparison = f"S{strength} ≥ 2×T{target_toughness}"
         elif strength > target_toughness:
-            print(f"\t\tStrength: {strength}, Toughness: {target_toughness}, dice_roll: {dice_roll} -> {dice_roll >= 3}")
-            return dice_roll >= 3
+            base_needed = 3
+            strength_comparison = f"S{strength} > T{target_toughness}"
         elif strength == target_toughness:
-            print(f"\t\tStrength: {strength}, Toughness: {target_toughness}, dice_roll: {dice_roll} -> {dice_roll >= 4}")
-            return dice_roll >= 4
+            base_needed = 4
+            strength_comparison = f"S{strength} = T{target_toughness}"
         elif strength <= (target_toughness / 2):
-            print(f"\t\tStrength: {strength}, Toughness: {target_toughness}, dice_roll: {dice_roll} -> {dice_roll >= 6}")
-            return dice_roll >= 6
+            base_needed = 6
+            strength_comparison = f"S{strength} ≤ T{target_toughness}/2"
         else:
-            print(f"\t\tStrength: {strength}, Toughness: {target_toughness}, dice_roll: {dice_roll} -> {dice_roll >= 5}")
-            return dice_roll >= 5
-        return False
+            base_needed = 5
+            strength_comparison = f"S{strength} < T{target_toughness}"
+        
+        wound_result['needed'] = base_needed
+        wound_result['strength_comparison'] = strength_comparison
+        
+        # Calculate wound modifiers
+        dice_modifier = 0
+        # TODO: Add wound modifiers here (abilities, stratagems, etc.)
+        
+        dice_modifier = min(max(dice_modifier, -1), 1)  # modifications are capped between -1 and 1
+        final_needed = base_needed - dice_modifier  # Note: positive dice_modifier makes it easier (lower needed)
+        
+        wound_result['final_needed'] = final_needed
+        wound_result['wound'] = dice_roll >= final_needed
+        
+        return wound_result
+
+    def _save_with_tracking(self, target_model: 'Model', attack_instance: Dict, ap: int) -> Dict:
+        """Saving throw resolution with detailed tracking"""
+        save_result = {
+            'roll': None,
+            'needed': None,
+            'saved': False,
+            'save_type': 'armor',
+            'base_save': target_model.save,
+            'ap_modifier': ap,
+            'final_save': None,
+            'special_effects': []
+        }
+        
+        # Calculate save value
+        save_value = target_model.save - ap
+        save_result['final_save'] = save_value
+        inv_save, inv_save_condition = target_model.inv_save
+        
+        if inv_save:
+            if not inv_save_condition or inv_save_condition(attack_instance):
+                if inv_save < save_value:
+                    save_value = inv_save
+                    save_result['save_type'] = 'invulnerable'
+                    save_result['final_save'] = save_value
+
+        dice_roll = get_roll("D6")
+        save_result['roll'] = dice_roll
+        save_result['needed'] = save_value
+        
+        if dice_roll == 1:  # unmodified dice roll of 1 is always a fail
+            save_result['saved'] = False
+            save_result['special_effects'].append("Natural 1 (auto-fail)")
+            return save_result
+
+        dice_modifier = 0  # TODO - handle positive & negative modifiers
+        dice_modifier = min(dice_modifier, 1)  # modifications are capped at +1
+        save_result['saved'] = (dice_roll + dice_modifier) >= save_value
+        
+        if dice_modifier != 0:
+            save_result['special_effects'].append(f"Modifier {dice_modifier:+d}")
+        
+        return save_result
+
+    def _damage_target_with_tracking(self, target_model: 'Model', attacker: 'Model', attack_instance: Dict) -> Dict:
+        """Damage application with detailed tracking"""
+        damage_result = {
+            'damage_rolled': 0,
+            'damage_applied': 0,
+            'target_model': target_model.name,
+            'excess_damage': 0,
+            'model_killed': False,
+            'fnp_saves': 0,
+            'fnp_rolls': [],
+            'damage_dice_rolls': [],
+            'damage_expression': str(self.damage),
+            'special_effects': []
+        }
+        
+        # Calculate damage with detailed tracking
+        if isinstance(self.damage, DiceCollection):
+            damage_value, dice_rolls = self.damage.roll_detailed()
+            damage_result['damage_dice_rolls'] = dice_rolls
+        else:
+            damage_value = self.damage
+            damage_result['damage_dice_rolls'] = []
+        damage_result['damage_rolled'] = damage_value
+        
+        if self.is_melta() and attack_instance['below_half_distance']:
+            melta_bonus = self.is_melta()
+            damage_value += melta_bonus
+            damage_result['special_effects'].append(f"Melta +{melta_bonus}")
+        
+        # Apply damage with detailed tracking
+        was_alive = target_model.is_alive
+        damage_result.update(self._apply_damage_with_tracking(target_model, damage_value, attack_instance['mortal_wound']))
+        damage_result['model_killed'] = was_alive and not target_model.is_alive
+        
+        if attack_instance['mortal_wound']:
+            damage_result['special_effects'].append("Mortal Wounds")
+        
+        return damage_result
+
+    def _apply_damage_with_tracking(self, target_model: 'Model', damage_amount: int, is_mortal: bool) -> Dict:
+        """Apply damage with detailed tracking of Feel No Pain saves"""
+        from warhammer40k_ai.utility.dice import get_roll
+        
+        result = {
+            'damage_applied': 0,
+            'fnp_saves': 0,
+            'fnp_rolls': [],
+            'excess_damage': 0
+        }
+        
+        # Handle Feel No Pain saves
+        final_damage = damage_amount
+        fnp_abilities = target_model.parent_unit.has_feel_no_pain()
+        
+        if fnp_abilities:
+            # Find the best applicable Feel No Pain ability
+            best_fnp = target_model._get_best_applicable_fnp(fnp_abilities, self, is_mortal)
+            
+            if best_fnp:
+                fnp_value, fnp_condition = best_fnp
+                fnp_saves = 0
+                
+                # Roll D6 for each point of damage
+                for i in range(damage_amount):
+                    fnp_roll = get_roll("D6")
+                    fnp_result = {
+                        'roll': fnp_roll,
+                        'needed': fnp_value,
+                        'saved': fnp_roll >= fnp_value,
+                        'condition': fnp_condition
+                    }
+                    result['fnp_rolls'].append(fnp_result)
+                    
+                    if fnp_result['saved']:
+                        fnp_saves += 1
+                
+                final_damage = damage_amount - fnp_saves
+                result['fnp_saves'] = fnp_saves
+        
+        # Apply the final damage
+        result['damage_applied'] = final_damage
+        target_model.wounds -= final_damage
+        
+        # Handle model death
+        if not target_model.is_alive:
+            target_model.die()
+            # Calculate excess damage (10th edition: excess damage is lost)
+            if is_mortal and abs(target_model.wounds) > 0:
+                result['excess_damage'] = abs(target_model.wounds)
+        
+        # Check for damaged profile
+        target_model._check_damaged_profile()
+        
+        return result
+
+    def _print_attack_summary(self, result: AttackResult) -> None:
+        """Print comprehensive attack summary"""
+        print(f"\n🎯 ATTACK SUMMARY: {result.weapon_name}")
+        print(f"   Attacker: {result.attacker_name} → Target: {result.target_unit_name}")
+        
+        # Attack generation with dice details
+        modifiers_str = f" ({', '.join(result.attacks_special_modifiers)})" if result.attacks_special_modifiers else ""
+        dice_details = ""
+        if result.attacks_dice_rolls:
+            dice_str = ", ".join(map(str, result.attacks_dice_rolls))
+            dice_details = f" - rolled: [{dice_str}]"
+        print(f"   🎲 Attacks: {result.attacks_rolled} (from {result.attacks_dice_expression}{dice_details}){modifiers_str}")
+        
+        # Hit results with needed/rolled format and modifier breakdown
+        if result.hit_results:
+            hit_rolls = [str(hit['roll']) if hit['roll'] is not None else 'Auto' for hit in result.hit_results]
+            hit_rolls_str = ", ".join(hit_rolls)
+            
+            # Show hit details with modifiers if any
+            first_hit = result.hit_results[0]
+            if 'final_needed' in first_hit and first_hit['final_needed'] is not None:
+                base_skill = first_hit['base_skill']
+                final_needed = first_hit['final_needed']
+                
+                if first_hit.get('modifiers'):
+                    modifiers_str = ", ".join(first_hit['modifiers'])
+                    needed_str = f"needed {final_needed}+ (base {base_skill}+ with {modifiers_str})"
+                else:
+                    needed_str = f"needed {final_needed}+"
+            else:
+                # Fallback for auto-hit or special cases
+                needed_str = "auto-hit"
+            
+            print(f"   ⚔️ Hits: {result.total_hits}/{len(result.hit_results)} - {needed_str} - rolled: [{hit_rolls_str}]")
+        
+        # Wound results with needed/rolled format and strength comparison
+        if result.wound_results:
+            wound_rolls = [str(wound['roll']) if wound['roll'] is not None else 'Auto' for wound in result.wound_results]
+            wound_rolls_str = ", ".join(wound_rolls)
+            
+            # Show wound details with strength comparison
+            first_wound = result.wound_results[0]
+            if 'final_needed' in first_wound and first_wound['final_needed'] is not None:
+                base_needed = first_wound['needed']
+                final_needed = first_wound['final_needed']
+                strength_comp = first_wound.get('strength_comparison', '')
+                
+                if first_wound.get('modifiers'):
+                    modifiers_str = ", ".join(first_wound['modifiers'])
+                    needed_str = f"needed {final_needed}+ (base {base_needed}+ with {modifiers_str}, {strength_comp})"
+                else:
+                    needed_str = f"needed {final_needed}+ ({strength_comp})"
+            else:
+                # Fallback for auto-wound or special cases
+                needed_str = "auto-wound"
+            
+            print(f"   🩸 Wounds: {result.total_wounds}/{len(result.wound_results)} - {needed_str} - rolled: [{wound_rolls_str}]")
+        
+        # Save results with save type and modifiers
+        if result.save_results:
+            save_rolls = [str(save['roll']) for save in result.save_results]
+            save_rolls_str = ", ".join(save_rolls)
+            
+            # Show save details - assume all saves are the same type for this attack
+            first_save = result.save_results[0]
+            save_type_str = "Inv" if first_save['save_type'] == 'invulnerable' else "Armor"
+            
+            if first_save['save_type'] == 'armor' and first_save['ap_modifier'] < 0:
+                needed_str = f"needed {first_save['needed']}+ {save_type_str} (base {first_save['base_save']}+ with AP{first_save['ap_modifier']})"
+            else:
+                needed_str = f"needed {first_save['needed']}+ {save_type_str}"
+            
+            failed_saves = len(result.save_results) - sum(1 for s in result.save_results if s['saved'])
+            print(f"   🛡️ Saves: {failed_saves}/{len(result.save_results)} failed - {needed_str} - rolled: [{save_rolls_str}]")
+        
+        # Damage results with Feel No Pain details
+        if result.damage_results:
+            damage_summary = []
+            for i, dmg in enumerate(result.damage_results):
+                effects = f" [{', '.join(dmg['special_effects'])}]" if dmg['special_effects'] else ""
+                killed = " 💀" if dmg['model_killed'] else ""
+                fnp_info = ""
+                
+                # Add Feel No Pain information
+                if dmg['fnp_rolls']:
+                    fnp_saves = dmg['fnp_saves']
+                    fnp_total = len(dmg['fnp_rolls'])
+                    fnp_rolls_str = ", ".join([str(roll['roll']) for roll in dmg['fnp_rolls']])
+                    fnp_needed = dmg['fnp_rolls'][0]['needed'] if dmg['fnp_rolls'] else 'N/A'
+                    fnp_info = f" FNP: {fnp_saves}/{fnp_total} saved (needed {fnp_needed}+ - rolled: [{fnp_rolls_str}])"
+                
+                # Add damage dice roll information
+                damage_info = f"{dmg['damage_rolled']}→{dmg['damage_applied']}"
+                if dmg['damage_dice_rolls']:
+                    dice_rolls_str = ", ".join([str(roll) for roll in dmg['damage_dice_rolls']])
+                    damage_info = f"{dmg['damage_rolled']}→{dmg['damage_applied']} (from {dmg['damage_expression']} - rolled: [{dice_rolls_str}])"
+                
+                damage_summary.append(f"#{i+1}: {damage_info} to {dmg['target_model']}{fnp_info}{effects}{killed}")
+            print(f"   💥 Damage: {result.total_damage_dealt} total - {', '.join(damage_summary)}")
+        
+        # Hazardous effects
+        if result.hazardous_roll is not None:
+            hazard_result = "💀 Backfire!" if result.hazardous_roll == 1 else "✓ Safe"
+            print(f"   ⚠️ Hazardous: Rolled {result.hazardous_roll} - {hazard_result}")
+            if result.hazardous_damage > 0:
+                print(f"      {result.attacker_name} takes {result.hazardous_damage} mortal wounds")
+        
+        # Final summary
+        if result.models_killed > 0:
+            print(f"   ☠️ Models eliminated: {result.models_killed}")
+        
+        print()  # Empty line for readability
+
+    # Legacy methods for backwards compatibility
+    def hit_target(self, target: 'Unit', attacker: 'Model', attack_instance: Dict) -> bool:
+        """Legacy hit target method for backwards compatibility"""
+        hit_result = self._hit_target_with_tracking(target, attacker, attack_instance)
+        return hit_result['hit']
+
+    def wound_target(self, target: 'Unit', attacker: 'Model', attack_instance: Dict) -> bool:
+        """Legacy wound target method for backwards compatibility"""
+        wound_result = self._wound_target_with_tracking(target, attacker, attack_instance)
+        return wound_result['wound']
 
     def opponent_wound_allocation(self, target: 'Unit') -> Optional['Model']:
+        """Allocate wounds to target models"""
         # Check if the unit has any models left
         if not target.models:
-            print(f"Warning: Unit {target.name} has no models left for wound allocation")
             return None
             
         _, damaged_model = target.is_max_health()
@@ -303,10 +703,9 @@ class WargearProfile:
             return target.models[0]
 
     def damage_target(self, target_model: 'Model', attacker: 'Model', attack_instance: Dict) -> int:
-        damage_value = self.damage.roll() if isinstance(self.damage, DiceCollection) else self.damage
-        if self.is_melta() and attack_instance['below_half_distance']:
-            damage_value += self.is_melta()
-        return damage_value
+        """Legacy damage target method for backwards compatibility"""
+        damage_result = self._damage_target_with_tracking(target_model, attacker, attack_instance)
+        return damage_result['damage_applied']
 
     ###########################################################################
     ### Wargear profile type checks
@@ -417,7 +816,7 @@ class WargearProfile:
 
 class Wargear:
     def __init__(self, wargear_data: Dict):
-        self.name = wargear_data.get('name', '').replace('’', "'")
+        self.name = wargear_data.get('name', '').replace("'", "'")
         if ' – ' in self.name:
             self.name, profile_name = self.name.split(' – ')
         else:
@@ -672,7 +1071,7 @@ def parse_option_string2(option: str, unit_ref: 'Unit') -> Optional[WargearOptio
                     option = option.replace(" can each have their ", " ").replace(" replaced with ", " can be replaced with ")
 
         # some pre-pattern cleaning
-        description = option.replace("’s", "'s").replace(",", " and")
+        description = option.replace("'s", "'s").replace(",", " and")
 
         pattern = re.compile(
             r"(?P<model>(?:This model|The " + re.escape(model_name_1) + r"|The " + re.escape(model_name_2) + r"|The " + re.escape(model_name_3) + 
