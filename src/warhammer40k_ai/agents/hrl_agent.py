@@ -865,7 +865,7 @@ class TacticalAgent:
     ###########################################################################
     def movement_phase(self, unit: Unit, objective: Objective) -> None:
         """Decide on movement actions for the unit and execute them."""
-        if not unit.deployed or not unit.is_alive():
+        if not unit.deployed or not unit.is_alive() or unit.is_in_reserves():
             return
 
         logger.info(f"🚶 {self.player.name}: {unit.name} making movement decision")
@@ -1296,8 +1296,13 @@ class TacticalAgent:
         return MAX_TARGETS
 
     def shooting_phase(self, unit: Unit) -> None:
-        """Select targets and resolve shooting attacks for each model in the unit."""
-        if not unit.deployed or not unit.is_alive():
+        """Select targets and resolve shooting attacks for each model in the unit.
+        
+        Follows proper Warhammer 40k rules:
+        1. Declare ALL targets for ALL weapons simultaneously
+        2. Resolve all attacks after all declarations are complete
+        """
+        if not unit.deployed or not unit.is_alive() or unit.is_in_reserves():
             return
 
         self.game.event_system.publish("shooting_phase_start", unit=unit, game_state=self.game.get_state())
@@ -1313,6 +1318,9 @@ class TacticalAgent:
             for enemy_unit in enemy_units if enemy_unit.is_alive()
         )
 
+        # PHASE 1: DECLARE ALL TARGETS FOR ALL WEAPONS
+        shooting_declarations = []
+        
         for model in unit.models:
             if not model.is_alive:
                 continue
@@ -1367,44 +1375,61 @@ class TacticalAgent:
                         valid_targets.append(target)
                 
                 if valid_targets:
-                    # Agent decides on the target
+                    # Agent decides on the target (declaration phase - no attacks resolved yet)
                     target_idx = self.choose_shooting_target(model, selected_profile, valid_targets)
                     target = valid_targets[target_idx]
-
-                    # Double-check that target is still alive before attacking
-                    if not target.is_alive():
-                        logger.info(f"Target {target.name} was destroyed before attack could be executed")
-                        reward = -0.5 * SHOOTING_REWARD_SCALING
-                        self.profile_selection_rewards.append(reward)
-                        self.shooting_rewards.append(reward)
-                        continue
-
-                    # Record the target's health before attack
-                    target_health_before = target.health_percent
-
-                    # Execute the attack
-                    logger.info(f"{model.name} of {unit.name} shoots at {target.name} with {wargear_item.name} ({selected_profile.name})")
-                    try:
-                        model.ranged_attack(target, selected_profile)
-                    except Exception as e:
-                        logger.error(f"Error during ranged attack: {e}")
-                        reward = -1.0 * SHOOTING_REWARD_SCALING
-                        self.profile_selection_rewards.append(reward)
-                        self.shooting_rewards.append(reward)
-                        continue
-
-                    # Record the target's health after attack
-                    target_health_after = target.health_percent
-
-                    # Compute the reward (damage inflicted)
-                    damage = target_health_before - target_health_after
-                    reward = SHOOTING_REWARD_SCALING * damage
-                    self.profile_selection_rewards.append(reward)
-                    self.shooting_rewards.append(reward)
+                    
+                    # Store the shooting declaration
+                    shooting_declarations.append({
+                        'model': model,
+                        'weapon_profile': selected_profile,
+                        'target': target,
+                        'target_health_before': target.health_percent  # Record health at declaration time
+                    })
+                    
+                    logger.info(f"🎯 {model.name} of {unit.name} declares target: {target.name} with {wargear_item.name} ({selected_profile.name})")
                 else:
+                    # No valid targets for this weapon
                     reward = -1.0 * SHOOTING_REWARD_SCALING
                     self.profile_selection_rewards.append(reward)
                     self.shooting_rewards.append(reward)
+
+        # PHASE 2: RESOLVE ALL ATTACKS AFTER ALL DECLARATIONS ARE COMPLETE
+        logger.info(f"📋 {unit.name} resolving {len(shooting_declarations)} shooting declarations...")
+        
+        for declaration in shooting_declarations:
+            model = declaration['model']
+            selected_profile = declaration['weapon_profile']
+            target = declaration['target']
+            target_health_before = declaration['target_health_before']
+            
+            # Double-check that target is still alive before attacking
+            if not target.is_alive():
+                logger.info(f"Target {target.name} was destroyed before attack could be executed")
+                reward = -0.5 * SHOOTING_REWARD_SCALING
+                self.profile_selection_rewards.append(reward)
+                self.shooting_rewards.append(reward)
+                continue
+
+            # Execute the attack
+            logger.info(f"🔥 {model.name} of {unit.name} shoots at {target.name} with {selected_profile.parent_wargear.name} ({selected_profile.name})")
+            try:
+                model.ranged_attack(target, selected_profile)
+            except Exception as e:
+                logger.error(f"Error during ranged attack: {e}")
+                reward = -1.0 * SHOOTING_REWARD_SCALING
+                self.profile_selection_rewards.append(reward)
+                self.shooting_rewards.append(reward)
+                continue
+
+            # Record the target's health after attack
+            target_health_after = target.health_percent
+
+            # Compute the reward (damage inflicted)
+            damage = target_health_before - target_health_after
+            reward = SHOOTING_REWARD_SCALING * damage
+            self.profile_selection_rewards.append(reward)
+            self.shooting_rewards.append(reward)
 
         self.game.event_system.publish("shooting_phase_end", unit=unit, game_state=self.game.get_state())
 
@@ -1413,7 +1438,7 @@ class TacticalAgent:
     ###########################################################################
     def charge_phase(self, unit: Unit) -> None:
         """Identify nearby targets and charge."""
-        if not unit.deployed or not unit.is_alive():
+        if not unit.deployed or not unit.is_alive() or unit.is_in_reserves():
             return None
 
         self.game.event_system.publish("charge_phase_start", unit=unit, game_state=self.game.get_state())

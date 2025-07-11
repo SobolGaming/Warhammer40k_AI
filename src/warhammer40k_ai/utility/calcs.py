@@ -832,10 +832,9 @@ def footprint_from_offsets(offsets, unit):
         polys.append(translate(base, cx+dx - m.model_base.x,
                                 cy+dy - m.model_base.y))
     hull = unary_union(polys).convex_hull
-    # Use a smaller buffer for footprint collision detection during deployment
-    # Full coherency distance (2.0") is too large and causes false collisions
-    buffer_distance = min(0.5, unit.coherency_distance * 0.25)  # 0.5" max buffer
-    return hull.buffer(buffer_distance)
+    # For deployment, use no buffer - just check actual model base collisions
+    # Adding any buffer makes small units appear much larger than they are
+    return hull
 
 def build_spatial_index(obstacles, enemies):
     """

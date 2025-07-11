@@ -17,6 +17,19 @@ from .panels.info_pane import InfoPane
 from .panels.reserves_arrival_panel import ReservesArrivalPanel
 from .panels.unit_detail_panel import UnitDetailPanel
 
+# Import shared UI utilities
+from .ui_utils import (
+    get_unit_color_variation,
+    draw_character_icon,
+    draw_vehicle_icon,
+    draw_monster_icon,
+    draw_battleline_icon,
+    draw_aircraft_icon,
+    draw_beast_icon,
+    draw_psyker_icon,
+    draw_generic_icon
+)
+
 # Constants
 TILE_SIZE = 20  # 20 pixels per inch
 BATTLEFIELD_WIDTH_INCHES = 60
@@ -102,28 +115,7 @@ UNIT_COLOR_VARIATIONS = [
     (200, 100, 255),  # Light purple
 ]
 
-def get_unit_color_variation(unit: Unit, all_units: List[Unit]) -> Tuple[int, int, int]:
-    """Get a color variation for a unit to distinguish it from others of the same type."""
-    # For Characters (especially Epic Heroes), assign different colors to different units
-    if unit.is_character:
-        character_units = [u for u in all_units if u.is_character]
-        if len(character_units) > 1:
-            try:
-                unit_index = character_units.index(unit)
-                return UNIT_COLOR_VARIATIONS[unit_index % len(UNIT_COLOR_VARIATIONS)]
-            except (ValueError, IndexError):
-                return (255, 255, 255)  # Default to white
-    
-    # For non-characters, use the original logic (same name units get different colors)
-    same_type_units = [u for u in all_units if u.name == unit.name]
-    if len(same_type_units) <= 1:
-        return (255, 255, 255)  # Default white for single units
-    
-    try:
-        unit_index = same_type_units.index(unit)
-        return UNIT_COLOR_VARIATIONS[unit_index % len(UNIT_COLOR_VARIATIONS)]
-    except (ValueError, IndexError):
-        return (255, 255, 255)  # Default to white
+
 
 class RosterPane(pygame.sprite.Sprite):
     def __init__(self, left, bottom, width, height, roster, player_name):
@@ -210,7 +202,7 @@ class RosterPane(pygame.sprite.Sprite):
                                 self.game_view.selected_unit = unit  # Also update GameView's selection
                             elif choice == 'reserves':
                                 unit.set_reserve_status('reserves')
-                                unit.deployed = True  # Deployed to reserves (deployment decision made)
+                                unit.deployed = True  # Deployment decision made (but not on battlefield)
                                 self.selected_unit = None
                                 self.game_view.selected_unit = None  # Clear GameView's selection
                                 # Record reserves action
@@ -221,7 +213,7 @@ class RosterPane(pygame.sprite.Sprite):
                                 self.game_view.game.advance_deployment_turn()
                             elif choice == 'strategic_reserves':
                                 unit.set_reserve_status('strategic_reserves')
-                                unit.deployed = True  # Deployed to strategic reserves (deployment decision made)
+                                unit.deployed = True  # Deployment decision made (but not on battlefield)
                                 self.selected_unit = None
                                 self.game_view.selected_unit = None  # Clear GameView's selection
                                 # Record strategic reserves action
@@ -2068,198 +2060,7 @@ def handle_pan(keys_pressed: Dict[int, bool], offset_x: int, offset_y: int, zoom
     
     return new_offset_x, new_offset_y
 
-def draw_character_icon(surface: pygame.Surface, center_x: int, center_y: int, size: int) -> None:
-    """Draw a crown icon for characters"""
-    crown_color = (255, 215, 0)  # Gold
-    outline_color = (0, 0, 0)
-    
-    # Crown base
-    base_rect = pygame.Rect(center_x - size//2, center_y + size//4, size, size//4)
-    pygame.draw.rect(surface, crown_color, base_rect)
-    pygame.draw.rect(surface, outline_color, base_rect, 1)
-    
-    # Crown peaks
-    peaks = [
-        (center_x - size//2, center_y + size//4),
-        (center_x - size//4, center_y - size//4),
-        (center_x, center_y + size//8),
-        (center_x + size//4, center_y - size//4),
-        (center_x + size//2, center_y + size//4)
-    ]
-    pygame.draw.polygon(surface, crown_color, peaks)
-    pygame.draw.polygon(surface, outline_color, peaks, 2)
-    
-    # Crown jewel
-    pygame.draw.circle(surface, (255, 0, 0), (center_x, center_y - size//8), size//8)
 
-def draw_vehicle_icon(surface: pygame.Surface, center_x: int, center_y: int, size: int) -> None:
-    """Draw a tank/vehicle icon"""
-    vehicle_color = (128, 128, 128)  # Gray
-    outline_color = (0, 0, 0)
-    
-    # Tank body
-    body_rect = pygame.Rect(center_x - size//2, center_y - size//4, size, size//2)
-    pygame.draw.rect(surface, vehicle_color, body_rect)
-    pygame.draw.rect(surface, outline_color, body_rect, 1)
-    
-    # Tank turret
-    turret_rect = pygame.Rect(center_x - size//3, center_y - size//3, size//1.5, size//3)
-    pygame.draw.rect(surface, vehicle_color, turret_rect)
-    pygame.draw.rect(surface, outline_color, turret_rect, 1)
-    
-    # Tank barrel
-    barrel_rect = pygame.Rect(center_x + size//4, center_y - size//8, size//3, size//8)
-    pygame.draw.rect(surface, vehicle_color, barrel_rect)
-    pygame.draw.rect(surface, outline_color, barrel_rect, 1)
-    
-    # Tracks
-    pygame.draw.rect(surface, outline_color, (center_x - size//2, center_y + size//8, size, size//8), 1)
-
-def draw_monster_icon(surface: pygame.Surface, center_x: int, center_y: int, size: int) -> None:
-    """Draw a monster/creature icon with claws and fangs"""
-    monster_color = (139, 69, 19)  # Brown
-    claw_color = (160, 82, 45)  # Lighter brown
-    outline_color = (0, 0, 0)
-    
-    # Monster body (oval)
-    body_rect = pygame.Rect(center_x - size//3, center_y - size//4, size//1.5, size//2)
-    pygame.draw.ellipse(surface, monster_color, body_rect)
-    pygame.draw.ellipse(surface, outline_color, body_rect, 2)
-    
-    # Claws
-    claw_points_left = [
-        (center_x - size//2, center_y),
-        (center_x - size//4, center_y - size//6),
-        (center_x - size//3, center_y + size//6)
-    ]
-    claw_points_right = [
-        (center_x + size//2, center_y),
-        (center_x + size//4, center_y - size//6),
-        (center_x + size//3, center_y + size//6)
-    ]
-    
-    pygame.draw.polygon(surface, claw_color, claw_points_left)
-    pygame.draw.polygon(surface, claw_color, claw_points_right)
-    pygame.draw.polygon(surface, outline_color, claw_points_left, 2)
-    pygame.draw.polygon(surface, outline_color, claw_points_right, 2)
-    
-    # Eyes
-    pygame.draw.circle(surface, (255, 0, 0), (center_x - size//8, center_y - size//8), size//12)
-    pygame.draw.circle(surface, (255, 0, 0), (center_x + size//8, center_y - size//8), size//12)
-
-def draw_psyker_icon(surface: pygame.Surface, center_x: int, center_y: int, size: int) -> None:
-    """Draw a mystical psyker icon"""
-    psyker_color = (138, 43, 226)  # Blue violet
-    outline_color = (0, 0, 0)
-    
-    # Central circle
-    pygame.draw.circle(surface, psyker_color, (center_x, center_y), size//4, 2)
-    
-    # Mystical rays
-    ray_length = size//2
-    for angle in [0, 45, 90, 135, 180, 225, 270, 315]:
-        angle_rad = math.radians(angle)
-        end_x = center_x + int(ray_length * math.cos(angle_rad))
-        end_y = center_y + int(ray_length * math.sin(angle_rad))
-        pygame.draw.line(surface, psyker_color, (center_x, center_y), (end_x, end_y), 2)
-    
-    # Central eye
-    pygame.draw.circle(surface, (255, 255, 255), (center_x, center_y), size//8)
-    pygame.draw.circle(surface, psyker_color, (center_x, center_y), size//12)
-    pygame.draw.circle(surface, outline_color, (center_x, center_y), size//8, 1)
-
-def draw_battleline_icon(surface: pygame.Surface, center_x: int, center_y: int, size: int) -> None:
-    """Draw a battleline infantry icon"""
-    infantry_color = (100, 100, 100)  # Gray
-    outline_color = (0, 0, 0)
-    
-    # Helmet
-    helmet_rect = pygame.Rect(center_x - size//4, center_y - size//3, size//2, size//3)
-    pygame.draw.ellipse(surface, infantry_color, helmet_rect)
-    pygame.draw.ellipse(surface, outline_color, helmet_rect, 1)
-    
-    # Body
-    body_rect = pygame.Rect(center_x - size//3, center_y - size//8, size//1.5, size//2)
-    pygame.draw.rect(surface, infantry_color, body_rect)
-    pygame.draw.rect(surface, outline_color, body_rect, 1)
-    
-    # Weapon
-    weapon_rect = pygame.Rect(center_x + size//6, center_y - size//4, size//4, size//12)
-    pygame.draw.rect(surface, outline_color, weapon_rect)
-    
-    # Visor
-    pygame.draw.rect(surface, (255, 0, 0), (center_x - size//8, center_y - size//4, size//4, size//12))
-
-def draw_aircraft_icon(surface: pygame.Surface, center_x: int, center_y: int, size: int) -> None:
-    """Draw an aircraft icon"""
-    aircraft_color = (70, 130, 180)  # Steel blue
-    outline_color = (0, 0, 0)
-    
-    # Main body
-    body_points = [
-        (center_x - size//2, center_y),
-        (center_x + size//3, center_y - size//8),
-        (center_x + size//2, center_y),
-        (center_x + size//3, center_y + size//8)
-    ]
-    pygame.draw.polygon(surface, aircraft_color, body_points)
-    pygame.draw.polygon(surface, outline_color, body_points, 2)
-    
-    # Wings
-    wing_points_top = [
-        (center_x - size//4, center_y - size//8),
-        (center_x - size//8, center_y - size//3),
-        (center_x + size//8, center_y - size//4)
-    ]
-    wing_points_bottom = [
-        (center_x - size//4, center_y + size//8),
-        (center_x - size//8, center_y + size//3),
-        (center_x + size//8, center_y + size//4)
-    ]
-    
-    pygame.draw.polygon(surface, aircraft_color, wing_points_top)
-    pygame.draw.polygon(surface, aircraft_color, wing_points_bottom)
-    pygame.draw.polygon(surface, outline_color, wing_points_top, 1)
-    pygame.draw.polygon(surface, outline_color, wing_points_bottom, 1)
-
-def draw_beast_icon(surface: pygame.Surface, center_x: int, center_y: int, size: int) -> None:
-    """Draw a beast icon"""
-    beast_color = (160, 82, 45)  # Saddle brown
-    outline_color = (0, 0, 0)
-    
-    # Beast body (elongated oval)
-    body_rect = pygame.Rect(center_x - size//2, center_y - size//4, size, size//2)
-    pygame.draw.ellipse(surface, beast_color, body_rect)
-    pygame.draw.ellipse(surface, outline_color, body_rect, 2)
-    
-    # Legs
-    for x_offset in [-size//3, -size//6, size//6, size//3]:
-        leg_start = (center_x + x_offset, center_y + size//4)
-        leg_end = (center_x + x_offset, center_y + size//2)
-        pygame.draw.line(surface, outline_color, leg_start, leg_end, 2)
-    
-    # Head
-    head_center = (center_x + size//3, center_y - size//8)
-    pygame.draw.circle(surface, beast_color, head_center, size//6)
-    pygame.draw.circle(surface, outline_color, head_center, size//6, 1)
-    
-    # Eyes
-    pygame.draw.circle(surface, (255, 0, 0), (center_x + size//4, center_y - size//6), size//16)
-
-def draw_generic_icon(surface: pygame.Surface, center_x: int, center_y: int, size: int) -> None:
-    """Draw a generic unit icon"""
-    generic_color = (128, 128, 128)  # Gray
-    outline_color = (0, 0, 0)
-    
-    # Simple diamond shape
-    diamond_points = [
-        (center_x, center_y - size//2),
-        (center_x + size//2, center_y),
-        (center_x, center_y + size//2),
-        (center_x - size//2, center_y)
-    ]
-    pygame.draw.polygon(surface, generic_color, diamond_points)
-    pygame.draw.polygon(surface, outline_color, diamond_points, 2)
 
 # Add these new classes and imports after the existing imports
 from abc import ABC, abstractmethod
@@ -2439,8 +2240,9 @@ class DeploymentPhaseHandler(BasePhaseHandler):
         original_unit_position = self.game_view.selected_unit.get_position() if self.game_view.selected_unit.position else None
         original_model_positions = [model.get_location() for model in self.game_view.selected_unit.models]
         
+        # During deployment, use relaxed friendly unit avoidance to allow tighter formations
         model_positions = self.game_view.selected_unit.calculate_model_positions(
-            battlefield_x, battlefield_y, self.game_view.game_map) # TODO - add zoom back -- , 0.0, self.game_view.zoom_level)
+            battlefield_x, battlefield_y, self.game_view.game_map, avoid_friendly_units=False) # TODO - add zoom back -- , 0.0, self.game_view.zoom_level)
         
         if model_positions:
             # Set model positions

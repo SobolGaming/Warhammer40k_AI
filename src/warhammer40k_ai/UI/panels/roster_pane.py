@@ -9,6 +9,19 @@ from ...classes.unit import Unit
 from ...classes.player import Player
 from ...classes.game import Game
 
+# Import icon drawing functions from ui_utils to avoid circular imports
+from ..ui_utils import (
+    get_unit_color_variation,
+    draw_character_icon,
+    draw_vehicle_icon,
+    draw_monster_icon,
+    draw_battleline_icon,
+    draw_aircraft_icon,
+    draw_beast_icon,
+    draw_psyker_icon,
+    draw_generic_icon
+)
+
 # Font sizes
 FONT_LARGE = 20
 FONT_MEDIUM = 16
@@ -118,7 +131,7 @@ class RosterPane(pygame.sprite.Sprite):
                                 self.game_view.selected_unit = unit  # Also update GameView's selection
                             elif choice == 'reserves':
                                 unit.set_reserve_status('reserves')
-                                unit.deployed = True  # Deployed to reserves (deployment decision made)
+                                unit.deployed = True  # Deployment decision made (but not on battlefield)
                                 self.selected_unit = None
                                 self.game_view.selected_unit = None  # Clear GameView's selection
                                 # Record reserves action
@@ -129,7 +142,7 @@ class RosterPane(pygame.sprite.Sprite):
                                 self.game_view.game.advance_deployment_turn()
                             elif choice == 'strategic_reserves':
                                 unit.set_reserve_status('strategic_reserves')
-                                unit.deployed = True  # Deployed to strategic reserves (deployment decision made)
+                                unit.deployed = True  # Deployment decision made (but not on battlefield)
                                 self.selected_unit = None
                                 self.game_view.selected_unit = None  # Clear GameView's selection
                                 # Record strategic reserves action

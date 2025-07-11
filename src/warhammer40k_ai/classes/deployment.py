@@ -241,7 +241,8 @@ class DeploymentManager:
         z = self.game.map.get_height_at_point(x, y)
         
         # Calculate model positions within the unit
-        model_positions = unit.calculate_model_positions(x, y, self.game.map)
+        # During deployment, use relaxed friendly unit avoidance to allow tighter formations
+        model_positions = unit.calculate_model_positions(x, y, self.game.map, avoid_friendly_units=False)
         
         if model_positions and len(model_positions) == len(unit.models):
             # Use calculated positions

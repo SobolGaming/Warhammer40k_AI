@@ -605,20 +605,35 @@ class WargearProfile:
             wound_rolls = [str(wound['roll']) if wound['roll'] is not None else 'Auto' for wound in result.wound_results]
             wound_rolls_str = ", ".join(wound_rolls)
             
-            # Show wound details with strength comparison
-            first_wound = result.wound_results[0]
-            if 'final_needed' in first_wound and first_wound['final_needed'] is not None:
-                base_needed = first_wound['needed']
-                final_needed = first_wound['final_needed']
-                strength_comp = first_wound.get('strength_comparison', '')
+            # Determine display logic based on wound results
+            normal_wounds = [w for w in result.wound_results if 'final_needed' in w and w['final_needed'] is not None]
+            special_wounds = [w for w in result.wound_results if 'final_needed' not in w or w['final_needed'] is None]
+            
+            if normal_wounds:
+                # Use normal wound logic - show strength vs toughness
+                first_normal = normal_wounds[0]
+                base_needed = first_normal['needed']
+                final_needed = first_normal['final_needed']
+                strength_comp = first_normal.get('strength_comparison', '')
                 
-                if first_wound.get('modifiers'):
-                    modifiers_str = ", ".join(first_wound['modifiers'])
+                if first_normal.get('modifiers'):
+                    modifiers_str = ", ".join(first_normal['modifiers'])
                     needed_str = f"needed {final_needed}+ (base {base_needed}+ with {modifiers_str}, {strength_comp})"
                 else:
                     needed_str = f"needed {final_needed}+ ({strength_comp})"
+            elif special_wounds:
+                # All wounds are special cases (lethal hits, natural 6s, anti-X, etc.)
+                special_effects = []
+                for wound in special_wounds:
+                    if 'special_effects' in wound:
+                        special_effects.extend(wound['special_effects'])
+                
+                if special_effects:
+                    needed_str = f"auto-wound ({', '.join(set(special_effects))})"
+                else:
+                    needed_str = "auto-wound"
             else:
-                # Fallback for auto-wound or special cases
+                # Fallback
                 needed_str = "auto-wound"
             
             print(f"   🩸 Wounds: {result.total_wounds}/{len(result.wound_results)} - {needed_str} - rolled: [{wound_rolls_str}]")

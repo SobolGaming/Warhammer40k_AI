@@ -1104,6 +1104,12 @@ class Unit:
         start_x, start_y = current_position[0], current_position[1]
         start_z = current_position[2] if len(current_position) > 2 else 0
 
+        # BACKUP ORIGINAL POSITIONS - Critical for proper rollback on failure
+        original_model_positions = []
+        original_unit_position = self.get_position()
+        for model in self.models:
+            original_model_positions.append(model.get_location())
+
         # Get the movement range from the first model (assuming all models have the same movement)
         movement_range = self.movement
 
@@ -1241,9 +1247,32 @@ class Unit:
             print(f"❌ {self.name} could not move - no models could reach any valid positions")
             return False
 
-        # Get final position for feedback
+        # CRITICAL VALIDATION: Check for illegal overlaps after movement
+        # This catches cases where models might be overlapping with enemies after movement
         final_position = self.get_position()
         end_x, end_y = final_position[0], final_position[1]
+        
+        # Check for base overlaps with enemy models
+        enemy_units = game_map.get_enemy_units(self)
+        for model in self.models:
+            if not model.is_alive:
+                continue
+            for enemy_unit in enemy_units:
+                if not enemy_unit.is_alive() or not enemy_unit.deployed:
+                    continue
+                for enemy_model in enemy_unit.models:
+                    if not enemy_model.is_alive:
+                        continue
+                    # Check if this model's base overlaps with the enemy model's base
+                    if model.model_base.collides_with(enemy_model.model_base):
+                        print(f"❌ {self.name} cannot move - {model.name} would overlap with {enemy_model.name} from {enemy_unit.name}")
+                        # ROLLBACK: Restore original positions
+                        for i, original_pos in enumerate(original_model_positions):
+                            if i < len(self.models):
+                                self.models[i].set_location(*original_pos)
+                        if original_unit_position:
+                            self.position = original_unit_position
+                        return False
         
         # Calculate actual distance the unit moved
         unit_distance_moved = get_dist(end_x - start_x, end_y - start_y)
@@ -1257,6 +1286,145 @@ class Unit:
 
         logger.info(f"Unit {self.name} {action_name} from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
         self.round_state.advanced_this_round = advance
+        return True
+
+    def charge_move(self, destination: Tuple[float, float, float], game_map: 'Map') -> bool:
+        """Special movement for charge actions that allows moving into engagement range.
+        
+        Unlike normal movement, charge movement:
+        1. Allows models to move into engagement range of enemy units
+        2. Uses relaxed collision detection for final positioning
+        3. Prioritizes achieving engagement range over perfect formations
+        """
+        if not self.models:
+            logger.error(f"Cannot charge move unit {self.name}: no models in unit")
+            return False
+        
+        current_position = self.get_position()
+        if current_position is None:
+            logger.error(f"Cannot charge move unit {self.name}: current position is None")
+            return False
+        
+        # Store starting position for feedback and rollback
+        start_x, start_y = current_position[0], current_position[1]
+        start_z = current_position[2] if len(current_position) > 2 else 0
+        
+        # Store original model positions for potential rollback
+        original_model_positions = []
+        for model in self.models:
+            model_pos = model.get_location()
+            original_model_positions.append(model_pos)
+        
+        original_unit_position = self.get_position()
+        
+        # Calculate maximum charge distance available
+        max_charge_distance = get_dist(
+            destination[0] - start_x,
+            destination[1] - start_y,
+            destination[2] - start_z
+        )
+        
+        # Find all enemy models to charge towards
+        enemy_units = game_map.get_enemy_units(self)
+        all_enemy_models = []
+        for enemy_unit in enemy_units:
+            if enemy_unit.is_alive():
+                all_enemy_models.extend([model for model in enemy_unit.models if model.is_alive])
+        
+        if not all_enemy_models:
+            print(f"❌ {self.name} cannot charge - no enemy models to charge towards")
+            return False
+        
+        successful_moves = 0
+        
+        # Move each model as close as possible to the nearest enemy model within charge distance
+        for model in self.models:
+            model_start = model.get_location()
+            
+            # Find the closest enemy model to this model
+            closest_enemy = None
+            closest_distance = float('inf')
+            
+            for enemy_model in all_enemy_models:
+                enemy_pos = enemy_model.get_location()
+                distance = get_dist(
+                    enemy_pos[0] - model_start[0],
+                    enemy_pos[1] - model_start[1],
+                    enemy_pos[2] - model_start[2] if len(model_start) > 2 else 0
+                )
+                if distance < closest_distance:
+                    closest_distance = distance
+                    closest_enemy = enemy_model
+            
+            if not closest_enemy:
+                continue
+            
+            # Calculate direction towards closest enemy
+            enemy_pos = closest_enemy.get_location()
+            dx = enemy_pos[0] - model_start[0]
+            dy = enemy_pos[1] - model_start[1]
+            dz = enemy_pos[2] - model_start[2] if len(model_start) > 2 else 0
+            
+            distance_to_enemy = get_dist(dx, dy, dz)
+            
+            if distance_to_enemy == 0:
+                # Already at enemy position, no movement needed
+                successful_moves += 1
+                continue
+            
+            # Normalize direction vector
+            dx /= distance_to_enemy
+            dy /= distance_to_enemy
+            dz /= distance_to_enemy if distance_to_enemy > 0 else 1
+            
+            # Calculate how far to move: use the distance provided by attempt_charge
+            # Get as close as possible to the enemy for better pile-in positioning
+            target_distance = max_charge_distance  # Use the distance calculated by attempt_charge
+            
+            if target_distance <= 0:
+                # Already close enough or can't move closer
+                successful_moves += 1
+                continue
+            
+            # Calculate new position
+            new_x = model_start[0] + dx * target_distance
+            new_y = model_start[1] + dy * target_distance
+            new_z = game_map.get_height_at_point(new_x, new_y)
+            new_facing = self.calculate_strategic_facing(new_x, new_y, game_map)
+            
+            # Move the model to the new position
+            model.set_location(new_x, new_y, new_z, new_facing)
+            successful_moves += 1
+            
+            actual_distance_moved = get_dist(
+                new_x - model_start[0],
+                new_y - model_start[1],
+                new_z - model_start[2] if len(model_start) > 2 else 0
+            )
+            logger.debug(f"Model {model._id} charge moved {actual_distance_moved:.1f}\" towards {closest_enemy.name}")
+        
+        # Update unit centroid
+        self.reset_position()
+        
+        # Check if any movement occurred
+        if successful_moves == 0:
+            print(f"❌ {self.name} could not charge - no models could reach any valid positions")
+            return False
+        
+        # Get final position for feedback
+        final_position = self.get_position()
+        end_x, end_y = final_position[0], final_position[1]
+        
+        # Calculate actual distance the unit moved
+        unit_distance_moved = get_dist(end_x - start_x, end_y - start_y)
+        
+        # Provide detailed feedback
+        print(f"✅ {self.name} moved from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
+        
+        if successful_moves < len(self.models):
+            print(f"⚠️  Note: Only {successful_moves}/{len(self.models)} models could move to valid positions")
+        
+        logger.info(f"Unit {self.name} charge moved from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
         return True
 
     def fall_back(self, destination: Tuple[float, float, float], path: List[Tuple[float, float, float]], game_map: 'Map') -> bool:
@@ -1420,6 +1588,25 @@ class Unit:
         if not self.is_alive():
             print(f"💀 {self.name} was completely destroyed during Fall Back Desperate Escape Tests!")
             return False
+        
+        # CRITICAL VALIDATION: Check for illegal overlaps after fall back
+        # Fall back has special rules - units can move over enemies but cannot end overlapping
+        enemy_units = game_map.get_enemy_units(self)
+        for model in self.models:
+            if not model.is_alive:
+                continue
+            for enemy_unit in enemy_units:
+                if not enemy_unit.is_alive() or not enemy_unit.deployed:
+                    continue
+                for enemy_model in enemy_unit.models:
+                    if not enemy_model.is_alive:
+                        continue
+                    # Check if this model's base overlaps with the enemy model's base
+                    if model.model_base.collides_with(enemy_model.model_base):
+                        print(f"❌ {self.name} cannot fall back - {model.name} cannot end overlapping with {enemy_model.name} from {enemy_unit.name}")
+                        # For fall back, we don't have original positions stored, so this is a critical error
+                        # The fall back move should have been validated during pathfinding
+                        return False
         
         # Get final position for feedback
         final_position = self.get_position()
@@ -1627,6 +1814,25 @@ class Unit:
         if successful_moves == 0:
             print(f"❌ {self.name} could not scout move - no models could reach valid positions")
             return False
+        
+        # CRITICAL VALIDATION: Check for illegal overlaps after scout move
+        # Scout moves cannot end overlapping with enemy models
+        enemy_units = game_map.get_enemy_units(self)
+        for model in self.models:
+            if not model.is_alive:
+                continue
+            for enemy_unit in enemy_units:
+                if not enemy_unit.is_alive() or not enemy_unit.deployed:
+                    continue
+                for enemy_model in enemy_unit.models:
+                    if not enemy_model.is_alive:
+                        continue
+                    # Check if this model's base overlaps with the enemy model's base
+                    if model.model_base.collides_with(enemy_model.model_base):
+                        print(f"❌ {self.name} cannot scout move - {model.name} cannot end overlapping with {enemy_model.name} from {enemy_unit.name}")
+                        # For scout move, we don't have original positions stored, so this is a critical error
+                        # The scout move should have been validated during pathfinding
+                        return False
         
         # Get final position for feedback
         final_position = self.get_position()
@@ -1933,15 +2139,7 @@ class Unit:
         print(f"{self.name} declares a charge against {[unit.name for unit in target_units]}.")
         self.round_state.declared_charge_this_round = True
 
-    def charge_move(self) -> None:
-        if not self.round_state.declared_charge_this_round:
-            print(f"{self.name} cannot charge move without a declared charge.")
-            return
 
-        """Moves the unit towards the enemy after a successful charge roll."""
-        charge_distance = get_roll("2D6")  # 2D6 roll
-        # Logic to move towards the closest enemy within declared targets
-        print(f"{self.name} charges forward {charge_distance} inches.")
 
     # Fight Phase Actions
     def pile_in(self, target_units: List['Unit']) -> None:
@@ -2703,7 +2901,10 @@ class Unit:
         print(f"🔍 DEBUG: Using multi-model formation templates")
         # SLOW PATH FOR MULTI-MODEL UNITS
         # 1) Build list of blocking models (enemies + optionally friendlies)
-        blocking_models = game_map.get_enemy_models(self)
+        enemy_models = game_map.get_enemy_models(self)
+        blocking_models = enemy_models
+        print(f"🔍 DEBUG: Found {len(enemy_models)} enemy models")
+        
         if avoid_friendly_units:
             # Add friendly models from other units (excluding self)
             friendly_models = []
@@ -2711,8 +2912,9 @@ class Unit:
                 if unit != self:  # Don't include models from the unit being positioned
                     friendly_models.extend(unit.models)
             blocking_models.extend(friendly_models)
+            print(f"🔍 DEBUG: Added {len(friendly_models)} friendly models from other units")
         
-        print(f"🔍 DEBUG: Found {len(blocking_models)} blocking models")
+        print(f"🔍 DEBUG: Total blocking models: {len(blocking_models)} (enemies: {len(enemy_models)}, friendlies: {len(blocking_models) - len(enemy_models)})")
         
         # 2) Use provided boundary repulsors or default to empty list
         if boundary_repulsors is None:
@@ -2746,11 +2948,34 @@ class Unit:
                 f = self.calculate_strategic_facing(x, y, game_map)
                 world.append([x, y, z, f])
 
-            # Quick footprint collision vs terrain/enemies/friendlies/boundaries
-            footprint = footprint_from_offsets(offsets, self)
-            footprint_hits = query_spatial_index(tree, footprint)
-            if len(footprint_hits) > 0:
-                print(f"🔍 DEBUG: Template '{template_name}' rejected - footprint collision with {len(footprint_hits)} objects")
+            # Check individual model base collisions instead of unit footprint
+            # This allows unit footprints to overlap as long as individual model bases don't overlap
+            model_collision_detected = False
+            for i, (dx, dy) in enumerate(offsets):
+                model_x = origin_2d[0] + dx
+                model_y = origin_2d[1] + dy
+                
+                # Create temporary model base at this position
+                temp_model = self.models[i] if i < len(self.models) else self.models[0]
+                temp_base = temp_model.model_base.get_base_shape()
+                temp_base_positioned = translate(temp_base, 
+                                               model_x - temp_base.centroid.x,
+                                               model_y - temp_base.centroid.y)
+                
+                # Check collision with obstacles and enemy models only
+                # (friendly unit avoidance is handled by the avoid_friendly_units parameter)
+                base_hits = query_spatial_index(tree, temp_base_positioned)
+                if len(base_hits) > 0:
+                    # Check if any hits are actual overlaps (not just touching)
+                    for hit in base_hits:
+                        if temp_base_positioned.overlaps(hit):
+                            model_collision_detected = True
+                            break
+                    if model_collision_detected:
+                        break
+            
+            if model_collision_detected:
+                print(f"🔍 DEBUG: Template '{template_name}' rejected - model base overlap detected")
                 continue
 
             print(f"🔍 DEBUG: Template '{template_name}' passed footprint check, starting relaxation")
@@ -3602,8 +3827,8 @@ class Unit:
             raise ValueError(f"Invalid reserve status: {status}. Must be one of {valid_statuses}")
         
         self.reserve_status = status
-        if status != 'deployed':
-            self.deployed = False
+        # Note: deployed flag is managed separately by deployment logic
+        # deployed=True means deployment decision made, deployed=False means needs decision
         
     def is_in_reserves(self) -> bool:
         """Check if the unit is currently in reserves (any type)."""
@@ -3667,7 +3892,8 @@ class Unit:
         try:
             # Use the existing model positioning logic with battlefield edge repulsors
             boundary_repulsors = game_map.get_battlefield_edge_repulsors() if game_map else []
-            model_positions = self.calculate_model_positions(position[0], position[1], game_map, boundary_repulsors=boundary_repulsors)
+            # During deployment, use relaxed friendly unit avoidance to allow tighter formations
+            model_positions = self.calculate_model_positions(position[0], position[1], game_map, boundary_repulsors=boundary_repulsors, avoid_friendly_units=False)
             
             # Check if formation finding failed
             if model_positions is None:

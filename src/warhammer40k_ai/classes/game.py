@@ -7,7 +7,7 @@ from .player import Player
 from .unit import Unit
 from .model import Model
 from ..utility.calcs import get_dist
-from ..utility.dice import get_roll
+from ..utility.dice import DiceCollection
 from ..utility.constants import TOTAL_ROUNDS
 
 logger = logging.getLogger(__name__)
@@ -467,7 +467,8 @@ class Game:
             # Calculate model positions (this also sets the positions internally)
             # NOTE: Do NOT use boundary_repulsors during deployment - they make formation finding too restrictive
             # Deployment zone validation is handled separately by is_valid_deployment_position()
-            model_positions = unit.calculate_model_positions(x, y, self.map)
+            # During deployment, use relaxed friendly unit avoidance to allow tighter formations
+            model_positions = unit.calculate_model_positions(x, y, self.map, avoid_friendly_units=False)
             
             if not model_positions:
                 return False
@@ -805,7 +806,8 @@ class Game:
             # For infiltrate units, we need to check each model's base at the proposed position
             # Calculate model positions using the same logic as unit deployment
             # NOTE: Don't use boundary_repulsors for validation - they make formation finding too restrictive
-            model_positions = unit.calculate_model_positions(x, y, self.map)
+            # During deployment, use relaxed friendly unit avoidance to allow tighter formations
+            model_positions = unit.calculate_model_positions(x, y, self.map, avoid_friendly_units=False)
             
             if not model_positions:
                 return False
@@ -834,7 +836,8 @@ class Game:
             # Check that every model's entire base would be within the deployment zone at the proposed position
             # Calculate model positions using the same logic as unit deployment
             # NOTE: Don't use boundary_repulsors for validation - they make formation finding too restrictive
-            model_positions = unit.calculate_model_positions(x, y, self.map)
+            # During deployment, use relaxed friendly unit avoidance to allow tighter formations
+            model_positions = unit.calculate_model_positions(x, y, self.map, avoid_friendly_units=False)
             
             if not model_positions:
                 return False
@@ -967,6 +970,9 @@ class Game:
         According to 10th edition rules, a successful charge requires at least one model
         of the charging unit to end their charge with edge-to-edge distance of 1" or less
         from at least one model in the target unit.
+        
+        CRITICAL: If the charge roll is insufficient to reach within 1" of the enemy,
+        the charge fails completely and NO MODELS MOVE AT ALL.
         """
         if not charging_unit.can_declare_charge_against(target_unit, self):
             return False
@@ -978,17 +984,20 @@ class Game:
         # So we need to move: current_distance - 1.0 inches
         distance_needed = max(0, current_distance - 1.0)
 
-        # Roll 2D6 for charge distance with modifiers
-        base_charge_roll = get_roll("2D6")
+        # Roll 2D6 for charge distance with modifiers - show individual dice
+        dice_collection = DiceCollection.from_string("2D6")
+        base_charge_roll, individual_dice = dice_collection.roll_detailed()
         charge_roll = self._apply_charge_modifiers(charging_unit, base_charge_roll)
         
         print(f"⚔️ {charging_unit.name} charging {target_unit.name}")
         print(f"⚔️ Current edge-to-edge distance: {current_distance:.1f}\"")
         print(f"⚔️ Distance needed to achieve ≤1\" edge-to-edge: {distance_needed:.1f}\"")
-        print(f"⚔️ Charge roll: {base_charge_roll} (modified: {charge_roll})")
+        print(f"⚔️ Charge roll: {base_charge_roll} (rolled {individual_dice}) (modified: {charge_roll})")
         
+        # CRITICAL RULE: If charge roll is insufficient, charge fails and no models move
         if charge_roll < distance_needed:
-            print(f"❌ Charge failed: {charge_roll} < {distance_needed:.1f}")
+            print(f"❌ Charge failed: roll {charge_roll}\" insufficient to reach within 1\" (needed {distance_needed:.1f}\")")
+            print(f"❌ No models move - charge failed completely")
             return False
 
         # Charge roll is sufficient - now attempt the movement
@@ -1012,23 +1021,32 @@ class Game:
         dx /= distance_to_target
         dy /= distance_to_target
         
-        # Move the charging unit towards the target
-        # Move as far as the charge roll allows, but not beyond achieving ≤1" edge-to-edge distance
-        movement_distance = min(charge_roll, distance_needed)
+        # Move the charging unit towards the target up to the charge roll distance
+        # Move as close as possible within the charge roll distance for better pile-in positioning
+        movement_distance = min(charge_roll, current_distance - 0.1)  # Get as close as possible without overlapping
         new_x = charging_pos[0] + dx * movement_distance
         new_y = charging_pos[1] + dy * movement_distance
         new_z = self.map.get_height_at_point(new_x, new_y)
         
-        # Attempt to move the unit
-        success = charging_unit.move((new_x, new_y, new_z), self.map)
+        # Attempt to move the unit with special charge movement logic
+        # During charge, units should be able to move into engagement range
+        success = charging_unit.charge_move((new_x, new_y, new_z), self.map)
         if success:
-            charging_unit.round_state.declared_charge_this_round = True
+            # Check if the charge actually achieved engagement range (≤1.0")
             final_distance = self.map.get_distance_between_units(charging_unit, target_unit)
-            print(f"✅ Charge successful: {charging_unit.name} achieved {final_distance:.1f}\" edge-to-edge distance with {target_unit.name}")
+            
+            if final_distance <= 1.0:
+                charging_unit.round_state.declared_charge_this_round = True
+                print(f"✅ Charge successful: {charging_unit.name} achieved {final_distance:.1f}\" edge-to-edge distance with {target_unit.name}")
+                return True
+            else:
+                print(f"❌ Charge failed: {charging_unit.name} achieved {final_distance:.1f}\" edge-to-edge distance (not ≤1.0\") with {target_unit.name}")
+                # Revert the unit position if charge failed to achieve engagement range
+                # TODO: Implement position rollback
+                return False
         else:
             print(f"❌ Charge failed: could not move unit")
-        
-        return success
+            return False
     
     def _apply_charge_modifiers(self, charging_unit: 'Unit', base_roll: int) -> int:
         """Apply charge roll modifiers based on unit abilities, stratagems, etc."""
