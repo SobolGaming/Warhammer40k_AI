@@ -188,8 +188,8 @@ class ChargeDeclarationDialog:
         
         # Check if unit advanced this round (unless special abilities allow charging after advance)
         if self.unit.round_state.advanced_this_round:
-            # TODO: Check for special abilities that allow charging after advance
-            return False
+            if not self.unit.can_charge_after_advance():
+                return False
         
         # Check if unit fell back this round (unless special abilities allow charging after fall back)
         if self.unit.round_state.fell_back_this_round:
@@ -221,7 +221,8 @@ class ChargeDeclarationDialog:
         
         # Check if unit advanced this round
         if self.unit.round_state.advanced_this_round:
-            return {"valid": False, "reason": "Unit advanced and cannot charge"}
+            if not self.unit.can_charge_after_advance():
+                return {"valid": False, "reason": "Unit advanced and cannot charge"}
         
         # Check if unit fell back this round
         if self.unit.round_state.fell_back_this_round:

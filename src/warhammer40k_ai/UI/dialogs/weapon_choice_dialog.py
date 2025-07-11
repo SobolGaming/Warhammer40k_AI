@@ -12,6 +12,7 @@ PANEL_BORDER = (63, 63, 70)  # Subtle border
 BUTTON_BG = (60, 60, 67)  # Button background
 BUTTON_HOVER = (75, 75, 82)  # Button hover
 BUTTON_SELECTED = (100, 149, 237)  # Selected button
+BUTTON_DISABLED = (40, 40, 40)  # Disabled button
 TEXT_PRIMARY = (255, 255, 255)  # Primary text
 TEXT_SECONDARY = (200, 200, 200)  # Secondary text
 TEXT_DISABLED = (100, 100, 100)  # Disabled text
@@ -68,10 +69,13 @@ class WeaponChoiceDialog:
                     for profile_name, profile in wargear.profiles.items():
                         # Check if unit can shoot this weapon
                         can_shoot = True
-                        if unit.round_state.advanced_this_round and not unit.can_shoot_after_advance(profile):
-                            can_shoot = False
+                        if unit.round_state.advanced_this_round:
+                            # Unit method already checks both weapon-specific and unit-specific abilities
+                            if not unit.can_shoot_after_advance(profile):
+                                can_shoot = False
                         if unit.round_state.fell_back_this_round:
-                            can_shoot = False
+                            if not unit.can_shoot_after_fall_back(profile):
+                                can_shoot = False
                         
                         weapon_info = {
                             'wargear': wargear,

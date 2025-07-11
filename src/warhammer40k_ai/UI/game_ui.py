@@ -10,6 +10,7 @@ from warhammer40k_ai.utility.model_base import Base, BaseType
 from warhammer40k_ai.classes.player import Player
 from warhammer40k_ai.classes.game import Game
 from warhammer40k_ai.classes.map import Obstacle, ObstacleType, Objective, ObjectivePoint
+from warhammer40k_ai.classes.fight_phase_manager import FightPhaseManager, FightStage
 
 # Import UI panels
 from .panels.roster_pane import RosterPane
@@ -918,6 +919,10 @@ class HumanUIInterface:
         if self.fight_unit_selection_dialog.visible:
             self.fight_unit_selection_dialog.draw(screen)
         
+        # Draw melee weapon declaration dialog if visible
+        if hasattr(self, 'melee_weapon_declaration_dialog') and self.melee_weapon_declaration_dialog.visible:
+            self.melee_weapon_declaration_dialog.draw(screen)
+        
         # Draw placement indicator if in placement mode
         if self.placement_mode and self.current_unit_for_placement:
             self.draw_placement_indicator(screen)
@@ -981,6 +986,10 @@ class HumanUIInterface:
         # Let fight unit selection dialog handle events
         if not handled and self.fight_unit_selection_dialog.visible:
             handled = self.fight_unit_selection_dialog.handle_event(event)
+        
+        # Let melee weapon declaration dialog handle events
+        if not handled and hasattr(self, 'melee_weapon_declaration_dialog') and self.melee_weapon_declaration_dialog.visible:
+            handled = self.melee_weapon_declaration_dialog.handle_event(event)
         
         return handled
 
@@ -1339,14 +1348,13 @@ class GameView:
             # Draw start and end points
             start_point = screen_path[0]
             end_point = screen_path[-1]
-            pygame.draw.circle(self.screen, (0, 255, 0), start_point, 5)  # Start point in green
-            pygame.draw.circle(self.screen, (255, 0, 0), end_point, 5)  # End point in red
+                    # Movement path visualization simplified - removed start/end point circles
 
             # Draw direction arrows
             for i in range(len(screen_path) - 1):
                 mid_point = ((screen_path[i][0] + screen_path[i+1][0]) // 2,
                             (screen_path[i][1] + screen_path[i+1][1]) // 2)
-                pygame.draw.circle(self.screen, (255, 0, 0), mid_point, 3)  # Small red dot for direction
+                # Direction indicator simplified - removed red dot
 
     def game_to_screen_coords(self, x: float, y: float) -> Tuple[int, int]:
         # Convert game coordinates to screen coordinates
@@ -1678,8 +1686,7 @@ def draw_units(screen: pygame.Surface, unit: Unit, zoom_level: float, offset_x: 
         # Draw large prominent icon that overlays the facing arrow
         draw_prominent_unit_icon(screen, screen_x, screen_y, base, zoom_level, unit, model, model_index, all_units)
     
-    # Calculate and draw unit bounding box
-    draw_unit_bounding_box(screen, unit, zoom_level, offset_x, offset_y, mouse_pos)
+            # Unit bounding box removed - model-based hover detection is more accurate
 
 def draw_prominent_unit_icon(screen: pygame.Surface, center_x: int, center_y: int, base: Base, zoom_level: float, unit: Unit, model: Model, model_index: int, all_units: List[Unit]) -> None:
     """Draw a large, prominent icon that overlays the facing direction"""
@@ -2014,23 +2021,7 @@ def draw_facing_direction(screen: pygame.Surface, base: Base, screen_x: int, scr
         # Draw arrowhead
         pygame.draw.polygon(screen, (0, 0, 0), [(end_x, end_y), (left_x, left_y), (right_x, right_y)])
 
-def draw_unit_bounding_box(screen: pygame.Surface, unit: Unit, zoom_level: float, offset_x: int, offset_y: int, mouse_pos: Tuple[int, int]) -> None:
-    position = unit.get_position()
-    if position is None:
-        return
-
-    center_x, center_y, _ = position
-    radius = unit.coherency_distance  # Assuming this is defined in the Unit class
-
-    bounding_box_rect = pygame.Rect(
-        int((center_x - radius) * TILE_SIZE * zoom_level + offset_x),
-        int((center_y - radius) * TILE_SIZE * zoom_level + offset_y),
-        int(2 * radius * TILE_SIZE * zoom_level),
-        int(2 * radius * TILE_SIZE * zoom_level)
-    )
-
-    if bounding_box_rect.collidepoint(mouse_pos):
-        pygame.draw.rect(screen, (255, 255, 0), bounding_box_rect, 2)  # Yellow highlight
+# draw_unit_bounding_box function removed - redundant with model-based hover detection
 
 def handle_zoom(zoom_level: float, event: pygame.event.Event) -> float:
     zoom_direction = event.y  # Positive for scroll up, negative for scroll down
@@ -2301,6 +2292,10 @@ class DeploymentPhaseHandler(BasePhaseHandler):
 class BattlePhaseHandler(BasePhaseHandler):
     """Handles events during battle phases (movement, shooting, etc.)"""
     
+    def __init__(self, game_view: 'GameView'):
+        super().__init__(game_view)
+        self.fight_phase_manager = None
+    
     def handle_event(self, event: pygame.event.Event) -> bool:
         """Handle pygame events during battle phases"""
         # Handle weapon choice dialog first (highest priority)
@@ -2433,10 +2428,7 @@ class BattlePhaseHandler(BasePhaseHandler):
     
     def _handle_movement_phase_selection(self, unit) -> None:
         """Handle unit selection during movement phase"""
-        # Check if unit has already moved this round
-        if hasattr(unit.round_state, 'moved_this_round') and unit.round_state.moved_this_round:
-            print(f"❌ {unit.name} has already moved this round")
-            return
+        # Movement validation is handled by the game logic
         
         def on_movement_choice(choice):
             self._handle_movement_choice(unit, choice)
@@ -2516,73 +2508,122 @@ class BattlePhaseHandler(BasePhaseHandler):
     def _handle_fight_phase_selection(self, unit) -> None:
         """Handle unit selection during fight phase"""
         current_player = self.game.get_current_player()
+        opponent_player = self.game.get_opponent()
         
-        # Check if unit is eligible to fight
-        if not unit.is_eligible_to_fight(self.game.map):
-            print(f"❌ {unit.name} is not eligible to fight")
+        # Initialize fight phase manager if not already done
+        if not self.fight_phase_manager:
+            self._initialize_fight_phase_manager(current_player, opponent_player)
+        
+        # Check if it's this player's turn to select a unit
+        active_player = self.fight_phase_manager.get_active_player()
+        unit_owner = unit.get_parent_army().player if unit.get_parent_army() else None
+        
+        if not unit_owner:
+            print(f"❌ {unit.name} has no owner")
             return
         
-        # Determine which stage we're in and show appropriate information
-        fight_first_units = self.game.get_fight_first_units(current_player)
-        remaining_combatant_units = self.game.get_remaining_combatant_units(current_player)
-        
-        # Check which stage this unit belongs to
-        if unit in fight_first_units:
-            print(f"⚔️ {unit.name} is eligible for Fight First stage")
-            if unit.round_state.declared_charge_this_round:
-                print(f"  🏃 Unit charged this turn")
-            if unit.has_fight_first():
-                print(f"  ⚡ Unit has Fight First ability")
-        elif unit in remaining_combatant_units:
-            print(f"👊 {unit.name} is eligible for Remaining Combatants stage")
-        else:
-            print(f"❌ {unit.name} is not eligible to fight this phase")
+        if active_player != unit_owner:
+            print(f"❌ It's {active_player.name}'s turn to select a unit, not {unit_owner.name}'s")
             return
         
-        # Show which enemies are in engagement range
-        enemies_in_range = []
-        unit_position = unit.get_position()
-        if unit_position:
-            enemy_units = self.game.map.get_enemy_units(unit)
-            for enemy_unit in enemy_units:
-                if enemy_unit.is_alive() and self.game.map.is_within_engagement_range(unit_position, enemy_unit):
-                    enemies_in_range.append(enemy_unit)
+        # Check if unit is eligible to fight in current stage
+        eligible_units = self.fight_phase_manager._get_eligible_units_for_player(unit_owner)
+        if unit not in eligible_units:
+            print(f"❌ {unit.name} is not eligible to fight in the current stage")
+            return
         
-        if enemies_in_range:
-            enemy_names = [enemy.name for enemy in enemies_in_range]
-            print(f"🎯 {unit.name} can fight: {', '.join(enemy_names)}")
-            print(f"👊 Click on an enemy unit to fight with {unit.name}")
-        else:
-            print(f"❌ {unit.name} has no enemies in engagement range")
+        # Unit is valid - process the selection
+        print(f"✅ {unit_owner.name} selected {unit.name} to fight")
+        self.fight_phase_manager.unit_selected(unit, current_player, opponent_player)
+    
+    def _initialize_fight_phase_manager(self, current_player: Player, opponent_player: Player) -> None:
+        """Initialize the fight phase manager with proper callbacks."""
+        print("🎯 Initializing Fight Phase Manager")
+        self.fight_phase_manager = FightPhaseManager(self.game)
+        
+        # Set up callbacks for human player interaction
+        def on_unit_selection_required(active_player: Player, eligible_units: List[Unit], stage: FightStage):
+            if active_player.type.name == 'HUMAN':
+                print(f"🎯 {active_player.name} must select a unit to fight ({stage.value} stage)")
+                print(f"   Eligible units: {[unit.name for unit in eligible_units]}")
+                # Show fight unit selection dialog
+                if hasattr(self.game_view, 'ui_interface') and self.game_view.ui_interface:
+                    def on_unit_selected(selected_unit):
+                        self.fight_phase_manager.unit_selected(selected_unit, current_player, opponent_player)
+                    
+                    def on_cancel():
+                        print("❌ Fight unit selection cancelled")
+                    
+                    self.game_view.ui_interface.show_fight_unit_selection_dialog(
+                        stage.value, eligible_units, on_unit_selected, on_cancel
+                    )
+            else:
+                # AI player - use existing AI logic
+                print(f"🤖 AI player {active_player.name} selecting unit automatically")
+                # TODO: Implement AI unit selection
+        
+        def on_target_selection_required(fighting_unit: Unit, eligible_targets: List[Unit], active_player: Player):
+            if active_player.type.name == 'HUMAN':
+                print(f"🎯 {active_player.name} must select targets for {fighting_unit.name}")
+                print(f"   Eligible targets: {[target.name for target in eligible_targets]}")
+                # Show melee weapon declaration dialog
+                if hasattr(self.game_view, 'ui_interface') and self.game_view.ui_interface:
+                    def on_targets_selected(target_declarations):
+                        self.fight_phase_manager.targets_selected(fighting_unit, target_declarations, current_player, opponent_player)
+                    
+                    self.game_view.ui_interface.show_melee_weapon_declaration_dialog(
+                        fighting_unit, on_targets_selected, self.game.map
+                    )
+            else:
+                # AI player - use existing AI logic
+                print(f"🤖 AI player {active_player.name} selecting targets automatically")
+                # TODO: Implement AI target selection
+        
+        def on_stage_complete():
+            print("✅ Fight Phase complete")
+            self.fight_phase_manager = None
+            # Advance to next phase
+            self.game.next_phase()
+        
+        self.fight_phase_manager.on_unit_selection_required = on_unit_selection_required
+        self.fight_phase_manager.on_target_selection_required = on_target_selection_required
+        self.fight_phase_manager.on_stage_complete = on_stage_complete
+        
+        # Start the fight phase
+        self.fight_phase_manager.start_fight_phase(current_player, opponent_player)
     
     def get_fight_phase_status(self) -> dict:
         """Get the current fight phase status for UI display"""
         current_player = self.game.get_current_player()
         opponent = self.game.get_opponent()
         
-        # Get units by stage for both players
-        current_fight_first = self.game.get_fight_first_units(current_player)
-        current_remaining = self.game.get_remaining_combatant_units(current_player)
-        opponent_fight_first = self.game.get_fight_first_units(opponent)
-        opponent_remaining = self.game.get_remaining_combatant_units(opponent)
-        
-        # Determine current stage
-        if current_fight_first or opponent_fight_first:
-            current_stage = "Fight First"
-        elif current_remaining or opponent_remaining:
-            current_stage = "Remaining Combatants"
+        if self.fight_phase_manager:
+            # Use fight phase manager for accurate status
+            return self.fight_phase_manager.get_stage_info(current_player, opponent)
         else:
-            current_stage = "Complete"
-        
-        return {
-            "current_stage": current_stage,
-            "current_player_fight_first": len(current_fight_first),
-            "current_player_remaining": len(current_remaining),
-            "opponent_fight_first": len(opponent_fight_first),
-            "opponent_remaining": len(opponent_remaining),
-            "fight_first_units": current_fight_first,
-            "remaining_units": current_remaining
-        }
+            # Fallback to old logic if manager not initialized
+            current_fight_first = self.game.get_fight_first_units(current_player)
+            current_remaining = self.game.get_remaining_combatant_units(current_player)
+            opponent_fight_first = self.game.get_fight_first_units(opponent)
+            opponent_remaining = self.game.get_remaining_combatant_units(opponent)
+            
+            if current_fight_first or opponent_fight_first:
+                current_stage = "Fight First"
+            elif current_remaining or opponent_remaining:
+                current_stage = "Remaining Combatants"
+            else:
+                current_stage = "Complete"
+            
+            return {
+                "current_stage": current_stage,
+                "active_player": None,
+                "current_player_fight_first": len(current_fight_first),
+                "current_player_remaining": len(current_remaining),
+                "opponent_fight_first": len(opponent_fight_first),
+                "opponent_remaining": len(opponent_remaining),
+                "fought_units": 0,
+                "is_complete": current_stage == "Complete"
+            }
     
     def _handle_movement_choice(self, unit, choice: str) -> None:
         """Handle movement choice selection using Unit's movement system"""
@@ -2817,11 +2858,14 @@ class BattlePhaseHandler(BasePhaseHandler):
             return {"valid": False, "reason": "Target unit is destroyed"}
         
         # Check if unit can shoot (not advanced unless allowed, not fell back, etc.)
-        if shooting_unit.round_state.advanced_this_round and not shooting_unit.can_shoot_after_advance(weapon_profile):
-            return {"valid": False, "reason": "Unit advanced and cannot shoot with this weapon"}
+        if shooting_unit.round_state.advanced_this_round:
+            # Unit method already checks both weapon-specific and unit-specific abilities
+            if not shooting_unit.can_shoot_after_advance(weapon_profile):
+                return {"valid": False, "reason": "Unit advanced and cannot shoot with this weapon"}
         
         if shooting_unit.round_state.fell_back_this_round:
-            return {"valid": False, "reason": "Unit fell back and cannot shoot"}
+            if not shooting_unit.can_shoot_after_fall_back(weapon_profile):
+                return {"valid": False, "reason": "Unit fell back and cannot shoot with this weapon"}
         
         # Check if any models in the unit can shoot this weapon at the target
         models_in_range = []
@@ -2886,43 +2930,42 @@ class BattlePhaseHandler(BasePhaseHandler):
     
     def _handle_fight_action(self, x: int, y: int) -> bool:
         """Handle fight phase actions"""
+        current_player = self.game.get_current_player()
+        opponent_player = self.game.get_opponent()
+        
+        # Initialize fight phase manager if not already done
+        if not self.fight_phase_manager:
+            self._initialize_fight_phase_manager(current_player, opponent_player)
+        
         # Always check if a unit was clicked on the battlefield first
         clicked_unit = self.game_view.get_unit_at_position(x, y)
-        current_player = self.game.get_current_player()
         
         # If a unit was clicked, check if it's a friendly unit to select for fighting
-        if clicked_unit and clicked_unit.get_parent_army() and clicked_unit.get_parent_army().player == current_player:
-            self.game_view.selected_unit = clicked_unit
-            self._synchronize_unit_selection(clicked_unit)
-            self._handle_fight_phase_selection(clicked_unit)
-            return True
-        
-        # If an enemy unit was clicked and we have a selected unit, try to fight it
-        if clicked_unit and self.game_view.selected_unit:
-            # Validate that the target is an enemy unit
-            if clicked_unit.get_parent_army() == self.game_view.selected_unit.get_parent_army():
-                print(f"❌ Cannot fight friendly unit: {self.game_view.selected_unit.name} cannot fight {clicked_unit.name} (same army)")
-                return False
+        if clicked_unit and clicked_unit.get_parent_army():
+            unit_owner = clicked_unit.get_parent_army().player
+            active_player = self.fight_phase_manager.get_active_player()
             
-            # Validate that the target is alive
-            if not clicked_unit.is_alive():
-                print(f"❌ Cannot fight destroyed unit: {clicked_unit.name} is destroyed")
+            # Check if this is the active player's unit
+            if unit_owner == active_player:
+                self.game_view.selected_unit = clicked_unit
+                self._synchronize_unit_selection(clicked_unit)
+                self._handle_fight_phase_selection(clicked_unit)
+                return True
+            else:
+                print(f"❌ It's {active_player.name}'s turn to select a unit, not {unit_owner.name}'s")
                 return False
-            
-            # Validate that the fighting unit is in engagement range of the target
-            if not self.game.map.is_within_engagement_range(self.game_view.selected_unit.get_position(), clicked_unit):
-                print(f"❌ Not in engagement range: {self.game_view.selected_unit.name} is not in engagement range of {clicked_unit.name}")
-                return False
-            
-            # All validations passed - execute the fight
-            print(f"⚔️ Fight action: {self.game_view.selected_unit.name} fights {clicked_unit.name}")
-            return True
         
         # If no unit was clicked, fall back to selected unit (e.g., from RosterPane)
         if self.game_view.selected_unit:
-            if self.game_view.selected_unit.get_parent_army() and self.game_view.selected_unit.get_parent_army().player == current_player:
+            unit_owner = self.game_view.selected_unit.get_parent_army().player if self.game_view.selected_unit.get_parent_army() else None
+            active_player = self.fight_phase_manager.get_active_player()
+            
+            if unit_owner == active_player:
                 self._handle_fight_phase_selection(self.game_view.selected_unit)
                 return True
+            else:
+                print(f"❌ It's {active_player.name}'s turn to select a unit, not {unit_owner.name}'s")
+                return False
         
         return False
     

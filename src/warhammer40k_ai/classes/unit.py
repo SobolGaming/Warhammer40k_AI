@@ -1288,7 +1288,7 @@ class Unit:
         self.round_state.advanced_this_round = advance
         return True
 
-    def charge_move(self, destination: Tuple[float, float, float], game_map: 'Map') -> bool:
+    def charge_move(self, destination: Tuple[float, float, float], game_map: 'Map', target_unit: 'Unit' = None) -> bool:
         """Special movement for charge actions that allows moving into engagement range.
         
         Unlike normal movement, charge movement:
@@ -1324,16 +1324,25 @@ class Unit:
             destination[2] - start_z
         )
         
-        # Find all enemy models to charge towards
-        enemy_units = game_map.get_enemy_units(self)
-        all_enemy_models = []
-        for enemy_unit in enemy_units:
-            if enemy_unit.is_alive():
-                all_enemy_models.extend([model for model in enemy_unit.models if model.is_alive])
-        
-        if not all_enemy_models:
-            print(f"❌ {self.name} cannot charge - no enemy models to charge towards")
-            return False
+        # Find enemy models to charge towards
+        if target_unit and target_unit.is_alive():
+            # Charge toward specific target unit
+            all_enemy_models = [model for model in target_unit.models if model.is_alive]
+            print(f"🎯 {self.name} charging specifically toward {target_unit.name} ({len(all_enemy_models)} models)")
+            if not all_enemy_models:
+                print(f"❌ {self.name} cannot charge - no alive models in target unit {target_unit.name}")
+                return False
+        else:
+            # Fallback: charge toward all enemy models (for backward compatibility)
+            enemy_units = game_map.get_enemy_units(self)
+            all_enemy_models = []
+            for enemy_unit in enemy_units:
+                if enemy_unit.is_alive():
+                    all_enemy_models.extend([model for model in enemy_unit.models if model.is_alive])
+            
+            if not all_enemy_models:
+                print(f"❌ {self.name} cannot charge - no enemy models to charge towards")
+                return False
         
         successful_moves = 0
         
@@ -1401,7 +1410,8 @@ class Unit:
                 new_y - model_start[1],
                 new_z - model_start[2] if len(model_start) > 2 else 0
             )
-            logger.debug(f"Model {model._id} charge moved {actual_distance_moved:.1f}\" towards {closest_enemy.name}")
+            target_name = target_unit.name if target_unit else "closest enemy"
+            logger.debug(f"Model {model._id} charge moved {actual_distance_moved:.1f}\" towards {closest_enemy.name} (from {target_name})")
         
         # Update unit centroid
         self.reset_position()
@@ -1423,6 +1433,9 @@ class Unit:
         
         if successful_moves < len(self.models):
             print(f"⚠️  Note: Only {successful_moves}/{len(self.models)} models could move to valid positions")
+        
+        # Mark unit as having moved this round
+        self.round_state.moved_this_round = True
         
         logger.info(f"Unit {self.name} charge moved from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
         return True
@@ -1629,15 +1642,159 @@ class Unit:
         self.round_state.fell_back_this_round = True
         return True
 
+    def has_advance_and_shoot(self) -> bool:
+        """Check if the unit has an ability that allows shooting after advancing.
+        
+        This checks for unit abilities that allow shooting after advancing,
+        based on actual Warhammer 40k ability descriptions.
+        
+        Returns:
+            bool: True if the unit has an ability that allows shooting after advancing
+        """
+        # Use cached result if available
+        if 'advance_and_shoot' in getattr(self, '_ability_cache', {}):
+            return self._ability_cache['advance_and_shoot']
+        
+        # Look for patterns that match actual 40k ability descriptions
+        found, _ = self._find_ability_with_patterns([
+            "eligible to shoot in a turn in which it advanced",
+            "eligible to shoot in a turn in which it fell back or advanced", 
+            "eligible to shoot in a turn in which it advanced or fell back",
+            "eligible to shoot and declare a charge in a turn in which it advanced",
+            "eligible to shoot and declare a charge in a turn in which it advanced or fell back",
+            "eligible to shoot and declare a charge in a turn in which it fell back or advanced",
+            "that unit is eligible to shoot and declare a charge in a turn in which it advanced",
+            "that unit is eligible to shoot and declare a charge in a turn in which it advanced or fell back",
+            "that unit is eligible to shoot and declare a charge in a turn in which it fell back or advanced"
+        ])
+        
+        # Cache the result
+        if not hasattr(self, '_ability_cache'):
+            self._ability_cache = {}
+        self._ability_cache['advance_and_shoot'] = found
+        
+        return found
+
+    def has_advance_and_charge(self) -> bool:
+        """Check if the unit has an ability that allows charging after advancing.
+        
+        This checks for unit abilities that allow charging after advancing,
+        based on actual Warhammer 40k ability descriptions.
+        
+        Returns:
+            bool: True if the unit has an ability that allows charging after advancing
+        """
+        # Use cached result if available
+        if 'advance_and_charge' in getattr(self, '_ability_cache', {}):
+            return self._ability_cache['advance_and_charge']
+        
+        # Look for patterns that match actual 40k ability descriptions
+        found, _ = self._find_ability_with_patterns([
+            "eligible to declare a charge in a turn in which it advanced",
+            "eligible to charge in a turn in which it advanced",
+            "eligible to shoot and declare a charge in a turn in which it advanced",
+            "eligible to shoot and declare a charge in a turn in which it advanced or fell back",
+            "eligible to shoot and declare a charge in a turn in which it fell back or advanced",
+            "that unit is eligible to shoot and declare a charge in a turn in which it advanced",
+            "that unit is eligible to shoot and declare a charge in a turn in which it advanced or fell back",
+            "that unit is eligible to shoot and declare a charge in a turn in which it fell back or advanced"
+        ])
+        
+        # Cache the result
+        if not hasattr(self, '_ability_cache'):
+            self._ability_cache = {}
+        self._ability_cache['advance_and_charge'] = found
+        
+        return found
+
+    def has_fell_back_and_shoot(self) -> bool:
+        """Check if the unit has an ability that allows shooting after falling back.
+        
+        This checks for unit abilities that allow shooting after falling back,
+        based on actual Warhammer 40k ability descriptions.
+        
+        Returns:
+            bool: True if the unit has an ability that allows shooting after falling back
+        """
+        # Use cached result if available
+        if 'fell_back_and_shoot' in getattr(self, '_ability_cache', {}):
+            return self._ability_cache['fell_back_and_shoot']
+        
+        # Look for patterns that match actual 40k ability descriptions
+        found, _ = self._find_ability_with_patterns([
+            "eligible to shoot in a turn in which it fell back",
+            "eligible to shoot in a turn in which it fell back or advanced", 
+            "eligible to shoot in a turn in which it advanced or fell back",
+            "eligible to shoot and declare a charge in a turn in which it fell back",
+            "eligible to shoot and declare a charge in a turn in which it advanced or fell back",
+            "eligible to shoot and declare a charge in a turn in which it fell back or advanced",
+            "that unit is eligible to shoot and declare a charge in a turn in which it fell back",
+            "that unit is eligible to shoot and declare a charge in a turn in which it advanced or fell back",
+            "that unit is eligible to shoot and declare a charge in a turn in which it fell back or advanced"
+        ])
+        
+        # Cache the result
+        if not hasattr(self, '_ability_cache'):
+            self._ability_cache = {}
+        self._ability_cache['fell_back_and_shoot'] = found
+        
+        return found
+
     def can_shoot_after_advance(self, profile) -> bool:
-        """Check if this unit can shoot after advancing with the given weapon profile."""
+        """Check if this unit can shoot after advancing with the given weapon profile.
+        
+        A unit can shoot after advancing if either:
+        1. The weapon profile is an Assault weapon, OR
+        2. The unit has an ability that allows shooting after advancing
+        
+        Args:
+            profile: The weapon profile to check
+            
+        Returns:
+            bool: True if the unit can shoot this weapon after advancing
+        """
         # Check for Assault weapons
         if profile.is_assault():
             return True
-        # TODO: Add checks for unit abilities that allow advance and shoot
-        # Example: if self.has_ability("advance_and_shoot"):
-        #     return True
+            
+        # Check for unit abilities that allow advance and shoot
+        if self.has_advance_and_shoot():
+            return True
+            
         return False
+
+    def can_shoot_after_fall_back(self, profile) -> bool:
+        """Check if this unit can shoot after falling back with the given weapon profile.
+        
+        A unit can shoot after falling back if either:
+        1. The weapon profile is a Pistol weapon, OR
+        2. The unit has an ability that allows shooting after falling back
+        
+        Args:
+            profile: The weapon profile to check
+            
+        Returns:
+            bool: True if the unit can shoot this weapon after falling back
+        """
+        # Check for Pistol weapons (can always shoot after falling back)
+        if profile.is_pistol():
+            return True
+            
+        # Check for unit abilities that allow shooting after falling back
+        if self.has_fell_back_and_shoot():
+            return True
+            
+        return False
+
+    def can_charge_after_advance(self) -> bool:
+        """Check if this unit can charge after advancing.
+        
+        A unit can charge after advancing if it has an ability that allows it.
+        
+        Returns:
+            bool: True if the unit can charge after advancing
+        """
+        return self.has_advance_and_charge()
 
     def scout_move(self, destination: Tuple[float, float, float], game_map: 'Map') -> bool:
         """Execute a scout move for the unit during pre-battle rules phase.
@@ -1926,8 +2083,16 @@ class Unit:
             return False
             
         if self.round_state.fell_back_this_round:
-            print(f"❌ {self.name} cannot shoot after falling back")
-            return False
+            # Check if any weapons in the declarations can shoot after falling back
+            can_shoot_any_weapon = False
+            for declaration in weapon_declarations:
+                if self.can_shoot_after_fall_back(declaration['weapon_profile']):
+                    can_shoot_any_weapon = True
+                    break
+            
+            if not can_shoot_any_weapon:
+                print(f"❌ {self.name} cannot shoot after falling back")
+                return False
             
         print(f"🎯 {self.name} executing {len(weapon_declarations)} shooting declarations...")
         
@@ -1975,8 +2140,15 @@ class Unit:
             return {"valid": False, "reason": "Target unit is destroyed"}
         
         # Check if unit can shoot after advancing
-        if self.round_state.advanced_this_round and not self.can_shoot_after_advance(weapon_profile):
-            return {"valid": False, "reason": "Unit advanced and cannot shoot with this weapon"}
+        if self.round_state.advanced_this_round:
+            # Unit method already checks both weapon-specific and unit-specific abilities
+            if not self.can_shoot_after_advance(weapon_profile):
+                return {"valid": False, "reason": "Unit advanced and cannot shoot with this weapon"}
+        
+        # Check if unit can shoot after falling back
+        if self.round_state.fell_back_this_round:
+            if not self.can_shoot_after_fall_back(weapon_profile):
+                return {"valid": False, "reason": "Unit fell back and cannot shoot with this weapon"}
         
         # Check if any models can actually shoot this weapon at the target
         models_in_range = []
@@ -3252,7 +3424,10 @@ class Unit:
         if self.round_state.declared_charge_this_round:
             return False
             
-        if self.round_state.advanced_this_round or self.round_state.fell_back_this_round:
+        if self.round_state.advanced_this_round and not self.can_charge_after_advance():
+            return False
+            
+        if self.round_state.fell_back_this_round:
             return False
         
         # Check if unit arrived from reserves this turn and has special charge restrictions

@@ -873,19 +873,7 @@ class Game:
         next_phase_value = (current_phase_value + 1) % len(BattleRoundPhases)
         self.phase = BattleRoundPhases(next_phase_value)
         
-        # Reset movement tracking when entering Movement Phase
-        if self.phase == BattleRoundPhases.MOVEMENT_PHASE:
-            current_player = self.get_current_player()
-            for unit in current_player.get_army().units:
-                if hasattr(unit.round_state, 'moved_this_round'):
-                    unit.round_state.moved_this_round = False
-        
-        # Reset shooting tracking when entering Shooting Phase
-        elif self.phase == BattleRoundPhases.SHOOTING_PHASE:
-            current_player = self.get_current_player()
-            for unit in current_player.get_army().units:
-                if hasattr(unit.round_state, 'shot_this_round'):
-                    unit.round_state.shot_this_round = False
+        # Phase-specific resets are no longer needed since we reset all round state at battle round start
         
         if next_phase_value == 0:  # If we've wrapped around to COMMAND_PHASE
             # This means we've finished all phases for the current player
@@ -902,6 +890,11 @@ class Game:
                 # We've cycled back to the player who started this battle round
                 self.turn += 1
                 self.battle_round_starting_player_index = self.current_player_index  # This player starts the next round
+                
+                # Reset round state for ALL units at the start of a new battle round
+                for player in self.players:
+                    for unit in player.get_army().units:
+                        unit.initialize_round()
 
     def is_command_phase(self) -> bool:
         return self.phase == BattleRoundPhases.COMMAND_PHASE
@@ -911,12 +904,15 @@ class Game:
         for player in self.players:
             player.gain_command_point()
 
-        # Reset round state for all units of current player
-        for unit in self.get_current_player().get_army().units:
-            unit.do_command_action(self.map, self.turn)
+        # Execute command actions for current player's units (without resetting round state)
+        current_player = self.get_current_player()
+        for unit in current_player.get_army().units:
+            # Do battle shock tests and other command phase actions without resetting round state
+            if unit.is_below_half_strength():
+                print(f"⚠️  {unit.name} is below half strength - taking Battle-Shock test")
+                unit.take_battle_shock_test(self.turn)
 
         # Update and evaluate objectives for the current player
-        current_player = self.get_current_player()
         for obj in self.map.objectives:
             if hasattr(obj, 'location') and hasattr(obj.location, 'update_control'):
                 obj.location.update_control(self)
@@ -1030,7 +1026,7 @@ class Game:
         
         # Attempt to move the unit with special charge movement logic
         # During charge, units should be able to move into engagement range
-        success = charging_unit.charge_move((new_x, new_y, new_z), self.map)
+        success = charging_unit.charge_move((new_x, new_y, new_z), self.map, target_unit)
         if success:
             # Check if the charge actually achieved engagement range (≤1.0")
             final_distance = self.map.get_distance_between_units(charging_unit, target_unit)

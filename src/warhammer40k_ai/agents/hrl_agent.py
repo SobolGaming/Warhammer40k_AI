@@ -1307,8 +1307,24 @@ class TacticalAgent:
 
         self.game.event_system.publish("shooting_phase_start", unit=unit, game_state=self.game.get_state())
         if unit.round_state.fell_back_this_round:
-            logger.info(f"{unit.name} cannot shoot after falling back.")
-            return
+            # Check if unit has any weapons that can shoot after falling back
+            can_shoot_any_weapon = False
+            for model in unit.models:
+                if not model.is_alive:
+                    continue
+                for wargear_item in model.wargear:
+                    for profile_name, profile in wargear_item.profiles.items():
+                        if unit.can_shoot_after_fall_back(profile):
+                            can_shoot_any_weapon = True
+                            break
+                    if can_shoot_any_weapon:
+                        break
+                if can_shoot_any_weapon:
+                    break
+            
+            if not can_shoot_any_weapon:
+                logger.info(f"{unit.name} cannot shoot after falling back.")
+                return
 
         # Check if unit is within engagement range of any enemy
         unit_position = unit.get_position()
@@ -1332,9 +1348,17 @@ class TacticalAgent:
                     continue
                 
                 # Skip if unit advanced and cannot shoot after advancing
-                if unit.round_state.advanced_this_round and not unit.can_shoot_after_advance(selected_profile):
-                    logger.debug(f"{model.name} cannot shoot {wargear_item.name} ({selected_profile.name}) - advanced and not allowed to shoot")
-                    continue
+                if unit.round_state.advanced_this_round:
+                    # Unit method already checks both weapon-specific and unit-specific abilities
+                    if not unit.can_shoot_after_advance(selected_profile):
+                        logger.debug(f"{model.name} cannot shoot {wargear_item.name} ({selected_profile.name}) - advanced and not allowed to shoot")
+                        continue
+                
+                # Skip if unit fell back and cannot shoot after falling back
+                if unit.round_state.fell_back_this_round:
+                    if not unit.can_shoot_after_fall_back(selected_profile):
+                        logger.debug(f"{model.name} cannot shoot {wargear_item.name} ({selected_profile.name}) - fell back and not allowed to shoot")
+                        continue
                 
                 # Skip if in engagement range and cannot shoot in engagement
                 if in_engagement_range and not unit.can_shoot_in_engagement_range(selected_profile):

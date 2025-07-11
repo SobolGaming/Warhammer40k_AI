@@ -773,6 +773,13 @@ class WargearProfile:
     def is_extra_attacks(self) -> int:
         return 'extra attacks' in [keyword.lower() for keyword in self.get_keywords()]
 
+    def can_shoot_after_advance(self) -> bool:
+        """Check if this weapon can be shot after advancing.
+        
+        Assault weapons can always be shot after advancing.
+        """
+        return self.is_assault()
+
     def is_sustained_hits(self) -> int:
         for keyword in self.get_keywords():
             if keyword.lower().startswith('sustained hits'):

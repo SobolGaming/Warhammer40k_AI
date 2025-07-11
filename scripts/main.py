@@ -265,6 +265,8 @@ def execute_human_turn(game: Game, player: Player, agents: dict, ui_interface=No
         tactical_agent = agents.get(f'ta{player_num}')
         if tactical_agent:
             tactical_agent.execute_fight_phase(player, opponent)
+            # Always advance phase after fight phase is complete
+            game.next_phase()
         else:
             # If no tactical agent, just advance the phase
             game.next_phase()

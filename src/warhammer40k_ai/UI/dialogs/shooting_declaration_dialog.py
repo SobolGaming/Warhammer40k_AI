@@ -216,12 +216,14 @@ class ShootingDeclarationDialog:
             
         # Check if unit advanced this round and weapon allows shooting after advance
         if self.unit.round_state.advanced_this_round:
-            if not weapon_profile.can_shoot_after_advance():
+            # Unit method already checks both weapon-specific and unit-specific abilities
+            if not self.unit.can_shoot_after_advance(weapon_profile):
                 return False
         
-        # Check if unit fell back this round (generally can't shoot)
+        # Check if unit fell back this round and weapon allows shooting after falling back
         if self.unit.round_state.fell_back_this_round:
-            return False
+            if not self.unit.can_shoot_after_fall_back(weapon_profile):
+                return False
         
         # Check if unit is in engagement range (can only shoot pistols or into melee)
         if not self.unit.can_shoot_in_engagement_range(self.game_map, weapon_profile):
@@ -790,14 +792,14 @@ class ShootingDeclarationDialog:
 
         # Handle weapon group targeting
         if self.selected_weapon_group:
-            # Add all weapons in the group to target the same enemy
-            for weapon_info in self.selected_weapon_group['individual_weapons']:
-                self.weapon_declarations.append({
-                    'weapon_profile': weapon_info['profile'],
-                    'target_unit': clicked_unit,
-                    'models': [weapon_info['model']],
-                    'weapon_instance': weapon_info['weapon_instance']
-                })
+            # Create a single declaration with all models in the group
+            all_models = [weapon_info['model'] for weapon_info in self.selected_weapon_group['individual_weapons']]
+            self.weapon_declarations.append({
+                'weapon_profile': self.selected_weapon,
+                'target_unit': clicked_unit,
+                'models': all_models,
+                'weapon_instance': 1  # Group targeting uses instance 1
+            })
             print(f"✅ {self.unit.name} targeting {clicked_unit.name} with {self.selected_weapon.parent_wargear.name} group (x{self.selected_weapon_group['count']})")
         else:
             # Handle individual weapon targeting
