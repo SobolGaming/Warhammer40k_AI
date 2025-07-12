@@ -792,14 +792,14 @@ class ShootingDeclarationDialog:
 
         # Handle weapon group targeting
         if self.selected_weapon_group:
-            # Create a single declaration with all models in the group
-            all_models = [weapon_info['model'] for weapon_info in self.selected_weapon_group['individual_weapons']]
-            self.weapon_declarations.append({
-                'weapon_profile': self.selected_weapon,
-                'target_unit': clicked_unit,
-                'models': all_models,
-                'weapon_instance': 1  # Group targeting uses instance 1
-            })
+            # Create individual declarations for each weapon instance in the group
+            for weapon_info in self.selected_weapon_group['individual_weapons']:
+                self.weapon_declarations.append({
+                    'weapon_profile': self.selected_weapon,
+                    'target_unit': clicked_unit,
+                    'models': [weapon_info['model']],  # Single model per declaration
+                    'weapon_instance': weapon_info['weapon_instance']
+                })
             print(f"✅ {self.unit.name} targeting {clicked_unit.name} with {self.selected_weapon.parent_wargear.name} group (x{self.selected_weapon_group['count']})")
         else:
             # Handle individual weapon targeting

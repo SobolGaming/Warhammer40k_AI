@@ -2303,6 +2303,11 @@ class BattlePhaseHandler(BasePhaseHandler):
             self.game_view.weapon_choice_dialog.visible):
             return self.game_view.weapon_choice_dialog.handle_event(event)
         
+        # Handle melee weapon declaration dialog (high priority for fight phase)
+        if (hasattr(self.game_view, 'melee_weapon_declaration_dialog') and
+            self.game_view.melee_weapon_declaration_dialog.visible):
+            return self.game_view.melee_weapon_declaration_dialog.handle_event(event)
+        
         # Handle shooting declaration dialog
         if (hasattr(self.game_view, 'shooting_declaration_dialog') and
             (self.game_view.shooting_declaration_dialog.visible or 
@@ -2842,11 +2847,6 @@ class BattlePhaseHandler(BasePhaseHandler):
         if hasattr(self.game_view, 'selected_shooting_models'):
             self.game_view.selected_shooting_models = []
     
-    def _execute_shooting_attack(self, shooting_unit, target_unit, weapon_profile):
-        """Shooting execution is now handled by unit.execute_shooting_declarations()"""
-        # This method is deprecated - shooting execution moved to unit.py
-        pass
-    
     def _validate_shooting_target(self, shooting_unit, target_unit, weapon_profile) -> dict:
         """Validate if shooting unit can target the enemy unit with the selected weapon"""
         # Check if target is an enemy unit
@@ -2936,6 +2936,11 @@ class BattlePhaseHandler(BasePhaseHandler):
         # Initialize fight phase manager if not already done
         if not self.fight_phase_manager:
             self._initialize_fight_phase_manager(current_player, opponent_player)
+        
+        # If fight phase manager is still None after initialization, fight phase is complete
+        if not self.fight_phase_manager:
+            print("✅ Fight phase is complete - no actions available")
+            return False
         
         # Always check if a unit was clicked on the battlefield first
         clicked_unit = self.game_view.get_unit_at_position(x, y)
@@ -3055,6 +3060,10 @@ class PhaseManager:
         # Charge system state
         from .dialogs import ChargeDeclarationDialog
         self.game_view.charge_declaration_dialog = ChargeDeclarationDialog(game_view.screen.get_width(), game_view.screen.get_height())
+        
+        # Melee weapon declaration system state
+        from .dialogs import MeleeWeaponDeclarationDialog
+        self.game_view.melee_weapon_declaration_dialog = MeleeWeaponDeclarationDialog(game_view.screen.get_width(), game_view.screen.get_height())
     
     def get_current_handler(self) -> BasePhaseHandler:
         """Get the appropriate handler for the current game phase"""

@@ -1401,7 +1401,35 @@ class Unit:
             new_z = game_map.get_height_at_point(new_x, new_y)
             new_facing = self.calculate_strategic_facing(new_x, new_y, game_map)
             
-            # Move the model to the new position
+            # CRITICAL: Validate position before moving to prevent friendly unit overlaps
+            # Import here to avoid circular imports
+            from ..utility.calcs import check_friendly_ending_collision
+            
+            # Check if the new position would collide with friendly units
+            if check_friendly_ending_collision(model, (new_x, new_y, new_z), game_map):
+                # Position would cause collision - try to find alternative position
+                # Try positions at different distances along the same direction
+                alternative_found = False
+                for distance_factor in [0.9, 0.8, 0.7, 0.6, 0.5]:
+                    alt_distance = target_distance * distance_factor
+                    alt_x = model_start[0] + dx * alt_distance
+                    alt_y = model_start[1] + dy * alt_distance
+                    alt_z = game_map.get_height_at_point(alt_x, alt_y)
+                    
+                    if not check_friendly_ending_collision(model, (alt_x, alt_y, alt_z), game_map):
+                        # Found a valid alternative position
+                        new_x, new_y, new_z = alt_x, alt_y, alt_z
+                        target_distance = alt_distance
+                        alternative_found = True
+                        logger.debug(f"Model {model._id} found alternative charge position at {distance_factor:.1f} of original distance")
+                        break
+                
+                if not alternative_found:
+                    # No valid position found - skip this model
+                    logger.debug(f"Model {model._id} cannot charge - no valid position found without friendly collisions")
+                    continue
+            
+            # Move the model to the validated position
             model.set_location(new_x, new_y, new_z, new_facing)
             successful_moves += 1
             
@@ -1420,6 +1448,29 @@ class Unit:
         if successful_moves == 0:
             print(f"❌ {self.name} could not charge - no models could reach any valid positions")
             return False
+        
+        # CRITICAL VALIDATION: Final check for any overlaps after all models positioned
+        # This catches edge cases where models might still overlap despite individual validation
+        friendly_units = game_map.get_friendly_units(self)
+        for model in self.models:
+            if not model.is_alive:
+                continue
+            for friendly_unit in friendly_units:
+                if friendly_unit == self or not friendly_unit.is_alive() or not friendly_unit.deployed:
+                    continue
+                for friendly_model in friendly_unit.models:
+                    if not friendly_model.is_alive:
+                        continue
+                    # Check if this model's base overlaps with the friendly model's base
+                    if model.model_base.collides_with(friendly_model.model_base):
+                        print(f"❌ {self.name} charge failed - {model.name} would overlap with {friendly_model.name} from {friendly_unit.name}")
+                        # ROLLBACK: Restore original positions
+                        for i, original_pos in enumerate(original_model_positions):
+                            if i < len(self.models):
+                                self.models[i].set_location(*original_pos)
+                        if original_unit_position:
+                            self.position = original_unit_position
+                        return False
         
         # Get final position for feedback
         final_position = self.get_position()
@@ -2106,6 +2157,7 @@ class Unit:
             weapon_profile = declaration['weapon_profile']
             target_unit = declaration['target_unit']
             models_with_weapon = declaration['models']
+            weapon_instance = declaration.get('weapon_instance', None)
             
             # Validate this declaration
             validation = self._validate_shooting_declaration(weapon_profile, target_unit, models_with_weapon, game_map)
@@ -2114,16 +2166,18 @@ class Unit:
                 continue
                 
             # Execute attacks with this weapon
-            weapon_attacks = self._execute_weapon_attacks(weapon_profile, target_unit, models_with_weapon, game_map)
+            weapon_attacks = self._execute_weapon_attacks(weapon_profile, target_unit, models_with_weapon, game_map, weapon_instance)
             successful_attacks += weapon_attacks
             
         # Report shooting results
         if successful_attacks > 0:
-            print(f"✅ {self.name} completed shooting with {successful_attacks} successful attacks")
+            print(f"✅ {self.name} completed shooting with {successful_attacks} attacks executed")
             
             # Check if target unit was destroyed
-            if not target_unit.is_alive():
-                print(f"💀 {target_unit.name} has been destroyed!")
+            for declaration in weapon_declarations:
+                target_unit = declaration['target_unit']
+                if not target_unit.is_alive():
+                    print(f"💀 {target_unit.name} has been destroyed!")
         else:
             print(f"❌ {self.name} failed to execute any attacks")
             
@@ -2242,7 +2296,7 @@ class Unit:
         # If target is different from engaged unit, only vehicles can shoot
         return self.is_vehicle
     
-    def _execute_weapon_attacks(self, weapon_profile, target_unit, models_with_weapon, game_map) -> int:
+    def _execute_weapon_attacks(self, weapon_profile, target_unit, models_with_weapon, game_map, weapon_instance=None) -> int:
         """Execute attacks with a specific weapon profile"""
         successful_attacks = 0
         
@@ -2254,64 +2308,35 @@ class Unit:
             if not self._can_model_shoot_weapon_at_target(model, weapon_profile, target_unit, game_map):
                 continue
                 
-            # Count how many weapons of this type the model has
-            weapon_count = 0
+            # Verify the model has this weapon
+            has_weapon = False
             for wargear in model.wargear:
-                # Check if this wargear has the specific weapon profile we're looking for
                 for profile_name, profile in wargear.profiles.items():
                     if profile == weapon_profile:
-                        weapon_count += 1
-                        break  # Only count once per wargear item
+                        has_weapon = True
+                        break
+                if has_weapon:
+                    break
             
-            # If no weapons found, skip this model
-            if weapon_count == 0:
+            if not has_weapon:
                 continue
                 
-            # Execute attacks for each weapon instance separately
-            for weapon_instance in range(weapon_count):
-                try:
-                    print(f"🎯 {model.name} attacking with {weapon_profile.parent_wargear.name} #{weapon_instance + 1}")
-                    # Execute the attack using the weapon profile - each weapon rolls independently
-                    attack_result = weapon_profile.attack(target_unit, model)
-                    if attack_result:
-                        successful_attacks += 1
-                except Exception as e:
-                    print(f"❌ Error executing attack with {weapon_profile.name} #{weapon_instance + 1}: {e}")
+            # Execute the attack - each declaration represents exactly one weapon firing
+            try:
+                weapon_display = f"{weapon_profile.parent_wargear.name}"
+                if weapon_instance:
+                    weapon_display += f" #{weapon_instance}"
+                print(f"🎯 {model.name} attacking with {weapon_display}")
+                
+                # Execute the attack using the weapon profile
+                weapon_profile.attack(target_unit, model)
+                # Count successful execution of the attack (not damage dealt)
+                successful_attacks += 1
+            except Exception as e:
+                print(f"❌ Error executing attack with {weapon_profile.name}: {e}")
+                # Don't increment successful_attacks if there was an exception
                 
         return successful_attacks
-
-    def shoot(self, target_unit: 'Unit') -> None:
-        if self.round_state.advanced_this_round:
-            print(f"{self.name} cannot shoot after advancing.")
-            return
-        if self.round_state.fell_back_this_round:
-            print(f"{self.name} cannot shoot after falling back.")
-            return
-
-        """Shoots at the target unit."""
-        if self.check_line_of_sight(target_unit):
-            for weapon in self.weapons:
-                weapon.fire(self, target_unit)
-            print(f"{self.name} fired at {target_unit.name}.")
-            self.round_state.shot_this_round = True
-        else:
-            print(f"{self.name} cannot see {target_unit.name}.")
-
-    # Charge Phase Actions
-    def declare_charge(self, target_units: List['Unit']) -> None:
-        if self.round_state.advanced_this_round:
-            print(f"{self.name} cannot charge after advancing.")
-            return
-        if self.round_state.fell_back_this_round:
-            print(f"{self.name} cannot charge after falling back.")
-            return
-
-        """Declares a charge against target units."""
-        self.charge_targets = target_units
-        print(f"{self.name} declares a charge against {[unit.name for unit in target_units]}.")
-        self.round_state.declared_charge_this_round = True
-
-
 
     # Fight Phase Actions
     def pile_in(self, target_units: List['Unit']) -> None:

@@ -931,10 +931,6 @@ class Wargear:
             max_range = self.profiles[profile_name].range.max
         return max_range
 
-    ### Wargear actions
-    def attack(self, model: 'Model', target: 'Unit') -> None:
-        pass
-
 
 class WargearOptionType(Enum):
     ADDITIONAL = auto()
