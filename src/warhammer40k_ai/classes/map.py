@@ -107,41 +107,38 @@ class Map:
             test_shape = translate(test_shape, destination[0] - model.model_base.x, destination[1] - model.model_base.y)
         return self.boundary.contains(test_shape)
 
-    def is_within_engagement_range(self, position: Tuple[float, float, float], target: Unit) -> bool:
+    def is_within_engagement_range(self, source_unit: Unit, target_unit: Unit) -> bool:
         """
-        Check if any model in the target unit is within engagement range.
+        Check if any model in the source unit is within engagement range of any model in the target unit.
         
         Engagement Range in 10th Edition:
         - Within 1″ horizontally (measured base-to-base)  
         - Within 5″ vertically
         
         Args:
-            position: The position to check from (x, y, z)
-            target: The target unit to check against
+            source_unit: The source unit to check from
+            target_unit: The target unit to check against
             
         Returns:
-            bool: True if any model in target is within engagement range
+            bool: True if any model in source unit is within engagement range of any model in target unit
         """
-        # Create a temporary model at the given position for distance calculations
-        from .model import Model
-        from ..utility.model_base import Base, BaseType
-        
-        # Create a temporary base for the position we're checking from
-        temp_base = Base(BaseType.CIRCULAR, 0.1)  # Small radius for point-like calculation
-        temp_base.set_position(position[0], position[1], position[2])
-        
-        for target_model in target.models:
-            # Calculate horizontal distance (base-to-base)
-            horizontal_distance = temp_base.edge_to_edge_distance(target_model.model_base)
-            
-            # Calculate vertical distance  
-            vertical_distance = temp_base.vertical_distance(target_model.model_base)
-            
-            # Check if within engagement range
-            if (horizontal_distance <= ENGAGEMENT_RANGE_HORIZONTAL and 
-                vertical_distance <= ENGAGEMENT_RANGE_VERTICAL):
-                return True
+        # Check if any model in source unit is within engagement range of any model in target unit
+        for source_model in source_unit.models:
+            if not source_model.is_alive:
+                continue
+            for target_model in target_unit.models:
+                if not target_model.is_alive:
+                    continue
+                # Calculate horizontal distance (base-to-base)
+                horizontal_distance = source_model.model_base.edge_to_edge_distance(target_model.model_base)
                 
+                # Calculate vertical distance  
+                vertical_distance = source_model.model_base.vertical_distance(target_model.model_base)
+                
+                # Check if within engagement range
+                if (horizontal_distance <= ENGAGEMENT_RANGE_HORIZONTAL and 
+                    vertical_distance <= ENGAGEMENT_RANGE_VERTICAL):
+                    return True
         return False
 
     def calculate_pivot_cost(self, unit: Unit) -> float:

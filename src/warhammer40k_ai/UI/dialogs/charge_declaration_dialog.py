@@ -199,7 +199,7 @@ class ChargeDeclarationDialog:
         # Check if unit is already in engagement range
         if self.game_map:
             enemy_units = self.game_map.get_enemy_units(self.unit)
-            is_engaged = any(self.game_map.is_within_engagement_range(self.unit.get_position(), enemy) 
+            is_engaged = any(self.game_map.is_within_engagement_range(self.unit, enemy) 
                            for enemy in enemy_units if enemy.is_alive())
             if is_engaged:
                 return False
@@ -229,7 +229,7 @@ class ChargeDeclarationDialog:
             return {"valid": False, "reason": "Unit fell back and cannot charge"}
         
         # Check if unit is already in engagement range
-        if self.game_map.is_within_engagement_range(self.unit.get_position(), target):
+        if self.game_map.is_within_engagement_range(self.unit, target):
             return {"valid": False, "reason": "Unit is already in engagement range"}
         
         # Check distance

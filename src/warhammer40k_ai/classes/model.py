@@ -421,12 +421,13 @@ class Model:
         save_value = self.save - attacking_ap
         inv_save, inv_save_condition = self.inv_save
         if inv_save:
-            if not inv_save_condition:
+            # Check invulnerable save condition (string-based, not callable)
+            condition_met = True
+            if inv_save_condition and inv_save_condition.strip():
+                condition_met = self._check_invulnerable_save_condition(inv_save_condition, attack_instance)
+            
+            if condition_met:
                 save_value = min(save_value, inv_save)
-            elif inv_save_condition(attack_instance):
-                save_value = min(save_value, inv_save)
-            else:
-                raise Exception(f"Invalid inv_save_condition: {inv_save_condition}")
 
         dice_roll = get_roll("D6")
         if dice_roll == 1:  # unmodified dice roll of 1 is always a fail
@@ -439,6 +440,58 @@ class Model:
         # Suppress print for comprehensive attack summary
         # print(f"Saving Throw: dice_roll: {dice_roll}, dice_modifier: {dice_modifier}, save_value: {save_value}")
         return (dice_roll + dice_modifier) >= save_value
+
+    def _check_invulnerable_save_condition(self, condition: str, attack_instance: dict) -> bool:
+        """
+        Check if an invulnerable save condition is met based on the attacking weapon.
+        
+        Args:
+            condition: The condition string (e.g., "against psychic attacks", "against melee attacks")
+            attack_instance: Dictionary containing attack information including weapon profile
+            
+        Returns:
+            bool: True if the condition is met and the invulnerable save should apply
+        """
+        if not condition or not condition.strip():
+            return True  # No condition means always applies
+        
+        condition_lower = condition.lower().strip()
+        
+        # Parse "against XXX attacks" pattern
+        import re
+        pattern = r'against\s+(\w+)\s+attacks?'
+        match = re.search(pattern, condition_lower)
+        
+        if match:
+            keyword_to_check = match.group(1)  # Extract the keyword (e.g., "psychic", "melee", "ranged")
+            
+            # Get weapon profile from attack_instance if available
+            weapon_profile = attack_instance.get('weapon_profile')
+            if not weapon_profile:
+                # If no weapon profile available, default to applying the save
+                return True
+            
+            # Check if the attacking weapon has this keyword
+            weapon_keywords = [kw.lower() for kw in weapon_profile.get_keywords()]
+            
+            # Special case mappings for common keywords
+            if keyword_to_check == "psychic":
+                return "psychic" in weapon_keywords
+            elif keyword_to_check == "melee":
+                return weapon_profile.parent_wargear and weapon_profile.parent_wargear.is_melee()
+            elif keyword_to_check == "ranged":
+                return weapon_profile.parent_wargear and weapon_profile.parent_wargear.is_ranged()
+            elif keyword_to_check == "mortal":
+                # Check if this attack deals mortal wounds
+                return attack_instance.get('is_mortal', False)
+            else:
+                # Check for exact keyword match
+                return keyword_to_check in weapon_keywords
+        
+        # If we can't parse the condition, default to applying the save
+        # This is safer than blocking legitimate saves due to parsing issues
+        print(f"⚠️  Unknown invulnerable save condition format: '{condition}' - applying save")
+        return True
 
     def failed_saving_throw(self, attack_instance: Dict, attacking_ap: int = 0) -> bool:
         return not self.passed_saving_throw(attack_instance, attacking_ap)

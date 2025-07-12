@@ -1,0 +1,124 @@
+Anvanth's Swift (1995 points)
+
+Aeldari
+Strike Force (2000 points)
+Warhost
+
+
+CHARACTERS
+
+Autarch Wayleaper (115 points)
+  • Warlord
+  • 1x Dragon fusion gun
+  • 1x Star glaive
+  • Enhancement: Phoenix Gem
+
+Avatar of Khaine (300 points)
+  • 1x The Wailing Doom
+
+Fuegan (120 points)
+  • 1x Fire Axe
+  • 1x Searsong
+
+Jain Zar (105 points)
+  • 1x Blade of Destruction
+  • 1x Silent Death
+
+Lhykhis (120 points)
+  • 1x Brood Twain
+  • 1x Spider’s Fangs
+  • 1x Weaverender
+
+Spiritseer (65 points)
+  • 1x Shuriken pistol
+  • 1x Witch staff
+
+
+DEDICATED TRANSPORTS
+
+Wave Serpent (125 points)
+  • 1x Shuriken cannon
+  • 1x Twin bright lance
+  • 1x Wraithbone hull
+
+
+OTHER DATASHEETS
+
+Fire Dragons (120 points)
+  • 1x Aspect Shrine Token
+  • 1x Fire Dragon Exarch
+    • 1x Close combat weapon
+    • 1x Exarch’s Dragon fusion gun
+  • 4x Fire Dragon
+    • 4x Close combat weapon
+    • 4x Dragon fusion gun
+
+Howling Banshees (95 points)
+  • 1x Aspect Shrine Token
+  • 1x Howling Banshee Exarch
+    • 1x Banshee blade
+    • 1x Shuriken pistol
+  • 4x Howling Banshee
+    • 4x Banshee blade
+    • 4x Shuriken pistol
+
+Rangers (55 points)
+  • 5x Ranger
+    • 5x Close combat weapon
+    • 5x Long rifle
+    • 5x Shuriken pistol
+
+Rangers (55 points)
+  • 5x Ranger
+    • 5x Close combat weapon
+    • 5x Long rifle
+    • 5x Shuriken pistol
+
+Rangers (55 points)
+  • 5x Ranger
+    • 5x Close combat weapon
+    • 5x Long rifle
+    • 5x Shuriken pistol
+
+Shroud Runners (80 points)
+  • 3x Shroud Runner
+    • 3x Close combat weapon
+    • 3x Long rifle
+    • 3x Scatter laser
+    • 3x Shuriken pistol
+
+War Walkers (85 points)
+  • 2x Bright lance
+  • 1x War Walker feet
+
+Warp Spiders (95 points)
+  • 1x Aspect Shrine Token
+  • 1x Warp Spider Exarch
+    • 1x Close combat weapon
+    • 1x Exarch’s death spinner
+  • 4x Warp Spider
+    • 4x Close combat weapon
+    • 4x Death spinner
+
+Warp Spiders (95 points)
+  • 1x Aspect Shrine Token
+  • 1x Warp Spider Exarch
+    • 1x Close combat weapon
+    • 1x Exarch’s death spinner
+  • 4x Warp Spider
+    • 4x Close combat weapon
+    • 4x Death spinner
+
+Wraithblades (170 points)
+  • 5x Wraithblade
+    • 5x Forceshield
+    • 5x Ghostaxe
+
+Wraithlord (140 points)
+  • 1x Bright lance
+  • 2x Flamer
+  • 1x Ghostglaive
+  • 1x Starcannon
+  • 1x Wraithbone fists
+
+Exported with App Version: v1.35.0 (83), Data Version: v629

@@ -1082,7 +1082,7 @@ class Game:
             
             # Check if unit is already in engagement range
             enemy_units = self.get_enemy_units(player)
-            is_engaged = any(self.map.is_within_engagement_range(unit.get_position(), enemy) 
+            is_engaged = any(self.map.is_within_engagement_range(unit, enemy) 
                            for enemy in enemy_units if enemy.is_alive())
             if is_engaged:
                 continue

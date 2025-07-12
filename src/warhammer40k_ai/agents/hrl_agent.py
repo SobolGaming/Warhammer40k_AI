@@ -1327,10 +1327,9 @@ class TacticalAgent:
                 return
 
         # Check if unit is within engagement range of any enemy
-        unit_position = unit.get_position()
         enemy_units = self.game.map.get_enemy_units(unit)
         in_engagement_range = any(
-            self.game.map.is_within_engagement_range(unit_position, enemy_unit) 
+            self.game.map.is_within_engagement_range(unit, enemy_unit) 
             for enemy_unit in enemy_units if enemy_unit.is_alive()
         )
 
@@ -1377,7 +1376,7 @@ class TacticalAgent:
                     target_in_engagement = False
                     for friendly_unit in self.game.map.get_friendly_units(unit):
                         if friendly_unit != unit and friendly_unit.is_alive():
-                            if self.game.map.is_within_engagement_range(friendly_unit.get_position(), target):
+                            if self.game.map.is_within_engagement_range(friendly_unit, target):
                                 target_in_engagement = True
                                 break
                     
@@ -1754,11 +1753,10 @@ class TacticalAgent:
     def find_enemies_in_melee_range(self, unit: Unit) -> List[Unit]:
         """Find all enemy units within engagement range of the given unit."""
         enemies_in_range = []
-        unit_position = unit.get_position()
         enemy_units = self.game.map.get_enemy_units(unit)
         
         for enemy_unit in enemy_units:
-            if self.game.map.is_within_engagement_range(unit_position, enemy_unit):
+            if self.game.map.is_within_engagement_range(unit, enemy_unit):
                 enemies_in_range.append(enemy_unit)
         
         return enemies_in_range
@@ -1933,11 +1931,23 @@ class TacticalAgent:
                 continue
             
             # Check if model is within engagement range of any enemy
-            model_position = (model.x, model.y, model.z, model.facing)
-            is_in_engagement_range = any(
-                self.game.map.is_within_engagement_range(model_position, enemy)
-                for enemy in enemies_in_range
-            )
+            is_in_engagement_range = False
+            for enemy_unit in enemies_in_range:
+                for enemy_model in enemy_unit.models:
+                    if not enemy_model.is_alive:
+                        continue
+                    # Calculate edge-to-edge distance between model bases
+                    horizontal_distance = model.model_base.edge_to_edge_distance(enemy_model.model_base)
+                    vertical_distance = model.model_base.vertical_distance(enemy_model.model_base)
+                    
+                    # Check if within engagement range (1" horizontally, 5" vertically)
+                    from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VERTICAL
+                    if (horizontal_distance <= ENGAGEMENT_RANGE_HORIZONTAL and
+                        vertical_distance <= ENGAGEMENT_RANGE_VERTICAL):
+                        is_in_engagement_range = True
+                        break
+                if is_in_engagement_range:
+                    break
             
             if is_in_engagement_range:
                 models_that_can_fight.append(model)
@@ -1950,11 +1960,23 @@ class TacticalAgent:
                     continue
                 
                 # Check if other model is in engagement range
-                other_position = (other_model.x, other_model.y, other_model.z, other_model.facing)
-                other_can_fight = any(
-                    self.game.map.is_within_engagement_range(other_position, enemy)
-                    for enemy in enemies_in_range
-                )
+                other_can_fight = False
+                for enemy_unit in enemies_in_range:
+                    for enemy_model in enemy_unit.models:
+                        if not enemy_model.is_alive:
+                            continue
+                        # Calculate edge-to-edge distance between model bases
+                        horizontal_distance = other_model.model_base.edge_to_edge_distance(enemy_model.model_base)
+                        vertical_distance = other_model.model_base.vertical_distance(enemy_model.model_base)
+                        
+                        # Check if within engagement range (1" horizontally, 5" vertically)
+                        from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VERTICAL
+                        if (horizontal_distance <= ENGAGEMENT_RANGE_HORIZONTAL and
+                            vertical_distance <= ENGAGEMENT_RANGE_VERTICAL):
+                            other_can_fight = True
+                            break
+                    if other_can_fight:
+                        break
                 
                 if other_can_fight:
                     # Check if this model is in base-to-base contact with the other model
@@ -2083,14 +2105,42 @@ class TacticalAgent:
         best_target = max(enemies_in_range, key=lambda enemy: enemy.get_threat_value())
         
         # Check if the target is still valid (within engagement range)
-        model_position = (model.x, model.y, model.z, model.facing)
-        if self.game.map.is_within_engagement_range(model_position, best_target):
+        target_is_valid = False
+        for enemy_model in best_target.models:
+            if not enemy_model.is_alive:
+                continue
+            # Calculate edge-to-edge distance between model bases
+            horizontal_distance = model.model_base.edge_to_edge_distance(enemy_model.model_base)
+            vertical_distance = model.model_base.vertical_distance(enemy_model.model_base)
+            
+            # Check if within engagement range (1" horizontally, 5" vertically)
+            from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VERTICAL
+            if (horizontal_distance <= ENGAGEMENT_RANGE_HORIZONTAL and
+                vertical_distance <= ENGAGEMENT_RANGE_VERTICAL):
+                target_is_valid = True
+                break
+        
+        if target_is_valid:
             target_declarations[best_target] = num_attacks
         else:
             # Fallback: find any valid target
-            for enemy in enemies_in_range:
-                if self.game.map.is_within_engagement_range(model_position, enemy):
-                    target_declarations[enemy] = num_attacks
+            for enemy_unit in enemies_in_range:
+                unit_is_valid = False
+                for enemy_model in enemy_unit.models:
+                    if not enemy_model.is_alive:
+                        continue
+                    # Calculate edge-to-edge distance between model bases
+                    horizontal_distance = model.model_base.edge_to_edge_distance(enemy_model.model_base)
+                    vertical_distance = model.model_base.vertical_distance(enemy_model.model_base)
+                    
+                    # Check if within engagement range (1" horizontally, 5" vertically)
+                    if (horizontal_distance <= ENGAGEMENT_RANGE_HORIZONTAL and
+                        vertical_distance <= ENGAGEMENT_RANGE_VERTICAL):
+                        unit_is_valid = True
+                        break
+                
+                if unit_is_valid:
+                    target_declarations[enemy_unit] = num_attacks
                     break
         
         return target_declarations

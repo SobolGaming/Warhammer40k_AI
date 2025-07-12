@@ -2308,6 +2308,12 @@ class BattlePhaseHandler(BasePhaseHandler):
             self.game_view.melee_weapon_declaration_dialog.visible):
             return self.game_view.melee_weapon_declaration_dialog.handle_event(event)
         
+        # Handle fight unit selection dialog (high priority for fight phase)
+        if (self.game_view.ui_interface and 
+            hasattr(self.game_view.ui_interface, 'fight_unit_selection_dialog') and
+            self.game_view.ui_interface.fight_unit_selection_dialog.visible):
+            return self.game_view.ui_interface.fight_unit_selection_dialog.handle_event(event)
+        
         # Handle shooting declaration dialog
         if (hasattr(self.game_view, 'shooting_declaration_dialog') and
             (self.game_view.shooting_declaration_dialog.visible or 
@@ -2455,7 +2461,7 @@ class BattlePhaseHandler(BasePhaseHandler):
             return
         
         # Check if unit is engaged and can't shoot
-        is_engaged = any(self.game.map.is_within_engagement_range(unit.get_position(), enemy)
+        is_engaged = any(self.game.map.is_within_engagement_range(unit, enemy)
                         for enemy in self.game.map.get_enemy_units(unit) if enemy.is_alive())
         
         if is_engaged:
@@ -2894,7 +2900,7 @@ class BattlePhaseHandler(BasePhaseHandler):
             return {"valid": False, "reason": "No models in range with line of sight"}
         
         # Check engagement range restrictions
-        is_engaged = any(self.game.map.is_within_engagement_range(shooting_unit.get_position(), enemy)
+        is_engaged = any(self.game.map.is_within_engagement_range(shooting_unit, enemy)
                         for enemy in self.game.map.get_enemy_units(shooting_unit) if enemy.is_alive())
         
         if is_engaged and not shooting_unit.can_shoot_in_engagement_range(weapon_profile):

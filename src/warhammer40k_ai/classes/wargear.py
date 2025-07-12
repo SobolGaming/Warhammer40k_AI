@@ -446,11 +446,15 @@ class WargearProfile:
         inv_save, inv_save_condition = target_model.inv_save
         
         if inv_save:
-            if not inv_save_condition or inv_save_condition(attack_instance):
-                if inv_save < save_value:
-                    save_value = inv_save
-                    save_result['save_type'] = 'invulnerable'
-                    save_result['final_save'] = save_value
+            # Check invulnerable save condition (string-based, not callable)
+            condition_met = True
+            if inv_save_condition and inv_save_condition.strip():
+                condition_met = self._check_invulnerable_save_condition(inv_save_condition, attack_instance)
+            
+            if condition_met and inv_save < save_value:
+                save_value = inv_save
+                save_result['save_type'] = 'invulnerable'
+                save_result['final_save'] = save_value
 
         dice_roll = get_roll("D6")
         save_result['roll'] = dice_roll
@@ -469,6 +473,52 @@ class WargearProfile:
             save_result['special_effects'].append(f"Modifier {dice_modifier:+d}")
         
         return save_result
+
+    def _check_invulnerable_save_condition(self, condition: str, attack_instance: dict) -> bool:
+        """
+        Check if an invulnerable save condition is met based on the attacking weapon.
+        
+        Args:
+            condition: The condition string (e.g., "against psychic attacks", "against melee attacks")
+            attack_instance: Dictionary containing attack information including weapon profile
+            
+        Returns:
+            bool: True if the condition is met and the invulnerable save should apply
+        """
+        if not condition or not condition.strip():
+            return True  # No condition means always applies
+        
+        condition_lower = condition.lower().strip()
+        
+        # Parse "against XXX attacks" pattern
+        import re
+        pattern = r'against\s+(\w+)\s+attacks?'
+        match = re.search(pattern, condition_lower)
+        
+        if match:
+            keyword_to_check = match.group(1)  # Extract the keyword (e.g., "psychic", "melee", "ranged")
+            
+            # Check if the attacking weapon has this keyword
+            weapon_keywords = [kw.lower() for kw in self.get_keywords()]
+            
+            # Special case mappings for common keywords
+            if keyword_to_check == "psychic":
+                return "psychic" in weapon_keywords
+            elif keyword_to_check == "melee":
+                return self.parent_wargear and self.parent_wargear.is_melee()
+            elif keyword_to_check == "ranged":
+                return self.parent_wargear and self.parent_wargear.is_ranged()
+            elif keyword_to_check == "mortal":
+                # Check if this attack deals mortal wounds
+                return attack_instance.get('is_mortal', False)
+            else:
+                # Check for exact keyword match
+                return keyword_to_check in weapon_keywords
+        
+        # If we can't parse the condition, default to applying the save
+        # This is safer than blocking legitimate saves due to parsing issues
+        print(f"⚠️  Unknown invulnerable save condition format: '{condition}' - applying save")
+        return True
 
     def _damage_target_with_tracking(self, target_model: 'Model', attacker: 'Model', attack_instance: Dict) -> Dict:
         """Damage application with detailed tracking"""
@@ -816,8 +866,8 @@ class WargearProfile:
         for keyword in self.get_keywords():
             if keyword.lower().startswith('anti-'):
                 parts = keyword[4:].replace('+', '').split(' ')
-                if len(parts) == 2 and parts[2].isdigit():
-                    return parts[1].lower(), int(parts[2])
+                if len(parts) == 2 and parts[1].isdigit():
+                    return parts[0].lower(), int(parts[1])
         return "", 0
 
     def is_split_fire(self) -> bool:
@@ -1497,7 +1547,8 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
                 ))
 
         if unhandled:
-            raise Exception(f"UNHANDLED: {str_list}")
+            print(f"UNHANDLED: {str_list}")
+            #raise Exception(f"UNHANDLED: {str_list}")
 
     for conditional in post_conditionals:
         search_str = None

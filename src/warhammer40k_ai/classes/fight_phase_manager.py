@@ -163,14 +163,10 @@ class FightPhaseManager:
     def _get_eligible_targets(self, fighting_unit: Unit) -> List[Unit]:
         """Get all eligible targets for a fighting unit."""
         eligible_targets = []
-        unit_position = fighting_unit.get_position()
-        
-        if not unit_position:
-            return eligible_targets
         
         enemy_units = self.game.map.get_enemy_units(fighting_unit)
         for enemy_unit in enemy_units:
-            if enemy_unit.is_alive() and self.game.map.is_within_engagement_range(unit_position, enemy_unit):
+            if enemy_unit.is_alive() and self.game.map.is_within_engagement_range(fighting_unit, enemy_unit):
                 eligible_targets.append(enemy_unit)
         
         return eligible_targets

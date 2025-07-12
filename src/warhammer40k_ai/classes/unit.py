@@ -1013,11 +1013,10 @@ class Unit:
 
     def get_engagement_state(self, game_map: 'Map') -> int:
         """Determine if the unit is in engagement range of any enemy model."""
-        current_position = self.get_position()
         enemy_units = game_map.get_enemy_units(self)
         
         for enemy_unit in enemy_units:
-            if game_map.is_within_engagement_range(current_position, enemy_unit):
+            if game_map.is_within_engagement_range(self, enemy_unit):
                 return MovementState.IN_ENGAGEMENT_RANGE
         
         return MovementState.OUT_OF_ENGAGEMENT_RANGE
@@ -2064,11 +2063,7 @@ class Unit:
     def can_shoot_in_engagement_range(self, game_map: 'Map', profile=None) -> bool:
         """Check if this unit can shoot while in engagement range with the given weapon profile."""
         # Check if unit is in engagement range
-        unit_position = self.get_position()
-        if not unit_position:
-            return True
-            
-        is_engaged = any(game_map.is_within_engagement_range(unit_position, enemy)
+        is_engaged = any(game_map.is_within_engagement_range(self, enemy)
                         for enemy in game_map.get_enemy_units(self) if enemy.is_alive())
         
         if not is_engaged:
@@ -2095,11 +2090,11 @@ class Unit:
     def can_shoot_at_target_while_engaged(self, target, profile, game_map) -> bool:
         """Check if this unit can shoot at a specific target while engaged with other units."""
         # If unit is not in engagement range, they can always shoot
-        if not any(game_map.is_within_engagement_range(self.get_position(), enemy)
+        if not any(game_map.is_within_engagement_range(self, enemy)
                   for enemy in game_map.get_enemy_units(self) if enemy.is_alive()):
             return True
         # If target is the unit we're engaged with, only Pistols can shoot
-        if any(game_map.is_within_engagement_range(self.get_position(), enemy)
+        if any(game_map.is_within_engagement_range(self, enemy)
               for enemy in [target] if enemy.is_alive()):
             return profile.is_pistol()
         # If target is not the unit we're engaged with:
@@ -2269,11 +2264,7 @@ class Unit:
     def _can_shoot_while_engaged(self, model, weapon_profile, target_unit, game_map) -> bool:
         """Check if model can shoot while engaged with other units"""
         # Check if unit is in engagement range
-        unit_position = self.get_position()
-        if not unit_position:
-            return True
-            
-        is_engaged = any(game_map.is_within_engagement_range(unit_position, enemy)
+        is_engaged = any(game_map.is_within_engagement_range(self, enemy)
                         for enemy in game_map.get_enemy_units(self) if enemy.is_alive())
         
         if not is_engaged:
@@ -2290,7 +2281,7 @@ class Unit:
             return True
             
         # Check if target is the unit we're engaged with
-        if game_map.is_within_engagement_range(unit_position, target_unit):
+        if game_map.is_within_engagement_range(self, target_unit):
             return weapon_profile.is_pistol()
             
         # If target is different from engaged unit, only vehicles can shoot
@@ -2442,21 +2433,20 @@ class Unit:
     
     def _is_model_in_base_to_base_contact(self, model: 'Model', enemy_models: List['Model'], game_map: 'Map') -> bool:
         """Check if a model is in base-to-base (edge-to-edge) contact with any enemy model."""
-        # For now, use engagement range as a proxy for base-to-base contact
-        # A full implementation would check actual base edge distances
-        model_position = (model.x, model.y, model.z, model.facing)
-        
+        # Check actual base edge distances for engagement range and base-to-base contact
         for enemy_model in enemy_models:
-            enemy_position = (enemy_model.x, enemy_model.y, enemy_model.z, enemy_model.facing)
-            if game_map.is_within_engagement_range(model_position, enemy_model.parent_unit):
-                # Further check if they're actually touching (1" or less edge-to-edge)
-                # Calculate model-to-model distance directly
-                dx = enemy_model.x - model.x
-                dy = enemy_model.y - model.y
-                dz = enemy_model.z - model.z
-                distance = (dx*dx + dy*dy + dz*dz) ** 0.5
-                
-                if distance <= 1.0:  # Base-to-base contact threshold
+            # Calculate edge-to-edge distance between model bases
+            horizontal_distance = model.model_base.edge_to_edge_distance(enemy_model.model_base)
+            
+            # Calculate vertical distance  
+            vertical_distance = model.model_base.vertical_distance(enemy_model.model_base)
+            
+            # Check if within engagement range (1" horizontally, 5" vertically)
+            from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VERTICAL
+            if (horizontal_distance <= ENGAGEMENT_RANGE_HORIZONTAL and
+                vertical_distance <= ENGAGEMENT_RANGE_VERTICAL):
+                # Further check if they're actually touching for base-to-base contact
+                if horizontal_distance <= 0.1:  # Very close for base-to-base contact
                     return True
         
         return False
@@ -3461,8 +3451,7 @@ class Unit:
             
         # CRITICAL: Units already within engagement range cannot declare charges
         # They are already considered to be "in combat"
-        current_position = self.get_position()
-        if game.map.is_within_engagement_range(current_position, target_unit):
+        if game.map.is_within_engagement_range(self, target_unit):
             return False
             
         # Check if target is within maximum charge range (2D6 = max 12")
@@ -3659,7 +3648,7 @@ class Unit:
         if 'infiltrate' in getattr(self, '_ability_cache', {}):
             return self._ability_cache['infiltrate']
         
-        found, _ = self._find_ability_with_patterns(["infiltrate"])
+        found, _ = self._find_ability_with_patterns(["infiltrators", "infiltrate"])
         
         # Cache the result
         if not hasattr(self, '_ability_cache'):
@@ -3785,13 +3774,9 @@ class Unit:
             return True
         
         # Check if unit is within engagement range of any enemy unit
-        unit_position = self.get_position()
-        if not unit_position:
-            return False
-        
         enemy_units = game_map.get_enemy_units(self)
         for enemy_unit in enemy_units:
-            if enemy_unit.is_alive() and game_map.is_within_engagement_range(unit_position, enemy_unit):
+            if enemy_unit.is_alive() and game_map.is_within_engagement_range(self, enemy_unit):
                 return True
         
         return False
