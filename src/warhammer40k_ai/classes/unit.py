@@ -1345,100 +1345,148 @@ class Unit:
         
         successful_moves = 0
         
-        # Move each model as close as possible to the nearest enemy model within charge distance
-        for model in self.models:
-            model_start = model.get_location()
-            
-            # Find the closest enemy model to this model
-            closest_enemy = None
-            closest_distance = float('inf')
-            
-            for enemy_model in all_enemy_models:
-                enemy_pos = enemy_model.get_location()
-                distance = get_dist(
-                    enemy_pos[0] - model_start[0],
-                    enemy_pos[1] - model_start[1],
-                    enemy_pos[2] - model_start[2] if len(model_start) > 2 else 0
-                )
-                if distance < closest_distance:
-                    closest_distance = distance
-                    closest_enemy = enemy_model
-            
-            if not closest_enemy:
-                continue
-            
-            # Calculate direction towards closest enemy
-            enemy_pos = closest_enemy.get_location()
-            dx = enemy_pos[0] - model_start[0]
-            dy = enemy_pos[1] - model_start[1]
-            dz = enemy_pos[2] - model_start[2] if len(model_start) > 2 else 0
-            
-            distance_to_enemy = get_dist(dx, dy, dz)
-            
-            if distance_to_enemy == 0:
-                # Already at enemy position, no movement needed
-                successful_moves += 1
-                continue
-            
-            # Normalize direction vector
-            dx /= distance_to_enemy
-            dy /= distance_to_enemy
-            dz /= distance_to_enemy if distance_to_enemy > 0 else 1
-            
-            # Calculate how far to move: use the distance provided by attempt_charge
-            # Get as close as possible to the enemy for better pile-in positioning
-            target_distance = max_charge_distance  # Use the distance calculated by attempt_charge
-            
-            if target_distance <= 0:
-                # Already close enough or can't move closer
-                successful_moves += 1
-                continue
-            
-            # Calculate new position
-            new_x = model_start[0] + dx * target_distance
-            new_y = model_start[1] + dy * target_distance
-            new_z = game_map.get_height_at_point(new_x, new_y)
-            new_facing = self.calculate_strategic_facing(new_x, new_y, game_map)
-            
-            # CRITICAL: Validate position before moving to prevent friendly unit overlaps
-            # Import here to avoid circular imports
-            from ..utility.calcs import check_friendly_ending_collision
-            
-            # Check if the new position would collide with friendly units
-            if check_friendly_ending_collision(model, (new_x, new_y, new_z), game_map):
-                # Position would cause collision - try to find alternative position
-                # Try positions at different distances along the same direction
-                alternative_found = False
-                for distance_factor in [0.9, 0.8, 0.7, 0.6, 0.5]:
-                    alt_distance = target_distance * distance_factor
-                    alt_x = model_start[0] + dx * alt_distance
-                    alt_y = model_start[1] + dy * alt_distance
-                    alt_z = game_map.get_height_at_point(alt_x, alt_y)
-                    
-                    if not check_friendly_ending_collision(model, (alt_x, alt_y, alt_z), game_map):
-                        # Found a valid alternative position
-                        new_x, new_y, new_z = alt_x, alt_y, alt_z
-                        target_distance = alt_distance
-                        alternative_found = True
-                        logger.debug(f"Model {model._id} found alternative charge position at {distance_factor:.1f} of original distance")
-                        break
+        # Generate potential positions for models with enhanced pathfinding for charges
+        boundary_repulsors = self._get_reduced_boundary_repulsors(game_map)
+        potential_positions = self.calculate_model_positions(destination[0], destination[1], game_map, boundary_repulsors=boundary_repulsors)
+        
+        # Use formation positioning if available, otherwise fall back to individual positioning
+        if potential_positions is not None:
+            # Use formation positioning with enhanced pathfinding validation
+            for model, model_destination in zip(self.models, potential_positions):
+                model_start = model.get_location()
                 
-                if not alternative_found:
-                    # No valid position found - skip this model
-                    logger.debug(f"Model {model._id} cannot charge - no valid position found without friendly collisions")
+                # Calculate distance for this model
+                model_distance = get_dist(
+                    model_destination[0] - model_start[0],
+                    model_destination[1] - model_start[1],
+                    model_destination[2] - model_start[2] if len(model_start) > 2 else 0
+                )
+                
+                # Check if within charge distance
+                if model_distance > max_charge_distance:
+                    logger.debug(f"Model {model._id} cannot reach charge destination {model_distance:.1f}\" away (max: {max_charge_distance}\")")
                     continue
+                
+                # Use enhanced pathfinding for charge movement
+                from ..utility.calcs import a_star_enhanced
+                from .unit import MovementAction
+                
+                pathfinding_result = a_star_enhanced(model, game_map, model_destination, movement_action=MovementAction.MOVE)
+                
+                if pathfinding_result:
+                    shortest_path, enemy_models_moved_over = pathfinding_result
+                    
+                    # Calculate path distance
+                    path_distance = sum(get_dist(shortest_path[i][0] - shortest_path[i-1][0], shortest_path[i][1] - shortest_path[i-1][1]) for i in range(1, len(shortest_path)))
+                    
+                    if path_distance <= max_charge_distance:
+                        # Move to destination
+                        model.set_location(*model_destination)
+                        successful_moves += 1
+                        logger.debug(f"Model {model._id} charge moved {path_distance:.1f}\" to formation position")
+                    else:
+                        logger.debug(f"Model {model._id} path distance {path_distance:.1f}\" exceeds charge distance {max_charge_distance}\"")
+                else:
+                    logger.debug(f"Model {model._id} cannot charge to formation position - pathfinding failed")
+        else:
+            print(f"❌ {self.name} charge failed - no valid formation found, trying individual positioning")
+        
+        # If formation failed or had limited success, try individual model positioning
+        if successful_moves < len(self.models) // 2:  # If less than half succeeded
+            # Move each model individually using enhanced pathfinding
+            for model in self.models:
+                model_start = model.get_location()
             
-            # Move the model to the validated position
-            model.set_location(new_x, new_y, new_z, new_facing)
-            successful_moves += 1
-            
-            actual_distance_moved = get_dist(
-                new_x - model_start[0],
-                new_y - model_start[1],
-                new_z - model_start[2] if len(model_start) > 2 else 0
-            )
-            target_name = target_unit.name if target_unit else "closest enemy"
-            logger.debug(f"Model {model._id} charge moved {actual_distance_moved:.1f}\" towards {closest_enemy.name} (from {target_name})")
+                # Find the closest enemy model to this model
+                closest_enemy = None
+                closest_distance = float('inf')
+                
+                for enemy_model in all_enemy_models:
+                    enemy_pos = enemy_model.get_location()
+                    distance = get_dist(
+                        enemy_pos[0] - model_start[0],
+                        enemy_pos[1] - model_start[1],
+                        enemy_pos[2] - model_start[2] if len(model_start) > 2 else 0
+                    )
+                    if distance < closest_distance:
+                        closest_distance = distance
+                        closest_enemy = enemy_model
+                
+                if not closest_enemy:
+                    continue
+                
+                # Calculate direction towards closest enemy
+                enemy_pos = closest_enemy.get_location()
+                dx = enemy_pos[0] - model_start[0]
+                dy = enemy_pos[1] - model_start[1]
+                dz = enemy_pos[2] - model_start[2] if len(model_start) > 2 else 0
+                
+                distance_to_enemy = get_dist(dx, dy, dz)
+                
+                if distance_to_enemy == 0:
+                    # Already at enemy position, no movement needed
+                    successful_moves += 1
+                    continue
+                
+                # Normalize direction vector
+                dx /= distance_to_enemy
+                dy /= distance_to_enemy
+                dz /= distance_to_enemy if distance_to_enemy > 0 else 1
+                
+                # Calculate how far to move: use the distance provided by attempt_charge
+                # Get as close as possible to the enemy for better pile-in positioning
+                target_distance = max_charge_distance  # Use the distance calculated by attempt_charge
+                
+                if target_distance <= 0:
+                    # Already close enough or can't move closer
+                    successful_moves += 1
+                    continue
+                
+                # Calculate new position
+                new_x = model_start[0] + dx * target_distance
+                new_y = model_start[1] + dy * target_distance
+                new_z = game_map.get_height_at_point(new_x, new_y)
+                new_facing = self.calculate_strategic_facing(new_x, new_y, game_map)
+                
+                # CRITICAL: Validate position before moving to prevent friendly unit overlaps
+                # Import here to avoid circular imports
+                from ..utility.calcs import check_friendly_ending_collision
+                
+                # Check if the new position would collide with friendly units
+                if check_friendly_ending_collision(model, (new_x, new_y, new_z), game_map):
+                    # Position would cause collision - try to find alternative position
+                    # Try positions at different distances along the same direction
+                    alternative_found = False
+                    for distance_factor in [0.9, 0.8, 0.7, 0.6, 0.5]:
+                        alt_distance = target_distance * distance_factor
+                        alt_x = model_start[0] + dx * alt_distance
+                        alt_y = model_start[1] + dy * alt_distance
+                        alt_z = game_map.get_height_at_point(alt_x, alt_y)
+                        
+                        if not check_friendly_ending_collision(model, (alt_x, alt_y, alt_z), game_map):
+                            # Found a valid alternative position
+                            new_x, new_y, new_z = alt_x, alt_y, alt_z
+                            target_distance = alt_distance
+                            alternative_found = True
+                            logger.debug(f"Model {model._id} found alternative charge position at {distance_factor:.1f} of original distance")
+                            break
+                    
+                    if not alternative_found:
+                        # No valid position found - skip this model
+                        logger.debug(f"Model {model._id} cannot charge - no valid position found without friendly collisions")
+                        continue
+                
+                # Move the model to the validated position
+                model.set_location(new_x, new_y, new_z, new_facing)
+                successful_moves += 1
+                
+                actual_distance_moved = get_dist(
+                    new_x - model_start[0],
+                    new_y - model_start[1],
+                    new_z - model_start[2] if len(model_start) > 2 else 0
+                )
+                target_name = target_unit.name if target_unit else "closest enemy"
+                logger.debug(f"Model {model._id} charge moved {actual_distance_moved:.1f}\" towards {closest_enemy.name} (from {target_name})")
         
         # Update unit centroid
         self.reset_position()

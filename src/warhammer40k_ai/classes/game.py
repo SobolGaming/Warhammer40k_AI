@@ -1004,6 +1004,13 @@ class Game:
             print(f"❌ Charge failed: invalid positions")
             return False
         
+        # CRITICAL: Store original model positions BEFORE attempting movement
+        # This allows proper rollback if charge fails to achieve engagement range
+        original_model_positions = []
+        original_unit_position = charging_unit.get_position()
+        for model in charging_unit.models:
+            original_model_positions.append(model.get_location())
+        
         # Calculate direction vector from charging unit to target
         dx = target_pos[0] - charging_pos[0]
         dy = target_pos[1] - charging_pos[1]
@@ -1037,11 +1044,34 @@ class Game:
                 return True
             else:
                 print(f"❌ Charge failed: {charging_unit.name} achieved {final_distance:.1f}\" edge-to-edge distance (not ≤1.0\") with {target_unit.name}")
-                # Revert the unit position if charge failed to achieve engagement range
-                # TODO: Implement position rollback
+                # CRITICAL: Revert all model positions if charge failed to achieve engagement range
+                # This ensures that NO MODELS MOVE when a charge fails
+                print(f"❌ Charge failed: Reverting all model positions - no models should move on failed charge")
+                
+                # Restore original positions
+                for i, original_pos in enumerate(original_model_positions):
+                    if i < len(charging_unit.models):
+                        charging_unit.models[i].set_location(*original_pos)
+                
+                # Restore unit position
+                if original_unit_position:
+                    charging_unit.position = original_unit_position
+                
                 return False
         else:
             print(f"❌ Charge failed: could not move unit")
+            # CRITICAL: Restore original positions if charge_move failed completely
+            print(f"❌ Charge failed: Reverting all model positions - no models should move on failed charge")
+            
+            # Restore original positions
+            for i, original_pos in enumerate(original_model_positions):
+                if i < len(charging_unit.models):
+                    charging_unit.models[i].set_location(*original_pos)
+            
+            # Restore unit position
+            if original_unit_position:
+                charging_unit.position = original_unit_position
+            
             return False
     
     def _apply_charge_modifiers(self, charging_unit: 'Unit', base_roll: int) -> int:
