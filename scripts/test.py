@@ -3,8 +3,7 @@ import platform
 import pygame
 import numpy as np
 from shapely.geometry import Polygon, box
-from shapely.affinity import rotate
-from math import radians, cos, sin
+from shapely.affinity import rotate, translate
 
 # Constants
 INCH_TO_MM = 25.4
@@ -69,6 +68,13 @@ def heuristic(a, b):
     bx, by = b
     return np.hypot(bx - ax, by - ay)
 
+# Pre-cache rotated ellipse shapes at origin
+ELLIPSE_SHAPES = {
+    angle: rotate(Polygon([(MODEL_SIZE[0] / 2 * np.cos(t), MODEL_SIZE[1] / 2 * np.sin(t))
+                           for t in np.linspace(0, 2 * np.pi, 30)]), angle, origin=(0, 0))
+    for angle in ORIENTATIONS
+}
+
 def a_star(start, goal, environment, unit):
     from heapq import heappush, heappop
     open_set = []
@@ -79,7 +85,7 @@ def a_star(start, goal, environment, unit):
 
     while open_set:
         _, cost, current, parent, rotation = heappop(open_set)
-        if current == goal:
+        if heuristic(current, goal) < 10:  # early exit threshold
             path = [(current, rotation)]
             while parent:
                 path.append(parent)
@@ -89,8 +95,38 @@ def a_star(start, goal, environment, unit):
 
         for dx, dy in [(-10, 0), (10, 0), (0, -10), (0, 10), (-10, -10), (10, -10), (-10, 10), (10, 10)]:
             neighbor = (current[0] + dx, current[1] + dy)
-            for angle in ORIENTATIONS:
-                model = Model(neighbor, "ellipse", MODEL_SIZE, angle)
+
+            # Try 0° first
+            rotated = translate(ELLIPSE_SHAPES[0], xoff=neighbor[0], yoff=neighbor[1])
+            model = Model(neighbor, orientation=0)
+            model.shape = rotated
+            if environment.is_valid_position(model, unit):
+                new_cost = cost + heuristic(current, neighbor)
+                if neighbor not in cost_so_far or new_cost < cost_so_far[neighbor]:
+                    cost_so_far[neighbor] = new_cost
+                    priority = new_cost + heuristic(goal, neighbor)
+                    heappush(open_set, (priority, new_cost, neighbor, (current, rotation), 0))
+                    came_from[neighbor] = (current, rotation)
+                continue
+
+            # Try 90° second
+            rotated = translate(ELLIPSE_SHAPES[90], xoff=neighbor[0], yoff=neighbor[1])
+            model = Model(neighbor, orientation=90)
+            model.shape = rotated
+            if environment.is_valid_position(model, unit):
+                new_cost = cost + heuristic(current, neighbor)
+                if neighbor not in cost_so_far or new_cost < cost_so_far[neighbor]:
+                    cost_so_far[neighbor] = new_cost
+                    priority = new_cost + heuristic(goal, neighbor)
+                    heappush(open_set, (priority, new_cost, neighbor, (current, rotation), 90))
+                    came_from[neighbor] = (current, rotation)
+                continue
+
+            # Try remaining orientations only if 0° fails
+            for angle in ORIENTATIONS[2:]:
+                rotated = translate(ELLIPSE_SHAPES[angle], xoff=neighbor[0], yoff=neighbor[1])
+                model = Model(neighbor, orientation=angle)
+                model.shape = rotated
                 if not environment.is_valid_position(model, unit):
                     continue
                 new_cost = cost + heuristic(current, neighbor)
@@ -99,6 +135,7 @@ def a_star(start, goal, environment, unit):
                     priority = new_cost + heuristic(goal, neighbor)
                     heappush(open_set, (priority, new_cost, neighbor, (current, rotation), angle))
                     came_from[neighbor] = (current, rotation)
+                break
 
     return None
 
@@ -135,7 +172,7 @@ async def main():
     obstacles = [
         Polygon([(400, 400), (800, 400), (550, 1600)]),  # Triangle
         box(800, 200, 1100, 400),
-        box(1150, 200, 1400, 400),
+        box(1140, 200, 1400, 400),
         Polygon([(1000, 700), (1400, 700), (1050, 900), (1200, 700)]),  # Irregular
     ]
     friendly_unit = Unit([Model((100, 100))])
