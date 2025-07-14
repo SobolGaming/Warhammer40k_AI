@@ -11,7 +11,7 @@ MAP_WIDTH = 60 * INCH_TO_MM
 MAP_HEIGHT = 44 * INCH_TO_MM
 MODEL_SIZE = (60, 35)  # Ellipse size
 ENEMY_DISTANCE = 25.4
-ORIENTATIONS = [0, 90, 45, 15, 30, 60, 75]
+ORIENTATIONS = [0, 90, 45, -45, 15, -15, 30, -30, 60, -60, 75, -75]
 
 class Model:
     def __init__(self, center, shape_type="ellipse", size=MODEL_SIZE, orientation=0):
@@ -21,7 +21,13 @@ class Model:
         self.shape = self._create_shape(center)
 
     def _create_shape(self, center):
-        if self.shape_type == "ellipse":
+        if self.shape_type == "circle":
+            radius = self.size[0] / 2
+            points = [(center[0] + radius * np.cos(t), center[1] + radius * np.sin(t))
+                      for t in np.linspace(0, 2 * np.pi, 30)]
+            shape = Polygon(points)
+            return shape
+        elif self.shape_type == "ellipse":
             radius_x = self.size[0] / 2
             radius_y = self.size[1] / 2
             points = [(center[0] + radius_x * np.cos(t), center[1] + radius_y * np.sin(t))
@@ -38,6 +44,8 @@ class Model:
 class Unit:
     def __init__(self, models):
         self.models = models
+        # placeholder for cached shapes
+        self._oriented_shapes = None
 
 class Environment:
     def __init__(self, map_bounds, obstacles, friendly_units, enemy_units):
@@ -68,23 +76,30 @@ def heuristic(a, b):
     bx, by = b
     return np.hypot(bx - ax, by - ay)
 
-# Pre-cache rotated ellipse shapes at origin
-ELLIPSE_SHAPES = {
-    angle: rotate(Polygon([(MODEL_SIZE[0] / 2 * np.cos(t), MODEL_SIZE[1] / 2 * np.sin(t))
-                           for t in np.linspace(0, 2 * np.pi, 30)]), angle, origin=(0, 0))
-    for angle in ORIENTATIONS
-}
-
 def a_star(start, goal, environment, unit):
     from heapq import heappush, heappop
+    
+    # Pre-cache rotated ellipse shapes only for ellipses
+    if unit.models[0].shape_type != "circle" and unit._oriented_shapes is None:
+        print("Pre-caching oriented shapes")
+        unit._oriented_shapes = {
+            angle: rotate(Polygon([(unit.models[0].size[0] / 2 * np.cos(t), unit.models[0].size[1] / 2 * np.sin(t))
+                                  for t in np.linspace(0, 2 * np.pi, 30)]), angle)
+            for angle in ORIENTATIONS
+        }
+
     open_set = []
     came_from = {}
     cost_so_far = {}
-    heappush(open_set, (0, 0, start, None, 0))
+    heappush(open_set, (0, 0, start, None, ORIENTATIONS[0]))
     cost_so_far[start] = 0
+
+    zero_angle = ORIENTATIONS[0]
+    second_angle = ORIENTATIONS[1]
 
     while open_set:
         _, cost, current, parent, rotation = heappop(open_set)
+        last_angle = rotation  # Update last_angle to current node's rotation
         if heuristic(current, goal) < 10:  # early exit threshold
             path = [(current, rotation)]
             while parent:
@@ -96,37 +111,70 @@ def a_star(start, goal, environment, unit):
         for dx, dy in [(-10, 0), (10, 0), (0, -10), (0, 10), (-10, -10), (10, -10), (-10, 10), (10, 10)]:
             neighbor = (current[0] + dx, current[1] + dy)
 
-            # Try 0° first
-            rotated = translate(ELLIPSE_SHAPES[0], xoff=neighbor[0], yoff=neighbor[1])
-            model = Model(neighbor, orientation=0)
-            model.shape = rotated
+            if unit.models[0].shape_type == "circle":
+                model = Model(neighbor, shape_type="circle", size=unit.models[0].size)
+                if environment.is_valid_position(model, unit):
+                    new_cost = cost + heuristic(current, neighbor)
+                    if neighbor not in cost_so_far or new_cost < cost_so_far[neighbor]:
+                        cost_so_far[neighbor] = new_cost
+                        priority = new_cost + heuristic(goal, neighbor)
+                        heappush(open_set, (priority, new_cost, neighbor, (current, rotation), 0))
+                        came_from[neighbor] = (current, rotation)
+                continue
+
+            # Try last orientation first
+            base = unit._oriented_shapes[last_angle]
+            model = Model(neighbor, orientation=last_angle)
+            # Replace with cached shape translated to neighbor position
+            # (cached shapes are at origin, need to be moved to neighbor)
+            model.shape = translate(base, neighbor[0], neighbor[1])
             if environment.is_valid_position(model, unit):
                 new_cost = cost + heuristic(current, neighbor)
                 if neighbor not in cost_so_far or new_cost < cost_so_far[neighbor]:
                     cost_so_far[neighbor] = new_cost
                     priority = new_cost + heuristic(goal, neighbor)
-                    heappush(open_set, (priority, new_cost, neighbor, (current, rotation), 0))
+                    heappush(open_set, (priority, new_cost, neighbor, (current, rotation), last_angle))
                     came_from[neighbor] = (current, rotation)
                 continue
 
-            # Try 90° second
-            rotated = translate(ELLIPSE_SHAPES[90], xoff=neighbor[0], yoff=neighbor[1])
-            model = Model(neighbor, orientation=90)
-            model.shape = rotated
-            if environment.is_valid_position(model, unit):
-                new_cost = cost + heuristic(current, neighbor)
-                if neighbor not in cost_so_far or new_cost < cost_so_far[neighbor]:
-                    cost_so_far[neighbor] = new_cost
-                    priority = new_cost + heuristic(goal, neighbor)
-                    heappush(open_set, (priority, new_cost, neighbor, (current, rotation), 90))
-                    came_from[neighbor] = (current, rotation)
-                continue
+            # Try zero orientation
+            if zero_angle != last_angle:
+                base = unit._oriented_shapes[zero_angle]
+                model = Model(neighbor, orientation=zero_angle)
+                # Replace with cached shape translated to neighbor position
+                model.shape = translate(base, neighbor[0], neighbor[1])
+                if environment.is_valid_position(model, unit):
+                    new_cost = cost + heuristic(current, neighbor)
+                    if neighbor not in cost_so_far or new_cost < cost_so_far[neighbor]:
+                        cost_so_far[neighbor] = new_cost
+                        priority = new_cost + heuristic(goal, neighbor)
+                        heappush(open_set, (priority, new_cost, neighbor, (current, rotation), zero_angle))
+                        came_from[neighbor] = (current, rotation)
+                    last_angle = zero_angle
+                    continue
 
-            # Try remaining orientations only if 0° fails
-            for angle in ORIENTATIONS[2:]:
-                rotated = translate(ELLIPSE_SHAPES[angle], xoff=neighbor[0], yoff=neighbor[1])
+            # Try second orientation
+            if second_angle != last_angle:
+                base = unit._oriented_shapes[second_angle]
+                model = Model(neighbor, orientation=second_angle)
+                # Replace with cached shape translated to neighbor position
+                model.shape = translate(base, neighbor[0], neighbor[1])
+                if environment.is_valid_position(model, unit):
+                    new_cost = cost + heuristic(current, neighbor)
+                    if neighbor not in cost_so_far or new_cost < cost_so_far[neighbor]:
+                        cost_so_far[neighbor] = new_cost
+                        priority = new_cost + heuristic(goal, neighbor)
+                        heappush(open_set, (priority, new_cost, neighbor, (current, rotation), second_angle))
+                        came_from[neighbor] = (current, rotation)
+                    last_angle = second_angle
+                    continue
+
+            # Try remaining orientations
+            for angle in ORIENTATIONS[2:-1]:
+                base = unit._oriented_shapes[angle]
                 model = Model(neighbor, orientation=angle)
-                model.shape = rotated
+                # Replace with cached shape translated to neighbor position
+                model.shape = translate(base, neighbor[0], neighbor[1])
                 if not environment.is_valid_position(model, unit):
                     continue
                 new_cost = cost + heuristic(current, neighbor)
@@ -135,6 +183,7 @@ def a_star(start, goal, environment, unit):
                     priority = new_cost + heuristic(goal, neighbor)
                     heappush(open_set, (priority, new_cost, neighbor, (current, rotation), angle))
                     came_from[neighbor] = (current, rotation)
+                last_angle = angle
                 break
 
     return None
@@ -172,7 +221,7 @@ async def main():
     obstacles = [
         Polygon([(400, 400), (800, 400), (550, 1600)]),  # Triangle
         box(800, 200, 1100, 400),
-        box(1140, 200, 1400, 400),
+        box(1140, 200, MAP_WIDTH, 400),
         Polygon([(1000, 700), (1400, 700), (1050, 900), (1200, 700)]),  # Irregular
     ]
     friendly_unit = Unit([Model((100, 100))])
