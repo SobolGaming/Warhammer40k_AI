@@ -774,8 +774,7 @@ class HumanUIInterface:
         self.scout_choice_dialog = ScoutChoiceDialog(screen_width, screen_height)
         from .dialogs import FightUnitSelectionDialog
         self.fight_unit_selection_dialog = FightUnitSelectionDialog(screen_width, screen_height)
-        from .dialogs import MeleeWeaponDeclarationDialog
-        self.melee_weapon_declaration_dialog = MeleeWeaponDeclarationDialog(screen_width, screen_height)
+        # Note: melee weapon declaration dialog is now handled directly through game_view instance
         self.reserves_arrival_panel = ReservesArrivalPanel()
         
         # State for handling UI interactions
@@ -919,9 +918,7 @@ class HumanUIInterface:
         if self.fight_unit_selection_dialog.visible:
             self.fight_unit_selection_dialog.draw(screen)
         
-        # Draw melee weapon declaration dialog if visible
-        if hasattr(self, 'melee_weapon_declaration_dialog') and self.melee_weapon_declaration_dialog.visible:
-            self.melee_weapon_declaration_dialog.draw(screen)
+        # Note: melee weapon declaration dialog is now drawn directly through game_view instance
         
         # Draw placement indicator if in placement mode
         if self.placement_mode and self.current_unit_for_placement:
@@ -987,9 +984,7 @@ class HumanUIInterface:
         if not handled and self.fight_unit_selection_dialog.visible:
             handled = self.fight_unit_selection_dialog.handle_event(event)
         
-        # Let melee weapon declaration dialog handle events
-        if not handled and hasattr(self, 'melee_weapon_declaration_dialog') and self.melee_weapon_declaration_dialog.visible:
-            handled = self.melee_weapon_declaration_dialog.handle_event(event)
+        # Note: melee weapon declaration dialog events are now handled directly through game_view instance
         
         return handled
 
@@ -1005,10 +1000,8 @@ class HumanUIInterface:
         print(f"⚔️ HumanUIInterface.show_fight_unit_selection_dialog called for {stage_name} stage with {len(eligible_units)} units")
         self.fight_unit_selection_dialog.show(stage_name, eligible_units, on_unit_selected, on_cancel)
 
-    def show_melee_weapon_declaration_dialog(self, unit, callback, game_map=None):
-        """Show the melee weapon declaration dialog for a unit."""
-        print(f"⚔️ HumanUIInterface.show_melee_weapon_declaration_dialog called for {unit.name}")
-        self.melee_weapon_declaration_dialog.show(unit, callback, game_map)
+    # Note: melee weapon declaration dialog is now handled directly through game_view instance
+    # (removed show_melee_weapon_declaration_dialog method to avoid duplicate instances)
 
 
 class GameView:
@@ -2577,14 +2570,13 @@ class BattlePhaseHandler(BasePhaseHandler):
             if active_player.type.name == 'HUMAN':
                 print(f"🎯 {active_player.name} must select targets for {fighting_unit.name}")
                 print(f"   Eligible targets: {[target.name for target in eligible_targets]}")
-                # Show melee weapon declaration dialog
-                if hasattr(self.game_view, 'ui_interface') and self.game_view.ui_interface:
-                    def on_targets_selected(target_declarations):
-                        self.fight_phase_manager.targets_selected(fighting_unit, target_declarations, current_player, opponent_player)
-                    
-                    self.game_view.ui_interface.show_melee_weapon_declaration_dialog(
-                        fighting_unit, on_targets_selected, self.game.map
-                    )
+                # Show melee weapon declaration dialog using game_view instance (like shooting dialog)
+                def on_targets_selected(target_declarations):
+                    self.fight_phase_manager.targets_selected(fighting_unit, target_declarations, current_player, opponent_player)
+                
+                self.game_view.melee_weapon_declaration_dialog.show(
+                    fighting_unit, on_targets_selected, self.game.map
+                )
             else:
                 # AI player - use existing AI logic
                 print(f"🤖 AI player {active_player.name} selecting targets automatically")
