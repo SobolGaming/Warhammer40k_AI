@@ -1084,7 +1084,15 @@ class Unit:
         return self.move(destination, game_map, advance=True)
 
     def move(self, destination: Tuple[float, float, float], game_map: 'Map', advance: bool = False) -> bool:
-        """Moves the unit towards the destination up to its movement characteristic or Advance."""
+        """
+        Moves the unit towards the destination using optimized individual model pathfinding.
+        
+        This method now uses the new pathfinding system that:
+        1. Moves models individually using optimized pathfinding
+        2. Ignores coherency during movement (human player responsibility)
+        3. Validates coherency after all models have moved
+        4. Removes non-coherent models from play if coherency fails
+        """
         if not self.models:
             logger.error(f"Cannot move unit {self.name}: no models in unit")
             return False
@@ -1105,7 +1113,6 @@ class Unit:
 
         # BACKUP ORIGINAL POSITIONS - Critical for proper rollback on failure
         original_model_positions = []
-        original_unit_position = self.get_position()
         for model in self.models:
             original_model_positions.append(model.get_location())
 
@@ -1148,11 +1155,15 @@ class Unit:
         if potential_positions is None:
             print(f"❌ {self.name} cannot move - no valid formation found at destination")
             return False
-            
-        actual_distance_moved = 0.0
+
+        # Use the new individual model pathfinding system
+        from ..utility.calcs import get_individual_model_movement_path, process_unit_movement_with_coherency_check
+        
+        model_movements = []
         successful_moves = 0
 
-        for model, model_destination in zip(self.models, potential_positions):
+        # Move each model individually using optimized pathfinding
+        for model_index, (model, model_destination) in enumerate(zip(self.models, potential_positions)):
             model_start = model.get_location()
             logging.debug(f"Model {model._id} {model.name} attempting to move from {model_start} to {model_destination}")
             
@@ -1168,25 +1179,15 @@ class Unit:
                 print(f"Model {model._id} cannot reach destination {model_distance:.1f}\" away (max: {movement_range}\")")
                 continue  # Skip this model, don't move it
             
-            # Try enhanced pathfinding that accounts for Warhammer 40k movement rules
-            movement_action = MovementAction.ADVANCE if advance else MovementAction.MOVE
-            pathfinding_result = a_star_enhanced(model, game_map, model_destination, movement_action=movement_action)
+            # Use new optimized pathfinding for individual model movement
+            path = get_individual_model_movement_path(self, model_index, model_destination, game_map, movement_range)
             
-            if not pathfinding_result:
-                logger.debug(f"Model {model._id} enhanced pathfinding failed - destination may violate movement rules")
-                # Don't allow direct movement if enhanced pathfinding fails, as it means the destination
-                # likely violates Warhammer 40k movement rules (engagement range, enemy collision, etc.)
-                logger.debug(f"Model {model._id} cannot move to {model_destination} due to movement restrictions")
+            if not path:
+                logger.debug(f"Model {model._id} optimized pathfinding failed - destination may violate movement rules")
                 continue
             
-            shortest_path, enemy_models_moved_over = pathfinding_result
-            
-            # Enhanced pathfinding should never return enemy models moved over for normal/advance moves
-            if enemy_models_moved_over:
-                logger.warning(f"Enhanced pathfinding returned enemy models moved over for {movement_action} movement - this should not happen")
-            
             # Calculate path distance
-            path_distance = sum(get_dist(shortest_path[i][0] - shortest_path[i-1][0], shortest_path[i][1] - shortest_path[i-1][1]) for i in range(1, len(shortest_path)))
+            path_distance = sum(get_dist(path[i][0] - path[i-1][0], path[i][1] - path[i-1][1]) for i in range(1, len(path)))
             
             if path_distance > movement_range:
                 print(f"Model {model._id} path distance {path_distance:.1f}\" exceeds movement {movement_range}\"")
@@ -1196,7 +1197,7 @@ class Unit:
                 distance_along_path = 0.0
                 direction_to_destination = get_angle(model_destination[0] - model.model_base.x, model_destination[1] - model.model_base.y)
                 
-                for node in shortest_path[1:]:
+                for node in path[1:]:
                     dx = node[0] - last_node[0]
                     dy = node[1] - last_node[1]
                     dz = node[2] - last_node[2] if len(node) > 2 else 0
@@ -1214,7 +1215,7 @@ class Unit:
                 if distance_along_path > 0:
                     final_position = model.last_move_path[-1]
                     model.set_location(final_position[0], final_position[1], final_position[2], final_position[3])
-                    actual_distance_moved = max(actual_distance_moved, distance_along_path)
+                    model_movements.append((model_index, model.last_move_path))
                     successful_moves += 1
                     logger.debug(f"Model {model._id} moved along path to {final_position[:3]}, distance: {distance_along_path:.1f}\"")
             else:
@@ -1225,7 +1226,7 @@ class Unit:
                 direction_to_destination = get_angle(model_destination[0] - model.model_base.x, model_destination[1] - model.model_base.y)
                 distance_along_path = 0.0
                 
-                for node in shortest_path[1:]:
+                for node in path[1:]:
                     dx = node[0] - last_node[0]
                     dy = node[1] - last_node[1]
                     dz = node[2] - last_node[2] if len(node) > 2 else 0
@@ -1234,7 +1235,7 @@ class Unit:
                     last_node = (node[0], node[1], node[2] if len(node) > 2 else 0, direction_to_destination)
                     model.last_move_path.append(last_node)
                 
-                actual_distance_moved = max(actual_distance_moved, distance_along_path)
+                model_movements.append((model_index, model.last_move_path))
                 successful_moves += 1
                 logger.debug(f"Model {model._id} moved to {model_destination}, path distance: {distance_along_path:.1f}\"")
 
@@ -1246,6 +1247,29 @@ class Unit:
             print(f"❌ {self.name} could not move - no models could reach any valid positions")
             return False
 
+        # NEW: Validate unit coherency after all models have moved
+        is_coherent, non_coherent_models = process_unit_movement_with_coherency_check(self, model_movements)
+        
+        if not is_coherent:
+            print(f"⚠️  {self.name} coherency violation after movement!")
+            print(f"⚠️  Models {non_coherent_models} are not coherent and must be removed from play")
+            
+            # Remove non-coherent models from play
+            for model_index in sorted(non_coherent_models, reverse=True):
+                if model_index < len(self.models):
+                    model = self.models[model_index]
+                    print(f"💀 Removing {model.name} from play due to coherency violation")
+                    model.is_alive = False
+                    model.wounds_remaining = 0
+                    
+            # Update unit status after model removal
+            self.reset_position()
+            
+            # Check if unit is still viable
+            if not self.is_alive():
+                print(f"💀 {self.name} has been destroyed due to coherency violations")
+                return False
+        
         # CRITICAL VALIDATION: Check for illegal overlaps after movement
         # This catches cases where models might be overlapping with enemies after movement
         final_position = self.get_position()
@@ -1269,8 +1293,7 @@ class Unit:
                         for i, original_pos in enumerate(original_model_positions):
                             if i < len(self.models):
                                 self.models[i].set_location(*original_pos)
-                        if original_unit_position:
-                            self.position = original_unit_position
+                        self.reset_position()
                         return False
         
         # Calculate actual distance the unit moved
@@ -2046,23 +2069,28 @@ class Unit:
                 print(f"Model {model._id} cannot reach scout destination {model_distance:.1f}\" away (max: {scout_distance}\")")
                 continue  # Skip this model, don't move it
             
-            # Try enhanced pathfinding for scout move (treat as normal move)
-            from .unit import MovementAction
-            pathfinding_result = a_star_enhanced(model, game_map, model_destination, movement_action=MovementAction.MOVE)
+            # Use new optimized pathfinding for scout move (individual model movement)
+            from ..utility.calcs import get_individual_model_movement_path
             
-            if not pathfinding_result:
-                logger.debug(f"Model {model._id} enhanced pathfinding failed for scout move - destination may be invalid")
+            # Find model index for pathfinding
+            model_index = None
+            for i, m in enumerate(self.models):
+                if m == model:
+                    model_index = i
+                    break
+            
+            if model_index is None:
+                logger.error(f"Could not find model index for {model.name}")
                 continue
             
-            shortest_path, enemy_models_moved_over = pathfinding_result
+            path = get_individual_model_movement_path(self, model_index, model_destination, game_map, scout_distance)
             
-            # Scout moves cannot move over enemy models (unlike fall back)
-            if enemy_models_moved_over:
-                logger.debug(f"Model {model._id} cannot scout move over enemy models")
+            if not path:
+                logger.debug(f"Model {model._id} optimized pathfinding failed for scout move - destination may be invalid")
                 continue
             
             # Calculate path distance
-            path_distance = sum(get_dist(shortest_path[i][0] - shortest_path[i-1][0], shortest_path[i][1] - shortest_path[i-1][1]) for i in range(1, len(shortest_path)))
+            path_distance = sum(get_dist(path[i][0] - path[i-1][0], path[i][1] - path[i-1][1]) for i in range(1, len(path)))
             
             if path_distance > scout_distance:
                 print(f"Model {model._id} path distance {path_distance:.1f}\" exceeds scout distance {scout_distance}\"")
@@ -2072,7 +2100,7 @@ class Unit:
                 distance_along_path = 0.0
                 direction_to_destination = get_angle(model_destination[0] - model.model_base.x, model_destination[1] - model.model_base.y)
                 
-                for node in shortest_path[1:]:
+                for node in path[1:]:
                     dx = node[0] - last_node[0]
                     dy = node[1] - last_node[1]
                     dz = node[2] - last_node[2] if len(node) > 2 else 0
@@ -2100,7 +2128,7 @@ class Unit:
                 direction_to_destination = get_angle(model_destination[0] - model.model_base.x, model_destination[1] - model.model_base.y)
                 distance_along_path = 0.0
                 
-                for node in shortest_path[1:]:
+                for node in path[1:]:
                     dx = node[0] - last_node[0]
                     dy = node[1] - last_node[1]
                     dz = node[2] - last_node[2] if len(node) > 2 else 0
@@ -2119,6 +2147,36 @@ class Unit:
         if successful_moves == 0:
             print(f"❌ {self.name} could not scout move - no models could reach valid positions")
             return False
+        
+        # NEW: Validate unit coherency after all models have moved (scout moves must maintain coherency)
+        from ..utility.calcs import validate_unit_coherency_after_movement
+        
+        # Get final positions of all models
+        final_positions = []
+        for model in self.models:
+            final_positions.append(model.get_location())
+        
+        is_coherent, non_coherent_models = validate_unit_coherency_after_movement(self, final_positions)
+        
+        if not is_coherent:
+            print(f"⚠️  {self.name} coherency violation after scout move!")
+            print(f"⚠️  Models {non_coherent_models} are not coherent and must be removed from play")
+            
+            # Remove non-coherent models from play
+            for model_index in sorted(non_coherent_models, reverse=True):
+                if model_index < len(self.models):
+                    model = self.models[model_index]
+                    print(f"💀 Removing {model.name} from play due to coherency violation")
+                    model.is_alive = False
+                    model.wounds_remaining = 0
+                    
+            # Update unit status after model removal
+            self.reset_position()
+            
+            # Check if unit is still viable
+            if not self.is_alive():
+                print(f"💀 {self.name} has been destroyed due to coherency violations")
+                return False
         
         # CRITICAL VALIDATION: Check for illegal overlaps after scout move
         # Scout moves cannot end overlapping with enemy models

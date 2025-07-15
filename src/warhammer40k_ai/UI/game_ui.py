@@ -1390,7 +1390,14 @@ class GameView:
 
         # Draw units on the battlefield
         for unit in self.game_map.units:
-            draw_units(battlefield_surface, unit, self.zoom_level, self.offset_x, self.offset_y, pygame.mouse.get_pos(), self.player1, self.player2)
+            # Check if this unit has a highlighted model for individual movement
+            highlighted_model_index = None
+            if (hasattr(self, 'individual_model_movement_dialog') and 
+                self.individual_model_movement_dialog.visible and 
+                self.individual_model_movement_dialog.unit == unit):
+                highlighted_model_index = self.individual_model_movement_dialog.get_highlighted_model_index()
+            
+            draw_units(battlefield_surface, unit, self.zoom_level, self.offset_x, self.offset_y, pygame.mouse.get_pos(), self.player1, self.player2, highlighted_model_index)
         
         # Draw movement range indicator if a unit is selected for movement
         if (hasattr(self, 'selected_unit_for_movement') and 
@@ -1445,6 +1452,10 @@ class GameView:
         # Draw movement choice dialog if visible
         if hasattr(self, 'movement_choice_dialog') and self.movement_choice_dialog.visible:
             self.movement_choice_dialog.draw(self.screen)
+        
+        # Draw individual model movement dialog if visible
+        if hasattr(self, 'individual_model_movement_dialog') and self.individual_model_movement_dialog.visible:
+            self.individual_model_movement_dialog.draw(self.screen)
         
         # Draw weapon choice dialog if visible
         if hasattr(self, 'weapon_choice_dialog') and self.weapon_choice_dialog.visible:
@@ -1650,7 +1661,7 @@ def draw_objective(screen: pygame.Surface, objective: Objective, zoom_level: flo
     if isinstance(objective.location, ObjectivePoint):
         pygame.draw.circle(screen, PURPLE, (int(objective.location.x * TILE_SIZE * zoom_level + offset_x), int(objective.location.y * TILE_SIZE * zoom_level + offset_y)), int(objective.location.control_radius * TILE_SIZE * zoom_level))
 
-def draw_units(screen: pygame.Surface, unit: Unit, zoom_level: float, offset_x: int, offset_y: int, mouse_pos: Tuple[int, int], player1: Player, player2: Player) -> None:
+def draw_units(screen: pygame.Surface, unit: Unit, zoom_level: float, offset_x: int, offset_y: int, mouse_pos: Tuple[int, int], player1: Player, player2: Player, highlighted_model_index: Optional[int] = None) -> None:
     # Determine the color based on which player the unit belongs to (only if armies are loaded)
     color = BLUE  # Default color
     if (player1.get_army() and player1.get_army().units and unit in player1.get_army().units):
@@ -1671,17 +1682,21 @@ def draw_units(screen: pygame.Surface, unit: Unit, zoom_level: float, offset_x: 
         screen_y = int((y * TILE_SIZE) * zoom_level + offset_y)
         base = model.model_base
         
-        draw_enhanced_base(screen, base, screen_x, screen_y, zoom_level, color, unit, model)
+        # Check if this model should be highlighted
+        is_highlighted = (highlighted_model_index is not None and 
+                         highlighted_model_index == model_index)
+        
+        draw_enhanced_base(screen, base, screen_x, screen_y, zoom_level, color, unit, model, is_highlighted)
         
         # Draw facing direction with enhanced styling
         draw_facing_direction(screen, base, screen_x, screen_y, zoom_level)
         
         # Draw large prominent icon that overlays the facing arrow
-        draw_prominent_unit_icon(screen, screen_x, screen_y, base, zoom_level, unit, model, model_index, all_units)
+        draw_prominent_unit_icon(screen, screen_x, screen_y, base, zoom_level, unit, model, model_index, all_units, is_highlighted)
     
             # Unit bounding box removed - model-based hover detection is more accurate
 
-def draw_prominent_unit_icon(screen: pygame.Surface, center_x: int, center_y: int, base: Base, zoom_level: float, unit: Unit, model: Model, model_index: int, all_units: List[Unit]) -> None:
+def draw_prominent_unit_icon(screen: pygame.Surface, center_x: int, center_y: int, base: Base, zoom_level: float, unit: Unit, model: Model, model_index: int, all_units: List[Unit], is_highlighted: bool = False) -> None:
     """Draw a large, prominent icon that overlays the facing direction"""
     # Calculate icon size - larger and with minimum size
     base_radius = int(base.get_radius() * TILE_SIZE * zoom_level)
@@ -1693,7 +1708,8 @@ def draw_prominent_unit_icon(screen: pygame.Surface, center_x: int, center_y: in
     # Draw semi-transparent background circle for better visibility
     bg_radius = icon_size // 2 + 4
     bg_surface = pygame.Surface((bg_radius * 2, bg_radius * 2), pygame.SRCALPHA)
-    pygame.draw.circle(bg_surface, (0, 0, 0, 100), (bg_radius, bg_radius), bg_radius)
+    bg_color = (255, 255, 0, 150) if is_highlighted else (0, 0, 0, 100)
+    pygame.draw.circle(bg_surface, bg_color, (bg_radius, bg_radius), bg_radius)
     screen.blit(bg_surface, (center_x - bg_radius, center_y - bg_radius))
     
     # Draw the unit type icon with color tinting and rotation
@@ -1701,7 +1717,7 @@ def draw_prominent_unit_icon(screen: pygame.Surface, center_x: int, center_y: in
     
     # For multi-model units, draw individual model identifier
     if len(unit.models) > 1:
-        draw_model_identifier(screen, center_x, center_y, icon_size, model_index, unit)
+        draw_model_identifier(screen, center_x, center_y, icon_size, model_index, unit, is_highlighted)
     
     # Draw wound indicator if model is damaged
     if not model.is_max_health:
@@ -1755,22 +1771,27 @@ def draw_tinted_unit_icon(screen: pygame.Surface, center_x: int, center_y: int, 
     # Just call the rotated version with 0 rotation for backward compatibility
     draw_rotated_tinted_unit_icon(screen, center_x, center_y, size, unit, tint_color, 0.0)
 
-def draw_model_identifier(screen: pygame.Surface, center_x: int, center_y: int, icon_size: int, model_index: int, unit: Unit) -> None:
+def draw_model_identifier(screen: pygame.Surface, center_x: int, center_y: int, icon_size: int, model_index: int, unit: Unit, is_highlighted: bool = False) -> None:
     """Draw individual model identifier for multi-model units"""
     # Position the identifier at the top-right of the icon with more offset
     identifier_size = max(12, icon_size // 3)
     identifier_x = center_x + icon_size // 2 - identifier_size // 4  # More to the right
     identifier_y = center_y - icon_size // 2 + identifier_size // 4  # More up
     
-    # Draw background circle
-    pygame.draw.circle(screen, (255, 255, 255), (identifier_x, identifier_y), identifier_size // 2 + 2)
-    pygame.draw.circle(screen, (0, 0, 0), (identifier_x, identifier_y), identifier_size // 2 + 2, 2)
+    # Draw background circle with highlighting
+    bg_color = (255, 255, 100) if is_highlighted else (255, 255, 255)
+    border_color = (255, 255, 0) if is_highlighted else (0, 0, 0)
+    border_width = 3 if is_highlighted else 2
+    
+    pygame.draw.circle(screen, bg_color, (identifier_x, identifier_y), identifier_size // 2 + 2)
+    pygame.draw.circle(screen, border_color, (identifier_x, identifier_y), identifier_size // 2 + 2, border_width)
     
     # Draw model number (1-indexed for user friendliness)
     font_size = max(10, identifier_size)
     font = pygame.font.Font(None, font_size)
     model_number = str(model_index + 1)
-    text_surface = font.render(model_number, True, (0, 0, 0))
+    text_color = (0, 0, 0) if not is_highlighted else (100, 100, 0)
+    text_surface = font.render(model_number, True, text_color)
     text_rect = text_surface.get_rect(center=(identifier_x, identifier_y))
     screen.blit(text_surface, text_rect)
 
@@ -1827,18 +1848,23 @@ def draw_model_count_indicator(surface: pygame.Surface, center_x: int, center_y:
     # This function is now unused but kept for compatibility
     pass
 
-def draw_enhanced_base(screen: pygame.Surface, base: Base, screen_x: int, screen_y: int, zoom_level: float, color: Tuple[int, int, int], unit: Unit, model: Model) -> None:
+def draw_enhanced_base(screen: pygame.Surface, base: Base, screen_x: int, screen_y: int, zoom_level: float, color: Tuple[int, int, int], unit: Unit, model: Model, is_highlighted: bool = False) -> None:
     """Enhanced base drawing with unit identification features"""
     if base.base_type == BaseType.CIRCULAR:
-        draw_enhanced_circular_base(screen, base, screen_x, screen_y, zoom_level, color, unit, model)
+        draw_enhanced_circular_base(screen, base, screen_x, screen_y, zoom_level, color, unit, model, is_highlighted)
     elif base.base_type == BaseType.ELLIPTICAL:
-        draw_enhanced_elliptical_base(screen, base, screen_x, screen_y, zoom_level, color, unit, model)
+        draw_enhanced_elliptical_base(screen, base, screen_x, screen_y, zoom_level, color, unit, model, is_highlighted)
     elif base.base_type == BaseType.HULL:
-        draw_enhanced_hull_base(screen, base, screen_x, screen_y, zoom_level, color, unit, model)
+        draw_enhanced_hull_base(screen, base, screen_x, screen_y, zoom_level, color, unit, model, is_highlighted)
 
-def draw_enhanced_circular_base(screen: pygame.Surface, base: Base, screen_x: int, screen_y: int, zoom_level: float, color: Tuple[int, int, int], unit: Unit, model: Model) -> None:
+def draw_enhanced_circular_base(screen: pygame.Surface, base: Base, screen_x: int, screen_y: int, zoom_level: float, color: Tuple[int, int, int], unit: Unit, model: Model, is_highlighted: bool = False) -> None:
     """Enhanced circular base with unit identification"""
     radius = int(base.get_radius() * TILE_SIZE * zoom_level)
+    
+    # Draw highlighting ring if highlighted
+    if is_highlighted:
+        highlight_radius = radius + 4
+        pygame.draw.circle(screen, (255, 255, 0), (screen_x, screen_y), highlight_radius, 3)
     
     # Draw outer ring with gradient effect
     pygame.draw.circle(screen, color, (screen_x, screen_y), radius)
@@ -1851,7 +1877,7 @@ def draw_enhanced_circular_base(screen: pygame.Surface, base: Base, screen_x: in
     # Add unit identification elements
     draw_unit_identification(screen, screen_x, screen_y, radius, unit, model, zoom_level)
 
-def draw_enhanced_elliptical_base(screen: pygame.Surface, base: Base, screen_x: int, screen_y: int, zoom_level: float, color: Tuple[int, int, int], unit: Unit, model: Model) -> None:
+def draw_enhanced_elliptical_base(screen: pygame.Surface, base: Base, screen_x: int, screen_y: int, zoom_level: float, color: Tuple[int, int, int], unit: Unit, model: Model, is_highlighted: bool = False) -> None:
     """Enhanced elliptical base with unit identification"""
     width = int(base.radius[0] * 2 * TILE_SIZE * zoom_level)
     height = int(base.radius[1] * 2 * TILE_SIZE * zoom_level)
@@ -1859,6 +1885,13 @@ def draw_enhanced_elliptical_base(screen: pygame.Surface, base: Base, screen_x: 
     # Ensure minimum size for visibility
     width = max(4, width)
     height = max(4, height)
+    
+    # Draw highlighting ellipse if highlighted
+    if is_highlighted:
+        highlight_width = width + 8
+        highlight_height = height + 8
+        highlight_rect = pygame.Rect(screen_x - highlight_width//2, screen_y - highlight_height//2, highlight_width, highlight_height)
+        pygame.draw.ellipse(screen, (255, 255, 0), highlight_rect, 3)
     
     # Create a surface for the ellipse
     ellipse_surface = pygame.Surface((width, height), pygame.SRCALPHA)
@@ -1887,7 +1920,7 @@ def draw_enhanced_elliptical_base(screen: pygame.Surface, base: Base, screen_x: 
     # Blit the rotated surface onto the screen
     screen.blit(rotated_surface, blit_pos)
 
-def draw_enhanced_hull_base(screen: pygame.Surface, base: Base, screen_x: int, screen_y: int, zoom_level: float, color: Tuple[int, int, int], unit: Unit, model: Model) -> None:
+def draw_enhanced_hull_base(screen: pygame.Surface, base: Base, screen_x: int, screen_y: int, zoom_level: float, color: Tuple[int, int, int], unit: Unit, model: Model, is_highlighted: bool = False) -> None:
     """Enhanced hull base with unit identification"""
     width = int(base.radius[0] * 2 * TILE_SIZE * zoom_level)
     height = int(base.radius[1] * 2 * TILE_SIZE * zoom_level)
@@ -1895,6 +1928,13 @@ def draw_enhanced_hull_base(screen: pygame.Surface, base: Base, screen_x: int, s
     # Ensure minimum size for visibility
     width = max(4, width)
     height = max(4, height)
+    
+    # Draw highlighting rectangle if highlighted
+    if is_highlighted:
+        highlight_width = width + 8
+        highlight_height = height + 8
+        highlight_rect = pygame.Rect(screen_x - highlight_width//2, screen_y - highlight_height//2, highlight_width, highlight_height)
+        pygame.draw.rect(screen, (255, 255, 0), highlight_rect, 3)
     
     # Create a surface for the hull
     hull_surface = pygame.Surface((width, height), pygame.SRCALPHA)
@@ -2325,6 +2365,11 @@ class BattlePhaseHandler(BasePhaseHandler):
             self.game_view.movement_choice_dialog.visible):
             return self.game_view.movement_choice_dialog.handle_event(event)
         
+        # Handle individual model movement dialog
+        if (hasattr(self.game_view, 'individual_model_movement_dialog') and
+            self.game_view.individual_model_movement_dialog.visible):
+            return self.game_view.individual_model_movement_dialog.handle_event(event)
+        
         # Handle mouse events
         if event.type == pygame.MOUSEBUTTONDOWN:
             return self._handle_battle_click(event.pos, event.button)
@@ -2664,6 +2709,9 @@ class BattlePhaseHandler(BasePhaseHandler):
         # Roll advance dice immediately if advancing
         if choice == 'advance':
             advance_roll = unit.prepare_advance()
+            max_distance = unit.movement + advance_roll
+        else:
+            max_distance = unit.movement
         
         if choice == 'stationary':
             # Execute stationary action immediately (no destination needed)
@@ -2675,8 +2723,20 @@ class BattlePhaseHandler(BasePhaseHandler):
             self.game_view.movement_action = None
             self.game_view.selected_model_for_movement = None
         else:
-            print(f"📍 Click on the battlefield to {choice} {unit.name}")
-            # Action will be executed when user clicks battlefield
+            # Open individual model movement dialog
+            def on_movement_complete(completed: bool):
+                if completed:
+                    print(f"✅ {unit.name} {choice} movement completed")
+                else:
+                    print(f"⏭️  {unit.name} {choice} movement skipped")
+                # Clear selection after movement
+                self.game_view.selected_unit_for_movement = None
+                self.game_view.movement_action = None
+                self.game_view.selected_model_for_movement = None
+            
+            self.game_view.individual_model_movement_dialog.show(
+                unit, choice, on_movement_complete, self.game.map, max_distance
+            )
     
     def _handle_battlefield_action(self, x: int, y: int) -> bool:
         """Handle battlefield actions based on current battle phase"""
@@ -2696,6 +2756,18 @@ class BattlePhaseHandler(BasePhaseHandler):
     
     def _handle_movement_action(self, x: int, y: int) -> bool:
         """Handle movement phase actions using Unit's movement system"""
+        # Check if individual model movement dialog is active
+        if (hasattr(self.game_view, 'individual_model_movement_dialog') and
+            self.game_view.individual_model_movement_dialog.visible):
+            # Handle battlefield click for individual model movement
+            battlefield_x = (x - ROSTER_PANE_WIDTH - self.game_view.offset_x) / (TILE_SIZE * self.game_view.zoom_level)
+            battlefield_y = (y - self.game_view.offset_y) / (TILE_SIZE * self.game_view.zoom_level)
+            battlefield_z = self.game.map.get_height_at_point(battlefield_x, battlefield_y)
+            
+            return self.game_view.individual_model_movement_dialog.handle_battlefield_click(
+                battlefield_x, battlefield_y, battlefield_z
+            )
+        
         # Check if we clicked on a model first for selection
         clicked_model = self.game_view.get_model_at_position(x, y)
         if clicked_model:
@@ -3046,8 +3118,9 @@ class PhaseManager:
         self.battle_handler = BattlePhaseHandler(game_view)
         
         # Movement system state
-        from .dialogs import MovementChoiceDialog
+        from .dialogs import MovementChoiceDialog, IndividualModelMovementDialog
         self.game_view.movement_choice_dialog = MovementChoiceDialog(game_view.screen.get_width(), game_view.screen.get_height())
+        self.game_view.individual_model_movement_dialog = IndividualModelMovementDialog(game_view.screen.get_width(), game_view.screen.get_height())
         self.game_view.selected_unit_for_movement = None
         self.game_view.movement_action = None  # MovementAction enum value
         
@@ -3334,8 +3407,19 @@ class PreBattlePhaseHandler(BasePhaseHandler):
     def _show_scout_dialog(self, unit):
         def on_scout_choice(choice):
             if choice == 'scout':
-                self.awaiting_battlefield_click = True
-                print(f"Click on the battlefield to select a destination for {unit.name}'s Scout move.")
+                # Open individual model movement dialog for scout movement
+                def on_scout_movement_complete(completed: bool):
+                    if completed:
+                        print(f"✅ {unit.name} scout movement completed")
+                        unit.scout_move_made = True
+                    else:
+                        print(f"⏭️  {unit.name} scout movement skipped")
+                        unit.scout_move_made = True
+                    self._next_scout_unit()
+                
+                self.game_view.individual_model_movement_dialog.show(
+                    unit, 'scout', on_scout_movement_complete, self.game_view.game.map, self.scout_distance
+                )
             else:
                 unit.scout_move_made = True
                 print(f"✅ {unit.name} scout move skipped")
@@ -3377,31 +3461,28 @@ class PreBattlePhaseHandler(BasePhaseHandler):
         if self.game_view.ui_interface.scout_choice_dialog.visible:
             return self.game_view.ui_interface.scout_choice_dialog.handle_event(event)
         
-        # If awaiting battlefield click for scout move
-        if self.awaiting_battlefield_click and self.current_scout_unit:
-            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                x, y = event.pos
-                # Convert to game coordinates
-                battlefield_x = (x - ROSTER_PANE_WIDTH - self.game_view.offset_x) / (TILE_SIZE * self.game_view.zoom_level)
-                battlefield_y = (y - self.game_view.offset_y) / (TILE_SIZE * self.game_view.zoom_level)
-                
-                # Validate the destination
-                validation = self._validate_scout_destination(self.current_scout_unit, (battlefield_x, battlefield_y))
-                
-                if validation['valid']:
+        # Handle individual model movement dialog (for scout moves)
+        if (hasattr(self.game_view, 'individual_model_movement_dialog') and
+            self.game_view.individual_model_movement_dialog.visible):
+            return self.game_view.individual_model_movement_dialog.handle_event(event)
+        
+        # Handle battlefield clicks for individual model movement during scout phase
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:  # Left click
+            x, y = event.pos
+            # Check if clicking on battlefield area
+            if ROSTER_PANE_WIDTH < x < BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH:
+                # Check if individual model movement dialog is active
+                if (hasattr(self.game_view, 'individual_model_movement_dialog') and
+                    self.game_view.individual_model_movement_dialog.visible):
+                    # Convert screen coordinates to game coordinates
+                    battlefield_x = (x - ROSTER_PANE_WIDTH - self.game_view.offset_x) / (TILE_SIZE * self.game_view.zoom_level)
+                    battlefield_y = (y - self.game_view.offset_y) / (TILE_SIZE * self.game_view.zoom_level)
                     battlefield_z = self.game_view.game.map.get_height_at_point(battlefield_x, battlefield_y)
-                    destination = (battlefield_x, battlefield_y, battlefield_z)
-                    # Try the scout move
-                    success = self.current_scout_unit.scout_move(destination, self.game_view.game.map)
-                    if success:
-                        print(f"✅ {self.current_scout_unit.name} completed its Scout move.")
-                        self.awaiting_battlefield_click = False
-                        self._next_scout_unit()
-                    else:
-                        print(f"❌ Scout move failed. Try a different location.")
-                else:
-                    print(f"❌ Invalid Scout move: {validation['reason']}")
-                return True
+                    
+                    # Handle battlefield click for individual model movement
+                    return self.game_view.individual_model_movement_dialog.handle_battlefield_click(
+                        battlefield_x, battlefield_y, battlefield_z
+                    )
         
         # Allow SPACE to skip to next phase if all done
         if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:

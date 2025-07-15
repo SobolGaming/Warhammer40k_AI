@@ -1,6 +1,7 @@
 from .charge_declaration_dialog import ChargeDeclarationDialog
 from .deployment_choice_dialog import DeploymentChoiceDialog
 from .fight_unit_selection_dialog import FightUnitSelectionDialog
+from .individual_model_movement_dialog import IndividualModelMovementDialog
 from .melee_weapon_declaration_dialog import MeleeWeaponDeclarationDialog
 from .movement_choice_dialog import MovementChoiceDialog
 from .reserves_selection_dialog import ReservesSelectionDialog
@@ -12,6 +13,7 @@ __all__ = [
     'ChargeDeclarationDialog',
     'DeploymentChoiceDialog',
     'FightUnitSelectionDialog',
+    'IndividualModelMovementDialog',
     'MeleeWeaponDeclarationDialog',
     'MovementChoiceDialog',
     'ReservesSelectionDialog',
