@@ -22,6 +22,9 @@ logger = logging.getLogger(__name__)
 # Constants for optimized pathfinding
 ORIENTATIONS = [0, 90, 45, -45, 15, -15, 30, -30, 60, -60, 75, -75]  # Degrees
 
+# Import existing constants
+from .constants import ENGAGEMENT_RANGE_HORIZONTAL, MM_TO_INCHES
+
 # OPTIMIZED PATHFINDING INTEGRATION
 # =================================
 # This module now includes optimized A* pathfinding with:
@@ -837,7 +840,7 @@ def a_star_optimized_with_pivot_cost(model: 'Model', game_map: 'Map', target: Tu
         List of path points (x, y, z) in inches, or None if no path exists
     """
     # Call the optimized A* algorithm
-    result = a_star_optimized(model, game_map, target[:2], max_distance, step_size)
+    result = a_star_optimized_enhanced(model, game_map, target[:2], max_distance, step_size)
     
     if not result:
         return None
@@ -1542,60 +1545,108 @@ class OptimizedPathfindingEnvironment:
         
         return True
 
-def a_star_optimized(model: 'Model', game_map: 'Map', target: Tuple[float, float], 
-                    max_distance: float, step_size: float = 0.4) -> Optional[Tuple[List[Tuple[float, float, float]], bool]]:
+    def get_reachable_positions(self, max_distance: float, step_size: float = 0.4) -> list:
+        """
+        Get all reachable positions within max_distance using optimized pathfinding.
+
+        This is useful for real-time movement preview visualization.
+
+        Args:
+            max_distance: Maximum movement distance in inches
+            step_size: Step size for pathfinding grid in inches
+
+        Returns:
+            List of (x, y) positions that are reachable
+        """
+        reachable = []
+        start_pos = (self.moving_model.model_base.x, self.moving_model.model_base.y)
+        current_orientation = getattr(self.moving_model.model_base, 'facing', 0)
+
+        # Find closest orientation in our ORIENTATIONS list
+        if current_orientation in ORIENTATIONS:
+            start_orientation = current_orientation
+        else:
+            start_orientation = min(ORIENTATIONS, key=lambda x: abs(x - current_orientation))
+
+        # Sample positions in a grid around the starting position
+        search_radius = max_distance + step_size
+        x_min = start_pos[0] - search_radius
+        x_max = start_pos[0] + search_radius
+        y_min = start_pos[1] - search_radius
+        y_max = start_pos[1] + search_radius
+
+        x = x_min
+        while x <= x_max:
+            y = y_min
+            while y <= y_max:
+                pos = (x, y)
+
+                # Quick distance check
+                distance = ((pos[0] - start_pos[0])**2 + (pos[1] - start_pos[1])**2)**0.5
+                if distance <= max_distance:
+                    # Check if position is valid
+                    if self.is_valid_position_fast(pos, start_orientation):
+                        reachable.append(pos)
+
+                y += step_size
+            x += step_size
+
+        return reachable
+
+def a_star_optimized_enhanced(model: 'Model', game_map: 'Map', target: Tuple[float, float],
+                            max_distance: float, step_size: float = 0.4) -> Optional[Tuple[List[Tuple[float, float, float]], bool]]:
     """
-    Optimized A* pathfinding using pre-computed Minkowski sums and STRTrees.
-    
-    This function works at the model level for maximum flexibility.
-    
+    Enhanced A* pathfinding adapted from test.py with optimizations.
+
+    This function provides the advanced pathfinding capabilities from test.py
+    but adapted to work with the main game's data structures.
+
     Args:
         model: The model to pathfind for
         game_map: The game map containing obstacles and units
         target: Target position (x, y) in inches
         max_distance: Maximum movement distance in inches
         step_size: Step size for pathfinding grid in inches
-        
+
     Returns:
         Tuple containing (path, rotation_occurred) or None if no path exists
     """
     from heapq import heappush, heappop
-    
+
     # Create optimized environment for this model
     env = OptimizedPathfindingEnvironment(game_map, model)
-    
+
     # Get starting position and orientation
     start_pos = (model.model_base.x, model.model_base.y)
     current_orientation = getattr(model.model_base, 'facing', 0)
-    
+
     # Find closest orientation in our ORIENTATIONS list
     if current_orientation in ORIENTATIONS:
         start_orientation = current_orientation
     else:
         # Find closest orientation
         start_orientation = min(ORIENTATIONS, key=lambda x: abs(x - current_orientation))
-    
+
     # A* data structures
     open_set = []
     came_from = {}
     cost_so_far = {}
     rotation_occurred = {}
-    
+
     # Initialize with starting position
     heappush(open_set, (0, 0, start_pos, None, start_orientation, False))
     cost_so_far[start_pos] = 0
     rotation_occurred[start_pos] = False
-    
-    # Orientation priority order
-    zero_angle = ORIENTATIONS[0]
-    second_angle = ORIENTATIONS[1]
-    
+
+    # Early exit threshold for performance
+    early_exit_threshold = step_size
+
     while open_set:
         _, cost, current, parent, rotation, path_has_rotation = heappop(open_set)
         last_angle = rotation
-        
-        # Check if we've reached the goal
-        if heuristic(current + (0,), target + (0,)) < step_size:
+
+        # Check if we've reached the goal (early exit)
+        if heuristic(current + (0,), target + (0,)) < early_exit_threshold:
             # Reconstruct path
             path = [(current[0], current[1], 0)]  # Add z=0 for 3D compatibility
             while parent:
@@ -1603,19 +1654,29 @@ def a_star_optimized(model: 'Model', game_map: 'Map', target: Tuple[float, float
                 parent = came_from.get(parent)
             path.reverse()
             return path, path_has_rotation
-        
-        # Generate neighbors
+
+        # Check distance constraint
+        distance_from_start = heuristic(start_pos + (0,), current + (0,))
+        if distance_from_start > max_distance:
+            continue
+
+        # Generate neighbors with 8-directional movement
         directions = [
             (-step_size, 0), (step_size, 0), (0, -step_size), (0, step_size),
-            (-step_size, -step_size), (step_size, -step_size), 
+            (-step_size, -step_size), (step_size, -step_size),
             (-step_size, step_size), (step_size, step_size)
         ]
-        
+
         for dx, dy in directions:
             neighbor = (current[0] + dx, current[1] + dy)
-            
+
+            # Check distance constraint for neighbor
+            neighbor_distance = heuristic(start_pos + (0,), neighbor + (0,))
+            if neighbor_distance > max_distance:
+                continue
+
             # For circular bases, orientation doesn't matter
-            if model.parent_unit.has_circular_base:
+            if getattr(model.parent_unit, 'has_circular_base', False):
                 if env.is_valid_position_fast(neighbor, 0):
                     new_cost = cost + heuristic(current + (0,), neighbor + (0,))
                     if neighbor not in cost_so_far or new_cost < cost_so_far[neighbor]:
@@ -1625,61 +1686,169 @@ def a_star_optimized(model: 'Model', game_map: 'Map', target: Tuple[float, float
                         heappush(open_set, (priority, new_cost, neighbor, current, 0, path_has_rotation))
                         came_from[neighbor] = current
                 continue
-            
-            # Try last orientation first (prefer maintaining current orientation)
-            if env.is_valid_position_fast(neighbor, last_angle):
-                new_cost = cost + heuristic(current + (0,), neighbor + (0,))
-                # Small bonus for maintaining the same orientation
-                if last_angle == start_orientation:
-                    new_cost -= 0.01  # Slight preference for maintaining original orientation
-                if neighbor not in cost_so_far or new_cost < cost_so_far[neighbor]:
-                    cost_so_far[neighbor] = new_cost
-                    rotation_occurred[neighbor] = path_has_rotation
-                    priority = new_cost + heuristic(neighbor + (0,), target + (0,))
-                    heappush(open_set, (priority, new_cost, neighbor, current, last_angle, path_has_rotation))
-                    came_from[neighbor] = current
-                continue
-            
-            # Try current model orientation if different from last_angle
+
+            # Try orientations in priority order for non-circular bases
+            orientations_to_try = [last_angle]  # Try current orientation first
+
+            # Add start orientation if different
             if start_orientation != last_angle:
-                if env.is_valid_position_fast(neighbor, start_orientation):
-                    new_cost = cost + heuristic(current + (0,), neighbor + (0,)) - 0.01
-                    has_rotation = path_has_rotation or (start_orientation != last_angle)
-                    if neighbor not in cost_so_far or new_cost < cost_so_far[neighbor]:
-                        cost_so_far[neighbor] = new_cost
-                        rotation_occurred[neighbor] = has_rotation
-                        priority = new_cost + heuristic(neighbor + (0,), target + (0,))
-                        heappush(open_set, (priority, new_cost, neighbor, current, start_orientation, has_rotation))
-                        came_from[neighbor] = current
-                    continue
-            
-            # Try zero orientation
-            if zero_angle != last_angle and zero_angle != start_orientation:
-                if env.is_valid_position_fast(neighbor, zero_angle):
-                    new_cost = cost + heuristic(current + (0,), neighbor + (0,))
-                    has_rotation = path_has_rotation or (zero_angle != start_orientation)
-                    if neighbor not in cost_so_far or new_cost < cost_so_far[neighbor]:
-                        cost_so_far[neighbor] = new_cost
-                        rotation_occurred[neighbor] = has_rotation
-                        priority = new_cost + heuristic(neighbor + (0,), target + (0,))
-                        heappush(open_set, (priority, new_cost, neighbor, current, zero_angle, has_rotation))
-                        came_from[neighbor] = current
-                    continue
-            
-            # Try remaining orientations (maintain order for optimization)
-            remaining_orientations = [a for a in ORIENTATIONS 
-                                    if a not in [last_angle, start_orientation, zero_angle]]
-            
-            for angle in remaining_orientations:
+                orientations_to_try.append(start_orientation)
+
+            # Add other orientations
+            for angle in ORIENTATIONS:
+                if angle not in orientations_to_try:
+                    orientations_to_try.append(angle)
+
+            # Try each orientation until one works
+            for angle in orientations_to_try:
                 if env.is_valid_position_fast(neighbor, angle):
                     new_cost = cost + heuristic(current + (0,), neighbor + (0,))
+
+                    # Apply orientation preferences
+                    if angle == start_orientation:
+                        new_cost -= 0.01  # Prefer original orientation
+                    elif angle == last_angle:
+                        new_cost -= 0.005  # Prefer maintaining current orientation
+
+                    # Check if rotation occurred
                     has_rotation = path_has_rotation or (angle != start_orientation)
+
                     if neighbor not in cost_so_far or new_cost < cost_so_far[neighbor]:
                         cost_so_far[neighbor] = new_cost
                         rotation_occurred[neighbor] = has_rotation
                         priority = new_cost + heuristic(neighbor + (0,), target + (0,))
                         heappush(open_set, (priority, new_cost, neighbor, current, angle, has_rotation))
                         came_from[neighbor] = current
-                    break
-    
+                    break  # Found valid orientation, move to next neighbor
+
     return None  # No path found
+
+
+def get_movement_path_preview(moving_model: 'Model', target_position: tuple,
+                            max_distance: float, game_map: 'Map') -> dict:
+    """
+    Get a movement path preview for the given model and target using optimized pathfinding.
+
+    This function integrates the pathfinding system into the main game,
+    providing real-time movement preview and validation at the model level.
+
+    Args:
+        moving_model: The model to move
+        target_position: Target position (x, y) in inches
+        max_distance: Maximum movement distance in inches
+        game_map: The game map containing obstacles and units
+
+    Returns:
+        Dict with keys:
+        - 'valid': bool indicating if path is valid
+        - 'path': list of path points if valid
+        - 'distance': total path distance
+        - 'reason': explanation if invalid
+    """
+    try:
+        # Validate input
+        if not moving_model or not moving_model.is_alive:
+            return {
+                'valid': False,
+                'path': None,
+                'distance': 0,
+                'reason': 'Invalid or dead model'
+            }
+
+        # Use the enhanced optimized pathfinding
+        result = a_star_optimized_enhanced(moving_model, game_map, target_position, max_distance)
+
+        if result and result[0]:
+            path, has_rotation = result
+
+            # Calculate total distance
+            total_distance = 0
+            if len(path) > 1:
+                for i in range(1, len(path)):
+                    dx = path[i][0] - path[i-1][0]
+                    dy = path[i][1] - path[i-1][1]
+                    total_distance += (dx*dx + dy*dy)**0.5
+
+            # Apply rotation cost if needed
+            effective_max_distance = max_distance
+            if has_rotation and not getattr(moving_model.parent_unit, 'has_circular_base', False):
+                rotation_cost = 1.0  # 1 inch rotation cost
+                effective_max_distance -= rotation_cost
+
+            return {
+                'valid': total_distance <= effective_max_distance,
+                'path': [(p[0], p[1]) for p in path],  # Convert to 2D for UI
+                'distance': total_distance,
+                'reason': 'Valid path found' if total_distance <= effective_max_distance else f'Path too long ({total_distance:.1f}" > {effective_max_distance}")'
+            }
+        else:
+            return {
+                'valid': False,
+                'path': None,
+                'distance': 0,
+                'reason': 'No valid path found'
+            }
+
+    except Exception as e:
+        logger.warning(f"Pathfinding error: {e}")
+        return {
+            'valid': False,
+            'path': None,
+            'distance': 0,
+            'reason': f'Pathfinding error: {str(e)}'
+        }
+
+
+def get_unit_movement_path_preview(moving_unit: 'Unit', target_position: tuple,
+                                 max_distance: float, game_map: 'Map') -> dict:
+    """
+    Get a movement path preview for a unit by using its first model.
+
+    This is a convenience function that works at the unit level but delegates
+    to model-level pathfinding.
+
+    Args:
+        moving_unit: The unit to move
+        target_position: Target position (x, y) in inches
+        max_distance: Maximum movement distance in inches
+        game_map: The game map containing obstacles and units
+
+    Returns:
+        Dict with keys:
+        - 'valid': bool indicating if path is valid
+        - 'path': list of path points if valid
+        - 'distance': total path distance
+        - 'reason': explanation if invalid
+    """
+    # Get the first model for pathfinding (unit leader)
+    if not moving_unit.models or not moving_unit.models[0].is_alive:
+        return {
+            'valid': False,
+            'path': None,
+            'distance': 0,
+            'reason': 'No valid models in unit'
+        }
+
+    # Delegate to model-level pathfinding
+    return get_movement_path_preview(moving_unit.models[0], target_position, max_distance, game_map)
+
+
+def create_optimized_pathfinding_environment(game_map: 'Map', moving_unit: 'Unit') -> 'OptimizedPathfindingEnvironment':
+    """
+    Create an optimized pathfinding environment for the given moving unit.
+
+    This adapts the existing OptimizedPathfindingEnvironment to work with the
+    enhanced pathfinding from test.py.
+
+    Args:
+        game_map: The game map containing obstacles and units
+        moving_unit: The unit that will be pathfinding
+
+    Returns:
+        OptimizedPathfindingEnvironment ready for pathfinding
+    """
+    if not moving_unit.models or not moving_unit.models[0].is_alive:
+        raise ValueError("Moving unit has no valid models")
+
+    # Use the existing OptimizedPathfindingEnvironment but enhance it
+    return OptimizedPathfindingEnvironment(game_map, moving_unit.models[0])

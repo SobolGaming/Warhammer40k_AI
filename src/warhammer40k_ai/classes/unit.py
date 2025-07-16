@@ -568,16 +568,23 @@ class Unit:
                 continue
             
             # Get the closest model in the unit to our position
-            unit_position = unit.get_position()
-            if not unit_position:
+            closest_distance = float('inf')
+            for model in unit.models:
+                if not model.is_alive:
+                    continue
+                model_pos = model.get_location()
+                if model_pos:
+                    model_distance = get_dist(
+                        x - model_pos[0],
+                        y - model_pos[1],
+                        z - model_pos[2] if len(model_pos) > 2 else 0
+                    )
+                    closest_distance = min(closest_distance, model_distance)
+
+            if closest_distance == float('inf'):
                 continue
-            
-            # Calculate distance between positions
-            distance = get_dist(
-                x - unit_position[0],
-                y - unit_position[1],
-                z - unit_position[2] if len(unit_position) > 2 else 0
-            )
+
+            distance = closest_distance
             
             if distance <= range_inches:
                 units_within_range.append(unit)
@@ -1102,14 +1109,19 @@ class Unit:
             logger.info(f"{self.name} cannot move - arrived from reserves this turn")
             return False
 
-        current_position = self.get_position()
-        if current_position is None:
-            logger.error(f"Cannot move unit {self.name}: current position is None")
+        # Get starting position from first model for feedback
+        if not self.models or not self.models[0].is_alive:
+            logger.error(f"Cannot move unit {self.name}: no valid models")
+            return False
+
+        first_model_pos = self.models[0].get_location()
+        if not first_model_pos:
+            logger.error(f"Cannot move unit {self.name}: first model has no position")
             return False
 
         # Store starting position for feedback
-        start_x, start_y = current_position[0], current_position[1]
-        start_z = current_position[2] if len(current_position) > 2 else 0
+        start_x, start_y = first_model_pos[0], first_model_pos[1]
+        start_z = first_model_pos[2] if len(first_model_pos) > 2 else 0
 
         # BACKUP ORIGINAL POSITIONS - Critical for proper rollback on failure
         original_model_positions = []
@@ -1239,8 +1251,7 @@ class Unit:
                 successful_moves += 1
                 logger.debug(f"Model {model._id} moved to {model_destination}, path distance: {distance_along_path:.1f}\"")
 
-        # Update unit centroid
-        self.reset_position()
+        # Unit position is now determined by model positions
         
         # Check if any movement occurred
         if successful_moves == 0:
@@ -1262,8 +1273,7 @@ class Unit:
                     model.is_alive = False
                     model.wounds_remaining = 0
                     
-            # Update unit status after model removal
-            self.reset_position()
+            # Unit position is now determined by model positions
             
             # Check if unit is still viable
             if not self.is_alive():
@@ -1272,8 +1282,11 @@ class Unit:
         
         # CRITICAL VALIDATION: Check for illegal overlaps after movement
         # This catches cases where models might be overlapping with enemies after movement
-        final_position = self.get_position()
-        end_x, end_y = final_position[0], final_position[1]
+        if self.models and self.models[0].is_alive:
+            final_position = self.models[0].get_location()
+            end_x, end_y = final_position[0], final_position[1]
+        else:
+            end_x, end_y = start_x, start_y  # Fallback to start position
         
         # Check for base overlaps with enemy models
         enemy_units = game_map.get_enemy_units(self)
@@ -1293,7 +1306,6 @@ class Unit:
                         for i, original_pos in enumerate(original_model_positions):
                             if i < len(self.models):
                                 self.models[i].set_location(*original_pos)
-                        self.reset_position()
                         return False
         
         # Calculate actual distance the unit moved
@@ -1322,14 +1334,19 @@ class Unit:
             logger.error(f"Cannot charge move unit {self.name}: no models in unit")
             return False
         
-        current_position = self.get_position()
-        if current_position is None:
-            logger.error(f"Cannot charge move unit {self.name}: current position is None")
+        # Get starting position from first model
+        if not self.models or not self.models[0].is_alive:
+            logger.error(f"Cannot charge move unit {self.name}: no valid models")
+            return False
+
+        first_model_pos = self.models[0].get_location()
+        if not first_model_pos:
+            logger.error(f"Cannot charge move unit {self.name}: first model has no position")
             return False
         
         # Store starting position for feedback and rollback
-        start_x, start_y = current_position[0], current_position[1]
-        start_z = current_position[2] if len(current_position) > 2 else 0
+        start_x, start_y = first_model_pos[0], first_model_pos[1]
+        start_z = first_model_pos[2] if len(first_model_pos) > 2 else 0
         
         # Store original model positions for potential rollback
         original_model_positions = []
@@ -1337,7 +1354,7 @@ class Unit:
             model_pos = model.get_location()
             original_model_positions.append(model_pos)
         
-        original_unit_position = self.get_position()
+        # Store original model positions for potential rollback
         
         # Calculate maximum charge distance available
         max_charge_distance = get_dist(
@@ -1561,8 +1578,7 @@ class Unit:
                     target_name = target_unit.name if target_unit else "closest enemy"
                     logger.debug(f"Model {model._id} charge moved {actual_distance_moved:.1f}\" towards {closest_enemy.name} (from {target_name})")
         
-        # Update unit centroid
-        self.reset_position()
+        # Unit position is now determined by model positions
         
         # Check if any movement occurred
         if successful_moves == 0:
@@ -1588,13 +1604,14 @@ class Unit:
                         for i, original_pos in enumerate(original_model_positions):
                             if i < len(self.models):
                                 self.models[i].set_location(*original_pos)
-                        if original_unit_position:
-                            self.position = original_unit_position
                         return False
         
-        # Get final position for feedback
-        final_position = self.get_position()
-        end_x, end_y = final_position[0], final_position[1]
+        # Get final position for feedback from first model
+        if self.models and self.models[0].is_alive:
+            final_position = self.models[0].get_location()
+            end_x, end_y = final_position[0], final_position[1]
+        else:
+            end_x, end_y = start_x, start_y  # Fallback to start position
         
         # Calculate actual distance the unit moved
         unit_distance_moved = get_dist(end_x - start_x, end_y - start_y)
@@ -1634,14 +1651,19 @@ class Unit:
             logger.error(f"Cannot fall back unit {self.name}: no models in unit")
             return False
         
-        current_position = self.get_position()
-        if current_position is None:
-            logger.error(f"Cannot fall back unit {self.name}: current position is None")
+        # Get starting position from first model
+        if not self.models or not self.models[0].is_alive:
+            logger.error(f"Cannot fall back unit {self.name}: no valid models")
             return False
-        
+
+        first_model_pos = self.models[0].get_location()
+        if not first_model_pos:
+            logger.error(f"Cannot fall back unit {self.name}: first model has no position")
+            return False
+
         # Store starting position for feedback
-        start_x, start_y = current_position[0], current_position[1]
-        start_z = current_position[2] if len(current_position) > 2 else 0
+        start_x, start_y = first_model_pos[0], first_model_pos[1]
+        start_z = first_model_pos[2] if len(first_model_pos) > 2 else 0
         
         # Fall Back movement distance is the unit's Move characteristic
         movement_range = self.movement
@@ -1760,8 +1782,7 @@ class Unit:
                 successful_moves += 1
                 logger.debug(f"Model {model._id} fell back to {model_destination}, path distance: {distance_along_path:.1f}\"")
         
-        # Update unit centroid
-        self.reset_position()
+        # Unit position is now determined by model positions
         
         # Check if any movement occurred
         if successful_moves == 0:
@@ -1792,9 +1813,12 @@ class Unit:
                         # The fall back move should have been validated during pathfinding
                         return False
         
-        # Get final position for feedback
-        final_position = self.get_position()
-        end_x, end_y = final_position[0], final_position[1]
+        # Get final position for feedback from first model
+        if self.models and self.models[0].is_alive:
+            final_position = self.models[0].get_location()
+            end_x, end_y = final_position[0], final_position[1]
+        else:
+            end_x, end_y = start_x, start_y  # Fallback to start position
         
         # Calculate actual distance the unit moved
         unit_distance_moved = get_dist(end_x - start_x, end_y - start_y)
@@ -2003,14 +2027,19 @@ class Unit:
             logger.error(f"Unit {self.name} is not deployed and cannot make scout move")
             return False
         
-        current_position = self.get_position()
-        if current_position is None:
-            logger.error(f"Cannot scout move unit {self.name}: current position is None")
+        # Get starting position from first model
+        if not self.models or not self.models[0].is_alive:
+            logger.error(f"Cannot scout move unit {self.name}: no valid models")
             return False
-        
+
+        first_model_pos = self.models[0].get_location()
+        if not first_model_pos:
+            logger.error(f"Cannot scout move unit {self.name}: first model has no position")
+            return False
+
         # Store starting position for feedback
-        start_x, start_y = current_position[0], current_position[1]
-        start_z = current_position[2] if len(current_position) > 2 else 0
+        start_x, start_y = first_model_pos[0], first_model_pos[1]
+        start_z = first_model_pos[2] if len(first_model_pos) > 2 else 0
         
         # Calculate straight-line distance to destination
         distance_to_destination = get_dist(
@@ -2030,13 +2059,21 @@ class Unit:
             if not enemy_unit.is_alive() or not enemy_unit.deployed:
                 continue
             
-            enemy_position = enemy_unit.get_position()
-            if enemy_position:
-                distance_to_enemy = get_dist(
-                    destination[0] - enemy_position[0],
-                    destination[1] - enemy_position[1],
-                    destination[2] - enemy_position[2] if len(enemy_position) > 2 else 0
-                )
+            # Check distance to closest model in enemy unit
+            closest_distance = float('inf')
+            for enemy_model in enemy_unit.models:
+                if enemy_model.is_alive:
+                    enemy_pos = enemy_model.get_location()
+                    if enemy_pos:
+                        distance = get_dist(
+                            destination[0] - enemy_pos[0],
+                            destination[1] - enemy_pos[1],
+                            destination[2] - enemy_pos[2] if len(enemy_pos) > 2 else 0
+                        )
+                        closest_distance = min(closest_distance, distance)
+
+            if closest_distance != float('inf'):
+                distance_to_enemy = closest_distance
                 
                 if distance_to_enemy < 9.0:
                     print(f"❌ {self.name} cannot scout move to destination - would end within 9\" of {enemy_unit.name}")
@@ -2140,8 +2177,7 @@ class Unit:
                 successful_moves += 1
                 logger.debug(f"Model {model._id} scout moved to {model_destination}, path distance: {distance_along_path:.1f}\"")
         
-        # Update unit centroid
-        self.reset_position()
+        # Unit position is now determined by model positions
         
         # Check if any movement occurred
         if successful_moves == 0:
@@ -2170,8 +2206,7 @@ class Unit:
                     model.is_alive = False
                     model.wounds_remaining = 0
                     
-            # Update unit status after model removal
-            self.reset_position()
+            # Unit position is now determined by model positions
             
             # Check if unit is still viable
             if not self.is_alive():
@@ -2197,9 +2232,12 @@ class Unit:
                         # The scout move should have been validated during pathfinding
                         return False
         
-        # Get final position for feedback
-        final_position = self.get_position()
-        end_x, end_y = final_position[0], final_position[1]
+        # Get final position for feedback from first model
+        if self.models and self.models[0].is_alive:
+            final_position = self.models[0].get_location()
+            end_x, end_y = final_position[0], final_position[1]
+        else:
+            end_x, end_y = start_x, start_y  # Fallback to start position
         
         # Calculate actual distance the unit moved
         unit_distance_moved = get_dist(end_x - start_x, end_y - start_y)
@@ -2408,7 +2446,12 @@ class Unit:
         """Check if shooting model has line of sight to target unit"""
         # Simplified line of sight check - can be enhanced with terrain
         shooting_pos = shooting_model.get_location()
-        target_pos = target_unit.get_position()
+        # Get position from first alive model in target unit
+        target_pos = None
+        for model in target_unit.models:
+            if model.is_alive:
+                target_pos = model.get_location()
+                break
         
         if not shooting_pos or not target_pos:
             return False
@@ -2759,7 +2802,13 @@ class Unit:
         if not objectives:
             return None
         
-        unit_position = self.get_position()
+        # Get position from first alive model
+        unit_position = None
+        for model in self.models:
+            if model.is_alive:
+                unit_position = model.get_location()
+                break
+
         if not unit_position:
             return objectives[0]  # Fallback to first objective
         
@@ -2974,41 +3023,23 @@ class Unit:
     def is_alive(self) -> bool:
         return len(self.models) > 0
 
-    def get_position(self):
-        if self.position is not None:
-            return self.position
-        elif self.models:
-            # Calculate the centroid of all model positions
-            x_sum = sum(model.get_location()[0] for model in self.models)
-            y_sum = sum(model.get_location()[1] for model in self.models)
-            z_sum = sum(model.get_location()[2] for model in self.models)
-            return (x_sum / len(self.models), y_sum / len(self.models), z_sum / len(self.models))
-        else:
-            return None
 
-    def reset_position(self):
-        if self.models:
-            # Calculate the centroid of all model positions
-            x_sum = sum(model.get_location()[0] for model in self.models)
-            y_sum = sum(model.get_location()[1] for model in self.models)
-            z_sum = sum(model.get_location()[2] for model in self.models)
-            self.x = x_sum / len(self.models)
-            self.y = y_sum / len(self.models)
-            self.z = z_sum / len(self.models)
-        else:
-            self.position = None
 
     def is_point_inside(self, x, y):
-        position = self.get_position()
-        if position is None:
-            return False
-        
-        center_x, center_y, _ = position
-        radius = self.coherency_distance  # Assuming this is defined elsewhere in the class
-        
-        # Check if the point is within the circular area defined by the unit's position and coherency distance
-        distance = get_dist(x - center_x, y - center_y)
-        return distance <= radius
+        # Check if point is within any model's base
+        for model in self.models:
+            if not model.is_alive:
+                continue
+            model_pos = model.get_location()
+            if model_pos:
+                # Check if point is within model's base radius
+                model_radius = getattr(model.model_base, 'radius', 1.0)
+                if isinstance(model_radius, (tuple, list)):
+                    model_radius = max(model_radius)  # Use larger radius for elliptical bases
+                distance = get_dist(x - model_pos[0], y - model_pos[1])
+                if distance <= model_radius:
+                    return True
+        return False
 
     def score_position(self, x, y, z, facing, game_map, model, placed_positions):
         """
@@ -3105,7 +3136,13 @@ class Unit:
         # Priority 1: Face nearest visible enemy unit
         for unit in game_map.units:
             if unit != self and unit.get_parent_army() != army and unit.is_alive():
-                enemy_pos = unit.get_position()
+                # Get position from first alive model in enemy unit
+                enemy_pos = None
+                for model in unit.models:
+                    if model.is_alive:
+                        enemy_pos = model.get_location()
+                        break
+
                 if enemy_pos:
                     distance = get_dist(x - enemy_pos[0], y - enemy_pos[1])
                     if distance < min_distance:
@@ -4251,8 +4288,7 @@ class Unit:
             for model in self.models:
                 model.set_location(position[0], position[1], position[2], 0.0)
         
-        # Calculate unit position from model positions
-        self.reset_position()
+        # Unit position is now determined by model positions
         
         # Update unit status
         self.deployed = True

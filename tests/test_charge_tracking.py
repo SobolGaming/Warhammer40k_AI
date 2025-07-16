@@ -62,11 +62,11 @@ class TestChargeTracking(unittest.TestCase):
         if self.unit.models:
             self.unit.models[0].set_location(10, 10, 0, 0)
         
-        # Create target unit
+        # Create target unit - position it further away so they're not in engagement range
         self.target = Unit(MockDatasheet("Target", model_count=1))
         self.target.deployed = True
         if self.target.models:
-            self.target.models[0].set_location(12, 10, 0, 0)
+            self.target.models[0].set_location(15, 10, 0, 0)  # 5" apart, outside engagement range
     
     def test_initial_charge_state(self):
         """Test that units start with no charge declaration."""
@@ -97,8 +97,12 @@ class TestChargeTracking(unittest.TestCase):
         """Test that units can charge again after round reset."""
         self.unit.round_state.declared_charge_this_round = True
         self.unit.initialize_round()
+
+        # Add units to the game map so distance calculation works
+        self.game.map.units = [self.unit, self.target]
+
         can_charge = self.unit.can_declare_charge_against(self.target, self.game)
-        self.assertTrue(can_charge, 
+        self.assertTrue(can_charge,
                        "Unit should be able to charge after round reset")
     
     def test_charge_eligibility_with_other_restrictions(self):

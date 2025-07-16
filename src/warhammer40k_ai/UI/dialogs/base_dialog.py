@@ -20,6 +20,7 @@ TEXT_SECONDARY = (200, 200, 200)  # Secondary text
 TEXT_DISABLED = (100, 100, 100)  # Disabled text
 TEXT_SUCCESS = (100, 255, 100)  # Success/completed text
 TEXT_WARNING = (255, 200, 100)  # Warning text
+TEXT_ERROR = (255, 100, 100)  # Error text
 
 
 class BaseDialog(ABC):

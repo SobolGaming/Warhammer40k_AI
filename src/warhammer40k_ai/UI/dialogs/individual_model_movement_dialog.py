@@ -168,7 +168,11 @@ class IndividualModelMovementDialog(BaseDialog):
         """
         if not self.visible:
             return False
-            
+
+        # Handle coherency dialog events first if it's open
+        if hasattr(self, 'coherency_dialog') and self.coherency_dialog.visible:
+            return self.coherency_dialog.handle_event(event)
+
         # Handle ESC key to close dialog
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             self.hide()
@@ -321,8 +325,7 @@ class IndividualModelMovementDialog(BaseDialog):
         # Store the movement path
         model.last_move_path = path
         
-        # Update unit centroid
-        self.unit.reset_position()
+        # Unit position is now determined by model positions
         
         print(f"✅ {model.name} (Model #{model_index + 1}) moved to ({final_position[0]:.1f}, {final_position[1]:.1f})")
         return True
@@ -340,42 +343,60 @@ class IndividualModelMovementDialog(BaseDialog):
         """Complete the movement phase and validate coherency"""
         if not self.unit:
             return
-            
+
         # Validate unit coherency
         from ...utility.calcs import validate_unit_coherency_after_movement
-        
+
         # Get final positions of all models
         final_positions = []
         for model in self.unit.models:
             final_positions.append(model.get_location())
-        
+
         is_coherent, non_coherent_models = validate_unit_coherency_after_movement(self.unit, final_positions)
-        
+
         if not is_coherent:
             print(f"⚠️  {self.unit.name} coherency violation!")
             print(f"⚠️  Models {non_coherent_models} are not coherent and must be removed from play")
-            
-            # Remove non-coherent models
-            for model_index in sorted(non_coherent_models, reverse=True):
-                if model_index < len(self.unit.models):
-                    model = self.unit.models[model_index]
-                    print(f"💀 Removing {model.name} from play due to coherency violation")
-                    model.is_alive = False
-                    model.wounds_remaining = 0
-                    
-            # Update unit after model removal
-            self.unit.reset_position()
-            
-            if not self.unit.is_alive():
-                print(f"💀 {self.unit.name} has been destroyed due to coherency violations")
-        
+
+            # Show coherency violation dialog for user to choose which models to remove
+            self._show_coherency_violation_dialog(non_coherent_models)
+        else:
+            # No coherency violations, complete normally
+            self._finalize_movement_completion()
+
+    def _show_coherency_violation_dialog(self, non_coherent_models: list):
+        """Show the coherency violation dialog"""
+        from ..coherency_violation_dialog import CoherencyViolationDialog
+
+        # Create and show the coherency dialog
+        coherency_dialog = CoherencyViolationDialog(self.screen_width, self.screen_height)
+        coherency_dialog.show(self.unit, non_coherent_models, self._on_coherency_resolution)
+
+        # Store reference to the dialog so it can be drawn and handled
+        self.coherency_dialog = coherency_dialog
+
+    def _on_coherency_resolution(self, models_removed: bool):
+        """Called when coherency violation dialog is complete"""
+        if models_removed:
+            print(f"✅ Coherency violations resolved for {self.unit.name}")
+        else:
+            print(f"❌ Coherency resolution cancelled for {self.unit.name}")
+
+        # Clean up dialog reference
+        if hasattr(self, 'coherency_dialog'):
+            delattr(self, 'coherency_dialog')
+
         # Complete the movement
+        self._finalize_movement_completion()
+
+    def _finalize_movement_completion(self):
+        """Finalize the movement completion"""
         print(f"✅ {self.unit.name} {self.movement_type} movement completed")
-        
+
         # Call callback with completion status
         if self.callback:
             self.callback(True)  # Movement completed
-            
+
         self.hide()
         
     def _skip_movement(self):
@@ -450,4 +471,8 @@ class IndividualModelMovementDialog(BaseDialog):
         
         # Draw control buttons using base class method
         self.draw_button(screen, 'complete', "Complete")
-        self.draw_button(screen, 'skip', "Skip") 
+        self.draw_button(screen, 'skip', "Skip")
+
+        # Draw coherency dialog if it's open
+        if hasattr(self, 'coherency_dialog') and self.coherency_dialog.visible:
+            self.coherency_dialog.draw(screen)

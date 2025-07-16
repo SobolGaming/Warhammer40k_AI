@@ -455,8 +455,14 @@ class ChargeDeclarationDialog:
         screen.blit(charge_surface, (self.x + 20, info_y + 20))
         
         # Unit position and movement info
-        if self.unit.get_position():
-            pos = self.unit.get_position()
+        first_model = None
+        for model in self.unit.models:
+            if model.is_alive:
+                first_model = model
+                break
+
+        if first_model:
+            pos = first_model.get_location()
             pos_text = f"Position: ({pos[0]:.1f}, {pos[1]:.1f})"
             pos_surface = self.font_small.render(pos_text, True, TEXT_SECONDARY)
             screen.blit(pos_surface, (self.x + 20, info_y + 40))
@@ -536,8 +542,14 @@ class ChargeDeclarationDialog:
             screen.blit(health_surface, (list_x + 10, list_y + i * target_height + 40))
 
             # Draw target position if available
-            if target.get_position():
-                pos = target.get_position()
+            first_target_model = None
+            for model in target.models:
+                if model.is_alive:
+                    first_target_model = model
+                    break
+
+            if first_target_model:
+                pos = first_target_model.get_location()
                 pos_text = f"Pos: ({pos[0]:.1f}, {pos[1]:.1f})"
                 pos_surface = self.font_small.render(pos_text, True, info_color)
                 screen.blit(pos_surface, (list_x + 250, list_y + i * target_height + 25))  # Moved right

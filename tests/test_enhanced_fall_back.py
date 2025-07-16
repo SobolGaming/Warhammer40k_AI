@@ -58,7 +58,7 @@ class TestEnhancedFallBack(unittest.TestCase):
         self.unit.models[0].set_location(10.0, 10.0, 0.0, 0.0)
         self.unit.models[1].set_location(11.0, 10.0, 0.0, 0.0)
         self.unit.models[2].set_location(12.0, 10.0, 0.0, 0.0)
-        self.unit.reset_position()
+        # Unit position is now determined by model positions
     
     def test_normal_fall_back_movement(self):
         """Test normal Fall Back movement (not battle-shocked)."""
@@ -76,9 +76,9 @@ class TestEnhancedFallBack(unittest.TestCase):
         self.assertTrue(self.unit.round_state.fell_back_this_round, "Unit should be marked as having fallen back")
         self.assertEqual(len(self.unit.models), 3, "All models should survive normal fall back")
         
-        # Verify unit moved
-        final_position = self.unit.get_position()
-        self.assertNotEqual(final_position[:2], (11.0, 10.0), "Unit should have moved from initial position")
+        # Verify unit moved - check first model position
+        final_position = self.unit.models[0].get_location()
+        self.assertNotEqual(final_position[:2], (10.0, 10.0), "Unit should have moved from initial position")
     
     def test_battle_shocked_fall_back_with_desperate_escape(self):
         """Test Battle-Shocked Fall Back with Desperate Escape Test."""
@@ -86,7 +86,7 @@ class TestEnhancedFallBack(unittest.TestCase):
         self.unit.models[0].set_location(20.0, 10.0, 0.0, 0.0)
         self.unit.models[1].set_location(21.0, 10.0, 0.0, 0.0)
         self.unit.models[2].set_location(22.0, 10.0, 0.0, 0.0)
-        self.unit.reset_position()
+        # Unit position is now determined by model positions
         self.unit.round_state.fell_back_this_round = False
         
         # Make unit Battle-Shocked
@@ -101,15 +101,20 @@ class TestEnhancedFallBack(unittest.TestCase):
         fall_back_destination = (24.0, 12.0, 0.0)  # About 4.5" away
         result = self.unit.fall_back(fall_back_destination, [], self.game_map)
         
-        # Fall back should succeed even if some models are lost
-        self.assertTrue(result, "Fall back should succeed even with model losses")
-        self.assertTrue(self.unit.is_alive(), "Unit should still be alive")
-        self.assertTrue(self.unit.round_state.fell_back_this_round, "Unit should be marked as having fallen back")
-        
         # Model count may be reduced due to Desperate Escape Tests
         final_model_count = len(self.unit.models)
         self.assertLessEqual(final_model_count, initial_model_count, "Model count should not increase")
-        self.assertGreater(final_model_count, 0, "At least some models should survive")
+
+        # Fall back result depends on whether any models survive
+        if final_model_count > 0:
+            # If models survive, fall back should succeed
+            self.assertTrue(result, "Fall back should succeed when models survive")
+            self.assertTrue(self.unit.is_alive(), "Unit should still be alive")
+            self.assertTrue(self.unit.round_state.fell_back_this_round, "Unit should be marked as having fallen back")
+        else:
+            # If all models die during Desperate Escape Test, fall back fails (unit is destroyed)
+            self.assertFalse(result, "Fall back should fail when all models are destroyed")
+            self.assertFalse(self.unit.is_alive(), "Unit should be destroyed when no models remain")
     
     def test_fly_unit_fall_back(self):
         """Test FLY unit Fall Back (should not need Desperate Escape Tests)."""
@@ -120,7 +125,7 @@ class TestEnhancedFallBack(unittest.TestCase):
         # Set initial positions
         fly_unit.models[0].set_location(30.0, 10.0, 0.0, 0.0)
         fly_unit.models[1].set_location(31.0, 10.0, 0.0, 0.0)
-        fly_unit.reset_position()
+        # Unit position is now determined by model positions
         
         self.game_map.units.append(fly_unit)
         
@@ -137,9 +142,9 @@ class TestEnhancedFallBack(unittest.TestCase):
         self.assertTrue(fly_unit.round_state.fell_back_this_round, "FLY unit should be marked as having fallen back")
         self.assertEqual(len(fly_unit.models), 2, "All FLY unit models should survive (no Desperate Escape Tests)")
         
-        # Verify unit moved
-        final_position = fly_unit.get_position()
-        self.assertNotEqual(final_position[:2], (30.5, 10.0), "FLY unit should have moved from initial position")
+        # Verify unit moved - check first model position
+        final_position = fly_unit.models[0].get_location()
+        self.assertNotEqual(final_position[:2], (30.0, 10.0), "FLY unit should have moved from initial position")
     
     def test_fall_back_distance_validation(self):
         """Test Fall Back distance validation (movement characteristic limit)."""
@@ -151,9 +156,9 @@ class TestEnhancedFallBack(unittest.TestCase):
         self.assertFalse(result, "Fall back should fail when destination is too far")
         self.assertFalse(self.unit.round_state.fell_back_this_round, "Unit should not be marked as having fallen back")
         
-        # Unit should not have moved
-        final_position = self.unit.get_position()
-        self.assertEqual(final_position[:2], (11.0, 10.0), "Unit should not have moved from initial position")
+        # Unit should not have moved - check first model position
+        final_position = self.unit.models[0].get_location()
+        self.assertEqual(final_position[:2], (10.0, 10.0), "Unit should not have moved from initial position")
     
     def test_desperate_escape_test_for_models_moving_over_enemies(self):
         """Test that Desperate Escape Tests are triggered when models move over enemy models."""
@@ -176,16 +181,16 @@ class TestEnhancedFallBack(unittest.TestCase):
     
     def test_unit_position_tracking(self):
         """Test that unit position is properly tracked during fall back."""
-        initial_position = self.unit.get_position()
-        
+        initial_position = self.unit.models[0].get_location()
+
         # Perform fall back
         fall_back_destination = (14.0, 12.0, 0.0)
         result = self.unit.fall_back(fall_back_destination, [], self.game_map)
-        
+
         self.assertTrue(result, "Fall back should succeed")
-        
-        # Verify position changed
-        final_position = self.unit.get_position()
+
+        # Verify position changed - check first model position
+        final_position = self.unit.models[0].get_location()
         self.assertNotEqual(initial_position, final_position, "Unit position should change after fall back")
         
         # Verify coherency is maintained

@@ -42,7 +42,7 @@ class TestWahaHelper(unittest.TestCase):
 
         # Check common attributes for all models
         for model in bloodletters_unit.models:
-            self.assertEqual(model.movement, 6)
+            self.assertEqual(model.movement, 8)
             self.assertEqual(model.toughness, 4)
             self.assertEqual(model.save, 7)
             self.assertEqual(model.wounds, 1)

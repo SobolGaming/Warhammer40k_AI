@@ -94,7 +94,7 @@ class TestFightPhaseManager(unittest.TestCase):
         unit.has_fight_first.return_value = fight_first
         
         # Set up position and engagement
-        unit.get_position.return_value = (10.0, 10.0, 0.0)
+        # Unit position is now determined by model positions - no need to mock get_position
         
         return unit
     
@@ -308,7 +308,7 @@ class TestUnitFightingEligibility(unittest.TestCase):
         self.unit.name = "Test Unit"
         self.unit.is_alive.return_value = True
         self.unit.deployed = True
-        self.unit.get_position.return_value = (10.0, 10.0, 0.0)
+        # Unit position is now determined by model positions - no need to mock get_position
         
         # Set up round state
         self.unit.round_state = Mock(spec=UnitRoundState)
@@ -331,9 +331,8 @@ class TestUnitFightingEligibility(unittest.TestCase):
                 return True
             
             # Check if unit is within engagement range
-            unit_position = self.unit.get_position.return_value
-            if not unit_position:
-                return False
+            # Since we removed get_position(), just assume unit has a position for mock tests
+            unit_position = (10.0, 10.0, 0.0)  # Mock position
             
             enemy_units = game_map.get_enemy_units.return_value or []
             for enemy_unit in enemy_units:

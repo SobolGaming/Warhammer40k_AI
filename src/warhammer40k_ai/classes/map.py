@@ -231,27 +231,39 @@ class Map:
 
     def is_path_blocked(self, unit: Unit, target: Unit) -> bool:
         """Check if there's a clear path between two units considering terrain and obstacles.
-        
+
         Args:
             unit (Unit): The unit checking the path
             target (Unit): The target unit
-            
+
         Returns:
             bool: True if path is blocked, False if clear
         """
-        # Get the positions of both units
-        unit_pos = unit.get_position()
-        target_pos = target.get_position()
-        
+        # Get the positions from first alive model in each unit
+        unit_pos = None
+        for model in unit.models:
+            if model.is_alive:
+                unit_pos = model.get_location()
+                break
+
+        target_pos = None
+        for model in target.models:
+            if model.is_alive:
+                target_pos = model.get_location()
+                break
+
+        if not unit_pos or not target_pos:
+            return True  # Consider path blocked if we can't determine positions
+
         # Create a line representing the path
         path = LineString([(unit_pos[0], unit_pos[1]), (target_pos[0], target_pos[1])])
-        
+
         # Check for intersections with obstacles
         for obstacle in self.obstacles:
             if path.intersects(obstacle.polygon):
                 if not can_traverse_freely(unit, obstacle):
                     return True  # Path is blocked
-        
+
         return False  # Path is clear
 
     def get_battlefield_edge_repulsors(self) -> List:

@@ -409,11 +409,17 @@ class Game:
                 if not existing_unit.deployed or existing_unit.reserve_status != 'deployed':
                     continue
                 
-                existing_pos = existing_unit.get_position()
-                if existing_pos:
-                    distance = ((x - existing_pos[0]) ** 2 + (y - existing_pos[1]) ** 2) ** 0.5
-                    if distance < min_distance:
-                        return True
+                # Check distance to closest model in existing unit
+                closest_distance = float('inf')
+                for model in existing_unit.models:
+                    if model.is_alive:
+                        model_pos = model.get_location()
+                        if model_pos:
+                            distance = ((x - model_pos[0]) ** 2 + (y - model_pos[1]) ** 2) ** 0.5
+                            closest_distance = min(closest_distance, distance)
+
+                if closest_distance < min_distance:
+                    return True
         
         return False
 
@@ -473,8 +479,7 @@ class Game:
             if not model_positions:
                 return False
             
-            # Calculate unit centroid position (same as manual)
-            unit.reset_position()
+            # Unit position is now determined by model positions
             
             # Place unit on map (same as manual)
             if self.map and self.map.place_unit(unit):

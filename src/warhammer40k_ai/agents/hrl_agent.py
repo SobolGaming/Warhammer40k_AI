@@ -951,7 +951,11 @@ class TacticalAgent:
                 new_z = self.game.map.get_height_at_point(new_x, new_y)
                 return (new_x, new_y, new_z)
         else:
-            return unit.get_position()
+            # Return position of first alive model
+            for model in unit.models:
+                if model.is_alive:
+                    return model.get_location()
+            return None
 
     def choose_movement_action(self, unit: Unit, available_actions: List[int], objective: Objective) -> int:
         state = self.extract_movement_state_features(unit, objective)
@@ -996,8 +1000,17 @@ class TacticalAgent:
 
     def extract_movement_state_features(self, unit: Unit, objective: Objective) -> torch.Tensor:
         features = []
-        unit_pos = unit.get_position()
-        features.extend([unit_pos[0], unit_pos[1], unit_pos[2]])
+        # Get position from first alive model
+        unit_pos = None
+        for model in unit.models:
+            if model.is_alive:
+                unit_pos = model.get_location()
+                break
+
+        if unit_pos:
+            features.extend([unit_pos[0], unit_pos[1], unit_pos[2]])
+        else:
+            features.extend([0.0, 0.0, 0.0])  # Default position if no alive models
         obj_pos = (objective.location.x, objective.location.y, objective.location.z)
         features.extend([obj_pos[0], obj_pos[1], obj_pos[2]])
         dx = obj_pos[0] - unit_pos[0]
