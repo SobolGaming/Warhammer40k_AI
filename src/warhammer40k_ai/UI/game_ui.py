@@ -992,6 +992,7 @@ class HumanUIInterface:
         """Show the scout move dialog for a unit."""
         print(f"🔍 HumanUIInterface.show_scout_dialog called for {unit.name}")
         self.scout_choice_dialog.show(unit, callback, game_map)
+        print(f"🔍 DEBUG: Scout dialog show() completed, visible={self.scout_choice_dialog.visible}")
     
     def show_fight_unit_selection_dialog(self, stage_name: str, eligible_units: List['Unit'], 
                                         on_unit_selected: Callable[['Unit'], None], 
@@ -3159,7 +3160,6 @@ class PhaseManager:
     def handle_event(self, event: pygame.event.Event) -> bool:
         """Route event to appropriate phase handler"""
         handler = self.get_current_handler()
-
         return handler.handle_event(event)
     
     def get_current_allowed_actions(self) -> List[str]:
@@ -3378,25 +3378,41 @@ class PreBattlePhaseHandler(BasePhaseHandler):
         self.mouse_pos = None
         # Get all eligible human scout units in correct order
         game = self.game_view.game
-        first_turn_player = game.get_current_player()
+        
+        # During setup phase, use first_turn_player_index instead of current_player_index
+        if game.first_turn_player_index is not None:
+            first_turn_player = game.players[game.first_turn_player_index]
+        else:
+            # Fallback to attacker if first turn not determined yet
+            first_turn_player = game.get_attacker() if game.attacker_index is not None else game.players[0]
+        
         players_in_order = [first_turn_player] + [p for p in game.players if p != first_turn_player]
+        print(f"🔍 DEBUG: Scout phase players in order: {[p.name for p in players_in_order]}")
         
         for player in players_in_order:
             if player.type.name == 'HUMAN' and player.get_army():
+                print(f"🔍 DEBUG: Checking {player.name}'s units for scout ability")
                 for unit in player.get_army().units:
                     has_scout, scout_distance = unit.has_scout()
+                    print(f"🔍 DEBUG: {unit.name} - has_scout={has_scout}, deployed={unit.deployed}, reserve_status={unit.reserve_status}, scout_move_made={getattr(unit, 'scout_move_made', False)}")
                     if has_scout and unit.deployed and unit.reserve_status == 'deployed' and not getattr(unit, 'scout_move_made', False):
                         self.scout_units_queue.append((unit, player, scout_distance))
+                        print(f"🔍 DEBUG: Added {unit.name} to scout queue")
+        
+        print(f"🔍 DEBUG: Scout queue has {len(self.scout_units_queue)} units: {[unit.name for unit, player, distance in self.scout_units_queue]}")
         self._next_scout_unit()
 
     def _next_scout_unit(self):
+        print(f"🔍 DEBUG: _next_scout_unit called, queue has {len(self.scout_units_queue)} units")
         if self.scout_units_queue:
             unit, player, scout_distance = self.scout_units_queue.pop(0)
+            print(f"🔍 DEBUG: Processing next scout unit: {unit.name} (Player: {player.name})")
             self.current_scout_unit = unit
             self.scout_distance = scout_distance
             self.awaiting_battlefield_click = False
             self._show_scout_dialog(unit)
         else:
+            print(f"🔍 DEBUG: Scout queue is empty, scout phase complete")
             self.current_scout_unit = None
             self.awaiting_battlefield_click = False
             self.scout_callback = None
@@ -3405,10 +3421,13 @@ class PreBattlePhaseHandler(BasePhaseHandler):
             print("✅ All human SCOUT moves complete. Press SPACE to continue.")
 
     def _show_scout_dialog(self, unit):
+        print(f"🔍 DEBUG: _show_scout_dialog called for {unit.name}")
         def on_scout_choice(choice):
+            print(f"🔍 DEBUG: Scout choice for {unit.name}: {choice}")
             if choice == 'scout':
                 # Open individual model movement dialog for scout movement
                 def on_scout_movement_complete(completed: bool):
+                    print(f"🔍 DEBUG: Scout movement complete for {unit.name}: completed={completed}")
                     if completed:
                         print(f"✅ {unit.name} scout movement completed")
                         unit.scout_move_made = True
@@ -3424,7 +3443,10 @@ class PreBattlePhaseHandler(BasePhaseHandler):
                 unit.scout_move_made = True
                 print(f"✅ {unit.name} scout move skipped")
                 self._next_scout_unit()
+        print(f"🔍 DEBUG: About to call ui_interface.show_scout_dialog for {unit.name}")
         self.game_view.ui_interface.show_scout_dialog(unit, on_scout_choice, self.game_view.game.map)
+        print(f"🔍 DEBUG: ui_interface.show_scout_dialog completed for {unit.name}")
+        print(f"🔍 DEBUG: Scout dialog visible: {self.game_view.ui_interface.scout_choice_dialog.visible}")
 
     def _validate_scout_destination(self, unit, destination: Tuple[float, float]) -> dict:
         """Validate if a destination is valid for a scout move."""
@@ -3459,16 +3481,21 @@ class PreBattlePhaseHandler(BasePhaseHandler):
         
         # If a scout dialog is visible, let it handle the event
         if self.game_view.ui_interface.scout_choice_dialog.visible:
+            print(f"🔍 DEBUG: PreBattlePhaseHandler: Scout dialog visible, handling event")
             return self.game_view.ui_interface.scout_choice_dialog.handle_event(event)
+        else:
+            print(f"🔍 DEBUG: PreBattlePhaseHandler: Scout dialog not visible (visible={self.game_view.ui_interface.scout_choice_dialog.visible})")
         
         # Handle individual model movement dialog (for scout moves)
         if (hasattr(self.game_view, 'individual_model_movement_dialog') and
             self.game_view.individual_model_movement_dialog.visible):
-            return self.game_view.individual_model_movement_dialog.handle_event(event)
+            if self.game_view.individual_model_movement_dialog.handle_event(event):
+                return True
         
         # Handle battlefield clicks for individual model movement during scout phase
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:  # Left click
             x, y = event.pos
+            
             # Check if clicking on battlefield area
             if ROSTER_PANE_WIDTH < x < BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH:
                 # Check if individual model movement dialog is active

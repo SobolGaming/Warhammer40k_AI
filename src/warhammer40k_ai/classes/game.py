@@ -1743,7 +1743,13 @@ class Game:
         print(f"🔍 Found {len(scout_units)} units with Scout ability")
         
         # Sort units by player (first turn player goes first)
-        first_turn_player = self.get_current_player()
+        # During setup phase, use first_turn_player_index instead of current_player_index
+        if self.first_turn_player_index is not None:
+            first_turn_player = self.players[self.first_turn_player_index]
+        else:
+            # Fallback to attacker if first turn not determined yet
+            first_turn_player = self.get_attacker() if self.attacker_index is not None else self.players[0]
+        
         scout_units_by_player = {}
         
         for player, unit, scout_distance in scout_units:

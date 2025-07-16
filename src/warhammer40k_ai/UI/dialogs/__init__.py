@@ -1,3 +1,4 @@
+from .base_dialog import BaseDialog
 from .charge_declaration_dialog import ChargeDeclarationDialog
 from .deployment_choice_dialog import DeploymentChoiceDialog
 from .fight_unit_selection_dialog import FightUnitSelectionDialog
@@ -10,6 +11,7 @@ from .shooting_declaration_dialog import ShootingDeclarationDialog
 from .weapon_choice_dialog import WeaponChoiceDialog
 
 __all__ = [
+    'BaseDialog',
     'ChargeDeclarationDialog',
     'DeploymentChoiceDialog',
     'FightUnitSelectionDialog',

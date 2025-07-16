@@ -1471,7 +1471,11 @@ class OptimizedPathfindingEnvironment:
                 continue
                 
             # Determine if unit is friendly or enemy
-            is_enemy = unit.allegiance != self.moving_unit.allegiance
+            # Units are enemies if they belong to different players
+            is_enemy = False
+            if (unit.parent_army and unit.parent_army.player and 
+                self.moving_unit.parent_army and self.moving_unit.parent_army.player):
+                is_enemy = unit.parent_army.player != self.moving_unit.parent_army.player
             
             for model in unit.models:
                 if not model.is_alive:

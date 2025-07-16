@@ -56,11 +56,12 @@ class ScoutChoiceDialog:
     
     def show(self, unit, callback, game_map=None):
         """Show the dialog for the given unit"""
-        #print(f"🔍 ScoutChoiceDialog.show called for {unit.name}")
+        print(f"🔍 ScoutChoiceDialog.show called for {unit.name}")
         self.unit = unit
         self.callback = callback
         self.game_map = game_map
         self.visible = True
+        print(f"🔍 DEBUG: ScoutChoiceDialog.visible set to {self.visible}")
         
         # Get scout distance from unit
         has_scout, scout_distance = unit.has_scout()
@@ -69,9 +70,11 @@ class ScoutChoiceDialog:
             self.scout_distance = scout_distance
         else:
             self.scout_distance = 0.0
+        print(f"🔍 DEBUG: ScoutChoiceDialog.show completed for {unit.name}")
     
     def hide(self):
         """Hide the dialog"""
+        print(f"🔍 DEBUG: ScoutChoiceDialog.hide called")
         self.visible = False
         self.unit = None
         self.callback = None
@@ -106,6 +109,7 @@ class ScoutChoiceDialog:
     def handle_event(self, event):
         """Handle pygame events"""
         if not self.visible:
+            print(f"🔍 DEBUG: ScoutChoiceDialog.handle_event called but not visible")
             return False
         
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -133,12 +137,15 @@ class ScoutChoiceDialog:
     
     def handle_click(self, mouse_pos):
         """Handle mouse clicks"""
+        print(f"🔍 DEBUG: ScoutChoiceDialog.handle_click called with mouse_pos={mouse_pos}")
         if self.scout_button.collidepoint(mouse_pos) and self.can_scout():
+            print(f"🔍 DEBUG: Scout button clicked")
             if self.callback:
                 self.callback('scout')
             self.hide()
             return True
         elif self.skip_button.collidepoint(mouse_pos):
+            print(f"🔍 DEBUG: Skip button clicked")
             if self.callback:
                 self.callback('skip')
             self.hide()
@@ -164,9 +171,10 @@ class ScoutChoiceDialog:
     def draw(self, screen):
         """Draw the dialog"""
         if not self.visible or not self.unit:
+            print(f"🔍 DEBUG: ScoutChoiceDialog.draw called but not visible or no unit")
             return
         
-        #print(f"🔍 Drawing scout dialog for {self.unit.name}")
+        print(f"🔍 DEBUG: Drawing scout dialog for {self.unit.name}")
         
         # Draw semi-transparent overlay only around the dialog area
         overlay = pygame.Surface((self.width + 40, self.height + 40))

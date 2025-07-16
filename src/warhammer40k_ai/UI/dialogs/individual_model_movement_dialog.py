@@ -1,37 +1,20 @@
 import pygame
 from typing import List, Optional, Callable, Dict, Any
+from .base_dialog import BaseDialog, TEXT_SUCCESS, TEXT_WARNING, BUTTON_SELECTED
 
-# Font sizes
-FONT_MEDIUM = 16
-FONT_SMALL = 14
-
-# Enhanced Colors
-PANEL_BG = (45, 45, 48)  # Dark background
-PANEL_BORDER = (63, 63, 70)  # Subtle border
-BUTTON_BG = (60, 60, 67)  # Button background
-BUTTON_HOVER = (75, 75, 82)  # Button hover
-BUTTON_SELECTED = (100, 150, 200)  # Selected model
-BUTTON_DISABLED = (40, 40, 40)  # Disabled button
-TEXT_PRIMARY = (255, 255, 255)  # Primary text
-TEXT_SECONDARY = (200, 200, 200)  # Secondary text
-TEXT_DISABLED = (100, 100, 100)  # Disabled text
-TEXT_SUCCESS = (100, 255, 100)  # Success/completed text
-TEXT_WARNING = (255, 200, 100)  # Warning text
+# Additional colors specific to this dialog
 HIGHLIGHT_COLOR = (255, 255, 0)  # Yellow for model highlighting
 
 
-class IndividualModelMovementDialog:
+class IndividualModelMovementDialog(BaseDialog):
     """Dialog for moving individual models within a unit during movement phases"""
     
     def __init__(self, screen_width: int, screen_height: int):
-        self.screen_width = screen_width
-        self.screen_height = screen_height
-        self.width = 600
-        self.height = 400
-        self.visible = False
+        super().__init__(screen_width, screen_height, width=600, height=400, draggable=True)
+        
+        # Dialog-specific state
         self.unit = None
         self.movement_type = None  # 'move', 'advance', 'fall_back', 'scout'
-        self.callback = None
         self.game_map = None
         self.max_distance = 0.0
         
@@ -40,61 +23,43 @@ class IndividualModelMovementDialog:
         self.selected_model_index = None
         self.awaiting_battlefield_click = False
         
-        # Dragging functionality
-        self.dragging = False
-        self.drag_offset_x = 0
-        self.drag_offset_y = 0
-        
-        # Calculate position (center of screen)
-        self.x = (screen_width - self.width) // 2
-        self.y = (screen_height - self.height) // 2
-        
-        # Fonts
-        try:
-            self.font_medium = pygame.font.SysFont('Arial', FONT_MEDIUM, bold=True)
-            self.font_small = pygame.font.SysFont('Arial', FONT_SMALL, bold=False)
-        except:
-            self.font_medium = pygame.font.Font(None, FONT_MEDIUM)
-            self.font_small = pygame.font.Font(None, FONT_SMALL)
-        
         # UI elements
         self.model_buttons = []
-        self.complete_button_rect = None
-        self.skip_button_rect = None
-        self.title_bar_rect = None
         
     def show(self, unit, movement_type: str, callback: Callable, game_map, max_distance: float = None):
         """Show the dialog for the given unit and movement type"""
+        # Call parent show method
+        super().show(callback)
+        
+        # Dialog-specific initialization
         self.unit = unit
         self.movement_type = movement_type
-        self.callback = callback
         self.game_map = game_map
         self.max_distance = max_distance or unit.movement
-        self.visible = True
         
         # Reset movement tracking
         self.model_movements = {}
         self.selected_model_index = None
         self.awaiting_battlefield_click = False
-        self.dragging = False
         
-        # Initialize model buttons
+        # Initialize model buttons and dialog buttons
         self._create_model_buttons()
+        self._create_dialog_buttons()
         
         print(f"🎯 Individual model movement dialog opened for {unit.name} ({movement_type})")
         print(f"📍 Select a model, then click on the battlefield to move it")
         
     def hide(self):
         """Hide the dialog"""
-        self.visible = False
+        super().hide()
+        
+        # Clean up dialog-specific state
         self.unit = None
         self.movement_type = None
-        self.callback = None
         self.game_map = None
         self.model_movements = {}
         self.selected_model_index = None
         self.awaiting_battlefield_click = False
-        self.dragging = False
         
     def _create_model_buttons(self):
         """Create buttons for each model in the unit"""
@@ -109,8 +74,8 @@ class IndividualModelMovementDialog:
         button_spacing = 5
         models_per_row = 3
         
-        start_x = self.x + 20
-        start_y = self.y + 80
+        start_x = 20  # Relative to dialog
+        start_y = 80  # Relative to dialog
         
         for i, model in enumerate(self.unit.models):
             if not model.is_alive:
@@ -122,80 +87,57 @@ class IndividualModelMovementDialog:
             button_x = start_x + col * (button_width + button_spacing)
             button_y = start_y + row * (button_height + button_spacing)
             
-            button_rect = pygame.Rect(button_x, button_y, button_width, button_height)
+            # Store relative position for re-positioning during drag
             self.model_buttons.append({
-                'rect': button_rect,
+                'rect': pygame.Rect(self.x + button_x, self.y + button_y, button_width, button_height),
                 'model_index': i,
-                'model': model
+                'model': model,
+                'relative_x': button_x,
+                'relative_y': button_y,
+                'width': button_width,
+                'height': button_height
             })
+    
+    def _create_dialog_buttons(self):
+        """Create the Complete and Skip buttons using base dialog button system"""
+        # Add Complete button
+        self.add_button('complete', self.width - 180, self.height - 50, 80, 35)
         
-        # Create control buttons
-        self.complete_button_rect = pygame.Rect(self.x + self.width - 180, self.y + self.height - 50, 80, 35)
-        self.skip_button_rect = pygame.Rect(self.x + self.width - 90, self.y + self.height - 50, 80, 35)
+        # Add Skip button  
+        self.add_button('skip', self.width - 90, self.height - 50, 80, 35)
         
-        # Title bar for dragging
-        self.title_bar_rect = pygame.Rect(self.x, self.y, self.width, 50)
-        
-    def handle_event(self, event: pygame.event.Event) -> bool:
-        """Handle pygame events for the dialog"""
-        if not self.visible:
-            return False
-            
-        # Handle ESC key to close dialog
-        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-            self.hide()
+    def _handle_button_click(self, button_name: str) -> bool:
+        """Handle button click events from base class"""
+        if button_name == 'complete':
+            self._complete_movement()
             return True
-        
-        # Handle mouse events for dragging
-        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:  # Left click
-            mouse_pos = event.pos
-            
-            # Ensure button positions are up-to-date before checking clicks
-            self._create_model_buttons()
-            
-            # Check if clicking on title bar to start dragging
-            if self.title_bar_rect and self.title_bar_rect.collidepoint(mouse_pos):
-                self.dragging = True
-                self.drag_offset_x = mouse_pos[0] - self.x
-                self.drag_offset_y = mouse_pos[1] - self.y
-                return True
-                
-            # Check complete button
-            if self.complete_button_rect and self.complete_button_rect.collidepoint(mouse_pos):
-                self._complete_movement()
-                return True
-                
-            # Check skip button
-            if self.skip_button_rect and self.skip_button_rect.collidepoint(mouse_pos):
-                self._skip_movement()
-                return True
-                
-            # Check model buttons
-            for button in self.model_buttons:
-                if button['rect'].collidepoint(mouse_pos):
-                    self._select_model(button['model_index'])
-                    return True
-                    
-        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:  # Left click release
-            if self.dragging:
-                self.dragging = False
-                return True
-                
-        elif event.type == pygame.MOUSEMOTION:
-            if self.dragging:
-                # Update dialog position
-                self.x = event.pos[0] - self.drag_offset_x
-                self.y = event.pos[1] - self.drag_offset_y
-                
-                # Keep dialog within screen bounds
-                self.x = max(0, min(self.screen_width - self.width, self.x))
-                self.y = max(0, min(self.screen_height - self.height, self.y))
-                
-                # Update button positions
-                self._create_model_buttons()
-                return True
-                
+        elif button_name == 'skip':
+            self._skip_movement()
+            return True
         return False
+    
+    def _handle_dialog_click(self, mouse_pos) -> bool:
+        """Handle clicks within dialog area"""
+        # Update model button positions
+        self._update_model_buttons()
+        
+        # Check model buttons
+        for button in self.model_buttons:
+            if button['rect'].collidepoint(mouse_pos):
+                self._select_model(button['model_index'])
+                return True
+        return False
+    
+    def _update_model_buttons(self):
+        """Update model button positions when dialog is moved"""
+        for button in self.model_buttons:
+            button['rect'].x = self.x + button['relative_x']
+            button['rect'].y = self.y + button['relative_y']
+    
+    def _update_buttons(self):
+        """Override base class method to also update model buttons"""
+        super()._update_buttons()
+        self._update_model_buttons()
         
     def _select_model(self, model_index: int):
         """Select a model for movement"""
@@ -218,6 +160,96 @@ class IndividualModelMovementDialog:
     def get_highlighted_model_index(self) -> Optional[int]:
         """Get the index of the currently highlighted model for battlefield rendering"""
         return self.selected_model_index
+    
+    def handle_event(self, event: pygame.event.Event) -> bool:
+        """
+        Handle pygame events for the dialog.
+        Override base class to handle battlefield clicks specially.
+        """
+        if not self.visible:
+            return False
+            
+        # Handle ESC key to close dialog
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+            self.hide()
+            return True
+        
+        # Handle mouse events
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:  # Left click
+            mouse_pos = event.pos
+            
+            # Ensure button positions are up-to-date
+            self._update_buttons()
+            
+            # Check if clicking on title bar to start dragging
+            if self.draggable and self.title_bar_rect and self.title_bar_rect.collidepoint(mouse_pos):
+                self.dragging = True
+                self.drag_offset_x = mouse_pos[0] - self.x
+                self.drag_offset_y = mouse_pos[1] - self.y
+                return True
+            
+            # Check button clicks
+            for button_name, button_rect in self.buttons.items():
+                if button_rect.collidepoint(mouse_pos):
+                    if self._handle_button_click(button_name):
+                        return True
+            
+            # Check if click is within dialog bounds
+            dialog_rect = pygame.Rect(self.x, self.y, self.width, self.height)
+            if dialog_rect.collidepoint(mouse_pos):
+                # Let subclass handle the click
+                if self._handle_dialog_click(mouse_pos):
+                    return True
+            else:
+                # Click outside dialog - special handling for battlefield clicks
+                if self.awaiting_battlefield_click:
+                    # Don't close dialog, let the parent handler process the battlefield click
+                    return False
+                else:
+                    # Click outside dialog without a model selected - show helpful message
+                    print(f"⚠️  Please select a model first, then click on the battlefield to move it")
+                    print(f"📍 Or press ESC to close the dialog")
+                    # Don't close dialog, let user try again
+                    return True
+                
+        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:  # Left click release
+            if self.dragging:
+                self.dragging = False
+                return True
+                
+        elif event.type == pygame.MOUSEMOTION:
+            if self.dragging:
+                # Update dialog position
+                self.x = event.pos[0] - self.drag_offset_x
+                self.y = event.pos[1] - self.drag_offset_y
+                
+                # Keep dialog within screen bounds
+                self.x = max(0, min(self.screen_width - self.width, self.x))
+                self.y = max(0, min(self.screen_height - self.height, self.y))
+                
+                # Update button positions
+                self._update_title_bar()
+                self._update_buttons()
+                return True
+            else:
+                # Update hover state
+                self._update_hover(event.pos)
+                return True
+        
+        # Let subclass handle other events
+        return self._handle_other_events(event)
+    
+    def _handle_other_events(self, event: pygame.event.Event) -> bool:
+        """Handle other events not processed by the main event handler"""
+        return False
+    
+    def _update_hover(self, mouse_pos):
+        """Update hover state for buttons"""
+        self.hovered_button = None
+        for button_name, button_rect in self.buttons.items():
+            if button_rect.collidepoint(mouse_pos):
+                self.hovered_button = button_name
+                break
         
     def handle_battlefield_click(self, battlefield_x: float, battlefield_y: float, battlefield_z: float) -> bool:
         """Handle battlefield click for model movement"""
@@ -241,17 +273,24 @@ class IndividualModelMovementDialog:
                 print(f"✅ All models in {self.unit.name} have been moved")
                 # Auto-complete after short delay or continue allowing more moves
                 
-        # Reset selection
-        self.selected_model_index = None
-        self.awaiting_battlefield_click = False
+            # Reset selection only on successful movement
+            self.selected_model_index = None
+            self.awaiting_battlefield_click = False
+        else:
+            # On failure, keep the model selected and continue waiting for battlefield clicks
+            print(f"❌ Movement failed for {self.unit.models[self.selected_model_index].name}")
+            print(f"🔄 Model remains selected. Try clicking on a valid location.")
         
         return success
         
     def _move_model(self, model_index: int, destination) -> bool:
         """Move a specific model to the destination"""
         if model_index >= len(self.unit.models):
+            print(f"❌ Invalid model index: {model_index}")
             return False
             
+        model = self.unit.models[model_index]
+        
         # Use the individual model movement pathfinding
         from ...utility.calcs import get_individual_model_movement_path
         
@@ -260,15 +299,24 @@ class IndividualModelMovementDialog:
         )
         
         if not path:
-            print(f"❌ No valid path found for {self.unit.models[model_index].name}")
+            # Calculate distance to provide better feedback
+            current_pos = model.get_location()
+            distance = ((destination[0] - current_pos[0])**2 + (destination[1] - current_pos[1])**2)**0.5
+            
+            print(f"❌ No valid path found for {model.name} (Model #{model_index + 1})")
+            if distance > self.max_distance:
+                print(f"   Distance: {distance:.1f}\" > Max: {self.max_distance:.1f}\"")
+            else:
+                print(f"   Path blocked by obstacles or other models")
+            print(f"   Try clicking closer or on a clear area")
             return False
             
         # Move the model along the path
-        model = self.unit.models[model_index]
         final_position = path[-1]
         
-        # Update model position
-        model.set_location(final_position[0], final_position[1], final_position[2])
+        # Update model position (preserve current facing)
+        current_facing = model.model_base.facing if hasattr(model.model_base, 'facing') else 0.0
+        model.set_location(final_position[0], final_position[1], final_position[2], current_facing)
         
         # Store the movement path
         model.last_move_path = path
@@ -346,31 +394,15 @@ class IndividualModelMovementDialog:
             return
             
         # Draw dialog background
-        dialog_rect = pygame.Rect(self.x, self.y, self.width, self.height)
-        pygame.draw.rect(screen, PANEL_BG, dialog_rect)
-        pygame.draw.rect(screen, PANEL_BORDER, dialog_rect, 2)
+        self.draw_dialog_background(screen)
         
-        # Draw title bar (draggable area)
-        title_bar_rect = pygame.Rect(self.x, self.y, self.width, 50)
-        pygame.draw.rect(screen, (55, 55, 58), title_bar_rect)
-        pygame.draw.rect(screen, PANEL_BORDER, title_bar_rect, 1)
-        
-        # Draw title
-        title_text = f"Individual Model Movement: {self.unit.name}"
-        title_surface = self.font_medium.render(title_text, True, TEXT_PRIMARY)
-        screen.blit(title_surface, (self.x + 20, self.y + 15))
-        
-        # Draw drag hint
-        drag_hint = "[Drag to move]"
-        drag_surface = self.font_small.render(drag_hint, True, TEXT_SECONDARY)
-        screen.blit(drag_surface, (self.x + 20, self.y + 35))
-        
-        # Draw movement type and distance info
-        info_text = f"{self.movement_type.title()} Movement (Max: {self.max_distance:.1f}\")"
-        info_surface = self.font_small.render(info_text, True, TEXT_SECONDARY)
-        screen.blit(info_surface, (self.x + 20, self.y + 60))
+        # Draw title bar
+        title = f"Individual Model Movement: {self.unit.name}"
+        subtitle = f"{self.movement_type.title()} Movement (Max: {self.max_distance:.1f}\")"
+        self.draw_title_bar(screen, title, subtitle)
         
         # Draw model buttons
+        self._update_model_buttons()
         for button in self.model_buttons:
             model_index = button['model_index']
             model = button['model']
@@ -379,20 +411,20 @@ class IndividualModelMovementDialog:
             # Determine button state
             if model_index == self.selected_model_index:
                 button_color = BUTTON_SELECTED
-                text_color = TEXT_PRIMARY
+                text_color = (255, 255, 255)  # TEXT_PRIMARY
             elif model_index in self.model_movements and self.model_movements[model_index]['completed']:
                 button_color = (100, 150, 100)  # Green for completed
                 text_color = TEXT_SUCCESS
             elif not model.is_alive:
-                button_color = BUTTON_DISABLED
-                text_color = TEXT_DISABLED
+                button_color = (40, 40, 40)  # BUTTON_DISABLED
+                text_color = (100, 100, 100)  # TEXT_DISABLED
             else:
-                button_color = BUTTON_BG
-                text_color = TEXT_PRIMARY
+                button_color = (60, 60, 67)  # BUTTON_BG
+                text_color = (255, 255, 255)  # TEXT_PRIMARY
                 
             # Draw button
             pygame.draw.rect(screen, button_color, rect)
-            pygame.draw.rect(screen, PANEL_BORDER, rect, 1)
+            pygame.draw.rect(screen, (63, 63, 70), rect, 1)  # PANEL_BORDER
             
             # Draw model name with number and status
             model_name = f"#{model_index + 1}: {model.name}"
@@ -411,22 +443,11 @@ class IndividualModelMovementDialog:
             instruction_color = TEXT_WARNING
         else:
             instruction_text = "Select a model, then click on battlefield to move it. ESC to close."
-            instruction_color = TEXT_SECONDARY
+            instruction_color = (200, 200, 200)  # TEXT_SECONDARY
             
         instruction_surface = self.font_small.render(instruction_text, True, instruction_color)
         screen.blit(instruction_surface, (self.x + 20, self.y + self.height - 80))
         
-        # Draw control buttons
-        if self.complete_button_rect:
-            pygame.draw.rect(screen, BUTTON_BG, self.complete_button_rect)
-            pygame.draw.rect(screen, PANEL_BORDER, self.complete_button_rect, 1)
-            complete_text = self.font_small.render("Complete", True, TEXT_PRIMARY)
-            complete_rect = complete_text.get_rect(center=self.complete_button_rect.center)
-            screen.blit(complete_text, complete_rect)
-            
-        if self.skip_button_rect:
-            pygame.draw.rect(screen, BUTTON_BG, self.skip_button_rect)
-            pygame.draw.rect(screen, PANEL_BORDER, self.skip_button_rect, 1)
-            skip_text = self.font_small.render("Skip", True, TEXT_PRIMARY)
-            skip_rect = skip_text.get_rect(center=self.skip_button_rect.center)
-            screen.blit(skip_text, skip_rect) 
+        # Draw control buttons using base class method
+        self.draw_button(screen, 'complete', "Complete")
+        self.draw_button(screen, 'skip', "Skip") 
