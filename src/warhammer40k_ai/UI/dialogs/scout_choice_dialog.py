@@ -130,7 +130,6 @@ class ScoutChoiceDialog:
                 # 'K' key for Skip
                 if self.callback:
                     self.callback('skip')
-                self.hide()
                 return True
         
         return True  # Consume all events when visible
@@ -148,7 +147,6 @@ class ScoutChoiceDialog:
             print(f"🔍 DEBUG: Skip button clicked")
             if self.callback:
                 self.callback('skip')
-            self.hide()
             return True
         
         # Click outside dialog - close it
