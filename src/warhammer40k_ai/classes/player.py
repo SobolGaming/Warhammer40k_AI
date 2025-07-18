@@ -72,11 +72,21 @@ class Player:
         distances = []
         for unit in self.get_army().units:
             if unit.is_alive() and unit.deployed:
-                unit_pos = unit.get_position()
+                # Find the model closest to the objective
                 obj_pos = (objective.location.x, objective.location.y, objective.location.z)
-                distances.append(get_dist(unit_pos[0] - obj_pos[0],
-                                        unit_pos[1] - obj_pos[1],
-                                        unit_pos[2] - obj_pos[2]))
+                closest_distance = float('inf')
+
+                for model in unit.models:
+                    if model.is_alive:
+                        model_pos = model.get_location()
+                        distance = get_dist(model_pos[0] - obj_pos[0],
+                                          model_pos[1] - obj_pos[1],
+                                          model_pos[2] - obj_pos[2])
+                        if distance < closest_distance:
+                            closest_distance = distance
+
+                if closest_distance != float('inf'):
+                    distances.append(closest_distance)
         return sum(distances) / len(distances) if distances else 0.0
 
     def __str__(self):

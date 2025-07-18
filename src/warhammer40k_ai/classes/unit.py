@@ -2801,28 +2801,31 @@ class Unit:
         """Find the closest objective to this unit."""
         if not objectives:
             return None
-        
-        # Get position from first alive model
-        unit_position = None
-        for model in self.models:
-            if model.is_alive:
-                unit_position = model.get_location()
-                break
 
-        if not unit_position:
+        if not self.models:
             return objectives[0]  # Fallback to first objective
-        
+
         closest_objective = None
         closest_distance = float('inf')
-        
+
         for objective in objectives:
             if hasattr(objective, 'location') and hasattr(objective.location, 'x'):
-                dx = objective.location.x - unit_position[0]
-                dy = objective.location.y - unit_position[1]
-                distance = (dx*dx + dy*dy) ** 0.5
-                
-                if distance < closest_distance:
-                    closest_distance = distance
+                obj_pos = (objective.location.x, objective.location.y, objective.location.z)
+
+                # Find the model in this unit that's closest to this objective
+                min_distance_to_obj = float('inf')
+                for model in self.models:
+                    if model.is_alive:
+                        model_pos = model.get_location()
+                        distance = get_dist(model_pos[0] - obj_pos[0],
+                                          model_pos[1] - obj_pos[1],
+                                          model_pos[2] - obj_pos[2])
+                        if distance < min_distance_to_obj:
+                            min_distance_to_obj = distance
+
+                # Check if this objective is the closest overall
+                if min_distance_to_obj < closest_distance:
+                    closest_distance = min_distance_to_obj
                     closest_objective = objective
         
         return closest_objective
@@ -3136,18 +3139,21 @@ class Unit:
         # Priority 1: Face nearest visible enemy unit
         for unit in game_map.units:
             if unit != self and unit.get_parent_army() != army and unit.is_alive():
-                # Get position from first alive model in enemy unit
-                enemy_pos = None
+                # Find the closest model in the enemy unit to our position
+                closest_enemy_distance = float('inf')
+                closest_enemy_pos = None
+
                 for model in unit.models:
                     if model.is_alive:
                         enemy_pos = model.get_location()
-                        break
+                        distance = get_dist(x - enemy_pos[0], y - enemy_pos[1])
+                        if distance < closest_enemy_distance:
+                            closest_enemy_distance = distance
+                            closest_enemy_pos = enemy_pos
 
-                if enemy_pos:
-                    distance = get_dist(x - enemy_pos[0], y - enemy_pos[1])
-                    if distance < min_distance:
-                        min_distance = distance
-                        best_target = enemy_pos
+                if closest_enemy_pos and closest_enemy_distance < min_distance:
+                    min_distance = closest_enemy_distance
+                    best_target = closest_enemy_pos
         
         # Priority 2: If no enemies, face towards objectives
         if not best_target and hasattr(game_map, 'objectives'):

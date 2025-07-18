@@ -366,7 +366,7 @@ class IndividualModelMovementDialog(BaseDialog):
 
     def _show_coherency_violation_dialog(self, non_coherent_models: list):
         """Show the coherency violation dialog"""
-        from ..coherency_violation_dialog import CoherencyViolationDialog
+        from .coherency_violation_dialog import CoherencyViolationDialog
 
         # Create and show the coherency dialog
         coherency_dialog = CoherencyViolationDialog(self.screen_width, self.screen_height)

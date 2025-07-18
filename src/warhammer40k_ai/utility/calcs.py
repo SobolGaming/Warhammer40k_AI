@@ -1264,7 +1264,17 @@ def footprint_from_offsets(offsets, unit):
     the convex-hull-buffer footprint Polygon.
     """
     polys = []
-    cx, cy = unit.get_position()[:2]
+    # Get position from first alive model
+    first_model = None
+    for model in unit.models:
+        if model.is_alive:
+            first_model = model
+            break
+
+    if not first_model:
+        return Polygon()  # Return empty polygon if no alive models
+
+    cx, cy = first_model.get_location()[:2]
     for (dx,dy), m in zip(offsets, unit.models):
         base = m.model_base.get_base_shape()
         polys.append(translate(base, cx+dx - m.model_base.x,

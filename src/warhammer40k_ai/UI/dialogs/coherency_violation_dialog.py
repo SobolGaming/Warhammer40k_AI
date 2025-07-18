@@ -97,6 +97,22 @@ class CoherencyViolationDialog(BaseDialog):
             'auto_remove': pygame.Rect(self.x + 430, self.y + self.height - 100, 120, 40),
             'cancel': pygame.Rect(self.x + 300, self.y + self.height - 50, 120, 40)
         }
+
+        # Initialize button states with proper positioning info
+        self.button_states = {
+            'remove_selected': {
+                'hovered': False, 'pressed': False, 'enabled': True, 'state': 'normal',
+                'relative_x': 300, 'relative_y': self.height - 100, 'width': 120, 'height': 40
+            },
+            'auto_remove': {
+                'hovered': False, 'pressed': False, 'enabled': True, 'state': 'normal',
+                'relative_x': 430, 'relative_y': self.height - 100, 'width': 120, 'height': 40
+            },
+            'cancel': {
+                'hovered': False, 'pressed': False, 'enabled': True, 'state': 'normal',
+                'relative_x': 300, 'relative_y': self.height - 50, 'width': 120, 'height': 40
+            }
+        }
     
     def handle_event(self, event: pygame.event.Event) -> bool:
         """Handle pygame events for the dialog"""
@@ -130,7 +146,20 @@ class CoherencyViolationDialog(BaseDialog):
                 return True
         
         return super().handle_event(event)
-    
+
+    def _handle_button_click(self, button_name: str) -> bool:
+        """Handle button click events. Return True if handled."""
+        if button_name == 'remove_selected':
+            self._remove_selected_models()
+            return True
+        elif button_name == 'auto_remove':
+            self._auto_remove_models()
+            return True
+        elif button_name == 'cancel':
+            self._cancel_removal()
+            return True
+        return False
+
     def _remove_selected_models(self):
         """Remove the selected models from play"""
         selected_models = [btn['model_index'] for btn in self.model_buttons if btn['selected']]

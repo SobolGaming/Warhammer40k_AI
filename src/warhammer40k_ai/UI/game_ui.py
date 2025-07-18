@@ -1414,6 +1414,72 @@ class GameView:
                                          self.movement_action, self.movement_preview_target,
                                          self.zoom_level, self.offset_x, self.offset_y, self.game.map)
 
+        # Draw movement range indicator for individual model movement dialog
+        if (hasattr(self, 'individual_model_movement_dialog') and
+            self.individual_model_movement_dialog.visible and
+            self.individual_model_movement_dialog.unit and
+            self.individual_model_movement_dialog.selected_model_index is not None):
+
+            unit = self.individual_model_movement_dialog.unit
+            model_index = self.individual_model_movement_dialog.selected_model_index
+
+            if model_index < len(unit.models):
+                selected_model = unit.models[model_index]
+                movement_type = self.individual_model_movement_dialog.movement_type
+                max_distance = self.individual_model_movement_dialog.max_distance
+
+                # Draw range circle for the selected model
+                draw_individual_model_movement_range(battlefield_surface, selected_model, movement_type,
+                                                   max_distance, self.zoom_level, self.offset_x, self.offset_y)
+
+                # Draw real-time path preview if mouse is hovering over battlefield
+                if hasattr(self, 'individual_model_preview_target') and self.individual_model_preview_target:
+                    print(f"🔍 DEBUG: Drawing path preview for model {model_index} to {self.individual_model_preview_target}")
+                    # Use existing path preview function with the selected model
+                    from ..utility.calcs import get_movement_path_preview
+
+                    path_result = get_movement_path_preview(
+                        selected_model,
+                        self.individual_model_preview_target,
+                        max_distance,
+                        self.game.map
+                    )
+
+                    print(f"🔍 DEBUG: Path result - valid: {path_result['valid']}, path length: {len(path_result['path']) if path_result['path'] else 0}")
+
+                    # Draw the path preview using existing visualization
+                    if path_result['valid'] and path_result['path']:
+                        # Choose color based on movement type
+                        if movement_type == 'scout':
+                            path_color = (0, 255, 255)  # Cyan for scout
+                        elif movement_type == 'move':
+                            path_color = (0, 255, 0)    # Green for move
+                        elif movement_type == 'advance':
+                            path_color = (255, 255, 0)  # Yellow for advance
+                        elif movement_type == 'fall_back':
+                            path_color = (255, 165, 0)  # Orange for fall back
+                        else:
+                            path_color = (0, 255, 0)    # Default green
+                    else:
+                        path_color = (255, 0, 0)        # Red for invalid path
+
+                    # Draw path using existing logic
+                    if path_result['path'] and len(path_result['path']) > 1:
+                        path_points = []
+                        for pos in path_result['path']:
+                            screen_x = int(pos[0] * TILE_SIZE * self.zoom_level + self.offset_x)
+                            screen_y = int(pos[1] * TILE_SIZE * self.zoom_level + self.offset_y)
+                            path_points.append((screen_x, screen_y))
+
+                        if len(path_points) > 1:
+                            pygame.draw.lines(battlefield_surface, path_color, False, path_points, 3)
+
+                        # Draw target indicator
+                        final_pos = path_result['path'][-1]
+                        final_screen_x = int(final_pos[0] * TILE_SIZE * self.zoom_level + self.offset_x)
+                        final_screen_y = int(final_pos[1] * TILE_SIZE * self.zoom_level + self.offset_y)
+                        pygame.draw.circle(battlefield_surface, path_color, (final_screen_x, final_screen_y), 8, 2)
+
         # Draw weapon range indicator if a unit is selected for shooting
         if (hasattr(self, 'selected_unit') and self.selected_unit and 
             hasattr(self, 'selected_weapon_profile') and self.selected_weapon_profile):
@@ -2917,7 +2983,13 @@ class BattlePhaseHandler(BasePhaseHandler):
                 enemy_units = self.game.get_enemy_units(unit.get_parent_army().player)
                 for enemy_unit in enemy_units:
                     if enemy_unit.is_alive() and enemy_unit.deployed:
-                        enemy_pos = enemy_unit.get_position()
+                        # Get position from first alive model
+                        enemy_pos = None
+                        for model in enemy_unit.models:
+                            if model.is_alive:
+                                enemy_pos = model.get_location()
+                                break
+
                         if enemy_pos:
                             distance_to_enemy = ((destination[0] - enemy_pos[0]) ** 2 +
                                                (destination[1] - enemy_pos[1]) ** 2) ** 0.5
@@ -3133,6 +3205,7 @@ class BattlePhaseHandler(BasePhaseHandler):
     def _handle_battle_motion(self, mouse_pos) -> bool:
         """Handle mouse motion during battle phases"""
         x, y = mouse_pos
+        print(f"🔍 DEBUG: _handle_battle_motion called with ({x}, {y})")
 
         # Update hover states for UI components
         if hasattr(self.game_view, 'shooting_declaration_dialog') and self.game_view.shooting_declaration_dialog.visible:
@@ -3161,6 +3234,35 @@ class BattlePhaseHandler(BasePhaseHandler):
             else:
                 # Clear preview when mouse leaves battlefield
                 self.game_view.movement_preview_target = None
+
+        # Track mouse position for individual model movement preview
+        if (hasattr(self.game_view, 'individual_model_movement_dialog') and
+            self.game_view.individual_model_movement_dialog.visible and
+            self.game_view.individual_model_movement_dialog.selected_model_index is not None):
+
+            print(f"🔍 DEBUG: Individual model dialog active, mouse at ({x}, {y})")
+
+            # Check if mouse is over battlefield area
+            if ROSTER_PANE_WIDTH < x < BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH:
+                # Convert to game coordinates
+                battlefield_x = (x - ROSTER_PANE_WIDTH - self.game_view.offset_x) / (TILE_SIZE * self.game_view.zoom_level)
+                battlefield_y = (y - self.game_view.offset_y) / (TILE_SIZE * self.game_view.zoom_level)
+
+                # Store mouse position for individual model movement preview
+                self.game_view.individual_model_preview_target = (battlefield_x, battlefield_y)
+                print(f"🔍 DEBUG: Set individual_model_preview_target to ({battlefield_x:.1f}, {battlefield_y:.1f})")
+                return True
+            else:
+                # Clear preview when mouse leaves battlefield
+                self.game_view.individual_model_preview_target = None
+                print(f"🔍 DEBUG: Cleared individual_model_preview_target (mouse outside battlefield)")
+        else:
+            # Debug why individual model preview is not active
+            if hasattr(self.game_view, 'individual_model_movement_dialog'):
+                dialog = self.game_view.individual_model_movement_dialog
+                if dialog.visible:
+                    print(f"🔍 DEBUG: Individual model dialog visible but selected_model: {dialog.selected_model_index}")
+            # Don't spam debug when dialog is not visible
 
         # Update roster pane hovers
         if self.game_view.left_roster_pane.rect.collidepoint(x, y):
@@ -3280,6 +3382,51 @@ class PhaseManager:
             print("✅ Coherency violations resolved")
         else:
             print("❌ Coherency resolution cancelled")
+
+
+def draw_individual_model_movement_range(screen: pygame.Surface, model, movement_type: str, max_distance: float, zoom_level: float, offset_x: int, offset_y: int) -> None:
+    """Draw a visual indicator showing the movement range for an individual model"""
+    if not model or not model.is_alive or max_distance <= 0:
+        return
+
+    # Get model position
+    model_location = model.get_location()
+    current_position = (model_location[0], model_location[1], model_location[2])
+
+    # Convert model position to screen coordinates
+    center_x = int(current_position[0] * TILE_SIZE * zoom_level + offset_x)
+    center_y = int(current_position[1] * TILE_SIZE * zoom_level + offset_y)
+
+    # Calculate radius in screen pixels
+    radius = int(max_distance * TILE_SIZE * zoom_level)
+
+    # Choose color based on movement type
+    if movement_type == 'scout':
+        color = (0, 255, 255, 64)  # Cyan for scout moves
+        border_color = (0, 200, 200)
+    elif movement_type == 'move':
+        color = (0, 255, 0, 64)  # Green for normal move
+        border_color = (0, 200, 0)
+    elif movement_type == 'advance':
+        color = (255, 255, 0, 64)  # Yellow for advance
+        border_color = (200, 200, 0)
+    elif movement_type == 'fall_back':
+        color = (255, 165, 0, 64)  # Orange for fall back
+        border_color = (200, 130, 0)
+    else:
+        color = (128, 128, 128, 64)  # Gray for other types
+        border_color = (100, 100, 100)
+
+    if radius > 0:
+        # Create a surface with per-pixel alpha for the range circle
+        range_surface = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
+        pygame.draw.circle(range_surface, color, (radius, radius), radius)
+
+        # Blit the transparent range circle onto the battlefield
+        screen.blit(range_surface, (center_x - radius, center_y - radius))
+
+        # Draw the border circle
+        pygame.draw.circle(screen, border_color, (center_x, center_y), radius, 2)
 
 
 def draw_movement_range(screen: pygame.Surface, unit, movement_action, zoom_level: float, offset_x: int, offset_y: int, advance_roll=None, selected_model=None) -> None:
@@ -3731,6 +3878,9 @@ class PreBattlePhaseHandler(BasePhaseHandler):
         return path_result
 
     def handle_event(self, event: pygame.event.Event) -> bool:
+        if event.type == pygame.MOUSEMOTION:
+            print(f"🔍 DEBUG: PreBattlePhaseHandler received MOUSEMOTION event at {event.pos}")
+
         # Track mouse position for visual feedback
         if event.type == pygame.MOUSEMOTION and self.awaiting_battlefield_click:
             self.mouse_pos = event.pos
@@ -3747,7 +3897,44 @@ class PreBattlePhaseHandler(BasePhaseHandler):
             self.game_view.individual_model_movement_dialog.visible):
             if self.game_view.individual_model_movement_dialog.handle_event(event):
                 return True
-        
+
+        # Handle mouse motion for path preview during individual model movement
+        if event.type == pygame.MOUSEMOTION:
+            print(f"🔍 DEBUG: PreBattlePhaseHandler mouse motion event received")
+
+            # Debug: Check individual model movement dialog visibility
+            has_dialog = hasattr(self.game_view, 'individual_model_movement_dialog')
+            print(f"🔍 DEBUG: has_dialog={has_dialog}")
+
+            if has_dialog:
+                dialog_obj = self.game_view.individual_model_movement_dialog
+                dialog_visible = dialog_obj.visible
+                dialog_unit = getattr(dialog_obj, 'unit', None)
+                unit_name = dialog_unit.name if dialog_unit else None
+                print(f"🔍 DEBUG: Mouse motion - has_dialog={has_dialog}, dialog_visible={dialog_visible}, dialog_unit={unit_name}")
+
+                if dialog_visible:
+                    x, y = event.pos
+                    print(f"🔍 DEBUG: PreBattlePhaseHandler individual model mouse motion at ({x}, {y})")
+
+                    # Check if mouse is over battlefield area
+                    if ROSTER_PANE_WIDTH < x < BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH:
+                        # Convert to game coordinates
+                        battlefield_x = (x - ROSTER_PANE_WIDTH - self.game_view.offset_x) / (TILE_SIZE * self.game_view.zoom_level)
+                        battlefield_y = (y - self.game_view.offset_y) / (TILE_SIZE * self.game_view.zoom_level)
+
+                        # Store mouse position for individual model movement preview
+                        self.game_view.individual_model_preview_target = (battlefield_x, battlefield_y)
+                        print(f"🔍 DEBUG: PreBattlePhaseHandler set individual_model_preview_target to ({battlefield_x:.1f}, {battlefield_y:.1f})")
+                        return True
+                    else:
+                        # Clear preview when mouse leaves battlefield
+                        self.game_view.individual_model_preview_target = None
+                        print(f"🔍 DEBUG: PreBattlePhaseHandler cleared individual_model_preview_target (mouse outside battlefield)")
+                        return True
+            else:
+                print(f"🔍 DEBUG: Mouse motion - has_dialog={has_dialog}")
+
         # Handle battlefield clicks for individual model movement during scout phase
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:  # Left click
             x, y = event.pos

@@ -1002,17 +1002,34 @@ class Game:
             return False
 
         # Charge roll is sufficient - now attempt the movement
-        charging_pos = charging_unit.get_position()
-        target_pos = target_unit.get_position()
-        
+        # Find the closest models between the two units for accurate distance calculation
+        charging_pos = None
+        target_pos = None
+        closest_distance = float('inf')
+
+        for charging_model in charging_unit.models:
+            if not charging_model.is_alive:
+                continue
+            for target_model in target_unit.models:
+                if not target_model.is_alive:
+                    continue
+
+                c_pos = charging_model.get_location()
+                t_pos = target_model.get_location()
+                distance = get_dist(c_pos[0] - t_pos[0], c_pos[1] - t_pos[1], c_pos[2] - t_pos[2])
+
+                if distance < closest_distance:
+                    closest_distance = distance
+                    charging_pos = c_pos
+                    target_pos = t_pos
+
         if not charging_pos or not target_pos:
             print(f"❌ Charge failed: invalid positions")
             return False
-        
+
         # CRITICAL: Store original model positions BEFORE attempting movement
         # This allows proper rollback if charge fails to achieve engagement range
         original_model_positions = []
-        original_unit_position = charging_unit.get_position()
         for model in charging_unit.models:
             original_model_positions.append(model.get_location())
         
@@ -1058,9 +1075,7 @@ class Game:
                     if i < len(charging_unit.models):
                         charging_unit.models[i].set_location(*original_pos)
                 
-                # Restore unit position
-                if original_unit_position:
-                    charging_unit.position = original_unit_position
+                # Unit position is now derived from model positions, no need to restore
                 
                 return False
         else:
@@ -1073,9 +1088,7 @@ class Game:
                 if i < len(charging_unit.models):
                     charging_unit.models[i].set_location(*original_pos)
             
-            # Restore unit position
-            if original_unit_position:
-                charging_unit.position = original_unit_position
+            # Unit position is now derived from model positions, no need to restore
             
             return False
     

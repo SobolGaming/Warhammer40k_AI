@@ -740,10 +740,17 @@ class HighLevelAgent:
         enemy_positions = []
         for enemy_unit in self.opponent.get_army().units:
             if enemy_unit.deployed:
-                enemy_pos = enemy_unit.get_position()
-                enemy_positions.extend([enemy_pos[0], enemy_pos[1]])
-                if len(enemy_positions) >= 4:  # Limit to 2 enemy positions
-                    break
+                # Get position from first alive model
+                enemy_pos = None
+                for model in enemy_unit.models:
+                    if model.is_alive:
+                        enemy_pos = model.get_location()
+                        break
+
+                if enemy_pos:
+                    enemy_positions.extend([enemy_pos[0], enemy_pos[1]])
+                    if len(enemy_positions) >= 4:  # Limit to 2 enemy positions
+                        break
         
         # Pad enemy positions
         while len(enemy_positions) < 4:
@@ -883,7 +890,16 @@ class TacticalAgent:
         destination = self.calculate_destination(unit, chosen_action, objective)
 
         # Record the previous distance to the objective
-        unit_position_before = unit.get_position()
+        # Get position from first alive model
+        unit_position_before = None
+        for model in unit.models:
+            if model.is_alive:
+                unit_position_before = model.get_location()
+                break
+
+        if not unit_position_before:
+            return  # No alive models
+
         dx_before = objective.location.x - unit_position_before[0]
         dy_before = objective.location.y - unit_position_before[1]
         dz_before = objective.location.z - unit_position_before[2]
@@ -925,11 +941,20 @@ class TacticalAgent:
         self.movement_rewards.append(reward)
 
     def calculate_destination(self, unit: Unit, action: MovementAction, objective: Objective) -> Tuple[float, float, float]:
+        # Get position from first alive model
+        unit_position = None
+        for model in unit.models:
+            if model.is_alive:
+                unit_position = model.get_location()
+                break
+
+        if not unit_position:
+            return None
+
         if action == MovementAction.REMAIN_STATIONARY:
-            return unit.get_position()
+            return unit_position
         elif action in [MovementAction.MOVE, MovementAction.ADVANCE]:
             # Move towards the objective
-            unit_position = unit.get_position()
             obj_position = (objective.location.x, objective.location.y, objective.location.z)
             # Calculate direction vector
             dx = obj_position[0] - unit_position[0]
@@ -1867,8 +1892,17 @@ class TacticalAgent:
         
         for enemy in targets[:MAX_TARGETS]:
             features.append(profile.get_damage_potential(enemy))
-            enemy_pos = enemy.get_position()
-            features.extend([enemy_pos[0], enemy_pos[1], enemy_pos[2]])
+            # Get position from first alive model in enemy unit
+            enemy_pos = None
+            for model in enemy.models:
+                if model.is_alive:
+                    enemy_pos = model.get_location()
+                    break
+
+            if enemy_pos:
+                features.extend([enemy_pos[0], enemy_pos[1], enemy_pos[2]])
+            else:
+                features.extend([0.0, 0.0, 0.0])  # Default if no alive models
             features.append(enemy.health_percent)
         
         num_targets = len(targets)
@@ -2847,7 +2881,16 @@ class AIDeploymentDecisionMaker(DeploymentDecisionMaker):
             if not enemy_unit.is_alive() or not enemy_unit.deployed:
                 continue
                 
-            enemy_pos = enemy_unit.get_position()
+            # Get position from first alive model in enemy unit
+            enemy_pos = None
+            for model in enemy_unit.models:
+                if model.is_alive:
+                    enemy_pos = model.get_location()
+                    break
+
+            if not enemy_pos:
+                continue
+
             distance = get_dist(
                 enemy_pos[0] - position[0],
                 enemy_pos[1] - position[1],
@@ -2957,10 +3000,20 @@ class AIDeploymentDecisionMaker(DeploymentDecisionMaker):
             if not enemy_unit.is_alive() or not enemy_unit.deployed:
                 continue
                 
+            # Get position from first alive model in enemy unit
+            enemy_pos = None
+            for model in enemy_unit.models:
+                if model.is_alive:
+                    enemy_pos = model.get_location()
+                    break
+
+            if not enemy_pos:
+                continue
+
             distance = get_dist(
-                enemy_unit.get_position()[0] - position[0],
-                enemy_unit.get_position()[1] - position[1],
-                enemy_unit.get_position()[2] - position[2]
+                enemy_pos[0] - position[0],
+                enemy_pos[1] - position[1],
+                enemy_pos[2] - position[2]
             )
             
             # Bonus for good threatening positions
