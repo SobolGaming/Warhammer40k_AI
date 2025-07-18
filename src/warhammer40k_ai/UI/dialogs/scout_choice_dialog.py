@@ -111,27 +111,44 @@ class ScoutChoiceDialog:
         if not self.visible:
             print(f"🔍 DEBUG: ScoutChoiceDialog.handle_event called but not visible")
             return False
-        
+
+        # Debug: Log all events handled by this dialog
+        dialog_name = self.__class__.__name__
+        if event.type == pygame.KEYDOWN:
+            print(f"🔍 DEBUG: {dialog_name}.handle_event - KEYDOWN: key={pygame.key.name(event.key)}")
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            print(f"🔍 DEBUG: {dialog_name}.handle_event - MOUSEBUTTONDOWN: button={event.button}, pos={event.pos}")
+        elif event.type == pygame.MOUSEBUTTONUP:
+            print(f"🔍 DEBUG: {dialog_name}.handle_event - MOUSEBUTTONUP: button={event.button}, pos={event.pos}")
+        elif event.type == pygame.MOUSEMOTION:
+            print(f"🔍 DEBUG: {dialog_name}.handle_event - MOUSEMOTION: pos={event.pos}")
+        else:
+            print(f"🔍 DEBUG: {dialog_name}.handle_event - OTHER: type={event.type}")
+
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            print(f"🔍 DEBUG: {dialog_name} - Left click, delegating to handle_click")
             return self.handle_click(event.pos)
         elif event.type == pygame.MOUSEMOTION:
             self.update_hover(event.pos)
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
+                print(f"🔍 DEBUG: {dialog_name} - ESC key pressed, hiding dialog")
                 self.hide()
                 return True
             elif event.key == pygame.K_s and self.can_scout():
+                print(f"🔍 DEBUG: {dialog_name} - 'S' key pressed for Scout")
                 # 'S' key for Scout
                 if self.callback:
                     self.callback('scout')
                 self.hide()
                 return True
             elif event.key == pygame.K_k:
+                print(f"🔍 DEBUG: {dialog_name} - 'K' key pressed for Skip")
                 # 'K' key for Skip
                 if self.callback:
                     self.callback('skip')
                 return True
-        
+
         return True  # Consume all events when visible
     
     def handle_click(self, mouse_pos):

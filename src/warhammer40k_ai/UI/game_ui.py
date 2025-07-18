@@ -964,29 +964,45 @@ class HumanUIInterface:
     def handle_event(self, event):
         """Handle pygame events for all UI components."""
         handled = False
-        
+
+        # Debug: Log event type and which dialogs are visible
+        if event.type in [pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP]:
+            event_name = "KEYDOWN" if event.type == pygame.KEYDOWN else ("MOUSEBUTTONDOWN" if event.type == pygame.MOUSEBUTTONDOWN else "MOUSEBUTTONUP")
+            print(f"🔍 DEBUG: HumanUIInterface.handle_event - {event_name}")
+            print(f"🔍 DEBUG: Dialog visibility - deployment:{self.deployment_choice_dialog.visible}, reserves:{self.reserves_dialog.visible}, scout:{self.scout_choice_dialog.visible}, fight:{self.fight_unit_selection_dialog.visible}")
+
         # Let deployment choice dialog handle events first (highest priority)
         if self.deployment_choice_dialog.visible:
+            print(f"🔍 DEBUG: HumanUIInterface - Delegating to deployment_choice_dialog")
             handled = self.deployment_choice_dialog.handle_event(event)
-        
+
         # Let reserves dialog handle events
         if not handled and self.reserves_dialog.visible:
+            print(f"🔍 DEBUG: HumanUIInterface - Delegating to reserves_dialog")
             handled = self.reserves_dialog.handle_event(event)
-        
+
         # Let reserves arrival panel handle events
         if not handled and self.reserves_arrival_panel.visible:
+            print(f"🔍 DEBUG: HumanUIInterface - Delegating to reserves_arrival_panel")
             handled = self.reserves_arrival_panel.handle_event(event)
-        
+
         # Let scout choice dialog handle events
         if not handled and self.scout_choice_dialog.visible:
+            print(f"🔍 DEBUG: HumanUIInterface - Delegating to scout_choice_dialog")
             handled = self.scout_choice_dialog.handle_event(event)
-        
+
         # Let fight unit selection dialog handle events
         if not handled and self.fight_unit_selection_dialog.visible:
+            print(f"🔍 DEBUG: HumanUIInterface - Delegating to fight_unit_selection_dialog")
             handled = self.fight_unit_selection_dialog.handle_event(event)
-        
+
         # Note: melee weapon declaration dialog events are now handled directly through game_view instance
-        
+
+        if handled:
+            print(f"🔍 DEBUG: HumanUIInterface - Event was handled by a dialog")
+        else:
+            print(f"🔍 DEBUG: HumanUIInterface - Event was not handled by any dialog")
+
         return handled
 
     def show_scout_dialog(self, unit, callback, game_map=None):
@@ -1106,16 +1122,42 @@ class GameView:
 
     def handle_pygame_event(self, event):
         """Handle pygame events using phase-based routing."""
+        # Debug: Log all events received by GameView
+        if event.type in [pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION]:
+            event_name = {
+                pygame.KEYDOWN: "KEYDOWN",
+                pygame.MOUSEBUTTONDOWN: "MOUSEBUTTONDOWN",
+                pygame.MOUSEBUTTONUP: "MOUSEBUTTONUP",
+                pygame.MOUSEMOTION: "MOUSEMOTION"
+            }.get(event.type, f"TYPE_{event.type}")
+
+            if event.type == pygame.KEYDOWN:
+                print(f"🔍 DEBUG: GameView.handle_pygame_event - {event_name}: key={pygame.key.name(event.key)}")
+            elif event.type in [pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP]:
+                print(f"🔍 DEBUG: GameView.handle_pygame_event - {event_name}: button={event.button}, pos={event.pos}")
+            elif event.type == pygame.MOUSEMOTION:
+                # Only log mouse motion occasionally to avoid spam
+                if hasattr(self, '_last_motion_log') and pygame.time.get_ticks() - self._last_motion_log < 100:
+                    pass  # Skip logging
+                else:
+                    print(f"🔍 DEBUG: GameView.handle_pygame_event - {event_name}: pos={event.pos}")
+                    self._last_motion_log = pygame.time.get_ticks()
+
         # PRIORITY 0: Handle unit detail panel escape key
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             if self.detailed_unit and hasattr(self.unit_detail_panel, 'handle_event') and hasattr(self.unit_detail_panel, 'visible') and self.unit_detail_panel.visible:
+                print(f"🔍 DEBUG: GameView - Delegating ESC to unit detail panel")
                 if self.unit_detail_panel.handle_event(event):
                     self.close_unit_details()
                     return True
-        
+
         # PRIORITY 1: Let phase manager handle phase-specific events first
+        print(f"🔍 DEBUG: GameView - Delegating to phase manager")
         if self.phase_manager.handle_event(event):
+            print(f"🔍 DEBUG: GameView - Event was handled by phase manager")
             return True
+        else:
+            print(f"🔍 DEBUG: GameView - Event was not handled by phase manager")
         
         # PRIORITY 2: Handle universal UI events that apply to all phases
         if event.type == pygame.MOUSEBUTTONDOWN:
@@ -3334,7 +3376,23 @@ class PhaseManager:
     def handle_event(self, event: pygame.event.Event) -> bool:
         """Route event to appropriate phase handler"""
         handler = self.get_current_handler()
-        return handler.handle_event(event)
+        handler_name = handler.__class__.__name__
+
+        # Debug: Log which handler is being used
+        if event.type in [pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP]:
+            event_name = {
+                pygame.KEYDOWN: "KEYDOWN",
+                pygame.MOUSEBUTTONDOWN: "MOUSEBUTTONDOWN",
+                pygame.MOUSEBUTTONUP: "MOUSEBUTTONUP"
+            }.get(event.type, f"TYPE_{event.type}")
+            print(f"🔍 DEBUG: PhaseManager - Routing {event_name} to {handler_name}")
+
+        result = handler.handle_event(event)
+
+        if event.type in [pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP]:
+            print(f"🔍 DEBUG: PhaseManager - {handler_name} returned {result}")
+
+        return result
     
     def get_current_allowed_actions(self) -> List[str]:
         """Get allowed actions for current phase"""

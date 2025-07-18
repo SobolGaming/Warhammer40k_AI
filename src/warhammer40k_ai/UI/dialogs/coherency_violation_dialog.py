@@ -163,18 +163,20 @@ class CoherencyViolationDialog(BaseDialog):
     def _remove_selected_models(self):
         """Remove the selected models from play"""
         selected_models = [btn['model_index'] for btn in self.model_buttons if btn['selected']]
-        
+
         if not selected_models:
             print("⚠️  No models selected for removal")
             return
-        
+
         # Remove selected models
         for model_index in sorted(selected_models, reverse=True):
             if model_index < len(self.unit.models):
                 model = self.unit.models[model_index]
                 print(f"💀 Removing {model.name} from play due to coherency violation")
-                model.is_alive = False
-                model.wounds_remaining = 0
+                # Set wounds to 0 to make the model dead (is_alive property checks wounds > 0)
+                model.wounds = 0
+                # Call die() method to properly remove the model from the unit
+                model.die()
         
         # Check if coherency is now satisfied
         self._check_coherency_and_complete()
@@ -185,8 +187,10 @@ class CoherencyViolationDialog(BaseDialog):
             if model_index < len(self.unit.models):
                 model = self.unit.models[model_index]
                 print(f"💀 Auto-removing {model.name} from play due to coherency violation")
-                model.is_alive = False
-                model.wounds_remaining = 0
+                # Set wounds to 0 to make the model dead (is_alive property checks wounds > 0)
+                model.wounds = 0
+                # Call die() method to properly remove the model from the unit
+                model.die()
         
         self._complete_removal()
     

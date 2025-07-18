@@ -1270,8 +1270,10 @@ class Unit:
                 if model_index < len(self.models):
                     model = self.models[model_index]
                     print(f"💀 Removing {model.name} from play due to coherency violation")
-                    model.is_alive = False
-                    model.wounds_remaining = 0
+                    # Set wounds to 0 to make the model dead (is_alive property checks wounds > 0)
+                    model.wounds = 0
+                    # Call die() method to properly remove the model from the unit
+                    model.die()
                     
             # Unit position is now determined by model positions
             
@@ -2203,8 +2205,10 @@ class Unit:
                 if model_index < len(self.models):
                     model = self.models[model_index]
                     print(f"💀 Removing {model.name} from play due to coherency violation")
-                    model.is_alive = False
-                    model.wounds_remaining = 0
+                    # Set wounds to 0 to make the model dead (is_alive property checks wounds > 0)
+                    model.wounds = 0
+                    # Call die() method to properly remove the model from the unit
+                    model.die()
                     
             # Unit position is now determined by model positions
             

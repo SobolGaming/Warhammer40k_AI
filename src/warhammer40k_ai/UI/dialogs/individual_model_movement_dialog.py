@@ -169,12 +169,27 @@ class IndividualModelMovementDialog(BaseDialog):
         if not self.visible:
             return False
 
+        # Debug: Log all events handled by this dialog
+        dialog_name = self.__class__.__name__
+        if event.type == pygame.KEYDOWN:
+            print(f"🔍 DEBUG: {dialog_name}.handle_event - KEYDOWN: key={pygame.key.name(event.key)}")
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            print(f"🔍 DEBUG: {dialog_name}.handle_event - MOUSEBUTTONDOWN: button={event.button}, pos={event.pos}")
+        elif event.type == pygame.MOUSEBUTTONUP:
+            print(f"🔍 DEBUG: {dialog_name}.handle_event - MOUSEBUTTONUP: button={event.button}, pos={event.pos}")
+        elif event.type == pygame.MOUSEMOTION:
+            print(f"🔍 DEBUG: {dialog_name}.handle_event - MOUSEMOTION: pos={event.pos}")
+        else:
+            print(f"🔍 DEBUG: {dialog_name}.handle_event - OTHER: type={event.type}")
+
         # Handle coherency dialog events first if it's open
         if hasattr(self, 'coherency_dialog') and self.coherency_dialog.visible:
+            print(f"🔍 DEBUG: {dialog_name} - Delegating to coherency dialog")
             return self.coherency_dialog.handle_event(event)
 
         # Handle ESC key to close dialog
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+            print(f"🔍 DEBUG: {dialog_name} - ESC key pressed, hiding dialog")
             self.hide()
             return True
         
@@ -226,19 +241,29 @@ class IndividualModelMovementDialog(BaseDialog):
                 # Update dialog position
                 self.x = event.pos[0] - self.drag_offset_x
                 self.y = event.pos[1] - self.drag_offset_y
-                
+
                 # Keep dialog within screen bounds
                 self.x = max(0, min(self.screen_width - self.width, self.x))
                 self.y = max(0, min(self.screen_height - self.height, self.y))
-                
+
                 # Update button positions
                 self._update_title_bar()
                 self._update_buttons()
                 return True
             else:
-                # Update hover state
-                self._update_hover(event.pos)
-                return True
+                # Only consume mouse motion events if the mouse is over the dialog
+                # This allows the phase handler to handle battlefield mouse motion for path preview
+                mouse_pos = event.pos
+                dialog_rect = pygame.Rect(self.x, self.y, self.width, self.height)
+
+                if dialog_rect.collidepoint(mouse_pos):
+                    # Mouse is over the dialog - update hover state and consume the event
+                    self._update_hover(event.pos)
+                    return True
+                else:
+                    # Mouse is outside dialog (likely over battlefield) - don't consume the event
+                    # This allows the phase handler to handle it for path preview
+                    return False
         
         # Let subclass handle other events
         return self._handle_other_events(event)
