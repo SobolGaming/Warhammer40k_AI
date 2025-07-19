@@ -30,27 +30,35 @@ class CoherencyViolationDialog(BaseDialog):
         self.font_medium = pygame.font.Font(None, 24)
         self.font_small = pygame.font.Font(None, 20)
         
-    def show(self, unit: Unit, non_coherent_models: List[int], callback: Callable[[bool], None]):
+    def show(self, unit: Unit, non_coherent_models: List[int], callback: Callable[[bool], None], existing_dialogs: List = None):
         """
         Show the coherency violation dialog.
-        
+
         Args:
             unit: The unit with coherency violations
-            non_coherent_models: List of model indices that are not coherent
+            non_coherent_models: List of model indices that are not coherent (for reference only)
             callback: Function to call when dialog is complete (bool indicates if models were removed)
+            existing_dialogs: List of other visible dialogs to avoid overlapping with
         """
+        # Position dialog to avoid overlap with existing dialogs
+        if existing_dialogs:
+            self.x, self.y = self.find_non_overlapping_position(existing_dialogs)
+
         super().show(callback)
-        
+
         self.unit = unit
-        self.non_coherent_models = non_coherent_models.copy()
+        self.non_coherent_models = non_coherent_models.copy()  # Keep for reference but don't restrict selection
         self.models_to_remove = []
         self.callback = callback
-        
+
         self._create_model_buttons()
         self._create_dialog_buttons()
-        
+
+        # Update button positions in case dialog position was changed by overlap avoidance
+        self._update_model_buttons()
+
         print(f"⚠️  Coherency violation dialog opened for {unit.name}")
-        print(f"⚠️  {len(non_coherent_models)} models are not in coherency and must be removed")
+        print(f"⚠️  Unit has coherency violations - select models to remove")
         
     def hide(self):
         """Hide the dialog"""
@@ -63,54 +71,70 @@ class CoherencyViolationDialog(BaseDialog):
         self.model_buttons = []
         
     def _create_model_buttons(self):
-        """Create buttons for each non-coherent model"""
+        """Create buttons for each model in the unit"""
         self.model_buttons = []
-        
-        if not self.unit or not self.non_coherent_models:
+
+        if not self.unit:
             return
-        
+
         button_width = 250
         button_height = 40
-        start_y = self.y + 120
-        
-        for i, model_index in enumerate(self.non_coherent_models):
-            if model_index < len(self.unit.models):
-                model = self.unit.models[model_index]
-                button_rect = pygame.Rect(
-                    self.x + 20,
-                    start_y + i * (button_height + 10),
-                    button_width,
-                    button_height
-                )
-                
-                self.model_buttons.append({
-                    'rect': button_rect,
-                    'model_index': model_index,
-                    'model': model,
-                    'selected': False
-                })
-    
+
+        # Show ALL alive models in the unit, not just non-coherent ones
+        alive_models = [(i, model) for i, model in enumerate(self.unit.models) if model.is_alive]
+
+        for i, (model_index, model) in enumerate(alive_models):
+            # Store relative positions so they can be updated when dialog moves
+            relative_x = 20
+            relative_y = self.title_bar_height + 70 + i * (button_height + 10)
+
+            button_rect = pygame.Rect(
+                self.x + relative_x,
+                self.y + relative_y,
+                button_width,
+                button_height
+            )
+
+            self.model_buttons.append({
+                'rect': button_rect,
+                'relative_x': relative_x,
+                'relative_y': relative_y,
+                'width': button_width,
+                'height': button_height,
+                'model_index': model_index,
+                'model': model,
+                'selected': False
+            })
+
+    def _update_model_buttons(self):
+        """Update model button positions when dialog is moved"""
+        for button in self.model_buttons:
+            button['rect'] = pygame.Rect(
+                self.x + button['relative_x'],
+                self.y + button['relative_y'],
+                button['width'],
+                button['height']
+            )
+
     def _create_dialog_buttons(self):
         """Create dialog control buttons"""
+        # Position buttons at the bottom of the dialog
+        button_y = self.y + self.height - 60  # Single row of buttons
+
         self.buttons = {
-            'remove_selected': pygame.Rect(self.x + 300, self.y + self.height - 100, 120, 40),
-            'auto_remove': pygame.Rect(self.x + 430, self.y + self.height - 100, 120, 40),
-            'cancel': pygame.Rect(self.x + 300, self.y + self.height - 50, 120, 40)
+            'remove_selected': pygame.Rect(self.x + 300, button_y, 140, 40),
+            'cancel': pygame.Rect(self.x + 450, button_y, 100, 40)  # Moved to where "Remove All" was
         }
 
         # Initialize button states with proper positioning info
         self.button_states = {
             'remove_selected': {
                 'hovered': False, 'pressed': False, 'enabled': True, 'state': 'normal',
-                'relative_x': 300, 'relative_y': self.height - 100, 'width': 120, 'height': 40
-            },
-            'auto_remove': {
-                'hovered': False, 'pressed': False, 'enabled': True, 'state': 'normal',
-                'relative_x': 430, 'relative_y': self.height - 100, 'width': 120, 'height': 40
+                'relative_x': 300, 'relative_y': self.height - 60, 'width': 140, 'height': 40
             },
             'cancel': {
                 'hovered': False, 'pressed': False, 'enabled': True, 'state': 'normal',
-                'relative_x': 300, 'relative_y': self.height - 50, 'width': 120, 'height': 40
+                'relative_x': 450, 'relative_y': self.height - 60, 'width': 100, 'height': 40
             }
         }
     
@@ -138,22 +162,23 @@ class CoherencyViolationDialog(BaseDialog):
             if self.buttons['remove_selected'].collidepoint(mouse_pos):
                 self._remove_selected_models()
                 return True
-            elif self.buttons['auto_remove'].collidepoint(mouse_pos):
-                self._auto_remove_models()
-                return True
             elif self.buttons['cancel'].collidepoint(mouse_pos):
                 self._cancel_removal()
                 return True
         
-        return super().handle_event(event)
+        # Let base class handle other events (dragging, ESC, etc.)
+        result = super().handle_event(event)
+
+        # Update model button positions if dialog was dragged
+        if event.type == pygame.MOUSEMOTION and self.dragging:
+            self._update_model_buttons()
+
+        return result
 
     def _handle_button_click(self, button_name: str) -> bool:
         """Handle button click events. Return True if handled."""
         if button_name == 'remove_selected':
             self._remove_selected_models()
-            return True
-        elif button_name == 'auto_remove':
-            self._auto_remove_models()
             return True
         elif button_name == 'cancel':
             self._cancel_removal()
@@ -161,7 +186,7 @@ class CoherencyViolationDialog(BaseDialog):
         return False
 
     def _remove_selected_models(self):
-        """Remove the selected models from play"""
+        """Remove the selected models from play and re-check coherency"""
         selected_models = [btn['model_index'] for btn in self.model_buttons if btn['selected']]
 
         if not selected_models:
@@ -177,22 +202,11 @@ class CoherencyViolationDialog(BaseDialog):
                 model.wounds = 0
                 # Call die() method to properly remove the model from the unit
                 model.die()
-        
-        # Check if coherency is now satisfied
-        self._check_coherency_and_complete()
+
+        # Re-run coherency validation to see if the issue is resolved
+        self._recheck_coherency_after_removal()
     
-    def _auto_remove_models(self):
-        """Automatically remove all non-coherent models"""
-        for model_index in sorted(self.non_coherent_models, reverse=True):
-            if model_index < len(self.unit.models):
-                model = self.unit.models[model_index]
-                print(f"💀 Auto-removing {model.name} from play due to coherency violation")
-                # Set wounds to 0 to make the model dead (is_alive property checks wounds > 0)
-                model.wounds = 0
-                # Call die() method to properly remove the model from the unit
-                model.die()
-        
-        self._complete_removal()
+
     
     def _cancel_removal(self):
         """Cancel the removal process (this shouldn't be allowed in actual rules)"""
@@ -201,28 +215,30 @@ class CoherencyViolationDialog(BaseDialog):
             self.callback(False)
         self.hide()
     
-    def _check_coherency_and_complete(self):
-        """Check if coherency is satisfied and complete if so"""
+    def _recheck_coherency_after_removal(self):
+        """Re-check coherency after model removal and update dialog accordingly"""
         from ...utility.calcs import validate_unit_coherency_after_movement
-        
+
         # Get current positions of all alive models
         final_positions = []
         for model in self.unit.models:
             if model.is_alive:
                 final_positions.append(model.get_location())
-        
+
         # Check coherency
         is_coherent, remaining_non_coherent = validate_unit_coherency_after_movement(self.unit, final_positions)
-        
+
         if is_coherent:
             print(f"✅ {self.unit.name} is now in coherency")
             self._complete_removal()
         else:
             print(f"⚠️  {self.unit.name} still has coherency violations")
-            print(f"⚠️  {len(remaining_non_coherent)} models still need to be removed")
-            # Update the dialog with remaining violations
+            print(f"⚠️  Additional models may need to be removed")
+            # Update the non_coherent_models for reference, but still show all models
             self.non_coherent_models = remaining_non_coherent
+            # Recreate model buttons to reflect the current state (some models may have been removed)
             self._create_model_buttons()
+            self._update_model_buttons()
     
     def _complete_removal(self):
         """Complete the model removal process"""
@@ -242,25 +258,21 @@ class CoherencyViolationDialog(BaseDialog):
         """Draw the dialog"""
         if not self.visible or not self.unit:
             return
+
+        # Draw dialog background and title bar
+        self.draw_dialog_background(screen)
+        self.draw_title_bar(screen, f"Coherency Violation - {self.unit.name}")
         
-        # Draw dialog background
-        super().draw(screen)
-        
-        # Draw title
-        title_text = f"Coherency Violation - {self.unit.name}"
-        title_surface = self.font_large.render(title_text, True, TEXT_ERROR)
-        title_rect = title_surface.get_rect(center=(self.x + self.width // 2, self.y + 30))
-        screen.blit(title_surface, title_rect)
-        
-        # Draw explanation
+        # Draw explanation (title is now in the title bar)
         explanation_lines = [
-            "The following models are not in unit coherency and must be removed:",
-            f"({len(self.non_coherent_models)} models out of coherency)"
+            "Unit has coherency violations. Select models to remove:",
+            f"(Choose any models strategically - {len([m for m in self.unit.models if m.is_alive])} models available)"
         ]
-        
+
+        content_start_y = self.y + self.title_bar_height + 20  # Start below title bar
         for i, line in enumerate(explanation_lines):
             text_surface = self.font_medium.render(line, True, TEXT_WARNING)
-            screen.blit(text_surface, (self.x + 20, self.y + 60 + i * 25))
+            screen.blit(text_surface, (self.x + 20, content_start_y + i * 25))
         
         # Draw model selection buttons
         for button in self.model_buttons:
@@ -289,10 +301,9 @@ class CoherencyViolationDialog(BaseDialog):
         
         # Draw control buttons
         self.draw_button(screen, 'remove_selected', "Remove Selected")
-        self.draw_button(screen, 'auto_remove', "Remove All")
         self.draw_button(screen, 'cancel', "Cancel")
-        
+
         # Draw instructions
-        instruction_text = "Select models to remove, then click 'Remove Selected'"
+        instruction_text = "Select models to remove, then click 'Remove Selected'. Coherency will be re-checked."
         instruction_surface = self.font_small.render(instruction_text, True, TEXT_SECONDARY)
         screen.blit(instruction_surface, (self.x + 20, self.y + self.height - 30))

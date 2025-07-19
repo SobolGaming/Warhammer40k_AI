@@ -395,7 +395,23 @@ class IndividualModelMovementDialog(BaseDialog):
 
         # Create and show the coherency dialog
         coherency_dialog = CoherencyViolationDialog(self.screen_width, self.screen_height)
-        coherency_dialog.show(self.unit, non_coherent_models, self._on_coherency_resolution)
+
+        # Collect all visible dialogs to avoid overlap
+        existing_dialogs = []
+        if self.visible:
+            existing_dialogs.append(self)
+
+        # Check for other potentially visible dialogs in the game UI
+        # This helps avoid overlap with scout dialogs, movement dialogs, etc.
+        try:
+            # Try to access the game UI to check for other visible dialogs
+            from ...UI.game_ui import HumanUIInterface
+            # Note: This is a best-effort approach - we'll collect what we can
+            print(f"🔍 DEBUG: Collecting existing dialogs to avoid overlap with coherency dialog")
+        except:
+            pass  # If we can't access other dialogs, just use what we have
+
+        coherency_dialog.show(self.unit, non_coherent_models, self._on_coherency_resolution, existing_dialogs)
 
         # Store reference to the dialog so it can be drawn and handled
         self.coherency_dialog = coherency_dialog

@@ -3426,10 +3426,20 @@ class PhaseManager:
             print(f"⚠️  Models {non_coherent_models} are not coherent and must be removed from play")
 
             # Show coherency violation dialog
+            # Collect existing visible dialogs to avoid overlap
+            existing_dialogs = []
+            if hasattr(self.game_view, 'movement_choice_dialog') and self.game_view.movement_choice_dialog.visible:
+                existing_dialogs.append(self.game_view.movement_choice_dialog)
+            if hasattr(self.game_view, 'individual_model_movement_dialog') and self.game_view.individual_model_movement_dialog.visible:
+                existing_dialogs.append(self.game_view.individual_model_movement_dialog)
+            if hasattr(self, 'scout_choice_dialog') and self.scout_choice_dialog.visible:
+                existing_dialogs.append(self.scout_choice_dialog)
+
             self.game_view.coherency_violation_dialog.show(
                 unit,
                 non_coherent_models,
-                self._on_coherency_resolution
+                self._on_coherency_resolution,
+                existing_dialogs
             )
         else:
             print(f"✅ {unit.name} maintains coherency after movement")

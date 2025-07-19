@@ -1,4 +1,5 @@
 import pygame
+import math
 from typing import Callable, Optional, Dict, Any
 from abc import ABC, abstractmethod
 
@@ -28,6 +29,10 @@ class BaseDialog(ABC):
     Base class for all dialog implementations.
     Provides common functionality like positioning, dragging, ESC handling, fonts, and button management.
     """
+
+    # UI constants for dialog positioning
+    DIALOG_MARGIN = 20  # Minimum margin from screen edges
+    DIALOG_OVERLAP_MARGIN = 30  # Minimum space between dialogs to avoid overlap
     
     def __init__(self, screen_width: int, screen_height: int, width: int, height: int, 
                  draggable: bool = True, center: bool = True):
@@ -196,6 +201,96 @@ class BaseDialog(ABC):
         
         # Let subclass handle other events
         return self._handle_other_events(event)
+
+    def find_non_overlapping_position(self, existing_dialogs: list) -> tuple:
+        """
+        Find a position for this dialog that doesn't overlap with existing visible dialogs.
+
+        Args:
+            existing_dialogs: List of other BaseDialog instances that are currently visible
+
+        Returns:
+            tuple: (x, y) position that avoids overlap
+        """
+        # Start with the default centered position
+        preferred_x = (self.screen_width - self.width) // 2
+        preferred_y = (self.screen_height - self.height) // 2
+
+        print(f"🔍 DEBUG: Dialog positioning - preferred position: ({preferred_x}, {preferred_y})")
+        print(f"🔍 DEBUG: Dialog positioning - {len(existing_dialogs)} existing dialogs to avoid")
+
+        # If no existing dialogs, use preferred position
+        if not existing_dialogs:
+            print(f"🔍 DEBUG: Dialog positioning - no existing dialogs, using preferred position")
+            return preferred_x, preferred_y
+
+        # Get rectangles of all visible dialogs
+        existing_rects = []
+        for dialog in existing_dialogs:
+            if hasattr(dialog, 'visible') and dialog.visible:
+                existing_rects.append(pygame.Rect(dialog.x, dialog.y, dialog.width, dialog.height))
+
+        # If no visible dialogs, use preferred position
+        if not existing_rects:
+            return preferred_x, preferred_y
+
+        # Try the preferred position first
+        test_rect = pygame.Rect(preferred_x, preferred_y, self.width, self.height)
+        if not self._rect_overlaps_any(test_rect, existing_rects):
+            return preferred_x, preferred_y
+
+        # Try positions in a spiral pattern around the preferred position
+        max_attempts = 20
+        step_size = 50
+
+        for attempt in range(max_attempts):
+            # Calculate spiral positions
+            angle_step = 2 * 3.14159 / 8  # 8 directions per ring
+            ring = attempt // 8 + 1
+            direction = attempt % 8
+
+            offset_x = int(ring * step_size * math.cos(direction * angle_step))
+            offset_y = int(ring * step_size * math.sin(direction * angle_step))
+
+            test_x = preferred_x + offset_x
+            test_y = preferred_y + offset_y
+
+            # Keep within screen bounds
+            test_x = max(self.DIALOG_MARGIN, min(self.screen_width - self.width - self.DIALOG_MARGIN, test_x))
+            test_y = max(self.DIALOG_MARGIN, min(self.screen_height - self.height - self.DIALOG_MARGIN, test_y))
+
+            test_rect = pygame.Rect(test_x, test_y, self.width, self.height)
+            if not self._rect_overlaps_any(test_rect, existing_rects):
+                return test_x, test_y
+
+        # If all else fails, position to the right of the rightmost dialog
+        rightmost_x = max(rect.right for rect in existing_rects)
+        fallback_x = min(rightmost_x + self.DIALOG_OVERLAP_MARGIN,
+                        self.screen_width - self.width - self.DIALOG_MARGIN)
+        fallback_y = max(self.DIALOG_MARGIN,
+                        min(preferred_y, self.screen_height - self.height - self.DIALOG_MARGIN))
+
+        return fallback_x, fallback_y
+
+    def _rect_overlaps_any(self, test_rect: pygame.Rect, existing_rects: list) -> bool:
+        """
+        Check if a rectangle overlaps with any rectangle in a list, with margin.
+
+        Args:
+            test_rect: Rectangle to test
+            existing_rects: List of existing rectangles
+
+        Returns:
+            bool: True if test_rect overlaps with any existing rectangle (including margin)
+        """
+        # Expand test rect by margin to ensure minimum spacing
+        expanded_test = test_rect.inflate(self.DIALOG_OVERLAP_MARGIN * 2, self.DIALOG_OVERLAP_MARGIN * 2)
+
+        for existing_rect in existing_rects:
+            if expanded_test.colliderect(existing_rect):
+                return True
+
+        return False
     
     def _update_hover(self, mouse_pos):
         """Update hover state for buttons"""
