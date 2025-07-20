@@ -119,23 +119,20 @@ class CoherencyViolationDialog(BaseDialog):
     def _create_dialog_buttons(self):
         """Create dialog control buttons"""
         # Position buttons at the bottom of the dialog
-        button_y = self.y + self.height - 60  # Single row of buttons
+        button_y = self.y + self.height - 70  # Moved up 10 pixels
 
         self.buttons = {
-            'remove_selected': pygame.Rect(self.x + 300, button_y, 140, 40),
-            'cancel': pygame.Rect(self.x + 450, button_y, 100, 40)  # Moved to where "Remove All" was
+            'remove_selected': pygame.Rect(self.x + 300, button_y, 140, 40)
+            # Removed "Cancel" button - coherency issue must be resolved
         }
 
         # Initialize button states with proper positioning info
         self.button_states = {
             'remove_selected': {
                 'hovered': False, 'pressed': False, 'enabled': True, 'state': 'normal',
-                'relative_x': 300, 'relative_y': self.height - 60, 'width': 140, 'height': 40
-            },
-            'cancel': {
-                'hovered': False, 'pressed': False, 'enabled': True, 'state': 'normal',
-                'relative_x': 450, 'relative_y': self.height - 60, 'width': 100, 'height': 40
+                'relative_x': 300, 'relative_y': self.height - 70, 'width': 140, 'height': 40
             }
+            # Removed "cancel" button state - coherency issue must be resolved
         }
     
     def handle_event(self, event: pygame.event.Event) -> bool:
@@ -143,10 +140,7 @@ class CoherencyViolationDialog(BaseDialog):
         if not self.visible:
             return False
             
-        # Handle ESC key to cancel
-        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-            self._cancel_removal()
-            return True
+        # ESC key handling removed - coherency issue must be resolved
             
         # Handle mouse clicks
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -162,9 +156,7 @@ class CoherencyViolationDialog(BaseDialog):
             if self.buttons['remove_selected'].collidepoint(mouse_pos):
                 self._remove_selected_models()
                 return True
-            elif self.buttons['cancel'].collidepoint(mouse_pos):
-                self._cancel_removal()
-                return True
+            # Removed cancel button handling - coherency issue must be resolved
         
         # Let base class handle other events (dragging, ESC, etc.)
         result = super().handle_event(event)
@@ -180,9 +172,7 @@ class CoherencyViolationDialog(BaseDialog):
         if button_name == 'remove_selected':
             self._remove_selected_models()
             return True
-        elif button_name == 'cancel':
-            self._cancel_removal()
-            return True
+        # Removed cancel button handling - coherency issue must be resolved
         return False
 
     def _remove_selected_models(self):
@@ -301,7 +291,7 @@ class CoherencyViolationDialog(BaseDialog):
         
         # Draw control buttons
         self.draw_button(screen, 'remove_selected', "Remove Selected")
-        self.draw_button(screen, 'cancel', "Cancel")
+        # Removed cancel button drawing - coherency issue must be resolved
 
         # Draw instructions
         instruction_text = "Select models to remove, then click 'Remove Selected'. Coherency will be re-checked."

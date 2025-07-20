@@ -443,11 +443,11 @@ class IndividualModelMovementDialog(BaseDialog):
     def _skip_movement(self):
         """Skip movement for this unit"""
         print(f"⏭️  Skipping {self.movement_type} movement for {self.unit.name}")
-        
+
         # Call callback with skip status
         if self.callback:
             self.callback(False)  # Movement skipped
-            
+
         self.hide()
         
     def draw(self, screen: pygame.Surface):

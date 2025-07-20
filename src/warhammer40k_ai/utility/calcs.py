@@ -999,13 +999,22 @@ def validate_unit_coherency_after_movement(unit: 'Unit', new_positions: List[Tup
         adjacency_graph[i] = []
         for j, pos_j in enumerate(new_positions):
             if i != j:
-                # Calculate distance between model bases
+                # Calculate edge-to-edge distance between model bases
                 model_i = unit.models[i]
                 model_j = unit.models[j]
-                
-                # Use the model's base size for edge-to-edge distance calculation
-                distance = get_dist(pos_i[0] - pos_j[0], pos_i[1] - pos_j[1]) - (model_i.base_size/2 + model_j.base_size/2)
-                
+
+                # Create temporary bases at the new positions to calculate proper edge-to-edge distance
+                temp_base_i = model_i.model_base.__class__(model_i.model_base.base_type, model_i.model_base.radius)
+                temp_base_i.set_position(pos_i[0], pos_i[1], pos_i[2])
+                temp_base_i.set_facing(model_i.model_base.facing)
+
+                temp_base_j = model_j.model_base.__class__(model_j.model_base.base_type, model_j.model_base.radius)
+                temp_base_j.set_position(pos_j[0], pos_j[1], pos_j[2])
+                temp_base_j.set_facing(model_j.model_base.facing)
+
+                # Use proper edge-to-edge distance calculation
+                distance = temp_base_i.edge_to_edge_distance(temp_base_j)
+
                 if distance <= coherency_distance:
                     adjacency_graph[i].append(j)
     
@@ -1480,20 +1489,24 @@ class OptimizedPathfindingEnvironment:
         all_units = getattr(self.game_map, 'units', [])
         
         for unit in all_units:
-            if unit == self.moving_unit or not unit.is_alive() or not unit.deployed:
+            if not unit.is_alive() or not unit.deployed:
                 continue
-                
+
             # Determine if unit is friendly or enemy
             # Units are enemies if they belong to different players
             is_enemy = False
-            if (unit.parent_army and unit.parent_army.player and 
+            if (unit.parent_army and unit.parent_army.player and
                 self.moving_unit.parent_army and self.moving_unit.parent_army.player):
                 is_enemy = unit.parent_army.player != self.moving_unit.parent_army.player
-            
+
             for model in unit.models:
                 if not model.is_alive:
                     continue
-                    
+
+                # Skip the specific model that's being moved, but include other models from the same unit
+                if model == self.moving_model:
+                    continue
+
                 if hasattr(model.model_base, 'get_base_shape'):
                     model_shape = model.model_base.get_base_shape()
                 else:
@@ -1503,7 +1516,7 @@ class OptimizedPathfindingEnvironment:
                     points = [(model_x + radius * np.cos(t), model_y + radius * np.sin(t))
                               for t in np.linspace(0, 2 * np.pi, 30)]
                     model_shape = Polygon(points)
-                
+
                 if is_enemy:
                     # Buffer enemy shapes by engagement range
                     self.enemy_shapes.append(model_shape.buffer(ENGAGEMENT_RANGE_HORIZONTAL))
@@ -1537,20 +1550,43 @@ class OptimizedPathfindingEnvironment:
                 if obstacle.contains(point):
                     return False
         
-        # Check friendly units using STRTree
+        # Check friendly units using STRTree - prevent base overlap
         if self.friendly_strtree:
-            min_radius = self.oriented_min_radii.get(orientation, self.oriented_min_radii[0])
-            query_circle = point.buffer(min_radius)
-            possible_friendlies = query_spatial_index(self.friendly_strtree, query_circle)
-            for friendly in possible_friendlies:
-                if friendly.intersects(query_circle):
+            # Create the moving model's base shape at the target position
+            temp_base = self.moving_model.model_base.__class__(
+                self.moving_model.model_base.base_type,
+                self.moving_model.model_base.radius
+            )
+            temp_base.set_position(position[0], position[1], self.moving_model.model_base.z)
+            temp_base.set_facing(orientation)
+            temp_base_shape = temp_base.get_base_shape()
+
+            # Query for nearby friendly units
+            query_buffer = temp_base_shape.buffer(0.1)  # Small buffer for spatial query
+            possible_friendlies = query_spatial_index(self.friendly_strtree, query_buffer)
+            for friendly_shape in possible_friendlies:
+                # Check for actual base overlap (not just touching)
+                if temp_base_shape.overlaps(friendly_shape):
                     return False
         
-        # Check enemy units using STRTree
+        # Check enemy units using STRTree - prevent base overlap
         if self.enemy_strtree:
-            possible_enemies = query_spatial_index(self.enemy_strtree, point)
-            for enemy in possible_enemies:
-                if enemy.contains(point):
+            # Use the same temp_base_shape created above for friendly checks
+            if 'temp_base_shape' not in locals():
+                temp_base = self.moving_model.model_base.__class__(
+                    self.moving_model.model_base.base_type,
+                    self.moving_model.model_base.radius
+                )
+                temp_base.set_position(position[0], position[1], self.moving_model.model_base.z)
+                temp_base.set_facing(orientation)
+                temp_base_shape = temp_base.get_base_shape()
+
+            # Query for nearby enemy units
+            query_buffer = temp_base_shape.buffer(0.1)  # Small buffer for spatial query
+            possible_enemies = query_spatial_index(self.enemy_strtree, query_buffer)
+            for enemy_shape in possible_enemies:
+                # Check for actual base overlap (not just touching)
+                if temp_base_shape.overlaps(enemy_shape):
                     return False
         
         return True

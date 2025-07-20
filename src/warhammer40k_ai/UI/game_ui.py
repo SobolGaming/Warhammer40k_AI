@@ -1516,32 +1516,26 @@ class GameView:
                         if len(path_points) > 1:
                             pygame.draw.lines(battlefield_surface, path_color, False, path_points, 3)
 
-                        # Draw target indicator
+                        # Draw target indicator with actual model base footprint
                         final_pos = path_result['path'][-1]
-                        final_screen_x = int(final_pos[0] * TILE_SIZE * self.zoom_level + self.offset_x)
-                        final_screen_y = int(final_pos[1] * TILE_SIZE * self.zoom_level + self.offset_y)
-                        pygame.draw.circle(battlefield_surface, path_color, (final_screen_x, final_screen_y), 8, 2)
+
+                        # Draw the actual model base footprint at target position
+                        self._draw_model_base_preview(battlefield_surface, selected_model,
+                                                    final_pos[0], final_pos[1], path_color)
 
         # Draw weapon range indicator if a unit is selected for shooting
-        if (hasattr(self, 'selected_unit') and self.selected_unit and 
+        if (hasattr(self, 'selected_unit') and self.selected_unit and
             hasattr(self, 'selected_weapon_profile') and self.selected_weapon_profile):
-            draw_weapon_ranges(battlefield_surface, self.selected_unit, 
+            draw_weapon_ranges(battlefield_surface, self.selected_unit,
                              self.selected_weapon_profile, self.zoom_level, self.offset_x, self.offset_y)
-        
-        # Draw weapon range for shooting declaration dialog if in targeting mode
-        if (hasattr(self, 'shooting_declaration_dialog') and 
-            self.shooting_declaration_dialog.is_targeting_mode and
-            self.shooting_declaration_dialog.selected_weapon):
-            draw_weapon_ranges(battlefield_surface, self.shooting_declaration_dialog.unit, 
-                             self.shooting_declaration_dialog.selected_weapon, 
-                             self.zoom_level, self.offset_x, self.offset_y)
-        
+
         # Draw scout visual feedback if in scout phase (draw on battlefield surface)
         if hasattr(self, 'phase_manager') and self.phase_manager:
             current_handler = self.phase_manager.get_current_handler()
             if isinstance(current_handler, PreBattlePhaseHandler):
                 current_handler.draw_scout_visual_feedback(battlefield_surface)
-        
+
+        # Blit the battlefield surface to the main screen
         self.screen.blit(battlefield_surface, (ROSTER_PANE_WIDTH, 0))
 
         # Draw enhanced InfoPane
@@ -1634,6 +1628,51 @@ class GameView:
             }
         else:
             return {'error': 'Phase manager not initialized'}
+
+    def _draw_model_base_preview(self, surface: pygame.Surface, model, game_x: float, game_y: float, color: tuple):
+        """Draw the actual model base footprint at the specified game coordinates"""
+        try:
+            if not model or not hasattr(model, 'model_base'):
+                # Fallback to small circle if no base information
+                screen_x = int(game_x * TILE_SIZE * self.zoom_level + self.offset_x)
+                screen_y = int(game_y * TILE_SIZE * self.zoom_level + self.offset_y)
+                pygame.draw.circle(surface, color[:3], (screen_x, screen_y), 8, 2)
+                return
+
+            # Get the model's base shape at the target position
+            base_shape = model.model_base.get_base_shape_at(game_x, game_y, model.model_base.facing)
+
+            # Convert the base shape to screen coordinates
+            screen_points = []
+            for x, y in base_shape.exterior.coords:
+                screen_x = int(x * TILE_SIZE * self.zoom_level + self.offset_x)
+                screen_y = int(y * TILE_SIZE * self.zoom_level + self.offset_y)
+                screen_points.append((screen_x, screen_y))
+
+            # Draw the base footprint
+            if len(screen_points) > 2:
+                # Draw filled shape with transparency
+                alpha_color = (*color[:3], 100) if len(color) == 3 else color
+                try:
+                    # Create a temporary surface for alpha blending
+                    temp_surface = pygame.Surface((surface.get_width(), surface.get_height()), pygame.SRCALPHA)
+                    pygame.draw.polygon(temp_surface, alpha_color, screen_points)
+                    surface.blit(temp_surface, (0, 0))
+                except:
+                    # Fallback to outline only if alpha blending fails
+                    pygame.draw.polygon(surface, color[:3], screen_points, 2)
+
+                # Draw outline
+                pygame.draw.polygon(surface, color[:3], screen_points, 2)
+        except Exception as e:
+            # Ultimate fallback - draw simple circle and don't break the rendering
+            try:
+                screen_x = int(game_x * TILE_SIZE * self.zoom_level + self.offset_x)
+                screen_y = int(game_y * TILE_SIZE * self.zoom_level + self.offset_y)
+                pygame.draw.circle(surface, color[:3], (screen_x, screen_y), 8, 2)
+            except:
+                # If even the fallback fails, just skip drawing
+                pass
 
 
 ### Battlefield drawing functions
@@ -3892,20 +3931,45 @@ class PreBattlePhaseHandler(BasePhaseHandler):
                 # Open individual model movement dialog for scout movement
                 def on_scout_movement_complete(completed: bool):
                     print(f"🔍 DEBUG: Scout movement complete for {unit.name}: completed={completed}")
+                    print(f"🔍 DEBUG: Setting scout_move_made=True for {unit.name}")
                     if completed:
                         print(f"✅ {unit.name} scout movement completed")
                         unit.scout_move_made = True
                     else:
                         print(f"⏭️  {unit.name} scout movement skipped")
                         unit.scout_move_made = True
+                    print(f"🔍 DEBUG: Calling _next_scout_unit() to proceed to next unit")
                     self._next_scout_unit()
-                
+
                 self.game_view.individual_model_movement_dialog.show(
                     unit, 'scout', on_scout_movement_complete, self.game_view.game.map, self.scout_distance
                 )
-            else:
+            elif choice == 'skip':
                 unit.scout_move_made = True
                 print(f"✅ {unit.name} scout move skipped")
+                self._next_scout_unit()
+            elif choice == 'defer':
+                print(f"⏸️  {unit.name} scout decision deferred - moving to end of current player's queue")
+                # Move this unit to the end of the current player's units in the queue
+                player = None
+                for p in self.game_view.game.players:
+                    if unit in p.army.units:
+                        player = p
+                        break
+
+                if player:
+                    # Find the last position of this player's units in the queue
+                    insert_position = len(self.scout_units_queue)  # Default to end
+                    for i in range(len(self.scout_units_queue)):
+                        _, queue_player, _ = self.scout_units_queue[i]
+                        if queue_player != player:
+                            # Found first unit from different player, insert before it
+                            insert_position = i
+                            break
+
+                    self.scout_units_queue.insert(insert_position, (unit, player, self.scout_distance))
+                    print(f"🔍 DEBUG: {unit.name} added back to position {insert_position} (end of {player.name}'s units). Queue now has {len(self.scout_units_queue)} units")
+
                 self._next_scout_unit()
         print(f"🔍 DEBUG: About to call ui_interface.show_scout_dialog for {unit.name}")
         self.game_view.ui_interface.show_scout_dialog(unit, on_scout_choice, self.game_view.game.map)
@@ -4107,8 +4171,17 @@ class PreBattlePhaseHandler(BasePhaseHandler):
                 pygame.draw.line(battlefield_surface, (*color, alpha),
                                (unit_surface_x, unit_surface_y), (mouse_surface_x, mouse_surface_y), 3)
 
-        # Draw destination indicator at mouse position
-        pygame.draw.circle(battlefield_surface, (*color, alpha), (mouse_surface_x, mouse_surface_y), 8, 2)
+        # Draw destination indicator with actual model base footprint at mouse position
+        # Get the first alive model to determine base size
+        first_model = None
+        for model in self.current_scout_unit.models:
+            if model.is_alive:
+                first_model = model
+                break
+
+        if first_model:
+            self.game_view._draw_model_base_preview(battlefield_surface, first_model,
+                                                  mouse_game_x, mouse_game_y, color)
         
         # Draw distance text using pathfinding results
         try:

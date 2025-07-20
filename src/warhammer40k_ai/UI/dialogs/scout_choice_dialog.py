@@ -41,16 +41,14 @@ class ScoutChoiceDialog:
             self.font_medium = pygame.font.Font(None, FONT_MEDIUM)
             self.font_small = pygame.font.Font(None, FONT_SMALL)
         
-        # Button rectangles
-        button_width = 120
-        button_height = 40
-        button_spacing = 20
-        
-        start_x = self.x + (self.width - (2 * button_width + button_spacing)) // 2
-        button_y = self.y + self.height - 100
-        
-        self.scout_button = pygame.Rect(start_x, button_y, button_width, button_height)
-        self.skip_button = pygame.Rect(start_x + button_width + button_spacing, button_y, button_width, button_height)
+        # Button dimensions (will be positioned in show() method)
+        self.button_width = 120
+        self.button_height = 40
+        self.button_spacing = 20
+
+        # Initialize button rectangles (will be updated in show())
+        self.scout_button = pygame.Rect(0, 0, self.button_width, self.button_height)
+        self.skip_button = pygame.Rect(0, 0, self.button_width, self.button_height)
         
         self.hovered_button = None
     
@@ -62,7 +60,16 @@ class ScoutChoiceDialog:
         self.game_map = game_map
         self.visible = True
         print(f"🔍 DEBUG: ScoutChoiceDialog.visible set to {self.visible}")
-        
+
+        # Update button positions based on current dialog position
+        start_x = self.x + (self.width - (2 * self.button_width + self.button_spacing)) // 2
+        button_y = self.y + self.height - 100
+
+        self.scout_button = pygame.Rect(start_x, button_y, self.button_width, self.button_height)
+        self.skip_button = pygame.Rect(start_x + self.button_width + self.button_spacing, button_y, self.button_width, self.button_height)
+
+        print(f"🔍 DEBUG: Button positions - Scout: {self.scout_button}, Skip: {self.skip_button}")
+
         # Get scout distance from unit
         has_scout, scout_distance = unit.has_scout()
         print(f"🔍 {unit.name} has_scout={has_scout}, scout_distance={scout_distance}")
@@ -132,21 +139,29 @@ class ScoutChoiceDialog:
             self.update_hover(event.pos)
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
-                print(f"🔍 DEBUG: {dialog_name} - ESC key pressed, hiding dialog")
+                print(f"🔍 DEBUG: {dialog_name} - ESC key pressed, deferring decision")
+                # ESC should defer the decision - move unit to end of queue
+                callback = self.callback  # Store callback before hide() clears it
                 self.hide()
+                if callback:
+                    print(f"🔍 DEBUG: Calling callback with 'defer'")
+                    callback('defer')
                 return True
             elif event.key == pygame.K_s and self.can_scout():
                 print(f"🔍 DEBUG: {dialog_name} - 'S' key pressed for Scout")
                 # 'S' key for Scout
-                if self.callback:
-                    self.callback('scout')
+                callback = self.callback  # Store callback before hide() clears it
                 self.hide()
+                if callback:
+                    callback('scout')
                 return True
             elif event.key == pygame.K_k:
                 print(f"🔍 DEBUG: {dialog_name} - 'K' key pressed for Skip")
                 # 'K' key for Skip
-                if self.callback:
-                    self.callback('skip')
+                callback = self.callback  # Store callback before hide() clears it
+                self.hide()
+                if callback:
+                    callback('skip')
                 return True
 
         return True  # Consume all events when visible
@@ -154,22 +169,36 @@ class ScoutChoiceDialog:
     def handle_click(self, mouse_pos):
         """Handle mouse clicks"""
         print(f"🔍 DEBUG: ScoutChoiceDialog.handle_click called with mouse_pos={mouse_pos}")
+        print(f"🔍 DEBUG: Scout button rect: {self.scout_button}")
+        print(f"🔍 DEBUG: Skip button rect: {self.skip_button}")
+        print(f"🔍 DEBUG: Scout button collision: {self.scout_button.collidepoint(mouse_pos)}")
+        print(f"🔍 DEBUG: Skip button collision: {self.skip_button.collidepoint(mouse_pos)}")
+        print(f"🔍 DEBUG: Can scout: {self.can_scout()}")
+
         if self.scout_button.collidepoint(mouse_pos) and self.can_scout():
             print(f"🔍 DEBUG: Scout button clicked")
-            if self.callback:
-                self.callback('scout')
+            callback = self.callback  # Store callback before hide() clears it
             self.hide()
+            if callback:
+                callback('scout')
             return True
         elif self.skip_button.collidepoint(mouse_pos):
             print(f"🔍 DEBUG: Skip button clicked")
-            if self.callback:
-                self.callback('skip')
+            callback = self.callback  # Store callback before hide() clears it
+            self.hide()
+            if callback:
+                callback('skip')
             return True
         
-        # Click outside dialog - close it
+        # Click outside dialog - defer decision (same as ESC)
         dialog_rect = pygame.Rect(self.x, self.y, self.width, self.height)
         if not dialog_rect.collidepoint(mouse_pos):
+            print(f"🔍 DEBUG: Click outside dialog, deferring decision")
+            callback = self.callback  # Store callback before hide() clears it
             self.hide()
+            if callback:
+                print(f"🔍 DEBUG: Calling callback with 'defer'")
+                callback('defer')
             return True
         
         return True
