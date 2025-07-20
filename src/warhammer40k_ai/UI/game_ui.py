@@ -3958,17 +3958,24 @@ class PreBattlePhaseHandler(BasePhaseHandler):
                         break
 
                 if player:
-                    # Find the last position of this player's units in the queue
-                    insert_position = len(self.scout_units_queue)  # Default to end
+                    # Find where to insert: after the last unit of the same player
+                    insert_position = 0
+                    last_same_player_position = -1
+
                     for i in range(len(self.scout_units_queue)):
                         _, queue_player, _ = self.scout_units_queue[i]
-                        if queue_player != player:
-                            # Found first unit from different player, insert before it
-                            insert_position = i
-                            break
+                        if queue_player == player:
+                            last_same_player_position = i
+
+                    # Insert after the last unit of the same player
+                    insert_position = last_same_player_position + 1
 
                     self.scout_units_queue.insert(insert_position, (unit, player, self.scout_distance))
-                    print(f"🔍 DEBUG: {unit.name} added back to position {insert_position} (end of {player.name}'s units). Queue now has {len(self.scout_units_queue)} units")
+                    print(f"🔍 DEBUG: {unit.name} added back to position {insert_position} (after last {player.name} unit). Queue now has {len(self.scout_units_queue)} units")
+
+                    # Debug: show current queue
+                    queue_debug = [(u.name, p.name) for u, p, _ in self.scout_units_queue]
+                    print(f"🔍 DEBUG: Current queue: {queue_debug}")
 
                 self._next_scout_unit()
         print(f"🔍 DEBUG: About to call ui_interface.show_scout_dialog for {unit.name}")
