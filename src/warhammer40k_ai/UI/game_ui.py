@@ -3192,12 +3192,7 @@ class BattlePhaseHandler(BasePhaseHandler):
         # Old unit-level movement tracking removed - now using Individual Model Movement Dialog for all movement
 
         # Track mouse position for individual model movement preview
-        print(f"🔍 DEBUG: Checking individual model dialog conditions:")
-        print(f"  - Has dialog: {hasattr(self.game_view, 'individual_model_movement_dialog')}")
-        if hasattr(self.game_view, 'individual_model_movement_dialog'):
-            dialog = self.game_view.individual_model_movement_dialog
-            print(f"  - Dialog visible: {dialog.visible}")
-            print(f"  - Selected model index: {dialog.selected_model_index}")
+
 
         if (hasattr(self.game_view, 'individual_model_movement_dialog') and
             self.game_view.individual_model_movement_dialog.visible and
