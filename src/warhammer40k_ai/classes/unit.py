@@ -6,7 +6,7 @@ from ..utility.model_base import Base, BaseType
 from .wargear import Wargear, WargearOption, parse_option_string, parse_alternate_3
 from .ability import Ability
 from ..utility.range import Range
-from ..utility.calcs import get_dist, get_angle, convert_mm_to_inches, a_star_enhanced, build_spatial_index, footprint_from_offsets, build_formation_templates, query_spatial_index
+from ..utility.calcs import get_dist, get_angle, convert_mm_to_inches, build_spatial_index, footprint_from_offsets, build_formation_templates, query_spatial_index
 from ..utility.dice import get_roll, DiceCollection
 from .status_effects import StatusEffect, BattleShockEffect
 import uuid
@@ -39,10 +39,11 @@ class UnitRoundState:
 
 
 class MovementAction(Enum):
-    REMAIN_STATIONARY = auto()  
+    REMAIN_STATIONARY = auto()
     MOVE = auto()
     ADVANCE = auto()
     FALL_BACK = auto()
+    CHARGE = auto()
 
 
 class MovementState(Enum):
@@ -1405,17 +1406,16 @@ class Unit:
                 print(f"❌ {self.name} cannot reach charge destination {model_distance:.1f}\" away (max: {max_charge_distance}\")")
                 return False
             
-            # Use enhanced pathfinding for single model (can navigate around obstacles)
-            from ..utility.calcs import a_star_enhanced
-            from .unit import MovementAction
+            # Use charge-aware pathfinding for single model (can navigate around obstacles and into engagement range)
+            from ..utility.calcs import get_charge_movement_path
+
+            pathfinding_result = get_charge_movement_path(model, destination[:2], max_charge_distance, game_map)
             
-            pathfinding_result = a_star_enhanced(model, game_map, destination, movement_action=MovementAction.MOVE)
-            
-            if not pathfinding_result:
+            if not pathfinding_result or not pathfinding_result.get('valid'):
                 print(f"❌ {self.name} cannot charge to destination - pathfinding failed (obstacles in way)")
                 return False
-            
-            shortest_path, enemy_models_moved_over = pathfinding_result
+
+            shortest_path = [(p[0], p[1], destination[2]) for p in pathfinding_result['path']]
             
             # Calculate path distance
             path_distance = sum(get_dist(shortest_path[i][0] - shortest_path[i-1][0], shortest_path[i][1] - shortest_path[i-1][1]) for i in range(1, len(shortest_path)))
@@ -1459,14 +1459,13 @@ class Unit:
                         logger.debug(f"Model {model._id} cannot reach charge destination {model_distance:.1f}\" away (max: {max_charge_distance}\")")
                         continue
                     
-                    # Use enhanced pathfinding for charge movement
-                    from ..utility.calcs import a_star_enhanced
-                    from .unit import MovementAction
-                    
-                    pathfinding_result = a_star_enhanced(model, game_map, model_destination, movement_action=MovementAction.MOVE)
-                    
-                    if pathfinding_result:
-                        shortest_path, enemy_models_moved_over = pathfinding_result
+                    # Use charge-aware pathfinding for charge movement
+                    from ..utility.calcs import get_charge_movement_path
+
+                    pathfinding_result = get_charge_movement_path(model, model_destination[:2], max_charge_distance, game_map)
+
+                    if pathfinding_result and pathfinding_result.get('valid'):
+                        shortest_path = [(p[0], p[1], model_destination[2]) for p in pathfinding_result['path']]
                         
                         # Calculate path distance
                         path_distance = sum(get_dist(shortest_path[i][0] - shortest_path[i-1][0], shortest_path[i][1] - shortest_path[i-1][1]) for i in range(1, len(shortest_path)))
@@ -1677,7 +1676,7 @@ class Unit:
             destination[2] - start_z
         )
         
-                # Check if destination is within movement range
+        # Check if destination is within movement range
         if distance_to_destination > movement_range:
             print(f"❌ {self.name} cannot reach fall back destination {distance_to_destination:.1f}\" away (max move: {movement_range}\")")
             return False
@@ -1710,19 +1709,24 @@ class Unit:
                 print(f"Model {model._id} cannot reach fall back destination {model_distance:.1f}\" away (max: {movement_range}\")")
                 continue  # Skip this model, don't move it
             
-            # Try enhanced pathfinding for Fall Back movement
-            pathfinding_result = a_star_enhanced(model, game_map, model_destination, movement_action=MovementAction.FALL_BACK)
-            
-            if not pathfinding_result:
-                logger.debug(f"Model {model._id} enhanced pathfinding failed for fall back - destination may be invalid")
+            # Try pathfinding for Fall Back movement using standard pathfinding
+            from ..utility.calcs import get_movement_path_preview
+
+            pathfinding_result = get_movement_path_preview(model, model_destination[:2], self.movement, game_map)
+
+            if not pathfinding_result or not pathfinding_result.get('valid'):
+                logger.debug(f"Model {model._id} pathfinding failed for fall back - destination may be invalid")
                 continue
-            
-            shortest_path, enemy_models_moved_over = pathfinding_result
+
+            # Convert 2D path to 3D
+            shortest_path = [(p[0], p[1], model_destination[2]) for p in pathfinding_result['path']]
             
             # Calculate path distance
             path_distance = sum(get_dist(shortest_path[i][0] - shortest_path[i-1][0], shortest_path[i][1] - shortest_path[i-1][1]) for i in range(1, len(shortest_path)))
             
             # Check for Desperate Escape Tests (models that move over enemy models)
+            # Note: New pathfinding doesn't track enemy models moved over, so skip this for now
+            enemy_models_moved_over = []  # TODO: Implement enemy model tracking in new pathfinding
             if enemy_models_moved_over and not self.is_titanic and not self.is_flying:
                 print(f"⚠️  Model {model._id} must take Desperate Escape Test for moving over {len(enemy_models_moved_over)} enemy model(s)")
                 

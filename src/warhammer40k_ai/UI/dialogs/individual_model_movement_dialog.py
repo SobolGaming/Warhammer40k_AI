@@ -322,33 +322,59 @@ class IndividualModelMovementDialog(BaseDialog):
         
         # Use the individual model movement pathfinding
         from ...utility.calcs import get_individual_model_movement_path
-        
-        path = get_individual_model_movement_path(
-            self.unit, model_index, destination, self.game_map, self.max_distance
-        )
-        
-        if not path:
-            # Calculate distance to provide better feedback
-            current_pos = model.get_location()
-            distance = ((destination[0] - current_pos[0])**2 + (destination[1] - current_pos[1])**2)**0.5
-            
+        from ...classes.unit import MovementAction
+
+        # Map movement type string to MovementAction enum
+        movement_action_map = {
+            'move': MovementAction.MOVE,
+            'advance': MovementAction.ADVANCE,
+            'fall_back': MovementAction.FALL_BACK,
+            'charge': MovementAction.CHARGE,
+            'scout': MovementAction.MOVE,  # Scout uses normal movement rules
+            'pile_in': MovementAction.MOVE,  # Pile-in uses normal movement rules
+            'consolidate': MovementAction.MOVE  # Consolidate uses normal movement rules
+        }
+
+        movement_action = movement_action_map.get(self.movement_type, MovementAction.MOVE)
+
+        # Use movement-specific pathfinding based on movement type
+        if movement_action == MovementAction.CHARGE:
+            # Use charge-specific pathfinding that allows engagement range
+            from ...utility.calcs import get_charge_movement_path
+            path_result = get_charge_movement_path(
+                model, destination[:2], self.max_distance, self.game_map
+            )
+        else:
+            # Use standard pathfinding for other movement types
+            from ...utility.calcs import get_movement_path_preview
+            path_result = get_movement_path_preview(
+                model, destination[:2], self.max_distance, self.game_map
+            )
+
+        print(f"🔍 DEBUG: Pathfinding result for {model.name} to {destination}")
+        print(f"🔍 DEBUG: Path valid: {path_result['valid']}, movement_action: {movement_action}")
+        print(f"🔍 DEBUG: Reason: {path_result['reason']}")
+        if path_result['path']:
+            print(f"🔍 DEBUG: Path length: {len(path_result['path'])}")
+
+        if not path_result['valid'] or not path_result['path']:
             print(f"❌ No valid path found for {model.name} (Model #{model_index + 1})")
-            if distance > self.max_distance:
-                print(f"   Distance: {distance:.1f}\" > Max: {self.max_distance:.1f}\"")
-            else:
-                print(f"   Path blocked by obstacles or other models")
+            print(f"   Reason: {path_result['reason']}")
             print(f"   Try clicking closer or on a clear area")
             return False
-            
+
+        # Convert 2D path back to 3D for movement
+        path_3d = [(p[0], p[1], destination[2]) for p in path_result['path']]
+
         # Move the model along the path
-        final_position = path[-1]
+        final_position = path_3d[-1]
         
         # Update model position (preserve current facing)
         current_facing = model.model_base.facing if hasattr(model.model_base, 'facing') else 0.0
         model.set_location(final_position[0], final_position[1], final_position[2], current_facing)
         
         # Store the movement path
-        model.last_move_path = path
+        model.last_move_path = path_3d
         
         # Unit position is now determined by model positions
         

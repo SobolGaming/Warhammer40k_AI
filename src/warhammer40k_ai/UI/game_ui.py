@@ -2709,16 +2709,17 @@ class BattlePhaseHandler(BasePhaseHandler):
             max_charge_distance = charge_roll
             print(f"🎲 {charging_unit.name} rolled {charge_roll}\" for charge distance")
 
+            # Mark charge as declared immediately (prevents re-rolling)
+            charging_unit.round_state.declared_charge_this_round = True
+
             # Open individual model movement dialog for charge movement
             def on_charge_movement_complete(completed: bool):
                 if completed:
                     print(f"⚔️ {charging_unit.name} charge movement completed")
-                    charging_unit.round_state.declared_charge_this_round = True
                     charging_unit.round_state.charged_this_round = True
                 else:
                     print(f"❌ {charging_unit.name} charge movement failed or skipped")
-                    charging_unit.round_state.declared_charge_this_round = True
-                    # Note: charge still declared even if movement failed
+                    # Note: charge already declared above - cannot charge again this round
 
             self.game_view.individual_model_movement_dialog.show(
                 charging_unit, 'charge', on_charge_movement_complete, self.game.map, max_charge_distance

@@ -247,7 +247,7 @@ def check_engagement_range_violation(model: 'Model', position: Tuple[float, floa
         model: The model to check
         position: The position to test (x, y, z)
         game_map: The game map containing enemy units
-        movement_action: MovementAction enum value (MOVE, ADVANCE, FALL_BACK)
+        movement_action: MovementAction enum value (MOVE, ADVANCE, FALL_BACK, CHARGE)
         is_ending_position: Whether this is the final destination
         
     Returns:
@@ -276,13 +276,17 @@ def check_engagement_range_violation(model: 'Model', position: Tuple[float, floa
             vertical_distance = temp_base.vertical_distance(enemy_model.model_base)
             
             # Check if within engagement range
-            if (horizontal_distance <= ENGAGEMENT_RANGE_HORIZONTAL and 
+            if (horizontal_distance <= ENGAGEMENT_RANGE_HORIZONTAL and
                 vertical_distance <= ENGAGEMENT_RANGE_VERTICAL):
-                
+
                 # Fall Back rules: Can move within engagement range but cannot end within it
                 if movement_action == MovementAction.FALL_BACK:
                     return is_ending_position  # Only violation if ending position
-                
+
+                # Charge rules: Can move into engagement range (that's the goal!)
+                if movement_action == MovementAction.CHARGE:
+                    return False  # No violation for charge movement
+
                 # Normal/Advance rules: Cannot move within engagement range at all
                 return True
                 
@@ -482,7 +486,7 @@ def is_position_valid_for_movement(model: 'Model', position: Tuple[float, float,
         start_pos: The starting position for path checking
         game_map: The game map
         is_ending_position: Whether this is the final destination
-        movement_action: MovementAction enum value (MOVE, ADVANCE, FALL_BACK)
+        movement_action: MovementAction enum value (MOVE, ADVANCE, FALL_BACK, CHARGE)
         
     Returns:
         Tuple[bool, List[Model]]: (is_valid, list_of_enemy_models_moved_over)
@@ -608,154 +612,9 @@ def get_enhanced_neighbors(current: Tuple[float, float, float], model: 'Model', 
     
     return valid_neighbors
 
-def a_star_enhanced(model: 'Model', game_map: 'Map', target: Tuple[float, float, float], 
-                   max_iterations: int = 15000, movement_action: 'MovementAction' = None) -> Optional[Tuple[List[Tuple[float, float, float]], List['Model']]]:
-    """
-    Enhanced A* pathfinding algorithm that accounts for all Warhammer 40k movement rules.
-    
-    This implementation now uses the optimized pathfinding with Minkowski sums and STRTrees
-    while maintaining compatibility with existing movement validation systems.
-    
-    Args:
-        model: The model to pathfind for
-        game_map: The game map containing all units and obstacles
-        target: Target position (x, y, z, facing)
-        max_iterations: Maximum iterations to prevent infinite loops
-        movement_action: MovementAction enum value (MOVE, ADVANCE, FALL_BACK)
-        
-    Returns:
-        Tuple containing (path, enemy_models_moved_over) or None if no path exists
-    """
-    # For complex movement actions that need special handling (like FALL_BACK), use legacy pathfinding
-    if movement_action is not None and hasattr(movement_action, 'value'):
-        from ..classes.unit import MovementAction
-        if movement_action == MovementAction.FALL_BACK:
-            # Use the legacy enhanced pathfinding for fall back movement
-            return a_star_enhanced_legacy(model, game_map, target, max_iterations, movement_action)
-    
-    # For basic pathfinding (MOVE, ADVANCE, or no movement action), use the optimized algorithm
-    max_distance = model.parent_unit.movement
-    
-    # If this is an advance movement, add the advance roll
-    if movement_action is not None and hasattr(movement_action, 'value'):
-        from ..classes.unit import MovementAction
-        if movement_action == MovementAction.ADVANCE:
-            # Check if the unit has an advance roll stored
-            unit = model.parent_unit
-            if hasattr(unit.round_state, 'advance_roll') and unit.round_state.advance_roll is not None:
-                max_distance += unit.round_state.advance_roll
-    
-    # Try optimized pathfinding first
-    try:
-        path = a_star_optimized_with_pivot_cost(model, game_map, target, max_distance)
-        if path:
-            logger.debug(f"Optimized path found for {model.name}, length: {len(path)}")
-            return path, []  # No enemy models moved over in basic pathfinding
-    except Exception as e:
-        logger.warning(f"Optimized pathfinding failed for {model.name}: {e}")
-    
-    # Fallback to legacy pathfinding
-    logger.debug(f"Falling back to legacy pathfinding for {model.name}")
-    return a_star_enhanced_legacy(model, game_map, target, max_iterations, movement_action)
+# REMOVED: a_star_enhanced - replaced with get_movement_path_preview and get_charge_movement_path
 
-def a_star_enhanced_legacy(model: 'Model', game_map: 'Map', target: Tuple[float, float, float], 
-                         max_iterations: int = 15000, movement_action: 'MovementAction' = None) -> Optional[Tuple[List[Tuple[float, float, float]], List['Model']]]:
-    """
-    Legacy enhanced A* pathfinding algorithm that accounts for all Warhammer 40k movement rules.
-    
-    This is the original implementation preserved for compatibility with complex movement actions.
-    """
-    start = (model.model_base.x, model.model_base.y, model.model_base.z)
-    goal = target[:3]
-    
-    # Early validation - check if goal is reachable at all
-    goal_valid, _ = is_position_valid_for_movement(model, goal, start, game_map, 
-                                                  is_ending_position=True, movement_action=movement_action)
-    if not goal_valid:
-        logger.debug(f"Goal position {goal} is invalid for {model.name} (movement action: {movement_action})")
-        return None
-    
-    # Initialize A* data structures
-    open_set = []
-    heapq.heappush(open_set, (0, start))
-    came_from = {}
-    g_score = {start: 0}
-    f_score = {start: heuristic(start, goal)}
-    closed_set = set()
-    
-    # Track enemy models moved over for each path
-    path_enemy_models = {start: []}
-    
-    iterations = 0
-    logger.debug(f"Starting legacy enhanced A* pathfinding for {model.name} from {start} to {goal} (movement action: {movement_action})")
-    
-    while open_set and iterations < max_iterations:
-        current = heapq.heappop(open_set)[1]
-        
-        # Skip if already processed
-        if current in closed_set:
-            continue
-            
-        closed_set.add(current)
-        
-        # Check if we've reached the goal
-        if heuristic(current, goal) < 0.1:  # Close enough to goal
-            # Reconstruct path and enemy models moved over
-            path = []
-            all_enemy_models_moved_over = []
-            
-            # Trace back through the path
-            path_node = current
-            while path_node in came_from:
-                path.append(path_node)
-                all_enemy_models_moved_over.extend(path_enemy_models.get(path_node, []))
-                path_node = came_from[path_node]
-                
-            path.append(start)
-            path.reverse()
-            path.append(goal)  # Ensure we end exactly at goal
-            
-            # Remove duplicates from enemy models moved over
-            unique_enemy_models = []
-            for enemy_model in all_enemy_models_moved_over:
-                if enemy_model not in unique_enemy_models:
-                    unique_enemy_models.append(enemy_model)
-            
-            logger.debug(f"Legacy enhanced path found after {iterations} iterations, length: {len(path)}, enemy models moved over: {len(unique_enemy_models)}")
-            return path, unique_enemy_models
-        
-        # Get valid neighbors according to Warhammer 40k rules
-        neighbors_with_enemies = get_enhanced_neighbors(current, model, game_map.obstacles, game_map, goal, movement_action)
-        
-        for neighbor, enemy_models_moved_over in neighbors_with_enemies:
-            if neighbor in closed_set:
-                continue
-                
-            # Calculate movement cost (including vertical movement)
-            movement_cost = heuristic(current, neighbor)
-            tentative_g_score = g_score[current] + movement_cost
-            
-            # If we've found a better path to this neighbor
-            if neighbor not in g_score or tentative_g_score < g_score[neighbor]:
-                came_from[neighbor] = current
-                g_score[neighbor] = tentative_g_score
-                f_score[neighbor] = g_score[neighbor] + heuristic(neighbor, goal)
-                
-                # Track enemy models moved over for this path
-                current_enemy_models = path_enemy_models.get(current, [])
-                path_enemy_models[neighbor] = current_enemy_models + enemy_models_moved_over
-                
-                # Add to open set if not already there with worse score
-                heapq.heappush(open_set, (f_score[neighbor], neighbor))
-        
-        iterations += 1
-        
-        # Progress logging for long pathfinding
-        if iterations % 1000 == 0:
-            logger.debug(f"Legacy enhanced A* iteration {iterations}, open set size: {len(open_set)} (movement action: {movement_action})")
-    
-    logger.debug(f"No legacy enhanced path found after {iterations} iterations for {model.name} (movement action: {movement_action})")
-    return None
+# REMOVED: a_star_enhanced_legacy - forcing use of new pathfinding system
 
 # Keep the original a_star function for backwards compatibility
 def a_star(model: 'Model', obstacles, target, max_iterations=10000):
@@ -1060,8 +919,8 @@ def validate_unit_coherency_after_movement(unit: 'Unit', new_positions: List[Tup
     
     return is_coherent, non_coherent_models
 
-def get_individual_model_movement_path(unit: 'Unit', model_index: int, target: Tuple[float, float, float], 
-                                    game_map: 'Map', max_distance: Optional[float] = None) -> Optional[List[Tuple[float, float, float]]]:
+def get_individual_model_movement_path(unit: 'Unit', model_index: int, target: Tuple[float, float, float],
+                                    game_map: 'Map', max_distance: Optional[float] = None, movement_action: 'MovementAction' = None) -> Optional[List[Tuple[float, float, float]]]:
     """
     Get pathfinding result for an individual model within a unit's movement phase.
     
@@ -1075,6 +934,7 @@ def get_individual_model_movement_path(unit: 'Unit', model_index: int, target: T
         target: Target position (x, y, z) for the model
         game_map: The game map
         max_distance: Maximum movement distance (defaults to model's movement stat)
+        movement_action: MovementAction enum value (MOVE, ADVANCE, FALL_BACK, CHARGE)
         
     Returns:
         Optional path as list of (x, y, z) positions, or None if no path found
@@ -1089,15 +949,42 @@ def get_individual_model_movement_path(unit: 'Unit', model_index: int, target: T
     if max_distance is None:
         max_distance = model.movement
     
-    # Use optimized pathfinding for individual model movement
-    path = get_optimized_path(model, game_map, target, max_distance)
-    
-    if path:
-        logger.debug(f"Path found for model {model_index} in unit {unit.name}: {len(path)} points")
+    # Use movement-specific pathfinding based on movement action
+    if movement_action is not None:
+        from ..classes.unit import MovementAction
+
+        if movement_action == MovementAction.CHARGE:
+            # Use charge-specific pathfinding that allows engagement range
+            pathfinding_result = get_charge_movement_path(model, target[:2], max_distance, game_map)
+            if pathfinding_result and pathfinding_result.get('valid'):
+                # Convert 2D path back to 3D
+                path_3d = [(p[0], p[1], target[2]) for p in pathfinding_result['path']]
+                logger.debug(f"Charge path found for model {model_index} in unit {unit.name}: {len(path_3d)} points")
+                return path_3d
+            else:
+                logger.debug(f"No charge path found for model {model_index} in unit {unit.name}: {pathfinding_result.get('reason', 'unknown')}")
+                return None
+        else:
+            # Use standard pathfinding for other movement actions
+            pathfinding_result = get_movement_path_preview(model, target[:2], max_distance, game_map)
+            if pathfinding_result and pathfinding_result.get('valid'):
+                # Convert 2D path back to 3D
+                path_3d = [(p[0], p[1], target[2]) for p in pathfinding_result['path']]
+                logger.debug(f"Path found for model {model_index} in unit {unit.name}: {len(path_3d)} points")
+                return path_3d
+            else:
+                logger.debug(f"No path found for model {model_index} in unit {unit.name}: {pathfinding_result.get('reason', 'unknown')}")
+                return None
     else:
-        logger.debug(f"No path found for model {model_index} in unit {unit.name}")
-    
-    return path
+        # Use optimized pathfinding for normal movement
+        path = get_optimized_path(model, game_map, target, max_distance)
+
+        if path:
+            logger.debug(f"Path found for model {model_index} in unit {unit.name}: {len(path)} points")
+        else:
+            logger.debug(f"No path found for model {model_index} in unit {unit.name}")
+
+        return path
 
 def process_unit_movement_with_coherency_check(unit: 'Unit', model_movements: List[Tuple[int, List[Tuple[float, float, float]]]]) -> Tuple[bool, List[int]]:
     """
@@ -1349,6 +1236,117 @@ def query_spatial_index(tree: STRtree, query_geom) -> List:
     
     # Fallback: if indices are actually geometry objects (old API), return as-is
     return list(indices) if hasattr(indices, '__iter__') else [indices]
+
+class OptimizedPathfindingEnvironmentForCharge:
+    """
+    Optimized pathfinding environment specifically for charge movement.
+
+    This is similar to OptimizedPathfindingEnvironment but allows movement
+    into engagement range of enemy units for charge actions.
+    """
+
+    def __init__(self, game_map: 'Map', moving_model: 'Model'):
+        """Initialize the charge pathfinding environment"""
+        self.game_map = game_map
+        self.moving_model = moving_model
+
+        # Pre-compute obstacles and enemy positions (same as normal pathfinding)
+        self.obstacles = []
+        for obstacle in game_map.obstacles:
+            if hasattr(obstacle, 'get_shape'):
+                self.obstacles.append(obstacle.get_shape())
+
+        # Get enemy models but don't treat them as obstacles for charge movement
+        self.enemy_models = []
+        enemy_units = game_map.get_enemy_units(moving_model.parent_unit)
+        for enemy_unit in enemy_units:
+            if enemy_unit.is_alive() and enemy_unit.deployed:
+                for enemy_model in enemy_unit.models:
+                    if enemy_model.is_alive:
+                        self.enemy_models.append(enemy_model)
+
+    def is_valid_position_fast(self, position: Tuple[float, float], orientation: float) -> bool:
+        """Fast collision detection for charge movement - allows engagement range"""
+        point = Point(position)
+
+        # Check map bounds
+        if not self.game_map.is_within_boundary(self.moving_model, position):
+            return False
+
+        # Check obstacles (still blocked by terrain)
+        for obstacle in self.obstacles:
+            if obstacle.contains(point):
+                return False
+
+        # For charge movement, we DON'T check enemy model collisions or engagement range
+        # This allows models to move into engagement range during charges
+
+        return True
+
+    def find_path(self, start: Tuple[float, float], goal: Tuple[float, float],
+                 max_distance: float, step_size: float = 0.4) -> Optional[List[Tuple[float, float]]]:
+        """Find a path using A* with charge-specific validation"""
+        # Use the same A* logic as the normal pathfinding but with charge validation
+        return self._a_star_search(start, goal, max_distance, step_size)
+
+    def _a_star_search(self, start: Tuple[float, float], goal: Tuple[float, float],
+                      max_distance: float, step_size: float) -> Optional[List[Tuple[float, float]]]:
+        """A* search implementation for charge movement"""
+        import heapq
+
+        open_set = []
+        heapq.heappush(open_set, (0, start))
+        came_from = {}
+        g_score = {start: 0}
+        f_score = {start: heuristic(start, goal)}
+        closed_set = set()
+
+        while open_set:
+            current = heapq.heappop(open_set)[1]
+
+            if current in closed_set:
+                continue
+
+            closed_set.add(current)
+
+            # Check if we've reached the goal
+            if heuristic(current, goal) < step_size:
+                # Reconstruct path
+                path = []
+                while current in came_from:
+                    path.append(current)
+                    current = came_from[current]
+                path.append(start)
+                path.reverse()
+                return path
+
+            # Generate neighbors
+            for dx, dy in [(-step_size, 0), (step_size, 0), (0, -step_size), (0, step_size),
+                          (-step_size, -step_size), (-step_size, step_size),
+                          (step_size, -step_size), (step_size, step_size)]:
+                neighbor = (current[0] + dx, current[1] + dy)
+
+                if neighbor in closed_set:
+                    continue
+
+                # Check if position is valid for charge movement
+                if not self.is_valid_position_fast(neighbor, 0):
+                    continue
+
+                tentative_g_score = g_score[current] + heuristic(current, neighbor)
+
+                # Check distance limit
+                if tentative_g_score > max_distance:
+                    continue
+
+                if neighbor not in g_score or tentative_g_score < g_score[neighbor]:
+                    came_from[neighbor] = current
+                    g_score[neighbor] = tentative_g_score
+                    f_score[neighbor] = tentative_g_score + heuristic(neighbor, goal)
+                    heapq.heappush(open_set, (f_score[neighbor], neighbor))
+
+        return None
+
 
 class OptimizedPathfindingEnvironment:
     """
@@ -1639,6 +1637,40 @@ class OptimizedPathfindingEnvironment:
 
         return reachable
 
+def a_star_optimized_enhanced_for_charge(model: 'Model', game_map: 'Map', target: Tuple[float, float],
+                                       max_distance: float, step_size: float = 0.4) -> Optional[Tuple[List[Tuple[float, float, float]], bool]]:
+    """
+    Enhanced A* pathfinding for charge movement that allows moving into engagement range.
+
+    This is based on a_star_optimized_enhanced but with modified validation that allows
+    charge movement into engagement range of enemy units.
+    """
+    try:
+        # Create optimized pathfinding environment with charge-specific settings
+        env = OptimizedPathfindingEnvironmentForCharge(game_map, model)
+
+        # Use the same pathfinding logic but with charge-aware validation
+        start_pos = (model.model_base.x, model.model_base.y)
+
+        # Run A* pathfinding
+        path = env.find_path(start_pos, target, max_distance, step_size)
+
+        if path:
+            # Convert to 3D path
+            path_3d = [(p[0], p[1], model.model_base.z) for p in path]
+
+            # Check if rotation is needed
+            has_rotation = len(path_3d) > 1 and not getattr(model.parent_unit, 'has_circular_base', False)
+
+            return path_3d, has_rotation
+        else:
+            return None
+
+    except Exception as e:
+        logger.warning(f"Charge pathfinding failed for {model.name}: {e}")
+        return None
+
+
 def a_star_optimized_enhanced(model: 'Model', game_map: 'Map', target: Tuple[float, float],
                             max_distance: float, step_size: float = 0.4) -> Optional[Tuple[List[Tuple[float, float, float]], bool]]:
     """
@@ -1768,6 +1800,81 @@ def a_star_optimized_enhanced(model: 'Model', game_map: 'Map', target: Tuple[flo
                     break  # Found valid orientation, move to next neighbor
 
     return None  # No path found
+
+
+def get_charge_movement_path(moving_model: 'Model', target_position: tuple,
+                           max_distance: float, game_map: 'Map') -> dict:
+    """
+    Get a movement path for charge actions that allows moving into engagement range.
+
+    This is similar to get_movement_path_preview but with charge-specific validation
+    that allows models to move into engagement range of enemy units.
+
+    Args:
+        moving_model: The model to move
+        target_position: Target position (x, y) in inches
+        max_distance: Maximum movement distance in inches
+        game_map: The game map containing obstacles and units
+
+    Returns:
+        Dict with keys:
+        - 'valid': bool indicating if path is valid
+        - 'path': list of path points if valid
+        - 'distance': total path distance
+        - 'reason': explanation if invalid
+    """
+    try:
+        # Validate input
+        if not moving_model or not moving_model.is_alive:
+            return {
+                'valid': False,
+                'path': None,
+                'distance': 0,
+                'reason': 'Invalid or dead model'
+            }
+
+        # Use the enhanced optimized pathfinding with charge-specific validation
+        result = a_star_optimized_enhanced_for_charge(moving_model, game_map, target_position, max_distance)
+
+        if result and result[0]:
+            path, has_rotation = result
+
+            # Calculate total distance
+            total_distance = 0
+            if len(path) > 1:
+                for i in range(1, len(path)):
+                    dx = path[i][0] - path[i-1][0]
+                    dy = path[i][1] - path[i-1][1]
+                    total_distance += (dx*dx + dy*dy)**0.5
+
+            # Apply rotation cost if needed
+            effective_max_distance = max_distance
+            if has_rotation and not getattr(moving_model.parent_unit, 'has_circular_base', False):
+                rotation_cost = 1.0  # 1 inch rotation cost
+                effective_max_distance -= rotation_cost
+
+            return {
+                'valid': total_distance <= effective_max_distance,
+                'path': [(p[0], p[1]) for p in path],  # Convert to 2D for UI
+                'distance': total_distance,
+                'reason': 'Valid charge path found' if total_distance <= effective_max_distance else f'Charge path too long ({total_distance:.1f}" > {effective_max_distance}")'
+            }
+        else:
+            return {
+                'valid': False,
+                'path': None,
+                'distance': 0,
+                'reason': 'No valid charge path found'
+            }
+
+    except Exception as e:
+        logger.warning(f"Charge pathfinding error: {e}")
+        return {
+            'valid': False,
+            'path': None,
+            'distance': 0,
+            'reason': f'Charge pathfinding error: {str(e)}'
+        }
 
 
 def get_movement_path_preview(moving_model: 'Model', target_position: tuple,
