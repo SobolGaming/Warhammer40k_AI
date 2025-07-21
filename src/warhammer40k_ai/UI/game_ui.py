@@ -1440,21 +1440,7 @@ class GameView:
             
             draw_units(battlefield_surface, unit, self.zoom_level, self.offset_x, self.offset_y, pygame.mouse.get_pos(), self.player1, self.player2, highlighted_model_index)
         
-        # Draw movement range indicator if a unit is selected for movement
-        if (hasattr(self, 'selected_unit_for_movement') and
-            self.selected_unit_for_movement and
-            hasattr(self, 'movement_action') and
-            self.movement_action):
-            advance_roll = getattr(self, 'advance_roll', None)
-            selected_model = getattr(self, 'selected_model_for_movement', None)
-            draw_movement_range(battlefield_surface, self.selected_unit_for_movement,
-                              self.movement_action, self.zoom_level, self.offset_x, self.offset_y, advance_roll, selected_model)
-
-            # Draw real-time movement path preview if mouse is hovering over battlefield
-            if hasattr(self, 'movement_preview_target') and self.movement_preview_target:
-                draw_movement_path_preview(battlefield_surface, self.selected_unit_for_movement,
-                                         self.movement_action, self.movement_preview_target,
-                                         self.zoom_level, self.offset_x, self.offset_y, self.game.map)
+        # Old unit-level movement range drawing removed - now using Individual Model Movement Dialog for all movement
 
         # Draw movement range indicator for individual model movement dialog
         if (hasattr(self, 'individual_model_movement_dialog') and
@@ -1462,6 +1448,7 @@ class GameView:
             self.individual_model_movement_dialog.unit and
             self.individual_model_movement_dialog.selected_model_index is not None):
 
+            print(f"🔍 DEBUG: Drawing individual model movement visualization")
             unit = self.individual_model_movement_dialog.unit
             model_index = self.individual_model_movement_dialog.selected_model_index
 
@@ -1470,11 +1457,16 @@ class GameView:
                 movement_type = self.individual_model_movement_dialog.movement_type
                 max_distance = self.individual_model_movement_dialog.max_distance
 
+                print(f"🔍 DEBUG: Drawing range circle for {selected_model.name} (type: {movement_type}, distance: {max_distance})")
                 # Draw range circle for the selected model
                 draw_individual_model_movement_range(battlefield_surface, selected_model, movement_type,
                                                    max_distance, self.zoom_level, self.offset_x, self.offset_y)
 
                 # Draw real-time path preview if mouse is hovering over battlefield
+                print(f"🔍 DEBUG: Checking for path preview - has target: {hasattr(self, 'individual_model_preview_target')}")
+                if hasattr(self, 'individual_model_preview_target'):
+                    print(f"🔍 DEBUG: Preview target value: {self.individual_model_preview_target}")
+
                 if hasattr(self, 'individual_model_preview_target') and self.individual_model_preview_target:
                     print(f"🔍 DEBUG: Drawing path preview for model {model_index} to {self.individual_model_preview_target}")
                     # Use existing path preview function with the selected model
@@ -1489,39 +1481,11 @@ class GameView:
 
                     print(f"🔍 DEBUG: Path result - valid: {path_result['valid']}, path length: {len(path_result['path']) if path_result['path'] else 0}")
 
-                    # Draw the path preview using existing visualization
-                    if path_result['valid'] and path_result['path']:
-                        # Choose color based on movement type
-                        if movement_type == 'scout':
-                            path_color = (0, 255, 255)  # Cyan for scout
-                        elif movement_type == 'move':
-                            path_color = (0, 255, 0)    # Green for move
-                        elif movement_type == 'advance':
-                            path_color = (255, 255, 0)  # Yellow for advance
-                        elif movement_type == 'fall_back':
-                            path_color = (255, 165, 0)  # Orange for fall back
-                        else:
-                            path_color = (0, 255, 0)    # Default green
-                    else:
-                        path_color = (255, 0, 0)        # Red for invalid path
-
-                    # Draw path using existing logic
-                    if path_result['path'] and len(path_result['path']) > 1:
-                        path_points = []
-                        for pos in path_result['path']:
-                            screen_x = int(pos[0] * TILE_SIZE * self.zoom_level + self.offset_x)
-                            screen_y = int(pos[1] * TILE_SIZE * self.zoom_level + self.offset_y)
-                            path_points.append((screen_x, screen_y))
-
-                        if len(path_points) > 1:
-                            pygame.draw.lines(battlefield_surface, path_color, False, path_points, 3)
-
-                        # Draw target indicator with actual model base footprint
-                        final_pos = path_result['path'][-1]
-
-                        # Draw the actual model base footprint at target position
-                        self._draw_model_base_preview(battlefield_surface, selected_model,
-                                                    final_pos[0], final_pos[1], path_color)
+                    # Draw the path and model base preview similar to scout movement
+                    self._draw_individual_model_path_preview(battlefield_surface, selected_model,
+                                                           path_result, self.individual_model_preview_target)
+                else:
+                    print(f"🔍 DEBUG: No preview target set for individual model movement")
 
         # Draw weapon range indicator if a unit is selected for shooting
         if (hasattr(self, 'selected_unit') and self.selected_unit and
@@ -1628,6 +1592,35 @@ class GameView:
             }
         else:
             return {'error': 'Phase manager not initialized'}
+
+    def _draw_individual_model_path_preview(self, surface: pygame.Surface, model, path_result: dict, target_pos: tuple):
+        """Draw path preview and model base for individual model movement"""
+        if not path_result or not target_pos:
+            return
+
+        # Choose color based on pathfinding result
+        if path_result['valid']:
+            color = (0, 255, 255)  # Cyan for valid path
+        else:
+            color = (255, 165, 0)  # Orange for invalid path
+
+        # Draw the path if available
+        if path_result['path'] and len(path_result['path']) > 1:
+            path_points = []
+            for pos in path_result['path']:
+                screen_x = int(pos[0] * TILE_SIZE * self.zoom_level + self.offset_x)
+                screen_y = int(pos[1] * TILE_SIZE * self.zoom_level + self.offset_y)
+                path_points.append((screen_x, screen_y))
+
+            if len(path_points) > 1:
+                pygame.draw.lines(surface, color, False, path_points, 3)
+
+            # Draw target indicator with actual model base footprint
+            final_pos = path_result['path'][-1]
+            self._draw_model_base_preview(surface, model, final_pos[0], final_pos[1], color)
+        else:
+            # No path available, just draw target position
+            self._draw_model_base_preview(surface, model, target_pos[0], target_pos[1], color)
 
     def _draw_model_base_preview(self, surface: pygame.Surface, model, game_x: float, game_y: float, color: tuple):
         """Draw the actual model base footprint at the specified game coordinates"""
@@ -2486,9 +2479,14 @@ class BattlePhaseHandler(BasePhaseHandler):
     
     def handle_event(self, event: pygame.event.Event) -> bool:
         """Handle pygame events during battle phases"""
+        if event.type == pygame.MOUSEMOTION:
+            print(f"🔍 DEBUG: BattlePhaseHandler.handle_event - MOUSEMOTION at {event.pos}")
+
         # Handle weapon choice dialog first (highest priority)
         if (hasattr(self.game_view, 'weapon_choice_dialog') and
             self.game_view.weapon_choice_dialog.visible):
+            if event.type == pygame.MOUSEMOTION:
+                print(f"🔍 DEBUG: BattlePhaseHandler - weapon_choice_dialog is visible, delegating")
             return self.game_view.weapon_choice_dialog.handle_event(event)
         
         # Handle melee weapon declaration dialog (high priority for fight phase)
@@ -2523,7 +2521,8 @@ class BattlePhaseHandler(BasePhaseHandler):
         # Handle individual model movement dialog
         if (hasattr(self.game_view, 'individual_model_movement_dialog') and
             self.game_view.individual_model_movement_dialog.visible):
-            return self.game_view.individual_model_movement_dialog.handle_event(event)
+            if self.game_view.individual_model_movement_dialog.handle_event(event):
+                return True
 
         # Handle coherency violation dialog
         if (hasattr(self.game_view, 'coherency_violation_dialog') and
@@ -2704,14 +2703,28 @@ class BattlePhaseHandler(BasePhaseHandler):
         
         # Show charge declaration dialog
         def on_charge_declaration(charging_unit, target_unit):
-            # Execute the charge
-            success = self.game.attempt_charge(charging_unit, target_unit)
-            if success:
-                print(f"⚔️ Charge successful: {charging_unit.name} charged {target_unit.name}")
-            else:
-                print(f"❌ Charge failed: {charging_unit.name} could not reach {target_unit.name}")
-            return success
-        
+            # Roll 2D6 for charge distance
+            import random
+            charge_roll = random.randint(1, 6) + random.randint(1, 6)
+            max_charge_distance = charge_roll
+            print(f"🎲 {charging_unit.name} rolled {charge_roll}\" for charge distance")
+
+            # Open individual model movement dialog for charge movement
+            def on_charge_movement_complete(completed: bool):
+                if completed:
+                    print(f"⚔️ {charging_unit.name} charge movement completed")
+                    charging_unit.round_state.declared_charge_this_round = True
+                    charging_unit.round_state.charged_this_round = True
+                else:
+                    print(f"❌ {charging_unit.name} charge movement failed or skipped")
+                    charging_unit.round_state.declared_charge_this_round = True
+                    # Note: charge still declared even if movement failed
+
+            self.game_view.individual_model_movement_dialog.show(
+                charging_unit, 'charge', on_charge_movement_complete, self.game.map, max_charge_distance
+            )
+            return True  # Charge declaration successful
+
         self.game_view.charge_declaration_dialog.show(unit, on_charge_declaration, self.game.map, self.game_view)
     
     def _handle_fight_phase_selection(self, unit) -> None:
@@ -2792,10 +2805,22 @@ class BattlePhaseHandler(BasePhaseHandler):
             self.fight_phase_manager = None
             # Advance to next phase
             self.game.next_phase()
-        
+
+        def on_movement_required(movement_type: str, unit: Unit, callback):
+            """Handle pile-in and consolidate movements using Individual Model Movement Dialog"""
+            print(f"📍 {unit.name} needs to perform {movement_type} movement")
+
+            # Determine max distance based on movement type
+            max_distance = 3.0  # Both pile-in and consolidate are 3 inches
+
+            self.game_view.individual_model_movement_dialog.show(
+                unit, movement_type, callback, self.game.map, max_distance
+            )
+
         self.fight_phase_manager.on_unit_selection_required = on_unit_selection_required
         self.fight_phase_manager.on_target_selection_required = on_target_selection_required
         self.fight_phase_manager.on_stage_complete = on_stage_complete
+        self.fight_phase_manager.on_movement_required = on_movement_required
         
         # Start the fight phase
         self.fight_phase_manager.start_fight_phase(current_player, opponent_player)
@@ -2938,146 +2963,11 @@ class BattlePhaseHandler(BasePhaseHandler):
             self._handle_unit_selection(clicked_unit)
             return True
         
-        # Only process movement destination if we have a unit selected for movement
-        if (hasattr(self.game_view, 'selected_unit_for_movement') and 
-            self.game_view.selected_unit_for_movement and 
-            hasattr(self.game_view, 'movement_action') and 
-            self.game_view.movement_action):
-            
-            unit = self.game_view.selected_unit_for_movement
-            action = self.game_view.movement_action
-            
-            # Convert to game coordinates
-            battlefield_x = (x - ROSTER_PANE_WIDTH - self.game_view.offset_x) / (TILE_SIZE * self.game_view.zoom_level)
-            battlefield_y = (y - self.game_view.offset_y) / (TILE_SIZE * self.game_view.zoom_level)
-            battlefield_z = self.game.map.get_height_at_point(battlefield_x, battlefield_y)
-            
-            destination = (battlefield_x, battlefield_y, battlefield_z)
-            
-            # Pre-validate the movement destination
-            validation_result = self._validate_movement_destination(unit, action, destination)
-            
-            if not validation_result["valid"]:
-                # Invalid move - show feedback and keep selection active for retry
-                print(f"❌ Invalid {action.name.lower().replace('_', ' ')}: {validation_result['reason']}")
-                print(f"📍 Click on the battlefield to {action.name.lower().replace('_', ' ')} {unit.name} (try a closer location)")
-                return True  # Keep the movement selection active
-            
-            # Destination is valid, attempt the movement
-            success = unit._execute_action(action.value, destination, self.game.map)
-            
-            if success:
-                # Unit movement system now provides its own detailed feedback
-                # Clear movement selection only on successful move
-                self.game_view.selected_unit_for_movement = None
-                self.game_view.movement_action = None
-                self.game_view.selected_model_for_movement = None
-            else:
-                # Move execution failed for some other reason - allow retry
-                print(f"📍 Click on the battlefield to {action.name.lower().replace('_', ' ')} {unit.name} (try a different location)")
-            
-            return True
+        # Old unit-level movement handling removed - now using Individual Model Movement Dialog for all movement
         
         return False
     
-    def _validate_movement_destination(self, unit, action, destination: Tuple[float, float, float]) -> dict:
-        """Validate if a movement destination is reachable using pathfinding and provide feedback"""
-
-
-        # Get position from first alive model
-        first_model = None
-        for model in unit.models:
-            if model.is_alive:
-                first_model = model
-                break
-
-        if not first_model:
-            return {"valid": False, "reason": "Unit has no valid models"}
-
-        current_position = first_model.get_location()
-        if current_position is None:
-            return {"valid": False, "reason": "Unit has no current position"}
-
-        # Get movement range based on action type
-        base_movement = unit.movement
-        if action == MovementAction.REMAIN_STATIONARY:
-            max_distance = 0
-        elif action == MovementAction.MOVE:
-            max_distance = base_movement
-        elif action == MovementAction.ADVANCE:
-            # Use the unit's advance roll if available
-            advance_roll = unit.get_advance_roll()
-            if advance_roll is not None:
-                max_distance = base_movement + advance_roll
-            else:
-                raise RuntimeError(f"Unit {unit.name} has no advance roll")
-        elif action == MovementAction.FALL_BACK:
-            max_distance = base_movement
-        elif action == MovementAction.CHARGE:
-            # For charge, use 2D6 roll if available
-            charge_roll = getattr(unit, 'charge_roll', None)
-            if charge_roll is not None:
-                max_distance = charge_roll
-            else:
-                max_distance = 12  # Maximum possible charge distance (2D6)
-        else:
-            return {"valid": False, "reason": "Unknown movement action"}
-
-        # For stationary units, no movement allowed
-        if action == MovementAction.REMAIN_STATIONARY:
-            if (abs(destination[0] - current_position[0]) > 0.1 or
-                abs(destination[1] - current_position[1]) > 0.1):
-                return {"valid": False, "reason": "Unit must remain stationary"}
-            return {"valid": True, "reason": "Unit remains in position"}
-
-        # Use pathfinding to validate the movement
-        from warhammer40k_ai.utility.calcs import get_unit_movement_path_preview
-        path_result = get_unit_movement_path_preview(
-            unit,
-            (destination[0], destination[1]),
-            max_distance,
-            self.game.map
-        )
-
-        # Apply movement-specific rules
-        if path_result['valid']:
-            # Additional validation for specific movement types
-            if action == MovementAction.CHARGE:
-                # Charge must end within engagement range of an enemy unit
-                enemy_units = self.game.get_enemy_units(unit.get_parent_army().player)
-                within_engagement_range = False
-                for enemy_unit in enemy_units:
-                    if enemy_unit.is_alive() and enemy_unit.deployed:
-                        enemy_pos = enemy_unit.get_position()
-                        if enemy_pos:
-                            distance_to_enemy = ((destination[0] - enemy_pos[0]) ** 2 +
-                                               (destination[1] - enemy_pos[1]) ** 2) ** 0.5
-                            if distance_to_enemy <= 1.0:  # 1" engagement range
-                                within_engagement_range = True
-                                break
-
-                if not within_engagement_range:
-                    return {"valid": False, "reason": "Charge must end within 1\" of an enemy unit"}
-
-            elif action == MovementAction.FALL_BACK:
-                # Fall back cannot end within engagement range of enemy units
-                enemy_units = self.game.get_enemy_units(unit.get_parent_army().player)
-                for enemy_unit in enemy_units:
-                    if enemy_unit.is_alive() and enemy_unit.deployed:
-                        # Get position from first alive model
-                        enemy_pos = None
-                        for model in enemy_unit.models:
-                            if model.is_alive:
-                                enemy_pos = model.get_location()
-                                break
-
-                        if enemy_pos:
-                            distance_to_enemy = ((destination[0] - enemy_pos[0]) ** 2 +
-                                               (destination[1] - enemy_pos[1]) ** 2) ** 0.5
-                            if distance_to_enemy <= 1.0:  # 1" engagement range
-                                return {"valid": False, "reason": "Cannot fall back within 1\" of enemy units"}
-
-        return path_result
+    # Old movement validation method removed - now using Individual Model Movement Dialog for all movement
     
     def _handle_shooting_action(self, x: int, y: int) -> bool:
         """Handle shooting phase actions - allow clicking on units to select them for shooting"""
@@ -3288,6 +3178,8 @@ class BattlePhaseHandler(BasePhaseHandler):
         x, y = mouse_pos
         print(f"🔍 DEBUG: _handle_battle_motion called with ({x}, {y})")
 
+        # Individual model movement tracking now has priority over old systems
+
         # Update hover states for UI components
         if hasattr(self.game_view, 'shooting_declaration_dialog') and self.game_view.shooting_declaration_dialog.visible:
             self.game_view.shooting_declaration_dialog.update_hover((x, y))
@@ -3297,31 +3189,21 @@ class BattlePhaseHandler(BasePhaseHandler):
             self.game_view.movement_choice_dialog.update_hover((x, y))
             return True
 
-        # Track mouse position for movement preview
-        if (hasattr(self.game_view, 'selected_unit_for_movement') and
-            self.game_view.selected_unit_for_movement and
-            hasattr(self.game_view, 'movement_action') and
-            self.game_view.movement_action):
-
-            # Check if mouse is over battlefield area
-            if ROSTER_PANE_WIDTH < x < BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH:
-                # Convert to game coordinates
-                battlefield_x = (x - ROSTER_PANE_WIDTH - self.game_view.offset_x) / (TILE_SIZE * self.game_view.zoom_level)
-                battlefield_y = (y - self.game_view.offset_y) / (TILE_SIZE * self.game_view.zoom_level)
-
-                # Store mouse position for movement preview
-                self.game_view.movement_preview_target = (battlefield_x, battlefield_y)
-                return True
-            else:
-                # Clear preview when mouse leaves battlefield
-                self.game_view.movement_preview_target = None
+        # Old unit-level movement tracking removed - now using Individual Model Movement Dialog for all movement
 
         # Track mouse position for individual model movement preview
+        print(f"🔍 DEBUG: Checking individual model dialog conditions:")
+        print(f"  - Has dialog: {hasattr(self.game_view, 'individual_model_movement_dialog')}")
+        if hasattr(self.game_view, 'individual_model_movement_dialog'):
+            dialog = self.game_view.individual_model_movement_dialog
+            print(f"  - Dialog visible: {dialog.visible}")
+            print(f"  - Selected model index: {dialog.selected_model_index}")
+
         if (hasattr(self.game_view, 'individual_model_movement_dialog') and
             self.game_view.individual_model_movement_dialog.visible and
             self.game_view.individual_model_movement_dialog.selected_model_index is not None):
 
-            print(f"🔍 DEBUG: Individual model dialog active, mouse at ({x}, {y})")
+            print(f"🔍 DEBUG: Individual model movement tracking active at ({x}, {y})")
 
             # Check if mouse is over battlefield area
             if ROSTER_PANE_WIDTH < x < BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH:
@@ -3331,19 +3213,19 @@ class BattlePhaseHandler(BasePhaseHandler):
 
                 # Store mouse position for individual model movement preview
                 self.game_view.individual_model_preview_target = (battlefield_x, battlefield_y)
-                print(f"🔍 DEBUG: Set individual_model_preview_target to ({battlefield_x:.1f}, {battlefield_y:.1f})")
+                print(f"🔍 DEBUG: Set preview target to ({battlefield_x:.1f}, {battlefield_y:.1f})")
                 return True
             else:
                 # Clear preview when mouse leaves battlefield
                 self.game_view.individual_model_preview_target = None
-                print(f"🔍 DEBUG: Cleared individual_model_preview_target (mouse outside battlefield)")
+                print(f"🔍 DEBUG: Cleared preview target (mouse outside battlefield)")
         else:
-            # Debug why individual model preview is not active
+            # Debug why tracking isn't active
             if hasattr(self.game_view, 'individual_model_movement_dialog'):
                 dialog = self.game_view.individual_model_movement_dialog
-                if dialog.visible:
-                    print(f"🔍 DEBUG: Individual model dialog visible but selected_model: {dialog.selected_model_index}")
-            # Don't spam debug when dialog is not visible
+                print(f"🔍 DEBUG: Dialog exists - visible: {dialog.visible}, selected_model: {dialog.selected_model_index}")
+            else:
+                print(f"🔍 DEBUG: No individual_model_movement_dialog found")
 
         # Update roster pane hovers
         if self.game_view.left_roster_pane.rect.collidepoint(x, y):
@@ -3418,17 +3300,18 @@ class PhaseManager:
         handler_name = handler.__class__.__name__
 
         # Debug: Log which handler is being used
-        if event.type in [pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP]:
+        if event.type in [pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION]:
             event_name = {
                 pygame.KEYDOWN: "KEYDOWN",
                 pygame.MOUSEBUTTONDOWN: "MOUSEBUTTONDOWN",
-                pygame.MOUSEBUTTONUP: "MOUSEBUTTONUP"
+                pygame.MOUSEBUTTONUP: "MOUSEBUTTONUP",
+                pygame.MOUSEMOTION: "MOUSEMOTION"
             }.get(event.type, f"TYPE_{event.type}")
             print(f"🔍 DEBUG: PhaseManager - Routing {event_name} to {handler_name}")
 
         result = handler.handle_event(event)
 
-        if event.type in [pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP]:
+        if event.type in [pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION]:
             print(f"🔍 DEBUG: PhaseManager - {handler_name} returned {result}")
 
         return result
@@ -3536,238 +3419,10 @@ def draw_individual_model_movement_range(screen: pygame.Surface, model, movement
         pygame.draw.circle(screen, border_color, (center_x, center_y), radius, 2)
 
 
-def draw_movement_range(screen: pygame.Surface, unit, movement_action, zoom_level: float, offset_x: int, offset_y: int, advance_roll=None, selected_model=None) -> None:
-    """Draw a visual indicator showing the movement range for a selected unit or specific model"""
-    # TILE_SIZE is defined at the top of this file
-    
-    # Use selected model's position if available, otherwise use first model's position
-    if selected_model:
-        model_location = selected_model.get_location()
-        current_position = (model_location[0], model_location[1], model_location[2])
-    else:
-        # Get position from first alive model
-        first_model = None
-        for model in unit.models:
-            if model.is_alive:
-                first_model = model
-                break
-
-        if not first_model:
-            return
-
-        model_location = first_model.get_location()
-        current_position = (model_location[0], model_location[1], model_location[2])
-
-    if not current_position:
-        return
-    
-    # Get movement range based on action type
-    base_movement = unit.movement
-    if movement_action == MovementAction.REMAIN_STATIONARY:
-        max_distance = 0
-    elif movement_action == MovementAction.MOVE:
-        max_distance = base_movement
-    elif movement_action == MovementAction.ADVANCE:
-        # Use the unit's stored advance roll
-        unit_advance_roll = unit.get_advance_roll()
-        if unit_advance_roll is not None:
-            max_distance = base_movement + unit_advance_roll
-        else:
-            raise RuntimeError(f"Unit {unit.name} has no advance roll")
-    elif movement_action == MovementAction.FALL_BACK:
-        max_distance = base_movement
-    else:
-        return
-    
-    if max_distance <= 0:
-        return
-    
-    # Convert unit position to screen coordinates
-    center_x = int(current_position[0] * TILE_SIZE * zoom_level + offset_x)
-    center_y = int(current_position[1] * TILE_SIZE * zoom_level + offset_y)
-    
-    # Calculate radius in screen pixels
-    radius = int(max_distance * TILE_SIZE * zoom_level)
-    
-    # Choose color based on movement type
-    if movement_action == MovementAction.MOVE:
-        color = (0, 255, 0, 64)  # Green for normal move
-        border_color = (0, 200, 0)
-    elif movement_action == MovementAction.ADVANCE:
-        color = (255, 255, 0, 64)  # Yellow for advance
-        border_color = (200, 200, 0)
-    elif movement_action == MovementAction.FALL_BACK:
-        color = (255, 128, 0, 64)  # Orange for fall back
-        border_color = (200, 100, 0)
-    else:
-        color = (128, 128, 128, 64)  # Gray for other actions
-        border_color = (100, 100, 100)
-    
-    # Create a surface with per-pixel alpha for the range circle
-    if radius > 0:
-        range_surface = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
-        pygame.draw.circle(range_surface, color, (radius, radius), radius)
-        
-        # Blit the transparent range circle onto the battlefield
-        screen.blit(range_surface, (center_x - radius, center_y - radius))
-        
-        # Draw the border circle
-        pygame.draw.circle(screen, border_color, (center_x, center_y), radius, 3)
-        
-        # Draw action text at the bottom of the circle
-        try:
-            font = pygame.font.SysFont('Arial', max(16, int(20 * zoom_level)), bold=True)
-            action_text = movement_action.name.replace('_', ' ').title()
-            if movement_action == MovementAction.ADVANCE:
-                unit_advance_roll = unit.get_advance_roll()
-                if unit_advance_roll is not None:
-                    action_text += f" ({unit.movement}\" + {unit_advance_roll}\" = {max_distance}\")"
-                else:
-                    action_text += f" (up to {max_distance}\")"
-            else:
-                action_text += f" ({max_distance}\")"
-            
-            # Add model identifier if a specific model is selected
-            if selected_model and len(unit.models) > 1:
-                model_index = unit.models.index(selected_model) + 1
-                action_text += f" [Model {model_index}]"
-            
-            text_surface = font.render(action_text, True, border_color)
-            text_rect = text_surface.get_rect()
-            text_rect.center = (center_x, center_y + radius + text_rect.height // 2 + 5)
-            screen.blit(text_surface, text_rect)
-        except:
-            # Fallback if font creation fails
-            pass
+# Old draw_movement_range function removed - now using Individual Model Movement Dialog for all movement
 
 
-def draw_movement_path_preview(screen: pygame.Surface, unit, movement_action, target_position: tuple,
-                             zoom_level: float, offset_x: int, offset_y: int, game_map) -> None:
-    """Draw real-time movement path preview using pathfinding"""
-
-    if not unit or not target_position:
-        return
-
-    # Get position from first alive model
-    first_model = None
-    for model in unit.models:
-        if model.is_alive:
-            first_model = model
-            break
-
-    if not first_model:
-        return
-
-    model_location = first_model.get_location()
-    current_position = (model_location[0], model_location[1], model_location[2])
-
-    if not current_position:
-        return
-
-    # Get movement range based on action type
-    base_movement = unit.movement
-    if movement_action == MovementAction.REMAIN_STATIONARY:
-        max_distance = 0
-    elif movement_action == MovementAction.MOVE:
-        max_distance = base_movement
-    elif movement_action == MovementAction.ADVANCE:
-        advance_roll = unit.get_advance_roll()
-        if advance_roll is not None:
-            max_distance = base_movement + advance_roll
-        else:
-            max_distance = base_movement + 6  # Assume max advance roll
-    elif movement_action == MovementAction.FALL_BACK:
-        max_distance = base_movement
-    elif movement_action == MovementAction.CHARGE:
-        charge_roll = getattr(unit, 'charge_roll', None)
-        if charge_roll is not None:
-            max_distance = charge_roll
-        else:
-            max_distance = 12  # Maximum possible charge distance
-    else:
-        return
-
-    if max_distance <= 0:
-        return
-
-    # Get pathfinding result
-    path_result = get_unit_movement_path_preview(
-        unit,
-        target_position,
-        max_distance,
-        game_map
-    )
-
-    # Choose colors based on validity and movement type
-    if path_result['valid']:
-        if movement_action == MovementAction.MOVE:
-            color = (0, 255, 0)  # Green for valid move
-        elif movement_action == MovementAction.ADVANCE:
-            color = (255, 255, 0)  # Yellow for valid advance
-        elif movement_action == MovementAction.FALL_BACK:
-            color = (255, 128, 0)  # Orange for valid fall back
-        elif movement_action == MovementAction.CHARGE:
-            color = (255, 0, 0)  # Red for valid charge
-        else:
-            color = (128, 128, 128)  # Gray for other actions
-    else:
-        color = (255, 100, 100)  # Light red for invalid path
-
-    # Draw the path if available
-    if path_result['path'] and len(path_result['path']) > 1:
-        # Convert path points to screen coordinates
-        path_points = []
-        for point in path_result['path']:
-            screen_x = int(point[0] * TILE_SIZE * zoom_level + offset_x)
-            screen_y = int(point[1] * TILE_SIZE * zoom_level + offset_y)
-            path_points.append((screen_x, screen_y))
-
-        # Draw the path as connected lines
-        if len(path_points) > 1:
-            pygame.draw.lines(screen, color, False, path_points, 3)
-
-            # Draw small circles at path waypoints
-            for point in path_points[1:-1]:  # Skip start and end points
-                pygame.draw.circle(screen, color, point, 3)
-
-    # Draw destination indicator
-    dest_screen_x = int(target_position[0] * TILE_SIZE * zoom_level + offset_x)
-    dest_screen_y = int(target_position[1] * TILE_SIZE * zoom_level + offset_y)
-    pygame.draw.circle(screen, color, (dest_screen_x, dest_screen_y), 8, 2)
-
-    # Draw distance text
-    try:
-        font = pygame.font.Font(None, 24)
-        if path_result['path']:
-            distance_text = f"{path_result['distance']:.1f}\""
-        else:
-            # Fallback to straight-line distance
-            distance = ((target_position[0] - current_position[0]) ** 2 +
-                       (target_position[1] - current_position[1]) ** 2) ** 0.5
-            distance_text = f"{distance:.1f}\" (direct)"
-
-        text_surface = font.render(distance_text, True, color)
-        text_rect = text_surface.get_rect(center=(dest_screen_x, dest_screen_y - 20))
-        screen.blit(text_surface, text_rect)
-    except:
-        pass  # Skip text rendering if font fails
-
-    # Draw validation message if invalid
-    if not path_result['valid']:
-        try:
-            error_font = pygame.font.Font(None, 20)
-            error_text = path_result['reason']
-            # Wrap text if too long
-            if len(error_text) > 40:
-                error_text = error_text[:37] + "..."
-            error_surface = error_font.render(error_text, True, (255, 255, 255))
-            error_rect = error_surface.get_rect(center=(dest_screen_x, dest_screen_y + 20))
-            # Draw background for error text
-            bg_rect = error_rect.inflate(10, 5)
-            pygame.draw.rect(screen, (0, 0, 0, 180), bg_rect)
-            screen.blit(error_surface, error_rect)
-        except:
-            pass  # Skip error text rendering if font fails
+# Old draw_movement_path_preview function removed - now using Individual Model Movement Dialog for all movement
 
 
 def draw_weapon_ranges(screen: pygame.Surface, unit, selected_weapon_profile, zoom_level: float, offset_x: int, offset_y: int) -> None:

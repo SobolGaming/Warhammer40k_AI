@@ -14,7 +14,7 @@ class IndividualModelMovementDialog(BaseDialog):
         
         # Dialog-specific state
         self.unit = None
-        self.movement_type = None  # 'move', 'advance', 'fall_back', 'scout'
+        self.movement_type = None  # 'move', 'advance', 'fall_back', 'scout', 'pile_in', 'consolidate', 'charge'
         self.game_map = None
         self.max_distance = 0.0
         
@@ -179,6 +179,7 @@ class IndividualModelMovementDialog(BaseDialog):
             print(f"🔍 DEBUG: {dialog_name}.handle_event - MOUSEBUTTONUP: button={event.button}, pos={event.pos}")
         elif event.type == pygame.MOUSEMOTION:
             print(f"🔍 DEBUG: {dialog_name}.handle_event - MOUSEMOTION: pos={event.pos}")
+            print(f"🔍 DEBUG: Dialog dragging state: {self.dragging}")
         else:
             print(f"🔍 DEBUG: {dialog_name}.handle_event - OTHER: type={event.type}")
 
@@ -256,13 +257,18 @@ class IndividualModelMovementDialog(BaseDialog):
                 mouse_pos = event.pos
                 dialog_rect = pygame.Rect(self.x, self.y, self.width, self.height)
 
+                print(f"🔍 DEBUG: Mouse at {mouse_pos}, dialog rect: ({self.x}, {self.y}, {self.width}, {self.height})")
+                print(f"🔍 DEBUG: Mouse over dialog: {dialog_rect.collidepoint(mouse_pos)}")
+
                 if dialog_rect.collidepoint(mouse_pos):
                     # Mouse is over the dialog - update hover state and consume the event
+                    print(f"🔍 DEBUG: Mouse over dialog - consuming event")
                     self._update_hover(event.pos)
                     return True
                 else:
                     # Mouse is outside dialog (likely over battlefield) - don't consume the event
                     # This allows the phase handler to handle it for path preview
+                    print(f"🔍 DEBUG: Mouse outside dialog - not consuming event")
                     return False
         
         # Let subclass handle other events

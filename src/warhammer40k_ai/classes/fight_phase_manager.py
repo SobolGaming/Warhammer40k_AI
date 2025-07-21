@@ -144,7 +144,8 @@ class FightPhaseManager:
         if len(eligible_targets) == 1:
             # Only one target - proceed directly to fighting
             print(f"🎯 {selected_unit.name} will fight {eligible_targets[0].name}")
-            self._execute_fight_sequence(selected_unit, eligible_targets[0], current_player, opponent_player)
+            ui_callback = getattr(self, 'on_movement_required', None)
+            self._execute_fight_sequence(selected_unit, eligible_targets[0], current_player, opponent_player, ui_callback)
         else:
             # Multiple targets - need target selection
             print(f"🎯 {selected_unit.name} can fight multiple targets: {[target.name for target in eligible_targets]}")
@@ -158,7 +159,8 @@ class FightPhaseManager:
             print(f"  {len(models)} models attacking {target_unit.name}")
         
         # Execute the complete fight sequence
-        self._execute_fight_sequence_with_declarations(fighting_unit, target_declarations, current_player, opponent_player)
+        ui_callback = getattr(self, 'on_movement_required', None)
+        self._execute_fight_sequence_with_declarations(fighting_unit, target_declarations, current_player, opponent_player, ui_callback)
     
     def _get_eligible_targets(self, fighting_unit: Unit) -> List[Unit]:
         """Get all eligible targets for a fighting unit."""
@@ -171,42 +173,117 @@ class FightPhaseManager:
         
         return eligible_targets
     
-    def _execute_fight_sequence(self, fighting_unit: Unit, target_unit: Unit, current_player: Player, opponent_player: Player) -> None:
+    def _execute_fight_sequence(self, fighting_unit: Unit, target_unit: Unit, current_player: Player, opponent_player: Player, ui_callback=None) -> None:
         """Execute the complete fight sequence for a single target."""
         print(f"⚔️ Executing fight sequence: {fighting_unit.name} vs {target_unit.name}")
-        
-        # Step 1: Pile-in
+
+        # If UI callback is provided, use individual model movement for pile-in and consolidate
+        if ui_callback:
+            self._execute_fight_sequence_with_ui(fighting_unit, target_unit, current_player, opponent_player, ui_callback)
+        else:
+            # Fallback to old unit-level methods
+            self._execute_fight_sequence_legacy(fighting_unit, target_unit, current_player, opponent_player)
+
+    def _execute_fight_sequence_with_ui(self, fighting_unit: Unit, target_unit: Unit, current_player: Player, opponent_player: Player, ui_callback) -> None:
+        """Execute fight sequence using individual model movement UI."""
+        print(f"⚔️ Starting UI-based fight sequence: {fighting_unit.name} vs {target_unit.name}")
+
+        # Step 1: Pile-in using Individual Model Movement Dialog
+        def on_pile_in_complete(completed: bool):
+            print(f"📍 {fighting_unit.name} pile-in completed: {completed}")
+
+            # Step 2: Make melee attacks
+            print(f"⚔️ {fighting_unit.name} makes melee attacks against {target_unit.name}")
+            # TODO: Implement proper melee attack resolution
+
+            # Step 3: Consolidate using Individual Model Movement Dialog
+            def on_consolidate_complete(completed: bool):
+                print(f"🏃 {fighting_unit.name} consolidate completed: {completed}")
+
+                # Mark unit as having fought
+                self.fought_units.add(fighting_unit)
+
+                # Switch to other player for next selection
+                self._switch_active_player(current_player, opponent_player)
+
+            # Show consolidate dialog
+            ui_callback('consolidate', fighting_unit, on_consolidate_complete)
+
+        # Show pile-in dialog
+        ui_callback('pile_in', fighting_unit, on_pile_in_complete)
+
+    def _execute_fight_sequence_legacy(self, fighting_unit: Unit, target_unit: Unit, current_player: Player, opponent_player: Player) -> None:
+        """Execute fight sequence using legacy unit-level methods."""
         print(f"📍 {fighting_unit.name} piles in...")
         fighting_unit.pile_in_towards_enemies(self.game.map)
-        
+
         # Step 2: Make melee attacks
         print(f"⚔️ {fighting_unit.name} makes melee attacks against {target_unit.name}")
         # TODO: Implement proper melee attack resolution
-        
+
         # Step 3: Consolidate
         print(f"🏃 {fighting_unit.name} consolidates...")
         fighting_unit.consolidate_towards_enemies(self.game.map)
-        
+
         # Mark unit as having fought
         self.fought_units.add(fighting_unit)
-        
+
         # Switch to other player for next selection
         self._switch_active_player(current_player, opponent_player)
     
-    def _execute_fight_sequence_with_declarations(self, fighting_unit: Unit, target_declarations: Dict[Unit, List['Model']], current_player: Player, opponent_player: Player) -> None:
+    def _execute_fight_sequence_with_declarations(self, fighting_unit: Unit, target_declarations: Dict[Unit, List['Model']], current_player: Player, opponent_player: Player, ui_callback=None) -> None:
         """Execute the complete fight sequence with target declarations."""
         print(f"⚔️ Executing fight sequence with declarations: {fighting_unit.name}")
-        
+
+        # If UI callback is provided, use individual model movement for pile-in and consolidate
+        if ui_callback:
+            self._execute_fight_sequence_with_declarations_ui(fighting_unit, target_declarations, current_player, opponent_player, ui_callback)
+        else:
+            # Fallback to old unit-level methods
+            self._execute_fight_sequence_with_declarations_legacy(fighting_unit, target_declarations, current_player, opponent_player)
+
+    def _execute_fight_sequence_with_declarations_ui(self, fighting_unit: Unit, target_declarations: Dict[Unit, List['Model']], current_player: Player, opponent_player: Player, ui_callback) -> None:
+        """Execute fight sequence with declarations using individual model movement UI."""
+        print(f"⚔️ Starting UI-based fight sequence with declarations: {fighting_unit.name}")
+
+        # Step 1: Pile-in using Individual Model Movement Dialog
+        def on_pile_in_complete(completed: bool):
+            print(f"📍 {fighting_unit.name} pile-in completed: {completed}")
+
+            # Step 2: Make melee attacks based on declarations
+            print(f"⚔️ {fighting_unit.name} makes melee attacks")
+            for target_unit, attacking_models in target_declarations.items():
+                print(f"  {len(attacking_models)} models attacking {target_unit.name}")
+                # TODO: Implement proper melee attack resolution with model-specific targeting
+
+            # Step 3: Consolidate using Individual Model Movement Dialog
+            def on_consolidate_complete(completed: bool):
+                print(f"🏃 {fighting_unit.name} consolidate completed: {completed}")
+
+                # Mark unit as having fought
+                self.fought_units.add(fighting_unit)
+
+                # Switch to other player for next selection
+                self._switch_active_player(current_player, opponent_player)
+
+            # Show consolidate dialog
+            ui_callback('consolidate', fighting_unit, on_consolidate_complete)
+
+        # Show pile-in dialog
+        ui_callback('pile_in', fighting_unit, on_pile_in_complete)
+
+    def _execute_fight_sequence_with_declarations_legacy(self, fighting_unit: Unit, target_declarations: Dict[Unit, List['Model']], current_player: Player, opponent_player: Player) -> None:
+        """Execute fight sequence with declarations using legacy unit-level methods."""
         # Step 1: Pile-in
         print(f"📍 {fighting_unit.name} piles in...")
         fighting_unit.pile_in_towards_enemies(self.game.map)
-        
+
         # Step 2: Make melee attacks based on declarations
         print(f"⚔️ {fighting_unit.name} makes melee attacks")
         for target_unit, attacking_models in target_declarations.items():
             print(f"  {len(attacking_models)} models attacking {target_unit.name}")
             # TODO: Implement proper melee attack resolution with model-specific targeting
-        
+
         # Step 3: Consolidate
         print(f"🏃 {fighting_unit.name} consolidates...")
         fighting_unit.consolidate_towards_enemies(self.game.map)
