@@ -2542,20 +2542,20 @@ class BattlePhaseHandler(BasePhaseHandler):
     def _handle_battle_click(self, mouse_pos, button) -> bool:
         """Handle battlefield clicks during battle phases"""
         x, y = mouse_pos
-        
+
         # Check if shooting declaration dialog is in targeting mode
         if (hasattr(self.game_view, 'shooting_declaration_dialog') and
             self.game_view.shooting_declaration_dialog.is_targeting_mode):
             # Only handle left clicks for targeting
             if button != 1:  # Not a left click
                 return True  # Still consume the event in targeting mode
-                
+
             # Only handle clicks on the battlefield area
             if ROSTER_PANE_WIDTH < x < BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH:
                 # Convert screen coordinates to game coordinates for targeting
                 battlefield_x = (x - ROSTER_PANE_WIDTH - self.game_view.offset_x) / (TILE_SIZE * self.game_view.zoom_level)
                 battlefield_y = (y - self.game_view.offset_y) / (TILE_SIZE * self.game_view.zoom_level)
-                
+
                 # Handle battlefield targeting for shooting declaration
                 handled = self.game_view.shooting_declaration_dialog.handle_battlefield_targeting(battlefield_x, battlefield_y)
             return True  # Consume all clicks in targeting mode, but only after trying to handle them

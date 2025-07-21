@@ -105,6 +105,11 @@ class ShootingDeclarationDialog:
         self.unit = None
         self.callback = None
         self.game_map = None
+
+        # Clear weapon profile on game view to remove range visualization
+        if hasattr(self, 'game_view') and self.game_view:
+            self.game_view.selected_weapon_profile = None
+
         self.game_view = None
         self.weapon_declarations = []
         self.available_weapons = []
@@ -270,11 +275,11 @@ class ShootingDeclarationDialog:
     
     def handle_event(self, event):
         """Handle pygame events"""
-        
+
         # If not visible and not in targeting mode, ignore all events
         if not self.visible and not self.is_targeting_mode:
             return False
-            
+
         # If in targeting mode, only handle ESC key and let all other events pass through
         if self.is_targeting_mode:
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
@@ -756,6 +761,11 @@ class ShootingDeclarationDialog:
         self.selected_weapon_group = None
         self.is_targeting_mode = True
         self.visible = False  # Close dialog
+
+        # Set weapon profile on game view for range visualization
+        if hasattr(self, 'game_view') and self.game_view:
+            self.game_view.selected_weapon_profile = weapon_profile
+
         print(f"🎯 Targeting mode set: is_targeting_mode={self.is_targeting_mode}, selected_weapon={self.selected_weapon}")
         print(f"🎯 Selected {weapon_profile.parent_wargear.name} #{weapon_instance} for targeting - click on battlefield")
     
@@ -767,6 +777,11 @@ class ShootingDeclarationDialog:
         self.selected_weapon_instance = None
         self.is_targeting_mode = True
         self.visible = False  # Close dialog
+
+        # Set weapon profile on game view for range visualization
+        if hasattr(self, 'game_view') and self.game_view:
+            self.game_view.selected_weapon_profile = weapon_group_info['profile']
+
         print(f"🎯 Targeting mode set: is_targeting_mode={self.is_targeting_mode}, selected_weapon_group={self.selected_weapon_group}")
         print(f"🎯 Selected weapon group {weapon_group_info['profile'].parent_wargear.name} (x{weapon_group_info['count']}) for targeting - click on battlefield")
     
@@ -823,4 +838,9 @@ class ShootingDeclarationDialog:
             self.selected_weapon_instance = None
             self.selected_weapon_group = None
             self.visible = True  # Reopen dialog
-            print("❌ Targeting mode cleared") 
+
+            # Clear weapon profile on game view to remove range visualization
+            if hasattr(self, 'game_view') and self.game_view:
+                self.game_view.selected_weapon_profile = None
+
+            print("❌ Targeting mode cleared")
