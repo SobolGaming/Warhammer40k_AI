@@ -7,7 +7,7 @@ from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VE
 from shapely.geometry import Polygon, Point, LineString
 from shapely.affinity import scale, translate
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, List, Tuple, Union
 if TYPE_CHECKING:
     from .game import Game
 
@@ -17,7 +17,7 @@ class Map:
         self.width = width
         self.height = height
         self.boundary = self.create_boundary_polygon()
-        self.obstacles = []
+        self.terrain_features: List['TerrainFeature'] = []
         self.objectives = []
         self.deployment_zones = {}
         self.units = []
@@ -36,11 +36,18 @@ class Map:
         ]
         return Polygon(vertices)
 
-    def add_obstacle(self, obstacle: 'Obstacle') -> None:
-        self.obstacles.append(obstacle)
+    def add_terrain_feature(self, terrain_feature: 'TerrainFeature') -> None:
+        """Add terrain feature."""
+        self.terrain_features.append(terrain_feature)
 
-    def add_obstacles(self, obstacles: List['Obstacle']) -> None:
-        self.obstacles.extend(obstacles)
+    def add_terrain_features(self, terrain_features: List['TerrainFeature']) -> None:
+        """Add multiple terrain features."""
+        self.terrain_features.extend(terrain_features)
+
+    @property
+    def obstacles(self):
+        """Legacy property for backward compatibility - returns terrain features."""
+        return self.terrain_features
 
     def add_objective(self, objective: 'Objective') -> None:
         self.objectives.append(objective)
@@ -317,7 +324,8 @@ class Map:
 
 
 
-class ObstacleType(Enum):
+class TerrainType(Enum):
+    """Types of terrain features."""
     CRATER_AND_RUBBLE = auto()
     BARRICADE_AND_FUEL_PIPES = auto()
     DEBRIS_AND_STATUARY = auto()
@@ -325,19 +333,396 @@ class ObstacleType(Enum):
     WOODS = auto()
     RUINS = auto()
 
+class TerrainFeature:
+    """Base class for all terrain features using polygon-based approach."""
 
-class Obstacle:
-    def __init__(self, vertices: List[Tuple[float, float]], terrain_type: ObstacleType, height: float) -> None:
-        self.vertices = vertices
+    def __init__(self, terrain_type: TerrainType, footprint: Polygon,
+                 bounding_box: dict, traversal_rules: dict = None):
+        """
+        Args:
+            terrain_type: Type of terrain
+            footprint: 2D ground outline of the terrain
+            bounding_box: 3D bounding box for spatial indexing
+            traversal_rules: Rules for which units can traverse this terrain
+        """
         self.terrain_type = terrain_type
-        self.height = height
-        if len(vertices) == 2:
-            self.polygon = Point(vertices[0]).buffer(1, resolution=64)
-            self.polygon = scale(self.polygon, vertices[1][0], vertices[1][1])
+        self.footprint = footprint
+        self.bounding_box = bounding_box
+        self.traversal_rules = traversal_rules or {}
+
+    def point_in_bounds(self, position: Tuple[float, float, float]) -> bool:
+        """Check if a 3D position is within the terrain's bounding box."""
+        x, y, z = position
+        min_x, min_y, min_z = self.bounding_box["min"]
+        max_x, max_y, max_z = self.bounding_box["max"]
+        return (min_x <= x <= max_x and
+                min_y <= y <= max_y and
+                min_z <= z <= max_z)
+
+    def can_unit_traverse(self, unit) -> bool:
+        """Check if a unit can traverse this terrain. Override in subclasses."""
+        return True
+
+class RuinsTerrain(TerrainFeature):
+    """RUINS terrain with walls, floors, and openings."""
+
+    def __init__(self, footprint: Polygon, walls: List[dict] = None,
+                 openings: List[dict] = None, floors: List[dict] = None,
+                 height_map: dict = None):
+        """
+        Args:
+            footprint: 2D ground outline of the ruins
+            walls: List of wall definitions with polygon, z_bottom, z_top, thickness
+            openings: List of opening definitions (windows/doors)
+            floors: List of floor definitions with polygon and elevation
+            height_map: Optional detailed elevation map {(x,y): z}
+        """
+        self.walls = walls or []
+        self.openings = openings or []
+        self.floors = floors or []
+        self.height_map = height_map or {}
+
+        # Calculate bounding box
+        bounds = footprint.bounds  # (minx, miny, maxx, maxy)
+        max_z = max([wall["z_top"] for wall in self.walls] +
+                   [floor["elevation"] + floor.get("thickness", 0.5) for floor in self.floors] + [0.0])
+
+        bounding_box = {
+            "min": (bounds[0], bounds[1], 0.0),
+            "max": (bounds[2], bounds[3], max_z)
+        }
+
+        # Traversal rules for RUINS
+        traversal_rules = {
+            "infantry_can_pass_walls": True,
+            "beast_can_pass_walls": True,
+            "vehicle_can_pass_walls": False,
+            "monster_can_pass_walls": False,
+            "flying_can_pass_walls": True,
+            "titanic_can_pass_walls": False,
+        }
+
+        super().__init__(TerrainType.RUINS, footprint, bounding_box, traversal_rules)
+
+    def check_wall_collision(self, position: Tuple[float, float, float]) -> bool:
+        """Check if a position collides with any wall."""
+        if not self.point_in_bounds(position):
+            return False
+
+        x, y, z = position
+        point = Point(x, y)
+
+        for wall in self.walls:
+            if (wall["z_bottom"] <= z <= wall["z_top"] and
+                wall["polygon"].contains(point)):
+                return True
+        return False
+
+    def check_opening_passage(self, position: Tuple[float, float, float]) -> bool:
+        """Check if a position is within an opening that allows movement."""
+        x, y, z = position
+        point = Point(x, y)
+
+        for opening in self.openings:
+            if (opening.get("allows_movement", False) and
+                opening["z_bottom"] <= z <= opening["z_top"] and
+                opening["polygon"].contains(point)):
+                return True
+        return False
+
+    def can_unit_move_through(self, unit, position: Tuple[float, float, float]) -> bool:
+        """Check if a unit can move through a specific position in the ruins."""
+        # Flying units can pass through anything
+        if getattr(unit, 'is_flying', False):
+            return True
+
+        # Check wall collision
+        if self.check_wall_collision(position):
+            # Check if unit can pass through walls
+            unit_type = self._get_unit_type(unit)
+            if not self.traversal_rules.get(f"{unit_type}_can_pass_walls", False):
+                # Check for openings that allow movement
+                if not self.check_opening_passage(position):
+                    return False
+
+        return True
+
+    def _get_unit_type(self, unit) -> str:
+        """Get unit type string for traversal rule lookup."""
+        if getattr(unit, 'is_infantry', False):
+            return "infantry"
+        elif getattr(unit, 'is_beast', False):
+            return "beast"
+        elif getattr(unit, 'is_flying', False):
+            return "flying"
+        elif getattr(unit, 'is_titanic', False):
+            return "titanic"
+        elif 'Vehicle' in getattr(unit, 'keywords', []):
+            return "vehicle"
+        elif 'Monster' in getattr(unit, 'keywords', []):
+            return "monster"
         else:
-            self.polygon = Polygon(vertices)
-        self.center = (self.polygon.centroid.x, self.polygon.centroid.y)
-        self.color = 'red'
+            return "infantry"  # Default to infantry rules
+
+class WoodsTerrain(TerrainFeature):
+    """WOODS terrain - all units can traverse freely."""
+
+    def __init__(self, footprint: Polygon, height: float = 6.0, density: float = 0.7):
+        """
+        Args:
+            footprint: 2D outline of the woods
+            height: Height of the tree canopy
+            density: Tree density (0.0 to 1.0) affects line of sight
+        """
+        self.height = height
+        self.density = density
+
+        bounds = footprint.bounds
+        bounding_box = {
+            "min": (bounds[0], bounds[1], 0.0),
+            "max": (bounds[2], bounds[3], height)
+        }
+
+        traversal_rules = {
+            "all_units_can_traverse": True,
+            "blocks_line_of_sight": density > 0.5,
+            "provides_cover": True
+        }
+
+        super().__init__(TerrainType.WOODS, footprint, bounding_box, traversal_rules)
+
+class CraterTerrain(TerrainFeature):
+    """CRATER_AND_RUBBLE terrain - difficult ground, all units can traverse."""
+
+    def __init__(self, footprint: Polygon, depth: float = 2.0, rim_height: float = 1.0):
+        """
+        Args:
+            footprint: 2D outline of the crater
+            depth: How deep the crater goes (negative Z)
+            rim_height: Height of crater rim above ground
+        """
+        self.depth = depth
+        self.rim_height = rim_height
+
+        bounds = footprint.bounds
+        bounding_box = {
+            "min": (bounds[0], bounds[1], -depth),
+            "max": (bounds[2], bounds[3], rim_height)
+        }
+
+        traversal_rules = {
+            "all_units_can_traverse": True,
+            "difficult_terrain": True,
+            "provides_cover": True
+        }
+
+        super().__init__(TerrainType.CRATER_AND_RUBBLE, footprint, bounding_box, traversal_rules)
+
+class BarricadeTerrain(TerrainFeature):
+    """BARRICADE_AND_FUEL_PIPES terrain - linear obstacles that can be climbed over."""
+
+    def __init__(self, footprint: Polygon, height: float = 3.0, thickness: float = 1.0):
+        """
+        Args:
+            footprint: 2D outline of the barricade
+            height: Height of the barricade
+            thickness: Thickness of the barricade structure
+        """
+        self.height = height
+        self.thickness = thickness
+
+        bounds = footprint.bounds
+        bounding_box = {
+            "min": (bounds[0], bounds[1], 0.0),
+            "max": (bounds[2], bounds[3], height)
+        }
+
+        traversal_rules = {
+            "all_units_can_traverse": True,
+            "requires_climbing": height > 2.0,
+            "provides_cover": True,
+            "blocks_vehicles": height > 4.0  # Very tall barricades block vehicles
+        }
+
+        super().__init__(TerrainType.BARRICADE_AND_FUEL_PIPES, footprint, bounding_box, traversal_rules)
+
+class DebrisTerrain(TerrainFeature):
+    """DEBRIS_AND_STATUARY terrain - scattered obstacles, can traverse but not end on."""
+
+    def __init__(self, footprint: Polygon, height: float = 2.0, scatter_density: float = 0.6):
+        """
+        Args:
+            footprint: 2D outline of the debris field
+            height: Average height of debris pieces
+            scatter_density: How densely packed the debris is
+        """
+        self.height = height
+        self.scatter_density = scatter_density
+
+        bounds = footprint.bounds
+        bounding_box = {
+            "min": (bounds[0], bounds[1], 0.0),
+            "max": (bounds[2], bounds[3], height)
+        }
+
+        traversal_rules = {
+            "all_units_can_traverse": True,
+            "cannot_end_move_on": True,  # Can move through but not stop on
+            "difficult_terrain": scatter_density > 0.5,
+            "provides_cover": True
+        }
+
+        super().__init__(TerrainType.DEBRIS_AND_STATUARY, footprint, bounding_box, traversal_rules)
+
+class HillsBuildingsTerrain(TerrainFeature):
+    """HILLS_AND_SEALED_BUILDINGS terrain - elevated surfaces with access restrictions."""
+
+    def __init__(self, footprint: Polygon, height: float = 6.0,
+                 access_points: List[Polygon] = None, max_base_size: float = 3.0):
+        """
+        Args:
+            footprint: 2D outline of the hill/building
+            height: Height of the elevated surface
+            access_points: Areas where units can climb up (ramps, stairs)
+            max_base_size: Maximum base size that can fit without overhanging
+        """
+        self.height = height
+        self.access_points = access_points or []
+        self.max_base_size = max_base_size
+
+        bounds = footprint.bounds
+        bounding_box = {
+            "min": (bounds[0], bounds[1], 0.0),
+            "max": (bounds[2], bounds[3], height)
+        }
+
+        traversal_rules = {
+            "requires_access_point": len(self.access_points) > 0,
+            "base_overhang_check": True,
+            "max_base_size": max_base_size,
+            "provides_elevation_advantage": True
+        }
+
+        super().__init__(TerrainType.HILLS_AND_SEALED_BUILDINGS, footprint, bounding_box, traversal_rules)
+
+    def can_base_fit(self, base_size: float) -> bool:
+        """Check if a model's base can fit on this terrain without overhanging."""
+        return base_size <= self.max_base_size
+
+    def has_access_from(self, position: Tuple[float, float]) -> bool:
+        """Check if there's an access point near the given position."""
+        if not self.access_points:
+            return True  # No restrictions if no access points defined
+
+        point = Point(position[0], position[1])
+        return any(access.contains(point) or access.distance(point) < 2.0
+                  for access in self.access_points)
+
+class TerrainFactory:
+    """Factory class for creating terrain features."""
+
+    @staticmethod
+    def create_ruins(footprint_vertices: List[Tuple[float, float]],
+                    wall_height: float = 4.0, num_floors: int = 1,
+                    has_windows: bool = True, has_doors: bool = True) -> RuinsTerrain:
+        """Create a RUINS terrain with walls, floors, and openings."""
+        footprint = Polygon(footprint_vertices)
+
+        walls = []
+        openings = []
+        floors = []
+
+        # Create floors for each level
+        for floor_level in range(num_floors + 1):  # Include ground floor
+            floors.append({
+                "polygon": footprint,
+                "elevation": floor_level * wall_height,
+                "thickness": 0.5
+            })
+
+        # Create walls around perimeter
+        coords = list(footprint.exterior.coords)[:-1]  # Remove duplicate last point
+        for i in range(len(coords)):
+            start_point = coords[i]
+            end_point = coords[(i + 1) % len(coords)]
+
+            # Create wall segment with thickness
+            wall_line = LineString([start_point, end_point])
+            wall_polygon = wall_line.buffer(0.25)  # 0.5" thick walls
+
+            for floor_level in range(num_floors + 1):
+                walls.append({
+                    "polygon": wall_polygon,
+                    "z_bottom": floor_level * wall_height,
+                    "z_top": (floor_level + 1) * wall_height,
+                    "thickness": 0.5
+                })
+
+                # Add windows and doors
+                if has_windows and floor_level > 0:  # Windows on upper floors
+                    window_polygon = wall_line.interpolate(0.5, normalized=True).buffer(1.0)
+                    openings.append({
+                        "polygon": window_polygon,
+                        "z_bottom": floor_level * wall_height + 1.0,
+                        "z_top": floor_level * wall_height + 3.0,
+                        "allows_movement": False,
+                        "allows_los": True
+                    })
+
+                if has_doors and floor_level == 0 and i == 0:  # Door on ground floor, first wall
+                    door_polygon = wall_line.interpolate(0.5, normalized=True).buffer(1.5)
+                    openings.append({
+                        "polygon": door_polygon,
+                        "z_bottom": 0.0,
+                        "z_top": 3.0,
+                        "allows_movement": True,
+                        "allows_los": True
+                    })
+
+        return RuinsTerrain(footprint, walls, openings, floors)
+
+    @staticmethod
+    def create_woods(footprint_vertices: List[Tuple[float, float]],
+                    height: float = 6.0, density: float = 0.7) -> WoodsTerrain:
+        """Create WOODS terrain."""
+        footprint = Polygon(footprint_vertices)
+        return WoodsTerrain(footprint, height, density)
+
+    @staticmethod
+    def create_crater(footprint_vertices: List[Tuple[float, float]],
+                     depth: float = 2.0, rim_height: float = 1.0) -> CraterTerrain:
+        """Create CRATER_AND_RUBBLE terrain."""
+        footprint = Polygon(footprint_vertices)
+        return CraterTerrain(footprint, depth, rim_height)
+
+    @staticmethod
+    def create_barricade(start_point: Tuple[float, float], end_point: Tuple[float, float],
+                        height: float = 3.0, thickness: float = 1.0) -> BarricadeTerrain:
+        """Create BARRICADE_AND_FUEL_PIPES terrain."""
+        line = LineString([start_point, end_point])
+        footprint = line.buffer(thickness / 2.0)
+        return BarricadeTerrain(footprint, height, thickness)
+
+    @staticmethod
+    def create_debris(footprint_vertices: List[Tuple[float, float]],
+                     height: float = 2.0, density: float = 0.6) -> DebrisTerrain:
+        """Create DEBRIS_AND_STATUARY terrain."""
+        footprint = Polygon(footprint_vertices)
+        return DebrisTerrain(footprint, height, density)
+
+    @staticmethod
+    def create_hill(footprint_vertices: List[Tuple[float, float]],
+                   height: float = 6.0, access_points: List[List[Tuple[float, float]]] = None,
+                   max_base_size: float = 3.0) -> HillsBuildingsTerrain:
+        """Create HILLS_AND_SEALED_BUILDINGS terrain."""
+        footprint = Polygon(footprint_vertices)
+        access_polygons = []
+        if access_points:
+            access_polygons = [Polygon(points) for points in access_points]
+        return HillsBuildingsTerrain(footprint, height, access_polygons, max_base_size)
+
+
+
 
 
 class ObjectivePoint:

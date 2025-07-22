@@ -10,7 +10,7 @@ from shapely import STRtree
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from ..classes.map import Obstacle, ObstacleType
+    from ..classes.map import TerrainFeature, TerrainType, RuinsTerrain
     from ..classes.unit import Unit, MovementAction
     from ..classes.model import Model
     from ..classes.map import Map
@@ -76,34 +76,36 @@ def angle_difference(angle1: float, angle2: float) -> float:
     diff = (angle2 - angle1 + pi) % (2 * pi) - pi
     return diff
 
-def can_traverse_freely(unit: 'Unit', obstacle: 'Obstacle') -> bool:
-    """Check if a unit can freely traverse over an obstacle without vertical movement cost.
+def can_traverse_freely(unit: 'Unit', terrain_feature: 'TerrainFeature') -> bool:
+    """Check if a unit can freely traverse over terrain without vertical movement cost.
 
     This function determines if terrain should be ignored for pathfinding purposes.
     """
-    # Flying units can traverse any obstacle freely
+    # Flying units can traverse any terrain freely
     if unit.is_flying:
         return True
 
-    # Check height-based traversal (≤2" is freely climbable)
-    if obstacle.height <= FREELY_CLIMBABLE_RANGE:
-        return True
-
     # Import at runtime to avoid circular import
-    from ..classes.map import ObstacleType
+    from ..classes.map import TerrainType, RuinsTerrain
 
-    # For terrain >2" height, check if it has special traversal rules
-    terrain = obstacle.terrain_type
-    if terrain == ObstacleType.RUINS:
+    terrain_type = terrain_feature.terrain_type
+
+    # RUINS have special traversal rules
+    if terrain_type == TerrainType.RUINS and isinstance(terrain_feature, RuinsTerrain):
         # Infantry, Beasts, Imperium Primarch, and Belisarius Cawl can move through walls freely
         return (unit.is_infantry or unit.is_beast or
                 unit.is_belisarius_cawl or unit.is_imperium_primarch)
 
-    # All other terrain types >2" can be traversed but require vertical movement cost
-    # They should NOT be treated as blocking terrain for pathfinding
-    return True
+    # For other terrain types, check height-based traversal rules
+    # Most terrain ≤2" height can be traversed freely
+    max_height = getattr(terrain_feature, 'height', 0.0)
+    if max_height <= FREELY_CLIMBABLE_RANGE:
+        return True
 
-def is_terrain_impassable(unit: 'Unit', obstacle: 'Obstacle') -> bool:
+    # All other terrain types >2" can be traversed but require vertical movement cost
+    return False
+
+def is_terrain_impassable(unit: 'Unit', terrain_feature: 'TerrainFeature') -> bool:
     """Check if terrain is completely impassable for a unit.
 
     This determines if terrain should be added to blocking collision trees.
@@ -113,17 +115,67 @@ def is_terrain_impassable(unit: 'Unit', obstacle: 'Obstacle') -> bool:
         return False
 
     # Import at runtime to avoid circular import
-    from ..classes.map import ObstacleType
+    from ..classes.map import TerrainType, RuinsTerrain
 
-    # Only RUINS are truly impassable for certain unit types
-    terrain = obstacle.terrain_type
-    if terrain == ObstacleType.RUINS:
+    terrain_type = terrain_feature.terrain_type
+
+    # Only RUINS walls are truly impassable for certain unit types
+    if terrain_type == TerrainType.RUINS and isinstance(terrain_feature, RuinsTerrain):
         # Non-Infantry/Beast units cannot move through RUINS walls
-        return not (unit.is_infantry or unit.is_beast or
-                   unit.is_belisarius_cawl or unit.is_imperium_primarch)
+        can_traverse_walls = (unit.is_infantry or unit.is_beast or
+                             unit.is_belisarius_cawl or unit.is_imperium_primarch)
+
+        if not can_traverse_walls:
+            # Check if there are any walls that would block movement
+            return len(terrain_feature.walls) > 0
+
+    # Check terrain-specific traversal rules
+    traversal_rules = getattr(terrain_feature, 'traversal_rules', {})
+
+    # BARRICADES can block vehicles if very tall
+    if terrain_type == TerrainType.BARRICADE_AND_FUEL_PIPES:
+        if traversal_rules.get('blocks_vehicles', False) and 'Vehicle' in getattr(unit, 'keywords', []):
+            return True
 
     # All other terrain types are passable (may require vertical cost)
     return False
+
+def get_terrain_blocking_polygons(unit: 'Unit', terrain_feature: 'TerrainFeature') -> List:
+    """Get list of polygons that block movement for a specific unit.
+
+    Args:
+        unit: The unit attempting to move
+        terrain_feature: The terrain feature
+
+    Returns:
+        List of Polygon objects that block the unit's movement
+    """
+    # Import at runtime to avoid circular import
+    from ..classes.map import TerrainType, RuinsTerrain
+
+    # Flying units are not blocked by any terrain
+    if unit.is_flying:
+        return []
+
+    blocking_polygons = []
+    terrain_type = terrain_feature.terrain_type
+
+    # RUINS: only walls block movement for non-Infantry/Beast units
+    if terrain_type == TerrainType.RUINS and isinstance(terrain_feature, RuinsTerrain):
+        can_traverse_walls = (unit.is_infantry or unit.is_beast or
+                             unit.is_belisarius_cawl or unit.is_imperium_primarch)
+
+        if not can_traverse_walls:
+            # Add wall polygons as blocking
+            for wall in terrain_feature.walls:
+                blocking_polygons.append(wall["polygon"])
+
+    # For other terrain types, check if they're impassable
+    elif is_terrain_impassable(unit, terrain_feature):
+        # Add the main footprint as blocking
+        blocking_polygons.append(terrain_feature.footprint)
+
+    return blocking_polygons
 
 def get_pivot_cost(unit: 'Unit') -> float:
     """
@@ -138,7 +190,7 @@ def get_pivot_cost(unit: 'Unit') -> float:
         return 1
     return 0
 
-def get_movement_cost(model: 'Model', point_a: Tuple[float, float], point_b: Tuple[float, float], obstacles: List['Obstacle']) -> float:
+def get_movement_cost(model: 'Model', point_a: Tuple[float, float], point_b: Tuple[float, float], terrain_features: List['TerrainFeature']) -> float:
     dx = point_b[0] - point_a[0]
     dy = point_b[1] - point_a[1]
     dz = 0  # Initialize vertical distance
@@ -147,24 +199,26 @@ def get_movement_cost(model: 'Model', point_a: Tuple[float, float], point_b: Tup
     #print(f"A: {point_a}, B: {point_b}")
     movement_line = LineString([point_a, point_b])
 
-    # Find obstacles that intersect the movement path
-    intersecting_obstacles = []
-    for obstacle in obstacles:
-        if movement_line.intersects(obstacle.polygon):
-            intersecting_obstacles.append(obstacle)
+    # Find terrain features that intersect the movement path
+    intersecting_terrain = []
+    for terrain_feature in terrain_features:
+        if movement_line.intersects(terrain_feature.footprint):
+            intersecting_terrain.append(terrain_feature)
 
-    # Determine the maximum obstacle height along the path that requires vertical movement
-    max_obstacle_height = 0
-    for obstacle in intersecting_obstacles:
-        # Only consider obstacles that are not impassable
-        if not is_terrain_impassable(model.parent_unit, obstacle):
-            # If obstacle is >2" height, it requires vertical movement cost
-            if obstacle.height > FREELY_CLIMBABLE_RANGE:
-                if obstacle.height > max_obstacle_height:
-                    max_obstacle_height = obstacle.height
+    # Determine the maximum terrain height along the path that requires vertical movement
+    max_terrain_height = 0
+    for terrain_feature in intersecting_terrain:
+        # Only consider terrain that is not impassable
+        if not is_terrain_impassable(model.parent_unit, terrain_feature):
+            # Get terrain height
+            terrain_height = getattr(terrain_feature, 'height', 0.0)
+            # If terrain is >2" height, it requires vertical movement cost
+            if terrain_height > FREELY_CLIMBABLE_RANGE:
+                if terrain_height > max_terrain_height:
+                    max_terrain_height = terrain_height
 
-    # Set vertical distance based on the highest obstacle that requires climbing
-    dz = max_obstacle_height if max_obstacle_height > FREELY_CLIMBABLE_RANGE else 0
+    # Set vertical distance based on the highest terrain that requires climbing
+    dz = max_terrain_height if max_terrain_height > FREELY_CLIMBABLE_RANGE else 0
 
     # For units with 'Fly', they pay vertical movement cost but can traverse over obstacles
     if model.parent_unit.is_flying:
@@ -399,9 +453,9 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
     """
     # Filter terrain based on unit capabilities
     blocking_terrain = []
-    for obstacle in game_map.obstacles:
-        if is_terrain_impassable(moving_unit, obstacle):
-            blocking_terrain.append(obstacle.polygon)
+    for terrain_feature in game_map.terrain_features:
+        blocking_polygons = get_terrain_blocking_polygons(moving_unit, terrain_feature)
+        blocking_terrain.extend(blocking_polygons)
 
     # Get all models except the moving unit's models
     friendly_models = []
@@ -569,7 +623,7 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
     if straight_line_distance <= max_distance:
         # Check if straight line path is clear
         straight_line_clear = True
-        num_checks = max(10, int(straight_line_distance / step_size))
+        num_checks = max(20, int(straight_line_distance / (step_size / 2)))  # More frequent checks
 
         for i in range(1, num_checks):
             t = i / num_checks
@@ -1642,7 +1696,7 @@ def simplify_path(path, obstacles, ellipse, tolerance=0.1):
             i += 1
     return simplified
 
-def can_end_move_on_terrain(model: 'Model', obstacle: 'Obstacle') -> bool:
+def can_end_move_on_terrain(model: 'Model', terrain_feature: 'TerrainFeature') -> bool:
     """
     Check if a model can end its move on a specific terrain feature.
 
@@ -1653,22 +1707,22 @@ def can_end_move_on_terrain(model: 'Model', obstacle: 'Obstacle') -> bool:
     Returns:
         bool: True if the model can end its move on this terrain
     """
-    from ..classes.map import ObstacleType
-    terrain = obstacle.terrain_type
-    base_overhang = base_overhangs_obstacle(model, obstacle)
+    from ..classes.map import TerrainType
+    terrain = terrain_feature.terrain_type
+    base_overhang = base_overhangs_terrain(model, terrain_feature)
     unit = model.parent_unit
 
-    if terrain == ObstacleType.CRATER_AND_RUBBLE:
+    if terrain == TerrainType.CRATER_AND_RUBBLE:
         return True  # Units can move over this terrain freely (can end move)
-    elif terrain == ObstacleType.BARRICADE_AND_FUEL_PIPES:
+    elif terrain == TerrainType.BARRICADE_AND_FUEL_PIPES:
         return False  # Cannot be set up or end any kind of move on top of it
-    elif terrain == ObstacleType.DEBRIS_AND_STATUARY:
+    elif terrain == TerrainType.DEBRIS_AND_STATUARY:
         return False  # Cannot be set up or end any kind of move on top of it
-    elif terrain == ObstacleType.HILLS_AND_SEALED_BUILDINGS:
+    elif terrain == TerrainType.HILLS_AND_SEALED_BUILDINGS:
         return not base_overhang  # Can end move if base does not overhang
-    elif terrain == ObstacleType.WOODS:
+    elif terrain == TerrainType.WOODS:
         return True  # Units can move over this terrain freely (can end move)
-    elif terrain == ObstacleType.RUINS:
+    elif terrain == TerrainType.RUINS:
         # All models can end move on ground floor of ruins
         # Special keyworded models + FLY can end move on any floor level
         if unit.is_infantry or unit.is_beast or unit.is_belisarius_cawl or unit.is_imperium_primarch or unit.is_flying():
@@ -1681,13 +1735,14 @@ def can_end_move_on_terrain(model: 'Model', obstacle: 'Obstacle') -> bool:
         # Default behavior for unknown terrain types
         return True
 
-def base_overhangs_obstacle(model: 'Model', obstacle: 'Obstacle') -> bool:
+def base_overhangs_terrain(model: 'Model', terrain_feature: 'TerrainFeature') -> bool:
+    """Check if a model's base overhangs the terrain feature."""
     base_shape = model.model_base.get_base_shape_at(model.model_base.x, model.model_base.y, model.model_base.facing)
-    return not obstacle.polygon.contains(base_shape) and obstacle.polygon.intersects(base_shape)
+    return not terrain_feature.footprint.contains(base_shape) and terrain_feature.footprint.intersects(base_shape)
 
 def build_formation_templates(N, spacing):
     """
-    Returns dict of {formation_name: np.ndarray[N×2]} offsets.
+    Returns dict of {formation_name: np.ndarray[Nx2]} offsets.
     """
     templates = {}
     # BLOCK: fill rows of width = ceil(sqrt(N))
@@ -1728,7 +1783,7 @@ def build_formation_templates(N, spacing):
 
 def footprint_from_offsets(offsets, unit):
     """
-    Given an (N×2) offsets array and unit, reconstruct
+    Given an (Nx2) offsets array and unit, reconstruct
     the convex-hull-buffer footprint Polygon.
     """
     polys = []
@@ -1808,10 +1863,6 @@ def query_spatial_index(tree: STRtree, query_geom) -> List:
     
     # Fallback: if indices are actually geometry objects (old API), return as-is
     return list(indices) if hasattr(indices, '__iter__') else [indices]
-
-# REMOVED: Old pathfinding classes - replaced with unified system
-
-# REMOVED: OptimizedPathfindingEnvironmentForCharge - replaced with unified system
 
 
 class OptimizedPathfindingEnvironment:

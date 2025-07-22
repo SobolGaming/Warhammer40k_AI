@@ -25,7 +25,7 @@ from warhammer40k_ai.utility.calcs import (
     build_collision_trees
 )
 from warhammer40k_ai.utility.model_base import Base, BaseType
-from warhammer40k_ai.classes.map import Map, Obstacle, ObstacleType
+from warhammer40k_ai.classes.map import Map, TerrainFactory, TerrainType
 from warhammer40k_ai.classes.unit import Unit
 
 from warhammer40k_ai.classes.army import Army
@@ -128,16 +128,20 @@ class TestCollisionDetection:
     
     def create_test_terrain(self):
         """Create test terrain obstacles."""
-        # Rectangular terrain piece
-        terrain_vertices = [(5.0, 5.0), (8.0, 5.0), (8.0, 8.0), (5.0, 8.0)]
-        terrain = Obstacle(terrain_vertices, ObstacleType.RUINS, height=4.0)
-        self.game_map.add_obstacle(terrain)
+        # RUINS terrain piece (5-8, 5-8) - only Infantry/Beast can traverse walls
+        ruins_vertices = [(5.0, 5.0), (8.0, 5.0), (8.0, 8.0), (5.0, 8.0)]
+        ruins_terrain = TerrainFactory.create_ruins(ruins_vertices, wall_height=4.0, num_floors=1)
+        self.game_map.add_terrain_feature(ruins_terrain)
         
-        # Circular terrain piece (crater)
+        # CRATER terrain piece
         crater_center = (25.0, 25.0)
         crater_radius = 2.0
-        crater = Obstacle([crater_center, (crater_radius, crater_radius)], ObstacleType.CRATER_AND_RUBBLE, height=1.0)
-        self.game_map.add_obstacle(crater)
+        crater_vertices = [(crater_center[0] - crater_radius, crater_center[1] - crater_radius),
+                          (crater_center[0] + crater_radius, crater_center[1] - crater_radius),
+                          (crater_center[0] + crater_radius, crater_center[1] + crater_radius),
+                          (crater_center[0] - crater_radius, crater_center[1] + crater_radius)]
+        crater_terrain = TerrainFactory.create_crater(crater_vertices, depth=2.0, rim_height=1.0)
+        self.game_map.add_terrain_feature(crater_terrain)
     
     def test_map_boundary_collision_circular(self):
         """Test that circular bases cannot move outside map boundaries."""
@@ -527,10 +531,12 @@ class TestCollisionDetection:
         model = infantry_unit.models[0]
 
         # Create RUINS terrain that blocks the direct path
-        from warhammer40k_ai.classes.map import Obstacle, ObstacleType
         ruins_vertices = [(12.0, 12.0), (16.0, 12.0), (16.0, 16.0), (12.0, 16.0)]
-        ruins = Obstacle(ruins_vertices, ObstacleType.RUINS, height=4.0)
-        self.game_map.add_obstacle(ruins)
+        ruins = TerrainFactory.create_ruins(ruins_vertices, wall_height=4.0, num_floors=1)
+        self.game_map.add_terrain_feature(ruins)
+
+        # Store reference to this specific ruins for the vehicle test
+        self.vehicle_test_ruins = ruins
 
         # Position model on one side of ruins
         model.set_location(10.0, 14.0, 0.0, 0.0)
@@ -557,12 +563,21 @@ class TestCollisionDetection:
         vehicle_unit.keywords = ['Vehicle']  # Add Vehicle keyword (case-sensitive)
         model = vehicle_unit.models[0]
 
-        # Position model on one side of existing ruins terrain (from previous test)
-        # Use a different position to avoid friendly model collisions
-        model.set_location(8.0, 14.0, 0.0, 0.0)
+        # Create RUINS terrain that blocks the direct path
+        ruins_vertices = [(12.0, 12.0), (16.0, 12.0), (16.0, 16.0), (12.0, 16.0)]
+        ruins = TerrainFactory.create_ruins(ruins_vertices, wall_height=4.0, num_floors=1)
+        self.game_map.add_terrain_feature(ruins)
 
-        # Try to move through ruins to other side
-        target_through_ruins = (18.0, 14.0, 0.0)
+        # Position model on one side of ruins terrain, away from other models
+        model.set_location(10.0, 14.0, 0.0, 0.0)
+        # Move other models away to avoid friendly collisions
+        self.circular_unit.models[0].set_location(30.0, 30.0, 0.0, 0.0)
+        self.elliptical_unit.models[0].set_location(30.0, 35.0, 0.0, 0.0)
+
+        # Try to move through the center of ruins to other side
+        target_through_ruins = (14.0, 14.0, 0.0)  # Center of RUINS at (12-16, 12-16)
+
+
 
         result = unified_pathfinding(
             model=model,
@@ -608,11 +623,10 @@ class TestCollisionDetection:
         fly_unit.keywords = ['Fly']  # Add Fly keyword (case-sensitive)
         model = fly_unit.models[0]
 
-        # Create impassable terrain (HILLS_AND_SEALED_BUILDINGS)
-        from warhammer40k_ai.classes.map import Obstacle, ObstacleType
+        # Create terrain (HILLS_AND_SEALED_BUILDINGS)
         building_vertices = [(20.0, 20.0), (24.0, 20.0), (24.0, 24.0), (20.0, 24.0)]
-        building = Obstacle(building_vertices, ObstacleType.HILLS_AND_SEALED_BUILDINGS, height=6.0)
-        self.game_map.add_obstacle(building)
+        building = TerrainFactory.create_hill(building_vertices, height=6.0)
+        self.game_map.add_terrain_feature(building)
 
         # Position model on one side of building
         model.set_location(18.0, 22.0, 0.0, 0.0)
@@ -635,10 +649,9 @@ class TestCollisionDetection:
     def test_all_units_can_traverse_woods(self):
         """Test that all units can move through WOODS terrain."""
         # Create WOODS terrain in a clear area away from enemy
-        from warhammer40k_ai.classes.map import Obstacle, ObstacleType
         woods_vertices = [(15.0, 50.0), (19.0, 50.0), (19.0, 54.0), (15.0, 54.0)]
-        woods = Obstacle(woods_vertices, ObstacleType.WOODS, height=3.0)
-        self.game_map.add_obstacle(woods)
+        woods = TerrainFactory.create_woods(woods_vertices, height=3.0)
+        self.game_map.add_terrain_feature(woods)
 
         # Test with different unit types
         test_units = [
@@ -676,10 +689,9 @@ class TestCollisionDetection:
     def test_low_height_terrain_traversable(self):
         """Test that terrain ≤2" height can be traversed by all units."""
         # Create low height terrain (≤2" is freely climbable) away from other units
-        from warhammer40k_ai.classes.map import Obstacle, ObstacleType
         low_terrain_vertices = [(30.0, 40.0), (34.0, 40.0), (34.0, 44.0), (30.0, 44.0)]
-        low_terrain = Obstacle(low_terrain_vertices, ObstacleType.DEBRIS_AND_STATUARY, height=2.0)  # 2" height
-        self.game_map.add_obstacle(low_terrain)
+        low_terrain = TerrainFactory.create_debris(low_terrain_vertices, height=2.0)  # 2" height
+        self.game_map.add_terrain_feature(low_terrain)
 
         # Test with a VEHICLE (normally can't traverse RUINS, but should traverse low terrain)
         vehicle_unit = self.hull_unit
@@ -707,10 +719,12 @@ class TestCollisionDetection:
     def test_barricade_traversal_but_cannot_end_on(self):
         """Test that units can traverse BARRICADE_AND_FUEL_PIPES but cannot end moves on it."""
         # Create BARRICADE_AND_FUEL_PIPES terrain
-        from warhammer40k_ai.classes.map import Obstacle, ObstacleType
-        barricade_vertices = [(40.0, 40.0), (44.0, 40.0), (44.0, 44.0), (40.0, 44.0)]
-        barricade = Obstacle(barricade_vertices, ObstacleType.BARRICADE_AND_FUEL_PIPES, height=2.0)
-        self.game_map.add_obstacle(barricade)
+        barricade = TerrainFactory.create_barricade(
+            start_point=(40.0, 40.0),
+            end_point=(44.0, 44.0),
+            height=2.0
+        )
+        self.game_map.add_terrain_feature(barricade)
 
         # Test with Infantry unit
         infantry_unit = self.circular_unit
@@ -753,10 +767,9 @@ class TestCollisionDetection:
     def test_debris_traversal_but_cannot_end_on(self):
         """Test that units can traverse DEBRIS_AND_STATUARY but cannot end moves on it."""
         # Create DEBRIS_AND_STATUARY terrain in safe area
-        from warhammer40k_ai.classes.map import Obstacle, ObstacleType
         debris_vertices = [(25.0, 60.0), (29.0, 60.0), (29.0, 64.0), (25.0, 64.0)]
-        debris = Obstacle(debris_vertices, ObstacleType.DEBRIS_AND_STATUARY, height=1.5)
-        self.game_map.add_obstacle(debris)
+        debris = TerrainFactory.create_debris(debris_vertices, height=1.5)
+        self.game_map.add_terrain_feature(debris)
 
         # Test with Vehicle unit
         vehicle_unit = self.hull_unit
@@ -783,10 +796,9 @@ class TestCollisionDetection:
     def test_hills_buildings_base_overhang_rules(self):
         """Test that units can end moves on HILLS_AND_SEALED_BUILDINGS if base doesn't overhang."""
         # Create HILLS_AND_SEALED_BUILDINGS terrain within map boundaries
-        from warhammer40k_ai.classes.map import Obstacle, ObstacleType
         building_vertices = [(35.0, 60.0), (39.0, 60.0), (39.0, 64.0), (35.0, 64.0)]
-        building = Obstacle(building_vertices, ObstacleType.HILLS_AND_SEALED_BUILDINGS, height=4.0)
-        self.game_map.add_obstacle(building)
+        building = TerrainFactory.create_hill(building_vertices, height=4.0)
+        self.game_map.add_terrain_feature(building)
 
         # Test with Infantry unit (small base)
         infantry_unit = self.circular_unit
