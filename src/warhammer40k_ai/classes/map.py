@@ -162,13 +162,18 @@ class Map:
         return 0
 
     def check_collision_with_obstacles(self, model: Model, destination: Tuple[float, float] = None) -> bool:
+        """Check collision with terrain features (legacy method name for backward compatibility)."""
         shape = model.model_base.get_base_shape()
         if destination:
             shape = translate(shape, destination[0] - model.model_base.x, destination[1] - model.model_base.y)
-        for obstacle in self.obstacles:
-            #print(f"{model.parent_unit.name} checking collision with obstacles :: {obstacle.polygon}")
-            if shape.intersects(obstacle.polygon):
-                return True
+
+        # Check collision with terrain features using the new system
+        from ..utility.calcs import get_terrain_blocking_polygons
+        for terrain_feature in self.terrain_features:
+            blocking_polygons = get_terrain_blocking_polygons(model.parent_unit, terrain_feature)
+            for blocking_polygon in blocking_polygons:
+                if shape.intersects(blocking_polygon):
+                    return True
         return False
 
     def check_collision_with_other_friendly_units(self, model: Model, destination: Tuple[float, float] = None) -> bool:

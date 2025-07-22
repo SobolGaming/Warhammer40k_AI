@@ -1571,14 +1571,23 @@ class Game:
         battlefield_width, battlefield_height = self.get_battlefield_size()
         print(f"✅ Map created: {battlefield_width}\" x {battlefield_height}\"")
         
-        # 2. Add terrain (obstacles)
-        from .map import Obstacle, ObstacleType
-        obstacles = [
-            Obstacle(vertices=[(3, 3), (3, 5), (5, 5), (5, 3)], terrain_type=ObstacleType.CRATER_AND_RUBBLE, height=3.0),
-            Obstacle(vertices=[(20, 7), (27, 9), (29, 9), (29, 7)], terrain_type=ObstacleType.DEBRIS_AND_STATUARY, height=6.0)
+        # 2. Add terrain features using the new terrain system
+        from .map import TerrainFactory
+        terrain_features = [
+            TerrainFactory.create_crater(
+                footprint_vertices=[(3, 3), (3, 5), (5, 5), (5, 3)],
+                depth=2.0,
+                rim_height=1.0
+            ),
+            TerrainFactory.create_debris(
+                footprint_vertices=[(20, 7), (27, 9), (29, 9), (29, 7)],
+                height=6.0,
+                density=0.7
+            )
         ]
-        self.map.add_obstacles(obstacles)
-        print(f"✅ Terrain added: {len(obstacles)} obstacles")
+        for terrain in terrain_features:
+            self.map.add_terrain_feature(terrain)
+        print(f"✅ Terrain added: {len(terrain_features)} terrain features")
         
         # 3. Add deployment zones (18" from edges for Strike Force)
         deployment_depth = 18.0  # 18 inches from edge

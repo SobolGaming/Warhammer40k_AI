@@ -10,7 +10,7 @@ from warhammer40k_ai.utility.model_base import Base, BaseType
 from warhammer40k_ai.utility.calcs import get_unit_movement_path_preview
 from warhammer40k_ai.classes.player import Player
 from warhammer40k_ai.classes.game import Game
-from warhammer40k_ai.classes.map import Obstacle, ObstacleType, Objective, ObjectivePoint
+from warhammer40k_ai.classes.map import TerrainFeature, TerrainType, Objective, ObjectivePoint
 from warhammer40k_ai.classes.fight_phase_manager import FightPhaseManager, FightStage
 
 # Import UI panels
@@ -1416,9 +1416,9 @@ class GameView:
         battlefield_surface = pygame.Surface((BATTLEFIELD_WIDTH, BATTLEFIELD_HEIGHT))
         draw_battlefield(battlefield_surface, self.zoom_level, self.offset_x, self.offset_y)
 
-        # Draw obstacles on the battlefield
-        for obstacle in self.game_map.obstacles:
-            draw_obstacle(battlefield_surface, obstacle, self.zoom_level, self.offset_x, self.offset_y)
+        # Draw terrain features on the battlefield
+        for terrain_feature in self.game_map.terrain_features:
+            draw_terrain_feature(battlefield_surface, terrain_feature, self.zoom_level, self.offset_x, self.offset_y)
 
         # Draw deployment zones (with transparency)
         if hasattr(self.game, 'deployment_zones') and self.game.deployment_zones:
@@ -1698,33 +1698,37 @@ def draw_battlefield(screen: pygame.Surface, zoom_level: float, offset_x: int, o
     # Draw battlefield border
     pygame.draw.rect(screen, RED, (0, 0, visible_width, visible_height), 2)
 
-def draw_obstacle(screen: pygame.Surface, obstacle: Obstacle, zoom_level: float, offset_x: int, offset_y: int) -> None:
-    # Determine the color based on the obstacle type
-    if obstacle.terrain_type == ObstacleType.CRATER_AND_RUBBLE:
+def draw_terrain_feature(screen: pygame.Surface, terrain_feature: TerrainFeature, zoom_level: float, offset_x: int, offset_y: int) -> None:
+    # Determine the color based on the terrain type
+    if terrain_feature.terrain_type == TerrainType.CRATER_AND_RUBBLE:
         color = (128, 0, 0, 180)  # Dark red for craters
-    elif obstacle.terrain_type == ObstacleType.DEBRIS_AND_STATUARY:
+    elif terrain_feature.terrain_type == TerrainType.DEBRIS_AND_STATUARY:
         color = (192, 192, 192, 180)  # Gray for debris and statuary
-    elif obstacle.terrain_type == ObstacleType.HILLS_AND_SEALED_BUILDINGS:
+    elif terrain_feature.terrain_type == TerrainType.HILLS_AND_SEALED_BUILDINGS:
         color = (128, 64, 0, 180)  # Brown for hills and sealed buildings
-    elif obstacle.terrain_type == ObstacleType.WOODS:
+    elif terrain_feature.terrain_type == TerrainType.WOODS:
         color = (0, 128, 0, 180)  # Green for woods
-    elif obstacle.terrain_type == ObstacleType.RUINS:
+    elif terrain_feature.terrain_type == TerrainType.RUINS:
         color = (128, 128, 128, 180)  # Gray for ruins
+    elif terrain_feature.terrain_type == TerrainType.BARRICADE_AND_FUEL_PIPES:
+        color = (139, 69, 19, 180)  # Brown for barricades
     else:
         color = (255, 255, 255, 180)  # Default white
 
-    # Convert vertices to screen coordinates
+    # Convert vertices to screen coordinates from terrain feature's footprint
+    footprint_coords = list(terrain_feature.footprint.exterior.coords)[:-1]  # Remove duplicate last point
     screen_vertices = [
         (int((vertex[0] * TILE_SIZE) * zoom_level + offset_x),
          int((vertex[1] * TILE_SIZE) * zoom_level + offset_y))
-        for vertex in obstacle.vertices
+        for vertex in footprint_coords
     ]
 
     # Draw the filled polygon
-    pygame.draw.polygon(screen, color, screen_vertices)
+    if len(screen_vertices) >= 3:
+        pygame.draw.polygon(screen, color, screen_vertices)
 
-    # Draw the outline of the polygon
-    pygame.draw.polygon(screen, (0, 0, 0), screen_vertices, 2)  # Black outline with 2px width
+        # Draw the outline of the polygon
+        pygame.draw.polygon(screen, (0, 0, 0), screen_vertices, 2)  # Black outline with 2px width
 
 def draw_deployment_zones(screen: pygame.Surface, deployment_zones: dict, player1: Player, player2: Player, 
                          zoom_level: float, offset_x: int, offset_y: int) -> None:
