@@ -1409,7 +1409,7 @@ class Unit:
             # Use charge-aware pathfinding for single model (can navigate around obstacles and into engagement range)
             from ..utility.calcs import get_charge_movement_path
 
-            pathfinding_result = get_charge_movement_path(model, destination[:2], max_charge_distance, game_map)
+            pathfinding_result = get_charge_movement_path(model, destination[:2], max_charge_distance, game_map, target_unit)
             
             if not pathfinding_result or not pathfinding_result.get('valid'):
                 print(f"❌ {self.name} cannot charge to destination - pathfinding failed (obstacles in way)")
@@ -1462,7 +1462,7 @@ class Unit:
                     # Use charge-aware pathfinding for charge movement
                     from ..utility.calcs import get_charge_movement_path
 
-                    pathfinding_result = get_charge_movement_path(model, model_destination[:2], max_charge_distance, game_map)
+                    pathfinding_result = get_charge_movement_path(model, model_destination[:2], max_charge_distance, game_map, target_unit)
 
                     if pathfinding_result and pathfinding_result.get('valid'):
                         shortest_path = [(p[0], p[1], model_destination[2]) for p in pathfinding_result['path']]

@@ -1,4 +1,4 @@
-from math import sqrt, atan2, pi, cos, sin
+from math import sqrt, atan2, pi, cos, sin, acos
 from typing import Tuple, List, Optional
 import heapq
 import numpy as np
@@ -77,35 +77,52 @@ def angle_difference(angle1: float, angle2: float) -> float:
     return diff
 
 def can_traverse_freely(unit: 'Unit', obstacle: 'Obstacle') -> bool:
-    """Check if a unit can freely traverse over an obstacle.
-    
-    This function combines both general movement rules and specific terrain type rules.
+    """Check if a unit can freely traverse over an obstacle without vertical movement cost.
+
+    This function determines if terrain should be ignored for pathfinding purposes.
     """
-    # Flying units can traverse any obstacle
+    # Flying units can traverse any obstacle freely
     if unit.is_flying:
         return True
 
-    # Check height-based traversal
+    # Check height-based traversal (≤2" is freely climbable)
     if obstacle.height <= FREELY_CLIMBABLE_RANGE:
         return True
 
     # Import at runtime to avoid circular import
     from ..classes.map import ObstacleType
-    
-    # Check terrain type specific rules
+
+    # For terrain >2" height, check if it has special traversal rules
     terrain = obstacle.terrain_type
-    if terrain in [ObstacleType.CRATER_AND_RUBBLE, ObstacleType.DEBRIS_AND_STATUARY]:
-        return True  # These are always traversable
-    elif terrain == ObstacleType.HILLS_AND_SEALED_BUILDINGS:
-        return False  # Cannot traverse through buildings
-    elif terrain == ObstacleType.WOODS:
-        return True  # Can traverse through woods
-    elif terrain == ObstacleType.RUINS:
-        # Special characters and infantry/beasts can traverse ruins
-        return (unit.is_infantry or unit.is_beast or 
+    if terrain == ObstacleType.RUINS:
+        # Infantry, Beasts, Imperium Primarch, and Belisarius Cawl can move through walls freely
+        return (unit.is_infantry or unit.is_beast or
                 unit.is_belisarius_cawl or unit.is_imperium_primarch)
-    
-    # Default to not traversable for unknown terrain types
+
+    # All other terrain types >2" can be traversed but require vertical movement cost
+    # They should NOT be treated as blocking terrain for pathfinding
+    return True
+
+def is_terrain_impassable(unit: 'Unit', obstacle: 'Obstacle') -> bool:
+    """Check if terrain is completely impassable for a unit.
+
+    This determines if terrain should be added to blocking collision trees.
+    """
+    # Flying units can pass through any terrain
+    if unit.is_flying:
+        return False
+
+    # Import at runtime to avoid circular import
+    from ..classes.map import ObstacleType
+
+    # Only RUINS are truly impassable for certain unit types
+    terrain = obstacle.terrain_type
+    if terrain == ObstacleType.RUINS:
+        # Non-Infantry/Beast units cannot move through RUINS walls
+        return not (unit.is_infantry or unit.is_beast or
+                   unit.is_belisarius_cawl or unit.is_imperium_primarch)
+
+    # All other terrain types are passable (may require vertical cost)
     return False
 
 def get_pivot_cost(unit: 'Unit') -> float:
@@ -136,14 +153,17 @@ def get_movement_cost(model: 'Model', point_a: Tuple[float, float], point_b: Tup
         if movement_line.intersects(obstacle.polygon):
             intersecting_obstacles.append(obstacle)
 
-    # Determine the maximum obstacle height along the path
+    # Determine the maximum obstacle height along the path that requires vertical movement
     max_obstacle_height = 0
     for obstacle in intersecting_obstacles:
-        if not can_traverse_freely(model.parent_unit, obstacle):
-            if obstacle.height > max_obstacle_height:
-                max_obstacle_height = obstacle.height
+        # Only consider obstacles that are not impassable
+        if not is_terrain_impassable(model.parent_unit, obstacle):
+            # If obstacle is >2" height, it requires vertical movement cost
+            if obstacle.height > FREELY_CLIMBABLE_RANGE:
+                if obstacle.height > max_obstacle_height:
+                    max_obstacle_height = obstacle.height
 
-    # Set vertical distance based on the highest obstacle if it's greater than the freely climbable range
+    # Set vertical distance based on the highest obstacle that requires climbing
     dz = max_obstacle_height if max_obstacle_height > FREELY_CLIMBABLE_RANGE else 0
 
     # For units with 'Fly', they pay vertical movement cost but can traverse over obstacles
@@ -161,6 +181,10 @@ def get_movement_cost(model: 'Model', point_a: Tuple[float, float], point_b: Tup
 def heuristic(a, b):
     """Calculate the heuristic (estimated distance) between two points."""
     return get_dist(a[0] - b[0], a[1] - b[1], a[2] - b[2])
+
+def heuristic_2d(a, b):
+    """Calculate the heuristic (estimated distance) between two 2D points."""
+    return ((a[0] - b[0])**2 + (a[1] - b[1])**2)**0.5
 
 def distance_to_nearest_obstacle(point, obstacles):
     if not obstacles:
@@ -238,210 +262,6 @@ def get_neighbors(current, obstacles, ellipse, goal):
             valid_neighbors.append((n[0], n[1], z))
     return valid_neighbors
 
-def check_engagement_range_violation(model: 'Model', position: Tuple[float, float, float], game_map: 'Map', 
-                                   movement_action: 'MovementAction' = None, is_ending_position: bool = False) -> bool:
-    """
-    Check if a position would put the model within engagement range of any enemy unit.
-    
-    Args:
-        model: The model to check
-        position: The position to test (x, y, z)
-        game_map: The game map containing enemy units
-        movement_action: MovementAction enum value (MOVE, ADVANCE, FALL_BACK, CHARGE)
-        is_ending_position: Whether this is the final destination
-        
-    Returns:
-        bool: True if position violates engagement range rules for the given movement action
-    """
-    # Import here to avoid circular imports
-    from ..classes.unit import MovementAction
-    
-    # Create a temporary base at the test position
-    temp_base = model.model_base.__class__(model.model_base.base_type, model.model_base.radius)
-    temp_base.set_position(position[0], position[1], position[2])
-    temp_base.set_facing(model.model_base.facing)
-    
-    # Check against all enemy units
-    enemy_units = game_map.get_enemy_units(model.parent_unit)
-    for enemy_unit in enemy_units:
-        if not enemy_unit.is_alive() or not enemy_unit.deployed:
-            continue
-            
-        for enemy_model in enemy_unit.models:
-            if not enemy_model.is_alive:
-                continue
-                
-            # Calculate horizontal and vertical distances
-            horizontal_distance = temp_base.edge_to_edge_distance(enemy_model.model_base)
-            vertical_distance = temp_base.vertical_distance(enemy_model.model_base)
-            
-            # Check if within engagement range
-            if (horizontal_distance <= ENGAGEMENT_RANGE_HORIZONTAL and
-                vertical_distance <= ENGAGEMENT_RANGE_VERTICAL):
-
-                # Fall Back rules: Can move within engagement range but cannot end within it
-                if movement_action == MovementAction.FALL_BACK:
-                    return is_ending_position  # Only violation if ending position
-
-                # Charge rules: Can move into engagement range (that's the goal!)
-                if movement_action == MovementAction.CHARGE:
-                    return False  # No violation for charge movement
-
-                # Normal/Advance rules: Cannot move within engagement range at all
-                return True
-                
-    return False
-
-def check_enemy_model_collision(model: 'Model', start_pos: Tuple[float, float, float], 
-                               end_pos: Tuple[float, float, float], game_map: 'Map', 
-                               movement_action: 'MovementAction' = None) -> Tuple[bool, List['Model']]:
-    """
-    Check if the movement path would collide with enemy models.
-    
-    Args:
-        model: The model moving
-        start_pos: Starting position (x, y, z)
-        end_pos: Ending position (x, y, z) 
-        game_map: The game map containing enemy units
-        movement_action: MovementAction enum value (MOVE, ADVANCE, FALL_BACK)
-        
-    Returns:
-        Tuple[bool, List[Model]]: (collision_detected, list_of_enemy_models_moved_over)
-    """
-    # Import here to avoid circular imports
-    from ..classes.unit import MovementAction
-    
-    # Create movement line
-    movement_line = LineString([(start_pos[0], start_pos[1]), (end_pos[0], end_pos[1])])
-    
-    enemy_units = game_map.get_enemy_units(model.parent_unit)
-    enemy_models_moved_over = []
-    
-    for enemy_unit in enemy_units:
-        if not enemy_unit.is_alive() or not enemy_unit.deployed:
-            continue
-            
-        for enemy_model in enemy_unit.models:
-            if not enemy_model.is_alive:
-                continue
-                
-            # Check if model has FLY keyword - can move over enemy models freely
-            if model.parent_unit.is_flying:
-                continue
-                
-            # Get enemy model's base shape
-            enemy_base_shape = enemy_model.model_base.get_base_shape()
-            
-            # Check if movement line intersects with enemy base
-            if movement_line.intersects(enemy_base_shape):
-                # For Fall Back moves, allow moving over enemies but track them
-                if movement_action == MovementAction.FALL_BACK:
-                    enemy_models_moved_over.append(enemy_model)
-                    continue
-                else:
-                    # Normal/Advance moves: collision blocks movement
-                    return True, []
-            
-            # Also check if our model's base would intersect at any point along the path
-            # Sample points along the path for more thorough checking
-            num_samples = max(10, int(sqrt((end_pos[0] - start_pos[0])**2 + (end_pos[1] - start_pos[1])**2) * 10))
-            for i in range(num_samples + 1):
-                t = i / num_samples
-                sample_x = start_pos[0] + t * (end_pos[0] - start_pos[0])
-                sample_y = start_pos[1] + t * (end_pos[1] - start_pos[1])
-                sample_z = start_pos[2] + t * (end_pos[2] - start_pos[2])
-                
-                # Create temporary base at sample position
-                temp_base = model.model_base.__class__(model.model_base.base_type, model.model_base.radius)
-                temp_base.set_position(sample_x, sample_y, sample_z)
-                temp_base.set_facing(model.model_base.facing)
-                
-                # Check collision with enemy model
-                if temp_base.collides_with(enemy_model.model_base):
-                    if movement_action == MovementAction.FALL_BACK:
-                        # Track enemy models being moved over
-                        if enemy_model not in enemy_models_moved_over:
-                            enemy_models_moved_over.append(enemy_model)
-                    else:
-                        # Normal/Advance moves: collision blocks movement
-                        return True, []
-    
-    # Return collision status and list of enemy models moved over
-    return len(enemy_models_moved_over) > 0 and movement_action != MovementAction.FALL_BACK, enemy_models_moved_over
-
-def check_vehicle_monster_restrictions(model: 'Model', start_pos: Tuple[float, float, float], 
-                                     end_pos: Tuple[float, float, float], game_map: 'Map') -> bool:
-    """
-    Check vehicle/monster movement restrictions against other vehicles/monsters.
-    
-    Args:
-        model: The model moving
-        start_pos: Starting position (x, y, z)
-        end_pos: Ending position (x, y, z)
-        game_map: The game map containing other units
-        
-    Returns:
-        bool: True if movement violates vehicle/monster restrictions
-    """
-    # Only apply to vehicles and monsters
-    if not (model.parent_unit.is_vehicle or model.parent_unit.is_monster):
-        return False
-        
-    # Check against both friendly and enemy vehicles/monsters
-    all_units = game_map.get_friendly_units(model.parent_unit) + game_map.get_enemy_units(model.parent_unit)
-    
-    for unit in all_units:
-        if unit == model.parent_unit or not unit.is_alive() or not unit.deployed:
-            continue
-            
-        # Only check against other vehicles/monsters
-        if not (unit.is_vehicle or unit.is_monster):
-            continue
-            
-        for other_model in unit.models:
-            if not other_model.is_alive:
-                continue
-                
-            # Check if path would intersect with this vehicle/monster
-            if check_model_path_intersection(model, start_pos, end_pos, other_model):
-                return True
-                
-    return False
-
-def check_model_path_intersection(moving_model: 'Model', start_pos: Tuple[float, float, float], 
-                                 end_pos: Tuple[float, float, float], stationary_model: 'Model') -> bool:
-    """
-    Check if a model's movement path would intersect with another model.
-    
-    Args:
-        moving_model: The model that is moving
-        start_pos: Starting position
-        end_pos: Ending position
-        stationary_model: The model to check intersection against
-        
-    Returns:
-        bool: True if paths intersect
-    """
-    # Sample points along the movement path
-    num_samples = max(20, int(sqrt((end_pos[0] - start_pos[0])**2 + (end_pos[1] - start_pos[1])**2) * 15))
-    
-    for i in range(num_samples + 1):
-        t = i / num_samples
-        sample_x = start_pos[0] + t * (end_pos[0] - start_pos[0])
-        sample_y = start_pos[1] + t * (end_pos[1] - start_pos[1])
-        sample_z = start_pos[2] + t * (end_pos[2] - start_pos[2])
-        
-        # Create temporary base at sample position
-        temp_base = moving_model.model_base.__class__(moving_model.model_base.base_type, moving_model.model_base.radius)
-        temp_base.set_position(sample_x, sample_y, sample_z)
-        temp_base.set_facing(moving_model.model_base.facing)
-        
-        # Check collision
-        if temp_base.collides_with(stationary_model.model_base):
-            return True
-            
-    return False
-
 def check_friendly_ending_collision(model: 'Model', end_pos: Tuple[float, float, float], game_map: 'Map') -> bool:
     """
     Check if ending position would collide with friendly models.
@@ -474,145 +294,882 @@ def check_friendly_ending_collision(model: 'Model', end_pos: Tuple[float, float,
                 
     return False
 
-def is_position_valid_for_movement(model: 'Model', position: Tuple[float, float, float], 
-                                  start_pos: Tuple[float, float, float], game_map: 'Map', 
-                                  is_ending_position: bool = False, movement_action: 'MovementAction' = None) -> Tuple[bool, List['Model']]:
-    """
-    Comprehensive validation of a position for movement according to Warhammer 40k rules.
-    
-    Args:
-        model: The model to check
-        position: The position to validate (x, y, z)
-        start_pos: The starting position for path checking
-        game_map: The game map
-        is_ending_position: Whether this is the final destination
-        movement_action: MovementAction enum value (MOVE, ADVANCE, FALL_BACK, CHARGE)
-        
-    Returns:
-        Tuple[bool, List[Model]]: (is_valid, list_of_enemy_models_moved_over)
-    """
-    # 1. Check battlefield boundaries
-    if not game_map.is_within_boundary(model, position[:2]):
-        return False, []
-        
-    # 2. Check obstacle collisions
-    if game_map.check_collision_with_obstacles(model, position[:2]):
-        return False, []
-        
-    # 3. Check engagement range violations (modified for Fall Back rules)
-    if check_engagement_range_violation(model, position, game_map, movement_action, is_ending_position):
-        return False, []
-        
-    # 4. Check enemy model base collisions along path (modified for Fall Back rules)
-    collision_detected, enemy_models_moved_over = check_enemy_model_collision(model, start_pos, position, game_map, movement_action)
-    if collision_detected:
-        return False, []
-        
-    # 5. Check vehicle/monster restrictions
-    if check_vehicle_monster_restrictions(model, start_pos, position, game_map):
-        return False, []
-        
-    # 6. Check friendly model collisions (only for ending position)
-    if is_ending_position and check_friendly_ending_collision(model, position, game_map):
-        return False, []
-    
-    # 7. Special FLY keyword rules
-    if model.parent_unit.is_flying and is_ending_position:
-        # FLY models cannot end on top of any other model (friendly or enemy)
-        if check_model_overlap_at_position(model, position, game_map):
-            return False, []
-        
-    return True, enemy_models_moved_over
+# =============================================================================
+# UNIFIED PATHFINDING SYSTEM
+# =============================================================================
 
-def check_model_overlap_at_position(model: 'Model', position: Tuple[float, float, float], game_map: 'Map') -> bool:
+from enum import Enum
+
+class MovementType(Enum):
+    """Movement types with specific rules and validation"""
+    MOVE = "move"
+    ADVANCE = "advance"
+    FALL_BACK = "fall_back"
+    CHARGE = "charge"
+    PILE_IN = "pile_in"
+    CONSOLIDATE = "consolidate"
+    SCOUT = "scout"
+
+def unified_pathfinding(model: 'Model', target: Tuple[float, float, float], movement_type: MovementType,
+                       max_distance: float, game_map: 'Map', target_unit: 'Unit' = None) -> dict:
     """
-    Check if a model would overlap with any other model (friendly or enemy) at the given position.
-    Used for FLY keyword validation.
+    Unified pathfinding system that handles all movement types through different
+    STRTree configurations and validation rules.
+
+    Args:
+        model: The model to move
+        target: Target position (x, y, z)
+        movement_type: Type of movement (MOVE, CHARGE, etc.)
+        max_distance: Maximum movement distance
+        game_map: The game map
+        target_unit: Target unit for charge movement (required for CHARGE)
+
+    Returns:
+        Dict with keys: 'valid', 'path', 'distance', 'reason'
     """
-    # Create temporary base at test position
-    temp_base = model.model_base.__class__(model.model_base.base_type, model.model_base.radius)
-    temp_base.set_position(position[0], position[1], position[2])
-    temp_base.set_facing(model.model_base.facing)
-    
-    # Check against all other units on the map
+    try:
+        # Handle None model gracefully
+        if model is None:
+            return {
+                'valid': False,
+                'path': [],
+                'distance': 0.0,
+                'reason': 'Invalid input: model is None'
+            }
+
+        # Validate target
+        if target is None or len(target) < 3:
+            return {
+                'valid': False,
+                'path': [],
+                'distance': 0.0,
+                'reason': 'Invalid input: target is None or incomplete'
+            }
+
+        # Validate max_distance
+        if max_distance <= 0:
+            return {
+                'valid': False,
+                'path': [],
+                'distance': 0.0,
+                'reason': 'Invalid input: max_distance must be positive'
+            }
+
+        print(f"🔍 DEBUG: Unified pathfinding for {model.name} to {target}, type: {movement_type}, max_dist: {max_distance}")
+
+        # Build collision trees based on movement type and unit capabilities
+        collision_trees = build_collision_trees(model.parent_unit, movement_type, game_map)
+        print(f"🔍 DEBUG: Built collision trees: {list(collision_trees.keys())}")
+
+        # Get validation rules for this movement type
+        validation_rules = get_validation_rules(movement_type, target_unit)
+        print(f"🔍 DEBUG: Validation rules: {validation_rules}")
+
+        # Run unified A* pathfinding
+        result = a_star_unified(model, target, max_distance, collision_trees, validation_rules, game_map)
+        print(f"🔍 DEBUG: A* result: valid={result.get('valid')}, reason={result.get('reason')}")
+
+        return result
+
+    except Exception as e:
+        import traceback
+        model_name = model.name if model and hasattr(model, 'name') else 'Unknown'
+        print(f"❌ Unified pathfinding error for {model_name}: {e}")
+        print(f"❌ Traceback: {traceback.format_exc()}")
+        return {
+            'valid': False,
+            'path': [],
+            'distance': 0.0,
+            'reason': f'Pathfinding error: {str(e)}'
+        }
+
+# REMOVED: can_unit_pass_through_terrain - using existing can_traverse_freely instead
+
+def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game_map: 'Map') -> dict:
+    """
+    Build STRTrees for collision detection based on movement type and unit capabilities.
+
+    Args:
+        moving_unit: The unit that is moving
+        movement_type: Type of movement being performed
+        game_map: The game map containing all objects
+
+    Returns:
+        Dict containing STRTrees for different collision types
+    """
+    # Filter terrain based on unit capabilities
+    blocking_terrain = []
+    for obstacle in game_map.obstacles:
+        if is_terrain_impassable(moving_unit, obstacle):
+            blocking_terrain.append(obstacle.polygon)
+
+    # Get all models except the moving unit's models
+    friendly_models = []
+    enemy_models = []
+
     for unit in game_map.units:
-        if not unit.is_alive() or not unit.deployed or unit == model.parent_unit:
+        if unit == moving_unit or not unit.is_alive() or not unit.deployed:
             continue
-            
-        for other_model in unit.models:
-            if not other_model.is_alive:
+
+        for model in unit.models:
+            if not model.is_alive:
                 continue
-                
-            # Check if bases would overlap
-            if temp_base.collides_with(other_model.model_base):
-                return True
-                
-    return False
 
-def get_enhanced_neighbors(current: Tuple[float, float, float], model: 'Model', obstacles: List['Obstacle'], 
-                          game_map: 'Map', goal: Tuple[float, float, float], 
-                          movement_action: 'MovementAction' = None) -> List[Tuple[Tuple[float, float, float], List['Model']]]:
+            model_shape = model.model_base.get_base_shape()
+            if unit.faction == moving_unit.faction:
+                friendly_models.append(model_shape)
+            else:
+                enemy_models.append(model_shape)
+
+    # Build trees based on movement type
+    trees = {
+        'terrain': STRtree(blocking_terrain) if blocking_terrain else None,
+        'friendly_models': STRtree(friendly_models) if friendly_models else None,
+        'enemy_models': STRtree(enemy_models) if enemy_models else None
+    }
+
+    print(f"🔍 DEBUG: Built collision trees - terrain: {len(blocking_terrain)}, friendly: {len(friendly_models)}, enemy: {len(enemy_models)}")
+
+    # Add engagement range buffers based on movement type
+    if movement_type in [MovementType.MOVE, MovementType.ADVANCE]:
+        # Standard movement: 1" engagement range buffer around enemy models
+        if enemy_models:
+            buffered_enemies = [shape.buffer(ENGAGEMENT_RANGE_HORIZONTAL) for shape in enemy_models]
+            trees['engagement_buffer'] = STRtree(buffered_enemies)
+
+    elif movement_type == MovementType.SCOUT:
+        # Scout movement: 9" buffer around enemy models and deployment zone
+        if enemy_models:
+            buffered_enemies = [shape.buffer(9.0) for shape in enemy_models]
+            trees['engagement_buffer'] = STRtree(buffered_enemies)
+
+        # Add deployment zone buffer (9" from enemy deployment zone)
+        enemy_deployment_zone = game_map.get_enemy_deployment_zone(moving_unit.faction)
+        if enemy_deployment_zone:
+            buffered_deployment = enemy_deployment_zone.buffer(9.0)
+            trees['deployment_buffer'] = STRtree([buffered_deployment])
+
+    elif movement_type == MovementType.FALL_BACK:
+        # Fall back: can move through models, only terrain blocks
+        trees['friendly_models'] = None  # Can move through friendly models
+        trees['enemy_models'] = None     # Can move through enemy models
+
+    elif movement_type == MovementType.CHARGE:
+        # Charge: no engagement range buffer (can move into engagement range)
+        pass  # Use base trees without engagement buffer
+
+    elif movement_type in [MovementType.PILE_IN, MovementType.CONSOLIDATE]:
+        # Pile-in/Consolidate: 3" movement, no engagement buffer
+        pass  # Use base trees without engagement buffer
+
+    return trees
+
+def get_validation_rules(movement_type: MovementType, target_unit: 'Unit' = None) -> dict:
     """
-    Get valid neighboring points with comprehensive Warhammer 40k movement validation.
-    
+    Get validation rules for specific movement types.
+
     Args:
-        current: Current position (x, y, z)
-        model: The model moving
-        obstacles: List of terrain obstacles
-        game_map: The game map
-        goal: The target destination
-        movement_action: MovementAction enum value (MOVE, ADVANCE, FALL_BACK)
-        
-    Returns:
-        List of tuples containing (valid_neighboring_position, enemy_models_moved_over)
-    """
-    x, y, z = current
-    step_size = adaptive_step_size(current, obstacles, goal)
-    
-    # Generate potential neighbors with adaptive step size
-    potential_neighbors = []
-    
-    # Add direct path to goal if close enough
-    goal_direction = (goal[0] - x, goal[1] - y)
-    goal_distance = sqrt(goal_direction[0]**2 + goal_direction[1]**2)
-    
-    if goal_distance <= step_size:
-        potential_neighbors.append(goal)
-    else:
-        # Normalized direction to goal
-        goal_step = (goal_direction[0] / goal_distance * step_size,
-                     goal_direction[1] / goal_distance * step_size)
-        potential_neighbors.append((x + goal_step[0], y + goal_step[1], z))
-    
-    # Add standard directional neighbors
-    directions = [
-        (step_size, 0),           # East
-        (-step_size, 0),          # West  
-        (0, step_size),           # North
-        (0, -step_size),          # South
-        (step_size * 0.707, step_size * 0.707),    # Northeast
-        (-step_size * 0.707, -step_size * 0.707),  # Southwest
-        (step_size * 0.707, -step_size * 0.707),   # Southeast
-        (-step_size * 0.707, step_size * 0.707),   # Northwest
-    ]
-    
-    for dx, dy in directions:
-        neighbor_pos = (x + dx, y + dy, z)
-        potential_neighbors.append(neighbor_pos)
-    
-    # Validate each neighbor according to Warhammer 40k rules
-    valid_neighbors = []
-    for neighbor in potential_neighbors:
-        is_valid, enemy_models_moved_over = is_position_valid_for_movement(
-            model, neighbor, current, game_map, 
-            is_ending_position=(neighbor == goal), movement_action=movement_action
-        )
-        if is_valid:
-            valid_neighbors.append((neighbor, enemy_models_moved_over))
-    
-    return valid_neighbors
+        movement_type: Type of movement being performed
+        target_unit: Target unit for charge movement (required for CHARGE)
 
-# REMOVED: a_star_enhanced - replaced with get_movement_path_preview and get_charge_movement_path
+    Returns:
+        Dict containing validation rules for this movement type
+    """
+    # Base rules that apply to all movement types
+    base_rules = {
+        'prevent_friendly_overlap': True,    # Always prevent friendly model overlap
+        'prevent_enemy_overlap': True,       # Always prevent enemy model overlap
+        'apply_pivot_cost': True,           # Always apply pivot costs
+        'check_terrain_traversal': True,    # Always check if unit can traverse terrain
+    }
+
+    # Add movement-specific rules
+    if movement_type == MovementType.CHARGE:
+        base_rules.update({
+            'must_end_in_engagement_range': True,
+            'target_unit': target_unit,  # Required for charge validation
+            'allow_engagement_range_movement': True,  # Can move through engagement range
+        })
+
+    elif movement_type == MovementType.PILE_IN:
+        base_rules.update({
+            'must_end_closer_to_enemies': True,
+            'prefer_base_contact': True,  # Prefer ending in base-to-base contact
+            'max_distance_override': 3.0,  # Pile-in is always 3"
+        })
+
+    elif movement_type == MovementType.CONSOLIDATE:
+        base_rules.update({
+            'must_end_closer_to_enemies_or_objectives': True,
+            'prefer_base_contact': True,  # Prefer ending in base-to-base contact
+            'max_distance_override': 3.0,  # Consolidate is always 3"
+        })
+
+    elif movement_type == MovementType.FALL_BACK:
+        base_rules.update({
+            'can_move_through_models': True,  # Can move through enemy and friendly models
+            'cannot_end_in_engagement_range': True,  # Cannot end within engagement range
+            'check_desperate_escape': True,  # Check if Desperate Escape tests are needed
+        })
+
+    elif movement_type == MovementType.SCOUT:
+        base_rules.update({
+            'min_distance_from_enemies': 9.0,  # Must end 9" from enemies
+            'min_distance_from_deployment_zone': 9.0,  # Must end 9" from enemy deployment
+        })
+
+    elif movement_type in [MovementType.MOVE, MovementType.ADVANCE]:
+        base_rules.update({
+            'cannot_move_within_engagement_range': True,  # Cannot move within 1" of enemies
+        })
+
+    return base_rules
+
+def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_distance: float,
+                  collision_trees: dict, validation_rules: dict, game_map: 'Map') -> dict:
+    """
+    Unified A* pathfinding algorithm that uses STRTrees for collision detection
+    and validation rules for movement-specific constraints.
+
+    Args:
+        model: The model to move
+        target: Target position (x, y, z)
+        max_distance: Maximum movement distance
+        collision_trees: Dict of STRTrees for different collision types
+        validation_rules: Dict of validation rules for this movement type
+        game_map: The game map
+
+    Returns:
+        Dict with keys: 'valid', 'path', 'distance', 'reason'
+    """
+    import heapq
+
+    start = (model.model_base.x, model.model_base.y, model.model_base.z)
+    goal = target
+    step_size = 0.5  # 0.5" step size for pathfinding (larger for straighter paths)
+
+    # Initialize A* data structures
+    open_set = []
+    heapq.heappush(open_set, (0, start))
+    came_from = {}
+    g_score = {start: 0}
+    f_score = {start: heuristic(start, goal)}
+    closed_set = set()
+
+    max_iterations = 15000
+    iterations = 0
+
+    # Track collision reasons for better error reporting
+    collision_reasons = set()
+
+    print(f"🔍 DEBUG: Starting A* from {start} to {goal}, max_distance: {max_distance}")
+
+    # Optimization: Try straight line path first if no obstacles
+    straight_line_distance = heuristic(start, goal)
+    if straight_line_distance <= max_distance:
+        # Check if straight line path is clear
+        straight_line_clear = True
+        num_checks = max(10, int(straight_line_distance / step_size))
+
+        for i in range(1, num_checks):
+            t = i / num_checks
+            check_pos = (
+                start[0] + t * (goal[0] - start[0]),
+                start[1] + t * (goal[1] - start[1]),
+                start[2] + t * (goal[2] - start[2])
+            )
+
+            validity_result = is_position_valid_unified_detailed(check_pos, model, collision_trees, validation_rules, game_map)
+            if not validity_result['valid']:
+                straight_line_clear = False
+                collision_reasons.add(validity_result['reason'])
+                break
+
+        if straight_line_clear:
+            # Validate final position for straight line path
+            validation_result = validate_final_position(model, goal, validation_rules, game_map)
+            if not validation_result['valid']:
+                print(f"🔍 DEBUG: Straight line path blocked by final position validation: {validation_result['reason']}")
+                # Continue with A* pathfinding instead
+            else:
+                print(f"🔍 DEBUG: Using straight line path (distance: {straight_line_distance:.1f}\")")
+
+                # Check for Desperate Escape requirements for straight line path
+                desperate_escape_info = check_desperate_escape_requirements(
+                    model, [start, goal], validation_rules, game_map
+                )
+
+                return {
+                    'valid': True,
+                    'path': [start, goal],
+                    'distance': straight_line_distance,
+                    'reason': 'Straight line path',
+                    'desperate_escape': desperate_escape_info
+                }
+
+    while open_set and iterations < max_iterations:
+        current = heapq.heappop(open_set)[1]
+
+        if current in closed_set:
+            continue
+
+        closed_set.add(current)
+
+        # Check if we've reached the goal
+        if heuristic(current, goal) < step_size:
+            # Reconstruct path
+            path = []
+            path_node = current
+            while path_node in came_from:
+                path.append(path_node)
+                path_node = came_from[path_node]
+            path.append(start)
+            path.reverse()
+            path.append(goal)  # Ensure we end exactly at goal
+
+            # Calculate total distance
+            total_distance = 0
+            for i in range(1, len(path)):
+                total_distance += heuristic(path[i-1], path[i])
+
+            # Apply pivot cost only if there's actual rotation
+            if validation_rules.get('apply_pivot_cost', False) and len(path) > 1:
+                # Check if the path requires rotation (direction change)
+                requires_rotation = False
+                if len(path) >= 3:  # Need at least 3 points to detect direction change
+                    # Check if there are significant direction changes
+                    for i in range(1, len(path) - 1):
+                        prev_dir = (path[i][0] - path[i-1][0], path[i][1] - path[i-1][1])
+                        next_dir = (path[i+1][0] - path[i][0], path[i+1][1] - path[i][1])
+
+                        # Normalize directions
+                        prev_len = (prev_dir[0]**2 + prev_dir[1]**2)**0.5
+                        next_len = (next_dir[0]**2 + next_dir[1]**2)**0.5
+
+                        if prev_len > 0 and next_len > 0:
+                            prev_norm = (prev_dir[0]/prev_len, prev_dir[1]/prev_len)
+                            next_norm = (next_dir[0]/next_len, next_dir[1]/next_len)
+
+                            # Calculate angle between directions
+                            dot_product = prev_norm[0]*next_norm[0] + prev_norm[1]*next_norm[1]
+                            dot_product = max(-1, min(1, dot_product))  # Clamp to [-1, 1]
+                            angle_diff = acos(dot_product)
+
+                            # If angle change > 30 degrees, consider it rotation
+                            if angle_diff > pi / 6:  # 30 degrees
+                                requires_rotation = True
+                                break
+
+                if requires_rotation:
+                    pivot_cost = get_pivot_cost(model.parent_unit)
+                    if pivot_cost > 0:
+                        total_distance += pivot_cost
+                        print(f"🔍 DEBUG: Applied pivot cost: {pivot_cost:.1f}\"")
+                else:
+                    print(f"🔍 DEBUG: No rotation detected, no pivot cost applied")
+
+            # Validate final position according to movement rules
+            validation_result = validate_final_position(model, goal, validation_rules, game_map)
+            if not validation_result['valid']:
+                return {
+                    'valid': False,
+                    'path': None,
+                    'distance': total_distance,
+                    'reason': validation_result['reason']
+                }
+
+            # Check distance limit
+            max_dist = validation_rules.get('max_distance_override', max_distance)
+            if total_distance > max_dist:
+                return {
+                    'valid': False,
+                    'path': None,
+                    'distance': total_distance,
+                    'reason': f'Path too long ({total_distance:.1f}" > {max_dist:.1f}")'
+                }
+
+            # Check for Desperate Escape requirements
+            desperate_escape_info = check_desperate_escape_requirements(
+                model, path, validation_rules, game_map
+            )
+
+            return {
+                'valid': True,
+                'path': path,
+                'distance': total_distance,
+                'reason': 'Valid path found',
+                'desperate_escape': desperate_escape_info
+            }
+
+        # Generate neighbors (3D movement with vertical component)
+        for dx, dy, dz in [(-step_size, 0, 0), (step_size, 0, 0), (0, -step_size, 0), (0, step_size, 0),
+                          (-step_size, -step_size, 0), (-step_size, step_size, 0),
+                          (step_size, -step_size, 0), (step_size, step_size, 0),
+                          # Add vertical movement for flying units or terrain traversal
+                          (0, 0, step_size), (0, 0, -step_size)]:
+            neighbor = (current[0] + dx, current[1] + dy, current[2] + dz)
+
+            if neighbor in closed_set:
+                continue
+
+            # Check if position is valid using STRTrees
+            validity_result = is_position_valid_unified_detailed(neighbor, model, collision_trees, validation_rules, game_map)
+            if not validity_result['valid']:
+                collision_reasons.add(validity_result['reason'])
+                if iterations < 10:  # Only log first few iterations to avoid spam
+                    print(f"🔍 DEBUG: Position {neighbor} invalid: {validity_result['reason']}")
+                continue
+
+            tentative_g_score = g_score[current] + heuristic(current, neighbor)
+
+            # Check distance limit during pathfinding
+            max_dist = validation_rules.get('max_distance_override', max_distance)
+            if tentative_g_score > max_dist:
+                continue
+
+            if neighbor not in g_score or tentative_g_score < g_score[neighbor]:
+                came_from[neighbor] = current
+                g_score[neighbor] = tentative_g_score
+                f_score[neighbor] = tentative_g_score + heuristic(neighbor, goal)
+                heapq.heappush(open_set, (f_score[neighbor], neighbor))
+
+        iterations += 1
+
+    # Provide more specific failure reason based on encountered obstacles
+    if collision_reasons:
+        primary_reason = list(collision_reasons)[0]  # Get first encountered reason
+        if len(collision_reasons) > 1:
+            reason = f"{primary_reason} (and {len(collision_reasons)-1} other obstacles)"
+        else:
+            reason = primary_reason
+    else:
+        reason = f'No path found after {iterations} iterations'
+
+    return {
+        'valid': False,
+        'path': None,
+        'distance': 0,
+        'reason': reason
+    }
+
+def is_position_valid_unified(position: Tuple[float, float, float], model: 'Model',
+                            collision_trees: dict, validation_rules: dict, game_map: 'Map' = None) -> bool:
+    """
+    Check if a position is valid using STRTrees and validation rules.
+
+    Args:
+        position: Position to check (x, y, z)
+        model: The model being moved
+        collision_trees: Dict of STRTrees for collision detection
+        validation_rules: Dict of validation rules
+
+    Returns:
+        True if position is valid, False otherwise
+    """
+    # Create the moving model's base shape at the test position
+    # We need to check shape intersection, not just point collision
+    current_pos = model.get_location()
+    dx = position[0] - current_pos[0]
+    dy = position[1] - current_pos[1]
+
+    # Get the model's base shape and translate it to the test position
+    moving_model_shape = model.model_base.get_base_shape()
+    test_shape = translate(moving_model_shape, dx, dy)
+
+    # Check if the entire model base fits within battlefield boundaries
+    if game_map:
+        if not game_map.is_within_boundary(model, (position[0], position[1])):
+            print(f"🔍 DEBUG: Position {position} would place model outside battlefield boundaries")
+            return False
+    else:
+        # Fallback basic boundary check if no game_map provided
+        bounds = test_shape.bounds  # (minx, miny, maxx, maxy)
+        if bounds[0] < 0 or bounds[1] < 0:
+            print(f"🔍 DEBUG: Position {position} would place model outside battlefield (negative coordinates)")
+            return False
+
+    # Check terrain collisions using shape intersection
+    if collision_trees.get('terrain'):
+        potential_hits = query_spatial_index(collision_trees['terrain'], test_shape)
+        actual_hits = []
+
+        for hit_shape in potential_hits:
+            try:
+                if test_shape.intersects(hit_shape):
+                    actual_hits.append(hit_shape)
+            except Exception as e:
+                print(f"🔍 DEBUG: Error checking terrain intersection: {e}, hit_shape type: {type(hit_shape)}")
+                continue
+
+        if actual_hits:
+            print(f"🔍 DEBUG: Position {position} blocked by terrain (shape intersection: {len(actual_hits)} hits)")
+            return False
+
+    # Check friendly model collisions using shape intersection (always blocked unless fall back)
+    if collision_trees.get('friendly_models') and validation_rules.get('prevent_friendly_overlap', True):
+        if not validation_rules.get('can_move_through_models', False):
+            # Use shape intersection instead of point collision
+            potential_hits = query_spatial_index(collision_trees['friendly_models'], test_shape)
+            actual_hits = []
+
+            for hit_shape in potential_hits:
+                try:
+                    if test_shape.intersects(hit_shape):
+                        actual_hits.append(hit_shape)
+                except Exception as e:
+                    print(f"🔍 DEBUG: Error checking friendly model intersection: {e}, hit_shape type: {type(hit_shape)}")
+                    continue
+
+            if actual_hits:
+                print(f"🔍 DEBUG: Position {position} blocked by friendly models (shape intersection: {len(actual_hits)} hits)")
+                return False
+        else:
+            print(f"🔍 DEBUG: Can move through models - skipping friendly collision check")
+    else:
+        if not collision_trees.get('friendly_models'):
+            print(f"🔍 DEBUG: No friendly models tree")
+        if not validation_rules.get('prevent_friendly_overlap', True):
+            print(f"🔍 DEBUG: prevent_friendly_overlap is False")
+
+    # Check enemy model collisions using shape intersection (always blocked unless fall back)
+    if collision_trees.get('enemy_models') and validation_rules.get('prevent_enemy_overlap', True):
+        if not validation_rules.get('can_move_through_models', False):
+            # Use shape intersection instead of point collision
+            potential_hits = query_spatial_index(collision_trees['enemy_models'], test_shape)
+            actual_hits = []
+
+            for hit_shape in potential_hits:
+                try:
+                    if test_shape.intersects(hit_shape):
+                        actual_hits.append(hit_shape)
+                except Exception as e:
+                    print(f"🔍 DEBUG: Error checking enemy model intersection: {e}, hit_shape type: {type(hit_shape)}")
+                    continue
+
+            if actual_hits:
+                print(f"🔍 DEBUG: Position {position} blocked by enemy models (shape intersection: {len(actual_hits)} hits)")
+                return False
+
+    # Check engagement range buffer using shape intersection (for normal movement)
+    if collision_trees.get('engagement_buffer') and validation_rules.get('cannot_move_within_engagement_range', False):
+        potential_hits = query_spatial_index(collision_trees['engagement_buffer'], test_shape)
+        actual_hits = []
+
+        for hit_shape in potential_hits:
+            if test_shape.intersects(hit_shape):
+                actual_hits.append(hit_shape)
+
+        if actual_hits:
+            print(f"🔍 DEBUG: Position {position} blocked by engagement range (shape intersection: {len(actual_hits)} hits)")
+            return False
+
+    # Check scout-specific deployment buffers using shape intersection
+    if collision_trees.get('deployment_buffer'):
+        potential_hits = query_spatial_index(collision_trees['deployment_buffer'], test_shape)
+        actual_hits = []
+
+        for hit_shape in potential_hits:
+            if test_shape.intersects(hit_shape):
+                actual_hits.append(hit_shape)
+
+        if actual_hits:
+            print(f"🔍 DEBUG: Position {position} blocked by deployment buffer (shape intersection: {len(actual_hits)} hits)")
+            return False
+
+    return True
+
+def is_position_valid_unified_detailed(position: Tuple[float, float, float], model: 'Model',
+                                      collision_trees: dict, validation_rules: dict, game_map: 'Map' = None) -> dict:
+    """
+    Check if a position is valid using STRTrees and validation rules, returning detailed reason.
+
+    Args:
+        position: Position to check (x, y, z)
+        model: The model being moved
+        collision_trees: Dict of STRTrees for collision detection
+        validation_rules: Dict of validation rules
+
+    Returns:
+        Dict with 'valid' (bool) and 'reason' (str) keys
+    """
+    # Create the moving model's base shape at the test position
+    current_pos = model.get_location()
+    dx = position[0] - current_pos[0]
+    dy = position[1] - current_pos[1]
+
+    # Get the model's base shape and translate it to the test position
+    moving_model_shape = model.model_base.get_base_shape()
+    test_shape = translate(moving_model_shape, dx, dy)
+
+    # Check if the entire model base fits within battlefield boundaries
+    if game_map:
+        if not game_map.is_within_boundary(model, (position[0], position[1])):
+            return {'valid': False, 'reason': 'Position outside battlefield boundaries'}
+    else:
+        # Fallback basic boundary check if no game_map provided
+        bounds = test_shape.bounds  # (minx, miny, maxx, maxy)
+        if bounds[0] < 0 or bounds[1] < 0:
+            return {'valid': False, 'reason': 'Position outside battlefield boundaries'}
+
+    # Check terrain collisions using shape intersection
+    if collision_trees.get('terrain'):
+        potential_hits = query_spatial_index(collision_trees['terrain'], test_shape)
+        actual_hits = []
+
+        for hit_shape in potential_hits:
+            try:
+                if test_shape.intersects(hit_shape):
+                    actual_hits.append(hit_shape)
+            except Exception:
+                continue
+
+        if actual_hits:
+            return {'valid': False, 'reason': 'Position blocked by terrain'}
+
+    # Check friendly model collisions using shape intersection
+    if collision_trees.get('friendly_models') and validation_rules.get('prevent_friendly_overlap', True):
+        if not validation_rules.get('can_move_through_models', False):
+            potential_hits = query_spatial_index(collision_trees['friendly_models'], test_shape)
+            actual_hits = []
+
+            for hit_shape in potential_hits:
+                try:
+                    if test_shape.intersects(hit_shape):
+                        actual_hits.append(hit_shape)
+                except Exception:
+                    continue
+
+            if actual_hits:
+                return {'valid': False, 'reason': 'Position blocked by friendly models'}
+
+    # Check enemy model collisions using shape intersection
+    if collision_trees.get('enemy_models') and validation_rules.get('prevent_enemy_overlap', True):
+        if not validation_rules.get('can_move_through_models', False):
+            potential_hits = query_spatial_index(collision_trees['enemy_models'], test_shape)
+            actual_hits = []
+
+            for hit_shape in potential_hits:
+                try:
+                    if test_shape.intersects(hit_shape):
+                        actual_hits.append(hit_shape)
+                except Exception:
+                    continue
+
+            if actual_hits:
+                return {'valid': False, 'reason': 'Position blocked by enemy models'}
+
+    # Check engagement range buffer using shape intersection
+    if collision_trees.get('engagement_buffer') and validation_rules.get('cannot_move_within_engagement_range', False):
+        potential_hits = query_spatial_index(collision_trees['engagement_buffer'], test_shape)
+        actual_hits = []
+
+        for hit_shape in potential_hits:
+            if test_shape.intersects(hit_shape):
+                actual_hits.append(hit_shape)
+
+        if actual_hits:
+            return {'valid': False, 'reason': 'Position within engagement range of enemy models'}
+
+    # Check scout-specific deployment buffers using shape intersection
+    if collision_trees.get('deployment_buffer'):
+        potential_hits = query_spatial_index(collision_trees['deployment_buffer'], test_shape)
+        actual_hits = []
+
+        for hit_shape in potential_hits:
+            if test_shape.intersects(hit_shape):
+                actual_hits.append(hit_shape)
+
+        if actual_hits:
+            return {'valid': False, 'reason': 'Position within deployment zone buffer'}
+
+    return {'valid': True, 'reason': 'Position is valid'}
+
+def check_desperate_escape_requirements(model: 'Model', path: List[Tuple[float, float, float]],
+                                       validation_rules: dict, game_map: 'Map') -> dict:
+    """
+    Check if Desperate Escape tests are required for fall back movement.
+
+    Args:
+        model: The model that moved
+        path: The movement path taken
+        validation_rules: Movement validation rules
+        game_map: The game map
+
+    Returns:
+        Dict with desperate escape information
+    """
+    if not validation_rules.get('check_desperate_escape', False):
+        return {'required': False, 'reason': 'Not fall back movement'}
+
+    unit = model.parent_unit
+    if not unit:
+        return {'required': False, 'reason': 'No parent unit'}
+
+    # Rule 1: Battle-shocked units always need Desperate Escape tests
+    if unit.is_battle_shocked():
+        return {
+            'required': True,
+            'reason': 'Battle-shocked unit falling back',
+            'all_models': True,  # All models in unit must test
+            'path_through_enemy': False  # Doesn't matter for battle-shocked
+        }
+
+    # Rule 2: Check if path goes through enemy models (for non-battle-shocked units)
+    path_through_enemy = False
+    if len(path) > 1:
+        # Check each segment of the path for enemy model intersection
+        for i in range(len(path) - 1):
+            start_pos = path[i]
+            end_pos = path[i + 1]
+
+            # Create line segment for this part of the path
+            from shapely.geometry import LineString
+            path_segment = LineString([start_pos[:2], end_pos[:2]])
+
+            # Check against all enemy models
+            for enemy_unit in game_map.units:
+                if (enemy_unit.faction == unit.faction or
+                    not enemy_unit.is_alive() or
+                    not enemy_unit.deployed):
+                    continue
+
+                for enemy_model in enemy_unit.models:
+                    if not enemy_model.is_alive:
+                        continue
+
+                    # Get enemy model shape
+                    enemy_shape = enemy_model.model_base.get_base_shape()
+
+                    # Check if path segment intersects enemy model
+                    if path_segment.intersects(enemy_shape):
+                        path_through_enemy = True
+                        break
+
+                if path_through_enemy:
+                    break
+
+            if path_through_enemy:
+                break
+
+    # Rule 3: Check for TITANIC or FLY keywords (exempt from Desperate Escape)
+    if path_through_enemy:
+        if unit.is_titanic or unit.is_flying:
+            return {
+                'required': False,
+                'reason': 'TITANIC or FLY unit exempt from Desperate Escape',
+                'path_through_enemy': True
+            }
+
+        return {
+            'required': True,
+            'reason': 'Path goes through enemy models',
+            'all_models': False,  # Only models that moved through enemies
+            'path_through_enemy': True
+        }
+
+    return {
+        'required': False,
+        'reason': 'Path does not go through enemy models',
+        'path_through_enemy': False
+    }
+
+def validate_final_position(model: 'Model', position: Tuple[float, float, float],
+                          validation_rules: dict, game_map: 'Map') -> dict:
+    """
+    Validate the final position according to movement-specific rules.
+
+    Args:
+        model: The model being moved
+        position: Final position to validate (x, y, z)
+        validation_rules: Dict of validation rules
+        game_map: The game map
+
+    Returns:
+        Dict with keys: 'valid', 'reason'
+    """
+    # Check charge-specific rules
+    if validation_rules.get('must_end_in_engagement_range', False):
+        target_unit = validation_rules.get('target_unit')
+        if not target_unit:
+            return {'valid': False, 'reason': 'No target unit specified for charge'}
+
+        # Check if final position is within engagement range of target unit using shape intersection
+        # Create the moving model's base shape at the final position
+        current_pos = model.get_location()
+        dx = position[0] - current_pos[0]
+        dy = position[1] - current_pos[1]
+
+        moving_model_shape = model.model_base.get_base_shape()
+        final_shape = translate(moving_model_shape, dx, dy)
+
+        in_engagement_range = False
+        for enemy_model in target_unit.models:
+            if not enemy_model.is_alive:
+                continue
+
+            # Get enemy model shape and buffer by engagement range
+            enemy_shape = enemy_model.model_base.get_base_shape()
+            engagement_zone = enemy_shape.buffer(ENGAGEMENT_RANGE_HORIZONTAL)
+
+            # Check if final position intersects with engagement zone
+            if final_shape.intersects(engagement_zone):
+                in_engagement_range = True
+                break
+
+        if not in_engagement_range:
+            return {'valid': False, 'reason': 'Charge must end within engagement range of target unit'}
+
+    # Check fall back rules
+    if validation_rules.get('cannot_end_in_engagement_range', False):
+        # Check if final position is within engagement range of any enemy using shape intersection
+        # Create the moving model's base shape at the final position
+        current_pos = model.get_location()
+        dx = position[0] - current_pos[0]
+        dy = position[1] - current_pos[1]
+
+        moving_model_shape = model.model_base.get_base_shape()
+        final_shape = translate(moving_model_shape, dx, dy)
+
+        # Check against all enemy models using proper edge-to-edge distance
+        for unit in game_map.units:
+            if unit.faction == model.parent_unit.faction or not unit.is_alive() or not unit.deployed:
+                continue
+            for enemy_model in unit.models:
+                if not enemy_model.is_alive:
+                    continue
+
+                # Get enemy model shape and buffer by engagement range
+                enemy_shape = enemy_model.model_base.get_base_shape()
+                engagement_zone = enemy_shape.buffer(ENGAGEMENT_RANGE_HORIZONTAL)
+
+                # Check if final position intersects with engagement zone
+                if final_shape.intersects(engagement_zone):
+                    return {'valid': False, 'reason': 'Fall back cannot end within engagement range'}
+
+    # Check pile-in/consolidate rules
+    if validation_rules.get('must_end_closer_to_enemies', False):
+        # TODO: Implement pile-in validation (must end closer to enemies)
+        pass
+
+    if validation_rules.get('must_end_closer_to_enemies_or_objectives', False):
+        # TODO: Implement consolidate validation (must end closer to enemies or objectives)
+        pass
+
+    # Check scout rules
+    if validation_rules.get('min_distance_from_enemies', 0) > 0:
+        min_distance = validation_rules['min_distance_from_enemies']
+        for unit in game_map.units:
+            if unit.faction == model.parent_unit.faction or not unit.is_alive() or not unit.deployed:
+                continue
+            for enemy_model in unit.models:
+                if not enemy_model.is_alive:
+                    continue
+                enemy_pos = enemy_model.get_location()
+                distance = ((position[0] - enemy_pos[0])**2 + (position[1] - enemy_pos[1])**2)**0.5
+                if distance < min_distance:
+                    return {'valid': False, 'reason': f'Scout movement must end {min_distance}" from enemies'}
+
+    return {'valid': True, 'reason': 'Valid final position'}
 
 # REMOVED: a_star_enhanced_legacy - forcing use of new pathfinding system
 
@@ -949,42 +1506,39 @@ def get_individual_model_movement_path(unit: 'Unit', model_index: int, target: T
     if max_distance is None:
         max_distance = model.movement
     
-    # Use movement-specific pathfinding based on movement action
+    # Map MovementAction to MovementType
+    movement_type_map = {
+        None: MovementType.MOVE,
+    }
+
     if movement_action is not None:
         from ..classes.unit import MovementAction
+        movement_type_map.update({
+            MovementAction.MOVE: MovementType.MOVE,
+            MovementAction.ADVANCE: MovementType.ADVANCE,
+            MovementAction.FALL_BACK: MovementType.FALL_BACK,
+            MovementAction.CHARGE: MovementType.CHARGE,
+        })
 
-        if movement_action == MovementAction.CHARGE:
-            # Use charge-specific pathfinding that allows engagement range
-            pathfinding_result = get_charge_movement_path(model, target[:2], max_distance, game_map)
-            if pathfinding_result and pathfinding_result.get('valid'):
-                # Convert 2D path back to 3D
-                path_3d = [(p[0], p[1], target[2]) for p in pathfinding_result['path']]
-                logger.debug(f"Charge path found for model {model_index} in unit {unit.name}: {len(path_3d)} points")
-                return path_3d
-            else:
-                logger.debug(f"No charge path found for model {model_index} in unit {unit.name}: {pathfinding_result.get('reason', 'unknown')}")
-                return None
-        else:
-            # Use standard pathfinding for other movement actions
-            pathfinding_result = get_movement_path_preview(model, target[:2], max_distance, game_map)
-            if pathfinding_result and pathfinding_result.get('valid'):
-                # Convert 2D path back to 3D
-                path_3d = [(p[0], p[1], target[2]) for p in pathfinding_result['path']]
-                logger.debug(f"Path found for model {model_index} in unit {unit.name}: {len(path_3d)} points")
-                return path_3d
-            else:
-                logger.debug(f"No path found for model {model_index} in unit {unit.name}: {pathfinding_result.get('reason', 'unknown')}")
-                return None
+    movement_type = movement_type_map.get(movement_action, MovementType.MOVE)
+
+    # Use unified pathfinding system
+    pathfinding_result = unified_pathfinding(
+        model=model,
+        target=target[:2],
+        movement_type=movement_type,
+        max_distance=max_distance,
+        game_map=game_map
+    )
+
+    if pathfinding_result and pathfinding_result.get('valid'):
+        # Convert 2D path back to 3D
+        path_3d = [(p[0], p[1], target[2]) for p in pathfinding_result['path']]
+        logger.debug(f"Path found for model {model_index} in unit {unit.name}: {len(path_3d)} points, type: {movement_type}")
+        return path_3d
     else:
-        # Use optimized pathfinding for normal movement
-        path = get_optimized_path(model, game_map, target, max_distance)
-
-        if path:
-            logger.debug(f"Path found for model {model_index} in unit {unit.name}: {len(path)} points")
-        else:
-            logger.debug(f"No path found for model {model_index} in unit {unit.name}")
-
-        return path
+        logger.debug(f"No path found for model {model_index} in unit {unit.name}: {pathfinding_result.get('reason', 'unknown')}")
+        return None
 
 def process_unit_movement_with_coherency_check(unit: 'Unit', model_movements: List[Tuple[int, List[Tuple[float, float, float]]]]) -> Tuple[bool, List[int]]:
     """
@@ -1089,24 +1643,42 @@ def simplify_path(path, obstacles, ellipse, tolerance=0.1):
     return simplified
 
 def can_end_move_on_terrain(model: 'Model', obstacle: 'Obstacle') -> bool:
+    """
+    Check if a model can end its move on a specific terrain feature.
+
+    Args:
+        model: The model attempting to end its move
+        obstacle: The terrain obstacle
+
+    Returns:
+        bool: True if the model can end its move on this terrain
+    """
     from ..classes.map import ObstacleType
     terrain = obstacle.terrain_type
     base_overhang = base_overhangs_obstacle(model, obstacle)
-    if terrain in [ObstacleType.CRATER_AND_RUBBLE, ObstacleType.DEBRIS_AND_STATUARY]:
-        return False  # Cannot end move on this terrain
+    unit = model.parent_unit
+
+    if terrain == ObstacleType.CRATER_AND_RUBBLE:
+        return True  # Units can move over this terrain freely (can end move)
+    elif terrain == ObstacleType.BARRICADE_AND_FUEL_PIPES:
+        return False  # Cannot be set up or end any kind of move on top of it
+    elif terrain == ObstacleType.DEBRIS_AND_STATUARY:
+        return False  # Cannot be set up or end any kind of move on top of it
     elif terrain == ObstacleType.HILLS_AND_SEALED_BUILDINGS:
         return not base_overhang  # Can end move if base does not overhang
     elif terrain == ObstacleType.WOODS:
-        return True  # Can end move on this terrain
+        return True  # Units can move over this terrain freely (can end move)
     elif terrain == ObstacleType.RUINS:
-        unit = model.parent_unit
-        # TODO - not accurate, need to account for floors. All units can end move on ruins base floor
-        if unit.is_infantry or unit.is_beast or unit.is_belisarius_cawl or unit.is_imperium_primarch:
-            return not base_overhang
+        # All models can end move on ground floor of ruins
+        # Special keyworded models + FLY can end move on any floor level
+        if unit.is_infantry or unit.is_beast or unit.is_belisarius_cawl or unit.is_imperium_primarch or unit.is_flying():
+            return not base_overhang  # Must not overhang if not ground floor
         else:
-            return False  # Other units cannot end move on RUINS
+            # Other units can only end move on ground floor
+            # TODO: Need to determine if this is ground floor vs upper floor
+            return not base_overhang
     else:
-        # Default behavior
+        # Default behavior for unknown terrain types
         return True
 
 def base_overhangs_obstacle(model: 'Model', obstacle: 'Obstacle') -> bool:
@@ -1237,115 +1809,9 @@ def query_spatial_index(tree: STRtree, query_geom) -> List:
     # Fallback: if indices are actually geometry objects (old API), return as-is
     return list(indices) if hasattr(indices, '__iter__') else [indices]
 
-class OptimizedPathfindingEnvironmentForCharge:
-    """
-    Optimized pathfinding environment specifically for charge movement.
+# REMOVED: Old pathfinding classes - replaced with unified system
 
-    This is similar to OptimizedPathfindingEnvironment but allows movement
-    into engagement range of enemy units for charge actions.
-    """
-
-    def __init__(self, game_map: 'Map', moving_model: 'Model'):
-        """Initialize the charge pathfinding environment"""
-        self.game_map = game_map
-        self.moving_model = moving_model
-
-        # Pre-compute obstacles and enemy positions (same as normal pathfinding)
-        self.obstacles = []
-        for obstacle in game_map.obstacles:
-            if hasattr(obstacle, 'get_shape'):
-                self.obstacles.append(obstacle.get_shape())
-
-        # Get enemy models but don't treat them as obstacles for charge movement
-        self.enemy_models = []
-        enemy_units = game_map.get_enemy_units(moving_model.parent_unit)
-        for enemy_unit in enemy_units:
-            if enemy_unit.is_alive() and enemy_unit.deployed:
-                for enemy_model in enemy_unit.models:
-                    if enemy_model.is_alive:
-                        self.enemy_models.append(enemy_model)
-
-    def is_valid_position_fast(self, position: Tuple[float, float], orientation: float) -> bool:
-        """Fast collision detection for charge movement - allows engagement range"""
-        point = Point(position)
-
-        # Check map bounds
-        if not self.game_map.is_within_boundary(self.moving_model, position):
-            return False
-
-        # Check obstacles (still blocked by terrain)
-        for obstacle in self.obstacles:
-            if obstacle.contains(point):
-                return False
-
-        # For charge movement, we DON'T check enemy model collisions or engagement range
-        # This allows models to move into engagement range during charges
-
-        return True
-
-    def find_path(self, start: Tuple[float, float], goal: Tuple[float, float],
-                 max_distance: float, step_size: float = 0.4) -> Optional[List[Tuple[float, float]]]:
-        """Find a path using A* with charge-specific validation"""
-        # Use the same A* logic as the normal pathfinding but with charge validation
-        return self._a_star_search(start, goal, max_distance, step_size)
-
-    def _a_star_search(self, start: Tuple[float, float], goal: Tuple[float, float],
-                      max_distance: float, step_size: float) -> Optional[List[Tuple[float, float]]]:
-        """A* search implementation for charge movement"""
-        import heapq
-
-        open_set = []
-        heapq.heappush(open_set, (0, start))
-        came_from = {}
-        g_score = {start: 0}
-        f_score = {start: heuristic(start, goal)}
-        closed_set = set()
-
-        while open_set:
-            current = heapq.heappop(open_set)[1]
-
-            if current in closed_set:
-                continue
-
-            closed_set.add(current)
-
-            # Check if we've reached the goal
-            if heuristic(current, goal) < step_size:
-                # Reconstruct path
-                path = []
-                while current in came_from:
-                    path.append(current)
-                    current = came_from[current]
-                path.append(start)
-                path.reverse()
-                return path
-
-            # Generate neighbors
-            for dx, dy in [(-step_size, 0), (step_size, 0), (0, -step_size), (0, step_size),
-                          (-step_size, -step_size), (-step_size, step_size),
-                          (step_size, -step_size), (step_size, step_size)]:
-                neighbor = (current[0] + dx, current[1] + dy)
-
-                if neighbor in closed_set:
-                    continue
-
-                # Check if position is valid for charge movement
-                if not self.is_valid_position_fast(neighbor, 0):
-                    continue
-
-                tentative_g_score = g_score[current] + heuristic(current, neighbor)
-
-                # Check distance limit
-                if tentative_g_score > max_distance:
-                    continue
-
-                if neighbor not in g_score or tentative_g_score < g_score[neighbor]:
-                    came_from[neighbor] = current
-                    g_score[neighbor] = tentative_g_score
-                    f_score[neighbor] = tentative_g_score + heuristic(neighbor, goal)
-                    heapq.heappush(open_set, (f_score[neighbor], neighbor))
-
-        return None
+# REMOVED: OptimizedPathfindingEnvironmentForCharge - replaced with unified system
 
 
 class OptimizedPathfindingEnvironment:
@@ -1637,38 +2103,7 @@ class OptimizedPathfindingEnvironment:
 
         return reachable
 
-def a_star_optimized_enhanced_for_charge(model: 'Model', game_map: 'Map', target: Tuple[float, float],
-                                       max_distance: float, step_size: float = 0.4) -> Optional[Tuple[List[Tuple[float, float, float]], bool]]:
-    """
-    Enhanced A* pathfinding for charge movement that allows moving into engagement range.
-
-    This is based on a_star_optimized_enhanced but with modified validation that allows
-    charge movement into engagement range of enemy units.
-    """
-    try:
-        # Create optimized pathfinding environment with charge-specific settings
-        env = OptimizedPathfindingEnvironmentForCharge(game_map, model)
-
-        # Use the same pathfinding logic but with charge-aware validation
-        start_pos = (model.model_base.x, model.model_base.y)
-
-        # Run A* pathfinding
-        path = env.find_path(start_pos, target, max_distance, step_size)
-
-        if path:
-            # Convert to 3D path
-            path_3d = [(p[0], p[1], model.model_base.z) for p in path]
-
-            # Check if rotation is needed
-            has_rotation = len(path_3d) > 1 and not getattr(model.parent_unit, 'has_circular_base', False)
-
-            return path_3d, has_rotation
-        else:
-            return None
-
-    except Exception as e:
-        logger.warning(f"Charge pathfinding failed for {model.name}: {e}")
-        return None
+# REMOVED: a_star_optimized_enhanced_for_charge - replaced with unified system
 
 
 def a_star_optimized_enhanced(model: 'Model', game_map: 'Map', target: Tuple[float, float],
@@ -1803,153 +2238,44 @@ def a_star_optimized_enhanced(model: 'Model', game_map: 'Map', target: Tuple[flo
 
 
 def get_charge_movement_path(moving_model: 'Model', target_position: tuple,
-                           max_distance: float, game_map: 'Map') -> dict:
+                           max_distance: float, game_map: 'Map', target_unit: 'Unit' = None) -> dict:
     """
-    Get a movement path for charge actions that allows moving into engagement range.
-
-    This is similar to get_movement_path_preview but with charge-specific validation
-    that allows models to move into engagement range of enemy units.
-
-    Args:
-        moving_model: The model to move
-        target_position: Target position (x, y) in inches
-        max_distance: Maximum movement distance in inches
-        game_map: The game map containing obstacles and units
-
-    Returns:
-        Dict with keys:
-        - 'valid': bool indicating if path is valid
-        - 'path': list of path points if valid
-        - 'distance': total path distance
-        - 'reason': explanation if invalid
+    Get a movement path for charge actions using the unified pathfinding system.
     """
-    try:
-        # Validate input
-        if not moving_model or not moving_model.is_alive:
-            return {
-                'valid': False,
-                'path': None,
-                'distance': 0,
-                'reason': 'Invalid or dead model'
-            }
+    # Convert 2D target to 3D if needed
+    if len(target_position) == 2:
+        target_3d = (target_position[0], target_position[1], moving_model.model_base.z)
+    else:
+        target_3d = target_position
 
-        # Use the enhanced optimized pathfinding with charge-specific validation
-        result = a_star_optimized_enhanced_for_charge(moving_model, game_map, target_position, max_distance)
-
-        if result and result[0]:
-            path, has_rotation = result
-
-            # Calculate total distance
-            total_distance = 0
-            if len(path) > 1:
-                for i in range(1, len(path)):
-                    dx = path[i][0] - path[i-1][0]
-                    dy = path[i][1] - path[i-1][1]
-                    total_distance += (dx*dx + dy*dy)**0.5
-
-            # Apply rotation cost if needed
-            effective_max_distance = max_distance
-            if has_rotation and not getattr(moving_model.parent_unit, 'has_circular_base', False):
-                rotation_cost = 1.0  # 1 inch rotation cost
-                effective_max_distance -= rotation_cost
-
-            return {
-                'valid': total_distance <= effective_max_distance,
-                'path': [(p[0], p[1]) for p in path],  # Convert to 2D for UI
-                'distance': total_distance,
-                'reason': 'Valid charge path found' if total_distance <= effective_max_distance else f'Charge path too long ({total_distance:.1f}" > {effective_max_distance}")'
-            }
-        else:
-            return {
-                'valid': False,
-                'path': None,
-                'distance': 0,
-                'reason': 'No valid charge path found'
-            }
-
-    except Exception as e:
-        logger.warning(f"Charge pathfinding error: {e}")
-        return {
-            'valid': False,
-            'path': None,
-            'distance': 0,
-            'reason': f'Charge pathfinding error: {str(e)}'
-        }
+    return unified_pathfinding(
+        model=moving_model,
+        target=target_3d,
+        movement_type=MovementType.CHARGE,
+        max_distance=max_distance,
+        game_map=game_map,
+        target_unit=target_unit
+    )
 
 
 def get_movement_path_preview(moving_model: 'Model', target_position: tuple,
                             max_distance: float, game_map: 'Map') -> dict:
     """
-    Get a movement path preview for the given model and target using optimized pathfinding.
-
-    This function integrates the pathfinding system into the main game,
-    providing real-time movement preview and validation at the model level.
-
-    Args:
-        moving_model: The model to move
-        target_position: Target position (x, y) in inches
-        max_distance: Maximum movement distance in inches
-        game_map: The game map containing obstacles and units
-
-    Returns:
-        Dict with keys:
-        - 'valid': bool indicating if path is valid
-        - 'path': list of path points if valid
-        - 'distance': total path distance
-        - 'reason': explanation if invalid
+    Get a movement path preview using the unified pathfinding system.
     """
-    try:
-        # Validate input
-        if not moving_model or not moving_model.is_alive:
-            return {
-                'valid': False,
-                'path': None,
-                'distance': 0,
-                'reason': 'Invalid or dead model'
-            }
+    # Convert 2D target to 3D if needed
+    if len(target_position) == 2:
+        target_3d = (target_position[0], target_position[1], moving_model.model_base.z)
+    else:
+        target_3d = target_position
 
-        # Use the enhanced optimized pathfinding
-        result = a_star_optimized_enhanced(moving_model, game_map, target_position, max_distance)
-
-        if result and result[0]:
-            path, has_rotation = result
-
-            # Calculate total distance
-            total_distance = 0
-            if len(path) > 1:
-                for i in range(1, len(path)):
-                    dx = path[i][0] - path[i-1][0]
-                    dy = path[i][1] - path[i-1][1]
-                    total_distance += (dx*dx + dy*dy)**0.5
-
-            # Apply rotation cost if needed
-            effective_max_distance = max_distance
-            if has_rotation and not getattr(moving_model.parent_unit, 'has_circular_base', False):
-                rotation_cost = 1.0  # 1 inch rotation cost
-                effective_max_distance -= rotation_cost
-
-            return {
-                'valid': total_distance <= effective_max_distance,
-                'path': [(p[0], p[1]) for p in path],  # Convert to 2D for UI
-                'distance': total_distance,
-                'reason': 'Valid path found' if total_distance <= effective_max_distance else f'Path too long ({total_distance:.1f}" > {effective_max_distance}")'
-            }
-        else:
-            return {
-                'valid': False,
-                'path': None,
-                'distance': 0,
-                'reason': 'No valid path found'
-            }
-
-    except Exception as e:
-        logger.warning(f"Pathfinding error: {e}")
-        return {
-            'valid': False,
-            'path': None,
-            'distance': 0,
-            'reason': f'Pathfinding error: {str(e)}'
-        }
+    return unified_pathfinding(
+        model=moving_model,
+        target=target_3d,
+        movement_type=MovementType.MOVE,
+        max_distance=max_distance,
+        game_map=game_map
+    )
 
 
 def get_unit_movement_path_preview(moving_unit: 'Unit', target_position: tuple,

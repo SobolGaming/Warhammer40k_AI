@@ -319,6 +319,7 @@ class Map:
 
 class ObstacleType(Enum):
     CRATER_AND_RUBBLE = auto()
+    BARRICADE_AND_FUEL_PIPES = auto()
     DEBRIS_AND_STATUARY = auto()
     HILLS_AND_SEALED_BUILDINGS = auto()
     WOODS = auto()
