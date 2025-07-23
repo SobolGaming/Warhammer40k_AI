@@ -1171,6 +1171,91 @@ class TestCollisionDetection:
         assert not result['valid'], "Should handle invalid max_distance gracefully"
         assert "invalid" in result['reason'].lower() or "error" in result['reason'].lower()
 
+    def test_3d_positioning_different_floors(self):
+        """Test that models can occupy same X,Y position on different floors if Z-delta > model height."""
+        # Create multi-floor RUINS terrain
+        ruins_vertices = [(10.0, 10.0), (15.0, 10.0), (15.0, 15.0), (10.0, 15.0)]
+        ruins = TerrainFactory.create_ruins(ruins_vertices, wall_height=4.0, num_floors=2)  # Ground + 1st + 2nd floor
+        self.game_map.add_terrain_feature(ruins)
+
+        # Use Infantry units that can traverse RUINS
+        infantry_unit1 = self.circular_unit
+        infantry_unit1.keywords = ['Infantry']
+        model1 = infantry_unit1.models[0]
+
+        infantry_unit2 = self.elliptical_unit
+        infantry_unit2.keywords = ['Infantry']
+        model2 = infantry_unit2.models[0]
+
+        # Position first model on ground floor (Z=0)
+        model1.set_location(12.5, 12.5, 0.0, 0.0)
+
+        # Position second model on first floor (Z=4.0) at same X,Y
+        # Model height is typically ~2", so Z-delta of 4" should allow this
+        model2.set_location(12.5, 12.5, 4.0, 0.0)
+
+        # Test that second model can move to this position
+        result = unified_pathfinding(
+            model=model2,
+            target=(12.5, 12.5, 4.0),
+            movement_type=MovementType.MOVE,
+            max_distance=10.0,
+            game_map=self.game_map
+        )
+
+        assert result['valid'], f"Should allow models on different floors with sufficient Z-delta: {result.get('reason', '')}"
+
+        # Test that models cannot occupy same position with insufficient Z-delta
+        # Try to place model2 at Z=1.0 (only 1" above model1)
+        model2.set_location(20.0, 20.0, 0.0, 0.0)  # Move away first
+
+        result_too_close = unified_pathfinding(
+            model=model2,
+            target=(12.5, 12.5, 1.0),  # Too close vertically
+            movement_type=MovementType.MOVE,
+            max_distance=10.0,
+            game_map=self.game_map
+        )
+
+        assert not result_too_close['valid'], "Should not allow models with insufficient Z-delta"
+        assert "friendly" in result_too_close['reason'].lower() or "overlap" in result_too_close['reason'].lower()
+
+    def test_3d_coherency_vertical_distance(self):
+        """Test that coherency is maintained with 5" vertical and 2" horizontal distances."""
+        # Create multi-floor RUINS terrain
+        ruins_vertices = [(5.0, 5.0), (15.0, 5.0), (15.0, 15.0), (5.0, 15.0)]
+        ruins = TerrainFactory.create_ruins(ruins_vertices, wall_height=4.0, num_floors=2)
+        self.game_map.add_terrain_feature(ruins)
+
+        # Use Infantry unit with multiple models
+        infantry_datasheet = MockDatasheet("Infantry Squad", model_count=3, movement=6, base_size="32mm")
+        infantry_unit = Unit(infantry_datasheet)
+        infantry_unit.keywords = ['Infantry']
+
+        # Position models at different heights
+        model1 = infantry_unit.models[0]  # Ground floor
+        model2 = infantry_unit.models[1]  # First floor
+        model3 = infantry_unit.models[2]  # Second floor
+
+        model1.set_location(10.0, 10.0, 0.0, 0.0)    # Ground floor
+        model2.set_location(10.0, 10.0, 4.0, 0.0)    # First floor (4" up)
+        model3.set_location(10.0, 10.0, 8.0, 0.0)    # Second floor (8" up)
+
+        # Test coherency - models should be in coherency
+        # Vertical distance: model1 to model2 = 4", model2 to model3 = 4", model1 to model3 = 8"
+        # All should be within 5" vertical coherency
+
+        from warhammer40k_ai.utility.calcs import check_unit_coherency
+        coherency_result = check_unit_coherency(infantry_unit)
+
+        assert coherency_result['coherent'], f"Unit should be coherent with vertical positioning: {coherency_result.get('reason', '')}"
+
+        # Test breaking vertical coherency - move model3 too far up
+        model3.set_location(10.0, 10.0, 12.0, 0.0)  # 12" up from ground (8" from model2)
+
+        coherency_result_broken = check_unit_coherency(infantry_unit)
+        assert not coherency_result_broken['coherent'], "Unit should not be coherent when vertical distance > 5\""
+
 
 if __name__ == "__main__":
     # Run tests if executed directly

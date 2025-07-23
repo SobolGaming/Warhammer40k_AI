@@ -1438,6 +1438,80 @@ def get_optimized_paths_for_unit_models(unit: 'Unit', game_map: 'Map', targets: 
     
     return paths
 
+def check_unit_coherency(unit: 'Unit') -> dict:
+    """
+    Check if a unit is in coherency using current model positions.
+
+    Uses Warhammer 40k coherency rules:
+    - 2" horizontal distance (base-to-base)
+    - 5" vertical distance (base-to-base)
+
+    Returns:
+        dict: {'coherent': bool, 'reason': str, 'non_coherent_models': List[int]}
+    """
+    if len(unit.models) <= 1:
+        return {'coherent': True, 'reason': 'Single model units are always coherent', 'non_coherent_models': []}
+
+    # Build adjacency graph using 3D coherency rules
+    adjacency_graph = {i: [] for i in range(len(unit.models))}
+
+    for i in range(len(unit.models)):
+        for j in range(i + 1, len(unit.models)):
+            model_i = unit.models[i]
+            model_j = unit.models[j]
+
+            if not model_i.is_alive or not model_j.is_alive:
+                continue
+
+            # Use the new coherency distance calculation
+            coherency_dist = model_i.model_base.coherency_distance(model_j.model_base)
+
+            if coherency_dist <= 0.0:  # In coherency
+                adjacency_graph[i].append(j)
+                adjacency_graph[j].append(i)
+
+    # Check if all models are connected using BFS
+    visited = set()
+    connected_components = []
+
+    for i in range(len(unit.models)):
+        if i not in visited and unit.models[i].is_alive:
+            component = []
+            queue = [i]
+            visited.add(i)
+
+            while queue:
+                current = queue.pop(0)
+                component.append(current)
+
+                for neighbor in adjacency_graph[current]:
+                    if neighbor not in visited:
+                        visited.add(neighbor)
+                        queue.append(neighbor)
+
+            connected_components.append(component)
+
+    # Unit is coherent if all alive models are in one connected component
+    is_coherent = len(connected_components) <= 1
+
+    if not is_coherent:
+        # Find the largest connected component (this should remain)
+        largest_component = max(connected_components, key=len)
+
+        # All models not in the largest component are non-coherent
+        non_coherent_models = []
+        for component in connected_components:
+            if component != largest_component:
+                non_coherent_models.extend(component)
+
+        return {
+            'coherent': False,
+            'reason': f'Unit has {len(connected_components)} disconnected groups',
+            'non_coherent_models': non_coherent_models
+        }
+
+    return {'coherent': True, 'reason': 'All models are connected', 'non_coherent_models': []}
+
 def validate_unit_coherency_after_movement(unit: 'Unit', new_positions: List[Tuple[float, float, float]]) -> Tuple[bool, List[int]]:
     """
     Validate that unit coherency is maintained after model movement.

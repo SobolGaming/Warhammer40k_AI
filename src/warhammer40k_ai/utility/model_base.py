@@ -191,6 +191,38 @@ class Base:
         # --- combine and round once at the end ---
         return round(get_dist(xy_dist, dz), 2)
 
+    def coherency_distance(self, other: 'Base') -> float:
+        """
+        Calculate coherency distance using Warhammer 40k rules:
+        - 2" horizontal distance (base-to-base)
+        - 5" vertical distance (base-to-base)
+
+        Returns the minimum distance for coherency purposes.
+        """
+        # Get 2D distance between bases
+        base_shape = self.get_base_shape()
+        other_base_shape = other.get_base_shape()
+        horizontal_dist = base_shape.distance(other_base_shape)
+
+        # Get vertical distance between base centers (not including model height)
+        vertical_dist = abs(self.z - other.z)
+
+        # Check coherency rules:
+        # - If horizontal distance <= 2", models are coherent regardless of vertical distance up to 5"
+        # - If vertical distance <= 5", models are coherent regardless of horizontal distance up to 2"
+
+        if horizontal_dist <= 2.0 and vertical_dist <= 5.0:
+            return 0.0  # In coherency
+        elif horizontal_dist <= 2.0:
+            return vertical_dist - 5.0  # Vertical distance beyond 5"
+        elif vertical_dist <= 5.0:
+            return horizontal_dist - 2.0  # Horizontal distance beyond 2"
+        else:
+            # Both distances exceed limits - return the smaller excess
+            horizontal_excess = horizontal_dist - 2.0
+            vertical_excess = vertical_dist - 5.0
+            return min(horizontal_excess, vertical_excess)
+
 
     def vertical_distance(self, other: 'Base') -> float:
         """Calculate the distance between two models in vertical space."""
@@ -202,12 +234,40 @@ class Base:
             return 0.0
 
     def collides_with(self, other: 'Base') -> bool:
+        """
+        Check if two model bases collide with 3D optimization.
+
+        Optimization strategy:
+        1. Fast 2D check first - if no 2D overlap, no collision
+        2. If 2D overlap exists - check Z positions
+        3. If Z positions differ - do detailed 3D collision check based on model heights
+        """
         #print(f"Base 1: {self.x:.2f}, {self.y:.2f}, {self.z:.2f}, {self.facing:.2f}")
         #print(f"Base 2: {other.x:.2f}, {other.y:.2f}, {other.z:.2f}, {other.facing:.2f}")
-        vert_dist = self.vertical_distance(other)
+
+        # Step 1: Fast 2D check - if no 2D overlap, no collision possible
         edge_dist = self.edge_to_edge_distance(other)
-        #print(f"Vertical Distance: {vert_dist}, Edge Distance: {edge_dist}")
-        return vert_dist == 0.0 and edge_dist == 0.0
+        if edge_dist > 0.0:
+            return False  # No 2D overlap, no collision
+
+        # Step 2: 2D overlap exists - check Z positions
+        z_diff = abs(self.z - other.z)
+
+        # If Z positions are the same (or very close), there's definitely a collision
+        if z_diff < 0.1:  # Within 0.1" is considered same level
+            return True
+
+        # Step 3: Different Z levels - check if vertical separation is sufficient
+        # Calculate the minimum Z separation needed to avoid collision
+        # Models need to be separated by at least the height of the taller model
+        min_z_separation = max(self.model_height, other.model_height)
+
+        # If Z separation is sufficient, no collision
+        if z_diff >= min_z_separation:
+            return False
+
+        # Z separation is insufficient - models collide
+        return True
 
     #########################################################################################
     ### Dunder methods
