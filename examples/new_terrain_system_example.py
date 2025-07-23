@@ -211,8 +211,6 @@ if __name__ == "__main__":
     
     print(f"\n=== Summary ===")
     print(f"Total terrain features: {len(battlefield.terrain_features)}")
-    print(f"Legacy obstacles: {len(battlefield.obstacles)}")
-    print(f"All terrain: {len(battlefield.get_all_terrain())}")
     
     print("\n✅ New polygon-based terrain system is ready!")
     print("✅ All terrain types implemented with proper 3D geometry")

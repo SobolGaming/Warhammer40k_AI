@@ -202,22 +202,28 @@ class Map:
 
     def get_height_at_point(self, x: float, y: float) -> float:
         """
-        Check if a given X,Y coordinate has an obstacle and return its height (Z coordinate).
-        If multiple obstacles overlap, return the maximum height.
+        Check if a given X,Y coordinate has terrain and return its height (Z coordinate).
+        If multiple terrain features overlap, return the maximum height.
 
         Args:
             x (float): X coordinate to check
             y (float): Y coordinate to check
 
         Returns:
-            float: Maximum height of obstacles at the given point, or 0 if no obstacles are present
+            float: Maximum height of terrain at the given point, or 0 if no terrain is present
         """
         point = Point(x, y)
         max_height = 0.0
 
-        for obstacle in self.obstacles:
-            if obstacle.polygon.contains(point):
-                max_height = max(max_height, obstacle.height)
+        for terrain_feature in self.terrain_features:
+            if terrain_feature.footprint.contains(point):
+                # Get height based on terrain type
+                if hasattr(terrain_feature, 'height'):
+                    max_height = max(max_height, terrain_feature.height)
+                elif hasattr(terrain_feature, 'rim_height'):
+                    max_height = max(max_height, terrain_feature.rim_height)
+                else:
+                    max_height = max(max_height, 2.0)  # Default terrain height
 
         return max_height
 
@@ -270,10 +276,10 @@ class Map:
         # Create a line representing the path
         path = LineString([(unit_pos[0], unit_pos[1]), (target_pos[0], target_pos[1])])
 
-        # Check for intersections with obstacles
-        for obstacle in self.obstacles:
-            if path.intersects(obstacle.polygon):
-                if not can_traverse_freely(unit, obstacle):
+        # Check for intersections with terrain features
+        for terrain_feature in self.terrain_features:
+            if path.intersects(terrain_feature.footprint):
+                if not can_traverse_freely(unit, terrain_feature):
                     return True  # Path is blocked
 
         return False  # Path is clear

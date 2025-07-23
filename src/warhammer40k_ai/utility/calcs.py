@@ -243,7 +243,21 @@ def heuristic_2d(a, b):
 def distance_to_nearest_obstacle(point, obstacles):
     if not obstacles:
         return float('inf')  # Return infinity if there are no obstacles
-    return min(obstacle.polygon.distance(Point(point)) for obstacle in obstacles)
+
+    # Handle both old obstacle objects and new terrain features
+    distances = []
+    for obstacle in obstacles:
+        if hasattr(obstacle, 'polygon'):
+            # Old obstacle object
+            distances.append(obstacle.polygon.distance(Point(point)))
+        elif hasattr(obstacle, 'footprint'):
+            # New terrain feature
+            distances.append(obstacle.footprint.distance(Point(point)))
+        else:
+            # Direct Shapely polygon (e.g., boundary repulsors)
+            distances.append(obstacle.distance(Point(point)))
+
+    return min(distances) if distances else float('inf')
 
 def adaptive_step_size(point, obstacles, target, min_step=0.1, max_step=6.0, safety_factor=0.5):
     dist = distance_to_nearest_obstacle(point, obstacles)
@@ -255,7 +269,16 @@ def move_object(obj, obstacles, dx, dy, step):
 
     # Check for collisions
     for obstacle in obstacles:
-        if new_obj.intersects(obstacle.polygon):
+        # Handle both old obstacle objects and new terrain features
+        obstacle_shape = None
+        if hasattr(obstacle, 'polygon'):
+            obstacle_shape = obstacle.polygon
+        elif hasattr(obstacle, 'footprint'):
+            obstacle_shape = obstacle.footprint
+        else:
+            obstacle_shape = obstacle  # Direct Shapely polygon
+
+        if new_obj.intersects(obstacle_shape):
             # Attempt to path around the obstacle
             alternative_directions = [
                 (cos(angle) * dx - sin(angle) * dy, sin(angle) * dx + cos(angle) * dy)
@@ -274,7 +297,22 @@ def move_object(obj, obstacles, dx, dy, step):
             
             for alt_dx, alt_dy in alternative_directions:
                 alt_obj = translate(obj, alt_dx, alt_dy)
-                if not any(alt_obj.intersects(obs.polygon) for obs in obstacles):
+                # Check collision with all obstacles using the same logic as above
+                collision_found = False
+                for obs in obstacles:
+                    obs_shape = None
+                    if hasattr(obs, 'polygon'):
+                        obs_shape = obs.polygon
+                    elif hasattr(obs, 'footprint'):
+                        obs_shape = obs.footprint
+                    else:
+                        obs_shape = obs  # Direct Shapely polygon
+
+                    if alt_obj.intersects(obs_shape):
+                        collision_found = True
+                        break
+
+                if not collision_found:
                     logger.debug(f"Collision avoided at step {step}")
                     return alt_obj, False  # Return the alternative movement
 
@@ -312,7 +350,22 @@ def get_neighbors(current, obstacles, ellipse, goal):
     valid_neighbors = []
     for n in neighbors:
         moved_ellipse = translate(ellipse, n[0] - ellipse.centroid.x, n[1] - ellipse.centroid.y)
-        if not any(moved_ellipse.intersects(obs.polygon) for obs in obstacles):
+        # Check collision with all obstacles using consistent logic
+        collision_found = False
+        for obs in obstacles:
+            obs_shape = None
+            if hasattr(obs, 'polygon'):
+                obs_shape = obs.polygon
+            elif hasattr(obs, 'footprint'):
+                obs_shape = obs.footprint
+            else:
+                obs_shape = obs  # Direct Shapely polygon
+
+            if moved_ellipse.intersects(obs_shape):
+                collision_found = True
+                break
+
+        if not collision_found:
             valid_neighbors.append((n[0], n[1], z))
     return valid_neighbors
 
@@ -2020,19 +2073,23 @@ class OptimizedPathfindingEnvironment:
             self.oriented_shapes = {0: base_shape}
             self.oriented_min_radii = {0: base_radius}
         
-        # Compute Minkowski sums with obstacles
+        # Compute Minkowski sums with terrain features
         self.obstacle_minkowski = {}
         for angle, shape in self.oriented_shapes.items():
             minkowski_obstacles = []
-            for obstacle in self.game_map.obstacles:
+            # Convert terrain features to blocking polygons for this unit
+            terrain_polygons = []
+            for terrain_feature in self.game_map.terrain_features:
+                blocking_polygons = get_terrain_blocking_polygons(self.moving_model.parent_unit, terrain_feature)
+                terrain_polygons.extend(blocking_polygons)
+
+            for obstacle_poly in terrain_polygons:
                 try:
-                    # Convert obstacle polygon to inches if needed
-                    obstacle_poly = obstacle.polygon
+                    # obstacle_poly is already a Shapely Polygon
                     # Assume obstacle coordinates are already in inches
-                    
+
                     # Compute Minkowski sum by sampling obstacle perimeter
                     translated_shapes = []
-                    obstacle_coords = list(obstacle_poly.exterior.coords[:-1])
                     
                     # Sample points along obstacle perimeter
                     perimeter = LineString(obstacle_poly.exterior.coords)
@@ -2058,7 +2115,7 @@ class OptimizedPathfindingEnvironment:
                 except Exception as e:
                     logger.warning(f"Minkowski sum computation failed for obstacle, using buffer: {e}")
                     min_radius = self.oriented_min_radii[angle]
-                    minkowski_obstacles.append(obstacle.polygon.buffer(min_radius))
+                    minkowski_obstacles.append(obstacle_poly.buffer(min_radius))
             
             self.obstacle_minkowski[angle] = minkowski_obstacles
         

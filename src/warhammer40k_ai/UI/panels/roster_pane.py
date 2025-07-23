@@ -106,23 +106,40 @@ class RosterPane(pygame.sprite.Sprite):
 
     def on_mouse_press(self, x, y, button):
         """Handle mouse press events in the roster pane."""
+        print(f"🔍 DEBUG: RosterPane.on_mouse_press called at ({x}, {y}) button={button} for {self.player_name}")
+
         if button == 1:  # Left mouse button
             for button_rect, unit in self.buttons:
                 if button_rect.collidepoint(x, y):
+                    print(f"🔍 DEBUG: Clicked on unit {unit.name}")
+                    print(f"🔍 DEBUG: unit.deployed = {unit.deployed}")
+                    print(f"🔍 DEBUG: game_view exists = {self.game_view is not None}")
+                    print(f"🔍 DEBUG: ui_interface exists = {self.game_view.ui_interface is not None if self.game_view else False}")
+
                     # Check if this is during deployment phase and unit is not deployed
                     if not unit.deployed and self.game_view and self.game_view.ui_interface:
                         # Check if deployment zones are loaded (deployment has officially started)
-                        if not hasattr(self.game_view.game, 'deployment_zones') or not self.game_view.game.deployment_zones:
+                        has_deployment_zones = hasattr(self.game_view.game, 'deployment_zones')
+                        zones_exist = self.game_view.game.deployment_zones if has_deployment_zones else None
+                        print(f"🔍 DEBUG: has_deployment_zones = {has_deployment_zones}")
+                        print(f"🔍 DEBUG: zones_exist = {zones_exist is not None if zones_exist else False}")
+
+                        if not has_deployment_zones or not zones_exist:
                             print(f"📋 Press SPACE to begin deployment sequence first")
                             return
                         
                         # Check if it's this player's turn to deploy
-                        if not self.game_view.game.can_player_deploy_unit(self.player):
+                        can_deploy = self.game_view.game.can_player_deploy_unit(self.player)
+                        print(f"🔍 DEBUG: can_player_deploy_unit = {can_deploy}")
+
+                        if not can_deploy:
                             # Not this player's turn - show message
                             print(f"❌ Not {self.player_name}'s turn to deploy")
                             return
                         
                         # Show deployment choice dialog
+                        print(f"🔍 DEBUG: About to show deployment choice dialog for {unit.name}")
+
                         def on_deployment_choice(choice):
                             if choice == 'deploy':
                                 unit.set_reserve_status('deployed')

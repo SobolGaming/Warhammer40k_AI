@@ -471,10 +471,11 @@ class Game:
         try:
             # Use the exact same approach as manual deployment in GameView.on_mouse_press
             # Calculate model positions (this also sets the positions internally)
-            # NOTE: Do NOT use boundary_repulsors during deployment - they make formation finding too restrictive
+            # Use boundary repulsors to prevent units from going off the battlefield
             # Deployment zone validation is handled separately by is_valid_deployment_position()
             # During deployment, use relaxed friendly unit avoidance to allow tighter formations
-            model_positions = unit.calculate_model_positions(x, y, self.map, avoid_friendly_units=False)
+            boundary_repulsors = self.map.get_battlefield_edge_repulsors() if self.map else []
+            model_positions = unit.calculate_model_positions(x, y, self.map, avoid_friendly_units=False, boundary_repulsors=boundary_repulsors)
             
             if not model_positions:
                 return False

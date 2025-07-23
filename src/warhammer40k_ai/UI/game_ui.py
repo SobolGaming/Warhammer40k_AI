@@ -2384,20 +2384,28 @@ class DeploymentPhaseHandler(BasePhaseHandler):
     def _handle_deployment_click(self, mouse_pos) -> bool:
         """Handle mouse clicks during deployment phase"""
         x, y = mouse_pos
-        
+
+        print(f"🔍 DEBUG: _handle_deployment_click at ({x}, {y})")
+        print(f"🔍 DEBUG: Left roster rect: {self.game_view.left_roster_pane.rect}")
+        print(f"🔍 DEBUG: Right roster rect: {self.game_view.right_roster_pane.rect}")
+
         # Check roster pane clicks first
         if self.game_view.left_roster_pane.rect.collidepoint(x, y):
+            print(f"🔍 DEBUG: Click is in LEFT roster pane")
             self.game_view.left_roster_pane.on_mouse_press(x, y, 1)
             self.game_view.selected_unit = self.game_view.left_roster_pane.selected_unit
             return True
         elif self.game_view.right_roster_pane.rect.collidepoint(x, y):
+            print(f"🔍 DEBUG: Click is in RIGHT roster pane")
             self.game_view.right_roster_pane.on_mouse_press(x, y, 1)
             self.game_view.selected_unit = self.game_view.right_roster_pane.selected_unit
             return True
-        
+        else:
+            print(f"🔍 DEBUG: Click is NOT in any roster pane")
+
         # Handle battlefield deployment clicks
-        elif (self.game_view.selected_unit and not self.game_view.selected_unit.deployed and 
-              ROSTER_PANE_WIDTH < x < BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH):
+        if (self.game_view.selected_unit and not self.game_view.selected_unit.deployed and
+            ROSTER_PANE_WIDTH < x < BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH):
             return self._handle_battlefield_deployment(x, y)
         
         return False

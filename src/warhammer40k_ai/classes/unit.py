@@ -3130,7 +3130,9 @@ class Unit:
             (-repulsor_thickness, game_map.height + repulsor_thickness)
         ])
         repulsors.append(top_edge)
-        
+
+        print(f"🔍 DEBUG: _get_reduced_boundary_repulsors returning {len(repulsors)} repulsors for map size {game_map.width}x{game_map.height}")
+
         return repulsors
 
     def calculate_strategic_facing(self, x: float, y: float, game_map: 'Map') -> float:
@@ -3225,6 +3227,12 @@ class Unit:
         print(f"🔍 DEBUG: avoid_friendly_units: {avoid_friendly_units}")
         print(f"🔍 DEBUG: boundary_repulsors: {len(boundary_repulsors) if boundary_repulsors else 0}")
 
+        # Debug boundary repulsors
+        if len(boundary_repulsors) == 0:
+            print(f"🔍 DEBUG: No boundary repulsors provided - this might cause formation finding issues")
+        else:
+            print(f"🔍 DEBUG: Boundary repulsors provided: {[type(br).__name__ for br in boundary_repulsors]}")
+
         # FAST PATH FOR SINGLE-MODEL UNITS (avoid terrain & enemy models)
         if len(self.models) == 1:
             print(f"🔍 DEBUG: Using single-model fast path")
@@ -3249,7 +3257,14 @@ class Unit:
                 boundary_repulsors = []
             
             # one-off spatial index of terrain + blocking models + boundary repulsors
-            tree = build_spatial_index(game_map.obstacles + boundary_repulsors, blocking_models)
+            # Convert terrain features to blocking polygons for this unit
+            from ..utility.calcs import get_terrain_blocking_polygons
+            terrain_polygons = []
+            for terrain_feature in game_map.terrain_features:
+                blocking_polygons = get_terrain_blocking_polygons(self, terrain_feature)
+                terrain_polygons.extend(blocking_polygons)
+
+            tree = build_spatial_index(terrain_polygons + boundary_repulsors, blocking_models)
 
             # relax away from any collisions
             for _ in range(relax_iters):
@@ -3314,8 +3329,15 @@ class Unit:
         if boundary_repulsors is None:
             boundary_repulsors = []
         
-        # 3) Spatial index of obstacles + blocking models + boundary repulsors
-        tree = build_spatial_index(game_map.obstacles + boundary_repulsors, blocking_models)
+        # 3) Spatial index of terrain + blocking models + boundary repulsors
+        # Convert terrain features to blocking polygons for this unit
+        from ..utility.calcs import get_terrain_blocking_polygons
+        terrain_polygons = []
+        for terrain_feature in game_map.terrain_features:
+            blocking_polygons = get_terrain_blocking_polygons(self, terrain_feature)
+            terrain_polygons.extend(blocking_polygons)
+
+        tree = build_spatial_index(terrain_polygons + boundary_repulsors, blocking_models)
 
         # 4) Compute safe spacing from the model base shape
         # Use tighter spacing for deployment to allow formations to fit in crowded areas
@@ -3370,6 +3392,16 @@ class Unit:
             
             if model_collision_detected:
                 print(f"🔍 DEBUG: Template '{template_name}' rejected - model base overlap detected")
+                continue
+
+            # Debug: Check if any models are outside battlefield bounds
+            models_outside_bounds = 0
+            for i, pos in enumerate(world):
+                if pos[0] < 0 or pos[0] > game_map.width or pos[1] < 0 or pos[1] > game_map.height:
+                    models_outside_bounds += 1
+
+            if models_outside_bounds > 0:
+                print(f"🔍 DEBUG: Template '{template_name}' rejected - {models_outside_bounds} models outside battlefield bounds (map: {game_map.width}x{game_map.height})")
                 continue
 
             print(f"🔍 DEBUG: Template '{template_name}' passed footprint check, starting relaxation")
