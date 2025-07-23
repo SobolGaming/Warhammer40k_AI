@@ -2697,7 +2697,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                 for wargear in model.wargear:
                     if wargear.is_ranged():
                         for profile in wargear.profiles.values():
-                            if unit.can_shoot_in_engagement_range(profile):
+                            if unit.can_shoot_in_engagement_range(self.game.map, profile):
                                 has_eligible_weapons = True
                                 break
                         if has_eligible_weapons:
