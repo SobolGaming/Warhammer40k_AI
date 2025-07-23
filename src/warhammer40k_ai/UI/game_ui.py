@@ -366,31 +366,46 @@ class RosterPane(pygame.sprite.Sprite):
         
         # Add movement, shooting, and charge status indicators
         status_indicators = []
-        if (hasattr(unit, 'round_state') and hasattr(unit.round_state, 'moved_this_round') and 
+
+        # Check for advanced movement (takes priority over normal movement)
+        if (hasattr(unit, 'round_state') and hasattr(unit.round_state, 'advanced_this_round') and
+            unit.round_state.advanced_this_round):
+            status_indicators.append("Advanced")
+            health_color = (0, 200, 100)  # Green to indicate advanced
+        # Check for fell back movement (takes priority over normal movement)
+        elif (hasattr(unit, 'round_state') and hasattr(unit.round_state, 'fell_back_this_round') and
+            unit.round_state.fell_back_this_round):
+            status_indicators.append("Fell Back")
+            health_color = (200, 200, 0)  # Yellow to indicate fell back
+        # Check for normal movement (only if not advanced or fell back)
+        elif (hasattr(unit, 'round_state') and hasattr(unit.round_state, 'moved_this_round') and
             unit.round_state.moved_this_round):
             status_indicators.append("Moved")
             health_color = (0, 150, 200)  # Blue to indicate moved
-        
-        if (hasattr(unit, 'round_state') and hasattr(unit.round_state, 'shot_this_round') and 
+
+        if (hasattr(unit, 'round_state') and hasattr(unit.round_state, 'shot_this_round') and
             unit.round_state.shot_this_round):
             status_indicators.append("Shot")
             health_color = (200, 100, 0)  # Orange to indicate shot
-        
-        if (hasattr(unit, 'round_state') and hasattr(unit.round_state, 'declared_charge_this_round') and 
+
+        if (hasattr(unit, 'round_state') and hasattr(unit.round_state, 'declared_charge_this_round') and
             unit.round_state.declared_charge_this_round):
             status_indicators.append("Charged")
             health_color = (200, 0, 0)  # Red to indicate charged
         
         # Handle multiple status indicators with appropriate colors
         if len(status_indicators) == 2:
-            if "Moved" in status_indicators and "Shot" in status_indicators:
-                health_color = (150, 0, 150)  # Purple for moved + shot
-            elif "Moved" in status_indicators and "Charged" in status_indicators:
-                health_color = (150, 0, 150)  # Purple for moved + charged
+            # Movement + Shot combinations
+            if ("Moved" in status_indicators or "Advanced" in status_indicators or "Fell Back" in status_indicators) and "Shot" in status_indicators:
+                health_color = (150, 0, 150)  # Purple for movement + shot
+            # Movement + Charged combinations
+            elif ("Moved" in status_indicators or "Advanced" in status_indicators or "Fell Back" in status_indicators) and "Charged" in status_indicators:
+                health_color = (150, 0, 150)  # Purple for movement + charged
+            # Shot + Charged combination
             elif "Shot" in status_indicators and "Charged" in status_indicators:
                 health_color = (200, 50, 0)  # Dark orange for shot + charged
-        elif len(status_indicators) == 3:
-            health_color = (100, 0, 100)  # Dark purple for all three actions
+        elif len(status_indicators) >= 3:
+            health_color = (100, 0, 100)  # Dark purple for multiple actions
         
         # Add status indicators to health text
         if status_indicators:
@@ -966,42 +981,45 @@ class HumanUIInterface:
         handled = False
 
         # Debug: Log event type and which dialogs are visible
-        if event.type in [pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP]:
-            event_name = "KEYDOWN" if event.type == pygame.KEYDOWN else ("MOUSEBUTTONDOWN" if event.type == pygame.MOUSEBUTTONDOWN else "MOUSEBUTTONUP")
-            print(f"🔍 DEBUG: HumanUIInterface.handle_event - {event_name}")
-            print(f"🔍 DEBUG: Dialog visibility - deployment:{self.deployment_choice_dialog.visible}, reserves:{self.reserves_dialog.visible}, scout:{self.scout_choice_dialog.visible}, fight:{self.fight_unit_selection_dialog.visible}")
+        # TODO: Uncomment for event debugging
+        # if event.type in [pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP]:
+        #     event_name = "KEYDOWN" if event.type == pygame.KEYDOWN else ("MOUSEBUTTONDOWN" if event.type == pygame.MOUSEBUTTONDOWN else "MOUSEBUTTONUP")
+        #     print(f"🔍 DEBUG: HumanUIInterface.handle_event - {event_name}")
+        #     print(f"🔍 DEBUG: Dialog visibility - deployment:{self.deployment_choice_dialog.visible}, reserves:{self.reserves_dialog.visible}, scout:{self.scout_choice_dialog.visible}, fight:{self.fight_unit_selection_dialog.visible}")
 
         # Let deployment choice dialog handle events first (highest priority)
         if self.deployment_choice_dialog.visible:
-            print(f"🔍 DEBUG: HumanUIInterface - Delegating to deployment_choice_dialog")
+            # print(f"🔍 DEBUG: HumanUIInterface - Delegating to deployment_choice_dialog")
             handled = self.deployment_choice_dialog.handle_event(event)
 
         # Let reserves dialog handle events
         if not handled and self.reserves_dialog.visible:
-            print(f"🔍 DEBUG: HumanUIInterface - Delegating to reserves_dialog")
+            # print(f"🔍 DEBUG: HumanUIInterface - Delegating to reserves_dialog")
             handled = self.reserves_dialog.handle_event(event)
 
         # Let reserves arrival panel handle events
         if not handled and self.reserves_arrival_panel.visible:
-            print(f"🔍 DEBUG: HumanUIInterface - Delegating to reserves_arrival_panel")
+            # print(f"🔍 DEBUG: HumanUIInterface - Delegating to reserves_arrival_panel")
             handled = self.reserves_arrival_panel.handle_event(event)
 
         # Let scout choice dialog handle events
         if not handled and self.scout_choice_dialog.visible:
-            print(f"🔍 DEBUG: HumanUIInterface - Delegating to scout_choice_dialog")
+            # print(f"🔍 DEBUG: HumanUIInterface - Delegating to scout_choice_dialog")
             handled = self.scout_choice_dialog.handle_event(event)
 
         # Let fight unit selection dialog handle events
         if not handled and self.fight_unit_selection_dialog.visible:
-            print(f"🔍 DEBUG: HumanUIInterface - Delegating to fight_unit_selection_dialog")
+            # print(f"🔍 DEBUG: HumanUIInterface - Delegating to fight_unit_selection_dialog")
             handled = self.fight_unit_selection_dialog.handle_event(event)
 
         # Note: melee weapon declaration dialog events are now handled directly through game_view instance
 
         if handled:
-            print(f"🔍 DEBUG: HumanUIInterface - Event was handled by a dialog")
+            # print(f"🔍 DEBUG: HumanUIInterface - Event was handled by a dialog")
+            pass
         else:
-            print(f"🔍 DEBUG: HumanUIInterface - Event was not handled by any dialog")
+            # print(f"🔍 DEBUG: HumanUIInterface - Event was not handled by any dialog")
+            pass
 
         return handled
 
@@ -1123,41 +1141,43 @@ class GameView:
     def handle_pygame_event(self, event):
         """Handle pygame events using phase-based routing."""
         # Debug: Log all events received by GameView
-        if event.type in [pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION]:
-            event_name = {
-                pygame.KEYDOWN: "KEYDOWN",
-                pygame.MOUSEBUTTONDOWN: "MOUSEBUTTONDOWN",
-                pygame.MOUSEBUTTONUP: "MOUSEBUTTONUP",
-                pygame.MOUSEMOTION: "MOUSEMOTION"
-            }.get(event.type, f"TYPE_{event.type}")
-
-            if event.type == pygame.KEYDOWN:
-                print(f"🔍 DEBUG: GameView.handle_pygame_event - {event_name}: key={pygame.key.name(event.key)}")
-            elif event.type in [pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP]:
-                print(f"🔍 DEBUG: GameView.handle_pygame_event - {event_name}: button={event.button}, pos={event.pos}")
-            elif event.type == pygame.MOUSEMOTION:
-                # Only log mouse motion occasionally to avoid spam
-                if hasattr(self, '_last_motion_log') and pygame.time.get_ticks() - self._last_motion_log < 100:
-                    pass  # Skip logging
-                else:
-                    print(f"🔍 DEBUG: GameView.handle_pygame_event - {event_name}: pos={event.pos}")
-                    self._last_motion_log = pygame.time.get_ticks()
+        # TODO: Uncomment for event debugging
+        # if event.type in [pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION]:
+        #     event_name = {
+        #         pygame.KEYDOWN: "KEYDOWN",
+        #         pygame.MOUSEBUTTONDOWN: "MOUSEBUTTONDOWN",
+        #         pygame.MOUSEBUTTONUP: "MOUSEBUTTONUP",
+        #         pygame.MOUSEMOTION: "MOUSEMOTION"
+        #     }.get(event.type, f"TYPE_{event.type}")
+        #
+        #     if event.type == pygame.KEYDOWN:
+        #         print(f"🔍 DEBUG: GameView.handle_pygame_event - {event_name}: key={pygame.key.name(event.key)}")
+        #     elif event.type in [pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP]:
+        #         print(f"🔍 DEBUG: GameView.handle_pygame_event - {event_name}: button={event.button}, pos={event.pos}")
+        #     elif event.type == pygame.MOUSEMOTION:
+        #         # Only log mouse motion occasionally to avoid spam
+        #         if hasattr(self, '_last_motion_log') and pygame.time.get_ticks() - self._last_motion_log < 100:
+        #             pass  # Skip logging
+        #         else:
+        #             print(f"🔍 DEBUG: GameView.handle_pygame_event - {event_name}: pos={event.pos}")
+        #             self._last_motion_log = pygame.time.get_ticks()
 
         # PRIORITY 0: Handle unit detail panel escape key
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             if self.detailed_unit and hasattr(self.unit_detail_panel, 'handle_event') and hasattr(self.unit_detail_panel, 'visible') and self.unit_detail_panel.visible:
-                print(f"🔍 DEBUG: GameView - Delegating ESC to unit detail panel")
+                # print(f"🔍 DEBUG: GameView - Delegating ESC to unit detail panel")
                 if self.unit_detail_panel.handle_event(event):
                     self.close_unit_details()
                     return True
 
         # PRIORITY 1: Let phase manager handle phase-specific events first
-        print(f"🔍 DEBUG: GameView - Delegating to phase manager")
+        # print(f"🔍 DEBUG: GameView - Delegating to phase manager")
         if self.phase_manager.handle_event(event):
-            print(f"🔍 DEBUG: GameView - Event was handled by phase manager")
+            # print(f"🔍 DEBUG: GameView - Event was handled by phase manager")
             return True
         else:
-            print(f"🔍 DEBUG: GameView - Event was not handled by phase manager")
+            # print(f"🔍 DEBUG: GameView - Event was not handled by phase manager")
+            pass
         
         # PRIORITY 2: Handle universal UI events that apply to all phases
         if event.type == pygame.MOUSEBUTTONDOWN:
@@ -2507,7 +2527,8 @@ class BattlePhaseHandler(BasePhaseHandler):
     def handle_event(self, event: pygame.event.Event) -> bool:
         """Handle pygame events during battle phases"""
         if event.type == pygame.MOUSEMOTION:
-            print(f"🔍 DEBUG: BattlePhaseHandler.handle_event - MOUSEMOTION at {event.pos}")
+            # print(f"🔍 DEBUG: BattlePhaseHandler.handle_event - MOUSEMOTION at {event.pos}")
+            pass
 
         # Handle weapon choice dialog first (highest priority)
         if (hasattr(self.game_view, 'weapon_choice_dialog') and
@@ -3204,7 +3225,7 @@ class BattlePhaseHandler(BasePhaseHandler):
     def _handle_battle_motion(self, mouse_pos) -> bool:
         """Handle mouse motion during battle phases"""
         x, y = mouse_pos
-        print(f"🔍 DEBUG: _handle_battle_motion called with ({x}, {y})")
+        # print(f"🔍 DEBUG: _handle_battle_motion called with ({x}, {y})")
 
         # Individual model movement tracking now has priority over old systems
 
@@ -3241,12 +3262,12 @@ class BattlePhaseHandler(BasePhaseHandler):
             else:
                 # Clear preview when mouse leaves battlefield
                 self.game_view.individual_model_preview_target = None
-                print(f"🔍 DEBUG: Cleared preview target (mouse outside battlefield)")
+                # print(f"🔍 DEBUG: Cleared preview target (mouse outside battlefield)")
         else:
             # Debug why tracking isn't active
             if hasattr(self.game_view, 'individual_model_movement_dialog'):
                 dialog = self.game_view.individual_model_movement_dialog
-                print(f"🔍 DEBUG: Dialog exists - visible: {dialog.visible}, selected_model: {dialog.selected_model_index}")
+                # print(f"🔍 DEBUG: Dialog exists - visible: {dialog.visible}, selected_model: {dialog.selected_model_index}")
             else:
                 print(f"🔍 DEBUG: No individual_model_movement_dialog found")
 
@@ -3323,19 +3344,21 @@ class PhaseManager:
         handler_name = handler.__class__.__name__
 
         # Debug: Log which handler is being used
-        if event.type in [pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION]:
-            event_name = {
-                pygame.KEYDOWN: "KEYDOWN",
-                pygame.MOUSEBUTTONDOWN: "MOUSEBUTTONDOWN",
-                pygame.MOUSEBUTTONUP: "MOUSEBUTTONUP",
-                pygame.MOUSEMOTION: "MOUSEMOTION"
-            }.get(event.type, f"TYPE_{event.type}")
-            print(f"🔍 DEBUG: PhaseManager - Routing {event_name} to {handler_name}")
+        # TODO: Uncomment for event debugging
+        # if event.type in [pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION]:
+        #     event_name = {
+        #         pygame.KEYDOWN: "KEYDOWN",
+        #         pygame.MOUSEBUTTONDOWN: "MOUSEBUTTONDOWN",
+        #         pygame.MOUSEBUTTONUP: "MOUSEBUTTONUP",
+        #         pygame.MOUSEMOTION: "MOUSEMOTION"
+        #     }.get(event.type, f"TYPE_{event.type}")
+        #     print(f"🔍 DEBUG: PhaseManager - Routing {event_name} to {handler_name}")
 
         result = handler.handle_event(event)
 
-        if event.type in [pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION]:
-            print(f"🔍 DEBUG: PhaseManager - {handler_name} returned {result}")
+        # TODO: Uncomment for event debugging
+        # if event.type in [pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION]:
+        #     print(f"🔍 DEBUG: PhaseManager - {handler_name} returned {result}")
 
         return result
     
@@ -3708,7 +3731,8 @@ class PreBattlePhaseHandler(BasePhaseHandler):
 
     def handle_event(self, event: pygame.event.Event) -> bool:
         if event.type == pygame.MOUSEMOTION:
-            print(f"🔍 DEBUG: PreBattlePhaseHandler received MOUSEMOTION event at {event.pos}")
+            # print(f"🔍 DEBUG: PreBattlePhaseHandler received MOUSEMOTION event at {event.pos}")
+            pass
 
         # Track mouse position for visual feedback
         if event.type == pygame.MOUSEMOTION and self.awaiting_battlefield_click:
@@ -3729,22 +3753,22 @@ class PreBattlePhaseHandler(BasePhaseHandler):
 
         # Handle mouse motion for path preview during individual model movement
         if event.type == pygame.MOUSEMOTION:
-            print(f"🔍 DEBUG: PreBattlePhaseHandler mouse motion event received")
+            # print(f"🔍 DEBUG: PreBattlePhaseHandler mouse motion event received")
 
             # Debug: Check individual model movement dialog visibility
             has_dialog = hasattr(self.game_view, 'individual_model_movement_dialog')
-            print(f"🔍 DEBUG: has_dialog={has_dialog}")
+            # print(f"🔍 DEBUG: has_dialog={has_dialog}")
 
             if has_dialog:
                 dialog_obj = self.game_view.individual_model_movement_dialog
                 dialog_visible = dialog_obj.visible
                 dialog_unit = getattr(dialog_obj, 'unit', None)
                 unit_name = dialog_unit.name if dialog_unit else None
-                print(f"🔍 DEBUG: Mouse motion - has_dialog={has_dialog}, dialog_visible={dialog_visible}, dialog_unit={unit_name}")
+                # print(f"🔍 DEBUG: Mouse motion - has_dialog={has_dialog}, dialog_visible={dialog_visible}, dialog_unit={unit_name}")
 
                 if dialog_visible:
                     x, y = event.pos
-                    print(f"🔍 DEBUG: PreBattlePhaseHandler individual model mouse motion at ({x}, {y})")
+                    # print(f"🔍 DEBUG: PreBattlePhaseHandler individual model mouse motion at ({x}, {y})")
 
                     # Check if mouse is over battlefield area
                     if ROSTER_PANE_WIDTH < x < BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH:
@@ -3754,12 +3778,12 @@ class PreBattlePhaseHandler(BasePhaseHandler):
 
                         # Store mouse position for individual model movement preview
                         self.game_view.individual_model_preview_target = (battlefield_x, battlefield_y)
-                        print(f"🔍 DEBUG: PreBattlePhaseHandler set individual_model_preview_target to ({battlefield_x:.1f}, {battlefield_y:.1f})")
+                        # print(f"🔍 DEBUG: PreBattlePhaseHandler set individual_model_preview_target to ({battlefield_x:.1f}, {battlefield_y:.1f})")
                         return True
                     else:
                         # Clear preview when mouse leaves battlefield
                         self.game_view.individual_model_preview_target = None
-                        print(f"🔍 DEBUG: PreBattlePhaseHandler cleared individual_model_preview_target (mouse outside battlefield)")
+                        # print(f"🔍 DEBUG: PreBattlePhaseHandler cleared individual_model_preview_target (mouse outside battlefield)")
                         return True
             else:
                 print(f"🔍 DEBUG: Mouse motion - has_dialog={has_dialog}")

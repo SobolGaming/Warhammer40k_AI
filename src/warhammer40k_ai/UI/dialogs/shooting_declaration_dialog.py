@@ -42,6 +42,7 @@ class ShootingDeclarationDialog:
         
         # UI state
         self.scroll_offset = 0
+        self.max_scroll = 0
         self.hovered_weapon = -1
         
         # Colors
@@ -94,7 +95,10 @@ class ShootingDeclarationDialog:
         # Get available weapons and targets
         self.available_weapons = self._get_available_weapons()
         self.available_targets = self._get_available_targets()
-        
+
+        # Calculate initial max scroll
+        self.max_scroll = self.get_max_scroll()
+
         print(f"🎯 ShootingDeclarationDialog shown for {unit.name}")
         print(f"🎯 Found {len(self.available_weapons)} available weapons")
         print(f"🎯 Found {len(self.available_targets)} available targets")
@@ -116,6 +120,7 @@ class ShootingDeclarationDialog:
         self.available_targets = []
         self.selected_weapon = None
         self.scroll_offset = 0
+        self.max_scroll = 0
         self.is_targeting_mode = False
         self.expanded_weapon_groups.clear()  # Clear expansion state
     
@@ -467,10 +472,24 @@ class ShootingDeclarationDialog:
         print(f"   Cancel button: ({cancel_x}, {cancel_y}) to ({cancel_x + cancel_width}, {cancel_y + cancel_height})")
         return False
     
+    def get_max_scroll(self):
+        """Calculate the maximum scroll offset based on content height"""
+        # Calculate total content height
+        weapons_height = len(self.available_weapons) * 50  # 50 pixels per weapon
+        declarations_height = len(self.weapon_declarations) * 40  # 40 pixels per declaration
+        total_content_height = weapons_height + declarations_height + 200  # Extra space for headers and padding
+
+        # Calculate visible height (dialog height minus headers and buttons)
+        visible_height = self.height - 100  # Account for title, buttons, and padding
+
+        # Max scroll is the amount of content that doesn't fit
+        return max(0, total_content_height - visible_height)
+
     def scroll(self, delta):
         """Scroll the dialog"""
         self.scroll_offset += delta * 20
-        self.scroll_offset = max(-100, min(0, self.scroll_offset))
+        self.max_scroll = self.get_max_scroll()  # Update max scroll
+        self.scroll_offset = max(0, min(self.max_scroll, self.scroll_offset))
     
     def update_hover(self, mouse_pos):
         """Update hover states"""

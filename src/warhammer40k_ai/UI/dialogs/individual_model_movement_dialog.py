@@ -28,26 +28,53 @@ class IndividualModelMovementDialog(BaseDialog):
         
     def show(self, unit, movement_type: str, callback: Callable, game_map, max_distance: float = None):
         """Show the dialog for the given unit and movement type"""
+
+        # Check if unit has already moved this round (prevent multiple movements)
+        if self._has_unit_already_moved(unit, movement_type):
+            print(f"❌ {unit.name} has already performed {movement_type} movement this round")
+            if callback:
+                callback(False)  # Movement not allowed
+            return
+
         # Call parent show method
         super().show(callback)
-        
+
         # Dialog-specific initialization
         self.unit = unit
         self.movement_type = movement_type
         self.game_map = game_map
         self.max_distance = max_distance or unit.movement
-        
+
         # Reset movement tracking
         self.model_movements = {}
         self.selected_model_index = None
         self.awaiting_battlefield_click = False
-        
+
         # Initialize model buttons and dialog buttons
         self._create_model_buttons()
         self._create_dialog_buttons()
-        
+
         print(f"🎯 Individual model movement dialog opened for {unit.name} ({movement_type})")
         print(f"📍 Select a model, then click on the battlefield to move it")
+
+    def _has_unit_already_moved(self, unit, movement_type: str) -> bool:
+        """Check if unit has already performed this type of movement this round"""
+        if movement_type == 'move':
+            return unit.round_state.moved_this_round
+        elif movement_type == 'advance':
+            return unit.round_state.advanced_this_round or unit.round_state.moved_this_round
+        elif movement_type == 'fall_back':
+            return unit.round_state.fell_back_this_round or unit.round_state.moved_this_round
+        elif movement_type == 'scout':
+            # Scout moves happen before the game starts, different tracking needed
+            return False  # For now, allow scout moves
+        elif movement_type in ['pile_in', 'consolidate']:
+            # These are fight phase movements, different rules
+            return False  # For now, allow these
+        elif movement_type == 'charge':
+            return unit.round_state.declared_charge_this_round
+        else:
+            return unit.round_state.moved_this_round
         
     def hide(self):
         """Hide the dialog"""
@@ -170,26 +197,27 @@ class IndividualModelMovementDialog(BaseDialog):
             return False
 
         # Debug: Log all events handled by this dialog
-        dialog_name = self.__class__.__name__
-        if event.type == pygame.KEYDOWN:
-            print(f"🔍 DEBUG: {dialog_name}.handle_event - KEYDOWN: key={pygame.key.name(event.key)}")
-        elif event.type == pygame.MOUSEBUTTONDOWN:
-            print(f"🔍 DEBUG: {dialog_name}.handle_event - MOUSEBUTTONDOWN: button={event.button}, pos={event.pos}")
-        elif event.type == pygame.MOUSEBUTTONUP:
-            print(f"🔍 DEBUG: {dialog_name}.handle_event - MOUSEBUTTONUP: button={event.button}, pos={event.pos}")
-        elif event.type == pygame.MOUSEMOTION:
-            print(f"🔍 DEBUG: {dialog_name}.handle_event - MOUSEMOTION: pos={event.pos}")
-        else:
-            print(f"🔍 DEBUG: {dialog_name}.handle_event - OTHER: type={event.type}")
+        # TODO: Uncomment for event debugging
+        # dialog_name = self.__class__.__name__
+        # if event.type == pygame.KEYDOWN:
+        #     print(f"🔍 DEBUG: {dialog_name}.handle_event - KEYDOWN: key={pygame.key.name(event.key)}")
+        # elif event.type == pygame.MOUSEBUTTONDOWN:
+        #     print(f"🔍 DEBUG: {dialog_name}.handle_event - MOUSEBUTTONDOWN: button={event.button}, pos={event.pos}")
+        # elif event.type == pygame.MOUSEBUTTONUP:
+        #     print(f"🔍 DEBUG: {dialog_name}.handle_event - MOUSEBUTTONUP: button={event.button}, pos={event.pos}")
+        # elif event.type == pygame.MOUSEMOTION:
+        #     print(f"🔍 DEBUG: {dialog_name}.handle_event - MOUSEMOTION: pos={event.pos}")
+        # else:
+        #     print(f"🔍 DEBUG: {dialog_name}.handle_event - OTHER: type={event.type}")
 
         # Handle coherency dialog events first if it's open
         if hasattr(self, 'coherency_dialog') and self.coherency_dialog.visible:
-            print(f"🔍 DEBUG: {dialog_name} - Delegating to coherency dialog")
+            # print(f"🔍 DEBUG: {dialog_name} - Delegating to coherency dialog")
             return self.coherency_dialog.handle_event(event)
 
         # Handle ESC key to close dialog
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-            print(f"🔍 DEBUG: {dialog_name} - ESC key pressed, hiding dialog")
+            # print(f"🔍 DEBUG: {dialog_name} - ESC key pressed, hiding dialog")
             self.hide()
             return True
         
@@ -360,10 +388,22 @@ class IndividualModelMovementDialog(BaseDialog):
             else:
                 target_3d = destination
 
+            # Map movement type to MovementType enum for pathfinding
+            movement_type_map = {
+                'move': MovementType.MOVE,
+                'advance': MovementType.ADVANCE,
+                'fall_back': MovementType.FALL_BACK,
+                'scout': MovementType.SCOUT,
+                'pile_in': MovementType.PILE_IN,
+                'consolidate': MovementType.CONSOLIDATE
+            }
+
+            pathfinding_movement_type = movement_type_map.get(self.movement_type, MovementType.MOVE)
+
             path_result = unified_pathfinding(
                 model=model,
                 target=target_3d,
-                movement_type=MovementType.MOVE,
+                movement_type=pathfinding_movement_type,
                 max_distance=self.max_distance,
                 game_map=self.game_map,
                 moved_models_in_unit=moved_models_in_unit
@@ -477,6 +517,15 @@ class IndividualModelMovementDialog(BaseDialog):
     def _finalize_movement_completion(self):
         """Finalize the movement completion"""
         print(f"✅ {self.unit.name} {self.movement_type} movement completed")
+
+        # Set unit round state based on movement type
+        if self.movement_type == 'advance':
+            self.unit.round_state.advanced_this_round = True
+        elif self.movement_type == 'fall_back':
+            self.unit.round_state.fell_back_this_round = True
+        elif self.movement_type in ['move', 'scout', 'pile_in', 'consolidate', 'charge']:
+            self.unit.round_state.moved_this_round = True
+            self.unit.round_state.remained_stationary_this_round = False
 
         # Call callback with completion status
         if self.callback:

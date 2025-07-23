@@ -270,6 +270,10 @@ def execute_human_turn(game: Game, player: Player, agents: dict, ui_interface=No
         else:
             # If no tactical agent, just advance the phase
             game.next_phase()
+    elif game.is_command_phase():
+        # Execute command phase for human players (same as AI)
+        game.start_command_phase()
+        game.next_phase()
     else:
         # For other phases, just advance to next phase
         # Human players will handle their actions through the UI

@@ -360,8 +360,35 @@ def add_unit_to_army(army: Army, unit: Unit, model_count: int, wargear_dict: Dic
             matching_gear = next((gear for gear in unit.possible_wargear if gear.name.lower().replace("’","'") == gear_name), None)
             if matching_gear:
                 # Add the wargear multiple times based on quantity
-                for _ in range(quantity):
-                    unit.add_wargear([matching_gear if gear.name.lower().replace("’","'") == gear_name else None for gear in unit.possible_wargear], model_name)
+                # Distribute wargear among models instead of adding multiple to each
+                target_models = []
+                if model_name and model_name != unit.name:
+                    target_models = [model for model in unit.models if model.name.lower() == model_name.lower()]
+                else:
+                    target_models = unit.models
+
+                if target_models:
+                    if quantity == len(target_models):
+                        # 1 item per model
+                        for model in target_models:
+                            model.wargear.append(matching_gear)
+                    elif quantity < len(target_models):
+                        # Fewer items than models - give to first N models
+                        for i in range(quantity):
+                            target_models[i].wargear.append(matching_gear)
+                    else:
+                        # More items than models - distribute evenly
+                        items_per_model = quantity // len(target_models)
+                        remainder = quantity % len(target_models)
+                        for i, model in enumerate(target_models):
+                            for _ in range(items_per_model):
+                                model.wargear.append(matching_gear)
+                            if i < remainder:
+                                model.wargear.append(matching_gear)
+                else:
+                    # Fallback to old behavior if no target models found
+                    for _ in range(quantity):
+                        unit.add_wargear([matching_gear if gear.name.lower().replace("’","'") == gear_name else None for gear in unit.possible_wargear], model_name)
             else:
                 matching_gear = next((gear for gear in unit.wargear_options if gear_name in gear.wargear_to), None)
                 if matching_gear:
