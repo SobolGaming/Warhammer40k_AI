@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from warhammer40k_ai.classes.unit import Unit, MovementAction
 from warhammer40k_ai.classes.model import Model
 from warhammer40k_ai.utility.model_base import Base, BaseType
-from warhammer40k_ai.utility.calcs import get_unit_movement_path_preview
+from warhammer40k_ai.utility.calcs import get_unit_movement_path_preview, clear_enemy_model_cache
 from warhammer40k_ai.classes.player import Player
 from warhammer40k_ai.classes.game import Game
 from warhammer40k_ai.classes.map import TerrainFeature, TerrainType, Objective, ObjectivePoint
@@ -1469,14 +1469,29 @@ class GameView:
 
                 if hasattr(self, 'individual_model_preview_target') and self.individual_model_preview_target:
                     print(f"🔍 DEBUG: Drawing path preview for model {model_index} to {self.individual_model_preview_target}")
-                    # Use existing path preview function with the selected model
-                    from ..utility.calcs import get_movement_path_preview
+                    # Use unified pathfinding that accounts for already-moved models
+                    from ..utility.calcs import unified_pathfinding, MovementType
 
-                    path_result = get_movement_path_preview(
-                        selected_model,
-                        self.individual_model_preview_target,
-                        max_distance,
-                        self.game.map
+                    # Get moved models from the dialog if available
+                    moved_models_in_unit = set()
+                    if hasattr(self, 'individual_model_movement_dialog') and self.individual_model_movement_dialog.visible:
+                        for moved_index, movement_data in self.individual_model_movement_dialog.model_movements.items():
+                            if movement_data.get('completed', False):
+                                moved_models_in_unit.add(moved_index)
+
+                    # Convert 2D target to 3D if needed
+                    if len(self.individual_model_preview_target) == 2:
+                        target_3d = (self.individual_model_preview_target[0], self.individual_model_preview_target[1], selected_model.model_base.z)
+                    else:
+                        target_3d = self.individual_model_preview_target
+
+                    path_result = unified_pathfinding(
+                        model=selected_model,
+                        target=target_3d,
+                        movement_type=MovementType.MOVE,
+                        max_distance=max_distance,
+                        game_map=self.game.map,
+                        moved_models_in_unit=moved_models_in_unit
                     )
 
                     print(f"🔍 DEBUG: Path result - valid: {path_result['valid']}, path length: {len(path_result['path']) if path_result['path'] else 0}")
@@ -3528,6 +3543,7 @@ class PreBattlePhaseHandler(BasePhaseHandler):
         super().__init__(game_view)
         self.scout_units_queue = []  # List of (unit, player) tuples
         self.current_scout_unit = None
+        self.current_scout_player = None  # Track current player for cache clearing
         self.awaiting_battlefield_click = False
         self.scout_callback = None
         self.scout_distance = 0
@@ -3538,6 +3554,7 @@ class PreBattlePhaseHandler(BasePhaseHandler):
         print("🔍 Initializing scout phase...")
         self.scout_units_queue = []
         self.current_scout_unit = None
+        self.current_scout_player = None  # Reset player tracking
         self.awaiting_battlefield_click = False
         self.scout_callback = None
         self.scout_distance = 0
@@ -3573,6 +3590,15 @@ class PreBattlePhaseHandler(BasePhaseHandler):
         if self.scout_units_queue:
             unit, player, scout_distance = self.scout_units_queue.pop(0)
             print(f"🔍 DEBUG: Processing next scout unit: {unit.name} (Player: {player.name})")
+
+            # Check if player has changed and clear enemy model cache if so
+            if self.current_scout_player != player:
+                if self.current_scout_player is not None:  # Not the first unit
+
+                    clear_enemy_model_cache(id(self.game_view.game.map))
+                    print(f"🔍 Scout phase player switched to {player.name} - cleared enemy model cache")
+                self.current_scout_player = player
+
             self.current_scout_unit = unit
             self.scout_distance = scout_distance
             self.awaiting_battlefield_click = False
@@ -3580,6 +3606,7 @@ class PreBattlePhaseHandler(BasePhaseHandler):
         else:
             print(f"🔍 DEBUG: Scout queue is empty, scout phase complete")
             self.current_scout_unit = None
+            self.current_scout_player = None  # Reset player tracking
             self.awaiting_battlefield_click = False
             self.scout_callback = None
             self.scout_distance = 0

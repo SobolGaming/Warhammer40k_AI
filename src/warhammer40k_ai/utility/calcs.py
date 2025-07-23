@@ -25,6 +25,31 @@ ORIENTATIONS = [0, 90, 45, -45, 15, -15, 30, -30, 60, -60, 75, -75]  # Degrees
 # Import existing constants
 from .constants import ENGAGEMENT_RANGE_HORIZONTAL, MM_TO_INCHES
 
+# Global caches for collision detection
+_terrain_cache = {}  # Cache for terrain blocking polygons by (game_map_id, unit_keywords)
+_enemy_model_cache = {}  # Cache for enemy model shapes by (game_map_id, faction)
+
+
+def clear_collision_caches():
+    """Clear all collision detection caches. Call when models die or game state changes significantly."""
+    global _terrain_cache, _enemy_model_cache
+    _terrain_cache.clear()
+    _enemy_model_cache.clear()
+    print("🔍 DEBUG: Cleared collision detection caches")
+
+
+def clear_enemy_model_cache(game_map_id: int = None):
+    """Clear enemy model cache for a specific game map or all maps."""
+    global _enemy_model_cache
+    if game_map_id is None:
+        _enemy_model_cache.clear()
+        print("🔍 DEBUG: Cleared all enemy model caches")
+    else:
+        keys_to_remove = [key for key in _enemy_model_cache.keys() if key[0] == game_map_id]
+        for key in keys_to_remove:
+            del _enemy_model_cache[key]
+        print(f"🔍 DEBUG: Cleared enemy model cache for game map {game_map_id}")
+
 # OPTIMIZED PATHFINDING INTEGRATION
 # =================================
 # This module now includes optimized A* pathfinding with:
@@ -418,7 +443,8 @@ class MovementType(Enum):
     SCOUT = "scout"
 
 def unified_pathfinding(model: 'Model', target: Tuple[float, float, float], movement_type: MovementType,
-                       max_distance: float, game_map: 'Map', target_unit: 'Unit' = None) -> dict:
+                       max_distance: float, game_map: 'Map', target_unit: 'Unit' = None,
+                       moved_models_in_unit: set = None) -> dict:
     """
     Unified pathfinding system that handles all movement types through different
     STRTree configurations and validation rules.
@@ -465,7 +491,8 @@ def unified_pathfinding(model: 'Model', target: Tuple[float, float, float], move
         print(f"🔍 DEBUG: Unified pathfinding for {model.name} to {target}, type: {movement_type}, max_dist: {max_distance}")
 
         # Build collision trees based on movement type and unit capabilities
-        collision_trees = build_collision_trees(model.parent_unit, movement_type, game_map)
+        collision_trees = build_collision_trees(model.parent_unit, movement_type, game_map,
+                                               model, moved_models_in_unit)
         print(f"🔍 DEBUG: Built collision trees: {list(collision_trees.keys())}")
 
         # Get validation rules for this movement type
@@ -492,41 +519,85 @@ def unified_pathfinding(model: 'Model', target: Tuple[float, float, float], move
 
 # REMOVED: can_unit_pass_through_terrain - using existing can_traverse_freely instead
 
-def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game_map: 'Map') -> dict:
+def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game_map: 'Map',
+                         moving_model: 'Model' = None, moved_models_in_unit: set = None) -> dict:
     """
     Build STRTrees for collision detection based on movement type and unit capabilities.
+
+    For individual model movement, pass moving_model and moved_models_in_unit to properly
+    handle same-unit collision detection.
 
     Args:
         moving_unit: The unit that is moving
         movement_type: Type of movement being performed
         game_map: The game map containing all objects
+        moving_model: Specific model being moved (for individual model movement)
+        moved_models_in_unit: Set of model indices already moved in this unit
 
     Returns:
         Dict containing STRTrees for different collision types
     """
-    # Filter terrain based on unit capabilities
-    blocking_terrain = []
-    for terrain_feature in game_map.terrain_features:
-        blocking_polygons = get_terrain_blocking_polygons(moving_unit, terrain_feature)
-        blocking_terrain.extend(blocking_polygons)
+    if moved_models_in_unit is None:
+        moved_models_in_unit = set()
 
-    # Get all models except the moving unit's models
-    friendly_models = []
-    enemy_models = []
+    # Get terrain blocking polygons with caching
+    unit_keywords = tuple(sorted(moving_unit.keywords)) if hasattr(moving_unit, 'keywords') else ()
+    terrain_cache_key = (id(game_map), unit_keywords)
 
-    for unit in game_map.units:
-        if unit == moving_unit or not unit.is_alive() or not unit.deployed:
-            continue
+    if terrain_cache_key in _terrain_cache:
+        blocking_terrain = _terrain_cache[terrain_cache_key]
+        print(f"🔍 DEBUG: Using cached terrain polygons: {len(blocking_terrain)} polygons")
+    else:
+        blocking_terrain = []
+        for terrain_feature in game_map.terrain_features:
+            blocking_polygons = get_terrain_blocking_polygons(moving_unit, terrain_feature)
+            blocking_terrain.extend(blocking_polygons)
+        _terrain_cache[terrain_cache_key] = blocking_terrain
+        print(f"🔍 DEBUG: Cached terrain polygons: {len(blocking_terrain)} polygons")
 
-        for model in unit.models:
-            if not model.is_alive:
+    # Get enemy models with caching
+    enemy_cache_key = (id(game_map), moving_unit.faction)
+
+    if enemy_cache_key in _enemy_model_cache:
+        enemy_models = _enemy_model_cache[enemy_cache_key]
+        print(f"🔍 DEBUG: Using cached enemy models: {len(enemy_models)} models")
+    else:
+        enemy_models = []
+        for unit in game_map.units:
+            if not unit.is_alive() or not unit.deployed:
                 continue
+            if unit.faction != moving_unit.faction:  # Enemy unit
+                for model in unit.models:
+                    if model.is_alive:
+                        enemy_models.append(model.model_base.get_base_shape())
+        _enemy_model_cache[enemy_cache_key] = enemy_models
+        print(f"🔍 DEBUG: Cached enemy models: {len(enemy_models)} models")
 
-            model_shape = model.model_base.get_base_shape()
-            if unit.faction == moving_unit.faction:
-                friendly_models.append(model_shape)
-            else:
-                enemy_models.append(model_shape)
+    # Get friendly models (cannot be cached as they change during individual model movement)
+    friendly_models = []
+    for unit in game_map.units:
+        if not unit.is_alive() or not unit.deployed:
+            continue
+        if unit.faction == moving_unit.faction:  # Friendly unit
+            for model_index, model in enumerate(unit.models):
+                if not model.is_alive:
+                    continue
+
+                # Skip the specific model that's currently being moved
+                if moving_model and model == moving_model:
+                    continue
+
+                model_shape = model.model_base.get_base_shape()
+
+                if unit == moving_unit:
+                    # For the moving unit, only include models that have already been moved
+                    if model_index in moved_models_in_unit:
+                        friendly_models.append(model_shape)
+                        print(f"🔍 DEBUG: Including already-moved model {model.name} (index {model_index}) as blocking obstacle")
+                    # Skip models that haven't been moved yet (they shouldn't block)
+                else:
+                    # Include all models from other friendly units
+                    friendly_models.append(model_shape)
 
     # Build trees based on movement type
     trees = {
@@ -570,6 +641,9 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
         pass  # Use base trees without engagement buffer
 
     return trees
+
+
+
 
 def get_validation_rules(movement_type: MovementType, target_unit: 'Unit' = None) -> dict:
     """
@@ -674,6 +748,31 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
     # Optimization: Try straight line path first if no obstacles
     straight_line_distance = heuristic(start, goal)
     if straight_line_distance <= max_distance:
+        # Special case: zero-distance move (staying in same position)
+        if straight_line_distance == 0.0:
+            print(f"🔍 DEBUG: No rotation detected, no pivot cost applied")
+            # For zero-distance moves, we need to check if the current position is valid
+            # This handles the case where another model has moved to this position
+            validity_result = is_position_valid_unified_detailed(goal, model, collision_trees, validation_rules, game_map)
+            if not validity_result['valid']:
+                print(f"🔍 DEBUG: Zero-distance move blocked: {validity_result['reason']}")
+                return {
+                    'valid': False,
+                    'path': [start],
+                    'distance': 0.0,
+                    'reason': validity_result['reason'],
+                    'desperate_escape': {'required': False, 'reason': 'Not fall back movement'}
+                }
+            else:
+                # Zero-distance move is valid
+                return {
+                    'valid': True,
+                    'path': [start, goal],
+                    'distance': 0.0,
+                    'reason': 'Valid path found',
+                    'desperate_escape': {'required': False, 'reason': 'Not fall back movement'}
+                }
+
         # Check if straight line path is clear
         straight_line_clear = True
         num_checks = max(20, int(straight_line_distance / (step_size / 2)))  # More frequent checks
@@ -2458,6 +2557,9 @@ def get_movement_path_preview(moving_model: 'Model', target_position: tuple,
         max_distance=max_distance,
         game_map=game_map
     )
+
+
+
 
 
 def get_unit_movement_path_preview(moving_unit: 'Unit', target_position: tuple,

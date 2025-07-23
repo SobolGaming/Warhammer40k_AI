@@ -345,10 +345,28 @@ class IndividualModelMovementDialog(BaseDialog):
                 model, destination[:2], self.max_distance, self.game_map
             )
         else:
-            # Use standard pathfinding for other movement types
-            from ...utility.calcs import get_movement_path_preview
-            path_result = get_movement_path_preview(
-                model, destination[:2], self.max_distance, self.game_map
+            # Use unified pathfinding that accounts for already-moved models
+            from ...utility.calcs import unified_pathfinding, MovementType
+
+            # Get set of already-moved model indices
+            moved_models_in_unit = set()
+            for moved_index, movement_data in self.model_movements.items():
+                if movement_data.get('completed', False):
+                    moved_models_in_unit.add(moved_index)
+
+            # Convert 2D target to 3D if needed
+            if len(destination) == 2:
+                target_3d = (destination[0], destination[1], model.model_base.z)
+            else:
+                target_3d = destination
+
+            path_result = unified_pathfinding(
+                model=model,
+                target=target_3d,
+                movement_type=MovementType.MOVE,
+                max_distance=self.max_distance,
+                game_map=self.game_map,
+                moved_models_in_unit=moved_models_in_unit
             )
 
         print(f"🔍 DEBUG: Pathfinding result for {model.name} to {destination}")

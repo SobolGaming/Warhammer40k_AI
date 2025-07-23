@@ -13,6 +13,7 @@ from enum import Enum
 from .unit import Unit
 from .model import Model
 from .player import Player
+from ..utility.calcs import clear_enemy_model_cache
 from .game import Game
 
 class FightStage(Enum):
@@ -298,7 +299,11 @@ class FightPhaseManager:
         """Switch the active player and continue the fight phase."""
         # Switch active player
         self.active_player = opponent_player if self.active_player == current_player else current_player
-        
+
+        # Clear enemy model cache when switching players since enemy positions may have changed
+        clear_enemy_model_cache(id(self.game.map))
+        print(f"⚔️ Fight phase player switched to {self.active_player.name} - cleared enemy model cache")
+
         # Request next unit selection
         self._request_unit_selection(current_player, opponent_player)
     

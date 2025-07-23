@@ -6,7 +6,7 @@ from .map import Map, Objective
 from .player import Player
 from .unit import Unit
 from .model import Model
-from ..utility.calcs import get_dist
+from ..utility.calcs import get_dist, clear_enemy_model_cache
 from ..utility.dice import DiceCollection
 from ..utility.constants import TOTAL_ROUNDS
 
@@ -885,6 +885,10 @@ class Game:
             # This means we've finished all phases for the current player
             # Switch to the next player
             self.current_player_index = (self.current_player_index + 1) % len(self.players)
+
+            # Clear enemy model cache when switching players since enemy positions may have changed
+            clear_enemy_model_cache(id(self.map))
+            print(f"🔄 Player switched to {self.get_current_player().name} - cleared enemy model cache")
             
             # Track who started this battle round if not already set
             if self.battle_round_starting_player_index is None:
