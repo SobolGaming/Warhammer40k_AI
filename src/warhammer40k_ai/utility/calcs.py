@@ -492,7 +492,7 @@ def unified_pathfinding(model: 'Model', target: Tuple[float, float, float], move
 
         # Build collision trees based on movement type and unit capabilities
         collision_trees = build_collision_trees(model.parent_unit, movement_type, game_map,
-                                               model, moved_models_in_unit)
+                                               model, moved_models_in_unit, max_distance)
         print(f"🔍 DEBUG: Built collision trees: {list(collision_trees.keys())}")
 
         # Get validation rules for this movement type
@@ -520,9 +520,12 @@ def unified_pathfinding(model: 'Model', target: Tuple[float, float, float], move
 # REMOVED: can_unit_pass_through_terrain - using existing can_traverse_freely instead
 
 def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game_map: 'Map',
-                         moving_model: 'Model' = None, moved_models_in_unit: set = None) -> dict:
+                         moving_model: 'Model' = None, moved_models_in_unit: set = None,
+                         max_distance: float = None, target_position: tuple = None) -> dict:
     """
     Build STRTrees for collision detection based on movement type and unit capabilities.
+
+    PERFORMANCE OPTIMIZATION: Only includes objects within movement range + safety buffer.
 
     For individual model movement, pass moving_model and moved_models_in_unit to properly
     handle same-unit collision detection.
@@ -533,6 +536,7 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
         game_map: The game map containing all objects
         moving_model: Specific model being moved (for individual model movement)
         moved_models_in_unit: Set of model indices already moved in this unit
+        max_distance: Maximum movement distance for spatial filtering
 
     Returns:
         Dict containing STRTrees for different collision types
@@ -540,41 +544,99 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
     if moved_models_in_unit is None:
         moved_models_in_unit = set()
 
-    # Get terrain blocking polygons with caching
+    # Get the moving model's position for spatial filtering
+    if moving_model:
+        center_pos = (moving_model.model_base.x, moving_model.model_base.y)
+        model_radius = moving_model.model_base.get_radius()
+    else:
+        # Use first alive model as reference
+        alive_models = [m for m in moving_unit.models if m.is_alive]
+        if alive_models:
+            center_pos = (alive_models[0].model_base.x, alive_models[0].model_base.y)
+            model_radius = alive_models[0].model_base.get_radius()
+        else:
+            center_pos = (0, 0)
+            model_radius = 1.0
+
+    # Calculate search radius: movement distance + model radius + safety buffer
+    if max_distance is None:
+        # When max_distance is not specified (e.g., in tests or validation),
+        # use a very large search radius to avoid filtering out important objects
+        max_distance = 12.0  # Default maximum movement
+        safety_buffer = 36.0  # Large buffer for test/validation scenarios
+    else:
+        # For actual pathfinding, use optimized spatial filtering
+        safety_buffer = max(4.0, model_radius + 2.0)  # At least 4" safety buffer
+
+    search_radius = max_distance + safety_buffer
+
+    print(f"🔍 DEBUG: Spatial filtering - center: {center_pos}, search radius: {search_radius:.1f}\"")
+
+    def is_within_search_area(shape_or_pos):
+        """Check if a shape or position is within the search area (2D distance only)."""
+        try:
+            if hasattr(shape_or_pos, 'centroid'):
+                # It's a shape - use 2D centroid
+                shape_center = (shape_or_pos.centroid.x, shape_or_pos.centroid.y)
+            elif hasattr(shape_or_pos, 'x') and hasattr(shape_or_pos, 'y'):
+                # It's a position object - use 2D coordinates
+                shape_center = (shape_or_pos.x, shape_or_pos.y)
+            else:
+                # It's a tuple/list - use first two coordinates for 2D distance
+                shape_center = (shape_or_pos[0], shape_or_pos[1])
+
+            # Calculate 2D distance only (ignore Z coordinate for spatial filtering)
+            # This ensures models on different floors are still considered for collision
+            distance_2d = ((shape_center[0] - center_pos[0])**2 + (shape_center[1] - center_pos[1])**2)**0.5
+            return distance_2d <= search_radius
+        except:
+            # If we can't determine position, include it to be safe
+            return True
+
+    # Get terrain blocking polygons with caching and spatial filtering
     unit_keywords = tuple(sorted(moving_unit.keywords)) if hasattr(moving_unit, 'keywords') else ()
-    terrain_cache_key = (id(game_map), unit_keywords)
+    terrain_cache_key = (id(game_map), unit_keywords, center_pos, search_radius)
 
     if terrain_cache_key in _terrain_cache:
         blocking_terrain = _terrain_cache[terrain_cache_key]
         print(f"🔍 DEBUG: Using cached terrain polygons: {len(blocking_terrain)} polygons")
     else:
-        blocking_terrain = []
+        all_terrain = []
         for terrain_feature in game_map.terrain_features:
             blocking_polygons = get_terrain_blocking_polygons(moving_unit, terrain_feature)
-            blocking_terrain.extend(blocking_polygons)
-        _terrain_cache[terrain_cache_key] = blocking_terrain
-        print(f"🔍 DEBUG: Cached terrain polygons: {len(blocking_terrain)} polygons")
+            all_terrain.extend(blocking_polygons)
 
-    # Get enemy models with caching
-    enemy_cache_key = (id(game_map), moving_unit.faction)
+        # Apply spatial filtering to terrain
+        blocking_terrain = [poly for poly in all_terrain if is_within_search_area(poly)]
+        _terrain_cache[terrain_cache_key] = blocking_terrain
+        print(f"🔍 DEBUG: Cached terrain polygons: {len(blocking_terrain)}/{len(all_terrain)} polygons (filtered)")
+
+    # Get enemy models with caching and spatial filtering
+    enemy_cache_key = (id(game_map), moving_unit.faction, center_pos, search_radius)
 
     if enemy_cache_key in _enemy_model_cache:
         enemy_models = _enemy_model_cache[enemy_cache_key]
         print(f"🔍 DEBUG: Using cached enemy models: {len(enemy_models)} models")
     else:
-        enemy_models = []
+        all_enemy_models = []
         for unit in game_map.units:
             if not unit.is_alive() or not unit.deployed:
                 continue
             if unit.faction != moving_unit.faction:  # Enemy unit
                 for model in unit.models:
                     if model.is_alive:
-                        enemy_models.append(model.model_base.get_base_shape())
+                        model_pos = (model.model_base.x, model.model_base.y)
+                        if is_within_search_area(model_pos):
+                            all_enemy_models.append(model.model_base.get_base_shape())
+
+        enemy_models = all_enemy_models
         _enemy_model_cache[enemy_cache_key] = enemy_models
-        print(f"🔍 DEBUG: Cached enemy models: {len(enemy_models)} models")
+        print(f"🔍 DEBUG: Cached enemy models: {len(enemy_models)} models (spatially filtered)")
 
     # Get friendly models (cannot be cached as they change during individual model movement)
+    # Apply spatial filtering to friendly models
     friendly_models = []
+    friendly_models_total = 0
     for unit in game_map.units:
         if not unit.is_alive() or not unit.deployed:
             continue
@@ -585,6 +647,13 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
 
                 # Skip the specific model that's currently being moved
                 if moving_model and model == moving_model:
+                    continue
+
+                friendly_models_total += 1
+                model_pos = (model.model_base.x, model.model_base.y)
+
+                # Apply spatial filtering
+                if not is_within_search_area(model_pos):
                     continue
 
                 model_shape = model.model_base.get_base_shape()
@@ -598,6 +667,8 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
                 else:
                     # Include all models from other friendly units
                     friendly_models.append(model_shape)
+
+    print(f"🔍 DEBUG: Friendly models: {len(friendly_models)}/{friendly_models_total} models (spatially filtered)")
 
     # Build trees based on movement type
     trees = {
@@ -727,7 +798,20 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
 
     start = (model.model_base.x, model.model_base.y, model.model_base.z)
     goal = target
-    step_size = 0.5  # 0.5" step size for pathfinding (larger for straighter paths)
+
+    # PERFORMANCE OPTIMIZATION: Adaptive step size and iteration limits based on distance
+    straight_line_distance = heuristic(start, goal)
+    if straight_line_distance <= 3.0:
+        step_size = 0.3  # Smaller steps for short distances
+        max_iterations = 5000
+    elif straight_line_distance <= 6.0:
+        step_size = 0.4  # Medium steps for medium distances
+        max_iterations = 8000
+    else:
+        step_size = 0.6  # Larger steps for long distances
+        max_iterations = 12000
+
+    print(f"🔍 DEBUG: A* optimization - distance: {straight_line_distance:.1f}\", step: {step_size}, max_iter: {max_iterations}")
 
     # Initialize A* data structures
     open_set = []
@@ -737,7 +821,6 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
     f_score = {start: heuristic(start, goal)}
     closed_set = set()
 
-    max_iterations = 15000
     iterations = 0
 
     # Track collision reasons for better error reporting
@@ -821,8 +904,9 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
 
         closed_set.add(current)
 
-        # Check if we've reached the goal
-        if heuristic(current, goal) < step_size:
+        # PERFORMANCE OPTIMIZATION: Early termination when close to goal
+        distance_to_goal = heuristic(current, goal)
+        if distance_to_goal < step_size:
             # Reconstruct path
             path = []
             path_node = current
@@ -907,12 +991,46 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
                 'desperate_escape': desperate_escape_info
             }
 
+        # PERFORMANCE OPTIMIZATION: Prioritize neighbors that move toward goal
+        all_neighbors = [(-step_size, 0, 0), (step_size, 0, 0), (0, -step_size, 0), (0, step_size, 0),
+                        (-step_size, -step_size, 0), (-step_size, step_size, 0),
+                        (step_size, -step_size, 0), (step_size, step_size, 0),
+                        # Add vertical movement for flying units or terrain traversal
+                        (0, 0, step_size), (0, 0, -step_size)]
+
+        # Sort neighbors by distance to goal (prioritize promising directions)
+        goal_direction = (goal[0] - current[0], goal[1] - current[1])
+        goal_distance = (goal_direction[0]**2 + goal_direction[1]**2)**0.5
+
+        if goal_distance > 0:
+            # Normalize goal direction
+            goal_dir_norm = (goal_direction[0] / goal_distance, goal_direction[1] / goal_distance)
+
+            # Score neighbors by alignment with goal direction
+            neighbor_scores = []
+            for dx, dy, dz in all_neighbors:
+                if dx == 0 and dy == 0:  # Vertical movement
+                    score = 0.5  # Neutral score for vertical movement
+                else:
+                    move_distance = (dx**2 + dy**2)**0.5
+                    if move_distance > 0:
+                        move_dir_norm = (dx / move_distance, dy / move_distance)
+                        # Dot product gives alignment score (-1 to 1)
+                        alignment = goal_dir_norm[0] * move_dir_norm[0] + goal_dir_norm[1] * move_dir_norm[1]
+                        score = alignment
+                    else:
+                        score = 0
+                neighbor_scores.append((score, dx, dy, dz))
+
+            # Sort by score (highest first) and take top 6 neighbors for performance
+            neighbor_scores.sort(reverse=True)
+            prioritized_neighbors = neighbor_scores[:6]
+        else:
+            # If at goal, check all neighbors
+            prioritized_neighbors = [(0, dx, dy, dz) for dx, dy, dz in all_neighbors]
+
         # Generate neighbors (3D movement with vertical component)
-        for dx, dy, dz in [(-step_size, 0, 0), (step_size, 0, 0), (0, -step_size, 0), (0, step_size, 0),
-                          (-step_size, -step_size, 0), (-step_size, step_size, 0),
-                          (step_size, -step_size, 0), (step_size, step_size, 0),
-                          # Add vertical movement for flying units or terrain traversal
-                          (0, 0, step_size), (0, 0, -step_size)]:
+        for score, dx, dy, dz in prioritized_neighbors:
             neighbor = (current[0] + dx, current[1] + dy, current[2] + dz)
 
             if neighbor in closed_set:
@@ -1132,7 +1250,7 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
         if actual_hits:
             return {'valid': False, 'reason': 'Position blocked by terrain'}
 
-    # Check friendly model collisions using shape intersection
+    # Check friendly model collisions using shape intersection with 3D consideration
     if collision_trees.get('friendly_models') and validation_rules.get('prevent_friendly_overlap', True):
         if not validation_rules.get('can_move_through_models', False):
             potential_hits = query_spatial_index(collision_trees['friendly_models'], test_shape)
@@ -1141,6 +1259,28 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
             for hit_shape in potential_hits:
                 try:
                     if test_shape.intersects(hit_shape):
+                        # For 3D positioning, check if there's sufficient vertical separation
+                        # We need to find the model that corresponds to this shape
+                        blocking_model = None
+                        if game_map:
+                            for unit in game_map.units:
+                                if unit.faction == model.parent_unit.faction:
+                                    for other_model in unit.models:
+                                        if (other_model != model and other_model.is_alive and
+                                            other_model.model_base.get_base_shape().equals(hit_shape)):
+                                            blocking_model = other_model
+                                            break
+                                    if blocking_model:
+                                        break
+
+                        # If we found the blocking model, check 3D separation
+                        if blocking_model:
+                            z_separation = abs(position[2] - blocking_model.model_base.z)
+                            # Models can occupy same X,Y if Z separation > model height (typically 2")
+                            model_height = 2.0  # Typical model height in inches
+                            if z_separation > model_height:
+                                continue  # Allow this overlap due to 3D separation
+
                         actual_hits.append(hit_shape)
                 except Exception:
                     continue
