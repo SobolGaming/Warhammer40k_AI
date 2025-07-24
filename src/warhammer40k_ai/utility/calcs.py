@@ -1041,11 +1041,22 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
             }
 
         # PERFORMANCE OPTIMIZATION: Prioritize neighbors that move toward goal
+        # Use 2D movement for most cases (much faster)
         all_neighbors = [(-step_size, 0, 0), (step_size, 0, 0), (0, -step_size, 0), (0, step_size, 0),
                         (-step_size, -step_size, 0), (-step_size, step_size, 0),
-                        (step_size, -step_size, 0), (step_size, step_size, 0),
-                        # Add vertical movement for flying units or terrain traversal
-                        (0, 0, step_size), (0, 0, -step_size)]
+                        (step_size, -step_size, 0), (step_size, step_size, 0)]
+
+        # Only add vertical movement when terrain has different height levels
+        # Check if there's terrain with height variations in the area
+        has_height_variations = False
+        if game_map and hasattr(game_map, 'terrain_features'):
+            for terrain in game_map.terrain_features:
+                if hasattr(terrain, 'height') and terrain.height > 0:
+                    has_height_variations = True
+                    break
+
+        if has_height_variations:
+            all_neighbors.extend([(0, 0, step_size), (0, 0, -step_size)])
 
         # Sort neighbors by distance to goal (prioritize promising directions)
         goal_direction = (goal[0] - current[0], goal[1] - current[1])
@@ -1228,8 +1239,8 @@ def is_position_valid_unified(position: Tuple[float, float, float], model: 'Mode
         print(f"🔍 DEBUG: Checking engagement range for position {position} using edge-to-edge distance")
 
         # Create a temporary model base at the test position to check engagement range
-        from ..utility.model_base import Base, BaseType
-        temp_base = Base(BaseType.ROUND, 25)  # Use same base type as the moving model
+        from ..utility.model_base import Base
+        temp_base = Base(model.model_base.base_type, model.model_base.radius)  # Use actual model's base type and size
         temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
 
         # Check against all enemy models using the same method as is_within_engagement_range
@@ -1377,8 +1388,8 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
         print(f"🔍 DEBUG: Final position validation - checking engagement range for {position} using edge-to-edge distance")
 
         # Create a temporary model base at the test position to check engagement range
-        from ..utility.model_base import Base, BaseType
-        temp_base = Base(BaseType.ROUND, 25)  # Use same base type as the moving model
+        from ..utility.model_base import Base
+        temp_base = Base(model.model_base.base_type, model.model_base.radius)  # Use actual model's base type and size
         temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
 
         # Check against all enemy models using the same method as is_within_engagement_range
@@ -1513,8 +1524,8 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
 
         # Check if final position is within engagement range of target unit using edge-to-edge distance
         # Create a temporary model base at the final position to check engagement range
-        from ..utility.model_base import Base, BaseType
-        temp_base = Base(BaseType.ROUND, 25)  # Use same base type as the moving model
+        from ..utility.model_base import Base
+        temp_base = Base(model.model_base.base_type, model.model_base.radius)  # Use actual model's base type and size
         temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
 
         in_engagement_range = False
@@ -1541,8 +1552,8 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
     if validation_rules.get('cannot_end_in_engagement_range', False):
         # Check if final position is within engagement range of any enemy using edge-to-edge distance
         # Create a temporary model base at the final position to check engagement range
-        from ..utility.model_base import Base, BaseType
-        temp_base = Base(BaseType.ROUND, 25)  # Use same base type as the moving model
+        from ..utility.model_base import Base
+        temp_base = Base(model.model_base.base_type, model.model_base.radius)  # Use actual model's base type and size
         temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
 
         # Check against all enemy models using proper edge-to-edge distance
@@ -1577,8 +1588,8 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
     if validation_rules.get('min_distance_from_enemies', 0) > 0:
         min_distance = validation_rules['min_distance_from_enemies']
         # Create a temporary model base at the final position to check distance
-        from ..utility.model_base import Base, BaseType
-        temp_base = Base(BaseType.ROUND, 25)  # Use same base type as the moving model
+        from ..utility.model_base import Base
+        temp_base = Base(model.model_base.base_type, model.model_base.radius)  # Use actual model's base type and size
         temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
 
         for unit in game_map.units:
