@@ -1025,9 +1025,9 @@ class HumanUIInterface:
 
     def show_scout_dialog(self, unit, callback, game_map=None):
         """Show the scout move dialog for a unit."""
-        print(f"🔍 HumanUIInterface.show_scout_dialog called for {unit.name}")
+        # print(f"🔍 HumanUIInterface.show_scout_dialog called for {unit.name}")
         self.scout_choice_dialog.show(unit, callback, game_map)
-        print(f"🔍 DEBUG: Scout dialog show() completed, visible={self.scout_choice_dialog.visible}")
+        # print(f"🔍 DEBUG: Scout dialog show() completed, visible={self.scout_choice_dialog.visible}")
     
     def show_fight_unit_selection_dialog(self, stage_name: str, eligible_units: List['Unit'], 
                                         on_unit_selected: Callable[['Unit'], None], 
@@ -1036,8 +1036,17 @@ class HumanUIInterface:
         print(f"⚔️ HumanUIInterface.show_fight_unit_selection_dialog called for {stage_name} stage with {len(eligible_units)} units")
         self.fight_unit_selection_dialog.show(stage_name, eligible_units, on_unit_selected, on_cancel)
 
-    # Note: melee weapon declaration dialog is now handled directly through game_view instance
-    # (removed show_melee_weapon_declaration_dialog method to avoid duplicate instances)
+    def show_melee_weapon_declaration_dialog(self, unit, callback, game_map=None):
+        """Show the melee weapon declaration dialog for a unit."""
+        print(f"⚔️ HumanUIInterface.show_melee_weapon_declaration_dialog called for {unit.name}")
+        # Delegate to the game view's dialog instance to avoid duplicates
+        if hasattr(self, 'game_view') and hasattr(self.game_view, 'melee_weapon_declaration_dialog'):
+            self.game_view.melee_weapon_declaration_dialog.show(unit, callback, game_map)
+        else:
+            print(f"❌ Error: melee_weapon_declaration_dialog not found on game_view")
+            # Call callback with empty declarations to prevent hanging
+            if callback:
+                callback([])
 
 
 class GameView:
@@ -1061,6 +1070,10 @@ class GameView:
         
         # UI interface for human player interaction
         self.ui_interface = ui_interface
+
+        # Set reference back to game view in UI interface for dialog access
+        if ui_interface:
+            ui_interface.game_view = self
         
         # Phase-based event handling system
         self.phase_manager = PhaseManager(self)
@@ -1494,10 +1507,25 @@ class GameView:
 
                     # Get moved models from the dialog if available
                     moved_models_in_unit = set()
+                    preview_movement_type = MovementType.MOVE  # Default
                     if hasattr(self, 'individual_model_movement_dialog') and self.individual_model_movement_dialog.visible:
                         for moved_index, movement_data in self.individual_model_movement_dialog.model_movements.items():
                             if movement_data.get('completed', False):
                                 moved_models_in_unit.add(moved_index)
+
+                        # Get the correct movement type from the dialog
+                        dialog_movement_type = self.individual_model_movement_dialog.movement_type
+                        movement_type_map = {
+                            'move': MovementType.MOVE,
+                            'advance': MovementType.ADVANCE,
+                            'fall_back': MovementType.FALL_BACK,
+                            'charge': MovementType.CHARGE,
+                            'scout': MovementType.SCOUT,
+                            'pile_in': MovementType.PILE_IN,
+                            'consolidate': MovementType.CONSOLIDATE
+                        }
+                        preview_movement_type = movement_type_map.get(dialog_movement_type, MovementType.MOVE)
+                        print(f"🔍 DEBUG: Using movement type {preview_movement_type} for path preview (dialog type: {dialog_movement_type})")
 
                     # Convert 2D target to 3D if needed
                     if len(self.individual_model_preview_target) == 2:
@@ -1505,12 +1533,18 @@ class GameView:
                     else:
                         target_3d = self.individual_model_preview_target
 
+                    # Get target unit for charge movement
+                    target_unit = None
+                    if hasattr(self, 'individual_model_movement_dialog') and self.individual_model_movement_dialog.visible:
+                        target_unit = self.individual_model_movement_dialog.target_unit
+
                     path_result = unified_pathfinding(
                         model=selected_model,
                         target=target_3d,
-                        movement_type=MovementType.MOVE,
+                        movement_type=preview_movement_type,
                         max_distance=max_distance,
                         game_map=self.game.map,
+                        target_unit=target_unit,
                         moved_models_in_unit=moved_models_in_unit
                     )
 
@@ -2634,7 +2668,28 @@ class BattlePhaseHandler(BasePhaseHandler):
                 self.game_view.detailed_unit = hovered_unit
                 self.game_view.detail_panel_pos = (x, y)
                 return True
-        
+
+        # Handle SPACE key for manual phase advancement
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
+            current_phase = self.game.phase
+
+            # Fight phase - check if we can skip/complete it
+            if current_phase.name == 'FIGHT_PHASE':
+                if self.fight_phase_manager and not self.fight_phase_manager.is_complete():
+                    # Force complete the fight phase
+                    print("⏭️ Manually completing fight phase...")
+                    self.fight_phase_manager._complete_fight_phase()
+                    return True
+                else:
+                    # Fight phase already complete, advance to next phase
+                    print("⏭️ Fight phase complete, advancing to next phase...")
+                    return False  # Let main loop advance phase
+
+            # For other phases, let main loop handle advancement
+            else:
+                print(f"⏭️ Manually advancing {current_phase.name}...")
+                return False  # Let main loop advance phase
+
         return False
     
     def _synchronize_unit_selection(self, unit) -> None:
@@ -2705,10 +2760,32 @@ class BattlePhaseHandler(BasePhaseHandler):
             print(f"❌ {unit.name} cannot shoot after falling back")
             return
         
-        # Check if unit is engaged and can't shoot
-        is_engaged = any(self.game.map.is_within_engagement_range(unit, enemy)
-                        for enemy in self.game.map.get_enemy_units(unit) if enemy.is_alive())
-        
+        # Check if unit is engaged and can't shoot with detailed debugging
+        enemy_units = self.game.map.get_enemy_units(unit)
+        engaged_enemies = []
+
+        for enemy in enemy_units:
+            if enemy.is_alive() and self.game.map.is_within_engagement_range(unit, enemy):
+                engaged_enemies.append(enemy.name)
+
+        is_engaged = len(engaged_enemies) > 0
+
+        if is_engaged:
+            print(f"🔍 DEBUG: {unit.name} is in engagement range of: {', '.join(engaged_enemies)}")
+
+            # Show detailed position information
+            if unit.models:
+                unit_pos = unit.models[0].get_location() if unit.models[0].is_alive else None
+                print(f"🔍 DEBUG: {unit.name} position: {unit_pos}")
+
+                for enemy_name in engaged_enemies:
+                    enemy_unit = next((e for e in enemy_units if e.name == enemy_name), None)
+                    if enemy_unit and enemy_unit.models:
+                        enemy_pos = enemy_unit.models[0].get_location() if enemy_unit.models[0].is_alive else None
+                        if unit_pos and enemy_pos:
+                            distance = ((unit_pos[0] - enemy_pos[0])**2 + (unit_pos[1] - enemy_pos[1])**2)**0.5
+                            print(f"🔍 DEBUG: Distance to {enemy_name}: {distance:.1f}\"")
+
         if is_engaged:
             # Check if unit has any weapons that can shoot while engaged
             has_eligible_weapons = False
@@ -2770,7 +2847,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                     # Note: charge already declared above - cannot charge again this round
 
             self.game_view.individual_model_movement_dialog.show(
-                charging_unit, 'charge', on_charge_movement_complete, self.game.map, max_charge_distance
+                charging_unit, 'charge', on_charge_movement_complete, self.game.map, max_charge_distance, target_unit
             )
             return True  # Charge declaration successful
 
@@ -2814,24 +2891,33 @@ class BattlePhaseHandler(BasePhaseHandler):
         
         # Set up callbacks for human player interaction
         def on_unit_selection_required(active_player: Player, eligible_units: List[Unit], stage: FightStage):
+            print(f"🔍 DEBUG: on_unit_selection_required called for {active_player.name} ({active_player.type.name})")
+            print(f"🔍 DEBUG: Stage: {stage.value}, Eligible units: {[unit.name for unit in eligible_units]}")
+
             if active_player.type.name == 'HUMAN':
                 print(f"🎯 {active_player.name} must select a unit to fight ({stage.value} stage)")
                 print(f"   Eligible units: {[unit.name for unit in eligible_units]}")
                 # Show fight unit selection dialog
                 if hasattr(self.game_view, 'ui_interface') and self.game_view.ui_interface:
                     def on_unit_selected(selected_unit):
+                        print(f"🔍 DEBUG: Unit selected callback called for {selected_unit.name}")
                         self.fight_phase_manager.unit_selected(selected_unit, current_player, opponent_player)
-                    
+
                     def on_cancel():
                         print("❌ Fight unit selection cancelled")
-                    
+
+                    print(f"🔍 DEBUG: About to show fight unit selection dialog")
                     self.game_view.ui_interface.show_fight_unit_selection_dialog(
                         stage.value, eligible_units, on_unit_selected, on_cancel
                     )
+                    print(f"🔍 DEBUG: Fight unit selection dialog show() called")
             else:
-                # AI player - use existing AI logic
+                # AI player - auto-select first eligible unit
                 print(f"🤖 AI player {active_player.name} selecting unit automatically")
-                # TODO: Implement AI unit selection
+                if eligible_units:
+                    selected_unit = eligible_units[0]
+                    print(f"🤖 AI selected {selected_unit.name}")
+                    self.fight_phase_manager.unit_selected(selected_unit, current_player, opponent_player)
         
         def on_target_selection_required(fighting_unit: Unit, eligible_targets: List[Unit], active_player: Player):
             if active_player.type.name == 'HUMAN':
@@ -2866,10 +2952,19 @@ class BattlePhaseHandler(BasePhaseHandler):
                 unit, movement_type, callback, self.game.map, max_distance
             )
 
+        def on_weapon_selection_required(unit: Unit, target_unit: Unit, callback):
+            """Handle melee weapon selection using Melee Weapon Declaration Dialog"""
+            print(f"⚔️ {unit.name} needs to select melee weapons against {target_unit.name}")
+
+            self.game_view.melee_weapon_declaration_dialog.show(
+                unit, callback, self.game.map
+            )
+
         self.fight_phase_manager.on_unit_selection_required = on_unit_selection_required
         self.fight_phase_manager.on_target_selection_required = on_target_selection_required
         self.fight_phase_manager.on_stage_complete = on_stage_complete
         self.fight_phase_manager.on_movement_required = on_movement_required
+        self.fight_phase_manager.on_weapon_selection_required = on_weapon_selection_required
         
         # Start the fight phase
         self.fight_phase_manager.start_fight_phase(current_player, opponent_player)
@@ -3126,6 +3221,18 @@ class BattlePhaseHandler(BasePhaseHandler):
     
     def _handle_charge_action(self, x: int, y: int) -> bool:
         """Handle charge phase actions"""
+        # Check if individual model movement dialog is active (for charge movement)
+        if (hasattr(self.game_view, 'individual_model_movement_dialog') and
+            self.game_view.individual_model_movement_dialog.visible):
+            # Handle battlefield click for individual model movement during charge
+            battlefield_x = (x - ROSTER_PANE_WIDTH - self.game_view.offset_x) / (TILE_SIZE * self.game_view.zoom_level)
+            battlefield_y = (y - self.game_view.offset_y) / (TILE_SIZE * self.game_view.zoom_level)
+            battlefield_z = self.game.map.get_height_at_point(battlefield_x, battlefield_y)
+
+            return self.game_view.individual_model_movement_dialog.handle_battlefield_click(
+                battlefield_x, battlefield_y, battlefield_z
+            )
+
         # Always check if a unit was clicked on the battlefield first
         clicked_unit = self.game_view.get_unit_at_position(x, y)
         current_player = self.game.get_current_player()
@@ -3336,6 +3443,19 @@ class PhaseManager:
         elif self.game.is_deployment_phase():
             return self.deployment_handler
         else:
+            # Battle phases
+            # Auto-start fight phase if we're in fight phase and it hasn't been started
+            if self.game.is_fight_phase():
+                if not hasattr(self.battle_handler, 'fight_phase_started') or not self.battle_handler.fight_phase_started:
+                    print("⚔️ Auto-starting fight phase...")
+                    current_player = self.game.get_current_player()
+                    opponent_player = self.game.get_opponent()
+                    self.battle_handler._initialize_fight_phase_manager(current_player, opponent_player)
+                    self.battle_handler.fight_phase_started = True
+            else:
+                # Reset fight phase flag when not in fight phase
+                if hasattr(self.battle_handler, 'fight_phase_started'):
+                    self.battle_handler.fight_phase_started = False
             return self.battle_handler
     
     def handle_event(self, event: pygame.event.Event) -> bool:
@@ -3627,7 +3747,7 @@ class PreBattlePhaseHandler(BasePhaseHandler):
             self.awaiting_battlefield_click = False
             self._show_scout_dialog(unit)
         else:
-            print(f"🔍 DEBUG: Scout queue is empty, scout phase complete")
+            # print(f"🔍 DEBUG: Scout queue is empty, scout phase complete")
             self.current_scout_unit = None
             self.current_scout_player = None  # Reset player tracking
             self.awaiting_battlefield_click = False
@@ -3637,21 +3757,21 @@ class PreBattlePhaseHandler(BasePhaseHandler):
             print("✅ All human SCOUT moves complete. Press SPACE to continue.")
 
     def _show_scout_dialog(self, unit):
-        print(f"🔍 DEBUG: _show_scout_dialog called for {unit.name}")
+        # print(f"🔍 DEBUG: _show_scout_dialog called for {unit.name}")
         def on_scout_choice(choice):
-            print(f"🔍 DEBUG: Scout choice for {unit.name}: {choice}")
+            # print(f"🔍 DEBUG: Scout choice for {unit.name}: {choice}")
             if choice == 'scout':
                 # Open individual model movement dialog for scout movement
                 def on_scout_movement_complete(completed: bool):
-                    print(f"🔍 DEBUG: Scout movement complete for {unit.name}: completed={completed}")
-                    print(f"🔍 DEBUG: Setting scout_move_made=True for {unit.name}")
+                    # print(f"🔍 DEBUG: Scout movement complete for {unit.name}: completed={completed}")
+                    # print(f"🔍 DEBUG: Setting scout_move_made=True for {unit.name}")
                     if completed:
                         print(f"✅ {unit.name} scout movement completed")
                         unit.scout_move_made = True
                     else:
                         print(f"⏭️  {unit.name} scout movement skipped")
                         unit.scout_move_made = True
-                    print(f"🔍 DEBUG: Calling _next_scout_unit() to proceed to next unit")
+                    # print(f"🔍 DEBUG: Calling _next_scout_unit() to proceed to next unit")
                     self._next_scout_unit()
 
                 self.game_view.individual_model_movement_dialog.show(
@@ -3684,17 +3804,17 @@ class PreBattlePhaseHandler(BasePhaseHandler):
                     insert_position = last_same_player_position + 1
 
                     self.scout_units_queue.insert(insert_position, (unit, player, self.scout_distance))
-                    print(f"🔍 DEBUG: {unit.name} added back to position {insert_position} (after last {player.name} unit). Queue now has {len(self.scout_units_queue)} units")
+                    # print(f"🔍 DEBUG: {unit.name} added back to position {insert_position} (after last {player.name} unit). Queue now has {len(self.scout_units_queue)} units")
 
                     # Debug: show current queue
-                    queue_debug = [(u.name, p.name) for u, p, _ in self.scout_units_queue]
-                    print(f"🔍 DEBUG: Current queue: {queue_debug}")
+                    # queue_debug = [(u.name, p.name) for u, p, _ in self.scout_units_queue]
+                    # print(f"🔍 DEBUG: Current queue: {queue_debug}")
 
                 self._next_scout_unit()
-        print(f"🔍 DEBUG: About to call ui_interface.show_scout_dialog for {unit.name}")
+        # print(f"🔍 DEBUG: About to call ui_interface.show_scout_dialog for {unit.name}")
         self.game_view.ui_interface.show_scout_dialog(unit, on_scout_choice, self.game_view.game.map)
-        print(f"🔍 DEBUG: ui_interface.show_scout_dialog completed for {unit.name}")
-        print(f"🔍 DEBUG: Scout dialog visible: {self.game_view.ui_interface.scout_choice_dialog.visible}")
+        # print(f"🔍 DEBUG: ui_interface.show_scout_dialog completed for {unit.name}")
+        # print(f"🔍 DEBUG: Scout dialog visible: {self.game_view.ui_interface.scout_choice_dialog.visible}")
 
     def _validate_scout_destination(self, unit, destination: Tuple[float, float]) -> dict:
         """Validate if a destination is valid for a scout move using pathfinding."""
@@ -3722,10 +3842,12 @@ class PreBattlePhaseHandler(BasePhaseHandler):
         enemy_units = self.game_view.game.get_enemy_units(unit.get_parent_army().player)
         for enemy_unit in enemy_units:
             if enemy_unit.is_alive() and enemy_unit.deployed:
-                enemy_pos = enemy_unit.get_position()
-                enemy_distance = ((game_x - enemy_pos[0]) ** 2 + (game_y - enemy_pos[1]) ** 2) ** 0.5
-                if enemy_distance < 9.0:
-                    return {'valid': False, 'reason': f'Too close to {enemy_unit.name} ({enemy_distance:.1f}\")'}
+                # Get position from closest model to the scout position
+                enemy_pos = enemy_unit.get_closest_model_position_to_target((game_x, game_y, 0.0))
+                if enemy_pos:
+                    enemy_distance = ((game_x - enemy_pos[0]) ** 2 + (game_y - enemy_pos[1]) ** 2) ** 0.5
+                    if enemy_distance < 9.0:
+                        return {'valid': False, 'reason': f'Too close to {enemy_unit.name} ({enemy_distance:.1f}\")'}
 
         return path_result
 
@@ -3740,10 +3862,11 @@ class PreBattlePhaseHandler(BasePhaseHandler):
         
         # If a scout dialog is visible, let it handle the event
         if self.game_view.ui_interface.scout_choice_dialog.visible:
-            print(f"🔍 DEBUG: PreBattlePhaseHandler: Scout dialog visible, handling event")
+            # print(f"🔍 DEBUG: PreBattlePhaseHandler: Scout dialog visible, handling event")
             return self.game_view.ui_interface.scout_choice_dialog.handle_event(event)
         else:
-            print(f"🔍 DEBUG: PreBattlePhaseHandler: Scout dialog not visible (visible={self.game_view.ui_interface.scout_choice_dialog.visible})")
+            pass
+            # print(f"🔍 DEBUG: PreBattlePhaseHandler: Scout dialog not visible (visible={self.game_view.ui_interface.scout_choice_dialog.visible})")
         
         # Handle individual model movement dialog (for scout moves)
         if (hasattr(self.game_view, 'individual_model_movement_dialog') and
@@ -3786,7 +3909,8 @@ class PreBattlePhaseHandler(BasePhaseHandler):
                         # print(f"🔍 DEBUG: PreBattlePhaseHandler cleared individual_model_preview_target (mouse outside battlefield)")
                         return True
             else:
-                print(f"🔍 DEBUG: Mouse motion - has_dialog={has_dialog}")
+                pass
+                # print(f"🔍 DEBUG: Mouse motion - has_dialog={has_dialog}")
 
         # Handle battlefield clicks for individual model movement during scout phase
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:  # Left click

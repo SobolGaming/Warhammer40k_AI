@@ -1300,8 +1300,12 @@ class TacticalAgent:
         features.append(model.health_percent)
         for enemy in targets[:MAX_TARGETS]:
             features.append(profile.get_damage_potential(enemy))
-            enemy_pos = enemy.get_position()
-            features.extend([enemy_pos[0], enemy_pos[1], enemy_pos[2]])
+            # Get position from closest model to the shooting model
+            enemy_pos = enemy.get_closest_model_position_to_target(model_pos)
+            if enemy_pos:
+                features.extend([enemy_pos[0], enemy_pos[1], enemy_pos[2]])
+            else:
+                features.extend([0.0, 0.0, 0.0])  # Default if no position available
             features.append(enemy.health_percent)
         num_targets = len(targets)
         if num_targets < MAX_TARGETS:

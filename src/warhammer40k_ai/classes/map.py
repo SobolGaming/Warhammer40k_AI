@@ -117,15 +117,15 @@ class Map:
     def is_within_engagement_range(self, source_unit: Unit, target_unit: Unit) -> bool:
         """
         Check if any model in the source unit is within engagement range of any model in the target unit.
-        
+
         Engagement Range in 10th Edition:
-        - Within 1″ horizontally (measured base-to-base)  
+        - Within 1″ horizontally (measured base-to-base)
         - Within 5″ vertically
-        
+
         Args:
             source_unit: The source unit to check from
             target_unit: The target unit to check against
-            
+
         Returns:
             bool: True if any model in source unit is within engagement range of any model in target unit
         """
@@ -138,13 +138,20 @@ class Map:
                     continue
                 # Calculate horizontal distance (base-to-base)
                 horizontal_distance = source_model.model_base.edge_to_edge_distance(target_model.model_base)
-                
-                # Calculate vertical distance  
+
+                # Calculate vertical distance
                 vertical_distance = source_model.model_base.vertical_distance(target_model.model_base)
-                
-                # Check if within engagement range
-                if (horizontal_distance <= ENGAGEMENT_RANGE_HORIZONTAL and 
+
+                # Check if within engagement range with debug output
+                if (horizontal_distance <= ENGAGEMENT_RANGE_HORIZONTAL and
                     vertical_distance <= ENGAGEMENT_RANGE_VERTICAL):
+                    source_pos = source_model.get_location()
+                    target_pos = target_model.get_location()
+                    print(f"🔍 DEBUG: ENGAGEMENT DETECTED!")
+                    print(f"🔍 DEBUG: {source_unit.name} model at {source_pos}")
+                    print(f"🔍 DEBUG: {target_unit.name} model at {target_pos}")
+                    print(f"🔍 DEBUG: Horizontal distance: {horizontal_distance:.2f}\" (limit: {ENGAGEMENT_RANGE_HORIZONTAL}\")")
+                    print(f"🔍 DEBUG: Vertical distance: {vertical_distance:.2f}\" (limit: {ENGAGEMENT_RANGE_VERTICAL}\")")
                     return True
         return False
 

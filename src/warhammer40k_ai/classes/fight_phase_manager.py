@@ -55,19 +55,26 @@ class FightPhaseManager:
         """Start the Fight First stage."""
         print("⚔️ Starting Fight First Stage")
         self.current_stage = FightStage.FIGHT_FIRST
-        
-        # Get Fight First units for both players
+
+        # Get Fight First units for both players with detailed debugging
         current_player_units = self.game.get_fight_first_units(current_player)
         opponent_units = self.game.get_fight_first_units(opponent_player)
-        
+
         print(f"  Current Player ({current_player.name}): {len(current_player_units)} Fight First units")
+        if current_player_units:
+            for unit in current_player_units:
+                print(f"    - {unit.name} (charged: {getattr(unit.round_state, 'declared_charge_this_round', False)}, fight_first_ability: {unit.has_fight_first()})")
+
         print(f"  Opponent ({opponent_player.name}): {len(opponent_units)} Fight First units")
-        
+        if opponent_units:
+            for unit in opponent_units:
+                print(f"    - {unit.name} (charged: {getattr(unit.round_state, 'declared_charge_this_round', False)}, fight_first_ability: {unit.has_fight_first()})")
+
         if not current_player_units and not opponent_units:
             print("📋 No units with Fight First abilities - moving to Remaining Combatants")
             self._start_remaining_combatants_stage(current_player, opponent_player)
             return
-        
+
         # Start alternating selection with opponent (non-current player)
         self.active_player = opponent_player
         self._request_unit_selection(current_player, opponent_player)
@@ -76,19 +83,26 @@ class FightPhaseManager:
         """Start the Remaining Combatants stage."""
         print("⚔️ Starting Remaining Combatants Stage")
         self.current_stage = FightStage.REMAINING_COMBATANTS
-        
-        # Get remaining combatant units for both players
+
+        # Get remaining combatant units for both players with detailed debugging
         current_player_units = self.game.get_remaining_combatant_units(current_player)
         opponent_units = self.game.get_remaining_combatant_units(opponent_player)
-        
+
         print(f"  Current Player ({current_player.name}): {len(current_player_units)} Remaining units")
+        if current_player_units:
+            for unit in current_player_units:
+                print(f"    - {unit.name} (eligible_to_fight: {unit.is_eligible_to_fight(self.game.map)})")
+
         print(f"  Opponent ({opponent_player.name}): {len(opponent_units)} Remaining units")
-        
+        if opponent_units:
+            for unit in opponent_units:
+                print(f"    - {unit.name} (eligible_to_fight: {unit.is_eligible_to_fight(self.game.map)})")
+
         if not current_player_units and not opponent_units:
             print("📋 No remaining combatant units - Fight Phase complete")
             self._complete_fight_phase()
             return
-        
+
         # Start alternating selection with opponent (non-current player)
         self.active_player = opponent_player
         self._request_unit_selection(current_player, opponent_player)
@@ -142,16 +156,18 @@ class FightPhaseManager:
             print(f"❌ {selected_unit.name} has no eligible targets")
             return
         
-        if len(eligible_targets) == 1:
-            # Only one target - proceed directly to fighting
-            print(f"🎯 {selected_unit.name} will fight {eligible_targets[0].name}")
-            ui_callback = getattr(self, 'on_movement_required', None)
-            self._execute_fight_sequence(selected_unit, eligible_targets[0], current_player, opponent_player, ui_callback)
+        # Always show target selection dialog, even for single targets
+        # This gives the user a chance to see what's happening and confirm the attack
+        print(f"🎯 {selected_unit.name} can fight {len(eligible_targets)} target(s): {[target.name for target in eligible_targets]}")
+        if self.on_target_selection_required:
+            self.on_target_selection_required(selected_unit, eligible_targets, self.active_player)
         else:
-            # Multiple targets - need target selection
-            print(f"🎯 {selected_unit.name} can fight multiple targets: {[target.name for target in eligible_targets]}")
-            if self.on_target_selection_required:
-                self.on_target_selection_required(selected_unit, eligible_targets, self.active_player)
+            # Fallback: if no target selection callback, auto-select all targets
+            print("⚠️ No target selection callback - auto-selecting all targets")
+            target_declarations = {}
+            for target in eligible_targets:
+                target_declarations[target] = []  # Empty list means all models attack this target
+            self.targets_selected(selected_unit, target_declarations, current_player, opponent_player)
     
     def targets_selected(self, fighting_unit: Unit, target_declarations: Dict[Unit, List['Model']], current_player: Player, opponent_player: Player) -> None:
         """Handle target selection and execute the fight sequence."""
@@ -193,22 +209,34 @@ class FightPhaseManager:
         def on_pile_in_complete(completed: bool):
             print(f"📍 {fighting_unit.name} pile-in completed: {completed}")
 
-            # Step 2: Make melee attacks
-            print(f"⚔️ {fighting_unit.name} makes melee attacks against {target_unit.name}")
-            # TODO: Implement proper melee attack resolution
+            # Step 2: Melee weapon selection
+            def on_weapon_selection_complete(weapon_declarations):
+                print(f"⚔️ {fighting_unit.name} weapon selection completed: {len(weapon_declarations)} weapons")
 
-            # Step 3: Consolidate using Individual Model Movement Dialog
-            def on_consolidate_complete(completed: bool):
-                print(f"🏃 {fighting_unit.name} consolidate completed: {completed}")
+                # Step 3: Resolve melee attacks
+                self._resolve_melee_attacks(fighting_unit, target_unit, weapon_declarations)
 
-                # Mark unit as having fought
-                self.fought_units.add(fighting_unit)
+                # Step 4: Consolidate using Individual Model Movement Dialog
+                def on_consolidate_complete(completed: bool):
+                    print(f"🏃 {fighting_unit.name} consolidate completed: {completed}")
 
-                # Switch to other player for next selection
-                self._switch_active_player(current_player, opponent_player)
+                    # Mark unit as having fought
+                    self.fought_units.add(fighting_unit)
 
-            # Show consolidate dialog
-            ui_callback('consolidate', fighting_unit, on_consolidate_complete)
+                    # Switch to other player for next selection
+                    self._switch_active_player(current_player, opponent_player)
+
+                # Show consolidate dialog
+                ui_callback('consolidate', fighting_unit, on_consolidate_complete)
+
+            # Show melee weapon selection dialog
+            if hasattr(self, 'on_weapon_selection_required') and self.on_weapon_selection_required:
+                self.on_weapon_selection_required(fighting_unit, target_unit, on_weapon_selection_complete)
+            else:
+                # Fallback: auto-select all melee weapons
+                print("⚠️ No weapon selection callback - auto-selecting all melee weapons")
+                weapon_declarations = self._auto_select_melee_weapons(fighting_unit)
+                on_weapon_selection_complete(weapon_declarations)
 
         # Show pile-in dialog
         ui_callback('pile_in', fighting_unit, on_pile_in_complete)
@@ -334,6 +362,96 @@ class FightPhaseManager:
     def is_complete(self) -> bool:
         """Check if the fight phase is complete."""
         return self.current_stage == FightStage.COMPLETE
+
+    def _resolve_melee_attacks(self, attacking_unit: Unit, target_unit: Unit, weapon_declarations: List) -> None:
+        """Resolve melee attacks with detailed output like shooting."""
+        print(f"⚔️ Resolving melee attacks: {attacking_unit.name} vs {target_unit.name}")
+
+        for declaration in weapon_declarations:
+            model = declaration.get('model')
+            weapon_profile = declaration.get('weapon_profile')
+
+            if not model or not weapon_profile:
+                continue
+
+            print(f"🗡️ {model.name} attacks with {weapon_profile.name}")
+
+            # Get number of attacks
+            attacks = weapon_profile.attacks
+            if isinstance(attacks, str):
+                # Handle dice notation like "D6" or "2D6"
+                from ..utility.dice import get_roll
+                attacks = get_roll(attacks)
+
+            print(f"🎲 Number of attacks: {attacks}")
+
+            # Roll to hit
+            hit_rolls = []
+            hits = 0
+            for i in range(attacks):
+                from ..utility.dice import get_roll
+                roll = get_roll("1D6")
+                hit_rolls.append(roll)
+                if roll >= weapon_profile.weapon_skill:
+                    hits += 1
+
+            print(f"🎯 Hit rolls: {hit_rolls} (WS {weapon_profile.weapon_skill}+) - {hits} hits")
+
+            if hits == 0:
+                print("❌ No hits - attack sequence ends")
+                continue
+
+            # Roll to wound
+            wound_rolls = []
+            wounds = 0
+            for i in range(hits):
+                from ..utility.dice import get_roll
+                roll = get_roll("1D6")
+                wound_rolls.append(roll)
+                # Simplified wound calculation - would need proper S vs T comparison
+                wound_target = 4  # Placeholder
+                if roll >= wound_target:
+                    wounds += 1
+
+            print(f"🩸 Wound rolls: {wound_rolls} (need {wound_target}+) - {wounds} wounds")
+
+            if wounds == 0:
+                print("❌ No wounds - attack sequence ends")
+                continue
+
+            # Apply damage
+            damage_per_wound = weapon_profile.damage
+            if isinstance(damage_per_wound, str):
+                from ..utility.dice import get_roll
+                damage_per_wound = get_roll(damage_per_wound)
+
+            total_damage = wounds * damage_per_wound
+            print(f"💥 {wounds} wounds × {damage_per_wound} damage = {total_damage} total damage")
+
+            # Apply damage to target unit
+            target_unit.take_damage(total_damage)
+            print(f"🎯 {target_unit.name} takes {total_damage} damage")
+
+    def _auto_select_melee_weapons(self, unit: Unit) -> List:
+        """Auto-select all available melee weapons for a unit."""
+        weapon_declarations = []
+
+        for model in unit.models:
+            if not model.is_alive:
+                continue
+
+            for wargear in model.wargear:
+                if hasattr(wargear, 'profiles'):
+                    for profile_name, profile in wargear.profiles.items():
+                        if hasattr(profile, 'is_melee_weapon') and profile.is_melee_weapon():
+                            weapon_declarations.append({
+                                'model': model,
+                                'weapon_profile': profile,
+                                'profile_name': profile_name
+                            })
+
+        print(f"🗡️ Auto-selected {len(weapon_declarations)} melee weapons for {unit.name}")
+        return weapon_declarations
     
     def get_stage_info(self, current_player: Player, opponent_player: Player) -> Dict:
         """Get information about the current stage for UI display."""

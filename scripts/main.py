@@ -256,20 +256,13 @@ def execute_human_turn(game: Game, player: Player, agents: dict, ui_interface=No
     player_num = 1 if player == game.players[0] else 2
     current_player_key = f'player{player_num}'
     
-    # For human players, we need to handle the fight phase specially
+    # For human players, the fight phase is handled by the UI system, not the agent
     if game.is_fight_phase():
-        # Execute the complete Fight Phase with proper two-stage structure
-        opponent = game.get_opponent()
-        
-        # Get the tactical agent for this player (even if human, we need it for fight phase logic)
-        tactical_agent = agents.get(f'ta{player_num}')
-        if tactical_agent:
-            tactical_agent.execute_fight_phase(player, opponent)
-            # Always advance phase after fight phase is complete
-            game.next_phase()
-        else:
-            # If no tactical agent, just advance the phase
-            game.next_phase()
+        # Human fight phase is handled through UI interactions (clicking units, dialogs, etc.)
+        # The phase will advance automatically when the fight phase is complete
+        # No need to call agent - the UI system handles everything
+        print(f"🎯 {player.name} fight phase - use UI to select units and fight")
+        return
     elif game.is_command_phase():
         # Execute command phase for human players (same as AI)
         game.start_command_phase()

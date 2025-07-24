@@ -229,12 +229,6 @@ class FightUnitSelectionDialog:
                 if unit.has_fight_first():
                     status_lines.append("⚡ Has Fight First ability")
             
-            # Engagement status
-            unit_position = unit.get_position()
-            if unit_position:
-                # Show that unit is eligible (engagement check is done by the game logic)
-                status_lines.append("🎯 In engagement range")
-            
             # Draw status lines
             for i, status_line in enumerate(status_lines):
                 status_surface = self.unit_info_font.render(status_line, True, health_color if i == 0 else TEXT_SECONDARY)

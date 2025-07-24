@@ -1878,19 +1878,23 @@ class Unit:
 
     def has_advance_and_charge(self) -> bool:
         """Check if the unit has an ability that allows charging after advancing.
-        
+
         This checks for unit abilities that allow charging after advancing,
         based on actual Warhammer 40k ability descriptions.
-        
+
         Returns:
             bool: True if the unit has an ability that allows charging after advancing
         """
         # Use cached result if available
         if 'advance_and_charge' in getattr(self, '_ability_cache', {}):
-            return self._ability_cache['advance_and_charge']
-        
+            cached_result = self._ability_cache['advance_and_charge']
+            print(f"🔍 {self.name} has_advance_and_charge (cached): {cached_result}")
+            return cached_result
+
+        print(f"🔍 {self.name} checking for advance and charge abilities...")
+
         # Look for patterns that match actual 40k ability descriptions
-        found, _ = self._find_ability_with_patterns([
+        found, matching_ability = self._find_ability_with_patterns([
             "eligible to declare a charge in a turn in which it advanced",
             "eligible to charge in a turn in which it advanced",
             "eligible to shoot and declare a charge in a turn in which it advanced",
@@ -1900,12 +1904,17 @@ class Unit:
             "that unit is eligible to shoot and declare a charge in a turn in which it advanced or fell back",
             "that unit is eligible to shoot and declare a charge in a turn in which it fell back or advanced"
         ])
-        
+
+        if found and matching_ability:
+            print(f"✅ {self.name} has advance and charge ability: {matching_ability.name if hasattr(matching_ability, 'name') else 'Unknown'}")
+        else:
+            print(f"❌ {self.name} does not have advance and charge ability")
+
         # Cache the result
         if not hasattr(self, '_ability_cache'):
             self._ability_cache = {}
         self._ability_cache['advance_and_charge'] = found
-        
+
         return found
 
     def has_fell_back_and_shoot(self) -> bool:
@@ -1989,13 +1998,15 @@ class Unit:
 
     def can_charge_after_advance(self) -> bool:
         """Check if this unit can charge after advancing.
-        
+
         A unit can charge after advancing if it has an ability that allows it.
-        
+
         Returns:
             bool: True if the unit can charge after advancing
         """
-        return self.has_advance_and_charge()
+        has_ability = self.has_advance_and_charge()
+        print(f"🔍 {self.name} can_charge_after_advance check: {has_ability}")
+        return has_ability
 
     def scout_move(self, destination: Tuple[float, float, float], game_map: 'Map') -> bool:
         """Execute a scout move for the unit during pre-battle rules phase.
@@ -3035,6 +3046,34 @@ class Unit:
         return len(self.models) > 0
 
 
+
+    def get_closest_model_position_to_target(self, target_position: Tuple[float, float, float]) -> Optional[Tuple[float, float, float]]:
+        """Get the position of the model closest to a target position.
+
+        Args:
+            target_position: (x, y, z) coordinates of the target
+
+        Returns:
+            Tuple[float, float, float]: Position of closest model or None if no alive models
+        """
+        closest_model = None
+        closest_distance = float('inf')
+
+        for model in self.models:
+            if not model.is_alive:
+                continue
+            model_pos = model.get_location()
+            if model_pos:
+                distance = get_dist(
+                    target_position[0] - model_pos[0],
+                    target_position[1] - model_pos[1],
+                    target_position[2] - model_pos[2] if len(model_pos) > 2 else 0
+                )
+                if distance < closest_distance:
+                    closest_distance = distance
+                    closest_model = model
+
+        return closest_model.get_location() if closest_model else None
 
     def is_point_inside(self, x, y):
         # Check if point is within any model's base

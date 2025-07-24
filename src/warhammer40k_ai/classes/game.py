@@ -1313,15 +1313,17 @@ class Game:
             if not enemy_unit.is_alive() or not enemy_unit.deployed:
                 continue
                 
-            enemy_pos = enemy_unit.get_position()
-            distance = get_dist(
-                position[0] - enemy_pos[0],
-                position[1] - enemy_pos[1],
-                position[2] - enemy_pos[2]
-            )
-            
-            if distance < 9.0:
-                return False
+            # Get position from closest model to the arrival position
+            enemy_pos = enemy_unit.get_closest_model_position_to_target(position)
+            if enemy_pos:
+                distance = get_dist(
+                    position[0] - enemy_pos[0],
+                    position[1] - enemy_pos[1],
+                    position[2] - enemy_pos[2]
+                )
+
+                if distance < 9.0:
+                    return False
         
         return True
     
@@ -1511,7 +1513,17 @@ class Game:
             # Set the battle round starting player to whoever goes first
             self.battle_round_starting_player_index = self.current_player_index
             self.phase = BattleRoundPhases.COMMAND_PHASE
-            print(f"🎉 Setup complete! {self.get_current_player().name} goes first")
+
+            # Show detailed first turn information
+            first_turn_player = self.get_current_player()
+            if self.first_turn_player_index == self.attacker_index:
+                role = "Attacker"
+            elif self.first_turn_player_index == self.defender_index:
+                role = "Defender"
+            else:
+                role = "Player"
+
+            print(f"🎉 Setup complete! {first_turn_player.name} ({role}) goes first")
             return True
         else:
             self.setup_phase = SetupPhase(next_phase_value)
@@ -1735,11 +1747,11 @@ class Game:
         if attacker_roll >= 4:
             # Attacker chooses who goes first
             self.first_turn_player_index = self.attacker_index  # For simplicity, attacker chooses themselves
-            print(f"✅ {attacker.name} goes first!")
+            print(f"✅ {attacker.name} goes first! (Attacker rolled {attacker_roll}, needed 4+)")
         else:
             # Defender goes first
             self.first_turn_player_index = self.defender_index
-            print(f"✅ {defender.name} goes first!")
+            print(f"✅ {defender.name} goes first! (Attacker rolled {attacker_roll}, needed 4+)")
         
         # Clear deployment actions since deployment phase is now complete
         self.clear_deployment_actions()

@@ -17,6 +17,7 @@ class IndividualModelMovementDialog(BaseDialog):
         self.movement_type = None  # 'move', 'advance', 'fall_back', 'scout', 'pile_in', 'consolidate', 'charge'
         self.game_map = None
         self.max_distance = 0.0
+        self.target_unit = None  # Target unit for charge movement
         
         # Model movement tracking
         self.model_movements = {}  # {model_index: {'path': [...], 'completed': bool}}
@@ -26,7 +27,7 @@ class IndividualModelMovementDialog(BaseDialog):
         # UI elements
         self.model_buttons = []
         
-    def show(self, unit, movement_type: str, callback: Callable, game_map, max_distance: float = None):
+    def show(self, unit, movement_type: str, callback: Callable, game_map, max_distance: float = None, target_unit=None):
         """Show the dialog for the given unit and movement type"""
 
         # Check if unit has already moved this round (prevent multiple movements)
@@ -44,6 +45,7 @@ class IndividualModelMovementDialog(BaseDialog):
         self.movement_type = movement_type
         self.game_map = game_map
         self.max_distance = max_distance or unit.movement
+        self.target_unit = target_unit
 
         # Reset movement tracking
         self.model_movements = {}
@@ -72,7 +74,9 @@ class IndividualModelMovementDialog(BaseDialog):
             # These are fight phase movements, different rules
             return False  # For now, allow these
         elif movement_type == 'charge':
-            return unit.round_state.declared_charge_this_round
+            # For charge movement, check if the unit has already completed charge movement
+            # A unit that has declared a charge should be allowed to perform the movement
+            return getattr(unit.round_state, 'charged_this_round', False)
         else:
             return unit.round_state.moved_this_round
         
@@ -84,6 +88,8 @@ class IndividualModelMovementDialog(BaseDialog):
         self.unit = None
         self.movement_type = None
         self.game_map = None
+        self.max_distance = 0.0
+        self.target_unit = None
         self.model_movements = {}
         self.selected_model_index = None
         self.awaiting_battlefield_click = False
@@ -348,69 +354,48 @@ class IndividualModelMovementDialog(BaseDialog):
             
         model = self.unit.models[model_index]
         
-        # Use the individual model movement pathfinding
-        from ...utility.calcs import get_individual_model_movement_path
-        from ...classes.unit import MovementAction
+        # Use unified pathfinding for ALL movement types
+        print(f"🔍 DEBUG: Using unified pathfinding for {model.name} with movement type {self.movement_type}")
+        from ...utility.calcs import unified_pathfinding, MovementType
 
-        # Map movement type string to MovementAction enum
-        movement_action_map = {
-            'move': MovementAction.MOVE,
-            'advance': MovementAction.ADVANCE,
-            'fall_back': MovementAction.FALL_BACK,
-            'charge': MovementAction.CHARGE,
-            'scout': MovementAction.MOVE,  # Scout uses normal movement rules
-            'pile_in': MovementAction.MOVE,  # Pile-in uses normal movement rules
-            'consolidate': MovementAction.MOVE  # Consolidate uses normal movement rules
+        # Get set of already-moved model indices
+        moved_models_in_unit = set()
+        for moved_index, movement_data in self.model_movements.items():
+            if movement_data.get('completed', False):
+                moved_models_in_unit.add(moved_index)
+
+        # Convert 2D target to 3D if needed
+        if len(destination) == 2:
+            target_3d = (destination[0], destination[1], model.model_base.z)
+        else:
+            target_3d = destination
+
+        # Map movement type to MovementType enum for pathfinding
+        movement_type_map = {
+            'move': MovementType.MOVE,
+            'advance': MovementType.ADVANCE,
+            'fall_back': MovementType.FALL_BACK,
+            'charge': MovementType.CHARGE,
+            'scout': MovementType.SCOUT,
+            'pile_in': MovementType.PILE_IN,
+            'consolidate': MovementType.CONSOLIDATE
         }
 
-        movement_action = movement_action_map.get(self.movement_type, MovementAction.MOVE)
+        pathfinding_movement_type = movement_type_map.get(self.movement_type, MovementType.MOVE)
+        print(f"🔍 DEBUG: Mapped {self.movement_type} to {pathfinding_movement_type}")
 
-        # Use movement-specific pathfinding based on movement type
-        if movement_action == MovementAction.CHARGE:
-            # Use charge-specific pathfinding that allows engagement range
-            from ...utility.calcs import get_charge_movement_path
-            path_result = get_charge_movement_path(
-                model, destination[:2], self.max_distance, self.game_map
-            )
-        else:
-            # Use unified pathfinding that accounts for already-moved models
-            from ...utility.calcs import unified_pathfinding, MovementType
-
-            # Get set of already-moved model indices
-            moved_models_in_unit = set()
-            for moved_index, movement_data in self.model_movements.items():
-                if movement_data.get('completed', False):
-                    moved_models_in_unit.add(moved_index)
-
-            # Convert 2D target to 3D if needed
-            if len(destination) == 2:
-                target_3d = (destination[0], destination[1], model.model_base.z)
-            else:
-                target_3d = destination
-
-            # Map movement type to MovementType enum for pathfinding
-            movement_type_map = {
-                'move': MovementType.MOVE,
-                'advance': MovementType.ADVANCE,
-                'fall_back': MovementType.FALL_BACK,
-                'scout': MovementType.SCOUT,
-                'pile_in': MovementType.PILE_IN,
-                'consolidate': MovementType.CONSOLIDATE
-            }
-
-            pathfinding_movement_type = movement_type_map.get(self.movement_type, MovementType.MOVE)
-
-            path_result = unified_pathfinding(
-                model=model,
-                target=target_3d,
-                movement_type=pathfinding_movement_type,
-                max_distance=self.max_distance,
-                game_map=self.game_map,
-                moved_models_in_unit=moved_models_in_unit
-            )
+        path_result = unified_pathfinding(
+            model=model,
+            target=target_3d,
+            movement_type=pathfinding_movement_type,
+            max_distance=self.max_distance,
+            game_map=self.game_map,
+            target_unit=self.target_unit,
+            moved_models_in_unit=moved_models_in_unit
+        )
 
         print(f"🔍 DEBUG: Pathfinding result for {model.name} to {destination}")
-        print(f"🔍 DEBUG: Path valid: {path_result['valid']}, movement_action: {movement_action}")
+        print(f"🔍 DEBUG: Path valid: {path_result['valid']}, movement_type: {pathfinding_movement_type}")
         print(f"🔍 DEBUG: Reason: {path_result['reason']}")
         if path_result['path']:
             print(f"🔍 DEBUG: Path length: {len(path_result['path'])}")
@@ -519,13 +504,15 @@ class IndividualModelMovementDialog(BaseDialog):
         print(f"✅ {self.unit.name} {self.movement_type} movement completed")
 
         # Set unit round state based on movement type
+        # NOTE: Scout movement happens before battle rounds, so it should NOT set round state flags
         if self.movement_type == 'advance':
             self.unit.round_state.advanced_this_round = True
         elif self.movement_type == 'fall_back':
             self.unit.round_state.fell_back_this_round = True
-        elif self.movement_type in ['move', 'scout', 'pile_in', 'consolidate', 'charge']:
+        elif self.movement_type in ['move', 'pile_in', 'consolidate', 'charge']:
             self.unit.round_state.moved_this_round = True
             self.unit.round_state.remained_stationary_this_round = False
+        # Scout movement does not set round state flags since it happens pre-battle
 
         # Call callback with completion status
         if self.callback:

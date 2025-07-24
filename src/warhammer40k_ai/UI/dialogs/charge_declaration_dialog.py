@@ -180,30 +180,40 @@ class ChargeDeclarationDialog:
     def _is_unit_eligible_to_charge(self) -> bool:
         """Check if the unit is eligible to declare a charge."""
         if not self.unit:
+            print(f"❌ Charge eligibility check failed: No unit selected")
             return False
-        
+
         # Check if unit has already charged this round
         if self.unit.round_state.declared_charge_this_round:
+            print(f"❌ {self.unit.name} charge eligibility: Already declared charge this round")
             return False
-        
+
         # Check if unit advanced this round (unless special abilities allow charging after advance)
         if self.unit.round_state.advanced_this_round:
-            if not self.unit.can_charge_after_advance():
+            can_charge_after_advance = self.unit.can_charge_after_advance()
+            print(f"🔍 {self.unit.name} advanced this round. Can charge after advance: {can_charge_after_advance}")
+            if not can_charge_after_advance:
+                print(f"❌ {self.unit.name} charge eligibility: Advanced this round and cannot charge after advancing")
                 return False
-        
+
         # Check if unit fell back this round (unless special abilities allow charging after fall back)
         if self.unit.round_state.fell_back_this_round:
+            print(f"❌ {self.unit.name} charge eligibility: Fell back this round and cannot charge")
             # TODO: Check for special abilities that allow charging after fall back
             return False
-        
+
         # Check if unit is already in engagement range
         if self.game_map:
             enemy_units = self.game_map.get_enemy_units(self.unit)
-            is_engaged = any(self.game_map.is_within_engagement_range(self.unit, enemy) 
+            is_engaged = any(self.game_map.is_within_engagement_range(self.unit, enemy)
                            for enemy in enemy_units if enemy.is_alive())
             if is_engaged:
+                engaged_enemies = [enemy.name for enemy in enemy_units
+                                 if enemy.is_alive() and self.game_map.is_within_engagement_range(self.unit, enemy)]
+                print(f"❌ {self.unit.name} charge eligibility: Already in engagement range of {', '.join(engaged_enemies)}")
                 return False
-        
+
+        print(f"✅ {self.unit.name} is eligible to charge")
         return True
     
     def _get_target_validation_info(self, target):

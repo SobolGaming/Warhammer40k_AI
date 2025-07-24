@@ -490,6 +490,24 @@ def unified_pathfinding(model: 'Model', target: Tuple[float, float, float], move
 
         print(f"🔍 DEBUG: Unified pathfinding for {model.name} to {target}, type: {movement_type}, max_dist: {max_distance}")
 
+        # Early distance check - if straight-line distance exceeds max_distance, no need to run pathfinding
+        current_pos = model.get_location()
+        if current_pos:
+            straight_line_distance = get_dist(
+                target[0] - current_pos[0],
+                target[1] - current_pos[1],
+                target[2] - current_pos[2] if len(target) > 2 and len(current_pos) > 2 else 0
+            )
+
+            if straight_line_distance > max_distance:
+                print(f"🔍 DEBUG: Early exit - straight-line distance {straight_line_distance:.1f}\" > max_distance {max_distance}\"")
+                return {
+                    'valid': False,
+                    'path': [],
+                    'distance': straight_line_distance,
+                    'reason': f'Target too far: {straight_line_distance:.1f}" > {max_distance}"'
+                }
+
         # Build collision trees based on movement type and unit capabilities
         collision_trees = build_collision_trees(model.parent_unit, movement_type, game_map,
                                                model, moved_models_in_unit, max_distance)
@@ -614,20 +632,34 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
     # Get enemy models with caching and spatial filtering
     enemy_cache_key = (id(game_map), moving_unit.faction, center_pos, search_radius)
 
+    print(f"🔍 DEBUG: Enemy cache key: map_id={id(game_map)}, faction={moving_unit.faction}, center={center_pos}, radius={search_radius}")
+    print(f"🔍 DEBUG: Cache has {len(_enemy_model_cache)} entries")
+
     if enemy_cache_key in _enemy_model_cache:
         enemy_models = _enemy_model_cache[enemy_cache_key]
         print(f"🔍 DEBUG: Using cached enemy models: {len(enemy_models)} models")
     else:
         all_enemy_models = []
+        print(f"🔍 DEBUG: Collecting enemy models for {moving_unit.name} (faction: {moving_unit.faction})")
+
         for unit in game_map.units:
             if not unit.is_alive() or not unit.deployed:
                 continue
             if unit.faction != moving_unit.faction:  # Enemy unit
+                print(f"🔍 DEBUG: Found enemy unit: {unit.name} (faction: {unit.faction})")
                 for model in unit.models:
                     if model.is_alive:
                         model_pos = (model.model_base.x, model.model_base.y)
+                        print(f"🔍 DEBUG: Enemy model {model.name} at {model_pos}")
                         if is_within_search_area(model_pos):
-                            all_enemy_models.append(model.model_base.get_base_shape())
+                            try:
+                                model_shape = model.model_base.get_base_shape()
+                                all_enemy_models.append(model_shape)
+                                print(f"🔍 DEBUG: Added enemy model {model.name} to collision detection")
+                            except Exception as e:
+                                print(f"❌ DEBUG: Failed to get shape for {model.name}: {e}")
+                        else:
+                            print(f"🔍 DEBUG: Enemy model {model.name} outside search area - skipped")
 
         enemy_models = all_enemy_models
         _enemy_model_cache[enemy_cache_key] = enemy_models
@@ -682,9 +714,26 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
     # Add engagement range buffers based on movement type
     if movement_type in [MovementType.MOVE, MovementType.ADVANCE]:
         # Standard movement: 1" engagement range buffer around enemy models
+        print(f"🔍 DEBUG: Building engagement buffer for {movement_type}")
+        print(f"🔍 DEBUG: Found {len(enemy_models)} enemy model shapes")
+
         if enemy_models:
-            buffered_enemies = [shape.buffer(ENGAGEMENT_RANGE_HORIZONTAL) for shape in enemy_models]
-            trees['engagement_buffer'] = STRtree(buffered_enemies)
+            buffered_enemies = []
+            for i, shape in enumerate(enemy_models):
+                try:
+                    buffered_shape = shape.buffer(ENGAGEMENT_RANGE_HORIZONTAL)
+                    buffered_enemies.append(buffered_shape)
+                    print(f"🔍 DEBUG: Buffered enemy model {i} by {ENGAGEMENT_RANGE_HORIZONTAL}\"")
+                except Exception as e:
+                    print(f"❌ DEBUG: Failed to buffer enemy model {i}: {e}")
+
+            if buffered_enemies:
+                trees['engagement_buffer'] = STRtree(buffered_enemies)
+                print(f"🔍 DEBUG: Created engagement_buffer STRTree with {len(buffered_enemies)} shapes")
+            else:
+                print(f"❌ DEBUG: No valid buffered enemy shapes - no engagement_buffer created")
+        else:
+            print(f"🔍 DEBUG: No enemy models found - no engagement_buffer created")
 
     elif movement_type == MovementType.SCOUT:
         # Scout movement: 9" buffer around enemy models and deployment zone
@@ -693,10 +742,10 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
             trees['engagement_buffer'] = STRtree(buffered_enemies)
 
         # Add deployment zone buffer (9" from enemy deployment zone)
-        enemy_deployment_zone = game_map.get_enemy_deployment_zone(moving_unit.faction)
-        if enemy_deployment_zone:
-            buffered_deployment = enemy_deployment_zone.buffer(9.0)
-            trees['deployment_buffer'] = STRtree([buffered_deployment])
+        # Note: Deployment zone validation is handled separately in the Game class
+        # For now, skip deployment zone buffer in pathfinding - this will be validated
+        # at a higher level by the scout movement validation in the Game class
+        pass
 
     elif movement_type == MovementType.FALL_BACK:
         # Fall back: can move through models, only terrain blocks
@@ -1174,17 +1223,36 @@ def is_position_valid_unified(position: Tuple[float, float, float], model: 'Mode
                 print(f"🔍 DEBUG: Position {position} blocked by enemy models (shape intersection: {len(actual_hits)} hits)")
                 return False
 
-    # Check engagement range buffer using shape intersection (for normal movement)
-    if collision_trees.get('engagement_buffer') and validation_rules.get('cannot_move_within_engagement_range', False):
-        potential_hits = query_spatial_index(collision_trees['engagement_buffer'], test_shape)
-        actual_hits = []
+    # Check engagement range using edge-to-edge distance (same method as engagement detection)
+    if validation_rules.get('cannot_move_within_engagement_range', False):
+        print(f"🔍 DEBUG: Checking engagement range for position {position} using edge-to-edge distance")
 
-        for hit_shape in potential_hits:
-            if test_shape.intersects(hit_shape):
-                actual_hits.append(hit_shape)
+        # Create a temporary model base at the test position to check engagement range
+        from ..utility.model_base import Base, BaseType
+        temp_base = Base(BaseType.ROUND, 25)  # Use same base type as the moving model
+        temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
 
-        if actual_hits:
-            print(f"🔍 DEBUG: Position {position} blocked by engagement range (shape intersection: {len(actual_hits)} hits)")
+        # Check against all enemy models using the same method as is_within_engagement_range
+        moving_unit = model.parent_unit
+        blocked = False
+        for unit in game_map.units:
+            if unit.faction != moving_unit.faction and unit.is_alive() and unit.deployed:
+                for enemy_model in unit.models:
+                    if enemy_model.is_alive:
+                        # Calculate edge-to-edge distance (same as engagement detection)
+                        horizontal_distance = temp_base.edge_to_edge_distance(enemy_model.model_base)
+                        vertical_distance = temp_base.vertical_distance(enemy_model.model_base)
+
+                        if (horizontal_distance <= ENGAGEMENT_RANGE_HORIZONTAL and
+                            vertical_distance <= 5.0):  # 5" vertical engagement range
+                            print(f"🔍 DEBUG: Position {position} blocked by engagement range")
+                            print(f"🔍 DEBUG: Distance to {enemy_model.name}: {horizontal_distance:.2f}\" horizontal, {vertical_distance:.2f}\" vertical")
+                            blocked = True
+                            break
+                if blocked:
+                    break
+
+        if blocked:
             return False
 
     # Check scout-specific deployment buffers using shape intersection
@@ -1304,29 +1372,33 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
             if actual_hits:
                 return {'valid': False, 'reason': 'Position blocked by enemy models'}
 
-    # Check engagement range buffer using shape intersection
-    if collision_trees.get('engagement_buffer') and validation_rules.get('cannot_move_within_engagement_range', False):
-        potential_hits = query_spatial_index(collision_trees['engagement_buffer'], test_shape)
-        actual_hits = []
+    # Check engagement range using edge-to-edge distance (same method as engagement detection)
+    if validation_rules.get('cannot_move_within_engagement_range', False):
+        print(f"🔍 DEBUG: Final position validation - checking engagement range for {position} using edge-to-edge distance")
 
-        for hit_shape in potential_hits:
-            if test_shape.intersects(hit_shape):
-                actual_hits.append(hit_shape)
+        # Create a temporary model base at the test position to check engagement range
+        from ..utility.model_base import Base, BaseType
+        temp_base = Base(BaseType.ROUND, 25)  # Use same base type as the moving model
+        temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
 
-        if actual_hits:
-            return {'valid': False, 'reason': 'Position within engagement range of enemy models'}
+        # Check against all enemy models using the same method as is_within_engagement_range
+        moving_unit = model.parent_unit
+        for unit in game_map.units:
+            if unit.faction != moving_unit.faction and unit.is_alive() and unit.deployed:
+                for enemy_model in unit.models:
+                    if enemy_model.is_alive:
+                        # Calculate edge-to-edge distance (same as engagement detection)
+                        horizontal_distance = temp_base.edge_to_edge_distance(enemy_model.model_base)
+                        vertical_distance = temp_base.vertical_distance(enemy_model.model_base)
 
-    # Check scout-specific deployment buffers using shape intersection
-    if collision_trees.get('deployment_buffer'):
-        potential_hits = query_spatial_index(collision_trees['deployment_buffer'], test_shape)
-        actual_hits = []
+                        if (horizontal_distance <= ENGAGEMENT_RANGE_HORIZONTAL and
+                            vertical_distance <= 5.0):  # 5" vertical engagement range
+                            print(f"🔍 DEBUG: Final position REJECTED due to engagement range")
+                            print(f"🔍 DEBUG: Distance to {enemy_model.name}: {horizontal_distance:.2f}\" horizontal, {vertical_distance:.2f}\" vertical")
+                            return {'valid': False, 'reason': 'Position within engagement range of enemy models'}
 
-        for hit_shape in potential_hits:
-            if test_shape.intersects(hit_shape):
-                actual_hits.append(hit_shape)
-
-        if actual_hits:
-            return {'valid': False, 'reason': 'Position within deployment zone buffer'}
+    # Note: Deployment zone validation for scout movement is handled at a higher level
+    # by the Game class validation methods, not in the pathfinding system
 
     return {'valid': True, 'reason': 'Position is valid'}
 
@@ -2658,25 +2730,7 @@ def a_star_optimized_enhanced(model: 'Model', game_map: 'Map', target: Tuple[flo
     return None  # No path found
 
 
-def get_charge_movement_path(moving_model: 'Model', target_position: tuple,
-                           max_distance: float, game_map: 'Map', target_unit: 'Unit' = None) -> dict:
-    """
-    Get a movement path for charge actions using the unified pathfinding system.
-    """
-    # Convert 2D target to 3D if needed
-    if len(target_position) == 2:
-        target_3d = (target_position[0], target_position[1], moving_model.model_base.z)
-    else:
-        target_3d = target_position
 
-    return unified_pathfinding(
-        model=moving_model,
-        target=target_3d,
-        movement_type=MovementType.CHARGE,
-        max_distance=max_distance,
-        game_map=game_map,
-        target_unit=target_unit
-    )
 
 
 def get_movement_path_preview(moving_model: 'Model', target_position: tuple,

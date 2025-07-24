@@ -117,16 +117,16 @@ class BaseDialog(ABC):
 
         # Debug: Log all events handled by this dialog
         dialog_name = self.__class__.__name__
-        if event.type == pygame.KEYDOWN:
-            print(f"🔍 DEBUG: {dialog_name}.handle_event - KEYDOWN: key={pygame.key.name(event.key)}")
-        elif event.type == pygame.MOUSEBUTTONDOWN:
-            print(f"🔍 DEBUG: {dialog_name}.handle_event - MOUSEBUTTONDOWN: button={event.button}, pos={event.pos}")
-        elif event.type == pygame.MOUSEBUTTONUP:
-            print(f"🔍 DEBUG: {dialog_name}.handle_event - MOUSEBUTTONUP: button={event.button}, pos={event.pos}")
-        elif event.type == pygame.MOUSEMOTION:
-            print(f"🔍 DEBUG: {dialog_name}.handle_event - MOUSEMOTION: pos={event.pos}")
-        else:
-            print(f"🔍 DEBUG: {dialog_name}.handle_event - OTHER: type={event.type}")
+        # if event.type == pygame.KEYDOWN:
+        #     print(f"🔍 DEBUG: {dialog_name}.handle_event - KEYDOWN: key={pygame.key.name(event.key)}")
+        # elif event.type == pygame.MOUSEBUTTONDOWN:
+        #     print(f"🔍 DEBUG: {dialog_name}.handle_event - MOUSEBUTTONDOWN: button={event.button}, pos={event.pos}")
+        # elif event.type == pygame.MOUSEBUTTONUP:
+        #     print(f"🔍 DEBUG: {dialog_name}.handle_event - MOUSEBUTTONUP: button={event.button}, pos={event.pos}")
+        # elif event.type == pygame.MOUSEMOTION:
+        #     print(f"🔍 DEBUG: {dialog_name}.handle_event - MOUSEMOTION: pos={event.pos}")
+        # else:
+        #     print(f"🔍 DEBUG: {dialog_name}.handle_event - OTHER: type={event.type}")
 
         # Handle ESC key to close dialog
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
