@@ -2611,6 +2611,11 @@ class BattlePhaseHandler(BasePhaseHandler):
             self.game_view.coherency_violation_dialog.visible):
             return self.game_view.coherency_violation_dialog.handle_event(event)
         
+        # Handle keyboard events
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_SPACE:
+                return self._handle_space_key()
+
         # Handle mouse events
         if event.type == pygame.MOUSEBUTTONDOWN:
             return self._handle_battle_click(event.pos, event.button)
@@ -2618,9 +2623,30 @@ class BattlePhaseHandler(BasePhaseHandler):
             return self._handle_battle_motion(event.pos)
         elif event.type == pygame.MOUSEBUTTONUP:
             return self._handle_battle_release(event.pos, event.button)
-        
+
         return False
-    
+
+    def _handle_space_key(self) -> bool:
+        """Handle SPACE key for manual phase advancement"""
+        current_phase = self.game.phase
+
+        # Fight phase - check if we can skip/complete it
+        if current_phase.name == 'FIGHT_PHASE':
+            if self.fight_phase_manager and not self.fight_phase_manager.is_complete():
+                # Force complete the fight phase
+                print("⏭️ Manually completing fight phase...")
+                self.fight_phase_manager._complete_fight_phase()
+                return True
+            else:
+                # Fight phase already complete, advance to next phase
+                print("⏭️ Fight phase complete, advancing to next phase...")
+                return False  # Let main loop advance phase
+
+        # For other phases, let main loop handle advancement
+        else:
+            print(f"⏭️ Manually advancing {current_phase.name}...")
+            return False  # Let main loop advance phase
+
     def _handle_battle_click(self, mouse_pos, button) -> bool:
         """Handle battlefield clicks during battle phases"""
         x, y = mouse_pos
@@ -2668,27 +2694,6 @@ class BattlePhaseHandler(BasePhaseHandler):
                 self.game_view.detailed_unit = hovered_unit
                 self.game_view.detail_panel_pos = (x, y)
                 return True
-
-        # Handle SPACE key for manual phase advancement
-        if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
-            current_phase = self.game.phase
-
-            # Fight phase - check if we can skip/complete it
-            if current_phase.name == 'FIGHT_PHASE':
-                if self.fight_phase_manager and not self.fight_phase_manager.is_complete():
-                    # Force complete the fight phase
-                    print("⏭️ Manually completing fight phase...")
-                    self.fight_phase_manager._complete_fight_phase()
-                    return True
-                else:
-                    # Fight phase already complete, advance to next phase
-                    print("⏭️ Fight phase complete, advancing to next phase...")
-                    return False  # Let main loop advance phase
-
-            # For other phases, let main loop handle advancement
-            else:
-                print(f"⏭️ Manually advancing {current_phase.name}...")
-                return False  # Let main loop advance phase
 
         return False
     

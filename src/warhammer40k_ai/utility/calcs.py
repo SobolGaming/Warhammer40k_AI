@@ -1511,27 +1511,27 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
         if not target_unit:
             return {'valid': False, 'reason': 'No target unit specified for charge'}
 
-        # Check if final position is within engagement range of target unit using shape intersection
-        # Create the moving model's base shape at the final position
-        current_pos = model.get_location()
-        dx = position[0] - current_pos[0]
-        dy = position[1] - current_pos[1]
-
-        moving_model_shape = model.model_base.get_base_shape()
-        final_shape = translate(moving_model_shape, dx, dy)
+        # Check if final position is within engagement range of target unit using edge-to-edge distance
+        # Create a temporary model base at the final position to check engagement range
+        from ..utility.model_base import Base, BaseType
+        temp_base = Base(BaseType.ROUND, 25)  # Use same base type as the moving model
+        temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
 
         in_engagement_range = False
         for enemy_model in target_unit.models:
             if not enemy_model.is_alive:
                 continue
 
-            # Get enemy model shape and buffer by engagement range
-            enemy_shape = enemy_model.model_base.get_base_shape()
-            engagement_zone = enemy_shape.buffer(ENGAGEMENT_RANGE_HORIZONTAL)
+            # Calculate edge-to-edge distance (same as engagement detection)
+            horizontal_distance = temp_base.edge_to_edge_distance(enemy_model.model_base)
+            vertical_distance = temp_base.vertical_distance(enemy_model.model_base)
 
-            # Check if final position intersects with engagement zone
-            if final_shape.intersects(engagement_zone):
+            # Check if within engagement range using same method as engagement detection
+            if (horizontal_distance <= ENGAGEMENT_RANGE_HORIZONTAL and
+                vertical_distance <= 5.0):  # 5" vertical engagement range
                 in_engagement_range = True
+                print(f"🔍 DEBUG: Charge validation - {model.name} within engagement range of {enemy_model.name}")
+                print(f"🔍 DEBUG: Distance: {horizontal_distance:.2f}\" horizontal, {vertical_distance:.2f}\" vertical")
                 break
 
         if not in_engagement_range:
@@ -1539,14 +1539,11 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
 
     # Check fall back rules
     if validation_rules.get('cannot_end_in_engagement_range', False):
-        # Check if final position is within engagement range of any enemy using shape intersection
-        # Create the moving model's base shape at the final position
-        current_pos = model.get_location()
-        dx = position[0] - current_pos[0]
-        dy = position[1] - current_pos[1]
-
-        moving_model_shape = model.model_base.get_base_shape()
-        final_shape = translate(moving_model_shape, dx, dy)
+        # Check if final position is within engagement range of any enemy using edge-to-edge distance
+        # Create a temporary model base at the final position to check engagement range
+        from ..utility.model_base import Base, BaseType
+        temp_base = Base(BaseType.ROUND, 25)  # Use same base type as the moving model
+        temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
 
         # Check against all enemy models using proper edge-to-edge distance
         for unit in game_map.units:
@@ -1556,12 +1553,15 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
                 if not enemy_model.is_alive:
                     continue
 
-                # Get enemy model shape and buffer by engagement range
-                enemy_shape = enemy_model.model_base.get_base_shape()
-                engagement_zone = enemy_shape.buffer(ENGAGEMENT_RANGE_HORIZONTAL)
+                # Calculate edge-to-edge distance (same as engagement detection)
+                horizontal_distance = temp_base.edge_to_edge_distance(enemy_model.model_base)
+                vertical_distance = temp_base.vertical_distance(enemy_model.model_base)
 
-                # Check if final position intersects with engagement zone
-                if final_shape.intersects(engagement_zone):
+                # Check if within engagement range using same method as engagement detection
+                if (horizontal_distance <= ENGAGEMENT_RANGE_HORIZONTAL and
+                    vertical_distance <= 5.0):  # 5" vertical engagement range
+                    print(f"🔍 DEBUG: Fall back validation - {model.name} would end within engagement range of {enemy_model.name}")
+                    print(f"🔍 DEBUG: Distance: {horizontal_distance:.2f}\" horizontal, {vertical_distance:.2f}\" vertical")
                     return {'valid': False, 'reason': 'Fall back cannot end within engagement range'}
 
     # Check pile-in/consolidate rules
@@ -1576,15 +1576,22 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
     # Check scout rules
     if validation_rules.get('min_distance_from_enemies', 0) > 0:
         min_distance = validation_rules['min_distance_from_enemies']
+        # Create a temporary model base at the final position to check distance
+        from ..utility.model_base import Base, BaseType
+        temp_base = Base(BaseType.ROUND, 25)  # Use same base type as the moving model
+        temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
+
         for unit in game_map.units:
             if unit.faction == model.parent_unit.faction or not unit.is_alive() or not unit.deployed:
                 continue
             for enemy_model in unit.models:
                 if not enemy_model.is_alive:
                     continue
-                enemy_pos = enemy_model.get_location()
-                distance = ((position[0] - enemy_pos[0])**2 + (position[1] - enemy_pos[1])**2)**0.5
+                # Use edge-to-edge distance for accurate measurement
+                distance = temp_base.edge_to_edge_distance(enemy_model.model_base)
                 if distance < min_distance:
+                    print(f"🔍 DEBUG: Scout validation - {model.name} too close to {enemy_model.name}")
+                    print(f"🔍 DEBUG: Distance: {distance:.2f}\" (minimum required: {min_distance}\")")
                     return {'valid': False, 'reason': f'Scout movement must end {min_distance}" from enemies'}
 
     return {'valid': True, 'reason': 'Valid final position'}
