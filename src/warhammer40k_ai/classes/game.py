@@ -923,12 +923,20 @@ class Game:
                 unit.take_battle_shock_test(self.turn)
 
         # Update and evaluate objectives for the current player
-        for obj in self.map.objectives:
-            if hasattr(obj, 'location') and hasattr(obj.location, 'update_control'):
-                obj.location.update_control(self)
-            if obj.check_completion(self):
-                current_player.add_score(obj.points)
-                print(f"🎯 {current_player.name} scored {obj.points} points for {obj.name}!")
+        # NOTE: Objectives cannot grant points until the 2nd battle round
+        if self.can_score_objectives():
+            for obj in self.map.objectives:
+                if hasattr(obj, 'location') and hasattr(obj.location, 'update_control'):
+                    obj.location.update_control(self)
+                if obj.check_completion(self):
+                    current_player.add_score(obj.points)
+                    print(f"🎯 {current_player.name} scored {obj.points} points for {obj.name}!")
+        else:
+            # Still update objective control for tracking purposes, but don't award points
+            for obj in self.map.objectives:
+                if hasattr(obj, 'location') and hasattr(obj.location, 'update_control'):
+                    obj.location.update_control(self)
+            print(f"📋 Battle Round {self.get_battle_round()}: Objectives updated but no points awarded (scoring starts in Battle Round 2)")
 
     def is_movement_phase(self) -> bool:
         return self.phase == BattleRoundPhases.MOVEMENT_PHASE
@@ -941,6 +949,25 @@ class Game:
 
     def is_fight_phase(self) -> bool:
         return self.phase == BattleRoundPhases.FIGHT_PHASE
+
+    def can_score_objectives(self) -> bool:
+        """Check if objectives can grant points in the current battle round.
+
+        According to Warhammer 40k rules, objectives cannot grant points until
+        the 2nd battle round.
+
+        Returns:
+            bool: True if objectives can grant points, False otherwise
+        """
+        return self.turn >= 2
+
+    def get_battle_round(self) -> int:
+        """Get the current battle round number.
+
+        Returns:
+            int: Current battle round (1-based)
+        """
+        return self.turn
 
     def is_game_over(self) -> bool:
         if self.turn > TOTAL_ROUNDS:
