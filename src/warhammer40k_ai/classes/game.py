@@ -1577,7 +1577,7 @@ class Game:
         # Load armies for both players
         from ..classes.army import parse_army_list
         from ..waha_helper import WahaHelper
-        
+
         waha_helper = WahaHelper()
         
         if len(self.players) >= 2:
