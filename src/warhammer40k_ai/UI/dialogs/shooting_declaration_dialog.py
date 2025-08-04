@@ -1,5 +1,6 @@
 import pygame
 from typing import List
+from .base_dialog import BaseDialog
 
 # Enhanced Colors
 PANEL_BG = (50, 50, 50)
@@ -12,20 +13,15 @@ TEXT_SECONDARY = (200, 200, 200)
 TEXT_ACCENT = (100, 149, 237)  # Blue accent color for keywords
 
 
-class ShootingDeclarationDialog:
+class ShootingDeclarationDialog(BaseDialog):
     """
     Advanced shooting declaration dialog that allows players to declare multiple weapons
     and targets before executing all shooting simultaneously.
     """
     
     def __init__(self, screen_width: int, screen_height: int):
-        self.screen_width = screen_width
-        self.screen_height = screen_height
-        self.width = 625  # Increased from 500 (25% wider)
-        self.height = 600
-        self.x = 50
-        self.y = 50
-        self.visible = False
+        # Initialize BaseDialog with draggable functionality
+        super().__init__(screen_width, screen_height, width=625, height=600, draggable=True)
         
         # Unit and callback
         self.unit = None
@@ -65,11 +61,12 @@ class ShootingDeclarationDialog:
     
     def show(self, unit, callback, game_map=None, game_view=None):
         """Show the shooting declaration dialog."""
+        # Call parent show method
+        super().show(callback)
+
         self.unit = unit
-        self.callback = callback
         self.game_map = game_map
         self.game_view = game_view
-        self.visible = True
         
         # Clear previous state
         self.weapon_declarations = []
@@ -99,9 +96,50 @@ class ShootingDeclarationDialog:
         # Calculate initial max scroll
         self.max_scroll = self.get_max_scroll()
 
+        # Create buttons using BaseDialog button system
+        self._create_dialog_buttons()
+
         print(f"🎯 ShootingDeclarationDialog shown for {unit.name}")
         print(f"🎯 Found {len(self.available_weapons)} available weapons")
         print(f"🎯 Found {len(self.available_targets)} available targets")
+
+    def _create_dialog_buttons(self):
+        """Create the Execute and Cancel buttons using BaseDialog button system"""
+        # Add Execute button
+        self.add_button('execute', 10, self.height - 50, 200, 35)
+
+        # Add Cancel button
+        self.add_button('cancel', self.width - 160, self.height - 50, 140, 35)
+
+    def _handle_button_click(self, button_name: str) -> bool:
+        """Handle button click events from BaseDialog"""
+        if button_name == 'execute':
+            self.execute_shooting()
+            return True
+        elif button_name == 'cancel':
+            print("✅ Cancel button clicked")
+            self.hide()
+            return True
+        return False
+
+    def _handle_dialog_click(self, mouse_pos) -> bool:
+        """Handle clicks within dialog area"""
+        x, y = mouse_pos
+
+        # Convert to dialog-relative coordinates, accounting for title bar
+        relative_x = x - self.x
+        content_y = self.title_bar_height if self.draggable else 0
+        relative_y = y - self.y - content_y
+
+        # Handle weapon selection clicks
+        if self._handle_weapon_click(relative_x, relative_y):
+            return True
+
+        # Handle declaration list clicks (to remove declarations)
+        if self._handle_declaration_click(relative_x, relative_y):
+            return True
+
+        return False
     
     def hide(self):
         """Hide the shooting declaration dialog."""
@@ -277,6 +315,26 @@ class ShootingDeclarationDialog:
                             models.append(model)
                             break
         return models
+
+    def _get_model_for_weapon_instance(self, weapon_profile, weapon_instance):
+        """Get the specific model assigned to a weapon instance.
+
+        For individual weapon instances (e.g., "Ectoplasma cannon #2"), this ensures
+        each declaration uses only one model, preventing multiple attacks per declaration.
+
+        Args:
+            weapon_profile: The weapon profile to find models for
+            weapon_instance: The weapon instance number (1-based)
+
+        Returns:
+            List containing a single model, or empty list if no models available
+        """
+        models_with_weapon = self._get_models_with_weapon(weapon_profile)
+        if models_with_weapon:
+            # Use modulo to cycle through available models for multiple weapon instances
+            model_index = (weapon_instance - 1) % len(models_with_weapon)
+            return [models_with_weapon[model_index]]
+        return []
     
     def handle_event(self, event):
         """Handle pygame events"""
@@ -292,51 +350,30 @@ class ShootingDeclarationDialog:
                 self.clear_targeting_mode()
                 return True
             return False  # Let other handlers (like battle phase) handle targeting clicks
-        
-        # Normal dialog event handling when visible and not in targeting mode
-        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            return self.handle_click(event.pos)
-        elif event.type == pygame.MOUSEMOTION:
-            self.update_hover(event.pos)
-        elif event.type == pygame.MOUSEBUTTONDOWN and event.button in (4, 5):  # Mouse wheel
+
+        # Handle mouse wheel scrolling
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button in (4, 5):  # Mouse wheel
             if event.button == 4:  # Scroll up
                 self.scroll_offset = max(0, self.scroll_offset - 50)
             else:  # Scroll down
                 self.scroll_offset = min(self.get_max_scroll(), self.scroll_offset + 50)
+            return True
+
+        # Handle mouse motion for hover updates
+        if event.type == pygame.MOUSEMOTION:
+            self.update_hover(event.pos)
+            return True  # Consume mouse motion events
+
+        # Let BaseDialog handle other events (dragging, button clicks, etc.)
+        result = super().handle_event(event)
         
-        return True  # Consume events when dialog is visible
+        # Ensure all events are consumed when dialog is visible
+        if self.visible:
+            return True
+        
+        return result
     
-    def handle_click(self, mouse_pos):
-        """Handle mouse clicks in the dialog."""
-        x, y = mouse_pos
-        
-        # Convert to dialog-relative coordinates
-        relative_x = x - self.x
-        relative_y = y - self.y
-        
-        # Check if click is outside dialog
-        if relative_x < 0 or relative_x > self.width or relative_y < 0 or relative_y > self.height:
-            # Click outside dialog
-            if self.is_targeting_mode:
-                print("🎯 [handle_click] Clearing targeting mode")
-                self.clear_targeting_mode()
-            else:
-                self.hide()
-            return True
-        
-        # Handle weapon selection clicks
-        if self._handle_weapon_click(relative_x, relative_y):
-            return True
-        
-        # Handle declaration list clicks (to remove declarations)
-        if self._handle_declaration_click(relative_x, relative_y):
-            return True
-        
-        # Handle button clicks
-        if self._handle_button_click(relative_x, relative_y):
-            return True
-        
-        return True
+
     
     def _handle_weapon_click(self, x, y):
         """Handle clicks on the weapons list."""
@@ -349,7 +386,7 @@ class ShootingDeclarationDialog:
         
         # Calculate which weapon was clicked
         relative_y = y - weapon_list_y + self.scroll_offset
-        weapon_index = relative_y // 50  # 50 pixels per weapon
+        weapon_index = relative_y // 60  # 60 pixels per weapon (matches drawing)
         
         available_weapons = self._get_available_weapons()
         if 0 <= weapon_index < len(available_weapons):
@@ -359,8 +396,14 @@ class ShootingDeclarationDialog:
             # Check if this is a click on the expand/collapse button
             if weapon_info.get('is_group', False):
                 # Check if click is on the expand/collapse button area (right side)
-                button_x = self.width - 40  # 40 pixels from right edge
-                if x >= button_x:
+                button_x = self.width - 35  # 35 pixels from right edge (matches drawing position)
+                weapon_y = weapon_list_y + weapon_index * 60  # 60 pixels per weapon row (matches drawing)
+                button_y = weapon_y + 5  # 5 pixels from top of weapon row
+                button_size = 20  # 20x20 pixel button
+                
+                # Check if click is within the button bounds
+                if (button_x <= x <= button_x + button_size and 
+                    button_y <= y <= button_y + button_size):
                     group_id = weapon_info['group_id']
                     self._toggle_weapon_group_expansion(group_id)
                     print(f"🔄 Toggled weapon group expansion for {weapon_profile.parent_wargear.name}")
@@ -441,35 +484,9 @@ class ShootingDeclarationDialog:
         
         return False
     
-    def _handle_button_click(self, x, y):
-        """Handle clicks on buttons"""
-        # Execute button
-        execute_x = 10
-        execute_y = self.height - 50
-        execute_width = 200
-        execute_height = 35
-        
-        if (execute_x <= x <= execute_x + execute_width and 
-            execute_y <= y <= execute_y + execute_height):
-            self.execute_shooting()
-            return True
-        
-        # Cancel button
-        cancel_x = self.width - 160
-        cancel_y = self.height - 50
-        cancel_width = 140
-        cancel_height = 35
-        
-        if (cancel_x <= x <= cancel_x + cancel_width and 
-            cancel_y <= y <= cancel_y + cancel_height):
-            print("✅ Cancel button clicked")
-            self.hide()
-            return True
-        
-        print(f"❌ Button click not detected at ({x}, {y})")
-        print(f"   Dialog bounds: ({self.x}, {self.y}) to ({self.x + self.width}, {self.y + self.height})")
-        print(f"   Execute button: ({execute_x}, {execute_y}) to ({execute_x + execute_width}, {execute_y + execute_height})")
-        print(f"   Cancel button: ({cancel_x}, {cancel_y}) to ({cancel_x + cancel_width}, {cancel_y + cancel_height})")
+    def _handle_legacy_button_click(self, x, y):
+        """Legacy button click handler - now handled by BaseDialog"""
+        # This method is no longer used since we're using BaseDialog button system
         return False
     
     def get_max_scroll(self):
@@ -497,8 +514,9 @@ class ShootingDeclarationDialog:
         
         # Update weapon hover
         self.hovered_weapon = -1
+        content_y = self.title_bar_height if self.draggable else 0
         weapons_x = self.x + 10
-        weapons_y = self.y + 80  # Don't add scroll_offset here - it's for drawing only
+        weapons_y = self.y + content_y + 80  # Account for title bar height
         weapons_width = self.width - 20
         weapons_height = 200
         
@@ -506,7 +524,7 @@ class ShootingDeclarationDialog:
             weapons_y <= y <= weapons_y + weapons_height):
             # Account for scroll offset in the relative calculation
             relative_y = (y - weapons_y) - self.scroll_offset
-            weapon_index = relative_y // 50
+            weapon_index = relative_y // 60  # 60 pixels per weapon (matches drawing)
             if 0 <= weapon_index < len(self.available_weapons):
                 self.hovered_weapon = weapon_index
     
@@ -537,37 +555,35 @@ class ShootingDeclarationDialog:
         """Draw the shooting declaration dialog"""
         if not self.visible:
             return
-        
-        # Create surface for dialog
-        dialog_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
-        
-        # Draw background
-        pygame.draw.rect(dialog_surface, self.bg_color, (0, 0, self.width, self.height))
-        pygame.draw.rect(dialog_surface, self.border_color, (0, 0, self.width, self.height), 2)
-        
-        # Draw title
-        font_large = pygame.font.Font(None, 24)
+
+        # Draw dialog background using BaseDialog
+        self.draw_dialog_background(screen)
+
+        # Draw title bar (draggable)
         title_text = f"Shooting Declaration - {self.unit.name}"
-        title_surface = font_large.render(title_text, True, self.text_color)
-        dialog_surface.blit(title_surface, (10, 10))
-        
+        self.draw_title_bar(screen, title_text)
+
         # Draw instructions
-        font_small = pygame.font.Font(None, 16)
         instructions = "Select a weapon to target, or click Execute to resolve shooting"
-        instructions_surface = font_small.render(instructions, True, self.text_color)
-        dialog_surface.blit(instructions_surface, (10, 40))
-        
+        self.draw_instructions(screen, instructions)
+
+        # Create surface for dialog content (excluding title bar)
+        content_y = self.title_bar_height if self.draggable else 0
+        content_height = self.height - content_y
+        dialog_surface = pygame.Surface((self.width, content_height), pygame.SRCALPHA)
+
         # Draw weapons list
-        self._draw_weapons_list(dialog_surface, font_large, font_small)
-        
+        self._draw_weapons_list(dialog_surface, self.font_medium, self.font_small)
+
         # Draw declarations list
-        self._draw_declarations_list(dialog_surface, font_large, font_small)
-        
-        # Draw buttons
-        self._draw_buttons(dialog_surface, font_large)
-        
-        # Draw dialog on screen
-        screen.blit(dialog_surface, (self.x, self.y))
+        self._draw_declarations_list(dialog_surface, self.font_medium, self.font_small)
+
+        # Draw buttons using BaseDialog
+        self.draw_button(screen, 'execute', "Execute Shooting")
+        self.draw_button(screen, 'cancel', "Cancel")
+
+        # Draw content on screen
+        screen.blit(dialog_surface, (self.x, self.y + content_y))
     
     def _draw_weapons_list(self, screen, font_large, font_small):
         """Draw the available weapons list"""
@@ -742,35 +758,7 @@ class ShootingDeclarationDialog:
             text_surface = font_small.render(declaration_text, True, self.text_color)
             screen.blit(text_surface, (x + 5, declaration_y + 5))
     
-    def _draw_buttons(self, screen, font_large):
-        """Draw the dialog buttons"""
-        # Execute button (relative to dialog surface, not screen)
-        execute_x = 10
-        execute_y = self.height - 50
-        execute_width = 200
-        execute_height = 35
-        
-        pygame.draw.rect(screen, self.button_color, (execute_x, execute_y, execute_width, execute_height))
-        pygame.draw.rect(screen, self.border_color, (execute_x, execute_y, execute_width, execute_height), 2)
-        
-        execute_text = "Execute Shooting"
-        execute_surface = font_large.render(execute_text, True, self.text_color)
-        text_rect = execute_surface.get_rect(center=(execute_x + execute_width//2, execute_y + execute_height//2))
-        screen.blit(execute_surface, text_rect)
-        
-        # Cancel button (relative to dialog surface, not screen)
-        cancel_x = self.width - 160
-        cancel_y = self.height - 50
-        cancel_width = 140
-        cancel_height = 35
-    
-        pygame.draw.rect(screen, self.button_color, (cancel_x, cancel_y, cancel_width, cancel_height))
-        pygame.draw.rect(screen, self.border_color, (cancel_x, cancel_y, cancel_width, cancel_height), 2)
-        
-        cancel_text = "Cancel"
-        cancel_surface = font_large.render(cancel_text, True, self.text_color)
-        text_rect = cancel_surface.get_rect(center=(cancel_x + cancel_width//2, cancel_y + cancel_height//2))
-        screen.blit(cancel_surface, text_rect)
+
 
     def select_weapon_for_targeting(self, weapon_profile, weapon_instance=1):
         """Select a weapon and enter targeting mode"""
@@ -837,13 +825,19 @@ class ShootingDeclarationDialog:
             print(f"✅ {self.unit.name} targeting {clicked_unit.name} with {self.selected_weapon.parent_wargear.name} group (x{self.selected_weapon_group['count']})")
         else:
             # Handle individual weapon targeting
+            weapon_instance = getattr(self, 'selected_weapon_instance', 1)
+
+            # For individual weapon instances, assign only one model per declaration
+            # This ensures each weapon instance fires once, not once per model
+            assigned_model = self._get_model_for_weapon_instance(self.selected_weapon, weapon_instance)
+
             self.weapon_declarations.append({
                 'weapon_profile': self.selected_weapon,
                 'target_unit': clicked_unit,
-                'models': self._get_models_with_weapon(self.selected_weapon),
-                'weapon_instance': getattr(self, 'selected_weapon_instance', 1)
+                'models': assigned_model,
+                'weapon_instance': weapon_instance
             })
-            print(f"✅ {self.unit.name} targeting {clicked_unit.name} with {self.selected_weapon.parent_wargear.name} #{getattr(self, 'selected_weapon_instance', 1)}")
+            print(f"✅ {self.unit.name} targeting {clicked_unit.name} with {self.selected_weapon.parent_wargear.name} #{weapon_instance} (assigned to {assigned_model[0].name if assigned_model else 'no model'})")
         
         # Clear targeting mode and return success
         self.clear_targeting_mode()
