@@ -3213,6 +3213,19 @@ class BattlePhaseHandler(BasePhaseHandler):
         if is_engaged and not shooting_unit.can_shoot_in_engagement_range(weapon_profile):
             return {"valid": False, "reason": "Unit is engaged and weapon cannot shoot in engagement range"}
         
+        # Check Lone Operative restriction
+        if target_unit.has_lone_operative():
+            # Check if any shooting model is within 12 inches of the Lone Operative unit
+            any_model_in_range = False
+            for model in models_in_range:
+                closest_target_model, distance = model.return_closest_model_in_unit(target_unit)
+                if distance <= 12.0:
+                    any_model_in_range = True
+                    break
+            
+            if not any_model_in_range:
+                return {"valid": False, "reason": "Lone Operative unit can only be targeted within 12 inches"}
+        
         return {"valid": True, "reason": f"{len(models_in_range)} models can shoot"}
     
     def _has_line_of_sight(self, shooting_model, target_model) -> bool:

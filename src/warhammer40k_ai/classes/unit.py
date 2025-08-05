@@ -2455,6 +2455,12 @@ class Unit:
         if not self._has_line_of_sight_to_target(model, target_unit, game_map):
             return False
             
+        # Check Lone Operative restriction
+        if target_unit.has_lone_operative():
+            # Lone Operative units can only be targeted if the attacking model is within 12 inches
+            if min_distance > 12.0:
+                return False
+            
         # Check engagement range restrictions
         if not self._can_shoot_while_engaged(model, weapon_profile, target_unit, game_map):
             return False
@@ -3672,22 +3678,6 @@ class Unit:
         self.max_shooting_range = max_range
         return max_range
 
-    def find_targets_in_range(self, game_map: 'Map') -> List['Unit']:
-        targets = []
-        enemy_units = game_map.get_enemy_units(self)
-        for enemy_unit in enemy_units:
-            for enemy_model in enemy_unit.models:
-                in_range = False
-                for model in self.models:
-                    if get_dist(model.x - enemy_model.x, model.y - enemy_model.y, model.z - enemy_model.z) < model.maximum_range():
-                        in_range = True
-                        break
-                if in_range:
-                    # TODO - Check line of sight
-                    targets.append(enemy_unit)
-                    break
-        return targets
-
     def print_unit(self) -> str:
         return f"{self.name} :: M: {self.movement}\", T: {self.toughness}, Sv: {self.save}, InvSv: {self.inv_save}, OC: {self.objective_control}"
 
@@ -4467,6 +4457,21 @@ class Unit:
             print(f"✅ Desperate Escape Test complete: All models survived!")
         
         return models_destroyed
+
+    def has_lone_operative(self) -> bool:
+        """Check if the unit has Lone Operative ability."""
+        # Use cached result if available
+        if 'lone_operative' in getattr(self, '_ability_cache', {}):
+            return self._ability_cache['lone_operative']
+        
+        found, _ = self._find_ability_with_patterns(["lone operative", "loneoperative"])
+        
+        # Cache the result
+        if not hasattr(self, '_ability_cache'):
+            self._ability_cache = {}
+        self._ability_cache['lone_operative'] = found
+        
+        return found
 
 
 

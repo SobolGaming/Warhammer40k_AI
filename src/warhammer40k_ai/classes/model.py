@@ -287,6 +287,11 @@ class Model:
         for enemy_unit in enemy_units:
             closest_model, closest_dist = self.return_closest_model_in_unit(enemy_unit)
             if closest_model and closest_dist < self.maximum_range(wargear_item, wargear_profile):
+                # Check Lone Operative restriction
+                if enemy_unit.has_lone_operative():
+                    # Lone Operative units can only be targeted if the attacking model is within 12 inches
+                    if closest_dist > 12.0:
+                        continue  # Skip this target due to Lone Operative restriction
                 targets.append(enemy_unit)
         return targets
 
