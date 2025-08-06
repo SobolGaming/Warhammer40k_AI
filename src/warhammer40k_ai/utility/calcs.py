@@ -505,7 +505,7 @@ def unified_pathfinding(model: 'Model', target: Tuple[float, float, float], move
                     'valid': False,
                     'path': [],
                     'distance': straight_line_distance,
-                    'reason': f'Target too far: {straight_line_distance:.1f}" > {max_distance}"'
+                    'reason': f'Distance limit exceeded: {straight_line_distance:.1f}" > {max_distance}"'
                 }
 
         # Build collision trees based on movement type and unit capabilities
@@ -1235,36 +1235,41 @@ def is_position_valid_unified(position: Tuple[float, float, float], model: 'Mode
                 return False
 
     # Check engagement range using edge-to-edge distance (same method as engagement detection)
+    # PERFORMANCE OPTIMIZATION: Commented out in favor of buffered collision detection
+    # The collision trees already include enemy models buffered by ENGAGEMENT_RANGE_HORIZONTAL
+    # This provides the same functionality with much better performance using spatial indexing
     if validation_rules.get('cannot_move_within_engagement_range', False):
-        print(f"🔍 DEBUG: Checking engagement range for position {position} using edge-to-edge distance")
-
-        # Create a temporary model base at the test position to check engagement range
-        from ..utility.model_base import Base
-        temp_base = Base(model.model_base.base_type, model.model_base.radius)  # Use actual model's base type and size
-        temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
-
-        # Check against all enemy models using the same method as is_within_engagement_range
-        moving_unit = model.parent_unit
-        blocked = False
-        for unit in game_map.units:
-            if unit.faction != moving_unit.faction and unit.is_alive() and unit.deployed:
-                for enemy_model in unit.models:
-                    if enemy_model.is_alive:
-                        # Calculate edge-to-edge distance (same as engagement detection)
-                        horizontal_distance = temp_base.edge_to_edge_distance(enemy_model.model_base)
-                        vertical_distance = temp_base.vertical_distance(enemy_model.model_base)
-
-                        if (horizontal_distance <= ENGAGEMENT_RANGE_HORIZONTAL and
-                            vertical_distance <= 5.0):  # 5" vertical engagement range
-                            print(f"🔍 DEBUG: Position {position} blocked by engagement range")
-                            print(f"🔍 DEBUG: Distance to {enemy_model.name}: {horizontal_distance:.2f}\" horizontal, {vertical_distance:.2f}\" vertical")
-                            blocked = True
-                            break
-                if blocked:
-                    break
-
-        if blocked:
-            return False
+        print(f"🔍 DEBUG: Engagement range check skipped - using buffered collision detection instead")
+        # Original edge-to-edge engagement range check (commented out for performance):
+        # print(f"🔍 DEBUG: Checking engagement range for position {position} using edge-to-edge distance")
+        #
+        # # Create a temporary model base at the test position to check engagement range
+        # from ..utility.model_base import Base
+        # temp_base = Base(model.model_base.base_type, model.model_base.radius)  # Use actual model's base type and size
+        # temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
+        #
+        # # Check against all enemy models using the same method as is_within_engagement_range
+        # moving_unit = model.parent_unit
+        # blocked = False
+        # for unit in game_map.units:
+        #     if unit.faction != moving_unit.faction and unit.is_alive() and unit.deployed:
+        #         for enemy_model in unit.models:
+        #             if enemy_model.is_alive:
+        #                 # Calculate edge-to-edge distance (same as engagement detection)
+        #                 horizontal_distance = temp_base.edge_to_edge_distance(enemy_model.model_base)
+        #                 vertical_distance = temp_base.vertical_distance(enemy_model.model_base)
+        #
+        #                 if (horizontal_distance <= ENGAGEMENT_RANGE_HORIZONTAL and
+        #                     vertical_distance <= 5.0):  # 5" vertical engagement range
+        #                     print(f"🔍 DEBUG: Position {position} blocked by engagement range")
+        #                     print(f"🔍 DEBUG: Distance to {enemy_model.name}: {horizontal_distance:.2f}\" horizontal, {vertical_distance:.2f}\" vertical")
+        #                     blocked = True
+        #                     break
+        #             if blocked:
+        #                 break
+        #
+        # if blocked:
+        #     return False
 
     # Check scout-specific deployment buffers using shape intersection
     if collision_trees.get('deployment_buffer'):
@@ -1402,7 +1407,7 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
                         horizontal_distance = temp_base.edge_to_edge_distance(enemy_model.model_base)
                         vertical_distance = temp_base.vertical_distance(enemy_model.model_base)
 
-                        if (horizontal_distance <= ENGAGEMENT_RANGE_HORIZONTAL and
+                        if (horizontal_distance < ENGAGEMENT_RANGE_HORIZONTAL and
                             vertical_distance <= 5.0):  # 5" vertical engagement range
                             print(f"🔍 DEBUG: Final position REJECTED due to engagement range")
                             print(f"🔍 DEBUG: Distance to {enemy_model.name}: {horizontal_distance:.2f}\" horizontal, {vertical_distance:.2f}\" vertical")
@@ -1538,7 +1543,7 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
             vertical_distance = temp_base.vertical_distance(enemy_model.model_base)
 
             # Check if within engagement range using same method as engagement detection
-            if (horizontal_distance <= ENGAGEMENT_RANGE_HORIZONTAL and
+            if (horizontal_distance < ENGAGEMENT_RANGE_HORIZONTAL and
                 vertical_distance <= 5.0):  # 5" vertical engagement range
                 in_engagement_range = True
                 print(f"🔍 DEBUG: Charge validation - {model.name} within engagement range of {enemy_model.name}")
@@ -1569,7 +1574,7 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
                 vertical_distance = temp_base.vertical_distance(enemy_model.model_base)
 
                 # Check if within engagement range using same method as engagement detection
-                if (horizontal_distance <= ENGAGEMENT_RANGE_HORIZONTAL and
+                if (horizontal_distance < ENGAGEMENT_RANGE_HORIZONTAL and
                     vertical_distance <= 5.0):  # 5" vertical engagement range
                     print(f"🔍 DEBUG: Fall back validation - {model.name} would end within engagement range of {enemy_model.name}")
                     print(f"🔍 DEBUG: Distance: {horizontal_distance:.2f}\" horizontal, {vertical_distance:.2f}\" vertical")
