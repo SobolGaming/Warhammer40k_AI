@@ -137,12 +137,7 @@ class TestCollisionDetection:
     def test_map_boundary_collision_circular(self):
         """Test that circular bases cannot move outside map boundaries."""
 
-        # Create test scenario
-        unit = self.create_circular_unit(x=10.0, y=10.0)
-        self.setup_units_on_map([unit])
-
-
-        # Create a clean scenario with just one unit
+        # Create test scenario with a single unit
         unit = self.create_circular_unit(x=24.0, y=36.0)
         self.setup_units_on_map([unit])
         
