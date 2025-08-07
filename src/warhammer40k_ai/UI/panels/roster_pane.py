@@ -169,7 +169,7 @@ class RosterPane(pygame.sprite.Sprite):
                                 # Advance to next player's deployment turn
                                 self.game_view.game.advance_deployment_turn()
                         
-                        self.game_view.ui_interface.deployment_choice_dialog.show(unit, on_deployment_choice)
+                        self.game_view.ui_interface.deployment_choice_dialog.show(unit, on_deployment_choice, self.game_view)
                         return
                     else:
                         # Normal unit selection (for deployed units or non-deployment phases)

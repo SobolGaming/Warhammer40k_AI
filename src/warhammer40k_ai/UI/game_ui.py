@@ -225,7 +225,7 @@ class RosterPane(pygame.sprite.Sprite):
                                 # Advance to next player's deployment turn
                                 self.game_view.game.advance_deployment_turn()
                         
-                        self.game_view.ui_interface.deployment_choice_dialog.show(unit, on_deployment_choice)
+                        self.game_view.ui_interface.deployment_choice_dialog.show(unit, on_deployment_choice, self.game_view)
                         return
                     else:
                         # Normal unit selection (for deployed units or non-deployment phases)
@@ -784,8 +784,8 @@ class HumanUIInterface:
         # UI components
         from .dialogs import DeploymentChoiceDialog
         self.deployment_choice_dialog = DeploymentChoiceDialog(screen_width, screen_height)
-        from .dialogs import ReservesSelectionDialog
-        self.reserves_dialog = ReservesSelectionDialog(screen_width, screen_height)
+        
+
         from .dialogs import ScoutChoiceDialog
         self.scout_choice_dialog = ScoutChoiceDialog(screen_width, screen_height)
         from .dialogs import FightUnitSelectionDialog
@@ -806,39 +806,7 @@ class HumanUIInterface:
         # In a full implementation, this would show a zone selection dialog
         return available_zones[0]
     
-    def declare_reserves(self, player) -> dict:
-        """Human declares reserves via UI dialog."""
-        
-        # Set up the reserves selection dialog
-        reserves_decisions = {}
-        dialog_complete = False
-        
-        def on_reserves_complete(decisions):
-            nonlocal reserves_decisions, dialog_complete
-            reserves_decisions = decisions
-            dialog_complete = True
-        
-        # Show the reserves dialog
-        self.reserves_dialog.show(player, on_reserves_complete)
-        
-        # Wait for user input
-        clock = pygame.time.Clock()
-        while not dialog_complete and self.reserves_dialog.visible:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    pygame.quit()
-                    return {unit.name: 'deploy' for unit in player.get_army().units}
-                
-                # Let the dialog handle the event
-                if self.reserves_dialog.handle_event(event):
-                    continue
-            
-            # Draw the current screen (this would be called by the main game loop)
-            # For now, we'll assume the screen is being drawn elsewhere
-            
-            clock.tick(60)
-        
-        return reserves_decisions if reserves_decisions else {unit.name: 'deploy' for unit in player.get_army().units}
+
     
     def choose_unit_deployment_position(self, unit: 'Unit', deployment_zone: dict, 
                                        already_deployed: List['Unit']) -> Tuple[float, float]:
@@ -919,9 +887,6 @@ class HumanUIInterface:
         if self.deployment_choice_dialog.visible:
             self.deployment_choice_dialog.draw(screen)
         
-        if self.reserves_dialog.visible:
-            self.reserves_dialog.draw(screen)
-        
         if self.reserves_arrival_panel.visible:
             self.reserves_arrival_panel.draw(screen)
         
@@ -985,7 +950,7 @@ class HumanUIInterface:
         # if event.type in [pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP]:
         #     event_name = "KEYDOWN" if event.type == pygame.KEYDOWN else ("MOUSEBUTTONDOWN" if event.type == pygame.MOUSEBUTTONDOWN else "MOUSEBUTTONUP")
         #     print(f"🔍 DEBUG: HumanUIInterface.handle_event - {event_name}")
-        #     print(f"🔍 DEBUG: Dialog visibility - deployment:{self.deployment_choice_dialog.visible}, reserves:{self.reserves_dialog.visible}, scout:{self.scout_choice_dialog.visible}, fight:{self.fight_unit_selection_dialog.visible}")
+        #     print(f"🔍 DEBUG: Dialog visibility - deployment:{self.deployment_choice_dialog.visible}, scout:{self.scout_choice_dialog.visible}, fight:{self.fight_unit_selection_dialog.visible}")
 
         # Let deployment choice dialog handle events first (highest priority)
         if self.deployment_choice_dialog.visible:
@@ -993,9 +958,7 @@ class HumanUIInterface:
             handled = self.deployment_choice_dialog.handle_event(event)
 
         # Let reserves dialog handle events
-        if not handled and self.reserves_dialog.visible:
-            # print(f"🔍 DEBUG: HumanUIInterface - Delegating to reserves_dialog")
-            handled = self.reserves_dialog.handle_event(event)
+
 
         # Let reserves arrival panel handle events
         if not handled and self.reserves_arrival_panel.visible:

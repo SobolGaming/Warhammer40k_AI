@@ -48,8 +48,8 @@ python3 scripts/main.py --mode play --player1 human --player2 ai
 # AI vs AI with manual phase control (for learning/debugging)
 python3 scripts/main.py --mode play --player1 ai --player2 ai --manual-phases
 
-# Human vs Human
-python3 scripts/main.py --mode play --player1 human --player2 human
+# Human vs Human with manual phase control
+python3 scripts/main.py --mode play --player1 human --player2 human --manual-phases
 ```
 
 #### Data Exploration

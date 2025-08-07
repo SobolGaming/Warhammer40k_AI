@@ -24,10 +24,11 @@ class DeploymentChoiceDialog:
         self.screen_width = screen_width
         self.screen_height = screen_height
         self.width = 300
-        self.height = 200
+        self.height = 250  # Increased height for reserve limits display
         self.visible = False
         self.unit = None
         self.callback = None
+        self.game_view = None  # Reference to game view for army access
         
         # Calculate position (center of screen)
         self.x = (screen_width - self.width) // 2
@@ -55,10 +56,71 @@ class DeploymentChoiceDialog:
         
         self.hovered_button = None
     
-    def show(self, unit, callback):
+    def can_add_to_reserves(self, reserve_type):
+        """Check if the unit can be added to reserves without exceeding limits."""
+        if not self.game_view or not self.unit:
+            return False
+        
+        # Find the player that owns this unit
+        player = None
+        if self.unit in self.game_view.player1.get_army().units:
+            player = self.game_view.player1
+        elif self.unit in self.game_view.player2.get_army().units:
+            player = self.game_view.player2
+        
+        if not player:
+            return False
+        
+        army = player.get_army()
+        
+        # Calculate current reserves
+        current_reserve_units = 0
+        current_reserve_points = 0
+        for unit_obj in army.units:
+            if unit_obj.reserve_status in ['reserves', 'strategic_reserves']:
+                current_reserve_units += 1
+                current_reserve_points += unit_obj.get_unit_cost()
+        
+        # Check if adding this unit would exceed limits
+        return army.can_add_unit_to_reserves(self.unit, current_reserve_units, current_reserve_points)
+    
+    def get_current_reserves_status(self):
+        """Get current reserves status for display."""
+        if not self.game_view or not self.unit:
+            return None
+        
+        # Find the player that owns this unit
+        player = None
+        if self.unit in self.game_view.player1.get_army().units:
+            player = self.game_view.player1
+        elif self.unit in self.game_view.player2.get_army().units:
+            player = self.game_view.player2
+        
+        if not player:
+            return None
+        
+        army = player.get_army()
+        
+        # Calculate current reserves
+        current_reserve_units = 0
+        current_reserve_points = 0
+        for unit_obj in army.units:
+            if unit_obj.reserve_status in ['reserves', 'strategic_reserves']:
+                current_reserve_units += 1
+                current_reserve_points += unit_obj.get_unit_cost()
+        
+        limits = army.get_reserve_limits()
+        return {
+            'reserve_units': current_reserve_units,
+            'reserve_points': current_reserve_points,
+            'limits': limits
+        }
+    
+    def show(self, unit, callback, game_view=None):
         """Show the dialog for the given unit"""
         self.unit = unit
         self.callback = callback
+        self.game_view = game_view
         self.visible = True
     
     def hide(self):
@@ -91,18 +153,24 @@ class DeploymentChoiceDialog:
             self.hide()
             return True
         elif self.reserves_button.collidepoint(mouse_pos):
-            # Only allow reserves if unit has Deep Strike
-            if self.unit and self.unit.has_deep_strike():
+            # Only allow reserves if unit has Deep Strike and limits allow
+            can_reserves = self.unit and self.unit.has_deep_strike() and self.can_add_to_reserves('reserves')
+            print(f"🔍 DEBUG: {self.unit.name} reserves check - Deep Strike: {self.unit.has_deep_strike()}, Can add: {self.can_add_to_reserves('reserves')}")
+            if can_reserves:
                 if self.callback:
                     self.callback('reserves')
                 self.hide()
                 return True
-            # If unit doesn't have Deep Strike, don't do anything but still consume the click
+            # If unit doesn't have Deep Strike or limits exceeded, don't do anything but still consume the click
             return True
         elif self.strategic_button.collidepoint(mouse_pos):
-            if self.callback:
-                self.callback('strategic_reserves')
-            self.hide()
+            # Only allow strategic reserves if limits allow
+            if self.can_add_to_reserves('strategic_reserves'):
+                if self.callback:
+                    self.callback('strategic_reserves')
+                self.hide()
+                return True
+            # If limits exceeded, don't do anything but still consume the click
             return True
         
         # Click outside dialog - close it
@@ -154,19 +222,37 @@ class DeploymentChoiceDialog:
         # Draw buttons
         self.draw_button(screen, self.deploy_button, "Deploy", 'deploy', DEPLOY_BUTTON_BG)
         
-        # Reserves button - only enabled if unit has Deep Strike
-        if self.unit.has_deep_strike():
+        # Reserves button - only enabled if unit has Deep Strike and limits allow
+        can_reserves = self.unit.has_deep_strike() and self.can_add_to_reserves('reserves')
+        if can_reserves:
             self.draw_button(screen, self.reserves_button, "Reserves", 'reserves', RESERVES_BUTTON_BG)
         else:
             self.draw_button(screen, self.reserves_button, "Reserves", 'reserves', BUTTON_DISABLED, enabled=False)
         
-        self.draw_button(screen, self.strategic_button, "Strategic", 'strategic', STRATEGIC_BUTTON_BG)
+        # Strategic reserves button - only enabled if limits allow
+        can_strategic = self.can_add_to_reserves('strategic_reserves')
+        if can_strategic:
+            self.draw_button(screen, self.strategic_button, "Strategic", 'strategic', STRATEGIC_BUTTON_BG)
+        else:
+            self.draw_button(screen, self.strategic_button, "Strategic", 'strategic', BUTTON_DISABLED, enabled=False)
+        
+        # Draw reserve limits status
+        status = self.get_current_reserves_status()
+        if status:
+            limits_text = f"Reserves: {status['reserve_units']}/{status['limits']['max_units']} units, {status['reserve_points']}/{status['limits']['max_points']} pts"
+            limits_surface = self.font_small.render(limits_text, True, TEXT_SECONDARY)
+            limits_rect = limits_surface.get_rect(center=(self.x + self.width // 2, self.y + self.height - 60))
+            screen.blit(limits_surface, limits_rect)
         
         # Draw help text
-        if self.unit.has_deep_strike():
-            help_text = "Reserves: Deep Strike ability required"
-        else:
+        if not self.unit.has_deep_strike():
             help_text = "Reserves: Requires Deep Strike ability"
+        elif not self.can_add_to_reserves('reserves'):
+            help_text = "Reserves: Limits exceeded"
+        elif not self.can_add_to_reserves('strategic_reserves'):
+            help_text = "Strategic: Limits exceeded"
+        else:
+            help_text = "Reserves: Deep Strike ability required"
         
         help_surface = self.font_small.render(help_text, True, TEXT_SECONDARY)
         help_rect = help_surface.get_rect(center=(self.x + self.width // 2, self.y + self.height - 40))

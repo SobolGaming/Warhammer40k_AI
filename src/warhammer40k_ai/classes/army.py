@@ -72,6 +72,163 @@ class Army:
     def get_total_points(self) -> int:
         return sum(unit.get_unit_cost() for unit in self.units)
 
+    def get_reserve_limits(self) -> dict:
+        """
+        Calculate the reserve limits for this army according to Warhammer 40k 10th Edition rules.
+        
+        Returns:
+            dict: Contains 'max_units' and 'max_points' limits for reserves
+        """
+        total_units = len(self.units)
+        total_points = self.get_total_points()
+        
+        # 50% limits (rounded down)
+        max_reserve_units = total_units // 2
+        max_reserve_points = total_points // 2
+        
+        return {
+            'max_units': max_reserve_units,
+            'max_points': max_reserve_points,
+            'total_units': total_units,
+            'total_points': total_points
+        }
+
+    def can_add_unit_to_reserves(self, unit: Unit, current_reserve_units: int, current_reserve_points: int) -> bool:
+        """
+        Check if a unit can be added to reserves without exceeding limits.
+        
+        Args:
+            unit: The unit to check
+            current_reserve_units: Current number of units in reserves
+            current_reserve_points: Current points in reserves
+            
+        Returns:
+            bool: True if the unit can be added to reserves
+        """
+        limits = self.get_reserve_limits()
+        unit_points = unit.get_unit_cost()
+        
+        # Check both unit count and points limits
+        can_add_units = current_reserve_units < limits['max_units']
+        can_add_points = current_reserve_points + unit_points <= limits['max_points']
+        
+        return can_add_units and can_add_points
+
+    def validate_reserves_decisions(self, reserves_decisions: dict) -> dict:
+        """
+        Validate reserves decisions against the 50% limits.
+        
+        Args:
+            reserves_decisions: Dict mapping unit names to reserve status ('deploy', 'reserves', 'strategic_reserves')
+            
+        Returns:
+            dict: Validation result with 'valid' boolean and 'errors' list
+        """
+        limits = self.get_reserve_limits()
+        reserve_units = 0
+        reserve_points = 0
+        errors = []
+        
+        for unit in self.units:
+            decision = reserves_decisions.get(unit.name, 'deploy')
+            if decision in ['reserves', 'strategic_reserves']:
+                reserve_units += 1
+                reserve_points += unit.get_unit_cost()
+        
+        # Check unit limit
+        if reserve_units > limits['max_units']:
+            errors.append(f"Too many units in reserves: {reserve_units}/{limits['max_units']} allowed")
+        
+        # Check points limit
+        if reserve_points > limits['max_points']:
+            errors.append(f"Too many points in reserves: {reserve_points}/{limits['max_points']} allowed")
+        
+        return {
+            'valid': len(errors) == 0,
+            'errors': errors,
+            'reserve_units': reserve_units,
+            'reserve_points': reserve_points,
+            'limits': limits
+        }
+
+    def enforce_reserves_limits(self, reserves_decisions: dict) -> dict:
+        """
+        Enforce reserve limits by modifying decisions if necessary.
+        This ensures the final reserves decisions comply with the 50% limits.
+        
+        Args:
+            reserves_decisions: Dict mapping unit names to reserve status
+            
+        Returns:
+            dict: Modified reserves decisions that comply with limits
+        """
+        limits = self.get_reserve_limits()
+        current_reserve_units = 0
+        current_reserve_points = 0
+        modified_decisions = reserves_decisions.copy()
+        
+        # First pass: count current reserves
+        for unit in self.units:
+            decision = modified_decisions.get(unit.name, 'deploy')
+            if decision in ['reserves', 'strategic_reserves']:
+                current_reserve_units += 1
+                current_reserve_points += unit.get_unit_cost()
+        
+        # Second pass: enforce limits by converting excess reserves to deploy
+        for unit in self.units:
+            decision = modified_decisions.get(unit.name, 'deploy')
+            if decision in ['reserves', 'strategic_reserves']:
+                unit_points = unit.get_unit_cost()
+                
+                # Check if this unit would exceed limits
+                would_exceed_units = current_reserve_units > limits['max_units']
+                would_exceed_points = current_reserve_points > limits['max_points']
+                
+                if would_exceed_units or would_exceed_points:
+                    # Convert to deploy
+                    modified_decisions[unit.name] = 'deploy'
+                    current_reserve_units -= 1
+                    current_reserve_points -= unit_points
+        
+        return modified_decisions
+
+    def get_current_reserves_status(self, reserves_decisions: dict) -> dict:
+        """
+        Get current reserves status and limits information.
+        
+        Args:
+            reserves_decisions: Dict mapping unit names to reserve status
+            
+        Returns:
+            dict: Current reserves status and limits
+        """
+        limits = self.get_reserve_limits()
+        reserve_units = 0
+        reserve_points = 0
+        reserve_unit_names = []
+        strategic_reserve_unit_names = []
+        
+        for unit in self.units:
+            decision = reserves_decisions.get(unit.name, 'deploy')
+            if decision == 'reserves':
+                reserve_units += 1
+                reserve_points += unit.get_unit_cost()
+                reserve_unit_names.append(unit.name)
+            elif decision == 'strategic_reserves':
+                reserve_units += 1
+                reserve_points += unit.get_unit_cost()
+                strategic_reserve_unit_names.append(unit.name)
+        
+        return {
+            'reserve_units': reserve_units,
+            'reserve_points': reserve_points,
+            'limits': limits,
+            'reserve_unit_names': reserve_unit_names,
+            'strategic_reserve_unit_names': strategic_reserve_unit_names,
+            'can_add_more_units': reserve_units < limits['max_units'],
+            'can_add_more_points': reserve_points < limits['max_points']
+        }
+
     def add_enhancement(self, enhancement, character_unit):
         # Assign an Enhancement to a Character unit
         if not character_unit.is_character or character_unit.is_epic_hero:

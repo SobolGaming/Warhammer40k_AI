@@ -528,21 +528,15 @@ class HighLevelAgent:
         - Maximum 50% of units can be in reserves
         - Maximum 50% of army points can be in reserves
         """
+        army = self.player.get_army()
         reserves_decisions = {}
-        total_units = len(self.player.get_army().units)
-        max_reserve_units = total_units // 2  # 50% unit limit
-        
-        # Calculate total army points and max reserve points
-        total_points = sum(unit.get_unit_cost() for unit in self.player.get_army().units)
-        max_reserve_points = total_points // 2  # 50% points limit
-        
         current_reserve_units = 0
         current_reserve_points = 0
         
         # Sort units by AI preference for reserves (evaluate all first, then decide)
         unit_preferences = []
         
-        for unit in self.player.get_army().units:
+        for unit in army.units:
             state = self.extract_reserves_decision_features(unit)
             probs = self.reserves_selection_net(state)
             
@@ -568,15 +562,14 @@ class HighLevelAgent:
         # Sort by reserves preference (highest first)
         unit_preferences.sort(key=lambda x: x['reserves_preference'], reverse=True)
         
-        # Make decisions while respecting limits
+        # Make decisions while respecting limits using Army methods
         for unit_data in unit_preferences:
             unit = unit_data['unit']
             preference_scores = unit_data['preference_scores']
             unit_points = unit_data['points']
             
-            # Check if we can still put units in reserves
-            can_reserve = (current_reserve_units < max_reserve_units and 
-                          current_reserve_points + unit_points <= max_reserve_points)
+            # Check if we can still put units in reserves using Army validation
+            can_reserve = army.can_add_unit_to_reserves(unit, current_reserve_units, current_reserve_points)
             
             if can_reserve:
                 # AI can choose freely
@@ -601,10 +594,17 @@ class HighLevelAgent:
             
             reserves_decisions[unit.name] = decision
         
-        # Log reserve allocation for debugging
-        total_reserves = sum(1 for d in reserves_decisions.values() if d != 'deploy')
-        logger.debug(f"🏗️ {self.player.name} reserves: {total_reserves}/{max_reserve_units} units, "
-                    f"{current_reserve_points}/{max_reserve_points} points")
+        # Final validation and enforcement using Army methods
+        validation_result = army.validate_reserves_decisions(reserves_decisions)
+        if not validation_result['valid']:
+            logger.warning(f"🏗️ {self.player.name} reserves validation failed: {validation_result['errors']}")
+            # Enforce limits by modifying decisions
+            reserves_decisions = army.enforce_reserves_limits(reserves_decisions)
+        
+        # Get final status for logging
+        final_status = army.get_current_reserves_status(reserves_decisions)
+        logger.debug(f"🏗️ {self.player.name} reserves: {final_status['reserve_units']}/{final_status['limits']['max_units']} units, "
+                    f"{final_status['reserve_points']}/{final_status['limits']['max_points']} points")
         
         return reserves_decisions
     

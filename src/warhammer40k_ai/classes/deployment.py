@@ -316,38 +316,76 @@ class HumanDeploymentDecisionMaker(DeploymentDecisionMaker):
             return self.ui_interface.declare_reserves(player)
         else:
             # Interactive console-based reserves selection
+            army = player.get_army()
             logger.info(f"🪂 {player.name}: Choose reserves for your units")
             reserves_decisions = {}
+            current_reserve_units = 0
+            current_reserve_points = 0
             
-            for unit in player.get_army().units:
+            # Show reserve limits
+            limits = army.get_reserve_limits()
+            print(f"\n📊 Reserve Limits: {limits['max_units']}/{limits['total_units']} units, {limits['max_points']}/{limits['total_points']} points")
+            
+            for unit in army.units:
                 print(f"\n📋 {unit.name} ({len(unit.models)} models, {unit.get_unit_cost()} pts)")
                 
                 # Check if unit can use standard reserves
                 can_use_reserves = unit.has_deep_strike() or "Deep Strike" in unit.keywords
                 
-                if can_use_reserves:
+                # Check if we can still add this unit to reserves
+                can_add_to_reserves = army.can_add_unit_to_reserves(unit, current_reserve_units, current_reserve_points)
+                
+                if can_use_reserves and can_add_to_reserves:
                     print("Options: (1) Deploy normally, (2) Standard Reserves, (3) Strategic Reserves")
                     choice = input(f"Choice for {unit.name} [1/2/3]: ").strip()
                     
                     if choice == '2':
                         reserves_decisions[unit.name] = 'reserves'
+                        current_reserve_units += 1
+                        current_reserve_points += unit.get_unit_cost()
                         print(f"✅ {unit.name} placed in Standard Reserves")
                     elif choice == '3':
                         reserves_decisions[unit.name] = 'strategic_reserves'
+                        current_reserve_units += 1
+                        current_reserve_points += unit.get_unit_cost()
                         print(f"✅ {unit.name} placed in Strategic Reserves")
                     else:
                         reserves_decisions[unit.name] = 'deploy'
                         print(f"✅ {unit.name} will deploy normally")
+                elif can_use_reserves and not can_add_to_reserves:
+                    print("⚠️  Cannot add to reserves (limits reached) - Options: (1) Deploy normally")
+                    choice = input(f"Choice for {unit.name} [1]: ").strip()
+                    reserves_decisions[unit.name] = 'deploy'
+                    print(f"✅ {unit.name} will deploy normally")
                 else:
-                    print("Options: (1) Deploy normally, (3) Strategic Reserves")
-                    choice = input(f"Choice for {unit.name} [1/3]: ").strip()
-                    
-                    if choice == '3':
-                        reserves_decisions[unit.name] = 'strategic_reserves'
-                        print(f"✅ {unit.name} placed in Strategic Reserves")
+                    if can_add_to_reserves:
+                        print("Options: (1) Deploy normally, (3) Strategic Reserves")
+                        choice = input(f"Choice for {unit.name} [1/3]: ").strip()
+                        
+                        if choice == '3':
+                            reserves_decisions[unit.name] = 'strategic_reserves'
+                            current_reserve_units += 1
+                            current_reserve_points += unit.get_unit_cost()
+                            print(f"✅ {unit.name} placed in Strategic Reserves")
+                        else:
+                            reserves_decisions[unit.name] = 'deploy'
+                            print(f"✅ {unit.name} will deploy normally")
                     else:
+                        print("⚠️  Cannot add to reserves (limits reached) - Options: (1) Deploy normally")
+                        choice = input(f"Choice for {unit.name} [1]: ").strip()
                         reserves_decisions[unit.name] = 'deploy'
                         print(f"✅ {unit.name} will deploy normally")
+                
+                # Show current reserve status
+                print(f"📊 Current reserves: {current_reserve_units}/{limits['max_units']} units, {current_reserve_points}/{limits['max_points']} points")
+            
+            # Final validation
+            validation_result = army.validate_reserves_decisions(reserves_decisions)
+            if not validation_result['valid']:
+                print(f"⚠️  Reserve validation failed: {validation_result['errors']}")
+                # Enforce limits
+                reserves_decisions = army.enforce_reserves_limits(reserves_decisions)
+                print("✅ Reserve limits enforced automatically")
             
             return reserves_decisions
     
