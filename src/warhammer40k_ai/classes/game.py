@@ -532,10 +532,19 @@ class Game:
             return False
         
         zone = self.deployment_zones[player_name]
-        x_min, x_max = zone['x_range']
-        y_min, y_max = zone['y_range']
         
-        return x_min <= x <= x_max and y_min <= y <= y_max
+        # Check if this zone has mission_zones (new system)
+        if 'mission_zones' in zone:
+            # Use precise polygon checking for mission zones
+            for mission_zone in zone['mission_zones']:
+                if mission_zone.contains_point(x, y):
+                    return True
+            return False
+        else:
+            # Fall back to old system for compatibility
+            x_min, x_max = zone['x_range']
+            y_min, y_max = zone['y_range']
+            return x_min <= x <= x_max and y_min <= y <= y_max
 
     def is_model_wholly_in_deployment_zone(self, model: 'Model', player_name: str) -> bool:
         """Check if a model's entire base is wholly within a player's deployment zone."""
@@ -546,43 +555,62 @@ class Game:
             return False
         
         zone = self.deployment_zones[player_name]
-        x_min, x_max = zone['x_range']
-        y_min, y_max = zone['y_range']
         
         # Get model position and base size
         model_x, model_y = model.get_location()[:2]
         base = model.model_base
         base_radius = base.get_radius()
         
-        # For circular bases, check that center +/- radius is within zone
-        if base.base_type.name == 'CIRCULAR':
-            return (x_min <= model_x - base_radius and 
-                    model_x + base_radius <= x_max and
-                    y_min <= model_y - base_radius and 
-                    model_y + base_radius <= y_max)
-        
-        # For elliptical bases, use the major axis as the effective radius
-        elif base.base_type.name == 'ELLIPTICAL':
-            major_radius = max(base.radius) if isinstance(base.radius, tuple) else base.radius
-            return (x_min <= model_x - major_radius and 
-                    model_x + major_radius <= x_max and
-                    y_min <= model_y - major_radius and 
-                    model_y + major_radius <= y_max)
-        
-        # For hull bases, use a rectangular approximation
-        elif base.base_type.name == 'HULL':
-            length, width = base.radius if isinstance(base.radius, tuple) else (base.radius, base.radius)
-            return (x_min <= model_x - length and 
-                    model_x + length <= x_max and
-                    y_min <= model_y - width and 
-                    model_y + width <= y_max)
-        
-        # Default: treat as circular with radius
+        # Check if this zone has mission_zones (new system)
+        if 'mission_zones' in zone:
+            # Use the new base checking methods for accurate validation
+            for mission_zone in zone['mission_zones']:
+                # Check if the entire model base is wholly within this mission zone
+                if base.base_type.name == 'CIRCULAR':
+                    if mission_zone.contains_circular_base(model_x, model_y, base_radius):
+                        return True  # Found a zone that contains the entire base
+                else:
+                    # For non-circular bases, get the base vertices
+                    base_vertices = base.get_vertices_at_position(model_x, model_y)
+                    if mission_zone.contains_polygon_base(base_vertices):
+                        return True  # Found a zone that contains the entire base
+            
+            # If no mission zone contains the entire base, placement is invalid
+            return False
         else:
-            return (x_min <= model_x - base_radius and 
-                    model_x + base_radius <= x_max and
-                    y_min <= model_y - base_radius and 
-                    model_y + base_radius <= y_max)
+            # Fall back to old system for compatibility
+            x_min, x_max = zone['x_range']
+            y_min, y_max = zone['y_range']
+            
+            # For circular bases, check that center +/- radius is within zone
+            if base.base_type.name == 'CIRCULAR':
+                return (x_min <= model_x - base_radius and 
+                        model_x + base_radius <= x_max and
+                        y_min <= model_y - base_radius and 
+                        model_y + base_radius <= y_max)
+            
+            # For elliptical bases, use the major axis as the effective radius
+            elif base.base_type.name == 'ELLIPTICAL':
+                major_radius = max(base.radius) if isinstance(base.radius, tuple) else base.radius
+                return (x_min <= model_x - major_radius and 
+                        model_x + major_radius <= x_max and
+                        y_min <= model_y - major_radius and 
+                        model_y + major_radius <= y_max)
+            
+            # For hull bases, use a rectangular approximation
+            elif base.base_type.name == 'HULL':
+                length, width = base.radius if isinstance(base.radius, tuple) else (base.radius, base.radius)
+                return (x_min <= model_x - length and 
+                        model_x + length <= x_max and
+                        y_min <= model_y - width and 
+                        model_y + width <= y_max)
+            
+            # Default: treat as circular with radius
+            else:
+                return (x_min <= model_x - base_radius and 
+                        model_x + base_radius <= x_max and
+                        y_min <= model_y - base_radius and 
+                        model_y + base_radius <= y_max)
 
     def is_position_wholly_in_deployment_zone(self, x: float, y: float, base, player_name: str) -> bool:
         """Check if a position with the given base would be wholly within the deployment zone."""
@@ -1604,70 +1632,67 @@ class Game:
         self.commands = ["attack", "defend", "move"]
         print(f"✅ Commands configured: {self.commands}")
         
+        # Store selected mission info for use in CREATE_BATTLEFIELD phase
+        # This will be set by the UI when the mission selection dialog is used
+        if not hasattr(self, 'selected_mission_info'):
+            # Use a valid default combination - M: Purge the Foe / Crucible of Battle / Layout 1
+            self.selected_mission_info = {
+                "combination_id": "M",
+                "primary": "Purge the Foe",  # Valid with Crucible of Battle
+                "deployment": "Crucible of Battle",   
+                "layout": 1  # Valid layout for this combination
+            }
+            print(f"✅ Using default mission: {self.selected_mission_info}")
+        else:
+            print(f"✅ Mission selected: {self.selected_mission_info}")
+        
         # Mission objectives will be placed during CREATE_BATTLEFIELD phase
         print("✅ Mission framework configured")
     
-    def execute_create_battlefield_phase(self) -> None:
+    def execute_create_battlefield_phase(self, mission_name: str = None) -> None:
         """Phase 3: Create Battlefield - Set up map, terrain, deployment zones, and objectives."""
         print("📋 CREATE BATTLEFIELD: Setting up battlefield...")
+        
+        # Use selected mission info if available, otherwise use provided mission_name or default
+        if hasattr(self, 'selected_mission_info'):
+            deployment_mission = self.selected_mission_info["deployment"]
+            terrain_layout = self.selected_mission_info["layout"]
+            primary_mission = self.selected_mission_info["primary"]
+        else:
+            deployment_mission = mission_name or "Crucible of Battle"
+            terrain_layout = 1
+            primary_mission = "Take and Hold"
         
         # 1. Create the Map (already done in __init__)
         battlefield_width, battlefield_height = self.get_battlefield_size()
         print(f"✅ Map created: {battlefield_width}\" x {battlefield_height}\"")
         
-        # 2. Add terrain features using the new terrain system
-        from .map import TerrainFactory
-        terrain_features = [
-            TerrainFactory.create_crater(
-                footprint_vertices=[(3, 3), (3, 5), (5, 5), (5, 3)],
-                depth=2.0,
-                rim_height=1.0
-            ),
-            TerrainFactory.create_debris(
-                footprint_vertices=[(20, 7), (27, 9), (29, 9), (29, 7)],
-                height=6.0,
-                density=0.7
-            )
-        ]
-        for terrain in terrain_features:
-            self.map.add_terrain_feature(terrain)
-        print(f"✅ Terrain added: {len(terrain_features)} terrain features")
+        # 2. Terrain features will be added later based on A-T mission terrain layouts
+        print(f"✅ Terrain layout {terrain_layout} noted (terrain placement to be implemented)")
         
-        # 3. Add deployment zones (18" from edges for Strike Force)
-        deployment_depth = 18.0  # 18 inches from edge
-        self.deployment_zones = {
-            self.players[0].name: {
-                'x_range': (0, deployment_depth),  # Left edge to 18" in
-                'y_range': (0, battlefield_height)  # Full height
-            },
-            self.players[1].name: {
-                'x_range': (battlefield_width - deployment_depth, battlefield_width),  # 18" from right edge to edge
-                'y_range': (0, battlefield_height)  # Full height
-            }
-        }
-        print(f"✅ Deployment zones created: 18\" depth zones")
+        # 3. Set up mission-based deployment zones and objectives
+        from .deployment import DeploymentManager
+        deployment_manager = DeploymentManager(self, deployment_mission)
         
-        # 4. Add objectives
-        import random
-        from .map import ObjectivePoint
-        center_x = battlefield_width / 2.0
-        center_y = battlefield_height / 2.0
-        # Add some randomization to prevent predictable positioning
-        random_offset_x = random.uniform(-3, 3)
-        random_offset_y = random.uniform(-3, 3)
-        objective_x = center_x + random_offset_x
-        objective_y = center_y + random_offset_y
+        # Set up deployment zones for the mission
+        mission_zones = deployment_manager.create_deployment_zones()
         
-        objective_point = ObjectivePoint(objective_x, objective_y, 0, 3.0)
-        from .map import Objective, ObjectiveCategory
-        objectives = [
-            Objective(name="Capture Central Point", location=objective_point, category=ObjectiveCategory.PRIMARY, points=10, 
-                      description="Capture the central point to gain control of the battlefield.", 
-                      conditions=lambda game: objective_point.controlling_player == game.get_current_player())
-        ]
-        self.map.add_objectives(objectives)
-        self.objectives = objectives  # Store for game access
-        print(f"✅ Objectives placed: {len(objectives)} objectives")
+        # Convert to the format expected by the game for visualization
+        self.deployment_zones = {}
+        for zone in mission_zones:
+            if zone['zone_type'] == 'defender':
+                # Assign to first player as defender (will be properly assigned later)
+                self.deployment_zones[self.players[0].name] = zone
+            elif zone['zone_type'] == 'attacker':
+                # Assign to second player as attacker
+                self.deployment_zones[self.players[1].name] = zone
+        
+        print(f"✅ Mission deployment zones created: {deployment_mission}")
+        
+        # 4. Set up mission objectives
+        deployment_manager.setup_mission_objectives()
+        print(f"✅ Mission objectives placed: {len(self.objectives)} objectives")
+        print(f"✅ Primary Mission: {primary_mission}")
     
     def execute_determine_attacker_defender_phase(self) -> None:
         """Phase 4: Determine Attacker and Defender - Roll off to determine roles."""

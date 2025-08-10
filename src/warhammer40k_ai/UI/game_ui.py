@@ -1579,6 +1579,10 @@ class GameView:
         # Draw melee weapon declaration dialog if visible
         if hasattr(self, 'melee_weapon_declaration_dialog') and self.melee_weapon_declaration_dialog.visible:
             self.melee_weapon_declaration_dialog.draw(self.screen)
+        
+        # Draw mission selection dialog if visible
+        if hasattr(self, 'mission_selection_dialog') and self.mission_selection_dialog.visible:
+            self.mission_selection_dialog.draw(self.screen)
 
         pygame.display.update()
 
@@ -1777,70 +1781,150 @@ def draw_deployment_zones(screen: pygame.Surface, deployment_zones: dict, player
             color = (128, 128, 128, 160)  # Semi-transparent gray for unknown players
             border_color = (100, 100, 100)
         
-        # Extract zone coordinates
-        x_start, x_end = zone['x_range']
-        y_start, y_end = zone['y_range']
-        
-        # Convert to screen coordinates
-        screen_x_start = int(x_start * TILE_SIZE * zoom_level + offset_x)
-        screen_y_start = int(y_start * TILE_SIZE * zoom_level + offset_y)
-        screen_x_end = int(x_end * TILE_SIZE * zoom_level + offset_x)
-        screen_y_end = int(y_end * TILE_SIZE * zoom_level + offset_y)
-        
-        # Calculate width and height
-        zone_width = screen_x_end - screen_x_start
-        zone_height = screen_y_end - screen_y_start
-        
-        # Skip drawing if zone is off-screen or invalid
-        if zone_width <= 0 or zone_height <= 0:
-            continue
-        
-        # Create a surface with per-pixel alpha for transparency
-        zone_surface = pygame.Surface((zone_width, zone_height), pygame.SRCALPHA)
-        zone_surface.fill(color)
-        
-        # Blit the transparent zone onto the battlefield
-        screen.blit(zone_surface, (screen_x_start, screen_y_start))
-        
-        # Draw a thicker border around the deployment zone for better visibility
-        pygame.draw.rect(screen, border_color, 
-                        (screen_x_start, screen_y_start, zone_width, zone_height), 4)
-        
-        # Draw corner markers for extra visibility
-        corner_size = max(8, int(8 * zoom_level))
-        corners = [
-            (screen_x_start, screen_y_start),  # Top-left
-            (screen_x_end - corner_size, screen_y_start),  # Top-right
-            (screen_x_start, screen_y_end - corner_size),  # Bottom-left
-            (screen_x_end - corner_size, screen_y_end - corner_size)  # Bottom-right
-        ]
-        
-        for corner_x, corner_y in corners:
+        # Check if this is a mission zone (new system) or old system
+        if 'mission_zones' in zone:
+            # Draw each mission zone polygon
+            for mission_zone in zone['mission_zones']:
+                # Convert mission zone vertices to screen coordinates
+                screen_points = []
+                for x, y in mission_zone.vertices:
+                    screen_x = int(x * TILE_SIZE * zoom_level + offset_x)
+                    screen_y = int(y * TILE_SIZE * zoom_level + offset_y)
+                    screen_points.append((screen_x, screen_y))
+                
+                # Only draw if we have enough points for a polygon
+                if len(screen_points) >= 3:
+                    # Create a surface for the polygon with alpha
+                    # Get bounding box for the surface
+                    min_x = min(p[0] for p in screen_points)
+                    max_x = max(p[0] for p in screen_points)
+                    min_y = min(p[1] for p in screen_points)
+                    max_y = max(p[1] for p in screen_points)
+                    
+                    surface_width = max_x - min_x + 1
+                    surface_height = max_y - min_y + 1
+                    
+                    if surface_width > 0 and surface_height > 0:
+                        # Adjust points relative to surface origin
+                        relative_points = [(p[0] - min_x, p[1] - min_y) for p in screen_points]
+                        
+                        # Create transparent surface
+                        zone_surface = pygame.Surface((surface_width, surface_height), pygame.SRCALPHA)
+                        
+                        # Draw filled polygon
+                        pygame.draw.polygon(zone_surface, color, relative_points)
+                        
+                        # Draw cutouts if any exist
+                        if hasattr(mission_zone, 'cutouts') and mission_zone.cutouts:
+                            for cutout in mission_zone.cutouts:
+                                if cutout.cutout_type.value == 'circle':
+                                    # Convert cutout center to screen coordinates
+                                    cutout_screen_x = int(cutout.center_x * TILE_SIZE * zoom_level + offset_x)
+                                    cutout_screen_y = int(cutout.center_y * TILE_SIZE * zoom_level + offset_y)
+                                    cutout_radius = int(cutout.parameters * TILE_SIZE * zoom_level)
+                                    
+                                    # Calculate cutout position relative to surface
+                                    cutout_rel_x = cutout_screen_x - min_x
+                                    cutout_rel_y = cutout_screen_y - min_y
+                                    
+                                    # Only draw cutout if it's within the surface bounds
+                                    if (cutout_rel_x + cutout_radius >= 0 and cutout_rel_x - cutout_radius < surface_width and
+                                        cutout_rel_y + cutout_radius >= 0 and cutout_rel_y - cutout_radius < surface_height):
+                                        
+                                        # Draw cutout as no man's land (dark gray)
+                                        pygame.draw.circle(zone_surface, (64, 64, 64, 200), 
+                                                         (cutout_rel_x, cutout_rel_y), cutout_radius)
+                                        # Draw cutout border
+                                        pygame.draw.circle(zone_surface, (128, 128, 128), 
+                                                         (cutout_rel_x, cutout_rel_y), cutout_radius, 2)
+                        
+                        # Draw border
+                        pygame.draw.polygon(zone_surface, border_color, relative_points, 3)
+                        
+                        # Blit to main screen
+                        screen.blit(zone_surface, (min_x, min_y))
+                        
+                        # Add zone label
+                        font = pygame.font.Font(None, int(24 * zoom_level))
+                        if zone.get('zone_type') == 'defender':
+                            label_text = "DEFENDER"
+                        elif zone.get('zone_type') == 'attacker':
+                            label_text = "ATTACKER"
+                        else:
+                            label_text = zone.get('name', 'ZONE')
+                        
+                        text_surface = font.render(label_text, True, border_color)
+                        text_rect = text_surface.get_rect()
+                        
+                        # Center text in the polygon (approximate)
+                        center_x = (min_x + max_x) // 2 - text_rect.width // 2
+                        center_y = (min_y + max_y) // 2 - text_rect.height // 2
+                        screen.blit(text_surface, (center_x, center_y))
+        else:
+            # Fall back to old rectangular system
+            x_start, x_end = zone['x_range']
+            y_start, y_end = zone['y_range']
+            
+            # Convert to screen coordinates
+            screen_x_start = int(x_start * TILE_SIZE * zoom_level + offset_x)
+            screen_y_start = int(y_start * TILE_SIZE * zoom_level + offset_y)
+            screen_x_end = int(x_end * TILE_SIZE * zoom_level + offset_x)
+            screen_y_end = int(y_end * TILE_SIZE * zoom_level + offset_y)
+            
+            # Calculate width and height
+            zone_width = screen_x_end - screen_x_start
+            zone_height = screen_y_end - screen_y_start
+            
+            # Skip drawing if zone is off-screen or invalid
+            if zone_width <= 0 or zone_height <= 0:
+                continue
+            
+            # Create a surface with per-pixel alpha for transparency
+            zone_surface = pygame.Surface((zone_width, zone_height), pygame.SRCALPHA)
+            zone_surface.fill(color)
+            
+            # Blit the transparent zone onto the battlefield
+            screen.blit(zone_surface, (screen_x_start, screen_y_start))
+            
+            # Draw a thicker border around the deployment zone for better visibility
             pygame.draw.rect(screen, border_color, 
-                           (corner_x, corner_y, corner_size, corner_size))
-        
-        # Add zone label with better positioning
-        font = pygame.font.SysFont('Arial', max(14, int(16 * zoom_level)), bold=True)
-        label_text = f"{player_name} Deployment Zone"
-        text_surface = font.render(label_text, True, border_color)
-        
-        # Position label at the center-top of the zone for better visibility
-        label_x = screen_x_start + (zone_width - text_surface.get_width()) // 2
-        label_y = screen_y_start + 15
-        
-        # Draw a more prominent background for the text
-        text_bg = pygame.Surface((text_surface.get_width() + 12, text_surface.get_height() + 6), pygame.SRCALPHA)
-        text_bg.fill((255, 255, 255, 220))  # More opaque white background
-        screen.blit(text_bg, (label_x - 6, label_y - 3))
-        
-        # Draw black outline for better text visibility
-        outline_positions = [(-1, -1), (-1, 1), (1, -1), (1, 1)]
-        for dx, dy in outline_positions:
-            outline_surface = font.render(label_text, True, (0, 0, 0))
-            screen.blit(outline_surface, (label_x + dx, label_y + dy))
-        
-        # Draw the main text
-        screen.blit(text_surface, (label_x, label_y))
+                            (screen_x_start, screen_y_start, zone_width, zone_height), 4)
+            
+            # Draw corner markers for extra visibility
+            corner_size = max(8, int(8 * zoom_level))
+            corners = [
+                (screen_x_start, screen_y_start),  # Top-left
+                (screen_x_end - corner_size, screen_y_start),  # Top-right
+                (screen_x_start, screen_y_end - corner_size),  # Bottom-left
+                (screen_x_end - corner_size, screen_y_end - corner_size)  # Bottom-right
+            ]
+            
+            for corner_x, corner_y in corners:
+                pygame.draw.rect(screen, border_color, 
+                               (corner_x, corner_y, corner_size, corner_size))
+            
+            # Add zone label with better positioning
+            font = pygame.font.SysFont('Arial', max(14, int(16 * zoom_level)), bold=True)
+            label_text = f"{player_name} Deployment Zone"
+            text_surface = font.render(label_text, True, border_color)
+            
+            # Position label at the center-top of the zone for better visibility
+            label_x = screen_x_start + (zone_width - text_surface.get_width()) // 2
+            label_y = screen_y_start + 15
+            
+            # Draw a more prominent background for the text
+            text_bg = pygame.Surface((text_surface.get_width() + 12, text_surface.get_height() + 6), pygame.SRCALPHA)
+            text_bg.fill((255, 255, 255, 220))  # More opaque white background
+            screen.blit(text_bg, (label_x - 6, label_y - 3))
+            
+            # Draw black outline for better text visibility
+            outline_positions = [(-1, -1), (-1, 1), (1, -1), (1, 1)]
+            for dx, dy in outline_positions:
+                outline_surface = font.render(label_text, True, (0, 0, 0))
+                screen.blit(outline_surface, (label_x + dx, label_y + dy))
+            
+            # Draw the main text
+            screen.blit(text_surface, (label_x, label_y))
 
 def draw_objective(screen: pygame.Surface, objective: Objective, zoom_level: float, offset_x: int, offset_y: int) -> None:
     if isinstance(objective.location, ObjectivePoint):
@@ -2310,6 +2394,44 @@ class SetupPhaseHandler(BasePhaseHandler):
     """Handles events during setup phases"""
     
     def handle_event(self, event: pygame.event.Event) -> bool:
+        # Handle mission selection dialog first (if active)
+        if (hasattr(self.game_view, 'mission_selection_dialog') and 
+            self.game_view.mission_selection_dialog.visible):
+            result = self.game_view.mission_selection_dialog.handle_event(event)
+            if result:
+                if result["action"] == "confirm":
+                    # Apply selected mission
+                    combination = result["combination"]
+                    layout = result["layout"]
+                    
+                    self.game.selected_mission_info = {
+                        "combination_id": combination["id"],
+                        "primary": combination["primary"],
+                        "deployment": combination["deployment"],
+                        "layout": layout
+                    }
+                    
+                    print(f"✅ Mission selected: {combination['id']} - {combination['primary']} / {combination['deployment']} / Layout {layout}")
+                    
+                    # Hide dialog and advance phase
+                    self.game_view.mission_selection_dialog.visible = False
+                    
+                    # Execute the phase and advance
+                    self.game.execute_current_setup_phase()
+                    self.game.advance_setup_phase()
+                    return True
+                    
+                elif result["action"] == "cancel":
+                    # Hide dialog and advance with default
+                    self.game_view.mission_selection_dialog.visible = False
+                    print("📋 Mission selection cancelled - using default")
+                    
+                    # Execute the phase and advance
+                    self.game.execute_current_setup_phase()
+                    self.game.advance_setup_phase()
+                    return True
+            return True  # Dialog is handling events
+        
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_SPACE:
                 # Handle setup phase advancement
@@ -2338,6 +2460,12 @@ class SetupPhaseHandler(BasePhaseHandler):
                 
                 # Store which phase we're executing to know when to refresh UI
                 current_phase_before = self.game.get_current_setup_phase()
+                
+                # Handle special phase-specific UI interactions
+                if current_phase_before.name == 'SELECT_MISSION_OBJECTIVES':
+                    # Show mission selection dialog
+                    self._show_mission_selection_dialog()
+                    return True  # Don't advance phase yet, wait for dialog
                 
                 self.game.execute_current_setup_phase(**setup_kwargs)
                 setup_complete = self.game.advance_setup_phase()
@@ -2368,6 +2496,22 @@ class SetupPhaseHandler(BasePhaseHandler):
                 return True
         
         return False
+    
+    def _show_mission_selection_dialog(self):
+        """Show the mission selection dialog for SELECT_MISSION_OBJECTIVES phase."""
+        from .dialogs import MissionSelectionDialog
+        
+        # Create mission selection dialog
+        dialog = MissionSelectionDialog(
+            self.game_view.screen.get_width(),
+            self.game_view.screen.get_height()
+        )
+        
+        # Store dialog in game view for event handling
+        self.game_view.mission_selection_dialog = dialog
+        dialog.visible = True
+        
+        print("📋 Mission Selection Dialog opened - choose from approved combinations A-T")
     
     def get_allowed_actions(self) -> List[str]:
         return ["advance_setup_phase", "view_unit_details"]

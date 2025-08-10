@@ -109,6 +109,19 @@ class InfoPane(pygame.sprite.Sprite):
         
         y_offset += 30
         
+        # Show mission information if selected
+        if hasattr(game, 'selected_mission_info') and game.selected_mission_info:
+            mission_info = game.selected_mission_info
+            if 'combination_id' in mission_info:
+                mission_text = f"Mission {mission_info['combination_id']}: {mission_info['primary']} / {mission_info['deployment']} / Layout {mission_info['layout']}"
+            else:
+                mission_text = f"Mission: {mission_info['primary']} / {mission_info['deployment']} / Layout {mission_info['layout']}"
+            
+            mission_surface = self.font_small.render(mission_text, True, TEXT_SECONDARY)
+            mission_rect = mission_surface.get_rect(center=(x_center, y_offset + 5))
+            surface.blit(mission_surface, mission_rect)
+            y_offset += 20
+        
         # Setup phase, deployment, or player information
         if game.is_in_setup_phase():
             # Show setup phase information

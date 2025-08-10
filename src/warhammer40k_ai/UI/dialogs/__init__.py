@@ -4,6 +4,7 @@ from .deployment_choice_dialog import DeploymentChoiceDialog
 from .fight_unit_selection_dialog import FightUnitSelectionDialog
 from .individual_model_movement_dialog import IndividualModelMovementDialog
 from .melee_weapon_declaration_dialog import MeleeWeaponDeclarationDialog
+from .mission_selection_dialog import MissionSelectionDialog
 from .movement_choice_dialog import MovementChoiceDialog
 
 from .scout_choice_dialog import ScoutChoiceDialog
@@ -17,6 +18,7 @@ __all__ = [
     'FightUnitSelectionDialog',
     'IndividualModelMovementDialog',
     'MeleeWeaponDeclarationDialog',
+    'MissionSelectionDialog',
     'MovementChoiceDialog',
 
     'ScoutChoiceDialog',

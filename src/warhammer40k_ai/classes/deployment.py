@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from warhammer40k_ai.classes.game import Game
 from warhammer40k_ai.classes.player import Player
 from warhammer40k_ai.utility.calcs import get_dist
+from .missions import OfficialMission, MissionRegistry, DeploymentZoneType, create_objectives_from_mission
 
 if TYPE_CHECKING:
     from warhammer40k_ai.classes.unit import Unit
@@ -36,11 +37,13 @@ class DeploymentDecisionMaker(ABC):
 class DeploymentManager:
     """Manages the official Warhammer 40k 10th Edition deployment sequence."""
     
-    def __init__(self, game: Game):
+    def __init__(self, game: Game, mission_name: str = "Crucible of Battle"):
         self.game = game
+        self.mission = MissionRegistry.get_mission(mission_name)
         self.attacker = None
         self.defender = None
         self.deployment_zones = []
+        logger.info(f"🚀 DeploymentManager initialized with mission: {self.mission.name}")
         
     def execute_deployment_sequence(self, decision_makers: Dict[str, DeploymentDecisionMaker]) -> dict:
         """Execute the complete deployment sequence according to Warhammer 40k rules.
@@ -159,24 +162,71 @@ class DeploymentManager:
             return self.game.players[1], self.game.players[0]  # Player 2 is attacker
     
     def create_deployment_zones(self) -> List[dict]:
-        """Create deployment zones based on battlefield size - using same 18\" zones as Human vs AI."""
-        battlefield_width, battlefield_height = self.game.get_battlefield_size()
-        deployment_depth = 18.0  # 18 inches from edge - consistent with Human vs AI
+        """Create deployment zones based on the selected mission."""
+        mission_zones = self.mission.get_deployment_zones()
         
-        # Standard deployment zones (18" from opposite table edges)
-        zone1 = {
-            'name': 'Zone 1',
-            'x_range': (0, deployment_depth),
-            'y_range': (0, battlefield_height)
-        }
+        # Convert mission deployment zones to the format expected by the game
+        zones = []
         
-        zone2 = {
-            'name': 'Zone 2', 
-            'x_range': (battlefield_width - deployment_depth, battlefield_width),
-            'y_range': (0, battlefield_height)
-        }
+        # Group zones by type
+        defender_zones = self.mission.get_defender_zones()
+        attacker_zones = self.mission.get_attacker_zones()
         
-        return [zone1, zone2]
+        # For missions with multiple zones per side, combine them into compound zones
+        if defender_zones:
+            # Create a compound defender zone that includes all defender areas
+            defender_zone = {
+                'name': 'Defender Zone',
+                'zone_type': 'defender',
+                'mission_zones': defender_zones,  # Store original zones for detailed checking
+                # For compatibility, create a bounding box
+                'x_range': self._get_zone_x_range(defender_zones),
+                'y_range': self._get_zone_y_range(defender_zones)
+            }
+            zones.append(defender_zone)
+        
+        if attacker_zones:
+            # Create a compound attacker zone
+            attacker_zone = {
+                'name': 'Attacker Zone', 
+                'zone_type': 'attacker',
+                'mission_zones': attacker_zones,
+                'x_range': self._get_zone_x_range(attacker_zones),
+                'y_range': self._get_zone_y_range(attacker_zones)
+            }
+            zones.append(attacker_zone)
+        
+        return zones
+    
+    def _get_zone_x_range(self, zones) -> Tuple[float, float]:
+        """Get the X range that encompasses all zones."""
+        all_x = []
+        for zone in zones:
+            for x, y in zone.vertices:
+                all_x.append(x)
+        return (min(all_x), max(all_x))
+    
+    def _get_zone_y_range(self, zones) -> Tuple[float, float]:
+        """Get the Y range that encompasses all zones."""
+        all_y = []
+        for zone in zones:
+            for x, y in zone.vertices:
+                all_y.append(y)
+        return (min(all_y), max(all_y))
+    
+    def setup_mission_objectives(self) -> None:
+        """Set up objectives based on the selected mission."""
+        # Create objectives from mission markers
+        objectives = create_objectives_from_mission(self.mission, self.game)
+        
+        # Add objectives to the game and map
+        self.game.objectives = objectives
+        self.game.map.add_objectives(objectives)
+        
+        logger.info(f"✅ Added {len(objectives)} objectives from mission: {self.mission.name}")
+        for obj in objectives:
+            if hasattr(obj.location, 'x'):
+                logger.info(f"   📍 {obj.name} at ({obj.location.x:.1f}, {obj.location.y:.1f})")
     
     def execute_alternating_deployment(self, deployment_results: dict, 
                                      decision_makers: Dict[str, DeploymentDecisionMaker]) -> None:
