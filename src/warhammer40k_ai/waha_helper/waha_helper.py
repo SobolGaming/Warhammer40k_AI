@@ -43,6 +43,7 @@ class WahaHelper:
                 # For plain text strings, just clean up whitespace
                 text = re.sub(r'\s+', ' ', data).strip()
                 text = re.sub(r'\s+([,.])', r'\1', text)
+                text = re.sub(r"’", "'", text)
                 return text
         else:
             return data
