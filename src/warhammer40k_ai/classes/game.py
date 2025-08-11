@@ -708,19 +708,12 @@ class Game:
                     if mission_zone.contains_circular_base(x, y, radius_val):
                         return True
                 else:
-                    # Preferred: use provided Shapely geometry from the base itself
-                    if hasattr(model_base, 'get_base_shape_at'):
-                        try:
-                            base_geom = model_base.get_base_shape_at(x, y, getattr(model_base, 'facing', 0.0))
-                            if mission_zone.contains_base_geometry(base_geom):
-                                return True
-                        except Exception:
-                            pass
-                    # Fallback to polygon vertices if needed
-                    if hasattr(model_base, 'get_vertices_at_position'):
-                        vertices = model_base.get_vertices_at_position(x, y)
-                        if mission_zone.contains_polygon_base(vertices):
-                            return True
+                    # Use provided Shapely geometry from the base itself (no legacy vertex fallback)
+                    if not hasattr(model_base, 'get_base_shape_at'):
+                        return False
+                    base_geom = model_base.get_base_shape_at(x, y, getattr(model_base, 'facing', 0.0))
+                    if mission_zone.contains_base_geometry(base_geom):
+                        return True
             return False
         return False
 
@@ -745,27 +738,15 @@ class Game:
         min_distance = float('inf')
         
         for zone_player_name, zone in self.deployment_zones.items():
-            if zone_player_name != player_name:
-                x_min, x_max = zone['x_range']
-                y_min, y_max = zone['y_range']
-                
-                # Calculate distance to the closest edge of the zone
-                if x < x_min:
-                    closest_x = x_min
-                elif x > x_max:
-                    closest_x = x_max
-                else:
-                    closest_x = x
-                
-                if y < y_min:
-                    closest_y = y_min
-                elif y > y_max:
-                    closest_y = y_max
-                else:
-                    closest_y = y
-                
-                distance = ((x - closest_x) ** 2 + (y - closest_y) ** 2) ** 0.5
-                min_distance = min(min_distance, distance)
+            if zone_player_name != player_name and 'mission_zones' in zone and zone['mission_zones']:
+                from shapely.geometry import Point as _ShPoint
+                from shapely.geometry import Polygon as _ShPoly
+                pt = _ShPoint(x, y)
+                for mission_zone in zone['mission_zones']:
+                    poly = _ShPoly(mission_zone.vertices)
+                    d = pt.distance(poly)
+                    if d < min_distance:
+                        min_distance = d
         
         return min_distance
 
