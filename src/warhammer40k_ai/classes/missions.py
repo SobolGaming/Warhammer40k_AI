@@ -3,7 +3,7 @@ Official Warhammer 40k 10th Edition Mission Deployment Zones and Objectives
 Based on Chapter Approved 2025/2026 mission layouts.
 
 Battlefield dimensions: 60" horizontal x 44" vertical
-Coordinate system: (0,0) at bottom-left corner
+Coordinate system: (0,0) at top-left corner, (60,44) at bottom-right corner
 """
 
 from typing import List, Dict, Tuple, Optional, Union
@@ -11,6 +11,7 @@ from enum import Enum
 from dataclasses import dataclass
 from .map import ObjectivePoint, Objective, ObjectiveCategory
 import math
+from shapely.geometry import Point, Polygon as ShapelyPolygon
 
 
 class DeploymentZoneType(Enum):
@@ -40,44 +41,47 @@ class ZoneCutout:
     
     def contains_point(self, x: float, y: float) -> bool:
         """Check if a point is within this cutout area."""
+        point = Point(x, y)
+        cutout_geometry = self.get_shapely_geometry()
+        return cutout_geometry.contains(point)
+    
+    def get_shapely_geometry(self):
+        """Get the Shapely geometry representation of this cutout."""
         if self.cutout_type == CutoutType.CIRCLE:
             radius = self.parameters
-            distance = math.sqrt((x - self.center_x)**2 + (y - self.center_y)**2)
-            return distance <= radius
+            return Point(self.center_x, self.center_y).buffer(radius)
         
         elif self.cutout_type == CutoutType.RECTANGLE:
             width, height = self.parameters
             half_width = width / 2
             half_height = height / 2
-            return (self.center_x - half_width <= x <= self.center_x + half_width and
-                    self.center_y - half_height <= y <= self.center_y + half_height)
+            vertices = [
+                (self.center_x - half_width, self.center_y - half_height),
+                (self.center_x + half_width, self.center_y - half_height),
+                (self.center_x + half_width, self.center_y + half_height),
+                (self.center_x - half_width, self.center_y + half_height)
+            ]
+            return ShapelyPolygon(vertices)
         
         elif self.cutout_type == CutoutType.POLYGON:
             # Convert relative vertices to absolute coordinates
             vertices = [(self.center_x + dx, self.center_y + dy) for dx, dy in self.parameters]
-            return self._point_in_polygon(x, y, vertices)
+            return ShapelyPolygon(vertices)
         
-        return False
+        return None
     
-    def _point_in_polygon(self, x: float, y: float, vertices: List[Tuple[float, float]]) -> bool:
-        """Ray casting algorithm for point-in-polygon test."""
-        n = len(vertices)
-        inside = False
-        
-        p1x, p1y = vertices[0]
-        for i in range(1, n + 1):
-            p2x, p2y = vertices[i % n]
-            if y > min(p1y, p2y):
-                if y <= max(p1y, p2y):
-                    if x <= max(p1x, p2x):
-                        if p1y != p2y:
-                            xinters = (y - p1y) * (p2x - p1x) / (p2y - p1y) + p1x
-                        if p1x == p2x or x <= xinters:
-                            inside = not inside
-            p1x, p1y = p2x, p2y
-        
-        return inside
-
+    def intersects_circular_base(self, center_x: float, center_y: float, radius: float) -> bool:
+        """Check if a circular model base intersects with this cutout area."""
+        base_geometry = Point(center_x, center_y).buffer(radius)
+        cutout_geometry = self.get_shapely_geometry()
+        return cutout_geometry.intersects(base_geometry)
+    
+    def intersects_polygon_base(self, vertices: List[Tuple[float, float]]) -> bool:
+        """Check if a polygonal model base intersects with this cutout area."""
+        base_geometry = ShapelyPolygon(vertices)
+        cutout_geometry = self.get_shapely_geometry()
+        return cutout_geometry.intersects(base_geometry)
+    
 
 @dataclass
 class DeploymentZone:
@@ -115,49 +119,55 @@ class DeploymentZone:
         return inside
     
     def contains_circular_base(self, center_x: float, center_y: float, radius: float) -> bool:
-        """Check if a circular model base is wholly within this deployment zone."""
-        # For a circle to be wholly within the zone:
-        # 1. The center must be in the zone
-        # 2. All points on the circle's circumference must be in the zone
-        # 3. None of the circle should intersect with any cutouts
+        """Check if a circular model base is wholly within this deployment zone.
+        Accepts scalar or vector-like radius; coerces to a single float."""
+        # Coerce radius to float to avoid vectorized buffer producing arrays
+        r = radius
+        try:
+            r = float(r)
+        except Exception:
+            try:
+                # If tuple/list/ndarray, use the max component as effective radius
+                r = float(max(r))
+            except Exception:
+                # Last resort
+                r = float(r)
+
+        # Create Shapely geometry for the model base
+        base_geometry = Point(center_x, center_y).buffer(r)
         
-        # Quick check: if center is not in zone, circle can't be wholly in zone
-        if not self.contains_point(center_x, center_y):
+        # Create Shapely geometry for the deployment zone
+        zone_geometry = ShapelyPolygon(self.vertices)
+        
+        # Base must be wholly within the zone
+        if not zone_geometry.contains(base_geometry):
             return False
         
-        # Check multiple points around the circumference (more accurate than just edge points)
-        num_check_points = 16  # Check 16 points around the circle
-        for i in range(num_check_points):
-            angle = 2 * math.pi * i / num_check_points
-            edge_x = center_x + radius * math.cos(angle)
-            edge_y = center_y + radius * math.sin(angle)
-            
-            if not self.contains_point(edge_x, edge_y):
-                return False
+        # Base must not intersect with any cutouts
+        if self.cutouts:
+            for cutout in self.cutouts:
+                if cutout.intersects_circular_base(center_x, center_y, r):
+                    return False
         
         return True
     
     def contains_polygon_base(self, vertices: List[Tuple[float, float]]) -> bool:
         """Check if a polygonal model base is wholly within this deployment zone."""
-        # For a polygon to be wholly within the zone:
-        # 1. All vertices must be in the zone
-        # 2. All edges should not intersect zone boundaries (complex check)
-        # For simplicity, we'll check all vertices and some intermediate points
+        # Create Shapely geometry for the model base
+        base_geometry = ShapelyPolygon(vertices)
         
-        # Check all vertices
-        for x, y in vertices:
-            if not self.contains_point(x, y):
-                return False
+        # Create Shapely geometry for the deployment zone
+        zone_geometry = ShapelyPolygon(self.vertices)
         
-        # Check midpoints of all edges for better coverage
-        for i in range(len(vertices)):
-            x1, y1 = vertices[i]
-            x2, y2 = vertices[(i + 1) % len(vertices)]
-            mid_x = (x1 + x2) / 2
-            mid_y = (y1 + y2) / 2
-            
-            if not self.contains_point(mid_x, mid_y):
-                return False
+        # Base must be wholly within the zone
+        if not zone_geometry.contains(base_geometry):
+            return False
+        
+        # Base must not intersect with any cutouts
+        if self.cutouts:
+            for cutout in self.cutouts:
+                if cutout.intersects_polygon_base(vertices):
+                    return False
         
         return True
 
@@ -431,13 +441,13 @@ class SearchAndDestroy(OfficialMission):
             parameters=9.0  # 9" radius
         )
         
-        # Defender gets the entire top half of battlefield (y > 22)
+        # Defender
         defender_vertices = [
-            (0, 22.01), (60, 22.01), (60, 44), (0, 44)
+            (0, 22), (30, 22), (30, 44), (0, 44)
         ]
-        # Attacker gets the entire bottom half of battlefield (y < 22)  
+        # Attacker 
         attacker_vertices = [
-            (0, 0), (60, 0), (60, 21.99), (0, 21.99)
+            (30, 0), (60, 0), (60, 22), (30, 22)
         ]
         
         self.deployment_zones = [

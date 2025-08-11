@@ -332,17 +332,41 @@ class Game:
             # Normal units must deploy within their deployment zone
             if hasattr(self, 'deployment_zones') and player_name in self.deployment_zones:
                 zone = self.deployment_zones[player_name]
-                x_min, x_max = zone['x_range']
-                y_min, y_max = zone['y_range']
                 
-                # Reduce formation buffer - smaller units need less space
-                formation_buffer = max(1.5, len(unit.models) * 0.3)  # Much smaller buffer
-                search_zones = [(
-                    max(x_min + formation_buffer, 0), 
-                    min(x_max - formation_buffer, battlefield_width),
-                    max(y_min + formation_buffer, 0), 
-                    min(y_max - formation_buffer, battlefield_height)
-                )]
+                # Check if this is the new mission zone system or old system
+                if 'mission_zones' in zone:
+                    # New system: Use mission zone boundaries but be more conservative
+                    # to account for cutouts that will be validated by contains_circular_base
+                    min_x = min_y = float('inf')
+                    max_x = max_y = float('-inf')
+                    
+                    for mission_zone in zone['mission_zones']:
+                        for x, y in mission_zone.vertices:
+                            min_x = min(min_x, x)
+                            max_x = max(max_x, x)
+                            min_y = min(min_y, y)
+                            max_y = max(max_y, y)
+                    
+                    # Add buffer but be more conservative for cutout missions
+                    formation_buffer = max(2.0, len(unit.models) * 0.4)  # Larger buffer for cutout missions
+                    search_zones = [(
+                        max(min_x + formation_buffer, 0), 
+                        min(max_x - formation_buffer, battlefield_width),
+                        max(min_y + formation_buffer, 0), 
+                        min(max_y - formation_buffer, battlefield_height)
+                    )]
+                else:
+                    # Old system: Use rectangular zones
+                    x_min, x_max = zone['x_range']
+                    y_min, y_max = zone['y_range']
+                    
+                    formation_buffer = max(1.5, len(unit.models) * 0.3)
+                    search_zones = [(
+                        max(x_min + formation_buffer, 0), 
+                        min(x_max - formation_buffer, battlefield_width),
+                        max(y_min + formation_buffer, 0), 
+                        min(y_max - formation_buffer, battlefield_height)
+                    )]
             else:
                 logger.error(f"No deployment zone found for {player_name}")
                 return False
@@ -612,49 +636,44 @@ class Game:
                         y_min <= model_y - base_radius and 
                         model_y + base_radius <= y_max)
 
-    def is_position_wholly_in_deployment_zone(self, x: float, y: float, base, player_name: str) -> bool:
-        """Check if a position with the given base would be wholly within the deployment zone."""
+    def is_position_wholly_in_deployment_zone(self, x: float, y: float, model_base, player_name: str) -> bool:
+        """Check if a model base at (x,y) is wholly within the player's deployment zone,
+        using mission zones with cutout-aware Shapely checks when available."""
+        # If no zones, allow (legacy behavior)
         if not hasattr(self, 'deployment_zones') or not self.deployment_zones:
-            return True  # If no deployment zones defined, allow anywhere
-        
+            return True
+
+        # Player must have a zone
         if player_name not in self.deployment_zones:
             return False
-        
-        zone = self.deployment_zones[player_name]
-        x_min, x_max = zone['x_range']
-        y_min, y_max = zone['y_range']
-        
-        base_radius = base.get_radius()
-        
-        # For circular bases, check that center +/- radius is within zone
-        if base.base_type.name == 'CIRCULAR':
-            return (x_min <= x - base_radius and 
-                    x + base_radius <= x_max and
-                    y_min <= y - base_radius and 
-                    y + base_radius <= y_max)
-        
-        # For elliptical bases, use the major axis as the effective radius
-        elif base.base_type.name == 'ELLIPTICAL':
-            major_radius = max(base.radius) if isinstance(base.radius, tuple) else base.radius
-            return (x_min <= x - major_radius and 
-                    x + major_radius <= x_max and
-                    y_min <= y - major_radius and 
-                    y + major_radius <= y_max)
-        
-        # For hull bases, use a rectangular approximation
-        elif base.base_type.name == 'HULL':
-            length, width = base.radius if isinstance(base.radius, tuple) else (base.radius, base.radius)
-            return (x_min <= x - length and 
-                    x + length <= x_max and
-                    y_min <= y - width and 
-                    y + width <= y_max)
-        
-        # Default: treat as circular with radius
-        else:
-            return (x_min <= x - base_radius and 
-                    x + base_radius <= x_max and
-                    y_min <= y - base_radius and 
-                    y + base_radius <= y_max)
+
+        zone_info = self.deployment_zones[player_name]
+
+        # New system: mission_zones from missions.py with cutouts
+        if 'mission_zones' in zone_info and zone_info['mission_zones']:
+            for mission_zone in zone_info['mission_zones']:
+                if model_base.base_type.name == 'CIRCULAR':
+                    # Coerce radius to scalar
+                    radius_val = getattr(model_base, 'radius', None)
+                    if radius_val is None:
+                        radius_val = model_base.get_radius() if hasattr(model_base, 'get_radius') else 0.5
+                    try:
+                        radius_val = float(radius_val)
+                    except Exception:
+                        try:
+                            radius_val = float(max(radius_val))
+                        except Exception:
+                            radius_val = 0.5
+                    if mission_zone.contains_circular_base(x, y, radius_val):
+                        return True
+                else:
+                    # Polygonal/elliptical/hull bases: get vertices and test polygon containment
+                    if hasattr(model_base, 'get_vertices_at_position'):
+                        vertices = model_base.get_vertices_at_position(x, y)
+                        if mission_zone.contains_polygon_base(vertices):
+                            return True
+            return False
+        return False
 
     def is_position_in_enemy_deployment_zone(self, x: float, y: float, player_name: str) -> bool:
         """Check if a position is within any enemy deployment zone."""

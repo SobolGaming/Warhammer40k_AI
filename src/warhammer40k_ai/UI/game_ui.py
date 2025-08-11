@@ -1831,15 +1831,15 @@ def draw_deployment_zones(screen: pygame.Surface, deployment_zones: dict, player
                                     if (cutout_rel_x + cutout_radius >= 0 and cutout_rel_x - cutout_radius < surface_width and
                                         cutout_rel_y + cutout_radius >= 0 and cutout_rel_y - cutout_radius < surface_height):
                                         
-                                        # Draw cutout as no man's land (dark gray)
-                                        pygame.draw.circle(zone_surface, (64, 64, 64, 200), 
+                                        # Draw cutout as no man's land (transparent - shows battlefield background)
+                                        # Create a "hole" by drawing with full transparency
+                                        pygame.draw.circle(zone_surface, (0, 0, 0, 0), 
                                                          (cutout_rel_x, cutout_rel_y), cutout_radius)
-                                        # Draw cutout border
-                                        pygame.draw.circle(zone_surface, (128, 128, 128), 
+                                        # Draw cutout border to show the boundary
+                                        pygame.draw.circle(zone_surface, (100, 100, 100), 
                                                          (cutout_rel_x, cutout_rel_y), cutout_radius, 2)
                         
-                        # Draw border
-                        pygame.draw.polygon(zone_surface, border_color, relative_points, 3)
+                        # No zone border per request (keep only filled zone and cutout visuals)
                         
                         # Blit to main screen
                         screen.blit(zone_surface, (min_x, min_y))
@@ -1928,7 +1928,24 @@ def draw_deployment_zones(screen: pygame.Surface, deployment_zones: dict, player
 
 def draw_objective(screen: pygame.Surface, objective: Objective, zoom_level: float, offset_x: int, offset_y: int) -> None:
     if isinstance(objective.location, ObjectivePoint):
-        pygame.draw.circle(screen, PURPLE, (int(objective.location.x * TILE_SIZE * zoom_level + offset_x), int(objective.location.y * TILE_SIZE * zoom_level + offset_y)), int(objective.location.control_radius * TILE_SIZE * zoom_level))
+        # Create a transparent surface for the objective
+        objective_radius = int(objective.location.control_radius * TILE_SIZE * zoom_level)
+        if objective_radius > 0:
+            # Calculate center position
+            center_x = int(objective.location.x * TILE_SIZE * zoom_level + offset_x)
+            center_y = int(objective.location.y * TILE_SIZE * zoom_level + offset_y)
+            
+            # Create a surface with per-pixel alpha for transparency
+            objective_surface = pygame.Surface((objective_radius * 2, objective_radius * 2), pygame.SRCALPHA)
+            
+            # Draw objective with 50% transparency (128 alpha instead of 255)
+            pygame.draw.circle(objective_surface, (128, 0, 128, 128), (objective_radius, objective_radius), objective_radius)
+            
+            # Draw border for visibility
+            pygame.draw.circle(objective_surface, (128, 0, 128, 255), (objective_radius, objective_radius), objective_radius, 2)
+            
+            # Blit to main screen
+            screen.blit(objective_surface, (center_x - objective_radius, center_y - objective_radius))
 
 def draw_units(screen: pygame.Surface, unit: Unit, zoom_level: float, offset_x: int, offset_y: int, mouse_pos: Tuple[int, int], player1: Player, player2: Player, highlighted_model_index: Optional[int] = None) -> None:
     # Determine the color based on which player the unit belongs to (only if armies are loaded)

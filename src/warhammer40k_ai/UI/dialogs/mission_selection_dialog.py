@@ -165,7 +165,9 @@ class MissionSelectionDialog(BaseDialog):
             row_index = (list_y - self.header_height) // self.row_height
             if 0 <= row_index < len(self.APPROVED_COMBINATIONS):
                 # Check if clicking on layout buttons
-                layouts_x = dialog_x + 500
+                # Account for dialog position + content area offset + layout buttons position
+                content_area_x = dialog_x + 10  # Content area starts at dialog_x + 10
+                layouts_x = content_area_x + 445  # Match drawing position from _draw_combinations
                 if layouts_x <= x <= dialog_x + self.dialog_width - 20:
                     layout_index = (x - layouts_x) // (self.layout_button_size + 5)
                     combination = self.APPROVED_COMBINATIONS[row_index]
