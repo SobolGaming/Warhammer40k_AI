@@ -2619,8 +2619,11 @@ class DeploymentPhaseHandler(BasePhaseHandler):
         original_model_positions = [model.get_location() for model in self.game_view.selected_unit.models]
         
         # During deployment, use relaxed friendly unit avoidance to allow tighter formations
+        # Use deployment boundary repulsors to keep formation inside mission zones/cutouts
+        deployment_repulsors = self.game_view.game.get_boundary_repulsors(self.game_view.selected_unit, context='deployment')
         model_positions = self.game_view.selected_unit.calculate_model_positions(
-            battlefield_x, battlefield_y, self.game_view.game_map, avoid_friendly_units=False) # TODO - add zoom back -- , 0.0, self.game_view.zoom_level)
+            battlefield_x, battlefield_y, self.game_view.game_map,
+            avoid_friendly_units=False, boundary_repulsors=deployment_repulsors) # TODO - add zoom back -- , 0.0, self.game_view.zoom_level)
         
         if model_positions:
             # Set model positions

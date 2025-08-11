@@ -71,16 +71,20 @@ class ZoneCutout:
         return None
     
     def intersects_circular_base(self, center_x: float, center_y: float, radius: float) -> bool:
-        """Check if a circular model base intersects with this cutout area."""
+        """Check if a circular model base has positive-area overlap with this cutout.
+        Tangential contact (touching boundary) is allowed and should not count as intersecting."""
         base_geometry = Point(center_x, center_y).buffer(radius)
         cutout_geometry = self.get_shapely_geometry()
-        return cutout_geometry.intersects(base_geometry)
+        intersection = cutout_geometry.intersection(base_geometry)
+        return getattr(intersection, 'area', 0.0) > 1e-6
     
     def intersects_polygon_base(self, vertices: List[Tuple[float, float]]) -> bool:
-        """Check if a polygonal model base intersects with this cutout area."""
+        """Check if a polygonal model base has positive-area overlap with this cutout.
+        Tangential contact (touching boundary) is allowed and should not count as intersecting."""
         base_geometry = ShapelyPolygon(vertices)
         cutout_geometry = self.get_shapely_geometry()
-        return cutout_geometry.intersects(base_geometry)
+        intersection = cutout_geometry.intersection(base_geometry)
+        return getattr(intersection, 'area', 0.0) > 1e-6
     
 
 @dataclass
@@ -138,9 +142,11 @@ class DeploymentZone:
         
         # Create Shapely geometry for the deployment zone
         zone_geometry = ShapelyPolygon(self.vertices)
+        if not getattr(zone_geometry, 'is_valid', True):
+            zone_geometry = zone_geometry.buffer(0)
         
-        # Base must be wholly within the zone
-        if not zone_geometry.contains(base_geometry):
+        # Base must be wholly within the zone (allow touching boundary, tolerate epsilon)
+        if not zone_geometry.buffer(1e-3).covers(base_geometry):
             return False
         
         # Base must not intersect with any cutouts
@@ -151,24 +157,77 @@ class DeploymentZone:
         
         return True
     
-    def contains_polygon_base(self, vertices: List[Tuple[float, float]]) -> bool:
-        """Check if a polygonal model base is wholly within this deployment zone."""
-        # Create Shapely geometry for the model base
-        base_geometry = ShapelyPolygon(vertices)
-        
-        # Create Shapely geometry for the deployment zone
+    def contains_polygon_base(self, vertices: List[Tuple[float, float]], center: Tuple[float, float] = None, radii: Tuple[float, float] = None, facing: float = 0.0) -> bool:
+        """Check if a non-circular base is wholly within this zone.
+        If center/radii provided (elliptical), build analytic ellipse to avoid vertex artifacts; otherwise fallback to polygon.
+        Allows boundary contact and ignores tangential contact with cutouts."""
+        from shapely.geometry import Point as _ShPoint
+        from shapely.affinity import scale as _sh_scale, rotate as _sh_rotate
+
+        if center is not None and radii is not None:
+            cx, cy = center
+            a, b = radii  # semi-major, semi-minor
+            try:
+                ellipse = _sh_scale(_ShPoint(cx, cy).buffer(1.0), a, b)
+                if facing:
+                    ellipse = _sh_rotate(ellipse, math.degrees(facing), origin=(cx, cy))
+                base_geometry = ellipse
+            except Exception:
+                base_geometry = ShapelyPolygon(vertices)
+        else:
+            base_geometry = ShapelyPolygon(vertices)
+        if not getattr(base_geometry, 'is_valid', True):
+            base_geometry = base_geometry.buffer(0)
         zone_geometry = ShapelyPolygon(self.vertices)
-        
-        # Base must be wholly within the zone
-        if not zone_geometry.contains(base_geometry):
+        if not getattr(zone_geometry, 'is_valid', True):
+            zone_geometry = zone_geometry.buffer(0)
+
+        # Allow boundary contact
+        if not zone_geometry.covers(base_geometry):
             return False
-        
-        # Base must not intersect with any cutouts
+
+        # Disallow positive-area overlap with cutouts; allow boundary tangency
         if self.cutouts:
             for cutout in self.cutouts:
-                if cutout.intersects_polygon_base(vertices):
+                cg = cutout.get_shapely_geometry()
+                if cg is None:
+                    continue
+                # Clean cutout geometry if needed
+                if hasattr(cg, 'is_valid') and not cg.is_valid:
+                    cg = cg.buffer(0)
+                inter = cg.intersection(base_geometry)
+                if getattr(inter, 'area', 0.0) > 1e-6:
                     return False
-        
+
+        return True
+
+    def contains_base_geometry(self, base_geometry) -> bool:
+        """General-purpose check using a provided Shapely geometry for the base.
+        Allows boundary contact for zone; forbids positive-area overlap with cutouts.
+        """
+        # Clean inputs if needed
+        if hasattr(base_geometry, 'is_valid') and not base_geometry.is_valid:
+            base_geometry = base_geometry.buffer(0)
+
+        zone_geometry = ShapelyPolygon(self.vertices)
+        if not getattr(zone_geometry, 'is_valid', True):
+            zone_geometry = zone_geometry.buffer(0)
+
+        # Allow tiny tolerance and boundary contact
+        if not zone_geometry.buffer(1e-3).covers(base_geometry):
+            return False
+
+        if self.cutouts:
+            for cutout in self.cutouts:
+                cg = cutout.get_shapely_geometry()
+                if cg is None:
+                    continue
+                if hasattr(cg, 'is_valid') and not cg.is_valid:
+                    cg = cg.buffer(0)
+                inter = cg.intersection(base_geometry)
+                if getattr(inter, 'area', 0.0) > 1e-6:
+                    return False
+
         return True
 
 

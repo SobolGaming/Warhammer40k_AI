@@ -332,41 +332,69 @@ class Game:
             # Normal units must deploy within their deployment zone
             if hasattr(self, 'deployment_zones') and player_name in self.deployment_zones:
                 zone = self.deployment_zones[player_name]
-                
+
+                # Helper: maximum model base radius approximation
+                def _max_base_radius(u: 'Unit') -> float:
+                    max_r = 0.5
+                    for m in u.models:
+                        r = getattr(m.model_base, 'radius', None)
+                        if r is None and hasattr(m.model_base, 'get_radius'):
+                            r = m.model_base.get_radius()
+                        try:
+                            r = float(r)
+                        except Exception:
+                            try:
+                                r = float(max(r))
+                            except Exception:
+                                r = 0.5
+                        max_r = max(max_r, r)
+                    return max_r
+
+                # Prepare effective mission polygons eroded by base radius to improve hit-rate
+                mission_effective_zones = []
+
                 # Check if this is the new mission zone system or old system
-                if 'mission_zones' in zone:
-                    # New system: Use mission zone boundaries but be more conservative
-                    # to account for cutouts that will be validated by contains_circular_base
-                    min_x = min_y = float('inf')
-                    max_x = max_y = float('-inf')
-                    
-                    for mission_zone in zone['mission_zones']:
-                        for x, y in mission_zone.vertices:
-                            min_x = min(min_x, x)
-                            max_x = max(max_x, x)
-                            min_y = min(min_y, y)
-                            max_y = max(max_y, y)
-                    
-                    # Add buffer but be more conservative for cutout missions
-                    formation_buffer = max(2.0, len(unit.models) * 0.4)  # Larger buffer for cutout missions
-                    search_zones = [(
-                        max(min_x + formation_buffer, 0), 
-                        min(max_x - formation_buffer, battlefield_width),
-                        max(min_y + formation_buffer, 0), 
-                        min(max_y - formation_buffer, battlefield_height)
-                    )]
+                if 'mission_zones' in zone and zone['mission_zones']:
+                    from shapely.geometry import Point as _ShPoint, Polygon as _ShPoly
+                    from shapely.ops import unary_union as _sh_union
+
+                    # Compute erosion distance based on unit footprint
+                    erosion = _max_base_radius(unit)
+                    # Reasonable extra margin for formation spread
+                    erosion += max(0.25, 0.1 * len(unit.models))
+
+                    # Build effective (cutout-subtracted) polygons and erode
+                    for mz in zone['mission_zones']:
+                        poly = _ShPoly(mz.vertices)
+                        # Subtract cutouts if any
+                        if getattr(mz, 'cutouts', None):
+                            for c in mz.cutouts:
+                                cg = c.get_shapely_geometry()
+                                if cg is not None:
+                                    poly = poly.difference(cg)
+                        # Erode polygon by erosion distance (buffer with negative value)
+                        eff = poly.buffer(-erosion)
+                        if not eff.is_empty:
+                            mission_effective_zones.append(eff)
+
+                    # If nothing usable after erosion, fall back to un-eroded zones
+                    if not mission_effective_zones:
+                        for mz in zone['mission_zones']:
+                            mission_effective_zones.append(_ShPoly(mz.vertices))
+
+                    # Construct an overall bbox to seed grid, but we will filter by polygon.contains
+                    if mission_effective_zones:
+                        union = _sh_union(mission_effective_zones)
+                        min_x, min_y, max_x, max_y = union.bounds
+                    else:
+                        min_x = min_y = 0.0
+                        max_x, max_y = battlefield_width, battlefield_height
+
+                    search_zones = [(max(min_x, 0.0), min(max_x, battlefield_width),
+                                     max(min_y, 0.0), min(max_y, battlefield_height))]
                 else:
-                    # Old system: Use rectangular zones
-                    x_min, x_max = zone['x_range']
-                    y_min, y_max = zone['y_range']
-                    
-                    formation_buffer = max(1.5, len(unit.models) * 0.3)
-                    search_zones = [(
-                        max(x_min + formation_buffer, 0), 
-                        min(x_max - formation_buffer, battlefield_width),
-                        max(y_min + formation_buffer, 0), 
-                        min(y_max - formation_buffer, battlefield_height)
-                    )]
+                    # No mission_zones present -> invalid configuration for deployment
+                    return False
             else:
                 logger.error(f"No deployment zone found for {player_name}")
                 return False
@@ -383,16 +411,19 @@ class Game:
             x_positions = []
             y_positions = []
             
-            # Generate grid positions
+            # Generate grid positions (adaptive to unit size)
             x = x_min
+            # Use diameter-based spacing where possible to reduce futile tests
+            base_step = 2.0 * max(0.5, len(unit.models) * 0.05)
+            step = max(0.75, min(2.0, base_step))
             while x <= x_max:
                 x_positions.append(x)
-                x += grid_spacing
+                x += step
             
             y = y_min
             while y <= y_max:
                 y_positions.append(y)
-                y += grid_spacing
+                y += step
             
             # Shuffle the positions to avoid predictable patterns
             test_positions = [(x, y) for x in x_positions for y in y_positions]
@@ -402,6 +433,22 @@ class Game:
             for x, y in test_positions:
                 z = 0.0
                 
+                # If using mission polygons, skip points outside eroded zones early
+                try:
+                    if 'mission_effective_zones' not in locals():
+                        pass
+                    else:
+                        inside_any = False
+                        for eff in mission_effective_zones:
+                            if eff.contains(_ShPoint(x, y)):
+                                inside_any = True
+                                break
+                        if not inside_any:
+                            continue
+                except Exception:
+                    # If Shapely not available or error, continue with regular checks
+                    pass
+
                 # Quick check: is this position too close to existing units?
                 if self._is_position_too_crowded(x, y, unit, player_name):
                     continue
@@ -550,25 +597,19 @@ class Game:
     def is_position_in_deployment_zone(self, x: float, y: float, player_name: str) -> bool:
         """Check if a position is within a player's deployment zone."""
         if not hasattr(self, 'deployment_zones') or not self.deployment_zones:
-            return True  # If no deployment zones defined, allow anywhere
+            return False
         
         if player_name not in self.deployment_zones:
             return False
         
         zone = self.deployment_zones[player_name]
         
-        # Check if this zone has mission_zones (new system)
-        if 'mission_zones' in zone:
-            # Use precise polygon checking for mission zones
+        # Only mission zones are supported
+        if 'mission_zones' in zone and zone['mission_zones']:
             for mission_zone in zone['mission_zones']:
                 if mission_zone.contains_point(x, y):
                     return True
-            return False
-        else:
-            # Fall back to old system for compatibility
-            x_min, x_max = zone['x_range']
-            y_min, y_max = zone['y_range']
-            return x_min <= x <= x_max and y_min <= y <= y_max
+        return False
 
     def is_model_wholly_in_deployment_zone(self, model: 'Model', player_name: str) -> bool:
         """Check if a model's entire base is wholly within a player's deployment zone."""
@@ -639,9 +680,9 @@ class Game:
     def is_position_wholly_in_deployment_zone(self, x: float, y: float, model_base, player_name: str) -> bool:
         """Check if a model base at (x,y) is wholly within the player's deployment zone,
         using mission zones with cutout-aware Shapely checks when available."""
-        # If no zones, allow (legacy behavior)
+        # Require configured zones
         if not hasattr(self, 'deployment_zones') or not self.deployment_zones:
-            return True
+            return False
 
         # Player must have a zone
         if player_name not in self.deployment_zones:
@@ -649,7 +690,7 @@ class Game:
 
         zone_info = self.deployment_zones[player_name]
 
-        # New system: mission_zones from missions.py with cutouts
+        # Only support mission_zones from missions.py with cutouts
         if 'mission_zones' in zone_info and zone_info['mission_zones']:
             for mission_zone in zone_info['mission_zones']:
                 if model_base.base_type.name == 'CIRCULAR':
@@ -667,7 +708,15 @@ class Game:
                     if mission_zone.contains_circular_base(x, y, radius_val):
                         return True
                 else:
-                    # Polygonal/elliptical/hull bases: get vertices and test polygon containment
+                    # Preferred: use provided Shapely geometry from the base itself
+                    if hasattr(model_base, 'get_base_shape_at'):
+                        try:
+                            base_geom = model_base.get_base_shape_at(x, y, getattr(model_base, 'facing', 0.0))
+                            if mission_zone.contains_base_geometry(base_geom):
+                                return True
+                        except Exception:
+                            pass
+                    # Fallback to polygon vertices if needed
                     if hasattr(model_base, 'get_vertices_at_position'):
                         vertices = model_base.get_vertices_at_position(x, y)
                         if mission_zone.contains_polygon_base(vertices):
@@ -753,52 +802,60 @@ class Game:
         player_name = unit.get_parent_army().player.name if unit.get_parent_army() and unit.get_parent_army().player else None
         
         if context == 'deployment':
-            # For deployment, add deployment zone boundaries as repulsors
+            # For deployment, add deployment zone boundaries (mission-aware) and cutouts as repulsors
             if hasattr(self, 'deployment_zones') and self.deployment_zones and player_name:
                 if player_name in self.deployment_zones:
                     zone = self.deployment_zones[player_name]
-                    x_min, x_max = zone['x_range']
-                    y_min, y_max = zone['y_range']
-                    
-                    # Create repulsor polygons just outside the deployment zone boundaries
-                    # This will push units away from the edges if they get too close
-                    repulsor_thickness = 0.5  # 0.5 inch thick repulsor zones
-                    
-                    # Left boundary repulsor (negative x direction)
-                    left_repulsor = Polygon([
-                        (x_min - repulsor_thickness, y_min - repulsor_thickness),
-                        (x_min, y_min - repulsor_thickness),
-                        (x_min, y_max + repulsor_thickness),
-                        (x_min - repulsor_thickness, y_max + repulsor_thickness)
-                    ])
-                    repulsors.append(left_repulsor)
-                    
-                    # Right boundary repulsor (positive x direction)
-                    right_repulsor = Polygon([
-                        (x_max, y_min - repulsor_thickness),
-                        (x_max + repulsor_thickness, y_min - repulsor_thickness),
-                        (x_max + repulsor_thickness, y_max + repulsor_thickness),
-                        (x_max, y_max + repulsor_thickness)
-                    ])
-                    repulsors.append(right_repulsor)
-                    
-                    # Bottom boundary repulsor (negative y direction)
-                    bottom_repulsor = Polygon([
-                        (x_min - repulsor_thickness, y_min - repulsor_thickness),
-                        (x_max + repulsor_thickness, y_min - repulsor_thickness),
-                        (x_max + repulsor_thickness, y_min),
-                        (x_min - repulsor_thickness, y_min)
-                    ])
-                    repulsors.append(bottom_repulsor)
-                    
-                    # Top boundary repulsor (positive y direction)
-                    top_repulsor = Polygon([
-                        (x_min - repulsor_thickness, y_max),
-                        (x_max + repulsor_thickness, y_max),
-                        (x_max + repulsor_thickness, y_max + repulsor_thickness),
-                        (x_min - repulsor_thickness, y_max + repulsor_thickness)
-                    ])
-                    repulsors.append(top_repulsor)
+                    repulsor_thickness = 0.5  # 0.5 inch thick edge repulsor ring
+
+                    # New mission system: polygon zones + cutouts
+                    if 'mission_zones' in zone and zone['mission_zones']:
+                        from shapely.geometry import Polygon as _ShPoly
+                        for mz in zone['mission_zones']:
+                            poly = _ShPoly(mz.vertices)
+                            # Outer ring to repel from edges (outside only)
+                            ring = poly.buffer(repulsor_thickness).difference(poly)
+                            if not ring.is_empty:
+                                repulsors.append(ring)
+                            # Cutouts act as hard blockers
+                            if getattr(mz, 'cutouts', None):
+                                for c in mz.cutouts:
+                                    cg = c.get_shapely_geometry()
+                                    if cg is not None and not cg.is_empty:
+                                        repulsors.append(cg)
+                    else:
+                        # Legacy rectangular ranges
+                        x_min, x_max = zone['x_range']
+                        y_min, y_max = zone['y_range']
+                        # Create repulsor polygons just outside the deployment zone boundaries
+                        left_repulsor = Polygon([
+                            (x_min - repulsor_thickness, y_min - repulsor_thickness),
+                            (x_min, y_min - repulsor_thickness),
+                            (x_min, y_max + repulsor_thickness),
+                            (x_min - repulsor_thickness, y_max + repulsor_thickness)
+                        ])
+                        repulsors.append(left_repulsor)
+                        right_repulsor = Polygon([
+                            (x_max, y_min - repulsor_thickness),
+                            (x_max + repulsor_thickness, y_min - repulsor_thickness),
+                            (x_max + repulsor_thickness, y_max + repulsor_thickness),
+                            (x_max, y_max + repulsor_thickness)
+                        ])
+                        repulsors.append(right_repulsor)
+                        bottom_repulsor = Polygon([
+                            (x_min - repulsor_thickness, y_min - repulsor_thickness),
+                            (x_max + repulsor_thickness, y_min - repulsor_thickness),
+                            (x_max + repulsor_thickness, y_min),
+                            (x_min - repulsor_thickness, y_min)
+                        ])
+                        repulsors.append(bottom_repulsor)
+                        top_repulsor = Polygon([
+                            (x_min - repulsor_thickness, y_max),
+                            (x_max + repulsor_thickness, y_max),
+                            (x_max + repulsor_thickness, y_max + repulsor_thickness),
+                            (x_min - repulsor_thickness, y_max + repulsor_thickness)
+                        ])
+                        repulsors.append(top_repulsor)
         
         elif context == 'movement':
             # For movement, add battlefield edge boundaries as repulsors
@@ -860,7 +917,11 @@ class Game:
             # Calculate model positions using the same logic as unit deployment
             # NOTE: Don't use boundary_repulsors for validation - they make formation finding too restrictive
             # During deployment, use relaxed friendly unit avoidance to allow tighter formations
-            model_positions = unit.calculate_model_positions(x, y, self.map, avoid_friendly_units=False)
+            # Use deployment boundary repulsors (mission-zone aware) to guide formation inside zone
+            deployment_repulsors = self.get_boundary_repulsors(unit, context='deployment')
+            model_positions = unit.calculate_model_positions(
+                x, y, self.map, avoid_friendly_units=False, boundary_repulsors=deployment_repulsors
+            )
             
             if not model_positions:
                 return False
@@ -890,7 +951,10 @@ class Game:
             # Calculate model positions using the same logic as unit deployment
             # NOTE: Don't use boundary_repulsors for validation - they make formation finding too restrictive
             # During deployment, use relaxed friendly unit avoidance to allow tighter formations
-            model_positions = unit.calculate_model_positions(x, y, self.map, avoid_friendly_units=False)
+            deployment_repulsors = self.get_boundary_repulsors(unit, context='deployment')
+            model_positions = unit.calculate_model_positions(
+                x, y, self.map, avoid_friendly_units=False, boundary_repulsors=deployment_repulsors
+            )
             
             if not model_positions:
                 return False
@@ -900,6 +964,11 @@ class Game:
                 
                 # Check if this model would be wholly within the deployment zone
                 if not self.is_position_wholly_in_deployment_zone(model_x, model_y, model.model_base, player_name):
+                    try:
+                        model_name = getattr(model, 'name', 'model')
+                        print(f"🔴 DEBUG: Zone check failed for {unit.name} {model_name} at ({model_x:.1f}, {model_y:.1f}) in player '{player_name}' zone")
+                    except Exception:
+                        pass
                     return False
             return True
 
