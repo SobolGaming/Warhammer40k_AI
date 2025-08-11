@@ -9,7 +9,7 @@ class TestWahaHelper(unittest.TestCase):
 
     def test_get_full_datasheet_info_by_name(self):
         # Replace "Belakor" with a datasheet name that should exist in your data
-        datasheet_name = "Be’lakor"
+        datasheet_name = "Be'lakor"
         result = self.waha_helper.get_full_datasheet_info_by_name(datasheet_name)
         self.assertIsNotNone(result)
         self.assertIsInstance(result, SimpleNamespace)

@@ -515,6 +515,19 @@ def unified_pathfinding(model: 'Model', target: Tuple[float, float, float], move
 
         # Get validation rules for this movement type
         validation_rules = get_validation_rules(movement_type, target_unit)
+
+        # Special case for CHARGE: Only one model in the unit must end within engagement range.
+        # If any model in the charging unit is already within engagement range of the target unit,
+        # then relax the 'must_end_in_engagement_range' requirement for subsequent models while
+        # preserving 'allow_engagement_range_movement'.
+        if movement_type == MovementType.CHARGE and target_unit is not None:
+            unit_already_engaged = game_map.is_within_engagement_range(model.parent_unit, target_unit)
+            if unit_already_engaged:
+                # Disable strict end-in-engagement requirement for this model's move
+                validation_rules['must_end_in_engagement_range'] = False
+                validation_rules['allow_engagement_range_movement'] = True
+                #print("🔍 DEBUG: Charge context - unit already in engagement range; relaxing end-in-engagement requirement for this model")
+
         print(f"🔍 DEBUG: Validation rules: {validation_rules}")
 
         # Run unified A* pathfinding
