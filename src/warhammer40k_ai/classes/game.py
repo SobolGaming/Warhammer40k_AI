@@ -503,20 +503,55 @@ class Game:
             return [(3.0, battlefield_width - 3.0, 3.0, battlefield_height - 3.0)]
         
         # For infiltrate, we need to avoid enemy deployment zones + 9" buffer
-        # Start with the entire battlefield and subtract restricted areas
+        # Create multiple zones including No Man's Land areas
         
         # Find enemy deployment zones
         enemy_zones = []
+        friendly_zones = []
         for zone_player_name, zone in self.deployment_zones.items():
             if zone_player_name != player_name:
                 enemy_zones.append(zone)
+            else:
+                friendly_zones.append(zone)
         
         if not enemy_zones:
             # No enemy zones - use entire battlefield
             return [(3.0, battlefield_width - 3.0, 3.0, battlefield_height - 3.0)]
         
-        # Create zones that avoid enemy deployment zones + 9" buffer
-        # For simplicity, create zones on either side of enemy zones
+        # Create comprehensive search zones for Infiltrate units
+        # 1. Areas around friendly deployment zone (but outside it)
+        for friendly_zone in friendly_zones:
+            fx_min, fx_max = friendly_zone['x_range']
+            fy_min, fy_max = friendly_zone['y_range']
+            
+            # Zone in front of friendly deployment (towards center)
+            if fx_max + 3.0 < battlefield_width / 2:
+                zones.append((fx_max, battlefield_width / 2, 3.0, battlefield_height - 3.0))
+            elif fx_min - 3.0 > battlefield_width / 2:
+                zones.append((battlefield_width / 2, fx_min, 3.0, battlefield_height - 3.0))
+        
+        # 2. No Man's Land (center area, avoiding enemy zones + 9" buffer)
+        center_x_min = battlefield_width * 0.25
+        center_x_max = battlefield_width * 0.75
+        center_y_min = battlefield_height * 0.25  
+        center_y_max = battlefield_height * 0.75
+        
+        # Check if center area is clear of enemy zones + buffer
+        center_clear = True
+        for enemy_zone in enemy_zones:
+            ex_min, ex_max = enemy_zone['x_range']
+            ey_min, ey_max = enemy_zone['y_range']
+            
+            # Check if center area overlaps with enemy zone + 9" buffer
+            if not (center_x_max < ex_min - 9.0 or center_x_min > ex_max + 9.0 or
+                    center_y_max < ey_min - 9.0 or center_y_min > ey_max + 9.0):
+                center_clear = False
+                break
+        
+        if center_clear:
+            zones.append((center_x_min, center_x_max, center_y_min, center_y_max))
+        
+        # 3. Flanking zones (sides of the battlefield, avoiding enemy zones + buffer)
         for enemy_zone in enemy_zones:
             ex_min, ex_max = enemy_zone['x_range']
             ey_min, ey_max = enemy_zone['y_range']
@@ -535,6 +570,10 @@ class Game:
             center_y = battlefield_height / 2
             zones.append((center_x - 5, center_x + 5, center_y - 5, center_y + 5))
         
+        print(f"🔍 DEBUG: Infiltrate search zones for {player_name}: {len(zones)} zones created")
+        for i, zone in enumerate(zones):
+            print(f"🔍 DEBUG: Zone {i+1}: x={zone[0]:.1f}-{zone[1]:.1f}, y={zone[2]:.1f}-{zone[3]:.1f}")
+        
         return zones
 
     def _deploy_unit_at_position(self, unit: 'Unit', x: float, y: float, z: float) -> bool:
@@ -542,14 +581,24 @@ class Game:
         try:
             # Use the exact same approach as manual deployment in GameView.on_mouse_press
             # Calculate model positions (this also sets the positions internally)
-            # Use boundary repulsors to prevent units from going off the battlefield
-            # Deployment zone validation is handled separately by is_valid_deployment_position()
-            # During deployment, use relaxed friendly unit avoidance to allow tighter formations
-            boundary_repulsors = self.map.get_battlefield_edge_repulsors() if self.map else []
-            model_positions = unit.calculate_model_positions(x, y, self.map, avoid_friendly_units=False, boundary_repulsors=boundary_repulsors)
+            # CRITICAL: Use deployment-specific boundary repulsors to ensure models stay within deployment zones
+            # This must match the repulsors used in is_valid_deployment_position for consistency
+            deployment_repulsors = self.get_boundary_repulsors(unit, context='deployment')
+            model_positions = unit.calculate_model_positions(x, y, self.map, avoid_friendly_units=False, boundary_repulsors=deployment_repulsors)
             
             if not model_positions:
                 return False
+            
+            # CRITICAL: Validate that all models are actually within deployment zone after positioning
+            # This is a final safety check to catch any edge cases where models extend outside zones
+            # EXCEPTION: Skip this check for Infiltrate units as they can deploy outside deployment zones
+            player_name = unit.get_parent_army().player.name if unit.get_parent_army() and unit.get_parent_army().player else None
+            if player_name and not unit.has_infiltrate():
+                for model, position in zip(unit.models, model_positions):
+                    model_x, model_y = position[0], position[1]
+                    if not self.is_position_wholly_in_deployment_zone(model_x, model_y, model.model_base, player_name):
+                        print(f"🔴 CRITICAL: Auto-deployment validation failed - {unit.name} {model.name} at ({model_x:.1f}, {model_y:.1f}) extends outside deployment zone")
+                        return False
             
             # Unit position is now determined by model positions
             
