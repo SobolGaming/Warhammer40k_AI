@@ -821,6 +821,7 @@ def get_validation_rules(movement_type: MovementType, target_unit: 'Unit' = None
             'must_end_in_engagement_range': True,
             'target_unit': target_unit,  # Required for charge validation
             'allow_engagement_range_movement': True,  # Can move through engagement range
+            'allow_base_to_base_contact': True,  # Can end in base-to-base contact with target
         })
 
     elif movement_type == MovementType.PILE_IN:
@@ -916,7 +917,7 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
             print(f"🔍 DEBUG: No rotation detected, no pivot cost applied")
             # For zero-distance moves, we need to check if the current position is valid
             # This handles the case where another model has moved to this position
-            validity_result = is_position_valid_unified_detailed(goal, model, collision_trees, validation_rules, game_map)
+            validity_result = is_position_valid_unified_detailed(goal, model, collision_trees, validation_rules, game_map, is_final_position=True)
             if not validity_result['valid']:
                 print(f"🔍 DEBUG: Zero-distance move blocked: {validity_result['reason']}")
                 return {
@@ -947,8 +948,7 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
                 start[1] + t * (goal[1] - start[1]),
                 start[2] + t * (goal[2] - start[2])
             )
-
-            validity_result = is_position_valid_unified_detailed(check_pos, model, collision_trees, validation_rules, game_map)
+            validity_result = is_position_valid_unified_detailed(check_pos, model, collision_trees, validation_rules, game_map, is_final_position=False)
             if not validity_result['valid']:
                 straight_line_clear = False
                 collision_reasons.add(validity_result['reason'])
@@ -956,7 +956,7 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
 
         if straight_line_clear:
             # Validate final position for straight line path using unified validation system
-            validation_result = is_position_valid_unified_detailed(goal, model, collision_trees, validation_rules, game_map)
+            validation_result = is_position_valid_unified_detailed(goal, model, collision_trees, validation_rules, game_map, is_final_position=True)
             if not validation_result['valid']:
                 print(f"🔍 DEBUG: Straight line path blocked by final position validation: {validation_result['reason']}")
                 # Continue with A* pathfinding instead
@@ -1040,7 +1040,7 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
 
             # Validate final position according to movement rules
             # Use the unified validation system that includes collision trees and engagement_buffer
-            validation_result = is_position_valid_unified_detailed(goal, model, collision_trees, validation_rules, game_map)
+            validation_result = is_position_valid_unified_detailed(goal, model, collision_trees, validation_rules, game_map, is_final_position=True)
             if not validation_result['valid']:
                 return {
                     'valid': False,
@@ -1129,7 +1129,7 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
                 continue
 
             # Check if position is valid using STRTrees
-            validity_result = is_position_valid_unified_detailed(neighbor, model, collision_trees, validation_rules, game_map)
+            validity_result = is_position_valid_unified_detailed(neighbor, model, collision_trees, validation_rules, game_map, is_final_position=False)
             if not validity_result['valid']:
                 collision_reasons.add(validity_result['reason'])
                 if iterations < 10:  # Only log first few iterations to avoid spam
@@ -1257,9 +1257,30 @@ def is_position_valid_unified(position: Tuple[float, float, float], model: 'Mode
             for hit_shape in potential_hits:
                 try:
                     if test_shape.intersects(hit_shape):
+                        # For charges, allow base-to-base contact with target unit
+                        if validation_rules.get('allow_base_to_base_contact', False):
+                            target_unit = validation_rules.get('target_unit')
+                            if target_unit:
+                                # Check if this hit is from the target unit by checking spatial proximity
+                                # Since we're at the final position and it's a charge, any enemy model
+                                # that's very close is likely the target unit
+                                for enemy_model in target_unit.models:
+                                    if enemy_model.is_alive:
+                                        # Calculate edge-to-edge distance to this enemy model
+                                        from ..utility.model_base import Base
+                                        temp_base = Base(model.model_base.base_type, model.model_base.radius)
+                                        temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
+                                        
+                                        horizontal_distance = temp_base.edge_to_edge_distance(enemy_model.model_base)
+                                        vertical_distance = temp_base.vertical_distance(enemy_model.model_base)
+                                        
+                                        # For base-to-base contact, we want edge-to-edge distance to be very close to 0
+                                        # but not negative (which would indicate overlap)
+                                        if (horizontal_distance >= 0.0 and horizontal_distance < 0.1 and 
+                                            vertical_distance <= ENGAGEMENT_RANGE_VERTICAL):
+                                            continue
                         actual_hits.append(hit_shape)
-                except Exception as e:
-                    print(f"🔍 DEBUG: Error checking enemy model intersection: {e}, hit_shape type: {type(hit_shape)}")
+                except Exception:
                     continue
 
             if actual_hits:
@@ -1284,7 +1305,8 @@ def is_position_valid_unified(position: Tuple[float, float, float], model: 'Mode
     return True
 
 def is_position_valid_unified_detailed(position: Tuple[float, float, float], model: 'Model',
-                                      collision_trees: dict, validation_rules: dict, game_map: 'Map' = None) -> dict:
+                                      collision_trees: dict, validation_rules: dict, game_map: 'Map' = None, 
+                                      is_final_position: bool = True) -> dict:
     """
     Check if a position is valid using STRTrees and validation rules, returning detailed reason.
 
@@ -1293,6 +1315,8 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
         model: The model being moved
         collision_trees: Dict of STRTrees for collision detection
         validation_rules: Dict of validation rules
+        game_map: The game map
+        is_final_position: Whether this is the final destination (affects charge/fall back validation)
 
     Returns:
         Dict with 'valid' (bool) and 'reason' (str) keys
@@ -1375,10 +1399,37 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
             potential_hits = query_spatial_index(collision_trees['enemy_models'], test_shape)
             actual_hits = []
 
+            # Track if we've already allowed base-to-base contact with target unit
+            allowed_target_contact = False
+
             for hit_shape in potential_hits:
                 try:
                     if test_shape.intersects(hit_shape):
-                        actual_hits.append(hit_shape)
+                        # For charges, allow base-to-base contact with target unit
+                        if validation_rules.get('allow_base_to_base_contact', False) and is_final_position and not allowed_target_contact:
+                            target_unit = validation_rules.get('target_unit')
+                            if target_unit:
+                                # Check if this hit is from the target unit by checking spatial proximity
+                                # Since we're at the final position and it's a charge, any enemy model
+                                # that's very close is likely the target unit
+                                for enemy_model in target_unit.models:
+                                    if enemy_model.is_alive:
+                                        # Calculate edge-to-edge distance to this enemy model
+                                        from ..utility.model_base import Base
+                                        temp_base = Base(model.model_base.base_type, model.model_base.radius)
+                                        temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
+                                        
+                                        horizontal_distance = temp_base.edge_to_edge_distance(enemy_model.model_base)
+                                        vertical_distance = temp_base.vertical_distance(enemy_model.model_base)
+                                        
+                                        # For base-to-base contact, we want edge-to-edge distance to be very close to 0
+                                        # but not negative (which would indicate overlap)
+                                        if (horizontal_distance >= 0.0 and horizontal_distance < 0.1 and 
+                                            vertical_distance <= ENGAGEMENT_RANGE_VERTICAL):
+                                            allowed_target_contact = True
+                                            continue
+                        if not allowed_target_contact:
+                            actual_hits.append(hit_shape)
                 except Exception:
                     continue
 
@@ -1430,8 +1481,8 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
                                 print(f"🔍 DEBUG: Distance to {enemy_model.name}: {horizontal_distance:.2f}\" horizontal, {vertical_distance:.2f}\" vertical")
                                 return {'valid': False, 'reason': 'Position within engagement range of enemy models'}
 
-    # Check charge-specific rules
-    if validation_rules.get('must_end_in_engagement_range', False):
+    # Check charge-specific rules (only apply to final positions)
+    if validation_rules.get('must_end_in_engagement_range', False) and is_final_position:
         target_unit = validation_rules.get('target_unit')
         if not target_unit:
             return {'valid': False, 'reason': 'No target unit specified for charge'}
@@ -1455,8 +1506,8 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
         if not in_engagement_range:
             return {'valid': False, 'reason': 'Charge must end within engagement range of target unit'}
 
-    # Check fall back rules
-    if validation_rules.get('cannot_end_in_engagement_range', False):
+    # Check fall back rules (only apply to final positions)
+    if validation_rules.get('cannot_end_in_engagement_range', False) and is_final_position:
         from ..utility.model_base import Base
         temp_base = Base(model.model_base.base_type, model.model_base.radius)
         temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]

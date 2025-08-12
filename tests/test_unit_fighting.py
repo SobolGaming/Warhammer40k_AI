@@ -150,19 +150,33 @@ class TestFightPhaseManager(unittest.TestCase):
         self.game_map.get_enemy_units.return_value = [self.unit1_charged]
         self.game_map.is_within_engagement_range.return_value = True
         
-        # Mock pile-in and consolidate methods
-        self.unit2_fight_first.pile_in_towards_enemies = Mock()
-        self.unit2_fight_first.consolidate_towards_enemies = Mock()
+        # Set up UI callbacks for the new fight sequence
+        def mock_ui_callback(movement_type, unit, callback):
+            # Simulate successful movement completion
+            callback(True)
+        
+        self.manager.on_movement_required = mock_ui_callback
+        
+        # Mock weapon selection callback
+        def mock_weapon_selection_callback(fighting_unit, target_unit, callback):
+            # Simulate weapon selection completion with empty declarations
+            callback([])
+        
+        self.manager.on_weapon_selection_required = mock_weapon_selection_callback
         
         # Select unit
         self.manager.unit_selected(self.unit2_fight_first, self.player1, self.player2)
         
-        # Should execute fight sequence directly (single target)
-        self.unit2_fight_first.pile_in_towards_enemies.assert_called_once()
-        self.unit2_fight_first.consolidate_towards_enemies.assert_called_once()
+        # Should call target selection callback (even for single target)
+        self.target_selection_callback.assert_called_once()
         
-        # Unit should be marked as fought
-        self.assertIn(self.unit2_fight_first, self.manager.fought_units)
+        # Get the arguments passed to the callback
+        args, kwargs = self.target_selection_callback.call_args
+        fighting_unit, eligible_targets, active_player = args
+        
+        self.assertEqual(fighting_unit, self.unit2_fight_first)
+        self.assertIn(self.unit1_charged, eligible_targets)
+        self.assertEqual(active_player, self.player2)
     
     def test_unit_selection_with_multiple_targets(self):
         """Test unit selection when there are multiple eligible targets."""
@@ -195,12 +209,32 @@ class TestFightPhaseManager(unittest.TestCase):
         # Mock single target for quick resolution
         self.game_map.get_enemy_units.return_value = [self.unit1_charged]
         self.game_map.is_within_engagement_range.return_value = True
-        self.unit2_fight_first.pile_in_towards_enemies = Mock()
-        self.unit2_fight_first.consolidate_towards_enemies = Mock()
+        
+        # Set up UI callbacks for the new fight sequence
+        def mock_ui_callback(movement_type, unit, callback):
+            # Simulate successful movement completion
+            callback(True)
+        
+        self.manager.on_movement_required = mock_ui_callback
+        
+        # Mock weapon selection callback
+        def mock_weapon_selection_callback(fighting_unit, target_unit, callback):
+            # Simulate weapon selection completion with empty declarations
+            callback([])
+        
+        self.manager.on_weapon_selection_required = mock_weapon_selection_callback
         
         # First selection (Player 2)
         self.assertEqual(self.manager.get_active_player(), self.player2)
         self.manager.unit_selected(self.unit2_fight_first, self.player1, self.player2)
+        
+        # Verify target selection callback was called
+        self.target_selection_callback.assert_called_once()
+        
+        # Simulate target selection completion by calling targets_selected
+        # Create a simple target declaration (empty dict for no specific model targeting)
+        target_declarations = {self.unit1_charged: []}
+        self.manager.targets_selected(self.unit2_fight_first, target_declarations, self.player1, self.player2)
         
         # Should switch to Player 1
         self.assertEqual(self.manager.get_active_player(), self.player1)
