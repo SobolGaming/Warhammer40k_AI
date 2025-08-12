@@ -159,15 +159,7 @@ class FightPhaseManager:
         # Always show target selection dialog, even for single targets
         # This gives the user a chance to see what's happening and confirm the attack
         print(f"🎯 {selected_unit.name} can fight {len(eligible_targets)} target(s): {[target.name for target in eligible_targets]}")
-        if self.on_target_selection_required:
-            self.on_target_selection_required(selected_unit, eligible_targets, self.active_player)
-        else:
-            # Fallback: if no target selection callback, auto-select all targets
-            print("⚠️ No target selection callback - auto-selecting all targets")
-            target_declarations = {}
-            for target in eligible_targets:
-                target_declarations[target] = []  # Empty list means all models attack this target
-            self.targets_selected(selected_unit, target_declarations, current_player, opponent_player)
+        self.on_target_selection_required(selected_unit, eligible_targets, self.active_player)
     
     def targets_selected(self, fighting_unit: Unit, target_declarations: Dict[Unit, List['Model']], current_player: Player, opponent_player: Player) -> None:
         """Handle target selection and execute the fight sequence."""
@@ -441,14 +433,13 @@ class FightPhaseManager:
                 continue
 
             for wargear in model.wargear:
-                if hasattr(wargear, 'profiles'):
+                if hasattr(wargear, 'profiles') and wargear.is_melee():
                     for profile_name, profile in wargear.profiles.items():
-                        if hasattr(profile, 'is_melee_weapon') and profile.is_melee_weapon():
-                            weapon_declarations.append({
-                                'model': model,
-                                'weapon_profile': profile,
-                                'profile_name': profile_name
-                            })
+                        weapon_declarations.append({
+                            'model': model,
+                            'weapon_profile': profile,
+                            'profile_name': profile_name
+                        })
 
         print(f"🗡️ Auto-selected {len(weapon_declarations)} melee weapons for {unit.name}")
         return weapon_declarations

@@ -8,8 +8,6 @@ following the official rules for melee combat resolution.
 import pygame
 from typing import List, Dict, Optional, Callable
 from ...classes.unit import Unit
-from ...classes.model import Model
-from ...classes.wargear import Wargear, WargearProfile
 
 # Enhanced Colors
 PANEL_BG = (50, 50, 50)
@@ -104,36 +102,85 @@ class MeleeWeaponDeclarationDialog:
         if not self.unit:
             return
         
+        print(f"🔍 DEBUG: Initializing weapon selection for {self.unit.name}")
+        print(f"🔍 DEBUG: Unit has {len(self.unit.models)} models")
+        
         # Get all melee weapons from all models
         melee_weapons = []
-        for model in self.unit.models:
+        for model_idx, model in enumerate(self.unit.models):
             if not model.is_alive:
+                print(f"🔍 DEBUG: Model {model_idx} is not alive, skipping")
                 continue
             
-            for wargear in model.wargear:
-                if hasattr(wargear, 'profiles'):
+            print(f"🔍 DEBUG: Model {model_idx} ({model.name}) has {len(model.wargear)} wargear items")
+            
+            for wargear_idx, wargear in enumerate(model.wargear):
+                print(f"🔍 DEBUG: Wargear {wargear_idx}: {wargear.name} (type: {wargear.type})")
+                
+                if hasattr(wargear, 'profiles') and wargear.is_melee():
+                    print(f"🔍 DEBUG: Wargear {wargear.name} is melee - has {len(wargear.profiles)} profiles: {list(wargear.profiles.keys())}")
                     for profile_name, profile in wargear.profiles.items():
-                        if hasattr(profile, 'is_melee_weapon') and profile.is_melee_weapon():
-                            melee_weapons.append({
-                                'model': model,
-                                'wargear': wargear,
-                                'profile': profile,
-                                'name': profile_name
-                            })
+                        print(f"🔍 DEBUG: Adding melee profile '{profile_name}'")
+                        melee_weapons.append({
+                            'model': model,
+                            'wargear': wargear,
+                            'profile': profile,
+                            'name': profile_name
+                        })
+                elif hasattr(wargear, 'profiles'):
+                    print(f"🔍 DEBUG: Wargear {wargear.name} is not melee (type: {wargear.type})")
+                else:
+                    print(f"🔍 DEBUG: Wargear does not have profiles attribute")
+        
+        print(f"🔍 DEBUG: Found {len(melee_weapons)} total melee weapons")
+        
+        # Implement proper melee weapon selection logic
+        # Only ONE primary weapon can be selected, plus any weapons with EXTRA ATTACKS
+        primary_weapons = []
+        extra_attack_weapons = []
+        
+        for weapon_info in melee_weapons:
+            profile = weapon_info['profile']
+            
+            # Check if weapon has EXTRA ATTACKS keyword using the existing method
+            has_extra_attacks = profile.is_extra_attacks()
+            
+            if has_extra_attacks:
+                extra_attack_weapons.append(weapon_info)
+            else:
+                primary_weapons.append(weapon_info)
+        
+        print(f"🔍 DEBUG: Found {len(primary_weapons)} primary weapons, {len(extra_attack_weapons)} extra attack weapons")
         
         # Create buttons for each weapon
         y_offset = 80
+        button_height = 60  # Increased height for more weapon info
+        
         for i, weapon_info in enumerate(melee_weapons):
-            button_rect = pygame.Rect(20, y_offset + i * 50, self.width - 40, 45)
+            button_rect = pygame.Rect(20, y_offset + i * button_height, self.width - 40, button_height - 5)
+            
+            profile = weapon_info['profile']
+            has_extra_attacks = profile.is_extra_attacks()
+            
+            # Select first primary weapon by default, and all extra attack weapons
+            is_selected = False
+            if has_extra_attacks:
+                is_selected = True  # Always select extra attack weapons
+            elif weapon_info in primary_weapons and not any(btn.get('selected', False) and not btn['weapon_info'].get('has_extra_attacks', False) for btn in self.weapon_buttons):
+                is_selected = True  # Select first primary weapon if none selected yet
+            
             self.weapon_buttons.append({
                 'rect': button_rect,
                 'weapon_info': weapon_info,
-                'selected': True  # Default to all weapons selected
+                'selected': is_selected,
+                'has_extra_attacks': has_extra_attacks
             })
-            self.selected_weapons.append(weapon_info)
+            
+            if is_selected:
+                self.selected_weapons.append(weapon_info)
         
         # Calculate scroll limits
-        total_height = len(self.weapon_buttons) * 50
+        total_height = len(self.weapon_buttons) * button_height
         content_height = self.height - 160  # Leave space for title and buttons
         self.max_scroll = max(0, total_height - content_height)
     
@@ -179,16 +226,46 @@ class MeleeWeaponDeclarationDialog:
                 button['rect'].height
             )
             if adjusted_rect.collidepoint(dialog_x, dialog_y):
-                # Toggle weapon selection
+                # Handle weapon selection with melee combat rules
                 weapon_info = button['weapon_info']
+                has_extra_attacks = button.get('has_extra_attacks', False)
+                
                 if button['selected']:
-                    button['selected'] = False
-                    if weapon_info in self.selected_weapons:
-                        self.selected_weapons.remove(weapon_info)
+                    # Deselecting a weapon
+                    if has_extra_attacks:
+                        # Can always deselect extra attack weapons
+                        button['selected'] = False
+                        if weapon_info in self.selected_weapons:
+                            self.selected_weapons.remove(weapon_info)
+                    else:
+                        # Deselecting primary weapon - only allowed if another primary is selected
+                        other_primary_selected = any(
+                            btn['selected'] and not btn.get('has_extra_attacks', False) and btn != button 
+                            for btn in self.weapon_buttons
+                        )
+                        if other_primary_selected:
+                            button['selected'] = False
+                            if weapon_info in self.selected_weapons:
+                                self.selected_weapons.remove(weapon_info)
+                        # If no other primary selected, don't allow deselection
                 else:
-                    button['selected'] = True
-                    if weapon_info not in self.selected_weapons:
-                        self.selected_weapons.append(weapon_info)
+                    # Selecting a weapon
+                    if has_extra_attacks:
+                        # Can always select extra attack weapons
+                        button['selected'] = True
+                        if weapon_info not in self.selected_weapons:
+                            self.selected_weapons.append(weapon_info)
+                    else:
+                        # Selecting primary weapon - deselect other primary weapons first
+                        for other_btn in self.weapon_buttons:
+                            if other_btn != button and other_btn['selected'] and not other_btn.get('has_extra_attacks', False):
+                                other_btn['selected'] = False
+                                if other_btn['weapon_info'] in self.selected_weapons:
+                                    self.selected_weapons.remove(other_btn['weapon_info'])
+                        
+                        button['selected'] = True
+                        if weapon_info not in self.selected_weapons:
+                            self.selected_weapons.append(weapon_info)
                 return
         
         # Check execute button
@@ -199,17 +276,19 @@ class MeleeWeaponDeclarationDialog:
     def _execute_attacks(self):
         """Execute the declared melee attacks."""
         if self.callback:
-            # Convert selected weapons to the format expected by the callback
-            declarations = []
+            # Convert selected weapons to weapon declarations format
+            # This should match what the fight sequence expects for weapon selection
+            weapon_declarations = []
             for weapon_info in self.selected_weapons:
-                declarations.append({
+                weapon_declarations.append({
                     'model': weapon_info['model'],
                     'weapon_profile': weapon_info['profile'],
-                    'wargear': weapon_info['wargear']
+                    'wargear': weapon_info['wargear'],
+                    'profile_name': weapon_info['name']
                 })
             
-            print(f"⚔️ Executing melee attacks with {len(declarations)} weapon declarations")
-            self.callback(declarations)
+            print(f"⚔️ Weapon selection completed with {len(weapon_declarations)} weapon declarations")
+            self.callback(weapon_declarations)
         self.hide()
     
     def _is_click_in_dialog(self, mouse_pos):
@@ -280,36 +359,59 @@ class MeleeWeaponDeclarationDialog:
                 continue
             
             # Draw button background
-            button_color = self.selected_color if button['selected'] else self.button_color
+            has_extra_attacks = button.get('has_extra_attacks', False)
+            if button['selected']:
+                button_color = EXTRA_ATTACKS_COLOR if has_extra_attacks else MELEE_COLOR
+            else:
+                button_color = self.button_color
+            
             pygame.draw.rect(surface, button_color, button_rect)
             pygame.draw.rect(surface, self.border_color, button_rect, 1)
             
             # Draw weapon info
             weapon_info = button['weapon_info']
-            weapon_name = weapon_info['name']
-            model_name = weapon_info['model'].name if hasattr(weapon_info['model'], 'name') else f"Model {weapon_info['model']._id}"
+            wargear = weapon_info['wargear']
+            profile = weapon_info['profile']
+            profile_name = weapon_info['name']
             
-            # Weapon name
+            # Line 1: Weapon name (use wargear name, not "default")
+            weapon_name = wargear.name
+            if profile_name != 'default':
+                weapon_name += f" - {profile_name}"
+            
+            # Add indicator for extra attacks weapons
+            if has_extra_attacks:
+                weapon_name += " [EXTRA ATTACKS]"
+            
             name_surface = self.font_medium.render(weapon_name, True, self.text_color)
             surface.blit(name_surface, (button_rect.x + 10, button_rect.y + 5))
             
-            # Model name
-            model_surface = self.font_small.render(f"Model: {model_name}", True, TEXT_SECONDARY)
-            surface.blit(model_surface, (button_rect.x + 10, button_rect.y + 25))
+            # Line 2: Weapon stats (melee format: A/WS/S/AP/D)
+            stats_parts = []
+            if hasattr(profile, 'attacks'):
+                stats_parts.append(f"A: {profile.attacks}")
+            if hasattr(profile, 'skill'):
+                stats_parts.append(f"WS: {profile.skill}+")
+            if hasattr(profile, 'strength'):
+                stats_parts.append(f"S: {profile.strength}")
+            if hasattr(profile, 'ap'):
+                stats_parts.append(f"AP: {profile.ap}")
+            if hasattr(profile, 'damage'):
+                stats_parts.append(f"D: {profile.damage}")
             
-            # Weapon stats (if available)
-            profile = weapon_info['profile']
-            if hasattr(profile, 'attacks') and hasattr(profile, 'strength'):
-                stats_text = f"A:{profile.attacks} S:{profile.strength}"
-                if hasattr(profile, 'ap'):
-                    stats_text += f" AP:{profile.ap}"
-                if hasattr(profile, 'damage'):
-                    stats_text += f" D:{profile.damage}"
-                
+            if stats_parts:
+                stats_text = " | ".join(stats_parts)
                 stats_surface = self.font_small.render(stats_text, True, TEXT_SECONDARY)
-                surface.blit(stats_surface, (button_rect.right - 200, button_rect.y + 5))
+                surface.blit(stats_surface, (button_rect.x + 10, button_rect.y + 25))
+            
+            # Line 3: Keywords (if any)
+            keywords = profile.get_keywords() if hasattr(profile, 'get_keywords') else []
+            if keywords:
+                keywords_text = ", ".join(keywords)
+                keywords_surface = self.font_small.render(keywords_text, True, (100, 149, 237))  # Blue accent
+                surface.blit(keywords_surface, (button_rect.x + 10, button_rect.y + 42))
             
             # Selection indicator
             if button['selected']:
-                check_surface = self.font_medium.render("✓", True, MELEE_COLOR)
+                check_surface = self.font_medium.render("✓", True, TEXT_PRIMARY)
                 surface.blit(check_surface, (button_rect.right - 30, button_rect.y + 10)) 

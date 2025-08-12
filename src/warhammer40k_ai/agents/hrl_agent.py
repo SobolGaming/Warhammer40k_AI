@@ -2106,12 +2106,8 @@ class TacticalAgent:
         regular_weapons = []
         
         for weapon in melee_weapons:
-            # Check if weapon has EXTRA ATTACKS keyword
-            has_extra_attacks = False
-            if hasattr(weapon, 'keywords'):
-                has_extra_attacks = 'EXTRA ATTACKS' in weapon.keywords
-            elif hasattr(weapon, 'name'):
-                has_extra_attacks = 'extra attacks' in weapon.name.lower()
+            # Check if weapon has EXTRA ATTACKS keyword using the proper method
+            has_extra_attacks = weapon.is_extra_attacks()
             
             if has_extra_attacks:
                 extra_attack_weapons.append(weapon)

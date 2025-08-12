@@ -1580,6 +1580,14 @@ class GameView:
         if hasattr(self, 'melee_weapon_declaration_dialog') and self.melee_weapon_declaration_dialog.visible:
             self.melee_weapon_declaration_dialog.draw(self.screen)
         
+        # Draw fight target selection dialog if visible
+        if hasattr(self, 'fight_target_selection_dialog') and self.fight_target_selection_dialog.visible:
+            self.fight_target_selection_dialog.draw(self.screen)
+        
+        # Draw target model selection dialog if visible
+        if hasattr(self, 'target_model_selection_dialog') and self.target_model_selection_dialog.visible:
+            self.target_model_selection_dialog.draw(self.screen)
+        
         # Draw mission selection dialog if visible
         if hasattr(self, 'mission_selection_dialog') and self.mission_selection_dialog.visible:
             self.mission_selection_dialog.draw(self.screen)
@@ -2709,6 +2717,16 @@ class BattlePhaseHandler(BasePhaseHandler):
             self.game_view.ui_interface.fight_unit_selection_dialog.visible):
             return self.game_view.ui_interface.fight_unit_selection_dialog.handle_event(event)
         
+        # Handle fight target selection dialog (high priority for fight phase)
+        if (hasattr(self.game_view, 'fight_target_selection_dialog') and
+            self.game_view.fight_target_selection_dialog.visible):
+            return self.game_view.fight_target_selection_dialog.handle_event(event)
+        
+        # Handle target model selection dialog (high priority for fight phase)
+        if (hasattr(self.game_view, 'target_model_selection_dialog') and
+            self.game_view.target_model_selection_dialog.visible):
+            return self.game_view.target_model_selection_dialog.handle_event(event)
+        
         # Handle shooting declaration dialog
         if (hasattr(self.game_view, 'shooting_declaration_dialog') and
             (self.game_view.shooting_declaration_dialog.visible or 
@@ -3055,17 +3073,36 @@ class BattlePhaseHandler(BasePhaseHandler):
             if active_player.type.name == 'HUMAN':
                 print(f"🎯 {active_player.name} must select targets for {fighting_unit.name}")
                 print(f"   Eligible targets: {[target.name for target in eligible_targets]}")
-                # Show melee weapon declaration dialog using game_view instance (like shooting dialog)
-                def on_targets_selected(target_declarations):
-                    self.fight_phase_manager.targets_selected(fighting_unit, target_declarations, current_player, opponent_player)
                 
-                self.game_view.melee_weapon_declaration_dialog.show(
-                    fighting_unit, on_targets_selected, self.game.map
-                )
+                if len(eligible_targets) == 1:
+                    # Single target - auto-select
+                    target_unit = eligible_targets[0]
+                    print(f"🎯 Auto-selecting single target: {target_unit.name}")
+                    self._start_comprehensive_fight_sequence(fighting_unit, [target_unit], current_player, opponent_player)
+                else:
+                    # Multiple targets - show target selection dialog
+                    print(f"🎯 Multiple targets available - showing target selection dialog")
+                    
+                    def on_target_selected(selected_target: Unit):
+                        print(f"🎯 Player selected target: {selected_target.name}")
+                        self._start_comprehensive_fight_sequence(fighting_unit, [selected_target], current_player, opponent_player)
+                    
+                    def on_target_selection_cancelled():
+                        print("🎯 Target selection cancelled")
+                        # Return to unit selection or skip this unit's turn
+                        self.fight_phase_manager._switch_active_player(current_player, opponent_player)
+                    
+                    # Show the target selection dialog
+                    self.game_view.fight_target_selection_dialog.show(
+                        fighting_unit, eligible_targets, on_target_selected, on_target_selection_cancelled
+                    )
             else:
-                # AI player - use existing AI logic
+                # AI player - auto-select first target for now
                 print(f"🤖 AI player {active_player.name} selecting targets automatically")
-                # TODO: Implement AI target selection
+                if eligible_targets:
+                    target_unit = eligible_targets[0]
+                    print(f"🤖 AI selected target: {target_unit.name}")
+                    self._start_comprehensive_fight_sequence(fighting_unit, [target_unit], current_player, opponent_player)
         
         def on_stage_complete():
             print("✅ Fight Phase complete")
@@ -3100,6 +3137,290 @@ class BattlePhaseHandler(BasePhaseHandler):
         
         # Start the fight phase
         self.fight_phase_manager.start_fight_phase(current_player, opponent_player)
+    
+    def _start_comprehensive_fight_sequence(self, fighting_unit: Unit, target_units: List[Unit], current_player: Player, opponent_player: Player):
+        """Start the comprehensive fight sequence following proper Warhammer 40k rules."""
+        print(f"⚔️ Starting comprehensive fight sequence: {fighting_unit.name} vs {[t.name for t in target_units]}")
+        
+        # Step 1: Pile-in movement
+        def on_pile_in_complete(completed: bool):
+            print(f"📍 {fighting_unit.name} pile-in completed: {completed}")
+            
+            if len(target_units) == 1:
+                # Single target - proceed directly to weapon allocation
+                self._start_weapon_allocation_phase(fighting_unit, target_units[0], current_player, opponent_player)
+            else:
+                # Multiple targets - implement weapon/attack allocation dialog
+                # TODO: Implement multi-target weapon allocation
+                print("⚠️ Multi-target weapon allocation not yet implemented - using first target")
+                self._start_weapon_allocation_phase(fighting_unit, target_units[0], current_player, opponent_player)
+        
+        # Start pile-in movement
+        print(f"📍 {fighting_unit.name} needs to perform pile_in movement")
+        self.game_view.individual_model_movement_dialog.show(
+            fighting_unit, 'pile_in', on_pile_in_complete, self.game.map, 3.0
+        )
+    
+    def _start_weapon_allocation_phase(self, fighting_unit: Unit, target_unit: Unit, current_player: Player, opponent_player: Player):
+        """Handle weapon allocation phase - each model selects one weapon (except EXTRA ATTACKS)."""
+        print(f"⚔️ Starting weapon allocation: {fighting_unit.name} vs {target_unit.name}")
+        
+        def on_weapon_allocation_complete(weapon_declarations):
+            print(f"⚔️ Weapon allocation completed with {len(weapon_declarations)} declarations")
+            self._start_target_model_selection_phase(fighting_unit, target_unit, weapon_declarations, current_player, opponent_player)
+        
+        # Show melee weapon declaration dialog for weapon allocation
+        self.game_view.melee_weapon_declaration_dialog.show(
+            fighting_unit, on_weapon_allocation_complete, self.game.map
+        )
+    
+    def _start_target_model_selection_phase(self, fighting_unit: Unit, target_unit: Unit, weapon_declarations: List, current_player: Player, opponent_player: Player):
+        """Handle target model selection phase."""
+        print(f"🎯 Starting target model selection phase")
+        
+        # Check if any weapons have PRECISION or if target unit has mixed attributes
+        has_precision_weapons = any(
+            decl.get('weapon_profile').is_precision()
+            for decl in weapon_declarations
+            if decl.get('weapon_profile')
+        )
+        
+        has_mixed_attributes = self._unit_has_mixed_attributes(target_unit)
+        
+        if has_precision_weapons:
+            print(f"🎯 PRECISION weapons detected - showing target model selection")
+            
+            def on_precision_model_selected(selected_model):
+                print(f"🎯 PRECISION targeting: {selected_model.name} selected")
+                # Store the precision target for attack resolution
+                for decl in weapon_declarations:
+                    weapon_profile = decl.get('weapon_profile')
+                    if weapon_profile and weapon_profile.is_precision():
+                        decl['precision_target'] = selected_model
+                self._start_attack_resolution_phase(fighting_unit, target_unit, weapon_declarations, current_player, opponent_player)
+            
+            def on_precision_cancelled():
+                print("🎯 PRECISION targeting cancelled")
+                # Proceed without precision targeting
+                self._start_attack_resolution_phase(fighting_unit, target_unit, weapon_declarations, current_player, opponent_player)
+            
+            self.game_view.target_model_selection_dialog.show(
+                fighting_unit, target_unit, weapon_declarations, "precision",
+                on_precision_model_selected, on_precision_cancelled
+            )
+            
+        elif has_mixed_attributes:
+            print(f"🎯 Mixed attributes detected - defender selects wound allocation")
+            
+            def on_wound_model_selected(selected_model):
+                print(f"🎯 Wound allocation: {selected_model.name} selected to receive wounds")
+                # Store the wound allocation target
+                for decl in weapon_declarations:
+                    decl['wound_target'] = selected_model
+                self._start_attack_resolution_phase(fighting_unit, target_unit, weapon_declarations, current_player, opponent_player)
+            
+            def on_wound_cancelled():
+                print("🎯 Wound allocation cancelled - using automatic allocation")
+                self._start_attack_resolution_phase(fighting_unit, target_unit, weapon_declarations, current_player, opponent_player)
+            
+            self.game_view.target_model_selection_dialog.show(
+                fighting_unit, target_unit, weapon_declarations, "wound_allocation",
+                on_wound_model_selected, on_wound_cancelled
+            )
+            
+        else:
+            print(f"🎯 No special targeting required - proceeding to attack resolution")
+            self._start_attack_resolution_phase(fighting_unit, target_unit, weapon_declarations, current_player, opponent_player)
+    
+    def _unit_has_mixed_attributes(self, unit: Unit) -> bool:
+        """Check if a unit has models with different toughness, save, or wounds."""
+        if len(unit.models) <= 1:
+            return False
+        
+        first_model = unit.models[0]
+        for model in unit.models[1:]:
+            if (model.toughness != first_model.toughness or 
+                model.save != first_model.save or 
+                model.wounds != first_model.wounds):
+                return True
+        return False
+    
+    def _start_attack_resolution_phase(self, fighting_unit: Unit, target_unit: Unit, weapon_declarations: List, current_player: Player, opponent_player: Player):
+        """Handle sequential attack resolution."""
+        print(f"⚔️ Starting attack resolution phase")
+        
+        # Resolve attacks sequentially
+        self._resolve_sequential_attacks(fighting_unit, target_unit, weapon_declarations)
+        
+        # Step 4: Consolidate movement
+        def on_consolidate_complete(completed: bool):
+            print(f"🏃 {fighting_unit.name} consolidate completed: {completed}")
+            
+            # Mark unit as having fought
+            self.fight_phase_manager.fought_units.add(fighting_unit)
+            
+            # Switch to other player for next selection
+            self.fight_phase_manager._switch_active_player(current_player, opponent_player)
+        
+        # Start consolidate movement
+        print(f"🏃 {fighting_unit.name} needs to perform consolidate movement")
+        self.game_view.individual_model_movement_dialog.show(
+            fighting_unit, 'consolidate', on_consolidate_complete, self.game.map, 3.0
+        )
+    
+    def _resolve_sequential_attacks(self, fighting_unit: Unit, target_unit: Unit, weapon_declarations: List):
+        """Resolve attacks one at a time with proper wound allocation."""
+        print(f"⚔️ Resolving {len(weapon_declarations)} weapon attacks sequentially")
+        
+        for i, weapon_decl in enumerate(weapon_declarations):
+            model = weapon_decl.get('model')
+            weapon_profile = weapon_decl.get('weapon_profile')
+            precision_target = weapon_decl.get('precision_target')
+            wound_target = weapon_decl.get('wound_target')
+            
+            if not model or not weapon_profile:
+                continue
+            
+            print(f"⚔️ Attack {i+1}/{len(weapon_declarations)}: {model.name} with {weapon_profile.name}")
+            
+            # Get number of attacks for this weapon
+            attacks = self._get_weapon_attacks(weapon_profile)
+            print(f"🎲 Rolling {attacks} attacks")
+            
+            # Resolve each attack individually
+            for attack_num in range(attacks):
+                if not target_unit.is_alive():
+                    print("💀 Target unit destroyed - remaining attacks cancelled")
+                    break
+                
+                print(f"  Attack {attack_num + 1}/{attacks}")
+                
+                # Determine target model for this attack
+                target_model = None
+                if precision_target and precision_target.is_alive:
+                    target_model = precision_target
+                    print(f"  🎯 PRECISION targeting: {target_model.name}")
+                elif wound_target and wound_target.is_alive:
+                    target_model = wound_target
+                    print(f"  🎯 Wound allocation: {target_model.name}")
+                else:
+                    # Standard wound allocation - wounded models first, then closest
+                    target_model = self._select_wound_target(target_unit)
+                    if target_model:
+                        print(f"  🎯 Auto-allocation: {target_model.name}")
+                
+                if not target_model:
+                    print("  ❌ No valid target model - attack wasted")
+                    continue
+                
+                # Resolve single attack
+                # Note: take_damage() method automatically handles model death, FNP saves, etc.
+                success = self._resolve_single_attack(model, weapon_profile, target_model, target_unit)
+                
+                # The take_damage() method has already handled model death if applicable
+                # No need for manual death checking since take_damage() calls die() automatically
+        
+        print(f"⚔️ All attacks resolved")
+    
+    def _get_weapon_attacks(self, weapon_profile) -> int:
+        """Get the number of attacks for a weapon profile."""
+        attacks = getattr(weapon_profile, 'attacks', 1)
+        if hasattr(attacks, 'resolve'):
+            # Handle dice-based attacks like "D6" or "2D3"
+            return attacks.resolve()
+        elif isinstance(attacks, str):
+            # Handle string-based attacks
+            from ..utility.dice import get_roll
+            return get_roll(attacks)
+        else:
+            return int(attacks) if attacks else 1
+    
+    def _select_wound_target(self, target_unit: Unit):
+        """Select the target model for wound allocation following 40k rules."""
+        if not target_unit.is_alive():
+            return None
+        
+        alive_models = [model for model in target_unit.models if model.is_alive]
+        if not alive_models:
+            return None
+        
+        # Priority 1: Wounded models (must allocate to wounded models first)
+        wounded_models = [model for model in alive_models if model.wounds < model._base_wounds]
+        if wounded_models:
+            # Return the most wounded model
+            return min(wounded_models, key=lambda m: m.wounds)
+        
+        # Priority 2: Any alive model (typically the closest or first)
+        return alive_models[0]
+    
+    def _resolve_single_attack(self, attacking_model, weapon_profile, target_model, target_unit) -> bool:
+        """Resolve a single attack and return True if it caused damage."""
+        try:
+            # Get attack stats
+            weapon_skill = getattr(weapon_profile, 'skill', 4)
+            strength = getattr(weapon_profile, 'strength', attacking_model.strength if hasattr(attacking_model, 'strength') else 4)
+            ap = getattr(weapon_profile, 'ap', 0)
+            damage = getattr(weapon_profile, 'damage', 1)
+            
+            # Roll to hit
+            from ..utility.dice import get_roll
+            hit_roll = get_roll("1D6")
+            hit_needed = weapon_skill
+            
+            print(f"    🎯 Hit: {hit_roll} vs {hit_needed}+ = {'HIT' if hit_roll >= hit_needed else 'MISS'}")
+            
+            if hit_roll < hit_needed:
+                return False
+            
+            # Roll to wound
+            wound_roll = get_roll("1D6")
+            wound_needed = self._calculate_wound_target(strength, target_model.toughness)
+            
+            print(f"    🩸 Wound: {wound_roll} vs {wound_needed}+ = {'WOUND' if wound_roll >= wound_needed else 'NO WOUND'}")
+            
+            if wound_roll < wound_needed:
+                return False
+            
+            # Roll save
+            save_roll = get_roll("1D6")
+            save_needed = max(target_model.save + ap, 2)  # Minimum 2+ save after modifiers
+            
+            print(f"    🛡️ Save: {save_roll} vs {save_needed}+ = {'SAVED' if save_roll >= save_needed else 'FAILED'}")
+            
+            if save_roll >= save_needed:
+                return False
+            
+            # Apply damage using the proper take_damage method
+            if isinstance(damage, str):
+                damage_dealt = get_roll(damage)
+            else:
+                damage_dealt = int(damage) if damage else 1
+            
+            print(f"    💥 Damage: {damage_dealt}")
+            
+            # Use the model's take_damage method which handles FNP, death, etc.
+            wounds_before = target_model.wounds
+            excess_damage = target_model.take_damage(damage_dealt, is_mortal=False, weapon_profile=weapon_profile)
+            actual_damage = wounds_before - target_model.wounds
+            
+            return actual_damage > 0
+            
+        except Exception as e:
+            print(f"    ❌ Attack resolution error: {e}")
+            return False
+    
+    def _calculate_wound_target(self, strength: int, toughness: int) -> int:
+        """Calculate the target number needed to wound."""
+        if strength >= toughness * 2:
+            return 2
+        elif strength > toughness:
+            return 3
+        elif strength == toughness:
+            return 4
+        elif strength * 2 <= toughness:
+            return 6
+        else:
+            return 5
     
     def get_fight_phase_status(self) -> dict:
         """Get the current fight phase status for UI display"""
@@ -3569,6 +3890,14 @@ class PhaseManager:
         # Melee weapon declaration system state
         from .dialogs import MeleeWeaponDeclarationDialog
         self.game_view.melee_weapon_declaration_dialog = MeleeWeaponDeclarationDialog(game_view.screen.get_width(), game_view.screen.get_height())
+        
+        # Fight target selection dialog
+        from .dialogs.fight_target_selection_dialog import FightTargetSelectionDialog
+        self.game_view.fight_target_selection_dialog = FightTargetSelectionDialog(game_view.screen.get_width(), game_view.screen.get_height())
+        
+        # Target model selection dialog
+        from .dialogs.target_model_selection_dialog import TargetModelSelectionDialog
+        self.game_view.target_model_selection_dialog = TargetModelSelectionDialog(game_view.screen.get_width(), game_view.screen.get_height())
     
     def get_current_handler(self) -> BasePhaseHandler:
         """Get the appropriate handler for the current game phase"""

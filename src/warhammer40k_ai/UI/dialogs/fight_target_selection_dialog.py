@@ -1,0 +1,119 @@
+import pygame
+from typing import List, Callable, Optional, Dict
+
+from .base_dialog import BaseDialog, PANEL_BG, PANEL_BORDER, BUTTON_BG, BUTTON_HOVER, TEXT_PRIMARY, TEXT_SECONDARY
+from ...classes.unit import Unit
+
+
+class FightTargetSelectionDialog(BaseDialog):
+    """Dialog for selecting which engaged enemy unit to fight."""
+
+    def __init__(self, screen_width: int, screen_height: int) -> None:
+        super().__init__(screen_width, screen_height, width=560, height=420, draggable=True, center=True)
+
+        # State
+        self.fighting_unit: Optional[Unit] = None
+        self.eligible_targets: List[Unit] = []
+        self.on_target_selected: Optional[Callable[[Unit], None]] = None
+        self.on_cancel: Optional[Callable[[], None]] = None
+
+        # Button mapping: name -> Unit
+        self._button_to_target: Dict[str, Unit] = {}
+
+    def show(self, fighting_unit: Unit, eligible_targets: List[Unit],
+             on_target_selected: Callable[[Unit], None],
+             on_cancel: Optional[Callable[[], None]] = None) -> None:
+        self.fighting_unit = fighting_unit
+        self.eligible_targets = eligible_targets
+        self.on_target_selected = on_target_selected
+        self.on_cancel = on_cancel
+        super().show()
+        self._create_buttons()
+
+    def hide(self) -> None:
+        super().hide()
+        self.fighting_unit = None
+        self.eligible_targets = []
+        self.on_target_selected = None
+        self.on_cancel = None
+        self._button_to_target.clear()
+
+    def _create_buttons(self) -> None:
+        # Clear any existing buttons
+        self.buttons.clear()
+        self.button_states.clear()
+        self._button_to_target.clear()
+
+        button_width = self.width - 40
+        button_height = 70
+        button_spacing = 10
+        start_y = (self.title_bar_height + 60)  # Below title/instructions
+
+        for i, target in enumerate(self.eligible_targets):
+            rel_x = 20
+            rel_y = start_y + i * (button_height + button_spacing)
+            name = f"target_{i}"
+            self.add_button(name, rel_x, rel_y, button_width, button_height, enabled=True)
+            self._button_to_target[name] = target
+
+        # Cancel button (bottom-right)
+        cancel_width, cancel_height = 120, 40
+        rel_x = self.width - cancel_width - 20
+        rel_y = self.height - cancel_height - 20
+        self.add_button('cancel', rel_x, rel_y, cancel_width, cancel_height, enabled=True)
+
+    def _handle_button_click(self, button_name: str) -> bool:
+        if button_name == 'cancel':
+            if self.on_cancel:
+                self.on_cancel()
+            self.hide()
+            return True
+
+        if button_name in self._button_to_target:
+            target = self._button_to_target[button_name]
+            if self.on_target_selected:
+                self.on_target_selected(target)
+            self.hide()
+            return True
+
+        return False
+
+    def draw(self, screen: pygame.Surface) -> None:
+        if not self.visible:
+            return
+
+        # Overlay behind the dialog
+        overlay = pygame.Surface((self.screen_width, self.screen_height))
+        overlay.set_alpha(128)
+        overlay.fill((0, 0, 0))
+        screen.blit(overlay, (0, 0))
+
+        # Dialog background and title bar
+        self.draw_dialog_background(screen)
+        unit_name = self.fighting_unit.name if self.fighting_unit else "Unit"
+        self.draw_title_bar(screen, f"Select Target for {unit_name}")
+
+        # Instructions
+        self.draw_instructions(screen, "Choose an engaged enemy unit to fight.")
+
+        # Draw target buttons
+        for name, rect in self.buttons.items():
+            if name == 'cancel':
+                continue
+            # Button background with hover handled by BaseDialog.draw_button
+            target = self._button_to_target.get(name)
+            label = target.name if target else name
+            # Draw the button
+            self.draw_button(screen, name, label, color=BUTTON_BG)
+
+            # Additional status line
+            if target:
+                models_alive = len([m for m in target.models if m.is_alive])
+                status_text = f"Models: {models_alive}"
+                status_surface = self.font_small.render(status_text, True, TEXT_SECONDARY)
+                screen.blit(status_surface, (rect.x + 12, rect.y + rect.height - 22))
+
+        # Draw cancel button
+        self.draw_button(screen, 'cancel', 'Cancel', color=BUTTON_BG)
+
+

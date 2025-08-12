@@ -155,7 +155,14 @@ class Model:
         print(f"{self.name} takes {amount} damage. It is {'Alive' if self.is_alive else 'Dead'}")
         excess_damage = 0
         if not self.is_alive:
-            self.die()
+            # Check for "Fights on Death" ability before removing from battlefield
+            if self.has_fights_on_death():
+                print(f"⚡ {self.name} has 'Fights on Death' - remains on battlefield temporarily")
+                # TODO: Mark model for death fight sequence instead of immediate removal
+                # For now, still die immediately since death fight sequence isn't implemented
+                self.die()
+            else:
+                self.die()
             # below is left-over from 9th edition - excess damage is lost in 10th edition
             if is_mortal and abs(self.wounds) > 0:
                 excess_damage = abs(self.wounds)
@@ -231,6 +238,21 @@ class Model:
         # TODO: Implement more sophisticated condition parsing for complex rules
         
         return False  # Condition not met
+
+    def has_fights_on_death(self) -> bool:
+        """Check if this model has a 'Fights on Death' type ability.
+        
+        This is a stub implementation. In the future, this would check for specific
+        abilities like 'Fights on Death', 'Last Stand', 'Death Throes', etc.
+        
+        Returns:
+            bool: True if the model can fight after being reduced to 0 wounds
+        """
+        # TODO: Implement actual ability checking
+        # For now, return False - no models have this ability
+        # Future implementation would check self.abilities or parent_unit.abilities
+        # for abilities with keywords like "fights on death", "last stand", etc.
+        return False
 
     def die(self) -> None:
         # Suppress print for comprehensive attack summary
