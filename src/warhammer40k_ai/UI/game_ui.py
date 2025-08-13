@@ -1,15 +1,13 @@
 import pygame
-import textwrap
 import math
-import random
 from typing import Optional, Tuple, Dict, List, Protocol, Callable
 from abc import ABC, abstractmethod
-from warhammer40k_ai.classes.unit import Unit, MovementAction
+from warhammer40k_ai.classes.unit import Unit
 from warhammer40k_ai.classes.model import Model
 from warhammer40k_ai.utility.model_base import Base, BaseType
 from warhammer40k_ai.utility.calcs import get_unit_movement_path_preview, clear_enemy_model_cache
 from warhammer40k_ai.classes.player import Player
-from warhammer40k_ai.classes.game import Game
+from warhammer40k_ai.utility.dice import get_roll
 from warhammer40k_ai.classes.map import TerrainFeature, TerrainType, Objective, ObjectivePoint
 from warhammer40k_ai.classes.fight_phase_manager import FightPhaseManager, FightStage
 
@@ -2979,8 +2977,7 @@ class BattlePhaseHandler(BasePhaseHandler):
         # Show charge declaration dialog
         def on_charge_declaration(charging_unit, target_unit):
             # Roll 2D6 for charge distance
-            import random
-            charge_roll = random.randint(1, 6) + random.randint(1, 6)
+            charge_roll = get_roll("2D6")
             max_charge_distance = charge_roll
             print(f"🎲 {charging_unit.name} rolled {charge_roll}\" for charge distance")
 
