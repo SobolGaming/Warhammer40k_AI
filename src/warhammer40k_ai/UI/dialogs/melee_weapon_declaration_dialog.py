@@ -50,6 +50,10 @@ class MeleeWeaponDeclarationDialog:
         self.scroll_offset = 0
         self.max_scroll = 0
         
+        # Weapon group expansion state
+        self.expanded_weapon_groups = set()  # Set of weapon profile IDs that are expanded
+        self.available_weapons = []  # Grouped weapons list
+        
         # Colors
         self.bg_color = (50, 50, 50, 230)
         self.border_color = (100, 100, 100)
@@ -93,6 +97,8 @@ class MeleeWeaponDeclarationDialog:
         self.weapon_declarations = {}
         self.selected_weapons = []
         self.weapon_buttons = []
+        self.expanded_weapon_groups.clear()  # Clear expansion state
+        self.available_weapons = []
     
     def _initialize_weapon_selection(self):
         """Initialize the weapon selection interface."""
@@ -105,75 +111,33 @@ class MeleeWeaponDeclarationDialog:
         print(f"🔍 DEBUG: Initializing weapon selection for {self.unit.name}")
         print(f"🔍 DEBUG: Unit has {len(self.unit.models)} models")
         
-        # Get all melee weapons from all models
-        melee_weapons = []
-        for model_idx, model in enumerate(self.unit.models):
-            if not model.is_alive:
-                print(f"🔍 DEBUG: Model {model_idx} is not alive, skipping")
-                continue
-            
-            print(f"🔍 DEBUG: Model {model_idx} ({model.name}) has {len(model.wargear)} wargear items")
-            
-            for wargear_idx, wargear in enumerate(model.wargear):
-                print(f"🔍 DEBUG: Wargear {wargear_idx}: {wargear.name} (type: {wargear.type})")
-                
-                if hasattr(wargear, 'profiles') and wargear.is_melee():
-                    print(f"🔍 DEBUG: Wargear {wargear.name} is melee - has {len(wargear.profiles)} profiles: {list(wargear.profiles.keys())}")
-                    for profile_name, profile in wargear.profiles.items():
-                        print(f"🔍 DEBUG: Adding melee profile '{profile_name}'")
-                        melee_weapons.append({
-                            'model': model,
-                            'wargear': wargear,
-                            'profile': profile,
-                            'name': profile_name
-                        })
-                elif hasattr(wargear, 'profiles'):
-                    print(f"🔍 DEBUG: Wargear {wargear.name} is not melee (type: {wargear.type})")
-                else:
-                    print(f"🔍 DEBUG: Wargear does not have profiles attribute")
+        # Get grouped weapons using the same system as shooting declarations
+        self.available_weapons = self._get_available_melee_weapons()
         
-        print(f"🔍 DEBUG: Found {len(melee_weapons)} total melee weapons")
-        
-        # Implement proper melee weapon selection logic
-        # Only ONE primary weapon can be selected, plus any weapons with EXTRA ATTACKS
-        primary_weapons = []
-        extra_attack_weapons = []
-        
-        for weapon_info in melee_weapons:
-            profile = weapon_info['profile']
-            
-            # Check if weapon has EXTRA ATTACKS keyword using the existing method
-            has_extra_attacks = profile.is_extra_attacks()
-            
-            if has_extra_attacks:
-                extra_attack_weapons.append(weapon_info)
-            else:
-                primary_weapons.append(weapon_info)
-        
-        print(f"🔍 DEBUG: Found {len(primary_weapons)} primary weapons, {len(extra_attack_weapons)} extra attack weapons")
-        
-        # Create buttons for each weapon
+        # Create buttons for each weapon (or weapon group)
         y_offset = 80
         button_height = 60  # Increased height for more weapon info
         
-        for i, weapon_info in enumerate(melee_weapons):
+        for i, weapon_info in enumerate(self.available_weapons):
             button_rect = pygame.Rect(20, y_offset + i * button_height, self.width - 40, button_height - 5)
             
             profile = weapon_info['profile']
             has_extra_attacks = profile.is_extra_attacks()
+            is_group = weapon_info.get('is_group', False)
             
             # Select first primary weapon by default, and all extra attack weapons
             is_selected = False
             if has_extra_attacks:
                 is_selected = True  # Always select extra attack weapons
-            elif weapon_info in primary_weapons and not any(btn.get('selected', False) and not btn['weapon_info'].get('has_extra_attacks', False) for btn in self.weapon_buttons):
+            elif not has_extra_attacks and not any(btn.get('selected', False) and not btn['weapon_info']['profile'].is_extra_attacks() for btn in self.weapon_buttons):
                 is_selected = True  # Select first primary weapon if none selected yet
             
             self.weapon_buttons.append({
                 'rect': button_rect,
                 'weapon_info': weapon_info,
                 'selected': is_selected,
-                'has_extra_attacks': has_extra_attacks
+                'has_extra_attacks': has_extra_attacks,
+                'is_group': is_group
             })
             
             if is_selected:
@@ -183,6 +147,99 @@ class MeleeWeaponDeclarationDialog:
         total_height = len(self.weapon_buttons) * button_height
         content_height = self.height - 160  # Leave space for title and buttons
         self.max_scroll = max(0, total_height - content_height)
+    
+    def _get_available_melee_weapons(self):
+        """Get all available melee weapon profiles for the unit, grouped by type."""
+        # First, collect all individual weapons
+        individual_weapons = []
+        
+        for model in self.unit.models:
+            if not model.is_alive:
+                continue
+            
+            for wargear in model.wargear:
+                if wargear.is_melee():
+                    for profile_name, profile in wargear.profiles.items():
+                        individual_weapons.append({
+                            'profile': profile,
+                            'wargear': wargear,
+                            'profile_name': profile_name,
+                            'model': model,
+                            'weapon_instance': len([w for w in individual_weapons if w['profile'] == profile]) + 1
+                        })
+        
+        # Group weapons by profile
+        weapon_groups = {}
+        for weapon in individual_weapons:
+            profile_id = id(weapon['profile'])
+            if profile_id not in weapon_groups:
+                weapon_groups[profile_id] = {
+                    'profile': weapon['profile'],
+                    'wargear': weapon['wargear'],
+                    'profile_name': weapon['profile_name'],
+                    'individual_weapons': [],
+                    'is_group': True
+                }
+            weapon_groups[profile_id]['individual_weapons'].append(weapon)
+        
+        # Build the final weapons list
+        weapons = []
+        for profile_id, group in weapon_groups.items():
+            if len(group['individual_weapons']) == 1:
+                # Single weapon - add as individual entry
+                weapon = group['individual_weapons'][0]
+                weapons.append({
+                    'profile': weapon['profile'],
+                    'wargear': weapon['wargear'],
+                    'profile_name': weapon['profile_name'],
+                    'models': [weapon['model']],
+                    'weapon_instance': weapon['weapon_instance'],
+                    'is_group': False,
+                    'group_id': None
+                })
+            else:
+                # Multiple weapons - add as group
+                if profile_id in self.expanded_weapon_groups:
+                    # Group is expanded - add individual weapons
+                    for weapon in group['individual_weapons']:
+                        weapons.append({
+                            'profile': weapon['profile'],
+                            'wargear': weapon['wargear'],
+                            'profile_name': weapon['profile_name'],
+                            'models': [weapon['model']],
+                            'weapon_instance': weapon['weapon_instance'],
+                            'is_group': False,
+                            'group_id': profile_id
+                        })
+                else:
+                    # Group is collapsed - add as single group entry
+                    all_models = [w['model'] for w in group['individual_weapons']]
+                    weapons.append({
+                        'profile': group['profile'],
+                        'wargear': group['wargear'],
+                        'profile_name': group['profile_name'],
+                        'models': all_models,
+                        'count': len(group['individual_weapons']),
+                        'is_group': True,
+                        'group_id': profile_id,
+                        'individual_weapons': group['individual_weapons']
+                    })
+        
+        return weapons
+    
+    def _toggle_weapon_group_expansion(self, group_id):
+        """Toggle the expansion state of a weapon group"""
+        if group_id in self.expanded_weapon_groups:
+            self.expanded_weapon_groups.remove(group_id)
+        else:
+            self.expanded_weapon_groups.add(group_id)
+        
+        # Refresh the weapon selection after expanding/collapsing
+        self._initialize_weapon_selection()
+    
+    def _is_weapon_group_expanded(self, group_id):
+        """Check if a weapon group is expanded"""
+        return group_id in self.expanded_weapon_groups
     
     def handle_event(self, event):
         """Handle pygame events."""
@@ -226,10 +283,26 @@ class MeleeWeaponDeclarationDialog:
                 button['rect'].height
             )
             if adjusted_rect.collidepoint(dialog_x, dialog_y):
-                # Handle weapon selection with melee combat rules
                 weapon_info = button['weapon_info']
                 has_extra_attacks = button.get('has_extra_attacks', False)
+                is_group = button.get('is_group', False)
                 
+                # Check if this is a click on the expand/collapse button for groups
+                if is_group:
+                    # Check if click is on the expand/collapse button area (right side)
+                    button_x = self.width - 35  # 35 pixels from right edge
+                    button_y = adjusted_rect.y + 5  # 5 pixels from top of weapon row
+                    button_size = 20  # 20x20 pixel button
+                    
+                    # Check if click is within the button bounds
+                    if (button_x <= dialog_x <= button_x + button_size and 
+                        button_y <= dialog_y <= button_y + button_size):
+                        group_id = weapon_info['group_id']
+                        self._toggle_weapon_group_expansion(group_id)
+                        print(f"🔄 Toggled weapon group expansion for {weapon_info['wargear'].name}")
+                        return True
+                
+                # Handle weapon selection with melee combat rules
                 if button['selected']:
                     # Deselecting a weapon
                     if has_extra_attacks:
@@ -266,7 +339,7 @@ class MeleeWeaponDeclarationDialog:
                         button['selected'] = True
                         if weapon_info not in self.selected_weapons:
                             self.selected_weapons.append(weapon_info)
-                return
+                return True
         
         # Check execute button
         execute_button_rect = pygame.Rect(20, self.height - 60, self.width - 40, 40)
@@ -280,12 +353,27 @@ class MeleeWeaponDeclarationDialog:
             # This should match what the fight sequence expects for weapon selection
             weapon_declarations = []
             for weapon_info in self.selected_weapons:
-                weapon_declarations.append({
-                    'model': weapon_info['model'],
-                    'weapon_profile': weapon_info['profile'],
-                    'wargear': weapon_info['wargear'],
-                    'profile_name': weapon_info['name']
-                })
+                is_group = weapon_info.get('is_group', False)
+                
+                if is_group:
+                    # For groups, create individual declarations for each model
+                    for individual_weapon in weapon_info.get('individual_weapons', []):
+                        weapon_declarations.append({
+                            'model': individual_weapon['model'],
+                            'weapon_profile': individual_weapon['profile'],
+                            'wargear': individual_weapon['wargear'],
+                            'profile_name': individual_weapon['profile_name']
+                        })
+                else:
+                    # For individual weapons, create declarations for each model
+                    models = weapon_info.get('models', [])
+                    for model in models:
+                        weapon_declarations.append({
+                            'model': model,
+                            'weapon_profile': weapon_info['profile'],
+                            'wargear': weapon_info['wargear'],
+                            'profile_name': weapon_info.get('profile_name', 'default')
+                        })
             
             print(f"⚔️ Weapon selection completed with {len(weapon_declarations)} weapon declarations")
             self.callback(weapon_declarations)
@@ -372,12 +460,21 @@ class MeleeWeaponDeclarationDialog:
             weapon_info = button['weapon_info']
             wargear = weapon_info['wargear']
             profile = weapon_info['profile']
-            profile_name = weapon_info['name']
+            profile_name = weapon_info.get('profile_name', 'default')
+            is_group = button.get('is_group', False)
             
             # Line 1: Weapon name (use wargear name, not "default")
             weapon_name = wargear.name
             if profile_name != 'default':
                 weapon_name += f" - {profile_name}"
+            
+            # Add count for groups or instance number for individuals
+            if is_group:
+                weapon_name += f" (x{weapon_info.get('count', 1)})"
+            else:
+                weapon_instance = weapon_info.get('weapon_instance', 1)
+                if weapon_instance > 1 or any(w.get('weapon_instance', 1) > 1 for w in self.available_weapons if w['profile'] == profile):
+                    weapon_name += f" #{weapon_instance}"
             
             # Add indicator for extra attacks weapons
             if has_extra_attacks:
@@ -385,6 +482,22 @@ class MeleeWeaponDeclarationDialog:
             
             name_surface = self.font_medium.render(weapon_name, True, self.text_color)
             surface.blit(name_surface, (button_rect.x + 10, button_rect.y + 5))
+            
+            # Draw expand/collapse button for groups
+            if is_group:
+                button_x = self.width - 35
+                button_y = button_rect.y + 5
+                button_size = 20
+                
+                # Draw button background
+                pygame.draw.rect(surface, (80, 80, 80), (button_x, button_y, button_size, button_size))
+                pygame.draw.rect(surface, self.border_color, (button_x, button_y, button_size, button_size), 1)
+                
+                # Draw + or - symbol
+                symbol = "-" if self._is_weapon_group_expanded(weapon_info.get('group_id')) else "+"
+                symbol_surface = self.font_medium.render(symbol, True, self.text_color)
+                symbol_rect = symbol_surface.get_rect(center=(button_x + button_size//2, button_y + button_size//2))
+                surface.blit(symbol_surface, symbol_rect)
             
             # Line 2: Weapon stats (melee format: A/WS/S/AP/D)
             stats_parts = []

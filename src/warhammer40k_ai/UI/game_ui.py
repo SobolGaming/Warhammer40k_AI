@@ -388,8 +388,8 @@ class RosterPane(pygame.sprite.Sprite):
             status_indicators.append("Shot")
             health_color = (200, 100, 0)  # Orange to indicate shot
 
-        if (hasattr(unit, 'round_state') and hasattr(unit.round_state, 'declared_charge_this_round') and
-            unit.round_state.declared_charge_this_round):
+        if (hasattr(unit, 'round_state') and hasattr(unit.round_state, 'charged_this_round') and
+            unit.round_state.charged_this_round):
             status_indicators.append("Charged")
             health_color = (200, 0, 0)  # Red to indicate charged
         
@@ -2967,8 +2967,8 @@ class BattlePhaseHandler(BasePhaseHandler):
     def _handle_charge_phase_selection(self, unit) -> None:
         """Handle unit selection during charge phase"""
         # Check if unit has already charged this round
-        if hasattr(unit.round_state, 'declared_charge_this_round') and unit.round_state.declared_charge_this_round:
-            print(f"❌ {unit.name} has already declared a charge this round")
+        if hasattr(unit.round_state, 'attempted_charge_this_round') and unit.round_state.attempted_charge_this_round:
+            print(f"❌ {unit.name} has already attempted a charge this round")
             return
         
         # Check if unit can charge (not advanced unless allowed, not fell back, etc.)
@@ -2984,17 +2984,28 @@ class BattlePhaseHandler(BasePhaseHandler):
             max_charge_distance = charge_roll
             print(f"🎲 {charging_unit.name} rolled {charge_roll}\" for charge distance")
 
-            # Mark charge as declared immediately (prevents re-rolling)
-            charging_unit.round_state.declared_charge_this_round = True
-
+            # Mark charge as attempted immediately (prevents multiple charge attempts)
+            charging_unit.round_state.attempted_charge_this_round = True
+            
             # Open individual model movement dialog for charge movement
             def on_charge_movement_complete(completed: bool):
                 if completed:
-                    print(f"⚔️ {charging_unit.name} charge movement completed")
-                    charging_unit.round_state.charged_this_round = True
+                    # Check if the charge actually achieved engagement range
+                    enemy_units = self.game.map.get_enemy_units(charging_unit)
+                    in_engagement_range = any(
+                        self.game.map.is_within_engagement_range(charging_unit, enemy_unit)
+                        for enemy_unit in enemy_units if enemy_unit.is_alive()
+                    )
+                    
+                    if in_engagement_range:
+                        print(f"✅ {charging_unit.name} charge successful - achieved engagement range")
+                        charging_unit.round_state.charged_this_round = True
+                    else:
+                        print(f"❌ {charging_unit.name} charge failed - did not achieve engagement range")
+                        # Do not set charged_this_round = True for failed charges
                 else:
                     print(f"❌ {charging_unit.name} charge movement failed or skipped")
-                    # Note: charge already declared above - cannot charge again this round
+                    # Do not set charged_this_round = True for failed charges
 
             self.game_view.individual_model_movement_dialog.show(
                 charging_unit, 'charge', on_charge_movement_complete, self.game.map, max_charge_distance, target_unit

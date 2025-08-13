@@ -32,7 +32,8 @@ class UnitRoundState:
     shot_this_round: bool = False
     fell_back_this_round: bool = False
     reinforced_this_round: bool = False
-    declared_charge_this_round: bool = False
+    attempted_charge_this_round: bool = False  # Track if unit attempted a charge (prevents multiple attempts)
+    charged_this_round: bool = False  # Track if unit successfully charged (determines fight eligibility)
     moved_this_round: bool = False  # Track if unit has moved during movement phase
     num_lost_models_this_round: int = 0
     advance_roll: int = None  # Store advance roll for the round
@@ -1888,7 +1889,7 @@ class Unit:
         # Use cached result if available
         if 'advance_and_charge' in getattr(self, '_ability_cache', {}):
             cached_result = self._ability_cache['advance_and_charge']
-            print(f"🔍 {self.name} has_advance_and_charge (cached): {cached_result}")
+            #print(f"🔍 {self.name} has_advance_and_charge (cached): {cached_result}")
             return cached_result
 
         print(f"🔍 {self.name} checking for advance and charge abilities...")
@@ -2005,7 +2006,7 @@ class Unit:
             bool: True if the unit can charge after advancing
         """
         has_ability = self.has_advance_and_charge()
-        print(f"🔍 {self.name} can_charge_after_advance check: {has_ability}")
+        #print(f"🔍 {self.name} can_charge_after_advance check: {has_ability}")
         return has_ability
 
     def scout_move(self, destination: Tuple[float, float, float], game_map: 'Map') -> bool:
@@ -3703,8 +3704,8 @@ class Unit:
         if not self.is_alive() or not target_unit.is_alive():
             return False
             
-        # Check if unit has already charged this round
-        if self.round_state.declared_charge_this_round:
+        # Check if unit has already attempted a charge this round (successful or failed)
+        if self.round_state.attempted_charge_this_round:
             return False
             
         if self.round_state.advanced_this_round and not self.can_charge_after_advance():
@@ -4038,7 +4039,7 @@ class Unit:
             return False
         
         # Check if unit charged this turn - units that charged can always fight
-        if self.round_state.declared_charge_this_round:
+        if self.round_state.charged_this_round:
             return True
         
         # Check if unit is within engagement range of any enemy unit
@@ -4060,7 +4061,7 @@ class Unit:
             bool: True if the unit should fight in the Fight First stage
         """
         # Units that charged this turn fight first
-        if self.round_state.declared_charge_this_round:
+        if self.round_state.charged_this_round:
             return True
             
         # Units with Fight First abilities fight first

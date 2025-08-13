@@ -1781,7 +1781,7 @@ class TacticalAgent:
         else:
             # AI logic: simple heuristic - could be enhanced with ML
             # Prioritize units that charged this turn, then highest threat
-            charged_units = [unit for unit in eligible_units if unit.round_state.declared_charge_this_round]
+            charged_units = [unit for unit in eligible_units if unit.round_state.charged_this_round]
             if charged_units:
                 selected_unit = max(charged_units, key=lambda u: u.get_threat_value())
                 logger.info(f"🤖 AI selected {selected_unit.name} to fight in {stage_name} stage (charged this turn)")
