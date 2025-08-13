@@ -184,8 +184,8 @@ class ChargeDeclarationDialog:
             return False
 
         # Check if unit has already charged this round
-        if self.unit.round_state.declared_charge_this_round:
-            print(f"❌ {self.unit.name} charge eligibility: Already declared charge this round")
+        if self.unit.round_state.attempted_charge_this_round:
+            print(f"❌ {self.unit.name} charge eligibility: Already attempted charge this round")
             return False
 
         # Check if unit advanced this round (unless special abilities allow charging after advance)
@@ -226,8 +226,8 @@ class ChargeDeclarationDialog:
             return {"valid": False, "reason": "Target is destroyed"}
         
         # Check if unit has already charged
-        if self.unit.round_state.declared_charge_this_round:
-            return {"valid": False, "reason": "Unit has already charged this round"}
+        if self.unit.round_state.attempted_charge_this_round:
+            return {"valid": False, "reason": "Unit has already attempted a charge this round"}
         
         # Check if unit advanced this round
         if self.unit.round_state.advanced_this_round:
@@ -447,12 +447,12 @@ class ChargeDeclarationDialog:
             status_parts.append("Advanced")
         if self.unit.round_state.fell_back_this_round:
             status_parts.append("Fell Back")
-        if self.unit.round_state.declared_charge_this_round:
-            status_parts.append("Already Charged")
+        if self.unit.round_state.attempted_charge_this_round:
+            status_parts.append("Already Attempted Charge")
         
         if status_parts:
             status_text = f"Status: {', '.join(status_parts)}"
-            status_color = WARNING_COLOR if any(s in status_parts for s in ["Advanced", "Fell Back", "Already Charged"]) else TEXT_SECONDARY
+            status_color = WARNING_COLOR if any(s in status_parts for s in ["Advanced", "Fell Back", "Already Attempted Charge"]) else TEXT_SECONDARY
             status_surface = self.font_small.render(status_text, True, status_color)
             screen.blit(status_surface, (self.x + 20, info_y))
         else:

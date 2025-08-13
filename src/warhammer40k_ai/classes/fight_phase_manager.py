@@ -63,12 +63,12 @@ class FightPhaseManager:
         print(f"  Current Player ({current_player.name}): {len(current_player_units)} Fight First units")
         if current_player_units:
             for unit in current_player_units:
-                print(f"    - {unit.name} (charged: {getattr(unit.round_state, 'declared_charge_this_round', False)}, fight_first_ability: {unit.has_fight_first()})")
+                print(f"    - {unit.name} (charged: {getattr(unit.round_state, 'charged_this_round', False)}, fight_first_ability: {unit.has_fight_first()})")
 
         print(f"  Opponent ({opponent_player.name}): {len(opponent_units)} Fight First units")
         if opponent_units:
             for unit in opponent_units:
-                print(f"    - {unit.name} (charged: {getattr(unit.round_state, 'declared_charge_this_round', False)}, fight_first_ability: {unit.has_fight_first()})")
+                print(f"    - {unit.name} (charged: {getattr(unit.round_state, 'charged_this_round', False)}, fight_first_ability: {unit.has_fight_first()})")
 
         if not current_player_units and not opponent_units:
             print("📋 No units with Fight First abilities - moving to Remaining Combatants")

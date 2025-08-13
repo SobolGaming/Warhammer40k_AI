@@ -224,7 +224,7 @@ class FightUnitSelectionDialog:
             
             # Fight First status
             if unit.should_fight_first():
-                if unit.round_state.declared_charge_this_round:
+                if unit.round_state.charged_this_round:
                     status_lines.append("🏃 Charged this turn")
                 if unit.has_fight_first():
                     status_lines.append("⚡ Has Fight First ability")

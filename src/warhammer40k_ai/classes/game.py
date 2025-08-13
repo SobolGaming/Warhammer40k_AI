@@ -1239,7 +1239,7 @@ class Game:
             final_distance = self.map.get_distance_between_units(charging_unit, target_unit)
             
             if final_distance <= 1.0:
-                charging_unit.round_state.declared_charge_this_round = True
+                charging_unit.round_state.charged_this_round = True
                 print(f"✅ Charge successful: {charging_unit.name} achieved {final_distance:.1f}\" edge-to-edge distance with {target_unit.name}")
                 return True
             else:
@@ -1292,8 +1292,8 @@ class Game:
             if not unit.is_alive() or not unit.deployed:
                 continue
             
-            # Check if unit has already charged this round
-            if unit.round_state.declared_charge_this_round:
+            # Check if unit has already attempted a charge this round
+            if unit.round_state.attempted_charge_this_round:
                 continue
             
             # Check if unit advanced this round (unless special abilities allow charging after advance)
