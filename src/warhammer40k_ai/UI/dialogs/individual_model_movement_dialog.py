@@ -412,9 +412,18 @@ class IndividualModelMovementDialog(BaseDialog):
         # Move the model along the path
         final_position = path_3d[-1]
         
+        # Debug: Log current and target positions
+        current_pos = model.get_location()
+        print(f"🔍 DEBUG: Model {model.name} current position: ({current_pos[0]:.2f}, {current_pos[1]:.2f}, {current_pos[2]:.2f})")
+        print(f"🔍 DEBUG: Target final position: ({final_position[0]:.2f}, {final_position[1]:.2f}, {final_position[2]:.2f})")
+        
         # Update model position (preserve current facing)
         current_facing = model.model_base.facing if hasattr(model.model_base, 'facing') else 0.0
         model.set_location(final_position[0], final_position[1], final_position[2], current_facing)
+        
+        # Debug: Verify position was actually updated
+        new_pos = model.get_location()
+        print(f"🔍 DEBUG: Model {model.name} position after set_location: ({new_pos[0]:.2f}, {new_pos[1]:.2f}, {new_pos[2]:.2f})")
         
         # Store the movement path
         model.last_move_path = path_3d

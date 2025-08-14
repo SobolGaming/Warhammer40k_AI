@@ -70,32 +70,32 @@ class TestChargeTracking(unittest.TestCase):
     
     def test_initial_charge_state(self):
         """Test that units start with no charge declaration."""
-        self.assertFalse(self.unit.round_state.declared_charge_this_round, 
-                        "Unit should not have charged initially")
+        self.assertFalse(self.unit.round_state.attempted_charge_this_round, 
+                        "Unit should not have attempted charge initially")
     
     def test_charge_flag_set(self):
         """Test that charge flag is properly set when unit charges."""
-        self.unit.round_state.declared_charge_this_round = True
-        self.assertTrue(self.unit.round_state.declared_charge_this_round, 
-                       "Unit should be marked as charged")
+        self.unit.round_state.attempted_charge_this_round = True
+        self.assertTrue(self.unit.round_state.attempted_charge_this_round, 
+                       "Unit should be marked as having attempted charge")
     
     def test_charge_flag_resets_on_new_round(self):
         """Test that charge flag resets when a new round begins."""
-        self.unit.round_state.declared_charge_this_round = True
+        self.unit.round_state.attempted_charge_this_round = True
         self.unit.initialize_round()
-        self.assertFalse(self.unit.round_state.declared_charge_this_round, 
+        self.assertFalse(self.unit.round_state.attempted_charge_this_round, 
                         "Charge flag should reset after round")
     
     def test_cannot_charge_twice(self):
         """Test that units cannot charge more than once per round."""
-        self.unit.round_state.declared_charge_this_round = True
+        self.unit.round_state.attempted_charge_this_round = True
         can_charge = self.unit.can_declare_charge_against(self.target, self.game)
         self.assertFalse(can_charge, 
                         "Unit should not be able to charge again in the same round")
     
     def test_can_charge_after_reset(self):
         """Test that units can charge again after round reset."""
-        self.unit.round_state.declared_charge_this_round = True
+        self.unit.round_state.attempted_charge_this_round = True
         self.unit.initialize_round()
 
         # Add units to the game map so distance calculation works
