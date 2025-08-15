@@ -1011,7 +1011,7 @@ class HumanUIInterface:
 
 
 class GameView:
-    def __init__(self, screen, env, game, game_map, player1, player2, ui_interface=None):
+    def __init__(self, screen, env, game, game_map, player1, player2, ui_interface=None, ui_scale_factor=1.0):
         self.screen = screen
         self.env = env
         self.game = game
@@ -1028,6 +1028,10 @@ class GameView:
         self.detailed_unit = None
         self.detail_panel_pos = (0, 0)
         self.unit_detail_panel = UnitDetailPanel()
+        
+        # UI scaling factor retained for future use, but layout now uses fixed panes and scrollable battlefield
+        self.ui_scale_factor = ui_scale_factor
+        print(f"🖥️  GameView initialized with UI scale factor: {ui_scale_factor:.2f}")
         
         # UI interface for human player interaction
         self.ui_interface = ui_interface
@@ -1047,15 +1051,28 @@ class GameView:
         # Create roster panes with reference to all units for color correlation
         # Roster panes now extend to full battlefield height + info pane height
         # Handle case where armies haven't been loaded yet (during setup phases)
-        roster_pane_height = BATTLEFIELD_HEIGHT + INFO_PANE_HEIGHT
+        # Fixed panes; battlefield viewport derived from actual screen size
+        scaled_roster_width = ROSTER_PANE_WIDTH
+        scaled_info_height = INFO_PANE_HEIGHT
+        screen_width, screen_height = self.screen.get_size()
+        scaled_battlefield_width = max(100, screen_width - 2 * scaled_roster_width)
+        scaled_battlefield_height = max(100, screen_height - scaled_info_height)
+        
+        roster_pane_height = scaled_battlefield_height + scaled_info_height
         player1_units = player1.get_army().units if player1.get_army() else []
         player2_units = player2.get_army().units if player2.get_army() else []
         
-        self.left_roster_pane = RosterPane(0, 0, ROSTER_PANE_WIDTH, roster_pane_height, 
+        self.left_roster_pane = RosterPane(0, 0, scaled_roster_width, roster_pane_height, 
                                          player1_units, f"Player 1 ({player1.name})")
-        self.right_roster_pane = RosterPane(BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH, 0, ROSTER_PANE_WIDTH, 
+        self.right_roster_pane = RosterPane(scaled_battlefield_width + scaled_roster_width, 0, scaled_roster_width, 
                                           roster_pane_height, player2_units, 
                                           f"Player 2 ({player2.name})")
+        
+        # Store scaled dimensions for mouse coordinate conversion
+        self.scaled_roster_width = scaled_roster_width
+        self.scaled_battlefield_width = scaled_battlefield_width
+        self.scaled_battlefield_height = scaled_battlefield_height
+        self.scaled_info_height = scaled_info_height
         
         # Pass all units to roster panes for color correlation
         all_units = player1_units + player2_units
@@ -1067,8 +1084,8 @@ class GameView:
         self.right_roster_pane.game_view = self
         
         # Position InfoPane between roster panes and below battlefield
-        self.info_pane = InfoPane(ROSTER_PANE_WIDTH, BATTLEFIELD_HEIGHT, 
-                                BATTLEFIELD_WIDTH, INFO_PANE_HEIGHT, self.selected_unit)
+        self.info_pane = InfoPane(scaled_roster_width, scaled_battlefield_height, 
+                                scaled_battlefield_width, scaled_info_height, self.selected_unit)
     
     def refresh_roster_panes(self):
         """Refresh roster panes when armies are loaded during setup phases."""
@@ -1166,7 +1183,7 @@ class GameView:
             # Check for middle mouse button panning
             elif event.button == 2:  # Middle mouse button - start panning
                 x, y = event.pos
-                if ROSTER_PANE_WIDTH < x < BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH:
+                if self.scaled_roster_width < x < self.scaled_battlefield_width + self.scaled_roster_width:
                     self.panning = True
                     self.pan_start_pos = (x, y)
                     self.pan_start_offset = (self.offset_x, self.offset_y)
@@ -1244,7 +1261,7 @@ class GameView:
             self.right_roster_pane.scroll(-scroll_y * 30)
         
         # PRIORITY 3: Handle battlefield panning with Shift+Scroll (alternative to middle mouse)
-        elif ROSTER_PANE_WIDTH < x < BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH:
+        elif self.scaled_roster_width < x < self.scaled_battlefield_width + self.scaled_roster_width:
             keys = pygame.key.get_pressed()
             if keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]:
                 # Horizontal panning with Shift+Scroll
@@ -1273,9 +1290,8 @@ class GameView:
             return hovered_unit, self.right_roster_pane
         
         # Check if hovering over a model on the battlefield
-        if ROSTER_PANE_WIDTH < x < BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH:
-            battlefield_x = (x - ROSTER_PANE_WIDTH) / TILE_SIZE / self.zoom_level - self.offset_x / TILE_SIZE
-            battlefield_y = y / TILE_SIZE / self.zoom_level - self.offset_y / TILE_SIZE
+        if self.scaled_roster_width < x < self.scaled_battlefield_width + self.scaled_roster_width:
+            battlefield_x, battlefield_y = self.screen_to_game_coords(x, y)
             
             # Create a point for the mouse position
             from shapely.geometry import Point
@@ -1311,9 +1327,8 @@ class GameView:
                             If False, coordinates are already game coordinates.
         """
         if needs_conversion:
-            # Convert screen coordinates to game coordinates
-            game_x = (x - ROSTER_PANE_WIDTH - self.offset_x) / (TILE_SIZE * self.zoom_level)
-            game_y = (y - self.offset_y) / (TILE_SIZE * self.zoom_level)
+            # Convert screen coordinates to game coordinates using helper method
+            game_x, game_y = self.screen_to_game_coords(x, y)
         else:
             game_x = x
             game_y = y
@@ -1337,9 +1352,8 @@ class GameView:
     
     def get_model_at_position(self, x: float, y: float) -> Optional['Model']:
         """Get the specific model at the given position"""
-        # Convert screen coordinates to game coordinates
-        game_x = (x - ROSTER_PANE_WIDTH - self.offset_x) / (TILE_SIZE * self.zoom_level)
-        game_y = (y - self.offset_y) / (TILE_SIZE * self.zoom_level)
+        # Convert screen coordinates to game coordinates using helper method
+        game_x, game_y = self.screen_to_game_coords(x, y)
         
         print(f"Checking for model at game coordinates: ({game_x}, {game_y})")
 
@@ -1361,6 +1375,18 @@ class GameView:
         
         print("No model found at position")
         return None
+    
+    def screen_to_game_coords(self, screen_x: int, screen_y: int) -> Tuple[float, float]:
+        """Convert screen coordinates to game coordinates with proper scaling"""
+        game_x = (screen_x - self.scaled_roster_width - self.offset_x) / (TILE_SIZE * self.zoom_level * self.ui_scale_factor)
+        game_y = (screen_y - self.offset_y) / (TILE_SIZE * self.zoom_level * self.ui_scale_factor)
+        return game_x, game_y
+    
+    def game_to_screen_coords(self, game_x: float, game_y: float) -> Tuple[int, int]:
+        """Convert game coordinates to screen coordinates with proper scaling"""
+        screen_x = int(self.scaled_roster_width + (game_x * TILE_SIZE * self.zoom_level * self.ui_scale_factor) + self.offset_x)
+        screen_y = int((game_y * TILE_SIZE * self.zoom_level * self.ui_scale_factor) + self.offset_y)
+        return screen_x, screen_y
 
     def draw_move_path(self, unit: Unit):
         for model in unit.models:
@@ -1368,7 +1394,7 @@ class GameView:
                 return
 
             # Convert game coordinates to screen coordinates
-            screen_path = [self.game_to_screen_coords(*point[:2]) for point in model.last_move_path]
+            screen_path = [self.game_to_screen_coords(point[0], point[1]) for point in model.last_move_path]
 
             # Draw the path
             pygame.draw.lines(self.screen, (0, 0, 255), False, screen_path, 2)
@@ -1384,14 +1410,15 @@ class GameView:
                             (screen_path[i][1] + screen_path[i+1][1]) // 2)
                 # Direction indicator simplified - removed red dot
 
-    def game_to_screen_coords(self, x: float, y: float) -> Tuple[int, int]:
-        # Convert game coordinates to screen coordinates
+    def old_game_to_screen_coords(self, x: float, y: float) -> Tuple[int, int]:
+        # DEPRECATED: Use the new game_to_screen_coords method instead
+        # Convert game coordinates to screen coordinates  
         screen_x = int(ROSTER_PANE_WIDTH + (x * TILE_SIZE * self.zoom_level) + self.offset_x)
         screen_y = int(y * TILE_SIZE * self.zoom_level + self.offset_y)
         return (screen_x, screen_y)
     
-    def screen_to_game_coords(self, screen_pos: Tuple[int, int]) -> Tuple[float, float]:
-        """Convert screen coordinates to game coordinates"""
+    def old_screen_to_game_coords(self, screen_pos: Tuple[int, int]) -> Tuple[float, float]:
+        """DEPRECATED: Convert screen coordinates to game coordinates"""
         x, y = screen_pos
         # Convert from screen coordinates to game coordinates
         # Account for roster pane width, zoom level, and pan offset
@@ -1406,22 +1433,52 @@ class GameView:
         self.left_roster_pane.draw(self.screen, self.game)
         self.right_roster_pane.draw(self.screen, self.game)
 
-        # Draw the battlefield
-        battlefield_surface = pygame.Surface((BATTLEFIELD_WIDTH, BATTLEFIELD_HEIGHT))
-        draw_battlefield(battlefield_surface, self.zoom_level, self.offset_x, self.offset_y)
+        # Draw the battlefield (use scaled viewport size and scaling-aware drawing)
+        battlefield_surface = pygame.Surface((self.scaled_battlefield_width, self.scaled_battlefield_height))
+        draw_battlefield(
+            battlefield_surface,
+            self.zoom_level,
+            self.offset_x,
+            self.offset_y,
+            self.ui_scale_factor,
+            self.scaled_battlefield_width,
+            self.scaled_battlefield_height,
+        )
 
         # Draw terrain features on the battlefield
         for terrain_feature in self.game_map.terrain_features:
-            draw_terrain_feature(battlefield_surface, terrain_feature, self.zoom_level, self.offset_x, self.offset_y)
+            draw_terrain_feature(
+                battlefield_surface,
+                terrain_feature,
+                self.zoom_level,
+                self.offset_x,
+                self.offset_y,
+                self.ui_scale_factor,
+            )
 
         # Draw deployment zones (with transparency)
         if hasattr(self.game, 'deployment_zones') and self.game.deployment_zones:
-            draw_deployment_zones(battlefield_surface, self.game.deployment_zones, self.player1, self.player2, 
-                                self.zoom_level, self.offset_x, self.offset_y)
+            draw_deployment_zones(
+                battlefield_surface,
+                self.game.deployment_zones,
+                self.player1,
+                self.player2,
+                self.zoom_level,
+                self.offset_x,
+                self.offset_y,
+                self.ui_scale_factor,
+            )
 
         # Draw objectives on the battlefield
         for objective in self.game_map.objectives:
-            draw_objective(battlefield_surface, objective, self.zoom_level, self.offset_x, self.offset_y)
+            draw_objective(
+                battlefield_surface,
+                objective,
+                self.zoom_level,
+                self.offset_x,
+                self.offset_y,
+                self.ui_scale_factor,
+            )
 
         # Draw units on the battlefield
         for unit in self.game_map.units:
@@ -1432,7 +1489,18 @@ class GameView:
                 self.individual_model_movement_dialog.unit == unit):
                 highlighted_model_index = self.individual_model_movement_dialog.get_highlighted_model_index()
             
-            draw_units(battlefield_surface, unit, self.zoom_level, self.offset_x, self.offset_y, pygame.mouse.get_pos(), self.player1, self.player2, highlighted_model_index)
+            draw_units(
+                battlefield_surface,
+                unit,
+                self.zoom_level,
+                self.offset_x,
+                self.offset_y,
+                self.ui_scale_factor,
+                pygame.mouse.get_pos(),
+                self.player1,
+                self.player2,
+                highlighted_model_index,
+            )
         
         # Old unit-level movement range drawing removed - now using Individual Model Movement Dialog for all movement
 
@@ -1450,11 +1518,21 @@ class GameView:
                 selected_model = unit.models[model_index]
                 movement_type = self.individual_model_movement_dialog.movement_type
                 max_distance = self.individual_model_movement_dialog.max_distance
+                game_map = self.individual_model_movement_dialog.game_map
 
                 print(f"🔍 DEBUG: Drawing range circle for {selected_model.name} (type: {movement_type}, distance: {max_distance})")
                 # Draw range circle for the selected model
-                draw_individual_model_movement_range(battlefield_surface, selected_model, movement_type,
-                                                   max_distance, self.zoom_level, self.offset_x, self.offset_y)
+                draw_individual_model_movement_range(
+                    battlefield_surface,
+                    selected_model,
+                    movement_type,
+                    max_distance,
+                    self.zoom_level,
+                    self.offset_x,
+                    self.offset_y,
+                    game_map,
+                    self.ui_scale_factor,
+                )
 
                 # Draw real-time path preview if mouse is hovering over battlefield
                 print(f"🔍 DEBUG: Checking for path preview - has target: {hasattr(self, 'individual_model_preview_target')}")
@@ -1520,8 +1598,15 @@ class GameView:
         # Draw weapon range indicator if a unit is selected for shooting
         if (hasattr(self, 'selected_unit') and self.selected_unit and
             hasattr(self, 'selected_weapon_profile') and self.selected_weapon_profile):
-            draw_weapon_ranges(battlefield_surface, self.selected_unit,
-                             self.selected_weapon_profile, self.zoom_level, self.offset_x, self.offset_y)
+            draw_weapon_ranges(
+                battlefield_surface,
+                self.selected_unit,
+                self.selected_weapon_profile,
+                self.zoom_level,
+                self.offset_x,
+                self.offset_y,
+                self.ui_scale_factor,
+            )
 
         # Draw scout visual feedback if in scout phase (draw on battlefield surface)
         if hasattr(self, 'phase_manager') and self.phase_manager:
@@ -1529,8 +1614,8 @@ class GameView:
             if isinstance(current_handler, PreBattlePhaseHandler):
                 current_handler.draw_scout_visual_feedback(battlefield_surface)
 
-        # Blit the battlefield surface to the main screen
-        self.screen.blit(battlefield_surface, (ROSTER_PANE_WIDTH, 0))
+        # Blit the battlefield surface to the main screen using scaled roster width
+        self.screen.blit(battlefield_surface, (self.scaled_roster_width, 0))
 
         # Draw enhanced InfoPane
         self.info_pane.draw(self.screen, self.game, self)
@@ -1614,11 +1699,21 @@ class GameView:
 
     def _apply_pan_limits(self, offset_x: int, offset_y: int) -> Tuple[int, int]:
         """Apply panning limits to prevent moving outside the battlefield"""
-        # Limit panning to prevent moving outside the grid
-        max_offset_x = max(0, int(BATTLEFIELD_WIDTH * self.zoom_level) - BATTLEFIELD_WIDTH)
-        max_offset_y = max(0, int(BATTLEFIELD_HEIGHT * self.zoom_level) - BATTLEFIELD_HEIGHT)
-        limited_offset_x = max(-max_offset_x, min(0, offset_x))
-        limited_offset_y = max(-max_offset_y, min(0, offset_y))
+        # Calculate world size in pixels with scaling
+        tile_size_px = TILE_SIZE * self.zoom_level * self.ui_scale_factor
+        world_width_px = int(BATTLEFIELD_WIDTH_INCHES * tile_size_px)
+        world_height_px = int(BATTLEFIELD_HEIGHT_INCHES * tile_size_px)
+
+        # Viewport size is the scaled battlefield viewport
+        viewport_width_px = int(self.scaled_battlefield_width)
+        viewport_height_px = int(self.scaled_battlefield_height)
+
+        # Max scrollable offsets (how far we can pan left/up as negative values)
+        max_scroll_x = max(0, world_width_px - viewport_width_px)
+        max_scroll_y = max(0, world_height_px - viewport_height_px)
+
+        limited_offset_x = max(-max_scroll_x, min(0, offset_x))
+        limited_offset_y = max(-max_scroll_y, min(0, offset_y))
         return limited_offset_x, limited_offset_y
 
     def get_phase_status(self) -> dict:
@@ -1650,8 +1745,8 @@ class GameView:
         if path_result['path'] and len(path_result['path']) > 1:
             path_points = []
             for pos in path_result['path']:
-                screen_x = int(pos[0] * TILE_SIZE * self.zoom_level + self.offset_x)
-                screen_y = int(pos[1] * TILE_SIZE * self.zoom_level + self.offset_y)
+                screen_x = int(pos[0] * TILE_SIZE * self.zoom_level * self.ui_scale_factor + self.offset_x)
+                screen_y = int(pos[1] * TILE_SIZE * self.zoom_level * self.ui_scale_factor + self.offset_y)
                 path_points.append((screen_x, screen_y))
 
             if len(path_points) > 1:
@@ -1669,8 +1764,8 @@ class GameView:
         try:
             if not model or not hasattr(model, 'model_base'):
                 # Fallback to small circle if no base information
-                screen_x = int(game_x * TILE_SIZE * self.zoom_level + self.offset_x)
-                screen_y = int(game_y * TILE_SIZE * self.zoom_level + self.offset_y)
+                screen_x = int(game_x * TILE_SIZE * self.zoom_level * self.ui_scale_factor + self.offset_x)
+                screen_y = int(game_y * TILE_SIZE * self.zoom_level * self.ui_scale_factor + self.offset_y)
                 pygame.draw.circle(surface, color[:3], (screen_x, screen_y), 8, 2)
                 return
 
@@ -1680,8 +1775,8 @@ class GameView:
             # Convert the base shape to screen coordinates
             screen_points = []
             for x, y in base_shape.exterior.coords:
-                screen_x = int(x * TILE_SIZE * self.zoom_level + self.offset_x)
-                screen_y = int(y * TILE_SIZE * self.zoom_level + self.offset_y)
+                screen_x = int(x * TILE_SIZE * self.zoom_level * self.ui_scale_factor + self.offset_x)
+                screen_y = int(y * TILE_SIZE * self.zoom_level * self.ui_scale_factor + self.offset_y)
                 screen_points.append((screen_x, screen_y))
 
             # Draw the base footprint
@@ -1702,8 +1797,8 @@ class GameView:
         except Exception as e:
             # Ultimate fallback - draw simple circle and don't break the rendering
             try:
-                screen_x = int(game_x * TILE_SIZE * self.zoom_level + self.offset_x)
-                screen_y = int(game_y * TILE_SIZE * self.zoom_level + self.offset_y)
+                screen_x = int(game_x * TILE_SIZE * self.zoom_level * self.ui_scale_factor + self.offset_x)
+                screen_y = int(game_y * TILE_SIZE * self.zoom_level * self.ui_scale_factor + self.offset_y)
                 pygame.draw.circle(surface, color[:3], (screen_x, screen_y), 8, 2)
             except:
                 # If even the fallback fails, just skip drawing
@@ -1711,13 +1806,13 @@ class GameView:
 
 
 ### Battlefield drawing functions
-def draw_battlefield(screen: pygame.Surface, zoom_level: float, offset_x: int, offset_y: int) -> None:
+def draw_battlefield(screen: pygame.Surface, zoom_level: float, offset_x: int, offset_y: int, ui_scale_factor: float = 1.0, viewport_width: Optional[int] = None, viewport_height: Optional[int] = None) -> None:
     screen.fill(WHITE)
-    tile_size = int(TILE_SIZE * zoom_level)
+    tile_size = int(TILE_SIZE * zoom_level * ui_scale_factor)
     
     # Calculate the visible area
-    visible_width = BATTLEFIELD_WIDTH
-    visible_height = BATTLEFIELD_HEIGHT
+    visible_width = viewport_width if viewport_width is not None else int(BATTLEFIELD_WIDTH * ui_scale_factor)
+    visible_height = viewport_height if viewport_height is not None else int(BATTLEFIELD_HEIGHT * ui_scale_factor)
     
     # Calculate the range of tiles to draw
     start_x = max(0, int(-offset_x / tile_size))
@@ -1740,7 +1835,7 @@ def draw_battlefield(screen: pygame.Surface, zoom_level: float, offset_x: int, o
     # Draw battlefield border
     pygame.draw.rect(screen, RED, (0, 0, visible_width, visible_height), 2)
 
-def draw_terrain_feature(screen: pygame.Surface, terrain_feature: TerrainFeature, zoom_level: float, offset_x: int, offset_y: int) -> None:
+def draw_terrain_feature(screen: pygame.Surface, terrain_feature: TerrainFeature, zoom_level: float, offset_x: int, offset_y: int, ui_scale_factor: float = 1.0) -> None:
     # Determine the color based on the terrain type
     if terrain_feature.terrain_type == TerrainType.CRATER_AND_RUBBLE:
         color = (128, 0, 0, 180)  # Dark red for craters
@@ -1760,8 +1855,8 @@ def draw_terrain_feature(screen: pygame.Surface, terrain_feature: TerrainFeature
     # Convert vertices to screen coordinates from terrain feature's footprint
     footprint_coords = list(terrain_feature.footprint.exterior.coords)[:-1]  # Remove duplicate last point
     screen_vertices = [
-        (int((vertex[0] * TILE_SIZE) * zoom_level + offset_x),
-         int((vertex[1] * TILE_SIZE) * zoom_level + offset_y))
+        (int((vertex[0] * TILE_SIZE) * zoom_level * ui_scale_factor + offset_x),
+         int((vertex[1] * TILE_SIZE) * zoom_level * ui_scale_factor + offset_y))
         for vertex in footprint_coords
     ]
 
@@ -1773,7 +1868,7 @@ def draw_terrain_feature(screen: pygame.Surface, terrain_feature: TerrainFeature
         pygame.draw.polygon(screen, (0, 0, 0), screen_vertices, 2)  # Black outline with 2px width
 
 def draw_deployment_zones(screen: pygame.Surface, deployment_zones: dict, player1: Player, player2: Player, 
-                         zoom_level: float, offset_x: int, offset_y: int) -> None:
+                         zoom_level: float, offset_x: int, offset_y: int, ui_scale_factor: float = 1.0) -> None:
     """Draw deployment zones with transparency and appropriate colors for each player."""
     for player_name, zone in deployment_zones.items():
         # Determine player color with more vibrant colors during deployment
@@ -1794,8 +1889,8 @@ def draw_deployment_zones(screen: pygame.Surface, deployment_zones: dict, player
                 # Convert mission zone vertices to screen coordinates
                 screen_points = []
                 for x, y in mission_zone.vertices:
-                    screen_x = int(x * TILE_SIZE * zoom_level + offset_x)
-                    screen_y = int(y * TILE_SIZE * zoom_level + offset_y)
+                    screen_x = int(x * TILE_SIZE * zoom_level * ui_scale_factor + offset_x)
+                    screen_y = int(y * TILE_SIZE * zoom_level * ui_scale_factor + offset_y)
                     screen_points.append((screen_x, screen_y))
                 
                 # Only draw if we have enough points for a polygon
@@ -1825,9 +1920,9 @@ def draw_deployment_zones(screen: pygame.Surface, deployment_zones: dict, player
                             for cutout in mission_zone.cutouts:
                                 if cutout.cutout_type.value == 'circle':
                                     # Convert cutout center to screen coordinates
-                                    cutout_screen_x = int(cutout.center_x * TILE_SIZE * zoom_level + offset_x)
-                                    cutout_screen_y = int(cutout.center_y * TILE_SIZE * zoom_level + offset_y)
-                                    cutout_radius = int(cutout.parameters * TILE_SIZE * zoom_level)
+                                    cutout_screen_x = int(cutout.center_x * TILE_SIZE * zoom_level * ui_scale_factor + offset_x)
+                                    cutout_screen_y = int(cutout.center_y * TILE_SIZE * zoom_level * ui_scale_factor + offset_y)
+                                    cutout_radius = int(cutout.parameters * TILE_SIZE * zoom_level * ui_scale_factor)
                                     
                                     # Calculate cutout position relative to surface
                                     cutout_rel_x = cutout_screen_x - min_x
@@ -1851,7 +1946,7 @@ def draw_deployment_zones(screen: pygame.Surface, deployment_zones: dict, player
                         screen.blit(zone_surface, (min_x, min_y))
                         
                         # Add zone label
-                        font = pygame.font.Font(None, int(24 * zoom_level))
+                        font = pygame.font.Font(None, int(24 * zoom_level * ui_scale_factor))
                         if zone.get('zone_type') == 'defender':
                             label_text = "DEFENDER"
                         elif zone.get('zone_type') == 'attacker':
@@ -1872,10 +1967,10 @@ def draw_deployment_zones(screen: pygame.Surface, deployment_zones: dict, player
             y_start, y_end = zone['y_range']
             
             # Convert to screen coordinates
-            screen_x_start = int(x_start * TILE_SIZE * zoom_level + offset_x)
-            screen_y_start = int(y_start * TILE_SIZE * zoom_level + offset_y)
-            screen_x_end = int(x_end * TILE_SIZE * zoom_level + offset_x)
-            screen_y_end = int(y_end * TILE_SIZE * zoom_level + offset_y)
+            screen_x_start = int(x_start * TILE_SIZE * zoom_level * ui_scale_factor + offset_x)
+            screen_y_start = int(y_start * TILE_SIZE * zoom_level * ui_scale_factor + offset_y)
+            screen_x_end = int(x_end * TILE_SIZE * zoom_level * ui_scale_factor + offset_x)
+            screen_y_end = int(y_end * TILE_SIZE * zoom_level * ui_scale_factor + offset_y)
             
             # Calculate width and height
             zone_width = screen_x_end - screen_x_start
@@ -1897,7 +1992,7 @@ def draw_deployment_zones(screen: pygame.Surface, deployment_zones: dict, player
                             (screen_x_start, screen_y_start, zone_width, zone_height), 4)
             
             # Draw corner markers for extra visibility
-            corner_size = max(8, int(8 * zoom_level))
+            corner_size = max(8, int(8 * zoom_level * ui_scale_factor))
             corners = [
                 (screen_x_start, screen_y_start),  # Top-left
                 (screen_x_end - corner_size, screen_y_start),  # Top-right
@@ -1910,7 +2005,7 @@ def draw_deployment_zones(screen: pygame.Surface, deployment_zones: dict, player
                                (corner_x, corner_y, corner_size, corner_size))
             
             # Add zone label with better positioning
-            font = pygame.font.SysFont('Arial', max(14, int(16 * zoom_level)), bold=True)
+            font = pygame.font.SysFont('Arial', max(14, int(16 * zoom_level * ui_scale_factor)), bold=True)
             label_text = f"{player_name} Deployment Zone"
             text_surface = font.render(label_text, True, border_color)
             
@@ -1932,14 +2027,14 @@ def draw_deployment_zones(screen: pygame.Surface, deployment_zones: dict, player
             # Draw the main text
             screen.blit(text_surface, (label_x, label_y))
 
-def draw_objective(screen: pygame.Surface, objective: Objective, zoom_level: float, offset_x: int, offset_y: int) -> None:
+def draw_objective(screen: pygame.Surface, objective: Objective, zoom_level: float, offset_x: int, offset_y: int, ui_scale_factor: float = 1.0) -> None:
     if isinstance(objective.location, ObjectivePoint):
         # Create a transparent surface for the objective
-        objective_radius = int(objective.location.control_radius * TILE_SIZE * zoom_level)
+        objective_radius = int(objective.location.control_radius * TILE_SIZE * zoom_level * ui_scale_factor)
         if objective_radius > 0:
             # Calculate center position
-            center_x = int(objective.location.x * TILE_SIZE * zoom_level + offset_x)
-            center_y = int(objective.location.y * TILE_SIZE * zoom_level + offset_y)
+            center_x = int(objective.location.x * TILE_SIZE * zoom_level * ui_scale_factor + offset_x)
+            center_y = int(objective.location.y * TILE_SIZE * zoom_level * ui_scale_factor + offset_y)
             
             # Create a surface with per-pixel alpha for transparency
             objective_surface = pygame.Surface((objective_radius * 2, objective_radius * 2), pygame.SRCALPHA)
@@ -1953,7 +2048,7 @@ def draw_objective(screen: pygame.Surface, objective: Objective, zoom_level: flo
             # Blit to main screen
             screen.blit(objective_surface, (center_x - objective_radius, center_y - objective_radius))
 
-def draw_units(screen: pygame.Surface, unit: Unit, zoom_level: float, offset_x: int, offset_y: int, mouse_pos: Tuple[int, int], player1: Player, player2: Player, highlighted_model_index: Optional[int] = None) -> None:
+def draw_units(screen: pygame.Surface, unit: Unit, zoom_level: float, offset_x: int, offset_y: int, ui_scale_factor: float, mouse_pos: Tuple[int, int], player1: Player, player2: Player, highlighted_model_index: Optional[int] = None) -> None:
     # Determine the color based on which player the unit belongs to (only if armies are loaded)
     color = BLUE  # Default color
     if (player1.get_army() and player1.get_army().units and unit in player1.get_army().units):
@@ -1970,21 +2065,21 @@ def draw_units(screen: pygame.Surface, unit: Unit, zoom_level: float, offset_x: 
 
     for model_index, model in enumerate(unit.models):
         x, y = model.get_location()[:2]
-        screen_x = int((x * TILE_SIZE) * zoom_level + offset_x)
-        screen_y = int((y * TILE_SIZE) * zoom_level + offset_y)
+        screen_x = int((x * TILE_SIZE) * zoom_level * ui_scale_factor + offset_x)
+        screen_y = int((y * TILE_SIZE) * zoom_level * ui_scale_factor + offset_y)
         base = model.model_base
         
         # Check if this model should be highlighted
         is_highlighted = (highlighted_model_index is not None and 
                          highlighted_model_index == model_index)
         
-        draw_enhanced_base(screen, base, screen_x, screen_y, zoom_level, color, unit, model, is_highlighted)
+        draw_enhanced_base(screen, base, screen_x, screen_y, zoom_level * ui_scale_factor, color, unit, model, is_highlighted)
         
         # Draw facing direction with enhanced styling
-        draw_facing_direction(screen, base, screen_x, screen_y, zoom_level)
+        draw_facing_direction(screen, base, screen_x, screen_y, zoom_level * ui_scale_factor)
         
         # Draw large prominent icon that overlays the facing arrow
-        draw_prominent_unit_icon(screen, screen_x, screen_y, base, zoom_level, unit, model, model_index, all_units, is_highlighted)
+        draw_prominent_unit_icon(screen, screen_x, screen_y, base, zoom_level * ui_scale_factor, unit, model, model_index, all_units, is_highlighted)
     
             # Unit bounding box removed - model-based hover detection is more accurate
 
@@ -2616,9 +2711,8 @@ class DeploymentPhaseHandler(BasePhaseHandler):
             print(f"📋 Press SPACE to begin deployment sequence first")
             return True
         
-        # Convert screen coordinates to game coordinates
-        battlefield_x = (x - ROSTER_PANE_WIDTH - self.game_view.offset_x) / (TILE_SIZE * self.game_view.zoom_level)
-        battlefield_y = (y - self.game_view.offset_y) / (TILE_SIZE * self.game_view.zoom_level)
+        # Convert screen coordinates to game coordinates using helper method
+        battlefield_x, battlefield_y = self.game_view.screen_to_game_coords(x, y)
         
         # Attempt to deploy the unit
         # Store original model positions for potential rollback
@@ -2802,10 +2896,9 @@ class BattlePhaseHandler(BasePhaseHandler):
                 return True  # Still consume the event in targeting mode
 
             # Only handle clicks on the battlefield area
-            if ROSTER_PANE_WIDTH < x < BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH:
-                # Convert screen coordinates to game coordinates for targeting
-                battlefield_x = (x - ROSTER_PANE_WIDTH - self.game_view.offset_x) / (TILE_SIZE * self.game_view.zoom_level)
-                battlefield_y = (y - self.game_view.offset_y) / (TILE_SIZE * self.game_view.zoom_level)
+            if self.game_view.scaled_roster_width < x < self.game_view.scaled_battlefield_width + self.game_view.scaled_roster_width:
+                # Convert screen coordinates to game coordinates for targeting using helper method
+                battlefield_x, battlefield_y = self.game_view.screen_to_game_coords(x, y)
 
                 # Handle battlefield targeting for shooting declaration
                 handled = self.game_view.shooting_declaration_dialog.handle_battlefield_targeting(battlefield_x, battlefield_y)
@@ -3549,9 +3642,8 @@ class BattlePhaseHandler(BasePhaseHandler):
         # Check if individual model movement dialog is active
         if (hasattr(self.game_view, 'individual_model_movement_dialog') and
             self.game_view.individual_model_movement_dialog.visible):
-            # Handle battlefield click for individual model movement
-            battlefield_x = (x - ROSTER_PANE_WIDTH - self.game_view.offset_x) / (TILE_SIZE * self.game_view.zoom_level)
-            battlefield_y = (y - self.game_view.offset_y) / (TILE_SIZE * self.game_view.zoom_level)
+            # Handle battlefield click for individual model movement using helper method
+            battlefield_x, battlefield_y = self.game_view.screen_to_game_coords(x, y)
             battlefield_z = self.game.map.get_height_at_point(battlefield_x, battlefield_y)
             
             return self.game_view.individual_model_movement_dialog.handle_battlefield_click(
@@ -3698,9 +3790,8 @@ class BattlePhaseHandler(BasePhaseHandler):
         # Check if individual model movement dialog is active (for charge movement)
         if (hasattr(self.game_view, 'individual_model_movement_dialog') and
             self.game_view.individual_model_movement_dialog.visible):
-            # Handle battlefield click for individual model movement during charge
-            battlefield_x = (x - ROSTER_PANE_WIDTH - self.game_view.offset_x) / (TILE_SIZE * self.game_view.zoom_level)
-            battlefield_y = (y - self.game_view.offset_y) / (TILE_SIZE * self.game_view.zoom_level)
+            # Handle battlefield click for individual model movement during charge using helper method
+            battlefield_x, battlefield_y = self.game_view.screen_to_game_coords(x, y)
             battlefield_z = self.game.map.get_height_at_point(battlefield_x, battlefield_y)
 
             return self.game_view.individual_model_movement_dialog.handle_battlefield_click(
@@ -3831,10 +3922,9 @@ class BattlePhaseHandler(BasePhaseHandler):
             print(f"🔍 DEBUG: Individual model movement tracking active at ({x}, {y})")
 
             # Check if mouse is over battlefield area
-            if ROSTER_PANE_WIDTH < x < BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH:
-                # Convert to game coordinates
-                battlefield_x = (x - ROSTER_PANE_WIDTH - self.game_view.offset_x) / (TILE_SIZE * self.game_view.zoom_level)
-                battlefield_y = (y - self.game_view.offset_y) / (TILE_SIZE * self.game_view.zoom_level)
+            if self.game_view.scaled_roster_width < x < self.game_view.scaled_battlefield_width + self.game_view.scaled_roster_width:
+                # Convert to game coordinates using helper method
+                battlefield_x, battlefield_y = self.game_view.screen_to_game_coords(x, y)
 
                 # Store mouse position for individual model movement preview
                 self.game_view.individual_model_preview_target = (battlefield_x, battlefield_y)
@@ -4022,7 +4112,7 @@ class PhaseManager:
             print("❌ Coherency resolution cancelled")
 
 
-def draw_individual_model_movement_range(screen: pygame.Surface, model, movement_type: str, max_distance: float, zoom_level: float, offset_x: int, offset_y: int) -> None:
+def draw_individual_model_movement_range(screen: pygame.Surface, model, movement_type: str, max_distance: float, zoom_level: float, offset_x: int, offset_y: int, game_map=None, ui_scale_factor: float = 1.0) -> None:
     """Draw a visual indicator showing the movement range for an individual model"""
     if not model or not model.is_alive or max_distance <= 0:
         return
@@ -4031,12 +4121,12 @@ def draw_individual_model_movement_range(screen: pygame.Surface, model, movement
     model_location = model.get_location()
     current_position = (model_location[0], model_location[1], model_location[2])
 
-    # Convert model position to screen coordinates
-    center_x = int(current_position[0] * TILE_SIZE * zoom_level + offset_x)
-    center_y = int(current_position[1] * TILE_SIZE * zoom_level + offset_y)
+    # Convert model position to screen coordinates (respect zoom and UI scaling)
+    center_x = int(current_position[0] * TILE_SIZE * zoom_level * ui_scale_factor + offset_x)
+    center_y = int(current_position[1] * TILE_SIZE * zoom_level * ui_scale_factor + offset_y)
 
-    # Calculate radius in screen pixels
-    radius = int(max_distance * TILE_SIZE * zoom_level)
+    # Calculate radius in screen pixels (respect scaling)
+    radius = int(max_distance * TILE_SIZE * zoom_level * ui_scale_factor)
 
     # Choose color based on movement type
     if movement_type == 'scout':
@@ -4051,20 +4141,189 @@ def draw_individual_model_movement_range(screen: pygame.Surface, model, movement
     elif movement_type == 'fall_back':
         color = (255, 165, 0, 64)  # Orange for fall back
         border_color = (200, 130, 0)
+    elif movement_type == 'pile_in':
+        color = (255, 0, 255, 64)  # Magenta for pile-in
+        border_color = (200, 0, 200)
+    elif movement_type == 'consolidate':
+        color = (255, 128, 255, 64)  # Light magenta for consolidate
+        border_color = (200, 100, 200)
     else:
         color = (128, 128, 128, 64)  # Gray for other types
         border_color = (100, 100, 100)
 
-    if radius > 0:
-        # Create a surface with per-pixel alpha for the range circle
-        range_surface = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
-        pygame.draw.circle(range_surface, color, (radius, radius), radius)
+    # Special handling for pile-in movement
+    if movement_type == 'pile_in' and game_map:
+        draw_pile_in_range(screen, model, current_position, max_distance, zoom_level, offset_x, offset_y, game_map, ui_scale_factor)
+    else:
+        # Standard circular range for other movement types
+        if radius > 0:
+            # Create a surface with per-pixel alpha for the range circle
+            range_surface = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
+            pygame.draw.circle(range_surface, color, (radius, radius), radius)
 
-        # Blit the transparent range circle onto the battlefield
-        screen.blit(range_surface, (center_x - radius, center_y - radius))
+            # Blit the transparent range circle onto the battlefield
+            screen.blit(range_surface, (center_x - radius, center_y - radius))
 
-        # Draw the border circle
-        pygame.draw.circle(screen, border_color, (center_x, center_y), radius, 2)
+            # Draw the border circle
+            pygame.draw.circle(screen, border_color, (center_x, center_y), radius, 2)
+
+
+def draw_pile_in_range(screen: pygame.Surface, model, current_position: tuple, max_distance: float, 
+                      zoom_level: float, offset_x: int, offset_y: int, game_map, ui_scale_factor: float = 1.0) -> None:
+    """
+    Draw pile-in movement range visualization showing intersection of:
+    1. 3" movement circle
+    2. Area closer to closest enemy model
+    """
+    from ..utility.constants import BASE_CONTACT_EPSILON
+    
+    # Find the closest enemy model
+    closest_enemy = None
+    closest_distance = float('inf')
+    
+    for unit in game_map.units:
+        if unit.faction == model.parent_unit.faction or not unit.is_alive() or not unit.deployed:
+            continue
+        for enemy_model in unit.models:
+            if not enemy_model.is_alive:
+                continue
+                
+            # Calculate edge-to-edge distance
+            distance = model.model_base.edge_to_edge_distance(enemy_model.model_base)
+            if distance < closest_distance:
+                closest_distance = distance
+                closest_enemy = enemy_model
+    
+    if not closest_enemy:
+        # No enemies found - draw standard circle
+        radius = int(max_distance * TILE_SIZE * zoom_level * ui_scale_factor)
+        center_x = int(current_position[0] * TILE_SIZE * zoom_level * ui_scale_factor + offset_x)
+        center_y = int(current_position[1] * TILE_SIZE * zoom_level * ui_scale_factor + offset_y)
+        
+        if radius > 0:
+            range_surface = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
+            pygame.draw.circle(range_surface, (255, 0, 255, 64), (radius, radius), radius)
+            screen.blit(range_surface, (center_x - radius, center_y - radius))
+            pygame.draw.circle(screen, (200, 0, 200), (center_x, center_y), radius, 2)
+        return
+    
+    # Get enemy position
+    enemy_location = closest_enemy.get_location()
+    enemy_position = (enemy_location[0], enemy_location[1])
+    
+    print(f"🔍 DEBUG: Drawing pile-in range for {model.name} vs closest enemy {closest_enemy.name} at {closest_distance:.2f}\"")
+    
+    # Draw the intersection of movement circle and "closer to enemy" area
+    draw_pile_in_intersection(screen, current_position[:2], enemy_position, closest_distance, 
+                             max_distance, zoom_level, offset_x, offset_y, ui_scale_factor)
+    
+    # Draw helpful indicators
+    draw_pile_in_indicators(screen, current_position[:2], enemy_position, closest_distance,
+                           max_distance, zoom_level, offset_x, offset_y, closest_enemy.name, ui_scale_factor)
+
+
+def draw_pile_in_intersection(screen: pygame.Surface, model_pos: tuple, enemy_pos: tuple, 
+                             current_distance: float, pile_in_distance: float,
+                             zoom_level: float, offset_x: int, offset_y: int, ui_scale_factor: float = 1.0) -> None:
+    """
+    Draw the intersection area using polygon approximation for the complex shape
+    """
+    import numpy as np
+    import math
+    
+    # Convert positions to screen coordinates
+    model_screen_x = int(model_pos[0] * TILE_SIZE * zoom_level * ui_scale_factor + offset_x)
+    model_screen_y = int(model_pos[1] * TILE_SIZE * zoom_level * ui_scale_factor + offset_y)
+    enemy_screen_x = int(enemy_pos[0] * TILE_SIZE * zoom_level * ui_scale_factor + offset_x)
+    enemy_screen_y = int(enemy_pos[1] * TILE_SIZE * zoom_level * ui_scale_factor + offset_y)
+    
+    # Calculate pile-in circle radius in screen pixels
+    pile_in_radius = int(pile_in_distance * TILE_SIZE * zoom_level * ui_scale_factor)
+    
+    # Generate points for the valid pile-in area
+    valid_points = []
+    
+    # Sample points around the pile-in circle
+    num_samples = 180  # More samples for smoother curve
+    for i in range(num_samples):
+        angle = 2 * math.pi * i / num_samples
+        
+        # Point on the pile-in circle
+        test_x = model_screen_x + pile_in_radius * math.cos(angle)
+        test_y = model_screen_y + pile_in_radius * math.sin(angle)
+        
+        # Convert back to game coordinates to test distance
+        test_game_x = (test_x - offset_x) / (TILE_SIZE * zoom_level * ui_scale_factor)
+        test_game_y = (test_y - offset_y) / (TILE_SIZE * zoom_level * ui_scale_factor)
+        
+        # Calculate distance from this test point to enemy
+        test_distance = math.sqrt((test_game_x - enemy_pos[0])**2 + (test_game_y - enemy_pos[1])**2)
+        
+        # Only include points that are closer to the enemy than current distance
+        if test_distance < current_distance:
+            valid_points.append((test_x, test_y))
+    
+    # Draw the valid area if we have enough points
+    if len(valid_points) >= 3:
+        # Create surface for the filled area
+        pile_in_surface = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+        
+        # Draw filled polygon for valid pile-in area
+        pygame.draw.polygon(pile_in_surface, (255, 0, 255, 80), valid_points)  # Bright magenta
+        screen.blit(pile_in_surface, (0, 0))
+        
+        # Draw border outline
+        if len(valid_points) > 1:
+            pygame.draw.polygon(screen, (255, 0, 255), valid_points, 3)  # Thick magenta border
+    
+    # Always draw the full pile-in circle as reference (dimmed)
+    pygame.draw.circle(screen, (200, 0, 200, 30), (model_screen_x, model_screen_y), pile_in_radius, 2)
+
+
+def draw_pile_in_indicators(screen: pygame.Surface, model_pos: tuple, enemy_pos: tuple,
+                           current_distance: float, pile_in_distance: float,
+                           zoom_level: float, offset_x: int, offset_y: int, enemy_name: str, ui_scale_factor: float = 1.0) -> None:
+    """
+    Draw helpful indicators for pile-in movement
+    """
+    # Convert positions to screen coordinates
+    model_screen_x = int(model_pos[0] * TILE_SIZE * zoom_level * ui_scale_factor + offset_x)
+    model_screen_y = int(model_pos[1] * TILE_SIZE * zoom_level * ui_scale_factor + offset_y)
+    enemy_screen_x = int(enemy_pos[0] * TILE_SIZE * zoom_level * ui_scale_factor + offset_x)
+    enemy_screen_y = int(enemy_pos[1] * TILE_SIZE * zoom_level * ui_scale_factor + offset_y)
+    
+    # Draw line to closest enemy
+    pygame.draw.line(screen, (255, 255, 0), (model_screen_x, model_screen_y), 
+                    (enemy_screen_x, enemy_screen_y), 2)  # Yellow line
+    
+    # Draw enemy highlight circle
+    enemy_highlight_radius = int(0.5 * TILE_SIZE * zoom_level * ui_scale_factor)  # 0.5" radius highlight
+    pygame.draw.circle(screen, (255, 255, 0), (enemy_screen_x, enemy_screen_y), 
+                      enemy_highlight_radius, 3)  # Yellow highlight
+    
+    # Draw distance text if zoom level is reasonable
+    if zoom_level * ui_scale_factor > 0.5:
+        font = pygame.font.Font(None, int(24 * ui_scale_factor))
+        
+        # Distance text
+        distance_text = f"{current_distance:.1f}\""
+        text_surface = font.render(distance_text, True, (255, 255, 255))
+        
+        # Position text at midpoint of line
+        mid_x = (model_screen_x + enemy_screen_x) // 2
+        mid_y = (model_screen_y + enemy_screen_y) // 2 - 15
+        
+        # Background rectangle for text
+        text_rect = text_surface.get_rect(center=(mid_x, mid_y))
+        pygame.draw.rect(screen, (0, 0, 0, 180), text_rect.inflate(6, 4))
+        screen.blit(text_surface, text_rect)
+        
+        # Enemy name text
+        enemy_text = f"Closest: {enemy_name}"
+        enemy_surface = font.render(enemy_text, True, (255, 255, 0))
+        enemy_rect = enemy_surface.get_rect(center=(enemy_screen_x, enemy_screen_y - 40))
+        pygame.draw.rect(screen, (0, 0, 0, 180), enemy_rect.inflate(6, 4))
+        screen.blit(enemy_surface, enemy_rect)
 
 
 # Old draw_movement_range function removed - now using Individual Model Movement Dialog for all movement
@@ -4073,7 +4332,7 @@ def draw_individual_model_movement_range(screen: pygame.Surface, model, movement
 # Old draw_movement_path_preview function removed - now using Individual Model Movement Dialog for all movement
 
 
-def draw_weapon_ranges(screen: pygame.Surface, unit, selected_weapon_profile, zoom_level: float, offset_x: int, offset_y: int) -> None:
+def draw_weapon_ranges(screen: pygame.Surface, unit, selected_weapon_profile, zoom_level: float, offset_x: int, offset_y: int, ui_scale_factor: float = 1.0) -> None:
     """Draw visual indicators showing the weapon range for each model that has the selected weapon"""
     if not selected_weapon_profile or not unit or not unit.models:
         return
@@ -4120,11 +4379,11 @@ def draw_weapon_ranges(screen: pygame.Surface, unit, selected_weapon_profile, zo
             model_pos = model.get_location()
             
             # Convert model position to screen coordinates
-            center_x = int(model_pos[0] * TILE_SIZE * zoom_level + offset_x)
-            center_y = int(model_pos[1] * TILE_SIZE * zoom_level + offset_y)
+            center_x = int(model_pos[0] * TILE_SIZE * zoom_level * ui_scale_factor + offset_x)
+            center_y = int(model_pos[1] * TILE_SIZE * zoom_level * ui_scale_factor + offset_y)
             
             # Calculate radius in screen pixels
-            radius = int(weapon_range * TILE_SIZE * zoom_level)
+            radius = int(weapon_range * TILE_SIZE * zoom_level * ui_scale_factor)
             
             if radius > 0:
                 # Create a surface with per-pixel alpha for the range circle
@@ -4140,7 +4399,7 @@ def draw_weapon_ranges(screen: pygame.Surface, unit, selected_weapon_profile, zo
     # Draw weapon information text
     if models_with_weapon:
         try:
-            font = pygame.font.SysFont('Arial', max(14, int(16 * zoom_level)), bold=True)
+            font = pygame.font.SysFont('Arial', max(14, int(16 * zoom_level * ui_scale_factor)), bold=True)
             weapon_name = selected_weapon_profile.parent_wargear.name
             if len(selected_weapon_profile.parent_wargear.profiles) > 1:
                 weapon_name += f" ({selected_weapon_profile.name})"
@@ -4376,10 +4635,9 @@ class PreBattlePhaseHandler(BasePhaseHandler):
                     # print(f"🔍 DEBUG: PreBattlePhaseHandler individual model mouse motion at ({x}, {y})")
 
                     # Check if mouse is over battlefield area
-                    if ROSTER_PANE_WIDTH < x < BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH:
-                        # Convert to game coordinates
-                        battlefield_x = (x - ROSTER_PANE_WIDTH - self.game_view.offset_x) / (TILE_SIZE * self.game_view.zoom_level)
-                        battlefield_y = (y - self.game_view.offset_y) / (TILE_SIZE * self.game_view.zoom_level)
+                    if self.game_view.scaled_roster_width < x < self.game_view.scaled_battlefield_width + self.game_view.scaled_roster_width:
+                        # Convert to game coordinates using helper method
+                        battlefield_x, battlefield_y = self.game_view.screen_to_game_coords(x, y)
 
                         # Store mouse position for individual model movement preview
                         self.game_view.individual_model_preview_target = (battlefield_x, battlefield_y)
@@ -4399,13 +4657,12 @@ class PreBattlePhaseHandler(BasePhaseHandler):
             x, y = event.pos
             
             # Check if clicking on battlefield area
-            if ROSTER_PANE_WIDTH < x < BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH:
+            if self.game_view.scaled_roster_width < x < self.game_view.scaled_battlefield_width + self.game_view.scaled_roster_width:
                 # Check if individual model movement dialog is active
                 if (hasattr(self.game_view, 'individual_model_movement_dialog') and
                     self.game_view.individual_model_movement_dialog.visible):
-                    # Convert screen coordinates to game coordinates
-                    battlefield_x = (x - ROSTER_PANE_WIDTH - self.game_view.offset_x) / (TILE_SIZE * self.game_view.zoom_level)
-                    battlefield_y = (y - self.game_view.offset_y) / (TILE_SIZE * self.game_view.zoom_level)
+                    # Convert screen coordinates to game coordinates using helper method
+                    battlefield_x, battlefield_y = self.game_view.screen_to_game_coords(x, y)
                     battlefield_z = self.game_view.game.map.get_height_at_point(battlefield_x, battlefield_y)
                     
                     # Handle battlefield click for individual model movement
@@ -4443,10 +4700,9 @@ class PreBattlePhaseHandler(BasePhaseHandler):
         unit_surface_x = int(unit_pos[0] * TILE_SIZE * self.game_view.zoom_level + self.game_view.offset_x)
         unit_surface_y = int(unit_pos[1] * TILE_SIZE * self.game_view.zoom_level + self.game_view.offset_y)
 
-        # Get mouse position in game coordinates for validation
+        # Get mouse position in game coordinates for validation using helper method
         mouse_x, mouse_y = self.mouse_pos
-        mouse_game_x = (mouse_x - ROSTER_PANE_WIDTH - self.game_view.offset_x) / (TILE_SIZE * self.game_view.zoom_level)
-        mouse_game_y = (mouse_y - self.game_view.offset_y) / (TILE_SIZE * self.game_view.zoom_level)
+        mouse_game_x, mouse_game_y = self.game_view.screen_to_game_coords(mouse_x, mouse_y)
 
         # Convert mouse position to battlefield surface coordinates
         mouse_surface_x = int(mouse_game_x * TILE_SIZE * self.game_view.zoom_level + self.game_view.offset_x)

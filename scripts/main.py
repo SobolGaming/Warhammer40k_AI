@@ -87,7 +87,33 @@ def initialize_game(player1_type: str, player2_type: str,
     if not training_mode:
         pygame.init()
         from warhammer40k_ai.UI.game_ui import ROSTER_PANE_WIDTH, BATTLEFIELD_WIDTH, BATTLEFIELD_HEIGHT, INFO_PANE_HEIGHT
-        screen = pygame.display.set_mode((BATTLEFIELD_WIDTH + 2 * ROSTER_PANE_WIDTH, BATTLEFIELD_HEIGHT + INFO_PANE_HEIGHT))
+        
+        # Calculate desired window size
+        desired_width = BATTLEFIELD_WIDTH + 2 * ROSTER_PANE_WIDTH
+        desired_height = BATTLEFIELD_HEIGHT + INFO_PANE_HEIGHT
+        
+        # Get monitor resolution
+        info = pygame.display.Info()
+        monitor_width = info.current_w
+        monitor_height = info.current_h
+        
+        # Leave some margin for window decorations and taskbar
+        usable_width = monitor_width - 100
+        usable_height = monitor_height - 150
+        
+        # Scale down if needed to fit monitor
+        scale_factor = min(1.0, usable_width / desired_width, usable_height / desired_height)
+        
+        if scale_factor < 1.0:
+            actual_width = int(desired_width * scale_factor)
+            actual_height = int(desired_height * scale_factor)
+            print(f"🖥️  Scaling window to fit monitor: {desired_width}x{desired_height} → {actual_width}x{actual_height} (scale: {scale_factor:.2f})")
+        else:
+            actual_width = desired_width
+            actual_height = desired_height
+            print(f"🖥️  Using full size window: {actual_width}x{actual_height}")
+        
+        screen = pygame.display.set_mode((actual_width, actual_height))
         pygame.display.set_caption('Warhammer 40,000 Battlefield')
 
     # Convert string types to PlayerType enum
@@ -293,7 +319,14 @@ def run_unified_game_loop(player_configs: dict) -> dict:
         from warhammer40k_ai.UI.game_ui import GameView, HumanUIInterface
         screen_width, screen_height = screen.get_size()
         ui_interface = HumanUIInterface(screen_width, screen_height)
-        game_view = GameView(screen, env, game, game_map, player1, player2, ui_interface)
+        
+        # Calculate UI scale factor for proper mouse coordinate handling
+        from warhammer40k_ai.UI.game_ui import ROSTER_PANE_WIDTH, BATTLEFIELD_WIDTH, BATTLEFIELD_HEIGHT, INFO_PANE_HEIGHT
+        desired_width = BATTLEFIELD_WIDTH + 2 * ROSTER_PANE_WIDTH
+        desired_height = BATTLEFIELD_HEIGHT + INFO_PANE_HEIGHT
+        ui_scale_factor = min(screen_width / desired_width, screen_height / desired_height)
+        
+        game_view = GameView(screen, env, game, game_map, player1, player2, ui_interface, ui_scale_factor)
         # Initial roster panes will be empty until armies are loaded
     
     # Create AI agents after basic setup

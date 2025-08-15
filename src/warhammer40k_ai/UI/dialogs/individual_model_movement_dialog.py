@@ -110,12 +110,18 @@ class IndividualModelMovementDialog(BaseDialog):
         start_x = 20  # Relative to dialog
         start_y = 80  # Relative to dialog
         
+        button_index = 0  # Separate index for button positioning
         for i, model in enumerate(self.unit.models):
             if not model.is_alive:
                 continue
+            
+            # Check if model is in base contact (for pile-in visual feedback)
+            in_base_contact = self.movement_type == 'pile_in' and self._is_model_in_base_contact(model)
+            if in_base_contact:
+                print(f"🔍 DEBUG: {model.name} already in base contact - will be shown as disabled")
                 
-            row = i // models_per_row
-            col = i % models_per_row
+            row = button_index // models_per_row
+            col = button_index % models_per_row
             
             button_x = start_x + col * (button_width + button_spacing)
             button_y = start_y + row * (button_height + button_spacing)
@@ -123,13 +129,17 @@ class IndividualModelMovementDialog(BaseDialog):
             # Store relative position for re-positioning during drag
             self.model_buttons.append({
                 'rect': pygame.Rect(self.x + button_x, self.y + button_y, button_width, button_height),
-                'model_index': i,
+                'model_index': i,  # Keep original model index
                 'model': model,
                 'relative_x': button_x,
                 'relative_y': button_y,
                 'width': button_width,
-                'height': button_height
+                'height': button_height,
+                'disabled': in_base_contact,  # Mark as disabled if in base contact
+                'disabled_reason': 'Already in base contact' if in_base_contact else None
             })
+            
+            button_index += 1
     
     def _create_dialog_buttons(self):
         """Create the Complete and Skip buttons using base dialog button system"""
@@ -157,6 +167,11 @@ class IndividualModelMovementDialog(BaseDialog):
         # Check model buttons
         for button in self.model_buttons:
             if button['rect'].collidepoint(mouse_pos):
+                # Check if button is disabled
+                if button.get('disabled', False):
+                    print(f"⚠️  Cannot select {button['model'].name}: {button.get('disabled_reason', 'Model unavailable')}")
+                    return True
+                
                 self._select_model(button['model_index'])
                 return True
         return False
@@ -432,6 +447,28 @@ class IndividualModelMovementDialog(BaseDialog):
         
         print(f"✅ {model.name} (Model #{model_index + 1}) moved to ({final_position[0]:.1f}, {final_position[1]:.1f})")
         return True
+    
+    def _is_model_in_base_contact(self, model) -> bool:
+        """Check if model is already in base-to-base contact with an enemy model"""
+        from ...utility.constants import BASE_CONTACT_EPSILON
+        
+        if not self.game_map:
+            return False
+            
+        for unit in self.game_map.units:
+            if unit.faction == model.parent_unit.faction or not unit.is_alive() or not unit.deployed:
+                continue
+            for enemy_model in unit.models:
+                if not enemy_model.is_alive:
+                    continue
+                    
+                # Check edge-to-edge distance
+                distance = model.model_base.edge_to_edge_distance(enemy_model.model_base)
+                if distance <= BASE_CONTACT_EPSILON:
+                    print(f"🔍 DEBUG: {model.name} already in base contact with {enemy_model.name} (distance: {distance:.3f}\")")
+                    return True
+        
+        return False
         
     def _all_models_moved(self) -> bool:
         """Check if all models have been moved"""
@@ -560,7 +597,10 @@ class IndividualModelMovementDialog(BaseDialog):
             rect = button['rect']
             
             # Determine button state
-            if model_index == self.selected_model_index:
+            if button.get('disabled', False):
+                button_color = (40, 40, 40)  # BUTTON_DISABLED - dark gray
+                text_color = (100, 100, 100)  # TEXT_DISABLED - dim gray
+            elif model_index == self.selected_model_index:
                 button_color = BUTTON_SELECTED
                 text_color = (255, 255, 255)  # TEXT_PRIMARY
             elif model_index in self.model_movements and self.model_movements[model_index]['completed']:
@@ -579,7 +619,9 @@ class IndividualModelMovementDialog(BaseDialog):
             
             # Draw model name with number and status
             model_name = f"#{model_index + 1}: {model.name}"
-            if model_index in self.model_movements and self.model_movements[model_index]['completed']:
+            if button.get('disabled', False):
+                model_name += f" ({button.get('disabled_reason', 'Unavailable')})"
+            elif model_index in self.model_movements and self.model_movements[model_index]['completed']:
                 model_name += " ✓"
             elif not model.is_alive:
                 model_name += " (Dead)"

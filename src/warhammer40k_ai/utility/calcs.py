@@ -825,17 +825,19 @@ def get_validation_rules(movement_type: MovementType, target_unit: 'Unit' = None
         })
 
     elif movement_type == MovementType.PILE_IN:
+        from .constants import PILE_IN_DISTANCE
         base_rules.update({
             'must_end_closer_to_enemies': True,
             'prefer_base_contact': True,  # Prefer ending in base-to-base contact
-            'max_distance_override': 3.0,  # Pile-in is always 3"
+            'max_distance_override': PILE_IN_DISTANCE,  # Standard pile-in distance
         })
 
     elif movement_type == MovementType.CONSOLIDATE:
+        from .constants import CONSOLIDATE_DISTANCE
         base_rules.update({
             'must_end_closer_to_enemies_or_objectives': True,
             'prefer_base_contact': True,  # Prefer ending in base-to-base contact
-            'max_distance_override': 3.0,  # Consolidate is always 3"
+            'max_distance_override': CONSOLIDATE_DISTANCE,  # Standard consolidate distance
         })
 
     elif movement_type == MovementType.FALL_BACK:
@@ -1695,8 +1697,82 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
 
     # Check pile-in/consolidate rules
     if validation_rules.get('must_end_closer_to_enemies', False):
-        # TODO: Implement pile-in validation (must end closer to enemies)
-        pass
+        # Pile-in validation: model must end closer to at least one enemy model
+        current_pos = model.get_location()
+        if not current_pos:
+            return {'valid': False, 'reason': 'Cannot determine current model position'}
+        
+        # Create temporary bases for distance calculations
+        from ..utility.model_base import Base
+        current_base = Base(model.model_base.base_type, model.model_base.radius)
+        current_base.x, current_base.y, current_base.z = current_pos[0], current_pos[1], current_pos[2]
+        
+        new_base = Base(model.model_base.base_type, model.model_base.radius)
+        new_base.x, new_base.y, new_base.z = position[0], position[1], position[2]
+        
+        # Find enemy models within potential pile-in range for optimization
+        # Only consider enemies within (ENGAGEMENT_RANGE + PILE_IN_DISTANCE) of current position
+        from .constants import ENGAGEMENT_RANGE_HORIZONTAL, PILE_IN_DISTANCE
+        max_relevant_distance = ENGAGEMENT_RANGE_HORIZONTAL + PILE_IN_DISTANCE
+        
+        enemy_models = []
+        for unit in game_map.units:
+            if unit.faction == model.parent_unit.faction or not unit.is_alive() or not unit.deployed:
+                continue
+            for enemy_model in unit.models:
+                if enemy_model.is_alive:
+                    # Optimization: exclude enemies too far away to matter for pile-in
+                    current_distance = current_base.edge_to_edge_distance(enemy_model.model_base)
+                    if current_distance <= max_relevant_distance:
+                        enemy_models.append(enemy_model)
+                    # Debug: show excluded enemies
+                    else:
+                        print(f"🔍 DEBUG: Excluding {enemy_model.name} from pile-in validation - too far away ({current_distance:.2f}\" > {max_relevant_distance:.2f}\")")
+        
+        if not enemy_models:
+            return {'valid': False, 'reason': 'No enemy models within pile-in range for validation'}
+        
+        print(f"🔍 DEBUG: Pile-in validation considering {len(enemy_models)} enemy models within {max_relevant_distance:.1f}\" range")
+        
+        # Find the closest enemy model to current position
+        closest_enemy = None
+        closest_distance = float('inf')
+        for enemy_model in enemy_models:
+            current_distance = current_base.edge_to_edge_distance(enemy_model.model_base)
+            if current_distance < closest_distance:
+                closest_distance = current_distance
+                closest_enemy = enemy_model
+        
+        if not closest_enemy:
+            return {'valid': False, 'reason': 'No closest enemy model found for pile-in validation'}
+        
+        print(f"🔍 DEBUG: Closest enemy to {model.name} is {closest_enemy.name} at {closest_distance:.2f}\"")
+        
+        # Check if new position is closer to the CLOSEST enemy model
+        new_distance_to_closest = new_base.edge_to_edge_distance(closest_enemy.model_base)
+        
+        if new_distance_to_closest >= closest_distance:
+            return {'valid': False, 'reason': f'Pile-in must end closer to closest enemy ({closest_enemy.name}): {new_distance_to_closest:.2f}" ≥ {closest_distance:.2f}"'}
+        
+        print(f"🔍 DEBUG: Pile-in validation - {model.name} moved closer to closest enemy {closest_enemy.name}: {closest_distance:.2f}\" → {new_distance_to_closest:.2f}\"")
+        
+        # Check if base-to-base contact is possible and required
+        from .constants import BASE_CONTACT_EPSILON
+        if validation_rules.get('prefer_base_contact', False):
+            # Calculate if it's possible to reach base contact with the closest enemy within pile-in distance
+            enemy_position = closest_enemy.get_location()
+            if enemy_position:
+                # Distance from model's current position to closest point on enemy base
+                max_distance_to_enemy = closest_distance
+                pile_in_distance = validation_rules.get('max_distance_override', PILE_IN_DISTANCE)
+                
+                # If base contact is achievable within pile-in distance, require it
+                if max_distance_to_enemy <= pile_in_distance:
+                    if new_distance_to_closest > BASE_CONTACT_EPSILON:
+                        return {'valid': False, 'reason': f'Pile-in must end in base contact with closest enemy ({closest_enemy.name}) when possible'}
+                    print(f"🔍 DEBUG: Pile-in achieved required base contact with {closest_enemy.name} (distance: {new_distance_to_closest:.3f}\")")
+                else:
+                    print(f"🔍 DEBUG: Base contact not required - closest enemy too far ({max_distance_to_enemy:.2f}\" > {pile_in_distance:.2f}\")")
 
     if validation_rules.get('must_end_closer_to_enemies_or_objectives', False):
         # TODO: Implement consolidate validation (must end closer to enemies or objectives)
