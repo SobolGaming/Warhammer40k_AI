@@ -1,13 +1,14 @@
 """
 Melee Weapon Declaration Dialog for Warhammer 40k AI
 
-This dialog allows players to declare melee weapons and targets during the Fight Phase,
-following the official rules for melee combat resolution.
+Refactored to use BaseDialog for consistent UI (title bar, drag, buttons), fixed
+overlapping labels, and improved layout clarity.
 """
 
 import pygame
 from typing import List, Dict, Optional, Callable
 from ...classes.unit import Unit
+from .base_dialog import BaseDialog, PANEL_BG, PANEL_BORDER, BUTTON_BG, BUTTON_HOVER, BUTTON_SELECTED, TEXT_PRIMARY, TEXT_SECONDARY
 
 # Enhanced Colors
 PANEL_BG = (50, 50, 50)
@@ -21,20 +22,14 @@ TEXT_ACCENT = (255, 100, 100)  # Red accent color for melee combat
 MELEE_COLOR = (255, 100, 100)  # Red for melee weapons
 EXTRA_ATTACKS_COLOR = (255, 200, 100)  # Orange for extra attacks
 
-class MeleeWeaponDeclarationDialog:
+class MeleeWeaponDeclarationDialog(BaseDialog):
     """
     Melee weapon declaration dialog that allows players to declare melee weapons
     and targets before executing all melee attacks simultaneously.
     """
     
     def __init__(self, screen_width: int, screen_height: int):
-        self.screen_width = screen_width
-        self.screen_height = screen_height
-        self.width = 800
-        self.height = 600
-        self.x = 50
-        self.y = 50
-        self.visible = False
+        super().__init__(screen_width, screen_height, width=800, height=600, draggable=True, center=True)
         
         # Unit and callback
         self.unit = None
@@ -62,26 +57,15 @@ class MeleeWeaponDeclarationDialog:
         self.button_hover_color = (120, 120, 120)
         self.selected_color = (120, 120, 120)
         
-        # Fonts
-        try:
-            self.font_large = pygame.font.SysFont('Arial', 20, bold=True)
-            self.font_medium = pygame.font.SysFont('Arial', 16, bold=False)
-            self.font_small = pygame.font.SysFont('Arial', 14, bold=False)
-        except:
-            self.font_large = pygame.font.Font(None, 20)
-            self.font_medium = pygame.font.Font(None, 16)
-            self.font_small = pygame.font.Font(None, 14)
+        # Fonts provided by BaseDialog: self.font_large/medium/small
     
     def show(self, unit: Unit, callback: Callable, game_map=None):
         """Show the melee weapon declaration dialog."""
         self.unit = unit
         self.callback = callback
         self.game_map = game_map
-        self.visible = True
-        
-        # Center dialog
-        self.x = (self.screen_width - self.width) // 2
-        self.y = (self.screen_height - self.height) // 2
+        # Preserve callback in BaseDialog for button handling
+        super().show(callback)
         
         # Initialize weapon selection
         self._initialize_weapon_selection()
@@ -90,7 +74,7 @@ class MeleeWeaponDeclarationDialog:
     
     def hide(self):
         """Hide the dialog."""
-        self.visible = False
+        super().hide()
         self.unit = None
         self.callback = None
         self.game_map = None
@@ -236,7 +220,10 @@ class MeleeWeaponDeclarationDialog:
         """Handle pygame events."""
         if not self.visible:
             return False
-        
+        # Base handling for drag/title/buttons
+        if super().handle_event(event):
+            return True
+
         if event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:  # Left click
                 mouse_pos = pygame.mouse.get_pos()
@@ -386,66 +373,40 @@ class MeleeWeaponDeclarationDialog:
         """Draw the dialog."""
         if not self.visible:
             return
-        
-        # Create surface with alpha
-        surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
-        
-        # Draw background
-        pygame.draw.rect(surface, self.bg_color, (0, 0, self.width, self.height))
-        pygame.draw.rect(surface, self.border_color, (0, 0, self.width, self.height), 2)
-        
-        # Draw title
-        title_text = f"Melee Weapon Declaration - {self.unit.name if self.unit else 'Unknown'}"
-        title_surface = self.font_large.render(title_text, True, self.text_color)
-        surface.blit(title_surface, (20, 20))
-        
-        # Draw instructions
-        instructions = "Select a model, then choose its melee weapons. Each model needs one primary weapon."
-        instr_surface = self.font_small.render(instructions, True, TEXT_SECONDARY)
-        surface.blit(instr_surface, (20, 50))
-        
-        # Draw weapon buttons
-        self._draw_weapon_buttons(surface)
-        
-        # Draw execute button
-        execute_button_rect = pygame.Rect(20, self.height - 60, self.width - 40, 40)
-        button_color = self.button_color
-        
-        # Count total weapon declarations
+        # Dialog background and title bar
+        self.draw_dialog_background(screen)
+        title = f"Melee Weapons - {self.unit.name if self.unit else 'Unknown'}"
+        self.draw_title_bar(screen, title, subtitle="Select a model, then its melee weapons")
+
+        # Draw content directly on screen for simplicity
+        self._draw_weapon_buttons(screen)
+
+        # Execute button
+        self.add_button("execute", 20, self.height - 60, self.width - 40, 40, enabled=True)
+        # Choose color based on readiness
         total_declarations = sum(len(selections) for selections in self.model_weapon_selections.values())
-        if total_declarations > 0:
-            button_color = MELEE_COLOR
-        
-        pygame.draw.rect(surface, button_color, execute_button_rect)
-        pygame.draw.rect(surface, self.border_color, execute_button_rect, 1)
-        
         models_ready = len(self.model_weapon_selections)
         total_models = len([m for m in self.unit.models if m.is_alive]) if self.unit else 0
-        button_text = f"Execute Melee Attacks ({models_ready}/{total_models} models ready)"
-        button_surface = self.font_medium.render(button_text, True, self.text_color)
-        text_rect = button_surface.get_rect(center=execute_button_rect.center)
-        surface.blit(button_surface, text_rect)
-        
-        # Draw to screen
-        screen.blit(surface, (self.x, self.y))
+        btn_label = f"Execute Melee Attacks ({models_ready}/{total_models} models ready)"
+        # Draw button with default style; color hint via text
+        self.draw_button(screen, "execute", btn_label)
     
     def _draw_weapon_buttons(self, surface):
         """Draw the model selection and weapon selection buttons."""
-        # Create clipping area for scrolling
-        clip_rect = pygame.Rect(20, 80, self.width - 40, self.height - 160)
+        # Create clipping area for scrolling (below title bar)
+        clip_rect = pygame.Rect(self.x + 20, self.y + self.title_bar_height + 10, self.width - 40, self.height - self.title_bar_height - 80)
         
         for button in self.weapon_buttons:
             # Calculate position with scroll offset
             button_rect = pygame.Rect(
-                button['rect'].x,
-                button['rect'].y - self.scroll_offset,
+                self.x + button['rect'].x,
+                self.y + button['rect'].y - self.scroll_offset,
                 button['rect'].width,
                 button['rect'].height
             )
             
             # Skip if button is outside visible area
-            if (button_rect.bottom < clip_rect.top or 
-                button_rect.top > clip_rect.bottom):
+            if (button_rect.bottom < clip_rect.top or button_rect.top > clip_rect.bottom):
                 continue
             
             button_type = button.get('type', 'weapon')
@@ -475,7 +436,7 @@ class MeleeWeaponDeclarationDialog:
                     weapon_count = len(self.model_weapon_selections[model_index])
                     model_text += f" ({weapon_count})"
                 
-                name_surface = self.font_small.render(model_text, True, self.text_color)
+                name_surface = self.font_small.render(model_text, True, TEXT_PRIMARY)
                 text_rect = name_surface.get_rect(center=button_rect.center)
                 surface.blit(name_surface, text_rect)
                 
@@ -490,7 +451,8 @@ class MeleeWeaponDeclarationDialog:
                 
                 # Draw button background
                 if is_selected:
-                    button_color = EXTRA_ATTACKS_COLOR if has_extra_attacks else MELEE_COLOR
+                    # Use the same selected style as ranged dialog for readability
+                    button_color = BUTTON_SELECTED
                 else:
                     button_color = self.button_color
                 
@@ -506,7 +468,7 @@ class MeleeWeaponDeclarationDialog:
                 if has_extra_attacks:
                     weapon_name += " [EXTRA ATTACKS]"
                 
-                name_surface = self.font_medium.render(weapon_name, True, self.text_color)
+                name_surface = self.font_medium.render(weapon_name, True, TEXT_PRIMARY)
                 surface.blit(name_surface, (button_rect.x + 10, button_rect.y + 5))
                 
                 # Line 2: Weapon stats (melee format: A/WS/S/AP/D)
@@ -527,11 +489,12 @@ class MeleeWeaponDeclarationDialog:
                     stats_surface = self.font_small.render(stats_text, True, TEXT_SECONDARY)
                     surface.blit(stats_surface, (button_rect.x + 10, button_rect.y + 25))
                 
-                # Line 3: Keywords (if any)
+                # Line 3: Keywords (if any) - use the same blue accent as ranged, on neutral/selected backgrounds
                 keywords = profile.get_keywords() if hasattr(profile, 'get_keywords') else []
                 if keywords:
                     keywords_text = ", ".join(keywords)
-                    keywords_surface = self.font_small.render(keywords_text, True, (100, 149, 237))  # Blue accent
+                    # Use blue accent like shooting dialog
+                    keywords_surface = self.font_small.render(keywords_text, True, (100, 149, 237))
                     surface.blit(keywords_surface, (button_rect.x + 10, button_rect.y + 42))
                 
                 # Selection indicator
@@ -543,10 +506,16 @@ class MeleeWeaponDeclarationDialog:
         if self.unit:
             # Model selection label
             model_label = self.font_medium.render("Select Model:", True, TEXT_ACCENT)
-            surface.blit(model_label, (20, 105))
+            surface.blit(model_label, (self.x + 20, self.y + self.title_bar_height + 5))
             
             # Weapon selection label
             if self.selected_model_index is not None:
                 model_name = self.unit.models[self.selected_model_index].name
                 weapon_label = self.font_medium.render(f"Weapons for {model_name}:", True, TEXT_ACCENT)
-                surface.blit(weapon_label, (20, 185)) 
+                surface.blit(weapon_label, (self.x + 20, self.y + self.title_bar_height + 85))
+
+    def _handle_button_click(self, button_name: str) -> bool:
+        if button_name == "execute":
+            self._execute_attacks()
+            return True
+        return False

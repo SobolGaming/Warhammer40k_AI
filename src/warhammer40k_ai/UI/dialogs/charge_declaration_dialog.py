@@ -1,5 +1,6 @@
 import pygame
 from typing import List, Optional, Callable
+from .base_dialog import BaseDialog, PANEL_BG, PANEL_BORDER, BUTTON_BG, BUTTON_HOVER, BUTTON_DISABLED, TEXT_PRIMARY, TEXT_SECONDARY
 
 # Font sizes
 FONT_LARGE = 18
@@ -21,33 +22,17 @@ INVALID_TARGET_COLOR = (200, 0, 0)  # Red for invalid targets
 WARNING_COLOR = (255, 165, 0)  # Orange for warnings
 
 
-class ChargeDeclarationDialog:
+class ChargeDeclarationDialog(BaseDialog):
     """Dialog for declaring charges during the charge phase"""
-    
+
     def __init__(self, screen_width: int, screen_height: int):
-        self.screen_width = screen_width
-        self.screen_height = screen_height
-        self.width = 650  # Increased width
-        self.height = 550  # Increased height
-        self.visible = False
+        super().__init__(screen_width, screen_height, width=650, height=550, draggable=True, center=True)
         self.unit = None
         self.callback = None
         self.game_map = None
         self.game_view = None
         
-        # Calculate position (center of screen)
-        self.x = (screen_width - self.width) // 2
-        self.y = (screen_height - self.height) // 2
-        
-        # Fonts
-        try:
-            self.font_large = pygame.font.SysFont('Arial', FONT_LARGE, bold=True)
-            self.font_medium = pygame.font.SysFont('Arial', FONT_MEDIUM, bold=True)
-            self.font_small = pygame.font.SysFont('Arial', FONT_SMALL, bold=False)
-        except:
-            self.font_large = pygame.font.Font(None, FONT_LARGE)
-            self.font_medium = pygame.font.Font(None, FONT_MEDIUM)
-            self.font_small = pygame.font.Font(None, FONT_SMALL)
+        # Fonts are provided by BaseDialog (font_large, font_medium, font_small)
         
         # Available targets
         self.available_targets = []
@@ -79,38 +64,25 @@ class ChargeDeclarationDialog:
         self.callback = callback
         self.game_map = game_map
         self.game_view = game_view
-        self.visible = True
+        # IMPORTANT: pass callback so BaseDialog.callback is preserved
+        super().show(callback)
         
         # Clear previous state
         self.selected_target = None
         self.scroll_offset = 0
         self.hovered_target = -1
         
-        # Position dialog based on player
-        if unit.get_parent_army() and unit.get_parent_army().player:
-            player_name = unit.get_parent_army().player.name
-            if "Player 1" in player_name or "1" in player_name:
-                # Player 1 - position on left side of battlefield
-                self.x = 50  # Small margin from left edge
-            else:
-                # Player 2 - position on right side of battlefield  
-                self.x = self.screen_width - self.width - 50  # Small margin from right edge
-        else:
-            # Fallback to center if player info not available
-            self.x = (self.screen_width - self.width) // 2
+        # Keep centered; dialog is draggable
         
-        # Center vertically
-        self.y = (self.screen_height - self.height) // 2
-        
-        # Update button positions
-        button_width = 140  # Increased width
+        # Create BaseDialog buttons (relative coordinates)
+        button_width = 140
         button_height = 35
-        button_spacing = 20  # Increased spacing
-        start_x = self.x + (self.width - (2 * button_width + button_spacing)) // 2
-        button_y = self.y + self.height - 50
-        
-        self.declare_button = pygame.Rect(start_x, button_y, button_width, button_height)
-        self.cancel_button = pygame.Rect(start_x + button_width + button_spacing, button_y, button_width, button_height)
+        button_spacing = 20
+        rel_start_x = (self.width - (2 * button_width + button_spacing)) // 2
+        rel_y = self.height - 50
+        # Add buttons via BaseDialog so clicks are handled uniformly
+        self.add_button('declare', rel_start_x, rel_y, button_width, button_height, enabled=False)
+        self.add_button('cancel', rel_start_x + button_width + button_spacing, rel_y, button_width, button_height, enabled=True)
         
         # Get available targets
         self._update_available_targets()
@@ -134,7 +106,7 @@ class ChargeDeclarationDialog:
     
     def hide(self):
         """Hide the charge declaration dialog"""
-        self.visible = False
+        super().hide()
         self.unit = None
         self.callback = None
         self.game_map = None
@@ -257,78 +229,34 @@ class ChargeDeclarationDialog:
         """Handle pygame events"""
         if not self.visible:
             return False
-        
-        # Check if event is within dialog bounds
-        dialog_rect = pygame.Rect(self.x, self.y, self.width, self.height)
-        event_pos = getattr(event, 'pos', None)
-        
-        # Handle mouse events
-        if event.type == pygame.MOUSEBUTTONDOWN:
-            if event.button == 1:
-                # Only handle clicks within dialog bounds
-                if event_pos and dialog_rect.collidepoint(event_pos):
-                    return self.handle_click(event_pos)
-            elif event.button == 4:  # Scroll up
-                if event_pos and dialog_rect.collidepoint(event_pos):
-                    self.scroll_offset = max(0, self.scroll_offset - 30)
-                    return True
-            elif event.button == 5:  # Scroll down
-                if event_pos and dialog_rect.collidepoint(event_pos):
-                    self.scroll_offset = min(self.max_scroll, self.scroll_offset + 30)
-                    return True
-        elif event.type == pygame.MOUSEMOTION:
-            # Only handle motion within dialog bounds
-            if event_pos and dialog_rect.collidepoint(event_pos):
-                self.update_hover(event_pos)
-                return True
-        elif event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_ESCAPE:
-                self.hide()
-                return True
-            elif event.key == pygame.K_RETURN and self.selected_target:
-                self._execute_charge()
-                return True
-        
-        # Only consume events that are within dialog bounds or are keyboard events
-        if event_pos:
-            return dialog_rect.collidepoint(event_pos)
-        else:
-            # For non-mouse events (like keyboard), consume them
+        # Use BaseDialog handling for drag/title/ESC
+        if super().handle_event(event):
             return True
-    
-    def handle_click(self, mouse_pos):
-        """Handle mouse clicks"""
-        # Check button clicks first
-        if self.declare_button.collidepoint(mouse_pos) and self.selected_target:
+        # Local scroll
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button in (4, 5):
+            self.scroll_offset = max(0, min(self.max_scroll, self.scroll_offset + (30 if event.button == 5 else -30)))
+            return True
+        # ENTER to execute
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN and self.selected_target:
             self._execute_charge()
             return True
-        elif self.cancel_button.collidepoint(mouse_pos):
-            self.hide()
-            return True
-        
-        # Check target selection
-        target_clicked = self._handle_target_click(mouse_pos)
-        if target_clicked:
-            return True
-        
-        # Click outside dialog - close it
-        dialog_rect = pygame.Rect(self.x, self.y, self.width, self.height)
-        if not dialog_rect.collidepoint(mouse_pos):
-            self.hide()
-            return True
-        
-        return True
+        return False
+    
+    def _handle_dialog_click(self, mouse_pos) -> bool:
+        """Handle clicks inside dialog area for target selection."""
+        # Delegate to target list selection; BaseDialog handles button clicks separately
+        return self._handle_target_click(mouse_pos)
     
     def _handle_target_click(self, mouse_pos):
         """Handle clicks on target units"""
         if not self.available_targets:
             return False
         
-        # Calculate target list area
+        # Calculate target list area (below title and unit info)
         list_x = self.x + 20
-        list_y = self.y + 160  # Increased to avoid overlap with unit info
+        list_y = self.y + self.title_bar_height + 110
         list_width = self.width - 40
-        list_height = self.height - 240  # Adjusted for new layout
+        list_height = self.height - (self.title_bar_height + 200)
         
         if not (list_x <= mouse_pos[0] <= list_x + list_width and 
                 list_y <= mouse_pos[1] <= list_y + list_height):
@@ -412,21 +340,9 @@ class ChargeDeclarationDialog:
         if not self.visible or not self.unit:
             return
         
-        # Draw semi-transparent overlay - only over the dialog area to avoid affecting battlefield
-        overlay = pygame.Surface((self.width, self.height))
-        overlay.set_alpha(128)
-        overlay.fill((0, 0, 0))
-        screen.blit(overlay, (self.x, self.y))
-        
-        # Draw dialog background
-        dialog_rect = pygame.Rect(self.x, self.y, self.width, self.height)
-        pygame.draw.rect(screen, PANEL_BG, dialog_rect)
-        pygame.draw.rect(screen, PANEL_BORDER, dialog_rect, 3)
-        
-        # Draw title
-        title_text = self.font_large.render(f"Declare Charge - {self.unit.name}", True, TEXT_PRIMARY)
-        title_rect = title_text.get_rect(center=(self.x + self.width // 2, self.y + 30))
-        screen.blit(title_text, title_rect)
+        # Draw dialog background and title bar
+        self.draw_dialog_background(screen)
+        self.draw_title_bar(screen, f"Declare Charge - {self.unit.name}")
         
         # Draw unit info
         self._draw_unit_info(screen)
@@ -434,8 +350,11 @@ class ChargeDeclarationDialog:
         # Draw target list
         self._draw_target_list(screen)
         
-        # Draw buttons
-        self._draw_buttons(screen)
+        # Draw buttons (enable/disable declare based on selection)
+        if 'declare' in self.button_states:
+            self.button_states['declare']['enabled'] = bool(self.selected_target)
+        self.draw_button(screen, 'declare', 'Declare Charge')
+        self.draw_button(screen, 'cancel', 'Cancel')
     
     def _draw_unit_info(self, screen):
         """Draw information about the charging unit"""
@@ -490,7 +409,7 @@ class ChargeDeclarationDialog:
     def _draw_target_list(self, screen):
         """Draw the list of available targets"""
         list_x = self.x + 20
-        list_y = self.y + 160  # Fixed position for header and list
+        list_y = self.y + self.title_bar_height + 110
         list_width = self.width - 40
         target_height = 60
         max_visible_targets = 5
@@ -573,23 +492,19 @@ class ChargeDeclarationDialog:
         # Update max_scroll for mouse wheel logic
         self.max_scroll = max_scroll_offset
     
-    def _draw_buttons(self, screen):
-        """Draw the dialog buttons"""
-        # Declare Charge button
-        declare_color = BUTTON_HOVER if self.hovered_button == 'declare' else BUTTON_BG
-        declare_color = BUTTON_DISABLED if not self.selected_target else declare_color
-        pygame.draw.rect(screen, declare_color, self.declare_button)
-        pygame.draw.rect(screen, PANEL_BORDER, self.declare_button, 2)
-        
-        declare_text = self.font_medium.render("Declare Charge", True, TEXT_PRIMARY if self.selected_target else TEXT_DISABLED)
-        declare_rect = declare_text.get_rect(center=self.declare_button.center)
-        screen.blit(declare_text, declare_rect)
-        
-        # Cancel button
-        cancel_color = BUTTON_HOVER if self.hovered_button == 'cancel' else BUTTON_BG
-        pygame.draw.rect(screen, cancel_color, self.cancel_button)
-        pygame.draw.rect(screen, PANEL_BORDER, self.cancel_button, 2)
-        
-        cancel_text = self.font_medium.render("Cancel", True, TEXT_PRIMARY)
-        cancel_rect = cancel_text.get_rect(center=self.cancel_button.center)
-        screen.blit(cancel_text, cancel_rect) 
+    def _handle_button_click(self, button_name: str) -> bool:
+        """Satisfy BaseDialog requirement; map to local buttons if needed."""
+        if button_name == 'declare':
+            if self.selected_target:
+                print(f"🔍 DEBUG: Declare pressed with selected target: {self.selected_target.name}")
+                self._execute_charge()
+                return True
+            else:
+                print("🔍 DEBUG: Declare pressed but no target selected")
+                return False
+        if button_name == 'cancel':
+            self.hide()
+            return True
+        return False
+    
+    # Legacy draw removed; BaseDialog.draw_button is used in draw()

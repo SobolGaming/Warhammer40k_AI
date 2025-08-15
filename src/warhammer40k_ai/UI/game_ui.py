@@ -3482,13 +3482,37 @@ class BattlePhaseHandler(BasePhaseHandler):
             if wound_roll < wound_needed:
                 return False
             
-            # Roll save
+            # Roll save with proper AP and invulnerable consideration
             save_roll = get_roll("1D6")
-            save_needed = max(target_model.save + ap, 2)  # Minimum 2+ save after modifiers
+            # Normalize AP (e.g., -2)
+            try:
+                ap_value = int(ap)
+            except Exception:
+                ap_value = 0
+            base_save = getattr(target_model, 'save', 7)
+            normal_needed = max(base_save - ap_value, 2)
+
+            # Check invulnerable save and whether its condition applies
+            effective_needed = normal_needed
+            detail_text = f"{base_save}+ with AP {ap_value}"
+            if hasattr(target_model, 'inv_save'):
+                inv_value, inv_condition = target_model.inv_save
+                if inv_value:
+                    # Build a minimal attack_instance for condition checks
+                    attack_instance = {'weapon_profile': weapon_profile, 'is_mortal': False}
+                    cond_ok = True
+                    if inv_condition and hasattr(target_model, '_check_invulnerable_save_condition'):
+                        try:
+                            cond_ok = target_model._check_invulnerable_save_condition(inv_condition, attack_instance)
+                        except Exception:
+                            cond_ok = True
+                    if cond_ok and inv_value < effective_needed:
+                        effective_needed = inv_value
+                        detail_text = f"{inv_value}+ Invuln"
+
+            print(f"    🛡️ Save: {save_roll} vs {effective_needed}+ ({detail_text}) = {'SAVED' if save_roll >= effective_needed else 'FAILED'}")
             
-            print(f"    🛡️ Save: {save_roll} vs {save_needed}+ = {'SAVED' if save_roll >= save_needed else 'FAILED'}")
-            
-            if save_roll >= save_needed:
+            if save_roll >= effective_needed:
                 return False
             
             # Apply damage using the proper take_damage method
