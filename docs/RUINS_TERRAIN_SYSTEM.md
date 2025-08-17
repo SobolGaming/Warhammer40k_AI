@@ -165,3 +165,56 @@ This enhanced RUINS system provides:
 - ✅ **Flexible building design** with custom components
 - ✅ **Proper vertical movement** cost calculations
 - ✅ **Warhammer 40k compliance** with official terrain rules
+
+## 3D visualization and preset ruin example
+
+This project includes a ready-to-use preset ruins piece and a simple 3D preview tool.
+
+- Preset: `TerrainFactory.create_preset_ruin_rect_12x6_variant1()`
+  - Footprint: 12" × 6"
+  - Wall thickness: 0.5" (all walls fully within the footprint)
+  - Walls layout:
+    - Long wall along the long edge, inset so its centerline is at y = 0.25"
+    - Two short walls at x = 2" and x = 10", each 4" long (y ∈ [0.25", 4.00"]) and joining the long wall at corners
+  - Windows (first floor only):
+    - Long wall: three 2" windows at x ∈ [3–5], [5–7], [7–9] (centered on y = 0.25")
+    - Short walls: one 2" window per short wall at y ∈ [1–3]
+  - Floors:
+    - Ground (level 0): full 12" × 6" footprint
+    - First and second floors: platform is exactly 8" × 4" at x ∈ [2, 10], y ∈ [0.25, 4.00]
+
+### Preview in 3D
+
+Install matplotlib (once):
+
+```bash
+pip install matplotlib
+```
+
+Run the example preview script:
+
+```bash
+python examples/ruins_terrain_example.py
+```
+
+You’ll see:
+
+- The preset ruin rendered in 3D (matplotlib mplot3d) with equal X/Y scale so inches look correct
+- Walls as solids; windows are cutouts (no glass)
+- Floors as slabs; upper floors do not extend beyond the walls
+- A unit of five 32 mm models placed on the selected floor (default: first floor), extruded to a simple height
+
+### Programmatic use
+
+```python
+from warhammer40k_ai.classes.map import TerrainFactory
+
+ruin = TerrainFactory.create_preset_ruin_rect_12x6_variant1()
+# game_map.add_terrain_feature(ruin)
+```
+
+To place and visualize 32 mm models on the first floor, see `examples/ruins_terrain_example.py`. It:
+
+- Computes interior as (footprint − walls)
+- Constrains placement to the floor platform area
+- Ensures no base overlap and uses a staggered (zig‑zag) pattern to fit five models

@@ -12,3 +12,4 @@ gym
 pygame
 torch
 shapely
+matplotlib

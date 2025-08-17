@@ -1,203 +1,183 @@
 #!/usr/bin/env python3
 """
-Example demonstrating the new RUINS terrain system with walls, floors, and windows.
+Example for generating and visualizing a preset 12"x6" RUINS piece with specific walls/windows.
 """
 
-from src.warhammer40k_ai.classes.map import (
-    Map, Obstacle, ObstacleType, 
-    RuinsComponent, RuinsComponentType, Window
-)
-from src.warhammer40k_ai.classes.unit import Unit
-from src.warhammer40k_ai.classes.model import Model
-from src.warhammer40k_ai.utility.model_base import Base, BaseType
+import os, sys
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-def create_simple_ruins_building():
-    """Create a simple 2-story ruins building with walls and floors."""
-    
-    # Define building footprint (10" x 8" building)
-    building_footprint = [
-        (10.0, 10.0),  # Bottom-left corner
-        (20.0, 10.0),  # Bottom-right corner
-        (20.0, 18.0),  # Top-right corner
-        (10.0, 18.0)   # Top-left corner
-    ]
-    
-    # Create ruins using the helper method
-    ruins = Obstacle.create_ruins(
-        building_footprint=building_footprint,
-        wall_height=4.0,      # 4" tall walls per floor
-        num_floors=1,         # Ground floor + 1st floor
-        has_windows=True      # Include windows for line of sight
-    )
-    
-    return ruins
+from warhammer40k_ai.classes.map import TerrainFactory
+from warhammer40k_ai.utility.model_base import Base, BaseType
+from warhammer40k_ai.utility.calcs import convert_mm_to_inches
+from shapely.geometry import Polygon
 
-def create_custom_ruins_building():
-    """Create a custom ruins building with specific wall and floor configurations."""
-    
-    # Building footprint
-    building_footprint = [
-        (30.0, 30.0),
-        (40.0, 30.0),
-        (40.0, 40.0),
-        (30.0, 40.0)
-    ]
-    
-    components = []
-    
-    # Ground floor
-    ground_floor = RuinsComponent(
-        vertices=building_footprint,
-        component_type=RuinsComponentType.FLOOR,
-        height=0.5,  # Floor thickness
-        floor_level=0
-    )
-    components.append(ground_floor)
-    
-    # First floor
-    first_floor = RuinsComponent(
-        vertices=building_footprint,
-        component_type=RuinsComponentType.FLOOR,
-        height=0.5,
-        floor_level=1
-    )
-    components.append(first_floor)
-    
-    # Create walls with custom windows
-    wall_segments = [
-        # South wall (with large window)
-        [(30.0, 30.0), (40.0, 30.0)],
-        # East wall (no windows)
-        [(40.0, 30.0), (40.0, 40.0)],
-        # North wall (with small window)
-        [(40.0, 40.0), (30.0, 40.0)],
-        # West wall (with door opening)
-        [(30.0, 40.0), (30.0, 30.0)]
-    ]
-    
-    for i, wall_vertices in enumerate(wall_segments):
-        windows = []
-        
-        if i == 0:  # South wall - large window
-            windows.append(Window(
-                start_position=0.2,
-                end_position=0.8,
-                height_bottom=1.0,
-                height_top=3.5
-            ))
-        elif i == 2:  # North wall - small window
-            windows.append(Window(
-                start_position=0.4,
-                end_position=0.6,
-                height_bottom=2.0,
-                height_top=3.0
-            ))
-        elif i == 3:  # West wall - door opening (ground floor only)
-            windows.append(Window(
-                start_position=0.3,
-                end_position=0.7,
-                height_bottom=0.0,  # Door goes to ground
-                height_top=3.0
-            ))
-        
-        # Ground floor walls
-        ground_wall = RuinsComponent(
-            vertices=wall_vertices,
-            component_type=RuinsComponentType.WALL,
-            height=4.0,
-            floor_level=0,
-            windows=windows if i != 3 else [windows[0]]  # Door only on ground floor
-        )
-        components.append(ground_wall)
-        
-        # First floor walls (no door opening)
-        first_floor_windows = windows if i != 3 else []  # No door on first floor
-        first_wall = RuinsComponent(
-            vertices=wall_vertices,
-            component_type=RuinsComponentType.WALL,
-            height=4.0,
-            floor_level=1,
-            windows=first_floor_windows
-        )
-        components.append(first_wall)
-    
-    # Create the ruins obstacle
-    ruins = Obstacle(
-        vertices=building_footprint,
-        terrain_type=ObstacleType.RUINS,
-        height=8.0,  # Total height (2 floors * 4")
-        ruins_components=components
-    )
-    
-    return ruins
+def visualize_ruin_3d(ruin, models=None):
+    """Visualize a RuinsTerrain in 3D using matplotlib (simple prism rendering)."""
+    import matplotlib.pyplot as plt
+    from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
-def demonstrate_ruins_traversal():
-    """Demonstrate how different unit types interact with ruins."""
-    
-    # Create a map
-    game_map = Map(width=48, height=72)
-    
-    # Add ruins buildings
-    simple_ruins = create_simple_ruins_building()
-    custom_ruins = create_custom_ruins_building()
-    
-    game_map.add_obstacle(simple_ruins)
-    game_map.add_obstacle(custom_ruins)
-    
-    # Create test units
-    from tests.mocks import MockDatasheet
-    
-    # Infantry unit (can move through walls)
-    infantry_datasheet = MockDatasheet("Space Marines", movement=6, base_size="32mm")
-    infantry_unit = Unit(infantry_datasheet)
-    infantry_unit.keywords = ['Infantry']
-    
-    # Vehicle unit (cannot move through walls)
-    vehicle_datasheet = MockDatasheet("Rhino", movement=12, base_size="120x92mm")
-    vehicle_unit = Unit(vehicle_datasheet)
-    vehicle_unit.keywords = ['Vehicle']
-    
-    print("=== RUINS Terrain System Demonstration ===\n")
-    
-    print("Simple Ruins Building:")
-    print(f"  - Footprint: 10\"x8\"")
-    print(f"  - Floors: {simple_ruins.get_max_floor_level() + 1}")
-    print(f"  - Total walls: {len(simple_ruins.get_walls())}")
-    print(f"  - Total floors: {len(simple_ruins.get_floors())}")
-    
-    print(f"\nCustom Ruins Building:")
-    print(f"  - Footprint: 10\"x10\"")
-    print(f"  - Floors: {custom_ruins.get_max_floor_level() + 1}")
-    print(f"  - Total walls: {len(custom_ruins.get_walls())}")
-    print(f"  - Total floors: {len(custom_ruins.get_floors())}")
-    
-    # Check wall traversal
-    print(f"\nWall Traversal Rules:")
-    for ruins in [simple_ruins, custom_ruins]:
-        walls = ruins.get_walls()
-        if walls:
-            sample_wall = walls[0]
-            infantry_can_traverse = ruins.can_unit_traverse_wall(infantry_unit, sample_wall)
-            vehicle_can_traverse = ruins.can_unit_traverse_wall(vehicle_unit, sample_wall)
-            
-            print(f"  Infantry can traverse walls: {infantry_can_traverse}")
-            print(f"  Vehicle can traverse walls: {vehicle_can_traverse}")
-            break
-    
-    # Show floor heights
-    print(f"\nFloor Heights:")
-    for floor_level in range(custom_ruins.get_max_floor_level() + 1):
-        height = custom_ruins.get_floor_height(floor_level)
-        floor_name = "Ground" if floor_level == 0 else f"Floor {floor_level}"
-        print(f"  {floor_name}: {height}\" above ground")
-    
-    # Show windows
-    print(f"\nWindows in Custom Ruins:")
-    for i, wall in enumerate(custom_ruins.get_walls()):
-        if wall.windows:
-            for j, window in enumerate(wall.windows):
-                print(f"  Wall {i//2 + 1}, Floor {wall.floor_level + 1}: Window from {window.start_position:.1%} to {window.end_position:.1%} of wall")
-                print(f"    Height: {window.height_bottom}\" to {window.height_top}\" above floor")
+    fig = plt.figure(figsize=(10, 7))
+    ax = fig.add_subplot(111, projection='3d')
+
+    def draw_prism(ax, poly, z0: float, z1: float, color: str, alpha: float = 0.5):
+        from shapely.geometry import Polygon, MultiPolygon
+        if isinstance(poly, MultiPolygon):
+            for sub in poly.geoms:
+                draw_prism(ax, sub, z0, z1, color, alpha)
+            return
+        if not isinstance(poly, Polygon):
+            return
+        x, y = poly.exterior.xy
+        verts = list(zip(x, y))
+        faces = []
+        # Side faces around exterior ring
+        for i in range(len(verts) - 1):
+            x0, y0 = verts[i]
+            x1, y1 = verts[i + 1]
+            faces.append([(x0, y0, z0), (x1, y1, z0), (x1, y1, z1), (x0, y0, z1)])
+        # Top and bottom faces (exterior only)
+        top = [(vx, vy, z1) for vx, vy in verts]
+        bottom = [(vx, vy, z0) for vx, vy in verts]
+        faces.append(top)
+        faces.append(bottom)
+        pc = Poly3DCollection(faces, facecolors=color, linewidths=0.5, edgecolors='k', alpha=alpha)
+        ax.add_collection3d(pc)
+
+    # Draw footprint floor slabs (upper floors clipped to interior)
+    for floor in ruin.floors:
+        draw_prism(ax, floor["polygon"], floor["elevation"], floor["elevation"] + floor.get("thickness", 0.5), color='#8da0cb', alpha=0.4)
+
+    # Draw walls with window cutouts, preserving wall above and below windows by slicing vertically
+    from shapely.ops import unary_union
+    for wall in ruin.walls:
+        wall_poly = wall["polygon"]
+        z0, z1 = wall["z_bottom"], wall["z_top"]
+
+        # Gather relevant openings (overlap vertically and intersect in 2D)
+        relevant = []
+        z_cuts = {z0, z1}
+        for op in ruin.openings:
+            if (op["z_top"] > z0 and op["z_bottom"] < z1) and (wall_poly.buffer(1e-6).intersects(op["polygon"])):
+                relevant.append(op)
+                z_cuts.add(max(z0, op["z_bottom"]))
+                z_cuts.add(min(z1, op["z_top"]))
+        z_slices = sorted(z_cuts)
+
+        # Render each vertical slice, subtracting openings only within that slice
+        for a, b in zip(z_slices[:-1], z_slices[1:]):
+            if b - a <= 1e-6:
+                continue
+            slice_poly = wall_poly
+            # Openings active in this slice
+            active = [op["polygon"] for op in relevant if not (op["z_top"] <= a or op["z_bottom"] >= b)]
+            if active:
+                slice_poly = slice_poly.difference(unary_union(active))
+            draw_prism(ax, slice_poly, a, b, color='#fc8d62', alpha=0.7)
+
+    # Do not draw openings; they are holes in walls, not glass
+
+    # Draw models (extruded bases)
+    if models:
+        for base in models:
+            poly = base.get_base_shape()
+            draw_prism(ax, poly, base.z, base.z + base.model_height, color='#1b9e77', alpha=0.8)
+
+    # Axes limits and labels
+    bxmin, bymin, bxmax, bymax = ruin.footprint.bounds
+    ax.set_xlim(bxmin - 1, bxmax + 1)
+    ax.set_ylim(bymin - 1, bymax + 1)
+    # Z limit: use ruins bounding box
+    ax.set_zlim(0, ruin.bounding_box["max"][2] + 1)
+    ax.set_xlabel('X (inches)')
+    ax.set_ylabel('Y (inches)')
+    ax.set_zlabel('Z (inches)')
+    ax.set_title('Preset 12"x6" RUINS (variant 1)')
+
+    # Enforce equal XY scale so inches look equal in both axes
+    # Matplotlib 3D doesn't have set_aspect('equal') directly; emulate via limits
+    x_range = (bxmax - bxmin) + 2
+    y_range = (bymax - bymin) + 2
+    max_range = max(x_range, y_range)
+    x_mid = (bxmax + bxmin) / 2.0
+    y_mid = (bymax + bymin) / 2.0
+    ax.set_xlim(x_mid - max_range/2, x_mid + max_range/2)
+    ax.set_ylim(y_mid - max_range/2, y_mid + max_range/2)
+    plt.tight_layout()
+    plt.show()
+
+
+def place_unit_in_ruin(ruin, num_models=5, base_mm=32, floor_level=0, model_height_in=2.0):
+    """Place models legally inside the ruin interior on a given floor.
+    Ensures: inside interior, no overlap, 2" coherency chain.
+    """
+    from shapely.ops import unary_union
+    from shapely.affinity import translate
+
+    # Base radius in inches (circular 32mm base)
+    radius_in = convert_mm_to_inches(base_mm / 2.0)
+    spacing_gap = 0.01  # edge-to-edge gap between bases
+    center_step = 2*radius_in + spacing_gap
+
+    # Interior polygon (footprint minus walls)
+    walls_union = unary_union([w["polygon"] for w in ruin.walls])
+    interior = ruin.footprint.difference(walls_union)
+
+    # Floor elevation and platform area (upper floors are smaller than footprint)
+    floor = next(fl for fl in ruin.floors if abs(fl["elevation"] - floor_level*4.0) < 1e-6)
+    z_base = floor["elevation"] + floor.get("thickness", 0.5)
+    # If a higher floor exists, ensure model height fits fully between floors; otherwise, disallow placement
+    higher_floors = sorted([fl for fl in ruin.floors if fl["elevation"] > floor["elevation"]], key=lambda f: f["elevation"])
+    if higher_floors:
+        next_floor = higher_floors[0]
+        clearance = (next_floor["elevation"]) - (floor["elevation"] + floor.get("thickness", 0.5))
+        if model_height_in >= clearance - 1e-3:
+            return []
+    placement_area = interior.intersection(floor["polygon"])  # constrain to floor platform
+    # Shrink to safe area so a circular base fits fully inside without boundary tolerance issues
+    # Safe area: floor platform minus walls with a tiny inward epsilon only
+    safe_area = placement_area.buffer(-1e-6)
+
+    placed = []
+    bxmin, bymin, bxmax, bymax = safe_area.bounds
+    row_idx = 0
+    y = bymin
+    while y <= bymax and len(placed) < num_models:
+        # Zig-zag: offset every other row by one radius
+        x = bxmin + (radius_in if (row_idx % 2 == 1) else 0.0)
+        while x <= bxmax and len(placed) < num_models:
+            b = Base(BaseType.CIRCULAR, radius_in)
+            b.set_position(x, y, z_base)
+            b.set_model_height(model_height_in)
+            shape = b.get_base_shape()
+            if not safe_area.contains(shape):
+                x += center_step
+                continue
+            # Check overlap with already placed
+            overlap = False
+            for other in placed:
+                # Disallow intersections; allow tiny numerical tolerance
+                if shape.buffer(-1e-6).intersects(other.get_base_shape().buffer(-1e-6)):
+                    overlap = True
+                    break
+            if overlap:
+                x += center_step
+                continue
+            placed.append(b)
+            x += center_step
+        y += center_step
+        row_idx += 1
+
+    return placed
+
+
+def main():
+    # Create preset ruin
+    ruin = TerrainFactory.create_preset_ruin_rect_12x6_variant1()
+    # Place 5 models on first floor
+    models = place_unit_in_ruin(ruin, num_models=5, base_mm=32, floor_level=1, model_height_in=2.0)
+    # Visualize
+    visualize_ruin_3d(ruin, models=models)
+
 
 if __name__ == "__main__":
-    demonstrate_ruins_traversal()
+    main()
