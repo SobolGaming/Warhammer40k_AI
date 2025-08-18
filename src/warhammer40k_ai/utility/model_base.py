@@ -22,7 +22,7 @@ def create_ellipse(center: typing.Tuple[float, float], lengths: typing.Tuple[flo
     :param bearing: The rotation of the ellipse in radians
     :return: A shapely Polygon representing the ellipse
     """
-    circ = Point(center).buffer(1, resolution=64)
+    circ = Point(center).buffer(1, quad_segs=64)
     ell = affinity.scale(circ, lengths[0], lengths[1])
     return affinity.rotate(ell, math.degrees(bearing))
 

@@ -2469,22 +2469,232 @@ class Unit:
         return True
     
     def _has_line_of_sight_to_target(self, shooting_model, target_unit, game_map) -> bool:
-        """Check if shooting model has line of sight to target unit"""
-        # Simplified line of sight check - can be enhanced with terrain
-        shooting_pos = shooting_model.get_location()
-        # Get position from first alive model in target unit
-        target_pos = None
-        for model in target_unit.models:
-            if model.is_alive:
-                target_pos = model.get_location()
-                break
-        
-        if not shooting_pos or not target_pos:
+        """Check if shooting model has line of sight to target unit.
+
+        LOS exists if a line can be drawn from ANY point on the shooter's 3D volume
+        to ANY point on the 3D volume of ANY model in the target unit without being
+        blocked by terrain or enemy models. Friendly models are ignored for blocking.
+        """
+        # Late imports to avoid circulars
+        from shapely.geometry import LineString
+
+        def sample_model_points_3d(model: 'Model', perimeter_points: int = 8, z_levels: int = 3) -> list:
+            base_shape = model.model_base.get_base_shape()
+            # Ensure polygon exterior length > 0
+            exterior = base_shape.exterior
+            perimeter_samples = []
+            if exterior.length > 0 and perimeter_points > 0:
+                step = exterior.length / perimeter_points
+                for i in range(perimeter_points):
+                    p = exterior.interpolate(step * i)
+                    perimeter_samples.append((p.x, p.y))
+            # Always include centroid
+            centroid = base_shape.centroid
+            xy_points = [(centroid.x, centroid.y)] + perimeter_samples
+
+            # Z samples: bottom, mid, top (minus tiny epsilon to stay within volume)
+            z_bottom = model.model_base.z
+            z_top = model.model_base.z + getattr(model.model_base, 'model_height', 2.0)
+            if z_levels <= 1:
+                z_samples = [z_bottom + 0.01]
+            elif z_levels == 2:
+                z_samples = [z_bottom + 0.01, z_top - 0.01]
+            else:
+                z_mid = (z_bottom + z_top) / 2.0
+                z_samples = [z_bottom + 0.01, z_mid, z_top - 0.01]
+
+            points_3d = []
+            for (x, y) in xy_points:
+                for z in z_samples:
+                    points_3d.append((x, y, z))
+            return points_3d
+
+        def is_segment_blocked(p0: tuple, p1: tuple, target_model: 'Model') -> bool:
+            # Quick reject: degenerate line in XY projects to a point
+            line2d = LineString([(p0[0], p0[1]), (p1[0], p1[1])])
+            if line2d.length == 0:
+                return False
+
+            # Helper to compute z at param t along the 2D line
+            def z_at_t(t: float) -> float:
+                return p0[2] + t * (p1[2] - p0[2])
+
+            # Terrain blocking (including special Ruins visibility rules)
+            for terrain in getattr(game_map, 'terrain_features', []):
+                footprint = getattr(terrain, 'footprint', None)
+                # Special Ruins visibility handling
+                is_ruins = hasattr(terrain, 'walls') and hasattr(terrain, 'openings') and footprint is not None
+                if is_ruins and footprint is not None:
+                    shooter_shape = shooting_model.model_base.get_base_shape()
+                    target_shape = target_model.model_base.get_base_shape()
+                    shooter_inside_any = footprint.intersects(shooter_shape)
+                    target_inside_any = footprint.intersects(target_shape)
+                    shooter_wholly_within = footprint.covers(shooter_shape)
+                    shooter_is_aircraft = False
+                    target_is_aircraft = False
+                    shooter_is_towering = False
+                    try:
+                        shooter_is_aircraft = bool(shooting_model.parent_unit.is_aircraft())
+                        target_is_aircraft = bool(target_model.parent_unit.is_aircraft())
+                        shooter_is_towering = bool(shooting_model.parent_unit.is_towering())
+                    except Exception:
+                        pass
+
+                    # Aircraft always default to normal LOS: skip special ruins blocking
+                    if shooter_is_aircraft or target_is_aircraft:
+                        pass
+                    else:
+                    # If both models are outside this ruins and the footprint lies between them, LOS is blocked.
+                        if not shooter_inside_any and not target_inside_any:
+                            if line2d.intersects(footprint):
+                                return True
+
+                    # If shooter is inside this ruins but not wholly within and not towering, cannot see out
+                        if shooter_inside_any and not shooter_wholly_within and not shooter_is_towering:
+                            if not target_inside_any:
+                                # Shooter partially within cannot see out of the ruins
+                                return True
+
+                    # Otherwise, visibility to/from/within ruins is determined normally below
+
+                # If terrain has explicit walls/openings (e.g., ruins), treat walls as vertical blockers
+                walls = getattr(terrain, 'walls', None)
+                openings = getattr(terrain, 'openings', None)
+                if walls:
+                    for wall in walls:
+                        wall_poly = wall.get('polygon')
+                        if wall_poly is None:
+                            continue
+                        if not line2d.intersects(wall_poly):
+                            continue
+                        inter = line2d.intersection(wall_poly)
+                        # Representative intersection point in XY
+                        inter_pt = None
+                        if inter.is_empty:
+                            continue
+                        if inter.geom_type == 'Point':
+                            inter_pt = inter
+                        elif inter.geom_type in ('LineString', 'MultiPoint', 'MultiLineString'):
+                            # Take centroid for a representative point
+                            inter_pt = inter.centroid
+                        else:
+                            inter_pt = inter.representative_point()
+
+                        # Compute param t along line for z
+                        t = line2d.project(inter_pt) / line2d.length if line2d.length > 0 else 0.0
+                        # Ignore intersections at endpoints
+                        if t <= 1e-6 or t >= 1.0 - 1e-6:
+                            continue
+                        z_here = z_at_t(t)
+                        z_bottom = wall.get('z_bottom', 0.0)
+                        z_top = wall.get('z_top', z_bottom)
+
+                        if z_bottom <= z_here <= z_top:
+                            # Check if an opening at this XY,Z allows LOS
+                            allowed = False
+                            if openings:
+                                for op in openings:
+                                    if not op.get('allows_los', False):
+                                        continue
+                                    op_poly = op.get('polygon')
+                                    if op_poly is None:
+                                        continue
+                                    if not op_poly.contains(inter_pt):
+                                        continue
+                                    if op.get('z_bottom', -1e9) <= z_here <= op.get('z_top', 1e9):
+                                        allowed = True
+                                        break
+                            if not allowed:
+                                return True  # Blocked by wall without LOS opening
+                else:
+                    # Generic blocking by terrain footprint with height
+                    footprint = getattr(terrain, 'footprint', None)
+                    if footprint is None:
+                        continue
+                    if not line2d.intersects(footprint):
+                        continue
+                    inter = line2d.intersection(footprint)
+                    if inter.is_empty:
+                        continue
+                    # Representative intersection point
+                    if inter.geom_type == 'Point':
+                        inter_pt = inter
+                    elif inter.geom_type in ('LineString', 'MultiPoint', 'MultiLineString'):
+                        inter_pt = inter.centroid
+                    else:
+                        inter_pt = inter.representative_point()
+                    t = line2d.project(inter_pt) / line2d.length if line2d.length > 0 else 0.0
+                    if t <= 1e-6 or t >= 1.0 - 1e-6:
+                        continue
+                    z_here = z_at_t(t)
+                    # Determine vertical bounds
+                    min_z, max_z = 0.0, 0.0
+                    if hasattr(terrain, 'height'):
+                        min_z, max_z = 0.0, getattr(terrain, 'height')
+                    elif hasattr(terrain, 'rim_height'):
+                        min_z, max_z = 0.0, getattr(terrain, 'rim_height')
+                    elif hasattr(terrain, 'bounding_box') and isinstance(terrain.bounding_box, dict):
+                        try:
+                            min_z = terrain.bounding_box.get('min', (0, 0, 0))[2]
+                            max_z = terrain.bounding_box.get('max', (0, 0, 0))[2]
+                        except Exception:
+                            min_z, max_z = 0.0, 2.0
+                    else:
+                        max_z = 2.0  # default obstacle height
+                    if min_z <= z_here <= max_z:
+                        return True
+
+            # Enemy models blocking (ignore friendlies and ignore models in the target unit)
+            for enemy_unit in game_map.get_enemy_units(self):
+                if not enemy_unit.is_alive() or not enemy_unit.deployed:
+                    continue
+                if enemy_unit == target_unit:
+                    continue
+                for enemy_model in enemy_unit.models:
+                    if not enemy_model.is_alive:
+                        continue
+                    enemy_poly = enemy_model.model_base.get_base_shape()
+                    if not line2d.intersects(enemy_poly):
+                        continue
+                    inter = line2d.intersection(enemy_poly)
+                    if inter.is_empty:
+                        continue
+                    if inter.geom_type == 'Point':
+                        inter_pt = inter
+                    elif inter.geom_type in ('LineString', 'MultiPoint', 'MultiLineString'):
+                        inter_pt = inter.centroid
+                    else:
+                        inter_pt = inter.representative_point()
+                    t = line2d.project(inter_pt) / line2d.length if line2d.length > 0 else 0.0
+                    if t <= 1e-6 or t >= 1.0 - 1e-6:
+                        continue
+                    z_here = z_at_t(t)
+                    em_z0 = enemy_model.model_base.z
+                    em_z1 = em_z0 + getattr(enemy_model.model_base, 'model_height', 2.0)
+                    if em_z0 <= z_here <= em_z1:
+                        return True
+
             return False
-            
-        # For now, assume line of sight unless blocked by terrain
-        # TODO: Implement proper line of sight checking with terrain
-        return True
+
+        # Validate inputs
+        if shooting_model is None or target_unit is None or game_map is None:
+            return False
+        if not shooting_model.is_alive or not target_unit.is_alive():
+            return False
+
+        # Sample 3D points on shooter and on each target model; LOS if any pair is unblocked
+        shooter_points = sample_model_points_3d(shooting_model, perimeter_points=8, z_levels=3)
+
+        for target_model in target_unit.models:
+            if not target_model.is_alive:
+                continue
+            target_points = sample_model_points_3d(target_model, perimeter_points=8, z_levels=3)
+            for p0 in shooter_points:
+                for p1 in target_points:
+                    if not is_segment_blocked(p0, p1, target_model):
+                        return True
+
+        return False
     
     def _can_shoot_while_engaged(self, model, weapon_profile, target_unit, game_map) -> bool:
         """Check if model can shoot while engaged with other units"""
