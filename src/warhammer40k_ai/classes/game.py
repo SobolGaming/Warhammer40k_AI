@@ -1785,8 +1785,40 @@ class Game:
         battlefield_width, battlefield_height = self.get_battlefield_size()
         print(f"✅ Map created: {battlefield_width}\" x {battlefield_height}\"")
         
-        # 2. Terrain features will be added later based on A-T mission terrain layouts
-        print(f"✅ Terrain layout {terrain_layout} noted (terrain placement to be implemented)")
+        # 2. Terrain features based on selected terrain layout
+        try:
+            from .terrain_layouts import instantiate_layout
+            terrain_features = instantiate_layout(terrain_layout)
+            if terrain_features:
+                self.map.add_terrain_features(terrain_features)
+                print(f"✅ Terrain layout {terrain_layout} placed: {len(terrain_features)} features")
+                # Debug: print RUINS footprints for verification
+                try:
+                    from .map import TerrainType
+                    for idx, tf in enumerate(terrain_features):
+                        if getattr(tf, 'terrain_type', None) == TerrainType.RUINS:
+                            coords = list(tf.footprint.exterior.coords)[:-1]
+                            pairs = [(round(float(x), 2), round(float(y), 2)) for (x, y) in coords]
+                            print(f"   • RUINS #{idx+1} footprint: {pairs}")
+                            # Floors detail (ground=0, first=1, second=2)
+                            floors = getattr(tf, 'floors', []) or []
+                            for fl in floors:
+                                poly = fl.get('polygon')
+                                elev = float(fl.get('elevation', 0.0))
+                                try:
+                                    level = int(round(elev / 4.0))
+                                except Exception:
+                                    level = 0
+                                if hasattr(poly, 'exterior'):
+                                    fcoords = list(poly.exterior.coords)[:-1]
+                                    fpairs = [(round(float(x), 2), round(float(y), 2)) for (x, y) in fcoords]
+                                    print(f"      - Floor L{level} (elev {elev:.1f}\"): {fpairs}")
+                except Exception:
+                    pass
+            else:
+                print(f"ℹ️ Terrain layout {terrain_layout} has no registered features")
+        except Exception as e:
+            print(f"⚠️ Failed to instantiate terrain layout {terrain_layout}: {e}")
         
         # 3. Set up mission-based deployment zones and objectives
         from .deployment import DeploymentManager

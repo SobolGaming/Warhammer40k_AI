@@ -1852,20 +1852,70 @@ def draw_terrain_feature(screen: pygame.Surface, terrain_feature: TerrainFeature
     else:
         color = (255, 255, 255, 180)  # Default white
 
-    # Convert vertices to screen coordinates from terrain feature's footprint
-    footprint_coords = list(terrain_feature.footprint.exterior.coords)[:-1]  # Remove duplicate last point
-    screen_vertices = [
-        (int((vertex[0] * TILE_SIZE) * zoom_level * ui_scale_factor + offset_x),
-         int((vertex[1] * TILE_SIZE) * zoom_level * ui_scale_factor + offset_y))
-        for vertex in footprint_coords
-    ]
+    def to_screen(pt):
+        return (
+            int((pt[0] * TILE_SIZE) * zoom_level * ui_scale_factor + offset_x),
+            int((pt[1] * TILE_SIZE) * zoom_level * ui_scale_factor + offset_y),
+        )
 
-    # Draw the filled polygon
+    def draw_shapely_polygon(poly, fill_rgba=None, outline_rgb=None, outline_w=1):
+        try:
+            coords = list(poly.exterior.coords)[:-1]
+        except Exception:
+            return
+        if len(coords) < 3:
+            return
+        points = [to_screen(v) for v in coords]
+        if fill_rgba is not None:
+            # Use a temporary surface to support alpha fills
+            temp = pygame.Surface((screen.get_width(), screen.get_height()), pygame.SRCALPHA)
+            pygame.draw.polygon(temp, fill_rgba, points)
+            screen.blit(temp, (0, 0))
+        if outline_rgb is not None and outline_w > 0:
+            pygame.draw.polygon(screen, outline_rgb, points, outline_w)
+
+    # Draw the footprint as a base
+    footprint_coords = list(terrain_feature.footprint.exterior.coords)[:-1]
+    screen_vertices = [to_screen(v) for v in footprint_coords]
     if len(screen_vertices) >= 3:
         pygame.draw.polygon(screen, color, screen_vertices)
+        pygame.draw.polygon(screen, (0, 0, 0), screen_vertices, 2)
 
-        # Draw the outline of the polygon
-        pygame.draw.polygon(screen, (0, 0, 0), screen_vertices, 2)  # Black outline with 2px width
+    # Special rendering for RUINS: draw floors, walls, and openings
+    if terrain_feature.terrain_type == TerrainType.RUINS:
+        # Floors: translucent bluish overlay
+        floors = getattr(terrain_feature, 'floors', []) or []
+        for floor in floors:
+            poly = floor.get('polygon')
+            if poly is None:
+                continue
+            draw_shapely_polygon(poly, fill_rgba=(80, 120, 200, 90), outline_rgb=(50, 80, 140), outline_w=1)
+
+        # Walls: darker gray blocks
+        walls = getattr(terrain_feature, 'walls', []) or []
+        for wall in walls:
+            poly = wall.get('polygon')
+            if poly is None:
+                continue
+            draw_shapely_polygon(poly, fill_rgba=(80, 80, 80, 220), outline_rgb=(30, 30, 30), outline_w=1)
+
+        # Openings (windows/doors): render as colored overlays to indicate cuts
+        openings = getattr(terrain_feature, 'openings', []) or []
+        for opening in openings:
+            poly = opening.get('polygon')
+            if poly is None:
+                continue
+            allows_movement = opening.get('allows_movement', False)
+            allows_los = opening.get('allows_los', False)
+            if allows_movement:
+                # doors: greenish
+                draw_shapely_polygon(poly, fill_rgba=(50, 200, 120, 180), outline_rgb=(0, 120, 60), outline_w=1)
+            elif allows_los:
+                # windows: yellowish
+                draw_shapely_polygon(poly, fill_rgba=(230, 210, 60, 160), outline_rgb=(160, 140, 20), outline_w=1)
+            else:
+                # generic openings
+                draw_shapely_polygon(poly, fill_rgba=(200, 200, 200, 140), outline_rgb=(100, 100, 100), outline_w=1)
 
 def draw_deployment_zones(screen: pygame.Surface, deployment_zones: dict, player1: Player, player2: Player, 
                          zoom_level: float, offset_x: int, offset_y: int, ui_scale_factor: float = 1.0) -> None:

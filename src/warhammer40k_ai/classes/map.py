@@ -833,8 +833,9 @@ class TerrainFactory:
         add_wall(short_wall_left_poly, floor_level=2, height=2.0)
         add_wall(short_wall_right_poly, floor_level=2, height=2.0)
 
-        # Floors: ground (0) uses full footprint; upper floors are exactly 8" x 4" inside the walls, offset from y=0.25
-        upper_floor_poly = box(2.0, 0.25, 10.0, 4.0)
+        # Floors: ground (0) uses full footprint; upper floors extend fully under wall thickness
+        # Long wall thickness spans y ∈ [0.0, 0.5] (centerline at 0.25), so floors should start at y=0.0
+        upper_floor_poly = box(2.0, 0.0, 10.0, 4.0)
         floors.append({
             "polygon": footprint,
             "elevation": 0.0,
