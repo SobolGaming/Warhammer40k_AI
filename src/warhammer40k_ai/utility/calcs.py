@@ -1528,6 +1528,13 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
                     print(f"🔍 DEBUG: Fall back validation - {model.name} would end within engagement range of {enemy_model.name}")
                     return {'valid': False, 'reason': 'Fall back cannot end within engagement range'}
 
+    # Check RUINS terrain placement rules
+    if game_map and hasattr(game_map, 'terrain_features'):
+        from ..classes.map import validate_ruins_placement
+        ruins_validation = validate_ruins_placement(model.parent_unit, position, game_map.terrain_features, moving_model=model)
+        if not ruins_validation['valid']:
+            return {'valid': False, 'reason': f"RUINS placement invalid: {ruins_validation['reason']}"}
+
     # Note: Deployment zone validation for scout movement is handled at a higher level
     # by the Game class validation methods, not in the pathfinding system
 

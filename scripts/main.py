@@ -113,7 +113,7 @@ def initialize_game(player1_type: str, player2_type: str,
             actual_height = desired_height
             print(f"🖥️  Using full size window: {actual_width}x{actual_height}")
         
-        screen = pygame.display.set_mode((actual_width, actual_height))
+        screen = pygame.display.set_mode((actual_width, actual_height), pygame.RESIZABLE)
         pygame.display.set_caption('Warhammer 40,000 Battlefield')
 
     # Convert string types to PlayerType enum
@@ -320,13 +320,7 @@ def run_unified_game_loop(player_configs: dict) -> dict:
         screen_width, screen_height = screen.get_size()
         ui_interface = HumanUIInterface(screen_width, screen_height)
         
-        # Calculate UI scale factor for proper mouse coordinate handling
-        from warhammer40k_ai.UI.game_ui import ROSTER_PANE_WIDTH, BATTLEFIELD_WIDTH, BATTLEFIELD_HEIGHT, INFO_PANE_HEIGHT
-        desired_width = BATTLEFIELD_WIDTH + 2 * ROSTER_PANE_WIDTH
-        desired_height = BATTLEFIELD_HEIGHT + INFO_PANE_HEIGHT
-        ui_scale_factor = min(screen_width / desired_width, screen_height / desired_height)
-        
-        game_view = GameView(screen, env, game, game_map, player1, player2, ui_interface, ui_scale_factor)
+        game_view = GameView(screen, env, game, game_map, player1, player2, ui_interface)
         # Initial roster panes will be empty until armies are loaded
     
     # Create AI agents after basic setup
@@ -367,6 +361,12 @@ def run_unified_game_loop(player_configs: dict) -> dict:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
+                elif event.type == pygame.VIDEORESIZE:
+                    # Recreate window with new size and notify UI to relayout
+                    new_size = (event.w, event.h)
+                    screen = pygame.display.set_mode(new_size, pygame.RESIZABLE)
+                    if game_view:
+                        game_view.resize_layout(new_size[0], new_size[1])
                 elif game_view and game_view.handle_pygame_event(event):
                     continue  # Event handled by UI
                 elif event.type == pygame.KEYDOWN:

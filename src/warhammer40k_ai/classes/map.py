@@ -855,6 +855,109 @@ class TerrainFactory:
         return RuinsTerrain(footprint, walls=walls, openings=openings, floors=floors)
 
 
+def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float], 
+                            terrain_features: List['TerrainFeature'], moving_model: Optional['Model'] = None) -> dict:
+    """
+    Validate if a unit or a specific moving model can be placed at a position considering RUINS terrain rules.
+
+    - If moving_model is provided, only that model's base at `position` is validated for overhang on upper floors
+      (used during per-model movement/pathfinding).
+    - If moving_model is None, validates the entire unit (used during deployment where positions are pre-set).
+    
+    Args:
+        unit: Unit to validate placement for
+        position: (x, y, z) position to check
+        terrain_features: List of terrain features to check against
+        moving_model: Optional specific model being placed/moved
+    
+    Returns:
+        Dict with 'valid' (bool), 'reason' (str), and 'floor_level' (int) keys
+    """
+    x, y, z = position
+    
+    # Check each terrain feature for RUINS
+    for terrain in terrain_features:
+        if terrain.terrain_type != TerrainType.RUINS:
+            continue
+            
+        # Check if position is within this RUINS footprint
+        from shapely.geometry import Point
+        point = Point(x, y)
+        if not terrain.footprint.contains(point):
+            continue
+            
+        # Find which floor this z-coordinate corresponds to
+        floors = getattr(terrain, 'floors', []) or []
+        current_floor = None
+        floor_level = 0
+        
+        # Find the closest floor by elevation
+        closest_floor_distance = float('inf')
+        for floor in floors:
+            floor_elev = floor.get('elevation', 0.0)
+            floor_thickness = floor.get('thickness', 0.5)
+            floor_surface = floor_elev + floor_thickness
+            
+            # Check if z is close to this floor surface
+            distance = abs(z - floor_surface)
+            if distance < closest_floor_distance and distance < 1.0:  # Allow 1" tolerance
+                closest_floor_distance = distance
+                current_floor = floor
+                floor_level = int(round(floor_elev / 4.0))
+        
+        # If no floor found, assume ground level (z=0) is valid
+        if current_floor is None:
+            if abs(z) < 1.0:  # Close to ground level
+                floor_level = 0
+                # Create a virtual ground floor for validation
+                current_floor = {'polygon': terrain.footprint, 'elevation': 0.0, 'thickness': 0.0}
+            else:
+                return {'valid': False, 'reason': f'Position not on a valid floor level (z={z:.1f})', 'floor_level': 0}
+        
+        # Ground floor (level 0) - all units allowed
+        if floor_level == 0:
+            return {'valid': True, 'reason': 'Valid ground floor placement', 'floor_level': floor_level}
+        
+        # Upper floors - check unit restrictions
+        if not unit.can_access_upper_floors():
+            return {
+                'valid': False, 
+                'reason': f'Unit type cannot access upper floors (floor level {floor_level})',
+                'floor_level': floor_level
+            }
+        
+        # Check base overhang for upper floors
+        floor_poly = current_floor.get('polygon')
+        if floor_level > 0 and floor_poly and not unit.can_overhang_floor():
+            # If a specific moving model is provided, only validate this model at the proposed position
+            if moving_model is not None:
+                base_geom = moving_model.model_base.get_base_shape_at(x, y, getattr(moving_model.model_base, 'facing', 0.0))
+                if not floor_poly.contains(base_geom):
+                    return {
+                        'valid': False,
+                        'reason': f'Model base would overhang floor on level {floor_level}',
+                        'floor_level': floor_level
+                    }
+            else:
+                # Deployment-time check for all models (positions assumed to be already set on models)
+                for model in unit.models:
+                    model_pos = model.get_location()
+                    if model_pos:
+                        mx, my = model_pos[0], model_pos[1]
+                        base_geom = model.model_base.get_base_shape_at(mx, my, getattr(model.model_base, 'facing', 0.0))
+                        if not floor_poly.contains(base_geom):
+                            return {
+                                'valid': False,
+                                'reason': f'Model base would overhang floor on level {floor_level}',
+                                'floor_level': floor_level
+                            }
+        
+        return {'valid': True, 'reason': f'Valid upper floor placement (level {floor_level})', 'floor_level': floor_level}
+    
+    # No RUINS terrain at this position
+    return {'valid': True, 'reason': 'No RUINS terrain at position', 'floor_level': 0}
+
+
 class ObjectivePoint:
     def __init__(self, x: float, y: float, z: float = 0.0, control_radius: float = 3.0) -> None:
         self.x = x

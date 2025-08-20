@@ -814,6 +814,22 @@ class Unit:
     @property
     def is_imperium_primarch(self) -> bool:
         return "Imperium" in self.keywords and "Primarch" in self.keywords
+    
+    def can_move_through_ruins_walls(self) -> bool:
+        """Check if this unit can move through RUINS walls (not just on ground floor)."""
+        return (self.is_infantry or self.is_beast or 
+                self.is_imperium_primarch or self.is_belisarius_cawl or 
+                self.is_flying)
+    
+    def can_access_upper_floors(self) -> bool:
+        """Check if this unit can be placed on upper floors of RUINS."""
+        # Same rules as wall traversal for RUINS
+        return self.can_move_through_ruins_walls()
+    
+    def can_overhang_floor(self) -> bool:
+        """Check if this unit's base can overhang floor edges on upper floors."""
+        # Only flying units can overhang floors on upper levels
+        return self.is_flying
 
     def has_keyword(self, keyword: str) -> bool:
         return keyword.lower() in [keyword.lower() for keyword in self.keywords]

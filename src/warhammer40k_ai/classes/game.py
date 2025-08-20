@@ -990,13 +990,24 @@ class Game:
                 return False
                 
             for model, position in zip(unit.models, model_positions):
-                model_x, model_y = position[0], position[1]
+                model_x, model_y, model_z = position[0], position[1], position[2]
                 
                 # Check if this model would be wholly within the deployment zone
                 if not self.is_position_wholly_in_deployment_zone(model_x, model_y, model.model_base, player_name):
                     try:
                         model_name = getattr(model, 'name', 'model')
                         print(f"🔴 DEBUG: Zone check failed for {unit.name} {model_name} at ({model_x:.1f}, {model_y:.1f}) in player '{player_name}' zone")
+                    except Exception:
+                        pass
+                    return False
+                
+                # Check RUINS terrain placement rules
+                from .map import validate_ruins_placement
+                ruins_validation = validate_ruins_placement(unit, (model_x, model_y, model_z), self.map.terrain_features)
+                if not ruins_validation['valid']:
+                    try:
+                        model_name = getattr(model, 'name', 'model')
+                        print(f"🔴 DEBUG: RUINS validation failed for {unit.name} {model_name}: {ruins_validation['reason']}")
                     except Exception:
                         pass
                     return False
