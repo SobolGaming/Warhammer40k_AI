@@ -6,6 +6,8 @@ from typing import List, Tuple, Literal
 from shapely.affinity import rotate as sh_rotate, translate as sh_translate, scale as sh_scale
 
 from .map import TerrainFeature, TerrainFactory, RuinsTerrain
+from shapely.geometry import Polygon as _ShPoly
+import math
 
 
 LongWallSide = Literal['left', 'right', 'top', 'bottom']
@@ -90,58 +92,92 @@ def _instantiate_ruin_rect_12x6_variant1(spec: TerrainPlacementSpec) -> RuinsTer
     if len(spec.footprint) != 4:
         raise ValueError("Footprint must contain exactly 4 vertices for rectangular placement")
 
-    # Determine target bounds and dimensions
-    xs = [p[0] for p in spec.footprint]
-    ys = [p[1] for p in spec.footprint]
-    x_min, x_max = min(xs), max(xs)
-    y_min, y_max = min(ys), max(ys)
-    target_width = x_max - x_min
-    target_height = y_max - y_min
+    # Support rotated placement: use oriented minimum bounding rectangle
+    tgt_poly = _ShPoly(spec.footprint)
+    if tgt_poly.is_empty or not tgt_poly.is_valid:
+        raise ValueError("Invalid footprint polygon for placement")
 
-    # Base preset dims
-    base_width = 12.0
-    base_height = 6.0
+    mrr = tgt_poly.minimum_rotated_rectangle
+    coords = list(mrr.exterior.coords)[:-1]
+    if len(coords) != 4:
+        raise ValueError("Target footprint must be a quadrilateral")
 
-    # Validate proportions; allow exact or swapped orientation. No arbitrary scaling for now.
-    dims_ok = (
-        abs(target_width - base_width) < 1e-6 and abs(target_height - base_height) < 1e-6
-    ) or (
-        abs(target_width - base_height) < 1e-6 and abs(target_height - base_width) < 1e-6
-    )
+    # Compute side vectors and lengths
+    edges = []  # (p0, p1, vec, length)
+    for i in range(4):
+        p0 = coords[i]
+        p1 = coords[(i + 1) % 4]
+        vx = p1[0] - p0[0]
+        vy = p1[1] - p0[1]
+        length = math.hypot(vx, vy)
+        edges.append((p0, p1, (vx, vy), length))
+
+    # Identify distinct side lengths (long ~12, short ~6)
+    lengths = sorted({round(e[3], 6) for e in edges})
+    if len(lengths) != 2:
+        raise ValueError("Target footprint edges must have exactly two distinct lengths")
+    long_len, short_len = max(lengths), min(lengths)
+
+    # Validate against preset dimensions (allow tiny tolerance)
+    base_long, base_short = 12.0, 6.0
+    # Accept small numeric deviations (e.g., 12.04/6.02). Use absolute tolerance of 0.1".
+    tol = 0.1
+    dims_ok = (abs(long_len - base_long) <= tol and abs(short_len - base_short) <= tol) or \
+              (abs(long_len - base_short) <= tol and abs(short_len - base_long) <= tol)
     if not dims_ok:
         raise ValueError(
-            f"Target footprint {target_width:.2f}x{target_height:.2f} does not match preset 12.00x6.00 (no scaling supported)"
+            f"Target footprint sides {long_len:.2f}/{short_len:.2f} do not match preset 12.00/6.00 (no scaling supported)"
         )
 
-    # Decide rotation to align long side and place designated long wall edge.
-    rotation_degrees = 0.0
-    translate_xy = (0.0, 0.0)
+    # Determine desired side for long wall based on long_wall_side and world axes
+    # Compute outward direction for each edge using centroid->midpoint vector
+    centroid = mrr.centroid
+    def edge_outward_dir(p0, p1):
+        mx, my = (p0[0] + p1[0]) * 0.5, (p0[1] + p1[1]) * 0.5
+        nx, ny = mx - centroid.x, my - centroid.y
+        nlen = math.hypot(nx, ny) or 1.0
+        return (nx / nlen, ny / nlen)
 
-    if target_width > target_height:  # 12x6 orientation (long edge horizontal)
-        # Long wall is authored on the bottom (south) edge at y=0.
-        if spec.long_wall_side not in ('bottom', 'top'):
-            raise ValueError("For 12x6 horizontal placement, long_wall_side must be 'bottom' or 'top'")
-        if spec.long_wall_side == 'bottom':
-            rotation_degrees = 0.0  # keep south -> bottom
-        else:  # 'top'
-            rotation_degrees = 180.0  # south -> top
-    else:  # 6x12 orientation (long edge vertical)
-        if spec.long_wall_side not in ('left', 'right'):
-            raise ValueError("For 6x12 vertical placement, long_wall_side must be 'left' or 'right'")
-        if spec.long_wall_side == 'right':
-            # Rotate -90deg: south edge maps to east (right)
-            rotation_degrees = -90.0
-        else:  # 'left'
-            # Rotate +90deg: south edge maps to west (left)
-            rotation_degrees = 90.0
-    
-    # First apply rotation around origin
+    # Axis preferences for side labels
+    axis_target = {
+        'right': (1.0, 0.0),
+        'left': (-1.0, 0.0),
+        'top': (0.0, 1.0),
+        'bottom': (0.0, -1.0),
+    }[spec.long_wall_side]
+
+    # Filter candidate edges to long edges (length ~ long_len)
+    long_edges = [e for e in edges if abs(e[3] - long_len) < tol]
+    if not long_edges:
+        raise ValueError("Could not identify long edges for target footprint")
+
+    # Pick the long edge whose outward direction best matches the requested side
+    best_edge = None
+    best_dot = -1e9
+    for p0, p1, vec, length in long_edges:
+        ox, oy = edge_outward_dir(p0, p1)
+        dot = ox * axis_target[0] + oy * axis_target[1]
+        if dot > best_dot:
+            best_dot = dot
+            best_edge = (p0, p1, (ox, oy), vec)
+
+    if best_edge is None:
+        raise ValueError("Failed to select matching long edge for long_wall_side")
+
+    # Compute rotation: rotate base outward normal (0,-1) to match selected outward normal
+    base_normal = (0.0, -1.0)
+    tgt_normal = best_edge[2]
+    base_angle = math.atan2(base_normal[1], base_normal[0])
+    tgt_angle = math.atan2(tgt_normal[1], tgt_normal[0])
+    rotation_degrees = math.degrees(tgt_angle - base_angle)
+
+    # Apply rotation around origin
     ruin = _apply_affine_to_ruins(ruin, rotation_degrees=rotation_degrees, translate_xy=(0.0, 0.0))
-    
-    # Compute rotated bounds and translate so that min corner aligns to (x_min, y_min)
-    rminx, rminy, rmaxx, rmaxy = ruin.footprint.bounds
-    dx = x_min - rminx
-    dy = y_min - rminy
+
+    # Translate to align centroids (rigid transform to overlay footprints)
+    rcentroid = ruin.footprint.centroid
+    dx = centroid.x - rcentroid.x
+    dy = centroid.y - rcentroid.y
     ruin = _apply_affine_to_ruins(ruin, rotation_degrees=0.0, translate_xy=(dx, dy))
     return ruin
 
@@ -159,18 +195,41 @@ class TerrainLayoutsRegistry:
     """
 
     _layouts: dict[int, List[TerrainPlacementSpec]] = {
-        # Layout 1 example with two 6x12-placed ruins and explicit long wall orientation
         1: [
             TerrainPlacementSpec(
                 preset='ruin_rect_12x6_variant1',
                 footprint=[(16.0, 28.0), (22.0, 28.0), (22.0, 40.0), (16.0, 40.0)],
-                long_wall_side='left',
+                long_wall_side='right',
             ),
             TerrainPlacementSpec(
                 preset='ruin_rect_12x6_variant1',
                 footprint=[(38.0, 4.0), (44.0, 4.0), (44.0, 16.0), (38.0, 16.0)],
+                long_wall_side='left',
+            ),
+        ],
+        2: [
+            TerrainPlacementSpec(
+                preset='ruin_rect_12x6_variant1',
+                footprint=[(13.0, 20.0), (17.0, 15.5), (26.0, 23.5), (22.0, 28.0)],
                 long_wall_side='right',
             ),
+            TerrainPlacementSpec(
+                preset='ruin_rect_12x6_variant1',
+                footprint=[(34.0, 20.5), (38.0, 16.0), (47.0, 24.0), (43.0, 28.5)],
+                long_wall_side='left',
+            ),
+        ],
+        3: [
+        ],
+        4: [
+        ],
+        5: [
+        ],
+        6: [
+        ],
+        7: [
+        ],
+        8: [
         ],
     }
 
@@ -187,8 +246,12 @@ def instantiate_layout(layout_id: int) -> List[TerrainFeature]:
     specs = TerrainLayoutsRegistry.get_layout_specs(layout_id)
     features: List[TerrainFeature] = []
     for spec in specs:
-        feature = _instantiate_from_spec(spec)
-        features.append(feature)
+        try:
+            feature = _instantiate_from_spec(spec)
+            features.append(feature)
+        except Exception as e:
+            # Log and continue with other features instead of aborting layout
+            print(f"⚠️ Terrain placement failed for preset {spec.preset}: {e}")
     return features
 
 
