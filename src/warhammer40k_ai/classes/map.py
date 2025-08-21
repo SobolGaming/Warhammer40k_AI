@@ -766,13 +766,13 @@ class TerrainFactory:
 
         # Define core wall line segments
         # Center wall lines are inset by 0.25" from footprint edges so buffered walls stay within footprint
-        long_wall_line = LineString([(0.0, 0.25), (12.0, 0.25)])
+        long_wall_line = LineString([(0.25, 0.25), (11.75, 0.25)])
         # Upper floors (levels 1,2) short walls: 4" long (centerline y from 0.25 to 3.75)
-        short_wall_left_line_upper = LineString([(0.0, 0.25), (0.0, 3.75)])
-        short_wall_right_line_upper = LineString([(12.0, 0.25), (12.0, 3.75)])
+        short_wall_left_line_upper = LineString([(0.25, 0.25), (0.25, 3.75)])
+        short_wall_right_line_upper = LineString([(11.75, 0.25), (11.75, 3.75)])
         # Ground floor short walls: 6" long (centerline y from 0.25 to 5.75)
-        short_wall_left_line_ground = LineString([(0.0, 0.25), (0.0, 5.75)])
-        short_wall_right_line_ground = LineString([(12.0, 0.25), (12.0, 5.75)])
+        short_wall_left_line_ground = LineString([(0.25, 0.25), (0.25, 5.75)])
+        short_wall_right_line_ground = LineString([(11.75, 0.25), (11.75, 5.75)])
 
         # Buffer to thickness to create polygons
         long_wall_poly = long_wall_line.buffer(half_t)
@@ -820,14 +820,14 @@ class TerrainFactory:
 
         # Short wall windows: y from 1" to 3", centered on x=2 and x=10 lines
         openings.append({
-            "polygon": box(0.0 - half_t, 1.0, 0.0 + half_t, 3.0),
+            "polygon": box(0.25 - half_t, 1.0, 0.25 + half_t, 3.0),
             "z_bottom": z1_bottom,
             "z_top": z1_top,
             "allows_movement": False,
             "allows_los": True
         })
         openings.append({
-            "polygon": box(12.0 - half_t, 1.0, 12.0 + half_t, 3.0),
+            "polygon": box(11.75 - half_t, 1.0, 11.75 + half_t, 3.0),
             "z_bottom": z1_bottom,
             "z_top": z1_top,
             "allows_movement": False,
@@ -862,7 +862,7 @@ class TerrainFactory:
 
     @staticmethod
     def create_preset_ruin_rect_12x6_variant2() -> RuinsTerrain:
-        """Create RUINS preset (12" x 6") Variant 2.
+        """Create RUINS preset (12" x 6") Variant 2 - L shape.
 
         Characteristics:
         - Same thickness (0.5"), same wall heights (ground 4", first 4", second 4"), 3 levels (0,1,2)
@@ -892,9 +892,9 @@ class TerrainFactory:
         # Centerlines inset by 0.25" so buffered walls remain within footprint
         # Long wall along TOP edge (y ~ 6)
         y_top_cl = 6.0 - half_t  # 5.75
-        long_line_ground = LineString([(0.0, y_top_cl), (12.0, y_top_cl)])
-        long_line_l1 = LineString([(4.0, y_top_cl), (12.0, y_top_cl)])
-        long_line_l2 = LineString([(8.0, y_top_cl), (12.0, y_top_cl)])
+        long_line_ground = LineString([(0.25, y_top_cl), (11.75, y_top_cl)])
+        long_line_l1 = LineString([(4.25, y_top_cl), (11.75, y_top_cl)])
+        long_line_l2 = LineString([(8.25, y_top_cl), (11.75, y_top_cl)])
 
         # Short wall along RIGHT edge (x ~ 12)
         x_right_cl = 12.0 - half_t  # 11.75
@@ -1005,7 +1005,7 @@ class TerrainFactory:
 
     @staticmethod
     def create_preset_ruin_rect_12x6_variant3() -> RuinsTerrain:
-        """Create RUINS preset (12" x 6") Variant 3.
+        """Create RUINS preset (12" x 6") Variant 3 - reverse L shape.
 
         Variant 3 is a horizontal mirror of Variant 2 across the vertical axis through x=6,
         so it's an exact left-right mirror (y-axis through the middle), preserving top/bottom.

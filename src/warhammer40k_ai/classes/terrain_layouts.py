@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Tuple, Literal
+from typing import List, Tuple, Literal, Union
 
 from shapely.affinity import rotate as sh_rotate, translate as sh_translate, scale as sh_scale
 
@@ -27,6 +27,19 @@ class TerrainPlacementSpec:
     preset: Literal['ruin_rect_12x6_variant1', 'ruin_rect_12x6_variant2', 'ruin_rect_12x6_variant3']
     footprint: List[Tuple[float, float]]
     long_wall_side: LongWallSide
+
+
+@dataclass
+class TerrainPlacementSimple:
+    """Simplified placement: rotate the authored preset by rotation_degrees around origin (0,0)
+    and translate so the preset's origin (0,0) lands at world_origin (x,y).
+
+    This avoids footprint and long-wall-side entirely.
+    """
+
+    preset: Literal['ruin_rect_12x6_variant1', 'ruin_rect_12x6_variant2', 'ruin_rect_12x6_variant3']
+    rotation_degrees: float
+    world_origin: Tuple[float, float]
 
 
 def _apply_affine_to_ruins(
@@ -83,6 +96,25 @@ def _apply_affine_to_ruins(
     ruin.bounding_box = {"min": (bounds[0], bounds[1], 0.0), "max": (bounds[2], bounds[3], max_z)}
 
     return ruin
+def _is_axis_aligned_rect(points: List[Tuple[float, float]], tol: float = 1e-6) -> bool:
+    if len(points) != 4:
+        return False
+    # Sort points for consistent edge traversal
+    pts = list(points)
+    # Build edges
+    edges = []
+    for i in range(4):
+        x0, y0 = pts[i]
+        x1, y1 = pts[(i + 1) % 4]
+        dx, dy = x1 - x0, y1 - y0
+        # Skip zero-length
+        if abs(dx) < tol and abs(dy) < tol:
+            continue
+        if not (abs(dx) < tol or abs(dy) < tol):
+            return False
+        edges.append((dx, dy))
+    return len(edges) == 4
+
 
 
 def _place_ruin_with_rotated_footprint(
@@ -192,25 +224,114 @@ def _place_ruin_with_rotated_footprint(
     return ruin
 
 
+def _place_ruin_axis_aligned(ruin: RuinsTerrain, spec: TerrainPlacementSpec, base_edge_label: str) -> RuinsTerrain:
+    """Fast path for axis-aligned rectangular footprints.
+
+    base_edge_label: 'top' if the authored long wall is on the top long edge (y=max),
+                     'bottom' if on the bottom long edge (y=min).
+    """
+    if len(spec.footprint) != 4:
+        return ruin  # fallback
+
+    xs = [p[0] for p in spec.footprint]
+    ys = [p[1] for p in spec.footprint]
+    x_min, x_max = min(xs), max(xs)
+    y_min, y_max = min(ys), max(ys)
+    width = x_max - x_min
+    height = y_max - y_min
+
+    # Determine desired side and rotation
+    rotation_degrees = 0.0
+    if width >= height:  # long edges are horizontal -> sides: 'top'/'bottom'
+        if spec.long_wall_side not in ('top', 'bottom'):
+            # Invalid request for this footprint; keep ruin as-is
+            return ruin
+        if base_edge_label == 'top':
+            rotation_degrees = 0.0 if spec.long_wall_side == 'top' else 180.0
+        else:  # base is 'bottom'
+            rotation_degrees = 0.0 if spec.long_wall_side == 'bottom' else 180.0
+        ruin = _apply_affine_to_ruins(ruin, rotation_degrees=rotation_degrees, translate_xy=(0.0, 0.0))
+        # Translate to flush selected side
+        rminx, rminy, rmaxx, rmaxy = ruin.footprint.bounds
+        dy = (y_max - rmaxy) if spec.long_wall_side == 'top' else (y_min - rminy)
+        ruin = _apply_affine_to_ruins(ruin, rotation_degrees=0.0, translate_xy=(0.0, dy))
+        # Center in x
+        rminx, rminy, rmaxx, rmaxy = ruin.footprint.bounds
+        dx = (x_min + (width - (rmaxx - rminx)) / 2.0) - rminx
+        ruin = _apply_affine_to_ruins(ruin, rotation_degrees=0.0, translate_xy=(dx, 0.0))
+        return ruin
+    else:  # long edges are vertical -> sides: 'left'/'right'
+        if spec.long_wall_side not in ('left', 'right'):
+            return ruin
+        # Determine rotation to map base long edge to requested vertical side
+        if base_edge_label == 'top':
+            rotation_degrees = 90.0 if spec.long_wall_side == 'left' else -90.0
+        else:  # base is 'bottom'
+            rotation_degrees = -90.0 if spec.long_wall_side == 'left' else 90.0
+        ruin = _apply_affine_to_ruins(ruin, rotation_degrees=rotation_degrees, translate_xy=(0.0, 0.0))
+        # Translate to flush selected side
+        rminx, rminy, rmaxx, rmaxy = ruin.footprint.bounds
+        dx = (x_max - rmaxx) if spec.long_wall_side == 'left' else (x_min - rminx)
+        ruin = _apply_affine_to_ruins(ruin, rotation_degrees=0.0, translate_xy=(dx, 0.0))
+        # Center in y
+        rminx, rminy, rmaxx, rmaxy = ruin.footprint.bounds
+        dy = (y_min + (height - (rmaxy - rminy)) / 2.0) - rminy
+        ruin = _apply_affine_to_ruins(ruin, rotation_degrees=0.0, translate_xy=(0.0, dy))
+        return ruin
+
+
 def _instantiate_ruin_rect_12x6_variant1(spec: TerrainPlacementSpec) -> RuinsTerrain:
     ruin = TerrainFactory.create_preset_ruin_rect_12x6_variant1()
-    # Base long edge: bottom from (0,0) -> (12,0)
-    return _place_ruin_with_rotated_footprint(ruin, spec, base_long_edge_start=(0.0, 0.0), base_long_edge_end=(12.0, 0.0))
+    if _is_axis_aligned_rect(spec.footprint):
+        return _place_ruin_axis_aligned(ruin, spec, base_edge_label='bottom')
+    # Rotated footprint fallback: map base bottom edge to requested long edge
+    return _place_ruin_with_rotated_footprint(
+        ruin, spec, base_long_edge_start=(0.0, 0.0), base_long_edge_end=(12.0, 0.0)
+    )
 
 
 def _instantiate_ruin_rect_12x6_variant2(spec: TerrainPlacementSpec) -> RuinsTerrain:
     ruin = TerrainFactory.create_preset_ruin_rect_12x6_variant2()
-    # Base long edge: top from (0,6) -> (12,6)
-    return _place_ruin_with_rotated_footprint(ruin, spec, base_long_edge_start=(0.0, 6.0), base_long_edge_end=(12.0, 6.0))
+    if _is_axis_aligned_rect(spec.footprint):
+        return _place_ruin_axis_aligned(ruin, spec, base_edge_label='top')
+    # Rotated footprint fallback: map base top edge to requested long edge
+    return _place_ruin_with_rotated_footprint(
+        ruin, spec, base_long_edge_start=(0.0, 6.0), base_long_edge_end=(12.0, 6.0)
+    )
 
 
 def _instantiate_ruin_rect_12x6_variant3(spec: TerrainPlacementSpec) -> RuinsTerrain:
     ruin = TerrainFactory.create_preset_ruin_rect_12x6_variant3()
-    # Base long edge: bottom from (0,0) -> (12,0) (opposite side from variant2)
-    return _place_ruin_with_rotated_footprint(ruin, spec, base_long_edge_start=(0.0, 0.0), base_long_edge_end=(12.0, 0.0))
+    if _is_axis_aligned_rect(spec.footprint):
+        return _place_ruin_axis_aligned(ruin, spec, base_edge_label='bottom')
+    # Rotated footprint fallback: map base bottom edge to requested long edge
+    return _place_ruin_with_rotated_footprint(
+        ruin, spec, base_long_edge_start=(0.0, 0.0), base_long_edge_end=(12.0, 0.0)
+    )
 
 
-def _instantiate_from_spec(spec: TerrainPlacementSpec) -> TerrainFeature:
+def _instantiate_simple(spec: TerrainPlacementSimple) -> TerrainFeature:
+    if spec.preset == 'ruin_rect_12x6_variant1':
+        ruin = TerrainFactory.create_preset_ruin_rect_12x6_variant1()
+    elif spec.preset == 'ruin_rect_12x6_variant2':
+        ruin = TerrainFactory.create_preset_ruin_rect_12x6_variant2()
+    elif spec.preset == 'ruin_rect_12x6_variant3':
+        ruin = TerrainFactory.create_preset_ruin_rect_12x6_variant3()
+    else:
+        raise ValueError(f"Unknown preset '{spec.preset}'")
+
+    # Rotate around preset origin (0,0)
+    ruin = _apply_affine_to_ruins(ruin, rotation_degrees=spec.rotation_degrees, translate_xy=(0.0, 0.0))
+    # Translate origin to world_origin
+    ruin = _apply_affine_to_ruins(ruin, rotation_degrees=0.0, translate_xy=spec.world_origin)
+    return ruin
+
+
+def _instantiate_from_spec(spec: Union[TerrainPlacementSpec, TerrainPlacementSimple]) -> TerrainFeature:
+    # New simple API path
+    if isinstance(spec, TerrainPlacementSimple):
+        return _instantiate_simple(spec)
+    # Legacy footprint-based path
     if spec.preset == 'ruin_rect_12x6_variant1':
         return _instantiate_ruin_rect_12x6_variant1(spec)
     if spec.preset == 'ruin_rect_12x6_variant2':
@@ -228,40 +349,22 @@ class TerrainLayoutsRegistry:
 
     _layouts: dict[int, List[TerrainPlacementSpec]] = {
         1: [
-            TerrainPlacementSpec(
-                preset='ruin_rect_12x6_variant1',
-                footprint=[(16.0, 28.0), (22.0, 28.0), (22.0, 40.0), (16.0, 40.0)],
-                long_wall_side='right',
-            ),
-            TerrainPlacementSpec(
-                preset='ruin_rect_12x6_variant1',
-                footprint=[(38.0, 4.0), (44.0, 4.0), (44.0, 16.0), (38.0, 16.0)],
-                long_wall_side='left',
-            ),
+            TerrainPlacementSimple(preset='ruin_rect_12x6_variant1', rotation_degrees=90.0, world_origin=(22.0, 28.0)),
+            TerrainPlacementSimple(preset='ruin_rect_12x6_variant1', rotation_degrees=270.0, world_origin=(38.0, 16.0)),
+            TerrainPlacementSimple(preset='ruin_rect_12x6_variant2', rotation_degrees=270.0, world_origin=(12.0, 5.0)),
+            TerrainPlacementSimple(preset='ruin_rect_12x6_variant2', rotation_degrees=90.0, world_origin=(48.0, 39.0)),
         ],
         2: [
-            TerrainPlacementSpec(
-                preset='ruin_rect_12x6_variant1',
-                footprint=[(13.0, 20.0), (17.0, 15.5), (26.0, 23.5), (22.0, 28.0)],
-                long_wall_side='right',
-            ),
-            TerrainPlacementSpec(
-                preset='ruin_rect_12x6_variant1',
-                footprint=[(34.0, 20.5), (38.0, 16.0), (47.0, 24.0), (43.0, 28.5)],
-                long_wall_side='left',
-            ),
+            TerrainPlacementSimple(preset='ruin_rect_12x6_variant1', rotation_degrees=math.degrees(math.atan2(4, 4.5)), world_origin=(17.0, 15.5)),
+            TerrainPlacementSimple(preset='ruin_rect_12x6_variant1', rotation_degrees=math.degrees(math.atan2(4, 4.5)) + 180.0, world_origin=(43.0, 28.5)),
+            TerrainPlacementSimple(preset='ruin_rect_12x6_variant2', rotation_degrees=270.0, world_origin=(8.0, 40.0)),
+            TerrainPlacementSimple(preset='ruin_rect_12x6_variant2', rotation_degrees=90.0, world_origin=(52.0, 4.0)),
         ],
         3: [
-            TerrainPlacementSpec(
-                preset='ruin_rect_12x6_variant1',
-                footprint=[(22.0, 4.0), (34.0, 4.0), (34.0, 10.0), (22.0, 10.0)],
-                long_wall_side='bottom',
-            ),
-            TerrainPlacementSpec(
-                preset='ruin_rect_12x6_variant1',
-                footprint=[(26.0, 32.0), (38.0, 32.0), (38.0, 38.0), (26.0, 38.0)],
-                long_wall_side='top',
-            ),
+            TerrainPlacementSimple(preset='ruin_rect_12x6_variant1', rotation_degrees=180.0, world_origin=(34.0, 10.0)),
+            TerrainPlacementSimple(preset='ruin_rect_12x6_variant1', rotation_degrees=0.0, world_origin=(26.0, 34.0)),
+            TerrainPlacementSimple(preset='ruin_rect_12x6_variant3', rotation_degrees=math.degrees(math.atan2(3, 5)) + 180.0, world_origin=(14.2, 38.0)),
+            TerrainPlacementSimple(preset='ruin_rect_12x6_variant3', rotation_degrees=math.degrees(math.atan2(3, 5)), world_origin=(45.8, 6.0)),
         ],
         4: [
             TerrainPlacementSpec(
