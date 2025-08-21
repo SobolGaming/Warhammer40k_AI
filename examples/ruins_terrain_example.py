@@ -11,7 +11,7 @@ from warhammer40k_ai.utility.model_base import Base, BaseType
 from warhammer40k_ai.utility.calcs import convert_mm_to_inches
 from shapely.geometry import Polygon
 
-def visualize_ruin_3d(ruin, models=None):
+def visualize_ruin_3d(ruin, models=None, title: str = 'Preset 12"x6" RUINS'):
     """Visualize a RuinsTerrain in 3D using matplotlib (simple prism rendering)."""
     import matplotlib.pyplot as plt
     from mpl_toolkits.mplot3d.art3d import Poly3DCollection
@@ -91,7 +91,7 @@ def visualize_ruin_3d(ruin, models=None):
     ax.set_xlabel('X (inches)')
     ax.set_ylabel('Y (inches)')
     ax.set_zlabel('Z (inches)')
-    ax.set_title('Preset 12"x6" RUINS (variant 1)')
+    ax.set_title(title)
 
     # Enforce equal XY scale so inches look equal in both axes
     # Matplotlib 3D doesn't have set_aspect('equal') directly; emulate via limits
@@ -171,12 +171,26 @@ def place_unit_in_ruin(ruin, num_models=5, base_mm=32, floor_level=0, model_heig
 
 
 def main():
-    # Create preset ruin
-    ruin = TerrainFactory.create_preset_ruin_rect_12x6_variant1()
-    # Place 5 models on first floor
-    models = place_unit_in_ruin(ruin, num_models=5, base_mm=32, floor_level=1, model_height_in=2.0)
-    # Visualize
-    visualize_ruin_3d(ruin, models=models)
+    import argparse
+    parser = argparse.ArgumentParser(description='Visualize preset 12x6 RUINS variants')
+    parser.add_argument('--preset', choices=['variant1', 'variant2', 'variant3'], default='variant1', help='Which preset to visualize')
+    parser.add_argument('--floor', type=int, default=1, help='Floor level to place example models (0,1,2)')
+    parser.add_argument('--models', type=int, default=5, help='Number of example models to place')
+    args = parser.parse_args()
+
+    # Create selected preset ruin
+    if args.preset == 'variant3':
+        ruin = TerrainFactory.create_preset_ruin_rect_12x6_variant3()
+    elif args.preset == 'variant2':
+        ruin = TerrainFactory.create_preset_ruin_rect_12x6_variant2()
+    else:
+        ruin = TerrainFactory.create_preset_ruin_rect_12x6_variant1()
+
+    # Place example models on requested floor
+    models = place_unit_in_ruin(ruin, num_models=args.models, base_mm=32, floor_level=args.floor, model_height_in=2.0)
+
+    # Visualize with dynamic title
+    visualize_ruin_3d(ruin, models=models, title=f'Preset 12"x6" RUINS ({args.preset})')
 
 
 if __name__ == "__main__":

@@ -24,12 +24,18 @@ class TerrainPlacementSpec:
       rectangles (height > width) and 'top'/'bottom' for horizontal rectangles (width > height).
     """
 
-    preset: Literal['ruin_rect_12x6_variant1']
+    preset: Literal['ruin_rect_12x6_variant1', 'ruin_rect_12x6_variant2', 'ruin_rect_12x6_variant3']
     footprint: List[Tuple[float, float]]
     long_wall_side: LongWallSide
 
 
-def _apply_affine_to_ruins(ruin: RuinsTerrain, rotation_degrees: float, translate_xy: Tuple[float, float], scale_xy: Tuple[float, float] | None = None) -> RuinsTerrain:
+def _apply_affine_to_ruins(
+    ruin: RuinsTerrain,
+    rotation_degrees: float,
+    translate_xy: Tuple[float, float],
+    scale_xy: Tuple[float, float] | None = None,
+    scale_origin: Tuple[float, float] = (0.0, 0.0),
+) -> RuinsTerrain:
     """Apply rotation/scale/translation to all geometries of a RuinsTerrain in-place and
     update its footprint and bounding box accordingly.
 
@@ -39,13 +45,13 @@ def _apply_affine_to_ruins(ruin: RuinsTerrain, rotation_degrees: float, translat
     # Scale (optional)
     if scale_xy is not None:
         sx, sy = scale_xy
-        ruin.footprint = sh_scale(ruin.footprint, xfact=sx, yfact=sy, origin=(0.0, 0.0))
+        ruin.footprint = sh_scale(ruin.footprint, xfact=sx, yfact=sy, origin=scale_origin)
         for wall in ruin.walls:
-            wall['polygon'] = sh_scale(wall['polygon'], xfact=sx, yfact=sy, origin=(0.0, 0.0))
+            wall['polygon'] = sh_scale(wall['polygon'], xfact=sx, yfact=sy, origin=scale_origin)
         for opening in ruin.openings:
-            opening['polygon'] = sh_scale(opening['polygon'], xfact=sx, yfact=sy, origin=(0.0, 0.0))
+            opening['polygon'] = sh_scale(opening['polygon'], xfact=sx, yfact=sy, origin=scale_origin)
         for floor in ruin.floors:
-            floor['polygon'] = sh_scale(floor['polygon'], xfact=sx, yfact=sy, origin=(0.0, 0.0))
+            floor['polygon'] = sh_scale(floor['polygon'], xfact=sx, yfact=sy, origin=scale_origin)
 
     # Rotate
     if rotation_degrees:
@@ -79,20 +85,19 @@ def _apply_affine_to_ruins(ruin: RuinsTerrain, rotation_degrees: float, translat
     return ruin
 
 
-def _instantiate_ruin_rect_12x6_variant1(spec: TerrainPlacementSpec) -> RuinsTerrain:
-    """Create and place the 12x6 preset ruin according to the placement spec.
+def _place_ruin_with_rotated_footprint(
+    ruin: RuinsTerrain,
+    spec: TerrainPlacementSpec,
+    base_long_edge_start: Tuple[float, float],
+    base_long_edge_end: Tuple[float, float],
+) -> RuinsTerrain:
+    """Place ruin by mapping its authored long edge to the requested target rectangle long edge.
 
-    The preset is authored as a 12x6 rectangle at origin with its distinctive long wall
-    along the 12" edge at y=0 (the "bottom" edge in base orientation). We rotate and
-    translate it so that its footprint matches the provided rectangle and the long wall
-    is flush to the requested side.
+    This uses an edge-to-edge rigid transform (rotation + translation) with no scaling.
     """
-    ruin = TerrainFactory.create_preset_ruin_rect_12x6_variant1()
-
     if len(spec.footprint) != 4:
         raise ValueError("Footprint must contain exactly 4 vertices for rectangular placement")
 
-    # Support rotated placement: use oriented minimum bounding rectangle
     tgt_poly = _ShPoly(spec.footprint)
     if tgt_poly.is_empty or not tgt_poly.is_valid:
         raise ValueError("Invalid footprint polygon for placement")
@@ -102,7 +107,6 @@ def _instantiate_ruin_rect_12x6_variant1(spec: TerrainPlacementSpec) -> RuinsTer
     if len(coords) != 4:
         raise ValueError("Target footprint must be a quadrilateral")
 
-    # Compute side vectors and lengths
     edges = []  # (p0, p1, vec, length)
     for i in range(4):
         p0 = coords[i]
@@ -112,15 +116,12 @@ def _instantiate_ruin_rect_12x6_variant1(spec: TerrainPlacementSpec) -> RuinsTer
         length = math.hypot(vx, vy)
         edges.append((p0, p1, (vx, vy), length))
 
-    # Identify distinct side lengths (long ~12, short ~6)
     lengths = sorted({round(e[3], 6) for e in edges})
     if len(lengths) != 2:
         raise ValueError("Target footprint edges must have exactly two distinct lengths")
     long_len, short_len = max(lengths), min(lengths)
 
-    # Validate against preset dimensions (allow tiny tolerance)
     base_long, base_short = 12.0, 6.0
-    # Accept small numeric deviations (e.g., 12.04/6.02). Use absolute tolerance of 0.1".
     tol = 0.1
     dims_ok = (abs(long_len - base_long) <= tol and abs(short_len - base_short) <= tol) or \
               (abs(long_len - base_short) <= tol and abs(short_len - base_long) <= tol)
@@ -129,16 +130,14 @@ def _instantiate_ruin_rect_12x6_variant1(spec: TerrainPlacementSpec) -> RuinsTer
             f"Target footprint sides {long_len:.2f}/{short_len:.2f} do not match preset 12.00/6.00 (no scaling supported)"
         )
 
-    # Determine desired side for long wall based on long_wall_side and world axes
-    # Compute outward direction for each edge using centroid->midpoint vector
     centroid = mrr.centroid
+
     def edge_outward_dir(p0, p1):
         mx, my = (p0[0] + p1[0]) * 0.5, (p0[1] + p1[1]) * 0.5
         nx, ny = mx - centroid.x, my - centroid.y
         nlen = math.hypot(nx, ny) or 1.0
         return (nx / nlen, ny / nlen)
 
-    # Axis preferences for side labels
     axis_target = {
         'right': (1.0, 0.0),
         'left': (-1.0, 0.0),
@@ -146,12 +145,11 @@ def _instantiate_ruin_rect_12x6_variant1(spec: TerrainPlacementSpec) -> RuinsTer
         'bottom': (0.0, 1.0),
     }[spec.long_wall_side]
 
-    # Filter candidate edges to long edges (length ~ long_len)
     long_edges = [e for e in edges if abs(e[3] - long_len) < tol]
     if not long_edges:
         raise ValueError("Could not identify long edges for target footprint")
 
-    # Pick the long edge whose outward direction best matches the requested side
+    # Choose the target long edge with outward normal matching the requested side
     best_edge = None
     best_dot = -1e9
     for p0, p1, vec, length in long_edges:
@@ -159,32 +157,66 @@ def _instantiate_ruin_rect_12x6_variant1(spec: TerrainPlacementSpec) -> RuinsTer
         dot = ox * axis_target[0] + oy * axis_target[1]
         if dot > best_dot:
             best_dot = dot
-            best_edge = (p0, p1, (ox, oy), vec)
+            best_edge = (p0, p1)
 
     if best_edge is None:
         raise ValueError("Failed to select matching long edge for long_wall_side")
 
-    # Compute rotation: rotate base outward normal (0,-1) to match selected outward normal
-    base_normal = (0.0, -1.0)
-    tgt_normal = best_edge[2]
-    base_angle = math.atan2(base_normal[1], base_normal[0])
-    tgt_angle = math.atan2(tgt_normal[1], tgt_normal[0])
-    rotation_degrees = math.degrees(tgt_angle - base_angle)
+    # Order target edge endpoints deterministically: for horizontal-ish edges by x, else by y
+    p0, p1 = best_edge
+    ex, ey = p1[0] - p0[0], p1[1] - p0[1]
+    if abs(ex) >= abs(ey):
+        t_start, t_end = (p0, p1) if p0[0] <= p1[0] else (p1, p0)
+    else:
+        t_start, t_end = (p0, p1) if p0[1] <= p1[1] else (p1, p0)
 
-    # Apply rotation around origin
-    ruin = _apply_affine_to_ruins(ruin, rotation_degrees=rotation_degrees, translate_xy=(0.0, 0.0))
+    # Compute base edge direction and target edge direction
+    bx, by = base_long_edge_end[0] - base_long_edge_start[0], base_long_edge_end[1] - base_long_edge_start[1]
+    tx, ty = t_end[0] - t_start[0], t_end[1] - t_start[1]
+    b_ang = math.atan2(by, bx)
+    t_ang = math.atan2(ty, tx)
+    rot_deg = math.degrees(t_ang - b_ang)
 
-    # Translate to align centroids (rigid transform to overlay footprints)
-    rcentroid = ruin.footprint.centroid
-    dx = centroid.x - rcentroid.x
-    dy = centroid.y - rcentroid.y
+    # Rotate ruin about origin
+    ruin = _apply_affine_to_ruins(ruin, rotation_degrees=rot_deg, translate_xy=(0.0, 0.0))
+
+    # Rotate base start to find its current position, then translate to target start
+    rad = math.radians(rot_deg)
+    ca, sa = math.cos(rad), math.sin(rad)
+    bsx, bsy = base_long_edge_start
+    bsx_r = bsx * ca - bsy * sa
+    bsy_r = bsx * sa + bsy * ca
+    dx = t_start[0] - bsx_r
+    dy = t_start[1] - bsy_r
     ruin = _apply_affine_to_ruins(ruin, rotation_degrees=0.0, translate_xy=(dx, dy))
     return ruin
+
+
+def _instantiate_ruin_rect_12x6_variant1(spec: TerrainPlacementSpec) -> RuinsTerrain:
+    ruin = TerrainFactory.create_preset_ruin_rect_12x6_variant1()
+    # Base long edge: bottom from (0,0) -> (12,0)
+    return _place_ruin_with_rotated_footprint(ruin, spec, base_long_edge_start=(0.0, 0.0), base_long_edge_end=(12.0, 0.0))
+
+
+def _instantiate_ruin_rect_12x6_variant2(spec: TerrainPlacementSpec) -> RuinsTerrain:
+    ruin = TerrainFactory.create_preset_ruin_rect_12x6_variant2()
+    # Base long edge: top from (0,6) -> (12,6)
+    return _place_ruin_with_rotated_footprint(ruin, spec, base_long_edge_start=(0.0, 6.0), base_long_edge_end=(12.0, 6.0))
+
+
+def _instantiate_ruin_rect_12x6_variant3(spec: TerrainPlacementSpec) -> RuinsTerrain:
+    ruin = TerrainFactory.create_preset_ruin_rect_12x6_variant3()
+    # Base long edge: bottom from (0,0) -> (12,0) (opposite side from variant2)
+    return _place_ruin_with_rotated_footprint(ruin, spec, base_long_edge_start=(0.0, 0.0), base_long_edge_end=(12.0, 0.0))
 
 
 def _instantiate_from_spec(spec: TerrainPlacementSpec) -> TerrainFeature:
     if spec.preset == 'ruin_rect_12x6_variant1':
         return _instantiate_ruin_rect_12x6_variant1(spec)
+    if spec.preset == 'ruin_rect_12x6_variant2':
+        return _instantiate_ruin_rect_12x6_variant2(spec)
+    if spec.preset == 'ruin_rect_12x6_variant3':
+        return _instantiate_ruin_rect_12x6_variant3(spec)
     raise ValueError(f"Unknown preset '{spec.preset}'")
 
 

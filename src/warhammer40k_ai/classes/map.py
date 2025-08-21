@@ -747,7 +747,7 @@ class TerrainFactory:
         Details:
         - Footprint: 12" x 6" rectangle
         - Wall thickness: 0.5"
-        - Walls 2" inward from both short edges and one long edge (y=0), flush to that long edge
+        - Walls 0" inward from both short edges and one long edge (y=0), flush to that long edge
           • Short walls: ground floor 6" long (y=0 to y=6); upper floors 4" long (y=0 to y=4) at x=0 and x=12
           • Long wall: 12" long from x=0 to x=12 along y=0
         - Ground floor (level 0): 4" wall height, no windows
@@ -857,6 +857,200 @@ class TerrainFactory:
             "elevation": 8.0,
             "thickness": 0.5
         })
+
+        return RuinsTerrain(footprint, walls=walls, openings=openings, floors=floors)
+
+    @staticmethod
+    def create_preset_ruin_rect_12x6_variant2() -> RuinsTerrain:
+        """Create RUINS preset (12" x 6") Variant 2.
+
+        Characteristics:
+        - Same thickness (0.5"), same wall heights (ground 4", first 4", second 4"), 3 levels (0,1,2)
+        - Long wall on the TOP long side (y=6):
+          • Ground: 12" long (x=0..12)
+          • 1st:    8" long  (x=4..12)
+          • 2nd:    4" long  (x=8..12)
+        - Short wall on the RIGHT short side (x=12):
+          • Ground: 6" long (y=0..6)
+          • 1st:    6" long (y=0..6)
+          • 2nd:    3" long (y=3..6)  (anchored to the top corner)
+        - The top-right corner (12,6) is the shared meeting corner of the long wall’s right end
+          and the short wall’s top end across levels.
+        - Floors:
+          • Ground: full 12x6 rectangle
+          • 1st:    right-angled triangle with legs 8 (x) and 6 (y), right angle at (12,6)
+          • 2nd:    right-angled triangle with legs 4 (x) and 3 (y), right angle at (12,6)
+        - Windows: similar style to variant1 but sized to new spans (LOS only)
+        """
+
+        # Footprint polygon
+        footprint = Polygon([(0.0, 0.0), (12.0, 0.0), (12.0, 6.0), (0.0, 6.0)])
+
+        wall_thickness = 0.5
+        half_t = wall_thickness / 2.0
+
+        # Centerlines inset by 0.25" so buffered walls remain within footprint
+        # Long wall along TOP edge (y ~ 6)
+        y_top_cl = 6.0 - half_t  # 5.75
+        long_line_ground = LineString([(0.0, y_top_cl), (12.0, y_top_cl)])
+        long_line_l1 = LineString([(4.0, y_top_cl), (12.0, y_top_cl)])
+        long_line_l2 = LineString([(8.0, y_top_cl), (12.0, y_top_cl)])
+
+        # Short wall along RIGHT edge (x ~ 12)
+        x_right_cl = 12.0 - half_t  # 11.75
+        short_line_ground = LineString([(x_right_cl, 0.25), (x_right_cl, 5.75)])
+        short_line_l1 = LineString([(x_right_cl, 0.25), (x_right_cl, 5.75)])
+        short_line_l2 = LineString([(x_right_cl, 3.25), (x_right_cl, 5.75)])  # 3" span anchored to top
+
+        # Buffer to wall polygons
+        long_poly_ground = long_line_ground.buffer(half_t)
+        long_poly_l1 = long_line_l1.buffer(half_t)
+        long_poly_l2 = long_line_l2.buffer(half_t)
+
+        short_poly_ground = short_line_ground.buffer(half_t)
+        short_poly_l1 = short_line_l1.buffer(half_t)
+        short_poly_l2 = short_line_l2.buffer(half_t)
+
+        walls: List[dict] = []
+        openings: List[dict] = []
+        floors: List[dict] = []
+
+        def add_wall(poly: Polygon, floor_level: int, height: float) -> None:
+            walls.append({
+                "polygon": poly,
+                "z_bottom": float(floor_level * 4.0),
+                "z_top": float(floor_level * 4.0 + height),
+                "thickness": wall_thickness
+            })
+
+        # Ground floor (level 0) walls: height 4"
+        add_wall(long_poly_ground, floor_level=0, height=4.0)
+        add_wall(short_poly_ground, floor_level=0, height=4.0)
+
+        # First floor (level 1) walls: height 4"
+        add_wall(long_poly_l1, floor_level=1, height=4.0)
+        add_wall(short_poly_l1, floor_level=1, height=4.0)
+
+        # Second floor (level 2) walls: height 4" (per variant requirement)
+        add_wall(long_poly_l2, floor_level=2, height=4.0)
+        add_wall(short_poly_l2, floor_level=2, height=4.0)
+
+        # Windows (LOS only): 1"-3" above floor level
+        z1_bottom = 1.0 + 4.0
+        z1_top = 3.0 + 4.0
+        z2_bottom = 1.0 + 8.0
+        z2_top = 3.0 + 8.0
+
+        # First floor windows
+        # Long wall (8" span x=4..12): two 2" windows centered in span
+        for x_start, x_end in [(5.0, 7.0), (9.0, 11.0)]:
+            openings.append({
+                "polygon": box(x_start, y_top_cl - half_t, x_end, y_top_cl + half_t),
+                "z_bottom": z1_bottom,
+                "z_top": z1_top,
+                "allows_movement": False,
+                "allows_los": True
+            })
+        # Short wall (6" span y=0..6): two 2" vertical windows centered
+        for y_start, y_end in [(1.0, 3.0), (3.0, 5.0)]:
+            openings.append({
+                "polygon": box(x_right_cl - half_t, y_start, x_right_cl + half_t, y_end),
+                "z_bottom": z1_bottom,
+                "z_top": z1_top,
+                "allows_movement": False,
+                "allows_los": True
+            })
+
+        # Second floor windows (walls are 4" high in this variant)
+        # Long wall (4" span x=8..12): one 2" window near center
+        openings.append({
+            "polygon": box(9.0, y_top_cl - half_t, 11.0, y_top_cl + half_t),
+            "z_bottom": z2_bottom,
+            "z_top": z2_top,
+            "allows_movement": False,
+            "allows_los": True
+        })
+        # Short wall (3" span y=3..6): one 2" vertical window near top
+        openings.append({
+            "polygon": box(x_right_cl - half_t, 3.5, x_right_cl + half_t, 5.5),
+            "z_bottom": z2_bottom,
+            "z_top": z2_top,
+            "allows_movement": False,
+            "allows_los": True
+        })
+
+        # Floors
+        # Ground: full footprint
+        floors.append({
+            "polygon": footprint,
+            "elevation": 0.0,
+            "thickness": 0.5
+        })
+        # First floor: right triangle with legs 8 (x) and 6 (y), right angle at (12,6)
+        floor1 = Polygon([(12.0, 6.0), (4.0, 6.0), (12.0, 0.0)])
+        floors.append({
+            "polygon": floor1,
+            "elevation": 4.0,
+            "thickness": 0.5
+        })
+        # Second floor: right triangle with legs 4 (x) and 3 (y), right angle at (12,6)
+        floor2 = Polygon([(12.0, 6.0), (8.0, 6.0), (12.0, 3.0)])
+        floors.append({
+            "polygon": floor2,
+            "elevation": 8.0,
+            "thickness": 0.5
+        })
+
+        return RuinsTerrain(footprint, walls=walls, openings=openings, floors=floors)
+
+    @staticmethod
+    def create_preset_ruin_rect_12x6_variant3() -> RuinsTerrain:
+        """Create RUINS preset (12" x 6") Variant 3.
+
+        Variant 3 is a horizontal mirror of Variant 2 across the vertical axis through x=6,
+        so it's an exact left-right mirror (y-axis through the middle), preserving top/bottom.
+        """
+
+        # Build variant 2 then mirror across x=6 (left-right flip)
+        v2 = TerrainFactory.create_preset_ruin_rect_12x6_variant2()
+        try:
+            from shapely.affinity import scale as _sh_scale
+        except Exception:
+            # If affinity not available, fall back to returning v2 (non-mirrored)
+            return v2
+
+        def _mirror_geom(g):
+            try:
+                return _sh_scale(g, xfact=-1.0, yfact=1.0, origin=(6.0, 0.0))
+            except Exception:
+                return g
+
+        # Mirror all geometries
+        footprint = _mirror_geom(v2.footprint)
+        walls: List[dict] = []
+        for w in v2.walls:
+            walls.append({
+                "polygon": _mirror_geom(w["polygon"]),
+                "z_bottom": w["z_bottom"],
+                "z_top": w["z_top"],
+                "thickness": w.get("thickness", 0.5),
+            })
+        openings: List[dict] = []
+        for op in v2.openings:
+            openings.append({
+                "polygon": _mirror_geom(op["polygon"]),
+                "z_bottom": op["z_bottom"],
+                "z_top": op["z_top"],
+                "allows_movement": op.get("allows_movement", False),
+                "allows_los": op.get("allows_los", False),
+            })
+        floors: List[dict] = []
+        for fl in v2.floors:
+            floors.append({
+                "polygon": _mirror_geom(fl["polygon"]),
+                "elevation": fl["elevation"],
+                "thickness": fl.get("thickness", 0.5),
+            })
 
         return RuinsTerrain(footprint, walls=walls, openings=openings, floors=floors)
 
