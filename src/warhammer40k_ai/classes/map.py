@@ -748,11 +748,11 @@ class TerrainFactory:
         - Footprint: 12" x 6" rectangle
         - Wall thickness: 0.5"
         - Walls 2" inward from both short edges and one long edge (y=0), flush to that long edge
-          • Short walls: 4" long from y=0 to y=4 at x=2 and x=10
-          • Long wall: 8" long from x=2 to x=10 along y=0
+          • Short walls: ground floor 6" long (y=0 to y=6); upper floors 4" long (y=0 to y=4) at x=0 and x=12
+          • Long wall: 12" long from x=0 to x=12 along y=0
         - Ground floor (level 0): 4" wall height, no windows
         - First floor (level 1): 4" wall height, windows
-          • Long wall: three 2" windows, at x=[3-5], [5-7], [7-9]
+          • Long wall: three 2" windows, at x=[2-4], [5-7], [8-10]
           • Short walls: one 2" window each, spanning y=[2-4]
           • All windows 1"-3" above that floor (allows LOS only)
         - Second floor (level 2): 2" damaged walls, no windows
@@ -766,14 +766,20 @@ class TerrainFactory:
 
         # Define core wall line segments
         # Center wall lines are inset by 0.25" from footprint edges so buffered walls stay within footprint
-        long_wall_line = LineString([(2.0, 0.25), (10.0, 0.25)])
-        short_wall_left_line = LineString([(2.0, 0.25), (2.0, 3.75)])
-        short_wall_right_line = LineString([(10.0, 0.25), (10.0, 3.75)])
+        long_wall_line = LineString([(0.0, 0.25), (12.0, 0.25)])
+        # Upper floors (levels 1,2) short walls: 4" long (centerline y from 0.25 to 3.75)
+        short_wall_left_line_upper = LineString([(0.0, 0.25), (0.0, 3.75)])
+        short_wall_right_line_upper = LineString([(12.0, 0.25), (12.0, 3.75)])
+        # Ground floor short walls: 6" long (centerline y from 0.25 to 5.75)
+        short_wall_left_line_ground = LineString([(0.0, 0.25), (0.0, 5.75)])
+        short_wall_right_line_ground = LineString([(12.0, 0.25), (12.0, 5.75)])
 
         # Buffer to thickness to create polygons
         long_wall_poly = long_wall_line.buffer(half_t)
-        short_wall_left_poly = short_wall_left_line.buffer(half_t)
-        short_wall_right_poly = short_wall_right_line.buffer(half_t)
+        short_wall_left_poly_upper = short_wall_left_line_upper.buffer(half_t)
+        short_wall_right_poly_upper = short_wall_right_line_upper.buffer(half_t)
+        short_wall_left_poly_ground = short_wall_left_line_ground.buffer(half_t)
+        short_wall_right_poly_ground = short_wall_right_line_ground.buffer(half_t)
 
         walls: List[dict] = []
         openings: List[dict] = []
@@ -787,22 +793,22 @@ class TerrainFactory:
                 "thickness": wall_thickness
             })
 
-        # Ground floor walls (no windows), height 4"
+        # Ground floor walls (no windows), height 4"; short walls extend full 6" length
         add_wall(long_wall_poly, floor_level=0, height=4.0)
-        add_wall(short_wall_left_poly, floor_level=0, height=4.0)
-        add_wall(short_wall_right_poly, floor_level=0, height=4.0)
+        add_wall(short_wall_left_poly_ground, floor_level=0, height=4.0)
+        add_wall(short_wall_right_poly_ground, floor_level=0, height=4.0)
 
-        # First floor walls (with windows), height 4"
+        # First floor walls (with windows), height 4"; short walls are 4" long
         add_wall(long_wall_poly, floor_level=1, height=4.0)
-        add_wall(short_wall_left_poly, floor_level=1, height=4.0)
-        add_wall(short_wall_right_poly, floor_level=1, height=4.0)
+        add_wall(short_wall_left_poly_upper, floor_level=1, height=4.0)
+        add_wall(short_wall_right_poly_upper, floor_level=1, height=4.0)
 
         # Windows on first floor: 1"-3" above the floor
         z1_bottom = 1.0 + 4.0
         z1_top = 3.0 + 4.0
 
         # Long wall: three 2" windows at 1" from each end and centered segments
-        for x_start, x_end in [(3.0, 5.0), (5.0, 7.0), (7.0, 9.0)]:
+        for x_start, x_end in [(2.0, 4.0), (5.0, 7.0), (8.0, 10.0)]:
             openings.append({
                 # Align with long wall thickness at y = 0.25 ± 0.25
                 "polygon": box(x_start, 0.25 - half_t, x_end, 0.25 + half_t),
@@ -814,28 +820,28 @@ class TerrainFactory:
 
         # Short wall windows: y from 1" to 3", centered on x=2 and x=10 lines
         openings.append({
-            "polygon": box(2.0 - half_t, 1.0, 2.0 + half_t, 3.0),
+            "polygon": box(0.0 - half_t, 1.0, 0.0 + half_t, 3.0),
             "z_bottom": z1_bottom,
             "z_top": z1_top,
             "allows_movement": False,
             "allows_los": True
         })
         openings.append({
-            "polygon": box(10.0 - half_t, 1.0, 10.0 + half_t, 3.0),
+            "polygon": box(12.0 - half_t, 1.0, 12.0 + half_t, 3.0),
             "z_bottom": z1_bottom,
             "z_top": z1_top,
             "allows_movement": False,
             "allows_los": True
         })
 
-        # Second floor walls (damaged), height 2"
+        # Second floor walls (damaged), height 2"; short walls are 4" long
         add_wall(long_wall_poly, floor_level=2, height=2.0)
-        add_wall(short_wall_left_poly, floor_level=2, height=2.0)
-        add_wall(short_wall_right_poly, floor_level=2, height=2.0)
+        add_wall(short_wall_left_poly_upper, floor_level=2, height=2.0)
+        add_wall(short_wall_right_poly_upper, floor_level=2, height=2.0)
 
         # Floors: ground (0) uses full footprint; upper floors extend fully under wall thickness
         # Long wall thickness spans y ∈ [0.0, 0.5] (centerline at 0.25), so floors should start at y=0.0
-        upper_floor_poly = box(2.0, 0.0, 10.0, 4.0)
+        upper_floor_poly = box(0.0, 0.0, 12.0, 4.0)
         floors.append({
             "polygon": footprint,
             "elevation": 0.0,
