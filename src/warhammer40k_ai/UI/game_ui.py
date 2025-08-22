@@ -14,6 +14,7 @@ from warhammer40k_ai.classes.fight_phase_manager import FightPhaseManager, Fight
 # Import UI panels
 from .panels.roster_pane import RosterPane
 from .panels.info_pane import InfoPane
+from ..utility.event_bus import get_recent_actions, get_recent_dice
 from .panels.reserves_arrival_panel import ReservesArrivalPanel
 from .panels.unit_detail_panel import UnitDetailPanel
 
@@ -1063,7 +1064,8 @@ class GameView:
         scaled_battlefield_width = max(100, screen_width - 2 * scaled_roster_width)
         scaled_battlefield_height = max(100, screen_height - scaled_info_height)
         
-        roster_pane_height = scaled_battlefield_height + scaled_info_height
+        # Roster panes should not overlap the bottom logs pane; limit to battlefield height
+        roster_pane_height = scaled_battlefield_height
         player1_units = player1.get_army().units if player1.get_army() else []
         player2_units = player2.get_army().units if player2.get_army() else []
         
@@ -1107,7 +1109,8 @@ class GameView:
         self.scaled_info_height = scaled_info_height
 
         # Resize roster panes
-        roster_pane_height = scaled_battlefield_height + scaled_info_height
+        # Roster panes should not overlap the bottom logs pane; limit to battlefield height
+        roster_pane_height = scaled_battlefield_height
         self.left_roster_pane.rect.update(0, 0, scaled_roster_width, roster_pane_height)
         self.right_roster_pane.rect.update(scaled_battlefield_width + scaled_roster_width, 0,
                                            scaled_roster_width, roster_pane_height)
@@ -1157,6 +1160,194 @@ class GameView:
             self.right_roster_pane.create_buttons()
             
             print(f"✅ Roster panes refreshed successfully")
+
+    def _draw_top_status_pane(self, pane_height_px: int) -> None:
+        left = self.scaled_roster_width
+        width = self.scaled_battlefield_width
+        pygame.draw.rect(self.screen, (35, 35, 38), (left, 0, width, pane_height_px))
+        pygame.draw.rect(self.screen, (63, 63, 70), (left, 0, width, pane_height_px), 2)
+
+        third = width // 3
+        p1_rect = pygame.Rect(left, 0, third, pane_height_px)
+        mid_rect = pygame.Rect(left + third, 0, third, pane_height_px)
+        p2_rect = pygame.Rect(left + 2 * third, 0, third, pane_height_px)
+
+        try:
+            font = pygame.font.SysFont('Arial', 16, bold=True)
+            small = pygame.font.SysFont('Arial', 14)
+            status_font = pygame.font.SysFont('Arial', 18, bold=True)
+        except Exception:
+            font = pygame.font.Font(None, 16)
+            small = pygame.font.Font(None, 14)
+            status_font = pygame.font.Font(None, 18)
+
+        def draw_box(rect: pygame.Rect, text: str, align: str = 'left', bg=(60,60,67)):
+            pygame.draw.rect(self.screen, bg, rect)
+            pygame.draw.rect(self.screen, (90,90,100), rect, 1)
+            ts = font.render(text, True, (255,255,255))
+            tr = ts.get_rect()
+            if align == 'left':
+                tr.topleft = (rect.x + 8, rect.y + rect.height//2 - ts.get_height()//2)
+            elif align == 'right':
+                tr.topright = (rect.right - 8, rect.y + rect.height//2 - ts.get_height()//2)
+            else:
+                tr.center = rect.center
+            self.screen.blit(ts, tr)
+
+        p1 = self.player1
+        p2 = self.player2
+
+        box_w = p1_rect.width // 6 - 6
+        x0 = p1_rect.x + 6
+        y0 = p1_rect.y + 6
+        h = pane_height_px - 12
+        draw_box(pygame.Rect(x0, y0, box_w, h), f"VP: {p1.score}")
+        draw_box(pygame.Rect(x0 + box_w + 6, y0, box_w, h), f"CP: {p1.command_points}")
+        sec_area_width = int((p1_rect.width - (2 * (box_w + 6)) - 12) * 0.95)
+        self._draw_secondaries_buttons(pygame.Rect(x0 + 2*(box_w + 6), y0, sec_area_width, h), p1, align='left')
+
+        # Move primary button 1" (TILE_SIZE px) further left
+        primary_rect = pygame.Rect(mid_rect.x + 6 - int(1 * TILE_SIZE), y0, int(mid_rect.width * 0.45 * 0.9), h)
+        self._draw_primary_button(primary_rect)
+        if self.game.is_in_setup_phase():
+            round_text = self.game.get_current_setup_phase().name.replace('_', ' ').title()
+        else:
+            round_text = f"Turn {self.game.turn} - {self.game.get_current_player().name} - {self.game.phase.name.replace('_',' ').title()}"
+        st = status_font.render(round_text, True, (255, 140, 0))
+        info_rect = pygame.Rect(primary_rect.right + 10, y0, mid_rect.right - (primary_rect.right + 18), h)
+        sr = st.get_rect(center=info_rect.center)
+        self.screen.blit(st, sr)
+
+        box_w2 = p2_rect.width // 6 - 6
+        y2 = p2_rect.y + 6
+        h2 = h
+        draw_box(pygame.Rect(p2_rect.right - box_w2 - 6, y2, box_w2, h2), f"VP: {p2.score}", align='right')
+        draw_box(pygame.Rect(p2_rect.right - 2*(box_w2 + 6), y2, box_w2, h2), f"CP: {p2.command_points}", align='right')
+        sec2_area_width = int((p2_rect.width - (2 * (box_w2 + 6)) - 12) * 0.95)
+        # Position Player 2 secondaries area immediately to the left of the CP/VP boxes
+        sec2_x = p2_rect.right - 2*(box_w2 + 6) - 6 - sec2_area_width
+        self._draw_secondaries_buttons(pygame.Rect(sec2_x, y2, sec2_area_width, h2), p2, align='right')
+
+    def _draw_primary_button(self, rect: pygame.Rect) -> None:
+        pygame.draw.rect(self.screen, (60,60,67), rect)
+        pygame.draw.rect(self.screen, (90,90,100), rect, 1)
+        card = getattr(self.game.get_current_player(), 'primary_mission', None)
+        label = card.name if card else 'Primary: None'
+        try:
+            font = pygame.font.SysFont('Arial', 16, bold=True)
+        except Exception:
+            font = pygame.font.Font(None, 16)
+        ts = font.render(label, True, (255,255,255))
+        tr = ts.get_rect(center=rect.center)
+        self.screen.blit(ts, tr)
+        # register for click detection
+        if not hasattr(self, '_ui_hitboxes'):
+            self._ui_hitboxes = {}
+        self._ui_hitboxes['primary'] = (pygame.Rect(rect), card)
+
+    def _draw_secondaries_buttons(self, rect: pygame.Rect, player, align: str = 'left') -> None:
+        pygame.draw.rect(self.screen, (50,50,55), rect)
+        pygame.draw.rect(self.screen, (90,90,100), rect, 1)
+        try:
+            font = pygame.font.SysFont('Arial', 14, bold=False)
+        except Exception:
+            font = pygame.font.Font(None, 14)
+        actives = getattr(player, 'active_secondaries', []) or []
+        btn_w = (rect.width - 12) // 2
+        for i in range(2):
+            sub = pygame.Rect(rect.x + 4 + i * (btn_w + 4), rect.y + 4, btn_w, rect.height - 8)
+            name = actives[i].name if i < len(actives) else 'None'
+            bg = (80,80,90) if i < len(actives) else (70,70,75)
+            pygame.draw.rect(self.screen, bg, sub)
+            pygame.draw.rect(self.screen, (100,100,110), sub, 1)
+            ts = font.render(name, True, (230,230,230))
+            tr = ts.get_rect(center=sub.center)
+            self.screen.blit(ts, tr)
+            if not hasattr(self, '_ui_hitboxes'):
+                self._ui_hitboxes = {}
+            self._ui_hitboxes[f"sec_{id(sub)}"] = (pygame.Rect(sub), actives[i] if i < len(actives) else None)
+
+    def _draw_bottom_logs_pane(self) -> None:
+        height = self.scaled_info_height
+        y = self.scaled_battlefield_height
+        left = 0
+        width = self.screen.get_width()
+        pygame.draw.rect(self.screen, (45,45,48), (left, y, width, height))
+        pygame.draw.rect(self.screen, (63,63,70), (left, y, width, height), 2)
+
+        quarter = width // 4
+        boxes = [pygame.Rect(i*quarter, y, quarter, height) for i in range(4)]
+
+        p1_name = self.player1.name
+        p2_name = self.player2.name
+        p1_actions = get_recent_actions(p1_name, limit=50)
+        p1_dice = get_recent_dice(p1_name, limit=50)
+        p2_actions = get_recent_actions(p2_name, limit=50)
+        p2_dice = get_recent_dice(p2_name, limit=50)
+
+        self._draw_scroll_text_box(boxes[0], p1_actions, title=f"{p1_name} Actions")
+        self._draw_scroll_text_box(boxes[1], p1_dice, title=f"{p1_name} Dice")
+        self._draw_scroll_text_box(boxes[2], p2_dice, title=f"{p2_name} Dice")
+        self._draw_scroll_text_box(boxes[3], p2_actions, title=f"{p2_name} Actions")
+
+    def _draw_scroll_text_box(self, rect: pygame.Rect, lines, title: str = "Logs") -> None:
+        pygame.draw.rect(self.screen, (40,40,44), rect)
+        pygame.draw.rect(self.screen, (70,70,78), rect, 1)
+        try:
+            font = pygame.font.SysFont('Consolas', 14)
+            title_font = pygame.font.SysFont('Arial', 14, bold=True)
+        except Exception:
+            font = pygame.font.Font(None, 14)
+            title_font = pygame.font.Font(None, 14)
+        ts = title_font.render(title, True, (220,220,230))
+        self.screen.blit(ts, (rect.x + 6, rect.y + 6))
+        max_lines = (rect.height - 28) // 16
+        to_show = list(lines)[-max_lines:]
+        y_cursor = rect.y + rect.height - 6
+        for line in reversed(to_show):
+            surf = font.render(line, True, (200,200,200))
+            y_cursor -= surf.get_height() + 2
+            if y_cursor < rect.y + 24:
+                break
+            self.screen.blit(surf, (rect.x + 6, y_cursor))
+
+    def _draw_mission_popup_overlay(self, title: str, body: str) -> None:
+        overlay = pygame.Surface(self.screen.get_size(), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 160))
+        self.screen.blit(overlay, (0, 0))
+        width = int(self.screen.get_width() * 0.5)
+        height = int(self.screen.get_height() * 0.45)
+        rect = pygame.Rect(0, 0, width, height)
+        rect.center = (self.screen.get_width() // 2, self.screen.get_height() // 2)
+        pygame.draw.rect(self.screen, (35,35,38), rect)
+        pygame.draw.rect(self.screen, (90,90,100), rect, 2)
+        try:
+            title_font = pygame.font.SysFont('Arial', 18, bold=True)
+            body_font = pygame.font.SysFont('Arial', 16)
+        except Exception:
+            title_font = pygame.font.Font(None, 18)
+            body_font = pygame.font.Font(None, 16)
+        ts = title_font.render(title, True, (255,255,255))
+        tr = ts.get_rect(center=(rect.centerx, rect.y + 28))
+        self.screen.blit(ts, tr)
+        # simple wrapping
+        x = rect.x + 16
+        y = rect.y + 56
+        max_w = rect.width - 32
+        line = ''
+        for word in body.split(' '):
+            test = (line + ' ' + word).strip()
+            surf = body_font.render(test, True, (220,220,220))
+            if surf.get_width() > max_w and line:
+                ls = body_font.render(line, True, (220,220,220))
+                self.screen.blit(ls, (x, y))
+                y += ls.get_height() + 4
+                line = word
+            else:
+                line = test
+        if line:
+            ls = body_font.render(line, True, (220,220,220))
+            self.screen.blit(ls, (x, y))
     
     def update_roster_pane_titles(self):
         """Update roster pane titles to show Attacker/Defender after roles are determined."""
@@ -1201,7 +1392,30 @@ class GameView:
                     self.close_unit_details()
                     return True
 
-        # PRIORITY 1: Let phase manager handle phase-specific events first
+        # PRIORITY 1: Top pane and overlay handling BEFORE phase-specific handlers
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            # Mission popup overlay closes on any click
+            if getattr(self, '_mission_popup', None):
+                self._mission_popup = None
+                return True
+            # Intercept clicks in the top status pane so they don't fall through
+            if hasattr(self, 'top_pane_height_px'):
+                left = self.scaled_roster_width
+                width = self.scaled_battlefield_width
+                top_rect = pygame.Rect(left, 0, width, self.top_pane_height_px)
+                if top_rect.collidepoint(event.pos):
+                    # If clicking on mission buttons, open popup
+                    if hasattr(self, '_ui_hitboxes'):
+                        for _, (rect, card) in list(self._ui_hitboxes.items()):
+                            if rect.collidepoint(event.pos) and card is not None:
+                                title = getattr(card, 'name', 'Mission')
+                                body = getattr(card, 'description', '')
+                                self._mission_popup = {'title': title, 'body': body}
+                                return True
+                    # Otherwise consume the click within top pane
+                    return True
+
+        # PRIORITY 2: Let phase manager handle phase-specific events next
         # print(f"🔍 DEBUG: GameView - Delegating to phase manager")
         if self.phase_manager.handle_event(event):
             # print(f"🔍 DEBUG: GameView - Event was handled by phase manager")
@@ -1210,7 +1424,7 @@ class GameView:
             # print(f"🔍 DEBUG: GameView - Event was not handled by phase manager")
             pass
         
-        # PRIORITY 2: Handle universal UI events that apply to all phases
+        # PRIORITY 3: Handle universal UI events that apply to all phases
         if event.type == pygame.MOUSEBUTTONDOWN:
             # Check for unit detail panel clicks (highest priority)
             if self.detailed_unit and event.button == 1:  # Left click
@@ -1236,6 +1450,10 @@ class GameView:
             mouse_x, mouse_y = pygame.mouse.get_pos()
             self.on_mouse_scroll(mouse_x, mouse_y, event.y)
         elif event.type == pygame.KEYDOWN:
+            # Close mission popup with ESC
+            if event.key == pygame.K_ESCAPE and getattr(self, '_mission_popup', None):
+                self._mission_popup = None
+                return True
             # Handle unit detail panel scrolling
             if self.detailed_unit:
                 if event.key == pygame.K_UP or event.key == pygame.K_w:
@@ -1418,14 +1636,16 @@ class GameView:
     
     def screen_to_game_coords(self, screen_x: int, screen_y: int) -> Tuple[float, float]:
         """Convert screen coordinates to game coordinates with proper scaling"""
+        top_offset = getattr(self, 'top_pane_height_px', 0)
         game_x = (screen_x - self.scaled_roster_width - self.offset_x) / (TILE_SIZE * self.zoom_level)
-        game_y = (screen_y - self.offset_y) / (TILE_SIZE * self.zoom_level)
+        game_y = (screen_y - top_offset - self.offset_y) / (TILE_SIZE * self.zoom_level)
         return game_x, game_y
     
     def game_to_screen_coords(self, game_x: float, game_y: float) -> Tuple[int, int]:
         """Convert game coordinates to screen coordinates with proper scaling"""
+        top_offset = getattr(self, 'top_pane_height_px', 0)
         screen_x = int(self.scaled_roster_width + (game_x * TILE_SIZE * self.zoom_level) + self.offset_x)
-        screen_y = int((game_y * TILE_SIZE * self.zoom_level) + self.offset_y)
+        screen_y = int((game_y * TILE_SIZE * self.zoom_level) + self.offset_y + top_offset)
         return screen_x, screen_y
 
     def draw_move_path(self, unit: Unit):
@@ -1474,7 +1694,9 @@ class GameView:
         self.right_roster_pane.draw(self.screen, self.game)
 
         # Draw the battlefield (use scaled viewport size and scaling-aware drawing)
-        battlefield_surface = pygame.Surface((self.scaled_battlefield_width, self.scaled_battlefield_height))
+        top_pane_height_px = int(2 * TILE_SIZE)
+        self.top_pane_height_px = top_pane_height_px
+        battlefield_surface = pygame.Surface((self.scaled_battlefield_width, self.scaled_battlefield_height - top_pane_height_px))
         draw_battlefield(
             battlefield_surface,
             self.zoom_level,
@@ -1649,11 +1871,12 @@ class GameView:
             if isinstance(current_handler, PreBattlePhaseHandler):
                 current_handler.draw_scout_visual_feedback(battlefield_surface)
 
-        # Blit the battlefield surface to the main screen using scaled roster width
-        self.screen.blit(battlefield_surface, (self.scaled_roster_width, 0))
+        # Draw top mission/status pane and shift battlefield down
+        self._draw_top_status_pane(top_pane_height_px)
+        self.screen.blit(battlefield_surface, (self.scaled_roster_width, top_pane_height_px))
 
-        # Draw enhanced InfoPane
-        self.info_pane.draw(self.screen, self.game, self)
+        # Draw repurposed bottom logs pane
+        self._draw_bottom_logs_pane()
 
         # Draw unit details panel if requested
         if self.detailed_unit:
@@ -1710,6 +1933,9 @@ class GameView:
         if hasattr(self, 'mission_selection_dialog') and self.mission_selection_dialog.visible:
             self.mission_selection_dialog.draw(self.screen)
 
+        # Finally, draw mission popup overlay above everything if present
+        if getattr(self, '_mission_popup', None):
+            self._draw_mission_popup_overlay(self._mission_popup.get('title', 'Mission'), self._mission_popup.get('body', ''))
         pygame.display.update()
 
     # Note: on_key_press is now handled by phase-specific handlers in PhaseManager

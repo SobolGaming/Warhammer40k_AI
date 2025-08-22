@@ -1066,5 +1066,31 @@ class SecureNoMansLandSecondary(SecondaryMissionCard):
 # ---------- Deck helpers ----------
 
 def default_secondary_deck() -> List[SecondaryMissionCard]:
-    # Minimal starter deck; expand as more secondaries are implemented
-    return [BringItDownSecondary(), SabotageSecondary()]
+    # Build full deck and shuffle for randomness each game
+    deck: List[SecondaryMissionCard] = [
+        BringItDownSecondary(),
+        SabotageSecondary(),
+        BehindEnemyLinesSecondary(),
+        StormHostileObjectiveSecondary(),
+        EngageOnAllFrontsSecondary(),
+        DefendStrongholdSecondary(),
+        MarkedForDeathSecondary(),
+        EstablishLocusSecondary(),
+        CleanseSecondary(),
+        AssassinationSecondary(),
+        NoPrisonersSecondary(),
+        CullTheHordeSecondary(),
+        DisplayOfMightSecondary(),
+        OverwhelmingForceSecondary(),
+        ExtendBattleLinesSecondary(),
+        ATemptingTargetSecondary(),
+        RecoverAssetsSecondary(),
+        AreaDenialSecondary(),
+        SecureNoMansLandSecondary(),
+    ]
+    try:
+        import random
+        random.shuffle(deck)
+    except Exception:
+        pass
+    return deck

@@ -446,6 +446,12 @@ class IndividualModelMovementDialog(BaseDialog):
         # Unit position is now determined by model positions
         
         print(f"✅ {model.name} (Model #{model_index + 1}) moved to ({final_position[0]:.1f}, {final_position[1]:.1f})")
+        try:
+            from ...utility.event_bus import append_action
+            pn = model.parent_unit.get_parent_army().player.name
+            append_action(pn, f"{model.name} moved to ({final_position[0]:.1f}, {final_position[1]:.1f})")
+        except Exception:
+            pass
         return True
     
     def _is_model_in_base_contact(self, model) -> bool:

@@ -102,7 +102,16 @@ class Player:
 
     def set_secondary_deck(self, cards: list[SecondaryMissionCard] | None = None) -> None:
         # Use provided or default deck
-        self.secondary_deck = list(cards) if cards is not None else default_secondary_deck()
+        if cards is not None:
+            self.secondary_deck = list(cards)
+        else:
+            self.secondary_deck = default_secondary_deck()
+            # Shuffle for randomness if not already shuffled upstream
+            try:
+                import random
+                random.shuffle(self.secondary_deck)
+            except Exception:
+                pass
         self.active_secondaries = []
         self.discarded_secondaries = []
 
@@ -123,6 +132,10 @@ class Player:
                 if hasattr(card, 'can_be_drawn') and not card.can_be_drawn(game, self):
                     # Discard immediately and continue drawing
                     self.discarded_secondaries.append(card)
+                    try:
+                        print(f"🗑️ {self.name} cannot draw Secondary: {card.name} (ineligible) → discarded")
+                    except Exception:
+                        pass
                     continue
                 # Allow cards to perform on-draw initialization
                 if hasattr(card, 'on_draw'):
@@ -133,6 +146,10 @@ class Player:
             except Exception:
                 pass
             self.active_secondaries.append(card)
+            try:
+                print(f"🃏 {self.name} drew Secondary: {card.name}")
+            except Exception:
+                pass
 
     def discard_secondary(self, card: SecondaryMissionCard, gain_cp: bool = False) -> None:
         if card in self.active_secondaries:

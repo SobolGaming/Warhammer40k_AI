@@ -86,11 +86,13 @@ def initialize_game(player1_type: str, player2_type: str,
     screen = None
     if not training_mode:
         pygame.init()
-        from warhammer40k_ai.UI.game_ui import ROSTER_PANE_WIDTH, BATTLEFIELD_WIDTH, BATTLEFIELD_HEIGHT, INFO_PANE_HEIGHT
+        from warhammer40k_ai.UI.game_ui import ROSTER_PANE_WIDTH, BATTLEFIELD_WIDTH, BATTLEFIELD_HEIGHT, INFO_PANE_HEIGHT, TILE_SIZE
         
         # Calculate desired window size
         desired_width = BATTLEFIELD_WIDTH + 2 * ROSTER_PANE_WIDTH
-        desired_height = BATTLEFIELD_HEIGHT + INFO_PANE_HEIGHT
+        # Add 2" top status pane height to default window
+        TOP_PANE_HEIGHT = int(2 * TILE_SIZE)
+        desired_height = BATTLEFIELD_HEIGHT + INFO_PANE_HEIGHT + TOP_PANE_HEIGHT
         
         # Get monitor resolution
         info = pygame.display.Info()

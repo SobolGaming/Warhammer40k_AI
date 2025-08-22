@@ -351,8 +351,8 @@ class TerrainLayoutsRegistry:
         1: [
             TerrainPlacementSimple(preset='ruin_rect_12x6_variant1', rotation_degrees=90.0, world_origin=(22.0, 28.0)),
             TerrainPlacementSimple(preset='ruin_rect_12x6_variant1', rotation_degrees=270.0, world_origin=(38.0, 16.0)),
-            TerrainPlacementSimple(preset='ruin_rect_12x6_variant2', rotation_degrees=270.0, world_origin=(12.0, 5.0)),
-            TerrainPlacementSimple(preset='ruin_rect_12x6_variant2', rotation_degrees=90.0, world_origin=(48.0, 39.0)),
+            TerrainPlacementSimple(preset='ruin_rect_12x6_variant2', rotation_degrees=270.0, world_origin=(6.0, 17.0)),
+            TerrainPlacementSimple(preset='ruin_rect_12x6_variant2', rotation_degrees=90.0, world_origin=(54.0, 27.0)),
         ],
         2: [
             TerrainPlacementSimple(preset='ruin_rect_12x6_variant1', rotation_degrees=math.degrees(math.atan2(4, 4.5)), world_origin=(17.0, 15.5)),

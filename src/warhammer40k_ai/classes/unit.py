@@ -503,6 +503,12 @@ class Unit:
         
         # Roll D6 to see if Deadly Demise triggers
         trigger_roll = get_roll("D6")
+        try:
+            from ..utility.event_bus import append_dice
+            pn = self.get_parent_army().player.name
+            append_dice(pn, f"Deadly Demise trigger: rolled {trigger_roll} (need 6)")
+        except Exception:
+            pass
         if trigger_roll != 6:
             print(f"🎲 Deadly Demise trigger roll: {trigger_roll} (needed 6) - No explosion!")
             return
@@ -1112,6 +1118,12 @@ class Unit:
         """Pre-roll advance dice for UI display. Returns the advance roll."""
         if not hasattr(self.round_state, 'advance_roll') or self.round_state.advance_roll is None:
             advance_roll = get_roll("D6")
+            try:
+                from ..utility.event_bus import append_dice
+                pn = self.get_parent_army().player.name
+                append_dice(pn, f"Advance roll: {advance_roll} for {self.name}")
+            except Exception:
+                pass
             self.round_state.advance_roll = advance_roll
             print(f"🎲 {self.name} advance roll: {advance_roll}\" (Move {self.movement}\" + {advance_roll}\" = {self.movement + advance_roll}\")")
             return advance_roll
@@ -1174,6 +1186,12 @@ class Unit:
             # Use stored advance roll if available, otherwise roll new one
             if not hasattr(self.round_state, 'advance_roll') or self.round_state.advance_roll is None:
                 advance_roll = get_roll("D6")
+                try:
+                    from ..utility.event_bus import append_dice
+                    pn = self.get_parent_army().player.name
+                    append_dice(pn, f"Advance roll: {advance_roll} for {self.name}")
+                except Exception:
+                    pass
                 self.round_state.advance_roll = advance_roll
                 print(f"Advance roll: {advance_roll}")
             else:
@@ -2425,6 +2443,12 @@ class Unit:
         # Report shooting results
         if successful_attacks > 0:
             print(f"✅ {self.name} completed shooting with {successful_attacks} attacks executed")
+            try:
+                from ..utility.event_bus import append_action
+                pn = self.get_parent_army().player.name
+                append_action(pn, f"{self.name} completed shooting: {successful_attacks} attacks")
+            except Exception:
+                pass
             
             # Check if target unit was destroyed
             for declaration in weapon_declarations:

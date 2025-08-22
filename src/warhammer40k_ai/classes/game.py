@@ -1097,7 +1097,12 @@ class Game:
         # Execute command actions for current player's units (without resetting round state)
         current_player = self.get_current_player()
         # Secondary Missions: draw up to two at the start of your Command phase
+        before = [getattr(c, 'name', 'Unknown') for c in getattr(current_player, 'active_secondaries', [])]
         current_player.draw_secondary_until_two(self)
+        after = [getattr(c, 'name', 'Unknown') for c in getattr(current_player, 'active_secondaries', [])]
+        newly_drawn = [name for name in after if name not in before]
+        if newly_drawn:
+            print(f"🃏 {current_player.name} active Secondaries: {', '.join(after)}")
         # If in fifth battle round and going second, primary scoring is at end of turn, not here
         for unit in current_player.get_army().units:
             # Do battle shock tests and other command phase actions without resetting round state
@@ -2277,6 +2282,12 @@ class Game:
         
         player1_roll = get_roll("1D6")
         player2_roll = get_roll("1D6")
+        try:
+            from ..utility.event_bus import append_dice
+            append_dice(self.players[0].name, f"First turn roll: {player1_roll}")
+            append_dice(self.players[1].name, f"First turn roll: {player2_roll}")
+        except Exception:
+            pass
         
         print(f"🎲 {self.players[0].name} rolled: {player1_roll}")
         print(f"🎲 {self.players[1].name} rolled: {player2_roll}")
@@ -2449,26 +2460,35 @@ class Game:
     
     def execute_determine_first_turn_order_phase(self) -> None:
         """Phase 7: Determine First Turn Order - Attacker rolls to see who goes first."""
-        print("📋 DETERMINE FIRST TURN ORDER: Rolling for first turn...")
-        
+        print("📋 DETERMINE FIRST TURN ORDER: Rolling for first turn (roll-off)...")
+
         from ..utility.dice import get_roll
-        
-        attacker = self.get_attacker()
-        defender = self.get_defender()
-        
-        # Attacker rolls 1D6
-        attacker_roll = get_roll("1D6")
-        print(f"🎲 {attacker.name} (Attacker) rolled: {attacker_roll}")
-        
-        if attacker_roll >= 4:
-            # Attacker chooses who goes first
-            self.first_turn_player_index = self.attacker_index  # For simplicity, attacker chooses themselves
-            print(f"✅ {attacker.name} goes first! (Attacker rolled {attacker_roll}, needed 4+)")
-        else:
-            # Defender goes first
-            self.first_turn_player_index = self.defender_index
-            print(f"✅ {defender.name} goes first! (Attacker rolled {attacker_roll}, needed 4+)")
-        
+
+        p1 = self.players[0]
+        p2 = self.players[1]
+
+        while True:
+            roll1 = get_roll("1D6")
+            roll2 = get_roll("1D6")
+            try:
+                from ..utility.event_bus import append_dice
+                append_dice(p1.name, f"First turn roll-off: {roll1}")
+                append_dice(p2.name, f"First turn roll-off: {roll2}")
+            except Exception:
+                pass
+            print(f"🎲 {p1.name} rolled: {roll1}")
+            print(f"🎲 {p2.name} rolled: {roll2}")
+            if roll1 == roll2:
+                print("🔁 Tie on roll-off - re-rolling...")
+                continue
+            if roll1 > roll2:
+                self.first_turn_player_index = 0
+                print(f"✅ {p1.name} wins the roll-off and takes the first turn")
+            else:
+                self.first_turn_player_index = 1
+                print(f"✅ {p2.name} wins the roll-off and takes the first turn")
+            break
+
         # Clear deployment actions since deployment phase is now complete
         self.clear_deployment_actions()
     

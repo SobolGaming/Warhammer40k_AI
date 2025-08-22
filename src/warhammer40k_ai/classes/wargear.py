@@ -3,6 +3,7 @@ from enum import Enum, auto
 from collections import namedtuple
 import re
 from warhammer40k_ai.utility.dice import DiceCollection, get_roll
+from warhammer40k_ai.utility.event_bus import append_dice
 from warhammer40k_ai.utility.range import Range
 from warhammer40k_ai.utility.count import Count
 from dataclasses import dataclass
@@ -325,6 +326,12 @@ class WargearProfile:
         hit_result['final_needed'] = final_needed
 
         dice_roll = get_roll("D6")
+        try:
+            # weapon_display_name available in attack(); provide fallback here
+            weapon_name_for_log = getattr(self, 'parent_wargear', None).name if getattr(self, 'parent_wargear', None) else getattr(self, 'name', 'Weapon')
+            append_dice(attacker.parent_unit.get_parent_army().player.name, f"Hit roll: {dice_roll} for {attacker.name} with {weapon_name_for_log}")
+        except Exception:
+            pass
         hit_result['roll'] = dice_roll
         
         if dice_roll == 1:  # unmodified dice roll of 1 is always a miss
@@ -376,6 +383,11 @@ class WargearProfile:
         wound_result['target_toughness'] = target_toughness
         strength = self.strength
         dice_roll = get_roll("D6")
+        try:
+            weapon_name_for_log = getattr(self, 'parent_wargear', None).name if getattr(self, 'parent_wargear', None) else getattr(self, 'name', 'Weapon')
+            append_dice(attacker.parent_unit.get_parent_army().player.name, f"Wound roll: {dice_roll} vs T{target_toughness} by {attacker.name} with {weapon_name_for_log}")
+        except Exception:
+            pass
         wound_result['roll'] = dice_roll
 
         if dice_roll == 1:  # unmodified dice roll of 1 is always a miss
@@ -466,6 +478,10 @@ class WargearProfile:
                 save_result['final_save'] = save_value
 
         dice_roll = get_roll("D6")
+        try:
+            append_dice(target_model.parent_unit.get_parent_army().player.name, f"Save roll: {dice_roll} (need {save_value}+) for {target_model.name}")
+        except Exception:
+            pass
         save_result['roll'] = dice_roll
         save_result['needed'] = save_value
         

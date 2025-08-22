@@ -1001,6 +1001,12 @@ class ShootingDeclarationDialog(BaseDialog):
                     'weapon_instance': weapon_info['weapon_instance']
                 })
             print(f"✅ {self.unit.name} targeting {clicked_unit.name} with {self.selected_weapon.parent_wargear.name} group (x{self.selected_weapon_group['count']})")
+            try:
+                from ...utility.event_bus import append_action
+                pn = self.unit.get_parent_army().player.name
+                append_action(pn, f"{self.unit.name} targets {clicked_unit.name} with {self.selected_weapon.parent_wargear.name} (x{self.selected_weapon_group['count']})")
+            except Exception:
+                pass
         else:
             # Handle individual weapon targeting
             weapon_instance = getattr(self, 'selected_weapon_instance', 1)
@@ -1016,6 +1022,12 @@ class ShootingDeclarationDialog(BaseDialog):
                 'weapon_instance': weapon_instance
             })
             print(f"✅ {self.unit.name} targeting {clicked_unit.name} with {self.selected_weapon.parent_wargear.name} #{weapon_instance} (assigned to {assigned_model[0].name if assigned_model else 'no model'})")
+            try:
+                from ...utility.event_bus import append_action
+                pn = self.unit.get_parent_army().player.name
+                append_action(pn, f"{self.unit.name} targets {clicked_unit.name} with {self.selected_weapon.parent_wargear.name} #{weapon_instance}")
+            except Exception:
+                pass
         
         # Clear targeting mode and return success
         self.clear_targeting_mode()
