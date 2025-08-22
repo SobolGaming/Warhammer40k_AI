@@ -367,64 +367,32 @@ class TerrainLayoutsRegistry:
             TerrainPlacementSimple(preset='ruin_rect_12x6_variant3', rotation_degrees=math.degrees(math.atan2(3, 5)), world_origin=(45.8, 6.0)),
         ],
         4: [
-            TerrainPlacementSpec(
-                preset='ruin_rect_12x6_variant1',
-                footprint=[(4.0, 32.0), (8.0, 27.5), (17.0, 35.5), (13.0, 40.0)],
-                long_wall_side='right',
-            ),
-            TerrainPlacementSpec(
-                preset='ruin_rect_12x6_variant1',
-                footprint=[(43.0, 8.5), (47.0, 4.0), (56.0, 12.0), (52.0, 16.5)],
-                long_wall_side='left',
-            ),
+            TerrainPlacementSimple(preset='ruin_rect_12x6_variant1', rotation_degrees=math.degrees(math.atan2(4, 4.5)), world_origin=(8.0, 27.5)),
+            TerrainPlacementSimple(preset='ruin_rect_12x6_variant1', rotation_degrees=math.degrees(math.atan2(4, 4.5)) + 180.0, world_origin=(52.0, 16.5)),
+            TerrainPlacementSimple(preset='ruin_rect_12x6_variant2', rotation_degrees=0.0, world_origin=(12.0, 4.0)),
+            TerrainPlacementSimple(preset='ruin_rect_12x6_variant2', rotation_degrees=180.0, world_origin=(48.0, 40.0)),
         ],
         5: [
-            TerrainPlacementSpec(
-                preset='ruin_rect_12x6_variant1',
-                footprint=[(24.0, 4.0), (36.0, 4.0), (36.0, 10.0), (24.0, 10.0)],
-                long_wall_side='bottom',
-            ),
-            TerrainPlacementSpec(
-                preset='ruin_rect_12x6_variant1',
-                footprint=[(24.0, 34.0), (36.0, 34.0), (36.0, 40.0), (24.0, 40.0)],
-                long_wall_side='top',
-            ),
+            TerrainPlacementSimple(preset='ruin_rect_12x6_variant1', rotation_degrees=180.0, world_origin=(36.0, 10.0)),
+            TerrainPlacementSimple(preset='ruin_rect_12x6_variant1', rotation_degrees=0.0, world_origin=(24.0, 34.0)),
+            TerrainPlacementSimple(preset='ruin_rect_12x6_variant2', rotation_degrees=math.degrees(math.atan2(11, 5)) - 90, world_origin=(5.0, 16.0)),
+            TerrainPlacementSimple(preset='ruin_rect_12x6_variant2', rotation_degrees=math.degrees(math.atan2(11, 5)) + 90, world_origin=(55.0, 28.0)),
         ],
         6: [
-            TerrainPlacementSpec(
-                preset='ruin_rect_12x6_variant1',
-                footprint=[(4.0, 31.0), (8.5, 27.0), (16.5, 36.0), (12.0, 40.0)],
-                long_wall_side='right',
-            ),
-            TerrainPlacementSpec(
-                preset='ruin_rect_12x6_variant1',
-                footprint=[(43.5, 8.0), (48.0, 4.0), (56.0, 13.0), (51.5, 17.0)],
-                long_wall_side='left',
-            ),
+            TerrainPlacementSimple(preset='ruin_rect_12x6_variant1', rotation_degrees=math.degrees(math.atan2(4.5, 4.0)), world_origin=(8.5, 27.0)),
+            TerrainPlacementSimple(preset='ruin_rect_12x6_variant1', rotation_degrees=math.degrees(math.atan2(4.5, 4.0)) + 180.0, world_origin=(51.5, 17.0)),
+            TerrainPlacementSimple(preset='ruin_rect_12x6_variant2', rotation_degrees=270.0, world_origin=(20.0, 40.0)),
+            TerrainPlacementSimple(preset='ruin_rect_12x6_variant2', rotation_degrees=90.0, world_origin=(40.0, 4.0)),
         ],
         7: [
-            TerrainPlacementSpec(
-                preset='ruin_rect_12x6_variant1',
-                footprint=[(23.0, 3.0), (29.0, 3.0), (29.0, 15.0), (23.0, 15.0)],
-                long_wall_side='right',
-            ),
-            TerrainPlacementSpec(
-                preset='ruin_rect_12x6_variant1',
-                footprint=[(31.0, 29.0), (37.0, 29.0), (37.0, 41.0), (31.0, 41.0)],
-                long_wall_side='left',
-            ),
+            TerrainPlacementSimple(preset='ruin_rect_12x6_variant1', rotation_degrees=90.0, world_origin=(29.0, 3.0)),
+            TerrainPlacementSimple(preset='ruin_rect_12x6_variant1', rotation_degrees=270.0, world_origin=(31.0, 41.0)),
         ],
         8: [
-            TerrainPlacementSpec(
-                preset='ruin_rect_12x6_variant1',
-                footprint=[(22.0, 0.0), (28.0, 0.0), (28.0, 12.0), (22.0, 12.0)],
-                long_wall_side='right',
-            ),
-            TerrainPlacementSpec(
-                preset='ruin_rect_12x6_variant1',
-                footprint=[(32.0, 32.0), (38.0, 32.0), (38.0, 44.0), (32.0, 44.0)],
-                long_wall_side='left',
-            ),
+            TerrainPlacementSimple(preset='ruin_rect_12x6_variant1', rotation_degrees=90.0, world_origin=(28.0, 0.0)),
+            TerrainPlacementSimple(preset='ruin_rect_12x6_variant1', rotation_degrees=270.0, world_origin=(32.0, 44.0)),
+            TerrainPlacementSimple(preset='ruin_rect_12x6_variant3', rotation_degrees=math.degrees(math.atan2(4, 4.5)) + 180.0, world_origin=(15.0, 40.0)),
+            TerrainPlacementSimple(preset='ruin_rect_12x6_variant3', rotation_degrees=math.degrees(math.atan2(4, 4.5)), world_origin=(45.0, 4.0)),
         ],
     }
 
