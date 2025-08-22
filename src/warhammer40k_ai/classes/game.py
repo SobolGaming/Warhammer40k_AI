@@ -127,6 +127,8 @@ class Game:
         self.in_progress_actions: List[Dict[str, Any]] = []
         self.destroyed_units_this_turn: List['Unit'] = []
         self.completed_actions_this_turn: List[Dict[str, Any]] = []
+        self.models_destroyed_this_turn: List['Model'] = []
+        self.destroyed_units_this_battle_round_by_player: Dict[Player, int] = {}
 
     def add_player(self, player: Player) -> None:
         """Add a player to the game."""
@@ -1196,6 +1198,7 @@ class Game:
         # Clear per-turn event lists
         self.destroyed_units_this_turn = []
         self.completed_actions_this_turn = []
+        self.models_destroyed_this_turn = []
 
     def end_of_battle_round_scoring(self) -> None:
         """Apply end-of-battle-round scoring for primaries that need it (e.g., Purge the Foe)."""
@@ -1214,6 +1217,39 @@ class Game:
                     if added:
                         player.add_score(added)
                         print(f"🎯 {player.name} scored {added} VP (end of battle round) from Primary: {player.primary_mission.name}")
+
+    def record_unit_destroyed(self, unit: 'Unit') -> None:
+        """Record a unit destroyed event and incrementally score relevant secondaries."""
+        try:
+            self.destroyed_units_this_turn.append(unit)
+        except Exception:
+            pass
+        # Tally for Purge the Foe end-of-battle-round scoring
+        try:
+            owner_player = unit.get_parent_army().player if unit.get_parent_army() else None
+            if owner_player is not None:
+                self.destroyed_units_this_battle_round_by_player[owner_player] = self.destroyed_units_this_battle_round_by_player.get(owner_player, 0) + 1
+        except Exception:
+            pass
+        # Incremental scoring for active secondaries (No Prisoners, Overwhelming Force)
+        try:
+            owner_player = unit.get_parent_army().player if unit.get_parent_army() else None
+            for player in self.players:
+                if player is owner_player:
+                    continue
+                for card in getattr(player, 'active_secondaries', []) or []:
+                    if hasattr(card, 'on_unit_destroyed'):
+                        try:
+                            points = card.on_unit_destroyed(self, player, unit)
+                        except Exception:
+                            points = 0
+                        if points:
+                            added = card.add_score(points)
+                            if added:
+                                player.add_score(added)
+                                print(f"🎯 {player.name} scored {added} VP from Secondary: {card.name} (unit destroyed)")
+        except Exception:
+            pass
 
     # ---------- Mission Action APIs ----------
 

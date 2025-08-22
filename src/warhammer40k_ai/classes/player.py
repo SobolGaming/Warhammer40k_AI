@@ -124,6 +124,12 @@ class Player:
                     # Discard immediately and continue drawing
                     self.discarded_secondaries.append(card)
                     continue
+                # Allow cards to perform on-draw initialization
+                if hasattr(card, 'on_draw'):
+                    try:
+                        card.on_draw(game, self)
+                    except Exception:
+                        pass
             except Exception:
                 pass
             self.active_secondaries.append(card)
