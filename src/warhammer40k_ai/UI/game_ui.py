@@ -1640,6 +1640,8 @@ class GameView:
                 self.offset_x,
                 self.offset_y,
             )
+            # Highlight valid targets in green overlay if targeting mode active
+            # Remove precomputed valid target highlighting to avoid heavy per-frame work
 
         # Draw scout visual feedback if in scout phase (draw on battlefield surface)
         if hasattr(self, 'phase_manager') and self.phase_manager:

@@ -23,8 +23,9 @@ class SetupPhase(Enum):
     DETERMINE_ATTACKER_AND_DEFENDER = 3
     DECLARE_BATTLE_FORMATIONS = 4  # Attach leaders to units if you want; declare reserve; declare embarked unts
     DEPLOY_ARMIES = 5
-    DETERMINE_FIRST_TURN_ORDER = 6
-    RESOLVE_PREBATTLE_RULES = 7  # Resolve any pre-battle rules, abilities, or stratagems
+    REDEPLOY_UNITS = 6
+    DETERMINE_FIRST_TURN_ORDER = 7
+    RESOLVE_PREBATTLE_RULES = 8  # Resolve any pre-battle rules, abilities, or stratagems
 
 
 class BattleRoundPhases(Enum):
@@ -1079,6 +1080,11 @@ class Game:
                 for player in self.players:
                     for unit in player.get_army().units:
                         unit.initialize_round()
+            # Start of COMMAND_PHASE for the new current player
+            try:
+                self.start_command_phase()
+            except Exception:
+                pass
 
     def is_command_phase(self) -> bool:
         return self.phase == BattleRoundPhases.COMMAND_PHASE
@@ -2350,6 +2356,96 @@ class Game:
             # Only print completion message if not waiting for manual input
             if not getattr(self, 'waiting_for_deployment_input', False):
                 print("✅ Army deployment complete")
+
+    def execute_redeploy_units_phase(self) -> None:
+        """Phase: Redeploy Units - Alternate resolving redeploy rules, Attacker first.
+
+        Rules:
+        - Some rules allow redeploying certain units after both armies are deployed.
+        - Players alternate resolving such rules, starting with the Attacker.
+        - Redeploy allows selecting a new valid deployment location for eligible units.
+        """
+        print("📋 REDEPLOY UNITS: Resolving redeploy abilities...")
+        if self.attacker_index is None or self.defender_index is None:
+            print("ℹ️ Attacker/Defender not set; skipping Redeploy Units phase")
+            return
+
+        players_in_order = [self.players[self.attacker_index], self.players[self.defender_index]]
+
+        # Collect eligible units per convention: unit.has_redeploy() -> (has, count, can_place_in_reserves)
+        redeploy_pool = {p: [] for p in players_in_order}
+        for p in players_in_order:
+            army = p.get_army()
+            if not army:
+                continue
+            for u in army.units:
+                try:
+                    has_redeploy, count, can_place_in_reserves = u.has_redeploy()
+                except Exception:
+                    has_redeploy, count, can_place_in_reserves = (False, 0, False)
+                if has_redeploy and u.deployed and u.reserve_status == 'deployed':
+                    redeploy_pool[p].append((u, count, can_place_in_reserves))
+
+        if not any(redeploy_pool.values()):
+            print("✅ No units with Redeploy; skipping")
+            return
+
+        # Alternate between players until all redeploy options exhausted
+        turn_idx = 0
+        while any(redeploy_pool[p] for p in players_in_order):
+            current_player = players_in_order[turn_idx % 2]
+            options = redeploy_pool[current_player]
+            if not options:
+                turn_idx += 1
+                continue
+            # Pick the first available unit; in the future, UI/AI should decide
+            unit, remaining, can_place_in_reserves = options.pop(0)
+            print(f"🔄 {current_player.name} redeploys {unit.name}")
+            # If the redeploy count was D3, print the stored roll result if available
+            roll_info = getattr(unit, '_redeploy_d_roll', None)
+            if roll_info:
+                print(f"🎲 Redeploy count ({roll_info['expr']}) for {unit.name}: {roll_info['total']} (rolled {roll_info['rolls']})")
+            # Simple random valid redeploy within current DZ for now
+            # A proper UI should present valid positions; here we keep rules isolated
+            pos = self._find_valid_redeploy_position(current_player, unit)
+            if pos:
+                # Use unit's deployment placement to set model positions
+                try:
+                    from shapely.geometry import Polygon as _Poly  # noqa: F401
+                except Exception:
+                    pass
+                positions = unit.calculate_model_positions(
+                    pos[0], pos[1], self.map,
+                    boundary_repulsors=self.map.get_battlefield_edge_repulsors()
+                )
+                if positions:
+                    print(f"✅ {unit.name} redeployed to ({pos[0]:.1f}, {pos[1]:.1f})")
+                else:
+                    print(f"⚠️ Redeploy failed to find valid formation for {unit.name}")
+            else:
+                print(f"⚠️ No valid redeploy position found for {unit.name}")
+            # If multiple redeploy counts allowed, requeue
+            if remaining > 1:
+                options.insert(0, (unit, remaining - 1, can_place_in_reserves))
+            turn_idx += 1
+
+        print("✅ Redeploy phase complete")
+
+    def _find_valid_redeploy_position(self, player: 'Player', unit: 'Unit') -> tuple | None:
+        # Naive sampling within player's DZ; real impl should mirror deployment validation
+        import random
+        dz = self.deployment_zones.get(player.name, {})
+        zone = dz.get('zone')
+        for _ in range(200):
+            x = random.uniform(0, self.battlefield.width)
+            y = random.uniform(0, self.battlefield.height)
+            if zone and hasattr(zone, 'contains_point') and not zone.contains_point(x, y):
+                continue
+            z = self.map.get_height_at_point(x, y)
+            # Reuse arrival placement validation
+            if self.can_place_unit_arriving_from_reserves(unit, (x, y, z)):
+                return (x, y, z)
+        return None
     
     def execute_determine_first_turn_order_phase(self) -> None:
         """Phase 7: Determine First Turn Order - Attacker rolls to see who goes first."""
@@ -2468,6 +2564,8 @@ class Game:
                 manual_phases=kwargs.get('manual_phases', False),
                 decision_makers=kwargs.get('decision_makers')
             )
+        elif self.setup_phase == SetupPhase.REDEPLOY_UNITS:
+            self.execute_redeploy_units_phase()
         elif self.setup_phase == SetupPhase.DETERMINE_FIRST_TURN_ORDER:
             self.execute_determine_first_turn_order_phase()
         elif self.setup_phase == SetupPhase.RESOLVE_PREBATTLE_RULES:

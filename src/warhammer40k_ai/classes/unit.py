@@ -15,6 +15,7 @@ import re
 import numpy as np
 from enum import Enum, auto
 from shapely.affinity import translate
+from ..utility.dice import DiceCollection
 
 # Forward declarations
 if TYPE_CHECKING:
@@ -4230,6 +4231,78 @@ class Unit:
             return 0.0
         
         return min(scout_distance / max_scout_distance, 1.0)
+
+    def has_redeploy(self) -> Tuple[bool, int, bool]:
+        """Check if the unit grants redeploy capability.
+
+        Returns:
+            Tuple[bool, int, bool]:
+                - has_redeploy: True if this unit grants redeploy to units in the army
+                - count: number of units that can be redeployed (default 3; D3 treated as 3 for now)
+                - can_place_in_reserves: True if redeployed units may be placed into Strategic Reserves regardless of limits
+
+        Notes:
+            We intentionally parse ability descriptions rather than names. The wording generally includes
+            "after both players have deployed their armies" and "select up to" N units from your army "and redeploy them".
+        """
+        # Use cached result if available
+        if 'redeploy' in getattr(self, '_ability_cache', {}):
+            return self._ability_cache['redeploy']
+
+        has_redeploy = False
+        count = 0
+        can_place_in_reserves = False
+
+        # Normalize abilities list: abilities may be attached to models in unit
+        abilities_to_check = []
+        for model in getattr(self, 'models', []):
+            for ability in getattr(model, 'abilities', []):
+                if ability and hasattr(ability, 'description'):
+                    abilities_to_check.append(ability.description)
+
+        # Also include unit-level possible_abilities if present
+        for ability in getattr(self, 'possible_abilities', []):
+            if ability and hasattr(ability, 'description'):
+                abilities_to_check.append(ability.description)
+
+        for desc in abilities_to_check:
+            text = desc.lower()
+            if ("after both players have deployed their armies" in text and "redeploy" in text):
+                # Attempt to extract count from "select up to" phrases
+                has_redeploy = True
+                # Support numeric or dice expressions like D3, D6, D10 (optionally with +N)
+                m = re.search(r"select\s+up\s+to\s+((?:\d+)|(?:d\d+(?:\s*\+\s*\d+)?))", text)
+                if m:
+                    val = m.group(1)
+                    if val.startswith('d'):
+                        # Roll the indicated die expression (e.g., D3, D6, D10), with optional +N
+                        try:
+                            expr = val.upper().replace(' ', '')
+                            d = DiceCollection.from_string(expr)
+                            total, rolls = d.roll_detailed()
+                            count = max(count, total)
+                            # Cache roll detail for UI/logging (generic cache)
+                            setattr(self, '_redeploy_d_roll', {'expr': expr, 'total': total, 'rolls': rolls})
+                            print(f"🎲 {self.name} Redeploy {expr} roll: {total} (rolled {rolls})")
+                        except Exception:
+                            # Fallback to minimal 1 if dice utilities unavailable
+                            count = max(count, 1)
+                    else:
+                        try:
+                            count = max(count, int(val))
+                        except Exception:
+                            pass
+                else:
+                    count = max(count, 3)  # default to 3 if unspecified
+                if "strategic reserves" in text:
+                    can_place_in_reserves = True
+
+        result = (has_redeploy, count, can_place_in_reserves)
+        # Cache the result
+        if not hasattr(self, '_ability_cache'):
+            self._ability_cache = {}
+        self._ability_cache['redeploy'] = result
+        return result
     
     def has_firing_deck(self) -> Tuple[bool, int]:
         """Check if the unit has Firing Deck ability and return the number of weapons.

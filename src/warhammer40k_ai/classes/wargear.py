@@ -681,19 +681,23 @@ class WargearProfile:
                 else:
                     needed_str = f"needed {final_needed}+ ({strength_comp})"
             elif special_wounds:
-                # All wounds are special cases (lethal hits, natural 6s, anti-X, etc.)
+                # All wounds are special cases (lethal hits, natural 6s, anti-X, natural 1, etc.)
                 special_effects = []
+                any_special_wound_success = False
                 for wound in special_wounds:
+                    if wound.get('wound'):
+                        any_special_wound_success = True
                     if 'special_effects' in wound:
                         special_effects.extend(wound['special_effects'])
-                
-                if special_effects:
-                    needed_str = f"auto-wound ({', '.join(set(special_effects))})"
+
+                effects_str = f" ({', '.join(set(special_effects))})" if special_effects else ""
+                if any_special_wound_success:
+                    needed_str = f"auto-wound{effects_str}"
                 else:
-                    needed_str = "auto-wound"
+                    needed_str = f"auto-fail{effects_str}"
             else:
                 # Fallback
-                needed_str = "auto-wound"
+                needed_str = "auto-fail"
             
             print(f"   🩸 Wounds: {result.total_wounds}/{len(result.wound_results)} - {needed_str} - rolled: [{wound_rolls_str}]")
         
