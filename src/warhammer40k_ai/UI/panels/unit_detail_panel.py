@@ -80,6 +80,16 @@ class UnitDetailPanel(pygame.sprite.Sprite):
         
         y_pos += 35
         
+        # Mission Action status
+        try:
+            if getattr(unit.round_state, 'performing_action_name', None):
+                action_name = unit.round_state.performing_action_name
+                status = self.font_small.render(f"Performing Action: {action_name}", True, TEXT_ACCENT)
+                surface.blit(status, (x_left, y_pos))
+                y_pos += 20
+        except Exception:
+            pass
+        
         # Faction and keywords
         faction_text = self.font_small.render(f"Faction: {unit.faction}", True, TEXT_SECONDARY)
         surface.blit(faction_text, (x_left, y_pos))

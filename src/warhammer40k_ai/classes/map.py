@@ -1165,12 +1165,20 @@ class ObjectivePoint:
         self.z = z
         self.control_radius = control_radius
         self.controlling_player = None
+        # Chapter Approved 2025/26 Terraform tracking
+        self.terraformed_by = None
+        # Some primaries can remove objectives (e.g., Scorched Earth, Supply Drop)
+        self.removed = False
 
     def update_control(self, game_state: 'Game') -> None:
         # Determine which player controls the objective based on base overlap
         player_oc = {player: 0 for player in game_state.players}  # Initialize all players with 0 OC
         
         from shapely.geometry import Point
+        # If removed, always uncontrolled
+        if getattr(self, 'removed', False):
+            self.controlling_player = None
+            return
         # Create objective area as a circle
         objective_area = Point(self.x, self.y).buffer(self.control_radius)
         
@@ -1253,86 +1261,3 @@ class Objective:
     def __repr__(self):
         status = "Completed" if self.completed else "Incomplete"
         return f"{self.name} ({self.category.name}): {status} - {self.points} points"
-
-
-########################################################
-### EXAMPLE OBJECTIVES
-########################################################
-# Primary Objective: Terraform (perform an action on objectives)
-terraform_condition = lambda game_state: (
-    game_state.unit_performed_action_on_objective("Terraform")
-)
-
-terraform_objective = Objective(
-    name="Terraform Objective",
-    category=ObjectiveCategory.PRIMARY,
-    points=10,
-    description="Perform a Terraform action on an objective to score points.",
-    conditions=terraform_condition,
-    location=(12, 8)  # Example objective location on the map
-)
-
-# Primary Objective: Take and Hold
-take_and_hold_condition = lambda game_state: (
-    game_state.player_controls_more_objectives()
-)
-
-take_and_hold = Objective(
-    name="Take and Hold",
-    category=ObjectiveCategory.PRIMARY,
-    points=5,
-    description="Control more objectives than your opponent at the end of the turn.",
-    conditions=take_and_hold_condition
-)
-
-# Secondary Objective: Sabotage Terrain
-sabotage_condition = lambda game_state: (
-    game_state.unit_sabotaged_terrain("Enemy Terrain")
-)
-
-sabotage_objective = Objective(
-    name="Sabotage Terrain",
-    category=ObjectiveCategory.SECONDARY,
-    points=5,
-    description="Sabotage a terrain feature controlled by the opponent.",
-    conditions=sabotage_condition
-)
-
-# Secondary Objective: Containment (units near battlefield edges)
-containment_condition = lambda game_state: (
-    game_state.has_units_near_edges()
-)
-
-containment_objective = Objective(
-    name="Containment",
-    category=ObjectiveCategory.SECONDARY,
-    points=5,
-    description="Maintain units within 9 inches of a battlefield edge.",
-    conditions=containment_condition
-)
-
-# Secret Mission: Command Insertion (Warlord in enemy deployment)
-command_insertion_condition = lambda game_state: (
-    game_state.warlord_in_enemy_deployment_zone()
-)
-
-command_insertion = Objective(
-    name="Command Insertion",
-    category=ObjectiveCategory.SECRET,
-    points=20,
-    description="Move your Warlord into the enemy deployment zone.",
-    conditions=command_insertion_condition
-)
-
-# Secret Mission: War of Attrition (weaken enemy forces)
-war_of_attrition_condition = lambda game_state: (
-    game_state.enemy_units_reduced_to_half_strength()
-)
-
-war_of_attrition = Objective(
-    name="War of Attrition",
-    category=ObjectiveCategory.SECRET,
-    points=20,
-    description="Reduce most of the enemy units to below half strength.",
-    conditions=war_of_attrition_condition
-)

@@ -37,6 +37,11 @@ class UnitRoundState:
     moved_this_round: bool = False  # Track if unit has moved during movement phase
     num_lost_models_this_round: int = 0
     advance_roll: int = None  # Store advance roll for the round
+    # Mission actions
+    performing_action_name: Optional[str] = None
+    action_started_turn: Optional[int] = None
+    action_completes_turn: Optional[int] = None
+    action_locked_until_turn_end: bool = False  # Cannot shoot or declare charge while true (except titanic character rule handled at call site)
 
 
 class MovementAction(Enum):
@@ -1055,6 +1060,14 @@ class Unit:
 
     def _execute_action(self, action: int, destination: Tuple[float, float, float], game_map: 'Map', advance_roll: int = None) -> bool:
         """Execute a movement action for the unit."""
+        # If the unit is currently performing a mission Action and moves (excluding pile-in/consolidation handled elsewhere), cancel the Action
+        def _cancel_action_due_to_move():
+            if getattr(self.round_state, 'performing_action_name', None):
+                print(f"❌ {self.name} moved; cancelling Action '{self.round_state.performing_action_name}'")
+                self.round_state.performing_action_name = None
+                self.round_state.action_completes_turn = None
+                self.round_state.action_locked_until_turn_end = False
+
         success = False
         if action == MovementAction.REMAIN_STATIONARY.value:
             print(f"{self.name} remains stationary")
@@ -1062,13 +1075,19 @@ class Unit:
         elif action == MovementAction.MOVE.value:
             print(f"{self.name} moves to {destination}")
             success = self.move(destination, game_map)
+            if success:
+                _cancel_action_due_to_move()
         elif action == MovementAction.ADVANCE.value:
             print(f"{self.name} advances to {destination}")
             success = self.advance(destination, game_map)
+            if success:
+                _cancel_action_due_to_move()
         elif action == MovementAction.FALL_BACK.value:
             print(f"{self.name} falls back")
             # Provide an empty path list for fall back action
             success = self.fall_back(destination, [], game_map)
+            if success:
+                _cancel_action_due_to_move()
         else:
             raise ValueError(f"Invalid action: {action}")
         
@@ -1350,6 +1369,10 @@ class Unit:
         2. Uses relaxed collision detection for final positioning
         3. Prioritizes achieving engagement range over perfect formations
         """
+        # Mission Actions: a unit performing an Action is not eligible to declare a charge
+        if getattr(self.round_state, 'action_locked_until_turn_end', False):
+            print(f"❌ {self.name} is performing an Action and cannot declare a charge this turn")
+            return False
         if not self.models:
             logger.error(f"Cannot charge move unit {self.name}: no models in unit")
             return False
@@ -2354,6 +2377,10 @@ class Unit:
             return False
             
         # Check if unit can shoot
+        # Mission Actions: a unit performing an Action is not eligible to shoot until that Action completes or end of turn
+        if getattr(self.round_state, 'action_locked_until_turn_end', False):
+            print(f"❌ {self.name} is performing an Action and cannot shoot this turn")
+            return False
         if self.round_state.shot_this_round:
             print(f"❌ {self.name} has already shot this round")
             return False

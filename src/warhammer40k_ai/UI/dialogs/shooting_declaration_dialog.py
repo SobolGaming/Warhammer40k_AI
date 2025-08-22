@@ -111,6 +111,12 @@ class ShootingDeclarationDialog(BaseDialog):
         # Add Cancel button
         self.add_button('cancel', self.width - 160, self.height - 50, 140, 35)
 
+        # Add Mission Action buttons (Terraform / Sabotage / Burn Objective)
+        # Place above the bottom row
+        self.add_button('start_terraform', 10, self.height - 95, 200, 35)
+        self.add_button('start_sabotage', 220, self.height - 95, 200, 35)
+        self.add_button('start_burn_objective', 430, self.height - 95, 185, 35)
+
     def _handle_button_click(self, button_name: str) -> bool:
         """Handle button click events from BaseDialog"""
         if button_name == 'execute':
@@ -120,6 +126,12 @@ class ShootingDeclarationDialog(BaseDialog):
             print("✅ Cancel button clicked")
             self.hide()
             return True
+        elif button_name == 'start_terraform':
+            return self._try_start_terraform()
+        elif button_name == 'start_sabotage':
+            return self._try_start_sabotage()
+        elif button_name == 'start_burn_objective':
+            return self._try_start_burn_objective()
         return False
 
     def _handle_dialog_click(self, mouse_pos) -> bool:
@@ -258,25 +270,65 @@ class ShootingDeclarationDialog(BaseDialog):
     
     def _can_use_weapon(self, weapon_profile):
         """Check if a weapon can be used."""
-        # Check if weapon has any shots
-        if not weapon_profile.attacks:
-            return False
-            
-        # Check if unit advanced this round and weapon allows shooting after advance
-        if self.unit.round_state.advanced_this_round:
-            # Unit method already checks both weapon-specific and unit-specific abilities
-            if not self.unit.can_shoot_after_advance(weapon_profile):
+        # If the unit is performing an Action, it cannot shoot
+        try:
+            if getattr(self.unit.round_state, 'action_locked_until_turn_end', False):
                 return False
-        
-        # Check if unit fell back this round and weapon allows shooting after falling back
-        if self.unit.round_state.fell_back_this_round:
-            if not self.unit.can_shoot_after_fall_back(weapon_profile):
-                return False
-        
-        # Check if unit is in engagement range (can only shoot pistols or into melee)
-        if not self.unit.can_shoot_in_engagement_range(self.game_map, weapon_profile):
+        except Exception:
+            pass
+        # Check if the unit has already shot
+        if self.unit.round_state.shot_this_round:
             return False
         
+        # Check for restrictions due to Advance or Fall Back
+        if self.unit.round_state.advanced_this_round and not self.unit.can_shoot_after_advance(weapon_profile):
+            return False
+        if self.unit.round_state.fell_back_this_round and not self.unit.can_shoot_after_fall_back(weapon_profile):
+            return False
+        return True
+
+    def _try_start_terraform(self) -> bool:
+        if not self.game_view or not hasattr(self.game_view, 'game'):
+            return False
+        game = self.game_view.game
+        check = game.can_start_terraform(self.unit)
+        if not check.get('valid'):
+            print(f"❌ Cannot start Terraform: {check.get('reason')}")
+            return False
+        result = game.start_terraform_action(self.unit)
+        print("✅ Terraform Action started")
+        # Lock dialog to prevent shooting; optionally close dialog
+        self.hide()
+        return True
+
+    def _try_start_sabotage(self) -> bool:
+        if not self.game_view or not hasattr(self.game_view, 'game'):
+            return False
+        game = self.game_view.game
+        check = game.can_start_sabotage(self.unit)
+        if not check.get('valid'):
+            print(f"❌ Cannot start Sabotage: {check.get('reason')}")
+            return False
+        result = game.start_sabotage_action(self.unit)
+        print("✅ Sabotage Action started")
+        self.hide()
+        return True
+
+    def _try_start_burn_objective(self) -> bool:
+        if not self.game_view or not hasattr(self.game_view, 'game'):
+            return False
+        game = self.game_view.game
+        # Reuse terraform-like check but specific API if available
+        if not hasattr(game, 'can_start_burn_objective'):
+            print("❌ Burn Objective not available for current primary")
+            return False
+        check = game.can_start_burn_objective(self.unit)
+        if not check.get('valid'):
+            print(f"❌ Cannot start Burn Objective: {check.get('reason')}")
+            return False
+        result = game.start_burn_objective_action(self.unit)
+        print("🔥 Burn Objective Action started")
+        self.hide()
         return True
     
     def _can_target_unit(self, weapon_profile, target_unit):

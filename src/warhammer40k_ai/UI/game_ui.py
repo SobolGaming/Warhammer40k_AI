@@ -2657,6 +2657,49 @@ class SetupPhaseHandler(BasePhaseHandler):
                     
                     print(f"✅ Mission selected: {combination['id']} - {combination['primary']} / {combination['deployment']} / Layout {layout}")
                     
+                    # Assign Primary Mission card to both players
+                    try:
+                        from warhammer40k_ai.classes.mission_cards import (
+                            TakeAndHoldPrimary,
+                            TerraformPrimary,
+                            LinchpinPrimary,
+                            PurgeTheFoePrimary,
+                            ScorchedEarthPrimary,
+                            HiddenSuppliesPrimary,
+                            SupplyDropPrimary,
+                            PrimaryMissionCard,
+                        )
+                        primary_name = (combination.get('primary') or '').strip().lower()
+                        card = None
+                        if primary_name == 'take and hold':
+                            card = TakeAndHoldPrimary()
+                        elif primary_name == 'terraform':
+                            card = TerraformPrimary()
+                        elif primary_name == 'linchpin':
+                            card = LinchpinPrimary()
+                        elif primary_name == 'purge the foe':
+                            card = PurgeTheFoePrimary()
+                        elif primary_name == 'scorched earth':
+                            card = ScorchedEarthPrimary()
+                        elif primary_name == 'hidden supplies':
+                            card = HiddenSuppliesPrimary()
+                        elif primary_name == 'supply drop':
+                            card = SupplyDropPrimary()
+                        else:
+                            # Stub primary for unimplemented ones
+                            class _StubPrimary(PrimaryMissionCard):
+                                def __init__(self, name):
+                                    super().__init__(name=name, description=f"Stub for {name}")
+                                def score_at_command_phase(self, game, player) -> int:
+                                    return 0
+                                def score_at_end_of_turn(self, game, player) -> int:
+                                    return 0
+                            card = _StubPrimary(combination.get('primary', 'Primary'))
+                        for p in self.game.players:
+                            p.set_primary_mission(card)
+                    except Exception as e:
+                        print(f"⚠️ Failed to assign primary mission card: {e}")
+                    
                     # Hide dialog and advance phase
                     self.game_view.mission_selection_dialog.visible = False
                     

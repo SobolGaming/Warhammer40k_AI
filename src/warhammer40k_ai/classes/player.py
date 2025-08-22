@@ -5,6 +5,7 @@ from enum import Enum, auto
 from .army import Army
 from .unit import Unit
 from warhammer40k_ai.classes.map import Objective
+from .mission_cards import PrimaryMissionCard, SecondaryMissionCard, default_secondary_deck
 from warhammer40k_ai.utility.calcs import get_dist
 
 logging.basicConfig(format="%(asctime)s %(levelname)-8s %(message)s")
@@ -28,6 +29,11 @@ class Player:
         self.command_points: int = 0  # Players start with 0 Command Points in 10th edition
         self.army: Army = army
         self.score: int = 0
+        # Mission cards
+        self.primary_mission: PrimaryMissionCard | None = None
+        self.secondary_deck: list[SecondaryMissionCard] = []
+        self.active_secondaries: list[SecondaryMissionCard] = []
+        self.discarded_secondaries: list[SecondaryMissionCard] = []
         # Set the player reference on the army
         if self.army:
             self.army.set_player(self)
@@ -88,6 +94,52 @@ class Player:
                 if closest_distance != float('inf'):
                     distances.append(closest_distance)
         return sum(distances) / len(distances) if distances else 0.0
+
+    # ---------- Mission card helpers ----------
+
+    def set_primary_mission(self, primary: PrimaryMissionCard) -> None:
+        self.primary_mission = primary
+
+    def set_secondary_deck(self, cards: list[SecondaryMissionCard] | None = None) -> None:
+        # Use provided or default deck
+        self.secondary_deck = list(cards) if cards is not None else default_secondary_deck()
+        self.active_secondaries = []
+        self.discarded_secondaries = []
+
+    def ensure_secondary_deck_initialized(self) -> None:
+        if not self.secondary_deck and not self.active_secondaries and not self.discarded_secondaries:
+            self.set_secondary_deck()
+
+    def can_draw_secondary(self) -> bool:
+        return len(self.secondary_deck) > 0
+
+    def draw_secondary_until_two(self, game) -> None:
+        # Initialize deck if needed
+        self.ensure_secondary_deck_initialized()
+        # Draw until two active if deck allows
+        while len(self.active_secondaries) < 2 and self.secondary_deck:
+            card = self.secondary_deck.pop(0)
+            try:
+                if hasattr(card, 'can_be_drawn') and not card.can_be_drawn(game, self):
+                    # Discard immediately and continue drawing
+                    self.discarded_secondaries.append(card)
+                    continue
+            except Exception:
+                pass
+            self.active_secondaries.append(card)
+
+    def discard_secondary(self, card: SecondaryMissionCard, gain_cp: bool = False) -> None:
+        if card in self.active_secondaries:
+            self.active_secondaries.remove(card)
+            self.discarded_secondaries.append(card)
+            if gain_cp:
+                self.gain_command_point()
+
+    def discard_achieved_secondaries(self, achieved_cards: list[SecondaryMissionCard]) -> None:
+        for card in list(achieved_cards):
+            if card in self.active_secondaries:
+                self.active_secondaries.remove(card)
+                self.discarded_secondaries.append(card)
 
     def __str__(self):
         return f"Name: {self.name}\nType: {self.type.name}\nCommand Points: {self.command_points}\nArmy: {self.army}"

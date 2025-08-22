@@ -1,6 +1,6 @@
 # Mission Selection Dialog - Chapter Approved 2025/2026
 
-This document describes the implementation of the Mission Selection Dialog for the SELECT_MISSION_OBJECTIVES setup phase, displaying all approved mission combinations from Chapter Approved 2025/2026.
+This document describes the implementation of the Mission Selection Dialog for the SELECT_MISSION_OBJECTIVES setup phase, displaying all approved mission combinations from Chapter Approved 2025/2026, and how it integrates with the new mission card scoring system.
 
 ## Overview
 
@@ -134,7 +134,56 @@ Selected mission affects:
 1. **Deployment zones**: Uses correct deployment pattern
 2. **Terrain layout**: Applies approved terrain configuration
 3. **Objectives**: Places mission-appropriate objective markers
-4. **Primary mission**: Sets scoring and victory conditions
+4. **Primary mission**: Sets scoring and victory conditions via Mission Cards
+
+## Mission Cards and Scoring
+
+The game uses a Chapter Approved 2025/26 mission card system:
+
+- **Primary Mission Card**: Selected via the Mission Selection Dialog; applies to both players for the battle. Each Primary defines its scoring windows (Command phase, end of turn, end of battle round) and optional mission Actions.
+- **Secondary Mission Deck**: At the start of each of your Command phases, you draw until you have two active secondary cards. When you score any VP from a secondary, it is discarded. You may discard an active secondary at end of your turn to gain 1CP. If the deck runs out you cannot generate more secondaries.
+- **Per-turn caps**: Some primaries have per-turn VP caps that are enforced automatically.
+- **Objective control**: Objectives removed by missions (e.g., Scorched Earth, Supply Drop) are excluded from control and scoring automatically.
+
+### Implemented Primary Missions
+
+- **Take and Hold**
+  - BR2+: End of your Command phase (or end of your turn if BR5 and you are going second): 5VP per objective you control, up to 15VP/turn.
+
+- **Terraform**
+  - Action: Terraform in your Shooting phase. Completes end of your turn if still in range and you control the same objective; marks that objective as terraformed by you.
+  - BR2+: End of your Command phase: 4VP per objective you control, up to 12VP/turn.
+  - Any BR: End of each turn: +1VP per terraformed objective you own.
+
+- **Linchpin**
+  - BR2+: End of your Command phase: If you do not control your home objective, score 3VP per objective you control; otherwise score 3VP for home objective and 5VP per other objective (cap 15VP/turn). Home objective is auto-detected as any objective in your deployment zone.
+
+- **Purge the Foe**
+  - End of battle round: 4VP if one or more enemy units were destroyed this battle round; BR2+: +4VP if more enemy units than friendly were destroyed.
+  - BR2+: End of your Command phase: 4VP if you control 1+ objectives; +4VP if you control more than your opponent.
+
+- **Scorched Earth**
+  - Action: Burn Objective (BR2+) in your Shooting phase while within range of a No Man’s Land or opponent DZ objective you control. Completes end of opponent’s next turn if still in range and you control it; removes that objective and awards 5VP (No Man’s Land) or 10VP (opponent DZ) immediately.
+  - BR2+: End of your Command phase: 5VP per objective you control (cap 10VP/turn).
+
+- **Hidden Supplies**
+  - Setup: Moves center objective 6" toward a corner and spawns a new No Man’s Land objective opposite (handled in deployment/objective placement logic).
+  - BR2+: End of your Command phase (cumulative): +5VP if you control one objective not in your DZ; +5VP if you control two not in your DZ; +5VP if you control more than your opponent.
+
+- **Supply Drop**
+  - Setup: Selects two No Man’s Land objectives (not center) as Alpha and Omega.
+  - BR4 start: Alpha is removed. BR5 start: Omega is removed. (Handled automatically at the start of those rounds.)
+  - BR2+: End of your Command phase: Score per No Man's Land objective you control: 5VP in BR2-3, 8VP in BR4, 15VP in BR5.
+
+### Actions UI
+
+During your Shooting phase, units can start mission Actions from the Shooting dialog:
+
+- Buttons: "Start Terraform", "Start Sabotage", and (if Scorched Earth is active) "Start Burn Objective".
+- Eligibility is enforced per rules: not Aircraft, not Battle-shocked, OC > 0, not within Engagement Range (unless TITANIC CHARACTER), did not Advance or Fall Back, and not already selected to shoot this phase.
+- While performing an Action, the unit cannot shoot or declare a charge until completion or end of turn; moving (Advance/Move/Fall Back) cancels the Action.
+
+The unit detail panel shows "Performing Action: <Action>" when a unit is acting.
 
 ## Visual Design
 
@@ -200,16 +249,5 @@ Planned improvements:
 - **Mission preview**: Show deployment zone visualization
 - **Terrain preview**: Display terrain layout images
 - **Mission details**: Hover tooltips with mission descriptions
-- **Favorites system**: Save preferred mission combinations
-- **Random selection**: Quick random mission generator
-- **Search/filter**: Find missions by type or deployment
-
-## Files Created/Modified
-
-- `src/warhammer40k_ai/UI/dialogs/mission_selection_dialog.py` - Main dialog implementation
-- `src/warhammer40k_ai/UI/dialogs/__init__.py` - Added dialog import
-- `src/warhammer40k_ai/classes/game.py` - Updated setup phases
-- `src/warhammer40k_ai/classes/missions.py` - Added placeholder missions
-- `examples/mission_selection_example.py` - Usage demonstration
 
 The Mission Selection Dialog provides a complete, tournament-legal interface for selecting Chapter Approved 2025/2026 mission combinations with proper integration into the game setup sequence.
