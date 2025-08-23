@@ -964,6 +964,7 @@ class Game:
             if not model_positions:
                 return False
                 
+            from .map import validate_ruins_placement
             for model, position in zip(unit.models, model_positions):
                 model_x, model_y = position[0], position[1]
                 
@@ -981,6 +982,11 @@ class Game:
                 distance_to_enemy_models = self.get_distance_to_enemy_models(model_x, model_y, player_name)
                 if distance_to_enemy_models - base_radius < 9.0:
                     return False
+                # RUINS validation: cannot start/end overlapping walls/floors
+                model_z = position[2] if len(position) > 2 else 0.0
+                ruins_validation = validate_ruins_placement(unit, (model_x, model_y, model_z), self.map.terrain_features, moving_model=model)
+                if not ruins_validation['valid']:
+                    return False
             
             return True
         else:
@@ -997,6 +1003,7 @@ class Game:
             if not model_positions:
                 return False
                 
+            from .map import validate_ruins_placement
             for model, position in zip(unit.models, model_positions):
                 model_x, model_y, model_z = position[0], position[1], position[2]
                 
@@ -1010,8 +1017,7 @@ class Game:
                     return False
                 
                 # Check RUINS terrain placement rules
-                from .map import validate_ruins_placement
-                ruins_validation = validate_ruins_placement(unit, (model_x, model_y, model_z), self.map.terrain_features)
+                ruins_validation = validate_ruins_placement(unit, (model_x, model_y, model_z), self.map.terrain_features, moving_model=model)
                 if not ruins_validation['valid']:
                     try:
                         model_name = getattr(model, 'name', 'model')

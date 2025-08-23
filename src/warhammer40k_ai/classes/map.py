@@ -1080,11 +1080,31 @@ def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float],
         if terrain.terrain_type != TerrainType.RUINS:
             continue
             
-        # Check if position is within this RUINS footprint
-        from shapely.geometry import Point
-        point = Point(x, y)
-        if not terrain.footprint.contains(point):
-            continue
+        # Check if the MODEL BASE intersects this RUINS footprint (not just the centroid)
+        if moving_model is not None:
+            try:
+                test_base = moving_model.model_base.get_base_shape_at(x, y, getattr(moving_model.model_base, 'facing', 0.0))
+            except Exception:
+                test_base = None
+            if test_base is None or not test_base.intersects(terrain.footprint):
+                continue
+        else:
+            # Validate entire unit: only proceed if any model's base intersects the footprint
+            any_intersection = False
+            for m in unit.models:
+                mpos = m.get_location()
+                if not mpos:
+                    continue
+                mx, my = mpos[0], mpos[1]
+                try:
+                    m_base = m.model_base.get_base_shape_at(mx, my, getattr(m.model_base, 'facing', 0.0))
+                except Exception:
+                    m_base = None
+                if m_base is not None and m_base.intersects(terrain.footprint):
+                    any_intersection = True
+                    break
+            if not any_intersection:
+                continue
             
         # Find which floor this z-coordinate corresponds to
         floors = getattr(terrain, 'floors', []) or []
@@ -1113,9 +1133,41 @@ def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float],
                 current_floor = {'polygon': terrain.footprint, 'elevation': 0.0, 'thickness': 0.0}
             else:
                 return {'valid': False, 'reason': f'Position not on a valid floor level (z={z:.1f})', 'floor_level': 0}
+
+        # Helper to check base-vs-wall intersection for one model at (mx,my,mz)
+        def _base_overlaps_wall(model: 'Model', mx: float, my: float, mz: float) -> Optional[str]:
+            base_geom = None
+            try:
+                base_geom = model.model_base.get_base_shape_at(mx, my, getattr(model.model_base, 'facing', 0.0))
+            except Exception:
+                return 'Failed to get model base geometry for wall check'
+            for wall in getattr(terrain, 'walls', []) or []:
+                # Only consider walls that occupy this Z slice
+                if wall.get('z_bottom', 0.0) <= mz <= wall.get('z_top', 0.0):
+                    try:
+                        if base_geom.intersects(wall.get('polygon')):
+                            return 'Model base overlaps a RUINS wall'
+                    except Exception:
+                        # If intersection fails, be conservative and reject
+                        return 'Error during wall intersection check'
+            return None
         
-        # Ground floor (level 0) - all units allowed
+        # Ground floor (level 0) - allowed, but must not overlap walls
         if floor_level == 0:
+            if moving_model is not None:
+                wall_reason = _base_overlaps_wall(moving_model, x, y, z)
+                if wall_reason:
+                    return {'valid': False, 'reason': wall_reason, 'floor_level': floor_level}
+            else:
+                # Validate all models in the unit at their current positions (deployment-time)
+                for model in unit.models:
+                    model_pos = model.get_location()
+                    if not model_pos:
+                        continue
+                    mx, my, mz = model_pos[0], model_pos[1], model_pos[2] if len(model_pos) > 2 else 0.0
+                    wall_reason = _base_overlaps_wall(model, mx, my, mz)
+                    if wall_reason:
+                        return {'valid': False, 'reason': wall_reason, 'floor_level': floor_level}
             return {'valid': True, 'reason': 'Valid ground floor placement', 'floor_level': floor_level}
         
         # Upper floors - check unit restrictions
@@ -1151,6 +1203,22 @@ def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float],
                                 'reason': f'Model base would overhang floor on level {floor_level}',
                                 'floor_level': floor_level
                             }
+
+        # On all upper floors, also forbid base overlap with walls at the model's Z
+        if floor_level > 0:
+            if moving_model is not None:
+                wall_reason = _base_overlaps_wall(moving_model, x, y, z)
+                if wall_reason:
+                    return {'valid': False, 'reason': wall_reason, 'floor_level': floor_level}
+            else:
+                for model in unit.models:
+                    model_pos = model.get_location()
+                    if not model_pos:
+                        continue
+                    mx, my, mz = model_pos[0], model_pos[1], model_pos[2] if len(model_pos) > 2 else (x, y, z)[2]
+                    wall_reason = _base_overlaps_wall(model, mx, my, mz)
+                    if wall_reason:
+                        return {'valid': False, 'reason': wall_reason, 'floor_level': floor_level}
         
         return {'valid': True, 'reason': f'Valid upper floor placement (level {floor_level})', 'floor_level': floor_level}
     
