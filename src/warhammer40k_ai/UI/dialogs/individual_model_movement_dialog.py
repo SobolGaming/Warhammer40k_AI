@@ -23,6 +23,9 @@ class IndividualModelMovementDialog(BaseDialog):
         self.model_movements = {}  # {model_index: {'path': [...], 'completed': bool}}
         self.selected_model_index = None
         self.awaiting_battlefield_click = False
+        # Floor selection sub-dialog state
+        self.floor_selection_dialog = None
+        self._pending_click_position = None  # (x,y) waiting for floor selection
         
         # UI elements
         self.model_buttons = []
@@ -93,6 +96,9 @@ class IndividualModelMovementDialog(BaseDialog):
         self.model_movements = {}
         self.selected_model_index = None
         self.awaiting_battlefield_click = False
+        # Hide nested dialogs as well
+        if hasattr(self, 'floor_selection_dialog') and self.floor_selection_dialog:
+            self.floor_selection_dialog.hide()
         
     def _create_model_buttons(self):
         """Create buttons for each model in the unit"""
@@ -236,6 +242,31 @@ class IndividualModelMovementDialog(BaseDialog):
             # print(f"🔍 DEBUG: {dialog_name} - Delegating to coherency dialog")
             return self.coherency_dialog.handle_event(event)
 
+        # Handle floor selection dialog if open
+        if hasattr(self, 'floor_selection_dialog') and self.floor_selection_dialog and self.floor_selection_dialog.visible:
+            result = self.floor_selection_dialog.handle_event(event)
+            if result:
+                action = result.get('action')
+                if action == 'confirm':
+                    selected_level = result.get('floor', 0)
+                    # Convert level to surface Z (level in 4" increments)
+                    surface_z = float(selected_level) * 4.0  # thickness handled in placement tolerance
+                    if self._pending_click_position is not None:
+                        dest_x, dest_y = self._pending_click_position
+                        self.floor_selection_dialog.hide()
+                        # Proceed with move using selected Z
+                        self._finalize_click_with_z(dest_x, dest_y, surface_z)
+                        self._pending_click_position = None
+                        return True
+                elif action == 'cancel':
+                    # Cancel selection; do nothing (user can click again)
+                    self.floor_selection_dialog.hide()
+                    self._pending_click_position = None
+                    return True
+            # If dialog consumed the event or is visible, stop here
+            # We return True to avoid double-processing the same event
+            # unless result is None, then fall-through for other handlers
+
         # Handle ESC key to close dialog
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             # print(f"🔍 DEBUG: {dialog_name} - ESC key pressed, hiding dialog")
@@ -334,6 +365,20 @@ class IndividualModelMovementDialog(BaseDialog):
         if not self.awaiting_battlefield_click or self.selected_model_index is None:
             return False
             
+        # If multiple RUINS floors are available at this XY, ask user to pick a floor
+        floors_at_xy = self._get_ruins_available_floors(battlefield_x, battlefield_y)
+        if len(floors_at_xy) > 1:
+            try:
+                from .floor_selection_dialog import FloorSelectionDialog
+                dialog = FloorSelectionDialog(available_floors=floors_at_xy, unit_name=self.unit.name)
+                self.floor_selection_dialog = dialog
+                self._pending_click_position = (battlefield_x, battlefield_y)
+                dialog.show()
+                return True  # Defer movement until selection
+            except Exception:
+                pass
+
+        # Use provided Z if no selection needed (or single floor)
         destination = (battlefield_x, battlefield_y, battlefield_z)
         
         # Attempt to move the selected model
@@ -360,6 +405,76 @@ class IndividualModelMovementDialog(BaseDialog):
             print(f"🔄 Model remains selected. Try clicking on a valid location.")
         
         return success
+
+    def _finalize_click_with_z(self, x: float, y: float, z: float) -> None:
+        """Finalize a pending battlefield click after floor selection by moving the model with chosen Z."""
+        destination = (x, y, z)
+        success = self._move_model(self.selected_model_index, destination)
+        if success:
+            # Mark model as moved
+            self.model_movements[self.selected_model_index] = {
+                'path': [],
+                'completed': True
+            }
+            # Reset selection only on successful movement
+            self.selected_model_index = None
+            self.awaiting_battlefield_click = False
+        else:
+            print(f"❌ Movement failed after floor selection for {self.unit.models[self.selected_model_index].name}")
+
+    def _get_ruins_available_floors(self, x: float, y: float) -> list[int]:
+        """Return available floor levels (0,1,2,...) at XY inside RUINS footprints that contain the point."""
+        levels: list[int] = []
+        try:
+            from shapely.geometry import Point as _ShPoint
+        except Exception:
+            _ShPoint = None
+        if not self.game_map:
+            return levels
+        point_ok = True
+        if _ShPoint is None:
+            point_ok = False
+        for terrain in getattr(self.game_map, 'terrain_features', []) or []:
+            try:
+                ttype = getattr(terrain, 'terrain_type', None)
+                # Compare name to avoid import cycles
+                if not ttype or getattr(ttype, 'name', '') != 'RUINS':
+                    continue
+                footprint = getattr(terrain, 'footprint', None)
+                if footprint is None:
+                    continue
+                contains = False
+                if point_ok:
+                    try:
+                        contains = footprint.contains(_ShPoint(x, y))
+                    except Exception:
+                        contains = False
+                if not point_ok:
+                    # Fallback: assume inside footprint if any floors exist (unsafe but best-effort)
+                    contains = True
+                if not contains:
+                    continue
+                # Ground floor always available inside footprint
+                if 0 not in levels:
+                    levels.append(0)
+                # Add any upper floors whose polygon contains the point
+                for fl in getattr(terrain, 'floors', []) or []:
+                    poly = fl.get('polygon')
+                    elev = float(fl.get('elevation', 0.0))
+                    lvl = int(round(elev / 4.0))
+                    if poly is not None:
+                        inside = False
+                        if point_ok:
+                            try:
+                                inside = poly.contains(_ShPoint(x, y))
+                            except Exception:
+                                inside = False
+                        if inside and lvl not in levels:
+                            levels.append(lvl)
+            except Exception:
+                continue
+        levels.sort()
+        return levels
         
     def _move_model(self, model_index: int, destination) -> bool:
         """Move a specific model to the destination"""
@@ -654,3 +769,6 @@ class IndividualModelMovementDialog(BaseDialog):
         # Draw coherency dialog if it's open
         if hasattr(self, 'coherency_dialog') and self.coherency_dialog.visible:
             self.coherency_dialog.draw(screen)
+        # Draw floor selection dialog if it's open
+        if hasattr(self, 'floor_selection_dialog') and self.floor_selection_dialog and self.floor_selection_dialog.visible:
+            self.floor_selection_dialog.draw(screen)

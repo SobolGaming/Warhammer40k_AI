@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from warhammer40k_ai.utility.calcs import (
     unified_pathfinding, 
     MovementType,
-    is_position_valid_unified,
+    is_position_valid_unified_detailed,
     build_collision_trees
 )
 from warhammer40k_ai.utility.model_base import Base, BaseType
@@ -1314,7 +1314,7 @@ class TestCollisionDetection:
         assert result['valid'], "Should allow advance movement to clear position"
 
     def test_position_validation_function_directly(self):
-        """Test the is_position_valid_unified function directly."""
+        """Test the is_position_valid_unified_detailed function directly."""
 
         # Create test scenario
         unit = self.create_circular_unit(x=10.0, y=10.0)
@@ -1334,13 +1334,13 @@ class TestCollisionDetection:
 
         # Test valid position
         valid_pos = (12.0, 12.0, 0.0)
-        is_valid = is_position_valid_unified(valid_pos, model, collision_trees, validation_rules, self.game_map)
-        assert is_valid, "Should validate clear position as valid"
+        result = is_position_valid_unified_detailed(valid_pos, model, collision_trees, validation_rules, self.game_map)
+        assert result['valid'], "Should validate clear position as valid"
 
         # Test invalid position (overlapping with enemy)
         enemy_pos = enemy_unit.models[0].get_location()
-        is_valid = is_position_valid_unified(enemy_pos, model, collision_trees, validation_rules, self.game_map)
-        assert not is_valid, "Should validate overlapping position as invalid"
+        result = is_position_valid_unified_detailed(enemy_pos, model, collision_trees, validation_rules, self.game_map)
+        assert not result['valid'], "Should validate overlapping position as invalid"
 
     def test_consolidate_movement_constraints(self):
         """Test consolidate movement specific constraints."""

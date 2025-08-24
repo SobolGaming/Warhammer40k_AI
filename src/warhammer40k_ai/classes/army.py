@@ -50,6 +50,8 @@ class Army:
     def __init__(self, faction: str, detachment_type: str, points_limit: int = 2000):
         self._id = str(uuid.uuid4())
         self.faction = faction
+        # faction_id from Factions.json if known; set by parse_army_list
+        self.faction_id: Optional[str] = None
         self.faction_keyword = []
         self.detachment_type = detachment_type
         self.points_limit = points_limit
@@ -418,6 +420,7 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
     faction_id = get_faction_id_from_name(faction_keyword)
     if faction_id:
         print(f"Using faction ID: {faction_id} for datasheet lookups")
+        army.faction_id = faction_id
     else:
         print(f"Warning: Could not determine faction ID for '{faction_keyword}', using generic lookup")
 

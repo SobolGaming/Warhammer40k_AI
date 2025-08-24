@@ -1076,6 +1076,18 @@ class Unit:
                 self.round_state.action_locked_until_turn_end = False
 
         success = False
+        # Resolve player/game for events
+        _player = getattr(self.get_parent_army(), 'player', None)
+        _game = getattr(_player, 'game', None) if _player else None
+        def _publish(evt: str, **kwargs):
+            try:
+                if _game and hasattr(_game, 'event_system'):
+                    _game.event_system.publish(evt, **kwargs)
+            except Exception:
+                pass
+        # Overwatch trigger: movement start
+        if action in (MovementAction.MOVE.value, MovementAction.ADVANCE.value, MovementAction.FALL_BACK.value):
+            _publish("unit_move_started", unit=self, action=('advance' if action == MovementAction.ADVANCE.value else 'fall_back' if action == MovementAction.FALL_BACK.value else 'move'))
         if action == MovementAction.REMAIN_STATIONARY.value:
             print(f"{self.name} remains stationary")
             success = self.remain_stationary()
@@ -1106,6 +1118,9 @@ class Unit:
             # it did not remain stationary this round
             if action != MovementAction.REMAIN_STATIONARY.value:
                 self.round_state.remained_stationary_this_round = False
+            # Overwatch trigger: movement end
+            if action in (MovementAction.MOVE.value, MovementAction.ADVANCE.value, MovementAction.FALL_BACK.value):
+                _publish("unit_move_ended", unit=self, action=('advance' if action == MovementAction.ADVANCE.value else 'fall_back' if action == MovementAction.FALL_BACK.value else 'move'))
         
         return success
 
@@ -1126,6 +1141,24 @@ class Unit:
                 pass
             self.round_state.advance_roll = advance_roll
             print(f"🎲 {self.name} advance roll: {advance_roll}\" (Move {self.movement}\" + {advance_roll}\" = {self.movement + advance_roll}\")")
+            # Publish roll event with reroll capability
+            try:
+                _player = getattr(self.get_parent_army(), 'player', None)
+                _game = getattr(_player, 'game', None) if _player else None
+                if _game and hasattr(_game, 'event_system'):
+                    def _reroll():
+                        new_roll = get_roll("D6")
+                        self.round_state.advance_roll = new_roll
+                        try:
+                            from ..utility.event_bus import append_dice as _append
+                            _append(_player.name, f"Advance re-roll: {new_roll} for {self.name}")
+                        except Exception:
+                            pass
+                        print(f"🎲 {self.name} advance re-roll: {new_roll}")
+                        return new_roll
+                    _game.event_system.publish("roll_made", player=_player, unit=self, roll_type="advance", value=advance_roll, reroll=_reroll)
+            except Exception:
+                pass
             return advance_roll
         return self.round_state.advance_roll
 
@@ -3285,10 +3318,26 @@ class Unit:
             print(f"⚡ {self.name} is already battle-shocked, no test needed")
             return
 
-        if not self.pass_leadership_check():
+        # Publish event: test started
+        try:
+            game = getattr(self.get_parent_army(), 'player', None)
+            if game and hasattr(game, 'game') and hasattr(game.game, 'event_system'):
+                game.game.event_system.publish("battle_shock_test_started", unit=self)
+        except Exception:
+            pass
+
+        passed = self.pass_leadership_check()
+        if not passed:
             battle_shock_effect = BattleShockEffect(current_turn)
             self.apply_status_effect(battle_shock_effect)
             print(f"💥 {self.name} has failed the battle shock test and is battle-shocked!")
+        # Publish event: test resolved
+        try:
+            game = getattr(self.get_parent_army(), 'player', None)
+            if game and hasattr(game, 'game') and hasattr(game.game, 'event_system'):
+                game.game.event_system.publish("battle_shock_test_resolved", unit=self, passed=passed)
+        except Exception:
+            pass
 
     def use_ability(self, ability: Ability, target: 'Unit', game_map: 'Map'):
         """Uses a special ability."""

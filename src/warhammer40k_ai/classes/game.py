@@ -1049,6 +1049,11 @@ class Game:
         current_phase_value = self.phase.value
         next_phase_value = (current_phase_value + 1) % len(BattleRoundPhases)
         self.phase = BattleRoundPhases(next_phase_value)
+        # Publish phase start for stratagem triggers
+        try:
+            self.event_system.publish("phase_start", player=self.get_current_player(), phase=self.phase)
+        except Exception:
+            pass
         
         # Phase-specific resets are no longer needed since we reset all round state at battle round start
         
@@ -1099,6 +1104,11 @@ class Game:
         """Start the command phase - all players gain 1 Command Point and evaluate objectives"""
         for player in self.players:
             player.gain_command_point()
+        # Explicit phase start publish for command phase entry
+        try:
+            self.event_system.publish("phase_start", player=self.get_current_player(), phase=self.phase)
+        except Exception:
+            pass
 
         # Execute command actions for current player's units (without resetting round state)
         current_player = self.get_current_player()
@@ -1601,6 +1611,16 @@ class Game:
         # Roll 2D6 for charge distance with modifiers - show individual dice
         dice_collection = DiceCollection.from_string("2D6")
         base_charge_roll, individual_dice = dice_collection.roll_detailed()
+        # Publish roll event for Command Re-roll
+        try:
+            def _reroll():
+                new_total, new_individual = DiceCollection.from_string("2D6").roll_detailed()
+                nonlocal base_charge_roll
+                base_charge_roll = new_total
+                return new_total, new_individual
+            self.event_system.publish("roll_made", player=charging_unit.get_parent_army().player, unit=charging_unit, roll_type="charge", value=base_charge_roll, dice=individual_dice, reroll=_reroll)
+        except Exception:
+            pass
         charge_roll = self._apply_charge_modifiers(charging_unit, base_charge_roll)
         
         print(f"⚔️ {charging_unit.name} charging {target_unit.name}")

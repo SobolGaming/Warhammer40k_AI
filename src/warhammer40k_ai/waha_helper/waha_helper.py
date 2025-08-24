@@ -75,6 +75,33 @@ class WahaHelper:
         except Exception as e:
             print(f"Error loading data: {str(e)}")
 
+    def get_stratagems_for_faction(self, faction_id: str | None = None, detachment: str | None = None) -> list[dict]:
+        """
+        Return a list of stratagem dicts that apply to the provided faction_id and detachment.
+
+        - Global stratagems have empty "faction_id" in source data and always apply.
+        - Faction-specific stratagems require faction_id to match; if a detachment string is
+          present on the stratagem, it must match the provided detachment exactly.
+        """
+        results: list[dict] = []
+        for s in self.stratagems.values():
+            try:
+                s_faction = s.get('faction_id', '') or ''
+                s_det = s.get('detachment', '') or ''
+                is_global = s_faction == ''
+                if is_global:
+                    results.append(s)
+                    continue
+                if faction_id and s_faction == faction_id:
+                    if s_det:
+                        if detachment and s_det == detachment:
+                            results.append(s)
+                    else:
+                        results.append(s)
+            except Exception:
+                continue
+        return results
+
     def load_json_file(self, filename, target_dict, key):
         file_path = os.path.join(self.data_dir, filename)
         if os.path.exists(file_path):

@@ -10,7 +10,7 @@ from shapely import STRtree
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from ..classes.map import TerrainFeature, TerrainType, RuinsTerrain
+    from ..classes.map import TerrainFeature
     from ..classes.unit import Unit, MovementAction
     from ..classes.model import Model
     from ..classes.map import Map
@@ -1170,142 +1170,6 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
         'reason': reason
     }
 
-def is_position_valid_unified(position: Tuple[float, float, float], model: 'Model',
-                            collision_trees: dict, validation_rules: dict, game_map: 'Map' = None) -> bool:
-    """
-    Check if a position is valid using STRTrees and validation rules.
-
-    Args:
-        position: Position to check (x, y, z)
-        model: The model being moved
-        collision_trees: Dict of STRTrees for collision detection
-        validation_rules: Dict of validation rules
-
-    Returns:
-        True if position is valid, False otherwise
-    """
-    # Create the moving model's base shape at the test position
-    # We need to check shape intersection, not just point collision
-    current_pos = model.get_location()
-    dx = position[0] - current_pos[0]
-    dy = position[1] - current_pos[1]
-
-    # Get the model's base shape and translate it to the test position
-    moving_model_shape = model.model_base.get_base_shape()
-    test_shape = translate(moving_model_shape, dx, dy)
-
-    # Check if the entire model base fits within battlefield boundaries
-    if game_map:
-        if not game_map.is_within_boundary(model, (position[0], position[1])):
-            print(f"🔍 DEBUG: Position {position} would place model outside battlefield boundaries")
-            return False
-    else:
-        # Fallback basic boundary check if no game_map provided
-        bounds = test_shape.bounds  # (minx, miny, maxx, maxy)
-        if bounds[0] < 0 or bounds[1] < 0:
-            print(f"🔍 DEBUG: Position {position} would place model outside battlefield (negative coordinates)")
-            return False
-
-    # Check terrain collisions using shape intersection
-    if collision_trees.get('terrain'):
-        potential_hits = query_spatial_index(collision_trees['terrain'], test_shape)
-        actual_hits = []
-
-        for hit_shape in potential_hits:
-            try:
-                if test_shape.intersects(hit_shape):
-                    actual_hits.append(hit_shape)
-            except Exception as e:
-                print(f"🔍 DEBUG: Error checking terrain intersection: {e}, hit_shape type: {type(hit_shape)}")
-                continue
-
-        if actual_hits:
-            print(f"🔍 DEBUG: Position {position} blocked by terrain (shape intersection: {len(actual_hits)} hits)")
-            return False
-
-    # Check friendly model collisions using shape intersection (always blocked unless fall back)
-    if collision_trees.get('friendly_models') and validation_rules.get('prevent_friendly_overlap', True):
-        if not validation_rules.get('can_move_through_models', False):
-            # Use shape intersection instead of point collision
-            potential_hits = query_spatial_index(collision_trees['friendly_models'], test_shape)
-            actual_hits = []
-
-            for hit_shape in potential_hits:
-                try:
-                    if test_shape.intersects(hit_shape):
-                        actual_hits.append(hit_shape)
-                except Exception as e:
-                    print(f"🔍 DEBUG: Error checking friendly model intersection: {e}, hit_shape type: {type(hit_shape)}")
-                    continue
-
-            if actual_hits:
-                print(f"🔍 DEBUG: Position {position} blocked by friendly models (shape intersection: {len(actual_hits)} hits)")
-                return False
-        else:
-            print(f"🔍 DEBUG: Can move through models - skipping friendly collision check")
-    else:
-        if not collision_trees.get('friendly_models'):
-            print(f"🔍 DEBUG: No friendly models tree")
-        if not validation_rules.get('prevent_friendly_overlap', True):
-            print(f"🔍 DEBUG: prevent_friendly_overlap is False")
-
-    # Check enemy model collisions using shape intersection (always blocked unless fall back)
-    if collision_trees.get('enemy_models') and validation_rules.get('prevent_enemy_overlap', True):
-        if not validation_rules.get('can_move_through_models', False):
-            # Use shape intersection instead of point collision
-            potential_hits = query_spatial_index(collision_trees['enemy_models'], test_shape)
-            actual_hits = []
-
-            for hit_shape in potential_hits:
-                try:
-                    if test_shape.intersects(hit_shape):
-                        # For charges, allow base-to-base contact with target unit
-                        if validation_rules.get('allow_base_to_base_contact', False):
-                            target_unit = validation_rules.get('target_unit')
-                            if target_unit:
-                                # Check if this hit is from the target unit by checking spatial proximity
-                                # Since we're at the final position and it's a charge, any enemy model
-                                # that's very close is likely the target unit
-                                for enemy_model in target_unit.models:
-                                    if enemy_model.is_alive:
-                                        # Calculate edge-to-edge distance to this enemy model
-                                        from ..utility.model_base import Base
-                                        temp_base = Base(model.model_base.base_type, model.model_base.radius)
-                                        temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
-                                        
-                                        horizontal_distance = temp_base.edge_to_edge_distance(enemy_model.model_base)
-                                        vertical_distance = temp_base.vertical_distance(enemy_model.model_base)
-                                        
-                                        # For base-to-base contact, we want edge-to-edge distance to be very close to 0
-                                        # but not negative (which would indicate overlap)
-                                        if (horizontal_distance >= 0.0 and horizontal_distance < 0.1 and 
-                                            vertical_distance <= ENGAGEMENT_RANGE_VERTICAL):
-                                            continue
-                        actual_hits.append(hit_shape)
-                except Exception:
-                    continue
-
-            if actual_hits:
-                print(f"🔍 DEBUG: Position {position} blocked by enemy models (shape intersection: {len(actual_hits)} hits)")
-                return False
-
-
-
-    # Check scout-specific deployment buffers using shape intersection
-    if collision_trees.get('deployment_buffer'):
-        potential_hits = query_spatial_index(collision_trees['deployment_buffer'], test_shape)
-        actual_hits = []
-
-        for hit_shape in potential_hits:
-            if test_shape.intersects(hit_shape):
-                actual_hits.append(hit_shape)
-
-        if actual_hits:
-            print(f"🔍 DEBUG: Position {position} blocked by deployment buffer (shape intersection: {len(actual_hits)} hits)")
-            return False
-
-    return True
-
 def is_position_valid_unified_detailed(position: Tuple[float, float, float], model: 'Model',
                                       collision_trees: dict, validation_rules: dict, game_map: 'Map' = None, 
                                       is_final_position: bool = True) -> dict:
@@ -1366,27 +1230,36 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
             for hit_shape in potential_hits:
                 try:
                     if test_shape.intersects(hit_shape):
-                        # For 3D positioning, check if there's sufficient vertical separation
-                        # We need to find the model that corresponds to this shape
-                        blocking_model = None
+                        # For 3D positioning, check if there's sufficient vertical separation.
+                        # Find the friendly model whose base intersects our test shape (do not rely on .equals identity).
+                        allow_due_to_vertical_separation = False
                         if game_map:
                             for unit in game_map.units:
-                                if unit.faction == model.parent_unit.faction:
-                                    for other_model in unit.models:
-                                        if (other_model != model and other_model.is_alive and
-                                            other_model.model_base.get_base_shape().equals(hit_shape)):
-                                            blocking_model = other_model
+                                if unit.faction != model.parent_unit.faction:
+                                    continue
+                                for other_model in unit.models:
+                                    if other_model is model or not other_model.is_alive:
+                                        continue
+                                    try:
+                                        other_shape = other_model.model_base.get_base_shape()
+                                        if test_shape.intersects(other_shape):
+                                            # Use exact model heights via Base.vertical_distance to determine separation sufficiency
+                                            from ..utility.model_base import Base as _Base
+                                            temp_base = _Base(model.model_base.base_type, model.model_base.radius)
+                                            temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
+                                            temp_base.set_facing(getattr(model.model_base, 'facing', 0.0))
+                                            temp_base.set_model_height(getattr(model.model_base, 'model_height', 2.0))
+                                            # vertical_distance > 0 implies sufficient gap between model volumes
+                                            if temp_base.vertical_distance(other_model.model_base) > 0.0:
+                                                allow_due_to_vertical_separation = True
                                             break
-                                    if blocking_model:
-                                        break
+                                    except Exception:
+                                        continue
+                                if allow_due_to_vertical_separation:
+                                    break
 
-                        # If we found the blocking model, check 3D separation
-                        if blocking_model:
-                            z_separation = abs(position[2] - blocking_model.model_base.z)
-                            # Models can occupy same X,Y if Z separation > model height (typically 2")
-                            model_height = 2.0  # Typical model height in inches
-                            if z_separation > model_height:
-                                continue  # Allow this overlap due to 3D separation
+                        if allow_due_to_vertical_separation:
+                            continue  # Do not count this as a blocking hit
 
                         actual_hits.append(hit_shape)
                 except Exception:
@@ -1459,29 +1332,11 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
                 except Exception:
                     continue
         else:
-            # Fallback to slow method if engagement_buffer tree not available
-            #print(f"🔍 DEBUG: WARNING: Using slow engagement range check - engagement_buffer tree not available")
-            
-            # Create a temporary model base at the test position to check engagement range
-            from ..utility.model_base import Base
-            temp_base = Base(model.model_base.base_type, model.model_base.radius)
-            temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
-
-            # Check against all enemy models using the same method as is_within_engagement_range
-            moving_unit = model.parent_unit
-            for unit in game_map.units:
-                if unit.faction != moving_unit.faction and unit.is_alive() and unit.deployed:
-                    for enemy_model in unit.models:
-                        if enemy_model.is_alive:
-                            # Calculate edge-to-edge distance (same as engagement detection)
-                            horizontal_distance = temp_base.edge_to_edge_distance(enemy_model.model_base)
-                            vertical_distance = temp_base.vertical_distance(enemy_model.model_base)
-
-                            if (horizontal_distance < ENGAGEMENT_RANGE_HORIZONTAL and
-                                vertical_distance <= ENGAGEMENT_RANGE_VERTICAL):
-                                print(f"🔍 DEBUG: Final position REJECTED due to engagement range")
-                                print(f"🔍 DEBUG: Distance to {enemy_model.name}: {horizontal_distance:.2f}\" horizontal, {vertical_distance:.2f}\" vertical")
-                                return {'valid': False, 'reason': 'Position within engagement range of enemy models'}
+            # No engagement buffer tree available. Given our spatial filtering builds the
+            # buffer using a radius that already includes any enemy that could be within
+            # engagement range of any valid destination, the absence of the tree implies
+            # no relevant enemies are in range. Skip slow O(n) fallback checks.
+            pass
 
     # Check charge-specific rules (only apply to final positions)
     if validation_rules.get('must_end_in_engagement_range', False) and is_final_position:

@@ -46,6 +46,13 @@ class Player:
     def set_game(self, game) -> None:
         """Set the game reference for this player."""
         self.game = game
+        try:
+            # Lazily attach stratagem manager when a game is set
+            from .stratagems import StratagemManager
+            self.stratagems = StratagemManager(self)
+        except Exception:
+            # Do not fail hard if wiring is incomplete
+            self.stratagems = None
 
     def get_army(self) -> Army | None:
         return self.army
