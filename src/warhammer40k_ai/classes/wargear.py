@@ -188,9 +188,22 @@ class WargearProfile:
 
         # Roll attacks for this specific weapon instance
         if isinstance(self.attacks, Count):
+            # Provide reroll callback for attacks count
+            def _reroll_attacks():
+                new_num, new_rolls = self.attacks.resolve_detailed()
+                attack_result.attacks_rolled = new_num
+                attack_result.attacks_dice_rolls = new_rolls
+                return new_num, new_rolls
             num_attacks, dice_rolls = self.attacks.resolve_detailed()
             attack_result.attacks_rolled = num_attacks
             attack_result.attacks_dice_rolls = dice_rolls
+            # Publish roll_made for attacks count
+            try:
+                unit = attacker.parent_unit
+                game = unit.get_parent_army().player.game
+                game.event_system.publish("roll_made", player=unit.get_parent_army().player, unit=unit, roll_type="attacks", value=num_attacks, dice=dice_rolls, reroll=_reroll_attacks)
+            except Exception:
+                pass
         else:
             num_attacks = self.attacks or 0
             attack_result.attacks_rolled = num_attacks
@@ -277,8 +290,23 @@ class WargearProfile:
         
         # Handle hazardous weapon effects
         if self.is_hazardous():
+            # Provide reroll callback for hazardous test
+            def _reroll_hazard():
+                new_roll = get_roll("D6")
+                try:
+                    append_dice(attacker.parent_unit.get_parent_army().player.name, f"Hazardous re-roll: {new_roll} for {attacker.name}")
+                except Exception:
+                    pass
+                return new_roll
             hazard_roll = get_roll("D6")
             attack_result.hazardous_roll = hazard_roll
+            # Publish roll_made for hazardous test
+            try:
+                unit = attacker.parent_unit
+                game = unit.get_parent_army().player.game
+                game.event_system.publish("roll_made", player=unit.get_parent_army().player, unit=unit, roll_type="hazardous", value=hazard_roll, reroll=_reroll_hazard)
+            except Exception:
+                pass
             if hazard_roll == 1:
                 attack_result.hazardous_damage = 3
                 attacker.take_damage(3, is_mortal=True, weapon_profile=None)
@@ -300,6 +328,24 @@ class WargearProfile:
             'special_effects': []
         }
         
+        # Overwatch restriction: only unmodified 6s hit
+        if getattr(attacker.parent_unit, '_overwatch_sixes_only', False):
+            dice_roll = get_roll("D6")
+            try:
+                weapon_name_for_log = getattr(self, 'parent_wargear', None).name if getattr(self, 'parent_wargear', None) else getattr(self, 'name', 'Weapon')
+                append_dice(attacker.parent_unit.get_parent_army().player.name, f"Overwatch Hit roll: {dice_roll} for {attacker.name} with {weapon_name_for_log}")
+            except Exception:
+                pass
+            hit_result['roll'] = dice_roll
+            if dice_roll == 6:
+                hit_result['hit'] = True
+                hit_result['special_effects'].append("Overwatch: 6 required to hit")
+                attack_instance['crit_hit'] = True
+            else:
+                hit_result['hit'] = False
+                hit_result['special_effects'].append("Overwatch: Miss (requires unmodified 6)")
+            return hit_result
+
         if self.is_torrent():
             hit_result['hit'] = True
             hit_result['special_effects'].append("Torrent (auto-hit)")
@@ -325,6 +371,15 @@ class WargearProfile:
         hit_result['needed'] = self.skill
         hit_result['final_needed'] = final_needed
 
+        # Provide reroll callback for hit
+        def _reroll_hit():
+            new_roll = get_roll("D6")
+            try:
+                weapon_name_for_log = getattr(self, 'parent_wargear', None).name if getattr(self, 'parent_wargear', None) else getattr(self, 'name', 'Weapon')
+                append_dice(attacker.parent_unit.get_parent_army().player.name, f"Hit re-roll: {new_roll} for {attacker.name} with {weapon_name_for_log}")
+            except Exception:
+                pass
+            return new_roll
         dice_roll = get_roll("D6")
         try:
             # weapon_display_name available in attack(); provide fallback here
@@ -333,6 +388,13 @@ class WargearProfile:
         except Exception:
             pass
         hit_result['roll'] = dice_roll
+        # Publish roll_made for hit
+        try:
+            unit = attacker.parent_unit
+            game = unit.get_parent_army().player.game
+            game.event_system.publish("roll_made", player=unit.get_parent_army().player, unit=unit, roll_type="hit", value=dice_roll, reroll=_reroll_hit)
+        except Exception:
+            pass
         
         if dice_roll == 1:  # unmodified dice roll of 1 is always a miss
             hit_result['hit'] = False
@@ -382,6 +444,15 @@ class WargearProfile:
         target_toughness = target.toughness
         wound_result['target_toughness'] = target_toughness
         strength = self.strength
+        # Provide reroll callback for wound
+        def _reroll_wound():
+            new_roll = get_roll("D6")
+            try:
+                weapon_name_for_log = getattr(self, 'parent_wargear', None).name if getattr(self, 'parent_wargear', None) else getattr(self, 'name', 'Weapon')
+                append_dice(attacker.parent_unit.get_parent_army().player.name, f"Wound re-roll: {new_roll} vs T{target_toughness} by {attacker.name} with {weapon_name_for_log}")
+            except Exception:
+                pass
+            return new_roll
         dice_roll = get_roll("D6")
         try:
             weapon_name_for_log = getattr(self, 'parent_wargear', None).name if getattr(self, 'parent_wargear', None) else getattr(self, 'name', 'Weapon')
@@ -389,6 +460,13 @@ class WargearProfile:
         except Exception:
             pass
         wound_result['roll'] = dice_roll
+        # Publish roll_made for wound
+        try:
+            unit = attacker.parent_unit
+            game = unit.get_parent_army().player.game
+            game.event_system.publish("roll_made", player=unit.get_parent_army().player, unit=unit, roll_type="wound", value=dice_roll, reroll=_reroll_wound)
+        except Exception:
+            pass
 
         if dice_roll == 1:  # unmodified dice roll of 1 is always a miss
             wound_result['wound'] = False
@@ -477,6 +555,14 @@ class WargearProfile:
                 save_result['save_type'] = 'invulnerable'
                 save_result['final_save'] = save_value
 
+        # Provide reroll callback for save
+        def _reroll_save():
+            new_roll = get_roll("D6")
+            try:
+                append_dice(target_model.parent_unit.get_parent_army().player.name, f"Save re-roll: {new_roll} (need {save_value}+) for {target_model.name}")
+            except Exception:
+                pass
+            return new_roll
         dice_roll = get_roll("D6")
         try:
             append_dice(target_model.parent_unit.get_parent_army().player.name, f"Save roll: {dice_roll} (need {save_value}+) for {target_model.name}")
@@ -484,6 +570,13 @@ class WargearProfile:
             pass
         save_result['roll'] = dice_roll
         save_result['needed'] = save_value
+        # Publish roll_made for save
+        try:
+            unit = target_model.parent_unit
+            game = unit.get_parent_army().player.game
+            game.event_system.publish("roll_made", player=unit.get_parent_army().player, unit=unit, roll_type="save", value=dice_roll, reroll=_reroll_save)
+        except Exception:
+            pass
         
         if dice_roll == 1:  # unmodified dice roll of 1 is always a fail
             save_result['saved'] = False
@@ -562,8 +655,19 @@ class WargearProfile:
         
         # Calculate damage with detailed tracking
         if isinstance(self.damage, DiceCollection):
+            # Provide reroll callback for damage
+            def _reroll_damage():
+                new_val, new_rolls = self.damage.roll_detailed()
+                return new_val, new_rolls
             damage_value, dice_rolls = self.damage.roll_detailed()
             damage_result['damage_dice_rolls'] = dice_rolls
+            # Publish roll_made for damage
+            try:
+                unit = attacker.parent_unit
+                game = unit.get_parent_army().player.game
+                game.event_system.publish("roll_made", player=unit.get_parent_army().player, unit=unit, roll_type="damage", value=damage_value, dice=dice_rolls, reroll=_reroll_damage)
+            except Exception:
+                pass
         else:
             damage_value = self.damage
             damage_result['damage_dice_rolls'] = []

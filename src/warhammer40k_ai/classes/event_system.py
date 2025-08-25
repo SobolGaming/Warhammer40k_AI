@@ -10,5 +10,15 @@ class EventSystem:
         self.subscribers.setdefault(event_name, []).append(callback)
 
     def publish(self, event_name: str, **kwargs):
+        try:
+            print(f"🔔 Event publish: {event_name} -> {kwargs}")
+        except Exception:
+            pass
         for callback in self.subscribers.get(event_name, []):
-            callback(**kwargs)
+            try:
+                callback(**kwargs)
+            except Exception as e:
+                try:
+                    print(f"⚠️ Event callback error for '{event_name}': {e}")
+                except Exception:
+                    pass

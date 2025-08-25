@@ -55,6 +55,20 @@ class IndividualModelMovementDialog(BaseDialog):
         self.selected_model_index = None
         self.awaiting_battlefield_click = False
 
+        # Publish unit move started (for Stratagem reactions like Overwatch)
+        try:
+            _player = getattr(self.unit.get_parent_army(), 'player', None)
+            _game = getattr(_player, 'game', None) if _player else None
+            if _game and hasattr(_game, 'event_system'):
+                action = 'move'
+                if self.movement_type == 'advance':
+                    action = 'advance'
+                elif self.movement_type == 'fall_back':
+                    action = 'fall_back'
+                _game.event_system.publish("unit_move_started", unit=self.unit, action=action)
+        except Exception:
+            pass
+
         # Initialize model buttons and dialog buttons
         self._create_model_buttons()
         self._create_dialog_buttons()
@@ -686,6 +700,20 @@ class IndividualModelMovementDialog(BaseDialog):
             self.callback(True)  # Movement completed
 
         self.hide()
+
+        # Publish unit move ended (for Stratagem reactions like Overwatch)
+        try:
+            _player = getattr(self.unit.get_parent_army(), 'player', None)
+            _game = getattr(_player, 'game', None) if _player else None
+            if _game and hasattr(_game, 'event_system'):
+                action = 'move'
+                if self.movement_type == 'advance':
+                    action = 'advance'
+                elif self.movement_type == 'fall_back':
+                    action = 'fall_back'
+                _game.event_system.publish("unit_move_ended", unit=self.unit, action=action)
+        except Exception:
+            pass
         
     def _skip_movement(self):
         """Skip movement for this unit"""

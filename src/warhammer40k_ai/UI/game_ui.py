@@ -1275,8 +1275,19 @@ class GameView:
         pygame.draw.rect(self.screen, (45,45,48), (left, y, width, height))
         pygame.draw.rect(self.screen, (63,63,70), (left, y, width, height), 2)
 
-        quarter = width // 4
-        boxes = [pygame.Rect(i*quarter, y, quarter, height) for i in range(4)]
+        # Layout: Stratagem - P1 Actions - P1 Dice - P2 Dice - P2 Actions - Stratagem
+        strat_w = max(120, int(width * 0.10))
+        remaining = max(0, width - (strat_w * 2))
+        box_w = remaining // 4
+
+        x_cursor = left
+        strat_left_rect = pygame.Rect(x_cursor, y, strat_w, height)
+        x_cursor += strat_w
+        boxes = [
+            pygame.Rect(x_cursor + i * box_w, y, box_w, height) for i in range(4)
+        ]
+        x_cursor += box_w * 4
+        strat_right_rect = pygame.Rect(x_cursor, y, width - x_cursor, height)  # Fill to end
 
         p1_name = self.player1.name
         p2_name = self.player2.name
@@ -1285,31 +1296,143 @@ class GameView:
         p2_actions = get_recent_actions(p2_name, limit=50)
         p2_dice = get_recent_dice(p2_name, limit=50)
 
-        self._draw_scroll_text_box(boxes[0], p1_actions, title=f"{p1_name} Actions")
-        self._draw_scroll_text_box(boxes[1], p1_dice, title=f"{p1_name} Dice")
-        self._draw_scroll_text_box(boxes[2], p2_dice, title=f"{p2_name} Dice")
-        self._draw_scroll_text_box(boxes[3], p2_actions, title=f"{p2_name} Actions")
+        # Draw left/right Stratagem buttons
+        self._draw_stratagem_button(strat_left_rect, self.player1)
+        self._draw_stratagem_button(strat_right_rect, self.player2)
 
-    def _draw_scroll_text_box(self, rect: pygame.Rect, lines, title: str = "Logs") -> None:
+        # Save hitboxes for click handling
+        if not hasattr(self, '_ui_hitboxes'):
+            self._ui_hitboxes = {}
+        self._ui_hitboxes['strat_p1'] = (pygame.Rect(strat_left_rect), self.player1)
+        self._ui_hitboxes['strat_p2'] = (pygame.Rect(strat_right_rect), self.player2)
+
+        # Initialize bottom log scroll state and hitboxes
+        if not hasattr(self, '_bottom_log_scroll'):
+            self._bottom_log_scroll = {
+                'p1_actions': 0,
+                'p1_dice': 0,
+                'p2_dice': 0,
+                'p2_actions': 0,
+            }
+        self._bottom_log_boxes = {
+            'p1_actions': boxes[0],
+            'p1_dice': boxes[1],
+            'p2_dice': boxes[2],
+            'p2_actions': boxes[3],
+        }
+
+        # Draw the four log boxes with wrapping and scroll support
+        self._draw_scroll_text_box(boxes[0], p1_actions, key='p1_actions', title=f"{p1_name} Actions")
+        self._draw_scroll_text_box(boxes[1], p1_dice, key='p1_dice', title=f"{p1_name} Dice")
+        self._draw_scroll_text_box(boxes[2], p2_dice, key='p2_dice', title=f"{p2_name} Dice")
+        self._draw_scroll_text_box(boxes[3], p2_actions, key='p2_actions', title=f"{p2_name} Actions")
+
+    def _draw_stratagem_button(self, rect: pygame.Rect, player) -> None:
+        # Determine glow/available state
+        glow = False
+        count = 0
+        try:
+            mgr = getattr(player, 'stratagems', None)
+            if mgr:
+                pending = mgr.get_pending_reactions() or []
+                avail = mgr.list_available_for_current_phase() or []
+                count = len(pending) + len(avail)
+                glow = count > 0
+        except Exception:
+            glow = False
+            count = 0
+
+        bg = (60, 60, 67) if not glow else (100, 149, 237)
+        fg = (255, 255, 255)
+        pygame.draw.rect(self.screen, bg, rect)
+        pygame.draw.rect(self.screen, (63,63,70), rect, 1)
+        try:
+            title_font = pygame.font.SysFont('Arial', 16, bold=True)
+            sub_font = pygame.font.SysFont('Arial', 14, bold=False)
+        except Exception:
+            title_font = pygame.font.Font(None, 16)
+            sub_font = pygame.font.Font(None, 14)
+
+        # Two-line label: "Player 1/2" on first line, "Stratagem" (with count) on second line
+        if player is self.player1:
+            player_label = "Player 1"
+        elif player is self.player2:
+            player_label = "Player 2"
+        else:
+            player_label = getattr(player, 'name', 'Player')
+
+        strat_label = "Stratagem" if count == 0 else f"Stratagem ({count})"
+
+        ts1 = title_font.render(strat_label, True, fg)
+        ts2 = sub_font.render(player_label, True, fg)
+
+        # Center both lines vertically within the rect
+        total_h = ts1.get_height() + ts2.get_height() + 2
+        start_y = rect.y + (rect.height - total_h) // 2
+
+        tr1 = ts1.get_rect(centerx=rect.centerx)
+        tr1.y = start_y
+        tr2 = ts2.get_rect(centerx=rect.centerx)
+        tr2.y = tr1.bottom + 2
+
+        self.screen.blit(ts1, tr1)
+        self.screen.blit(ts2, tr2)
+
+    def _draw_scroll_text_box(self, rect: pygame.Rect, lines, key: str, title: str = "Logs") -> None:
         pygame.draw.rect(self.screen, (40,40,44), rect)
         pygame.draw.rect(self.screen, (70,70,78), rect, 1)
         try:
-            font = pygame.font.SysFont('Consolas', 14)
+            msg_font = pygame.font.SysFont('Consolas', 12)
             title_font = pygame.font.SysFont('Arial', 14, bold=True)
         except Exception:
-            font = pygame.font.Font(None, 14)
+            msg_font = pygame.font.Font(None, 12)
             title_font = pygame.font.Font(None, 14)
+        # Title
         ts = title_font.render(title, True, (220,220,230))
-        self.screen.blit(ts, (rect.x + 6, rect.y + 6))
-        max_lines = (rect.height - 28) // 16
-        to_show = list(lines)[-max_lines:]
+        self.screen.blit(ts, (rect.x + 6, rect.y + 4))
+
+        # Word-wrap all lines into wrapped_lines list
+        content_left = rect.x + 6
+        content_top = rect.y + 24
+        content_width = rect.width - 12
+        content_height = rect.height - (content_top - rect.y) - 6
+
+        def wrap_text(text: str) -> list:
+            words = text.split(' ')
+            wrapped = []
+            line = ''
+            for w in words:
+                test = (line + ' ' + w).strip()
+                surf = msg_font.render(test, True, (0,0,0))
+                if surf.get_width() > content_width and line:
+                    wrapped.append(line)
+                    line = w
+                else:
+                    line = test
+            if line:
+                wrapped.append(line)
+            return wrapped
+
+        wrapped_lines = []
+        for ln in lines:
+            wrapped_lines.extend(wrap_text(str(ln)))
+
+        # Determine how many wrapped lines fit and apply scroll offset (from bottom)
+        line_height = msg_font.get_height() + 2
+        max_visible = max(0, content_height // line_height)
+        offset = int(self._bottom_log_scroll.get(key, 0) or 0)
+        start_index = max(0, len(wrapped_lines) - max_visible - offset)
+        end_index = len(wrapped_lines) - offset if offset > 0 else len(wrapped_lines)
+        to_show = wrapped_lines[start_index:end_index]
+
+        # Draw from bottom up for consistent feel with logs
         y_cursor = rect.y + rect.height - 6
         for line in reversed(to_show):
-            surf = font.render(line, True, (200,200,200))
-            y_cursor -= surf.get_height() + 2
-            if y_cursor < rect.y + 24:
+            surf = msg_font.render(line, True, (200,200,200))
+            y_cursor -= line_height
+            if y_cursor < content_top:
                 break
-            self.screen.blit(surf, (rect.x + 6, y_cursor))
+            self.screen.blit(surf, (content_left, y_cursor))
 
     def _draw_mission_popup_overlay(self, title: str, body: str) -> None:
         overlay = pygame.Surface(self.screen.get_size(), pygame.SRCALPHA)
@@ -1415,6 +1538,29 @@ class GameView:
                     # Otherwise consume the click within top pane
                     return True
 
+            # Handle bottom stratagem button clicks
+            if hasattr(self, '_ui_hitboxes'):
+                # Left and right stratagem buttons are stored as 'strat_p1' and 'strat_p2'
+                for key in ('strat_p1', 'strat_p2'):
+                    if key in self._ui_hitboxes:
+                        rect, player = self._ui_hitboxes[key]
+                        if rect.collidepoint(event.pos):
+                            # Build a simple summary body for available reactions/options
+                            try:
+                                mgr = getattr(player, 'stratagems', None)
+                                pending = mgr.get_pending_reactions() if mgr else []
+                                avail = mgr.list_available_for_current_phase() if mgr else []
+                                items = []
+                                for r in pending:
+                                    items.append(f"[Reaction] {r.get('stratagem','')} ({r.get('event','')})")
+                                for s in avail:
+                                    items.append(f"{getattr(s, 'name', 'Stratagem')}")
+                                body = "No stratagems available." if not items else "\n".join(items[:20])
+                                self._mission_popup = {'title': f"{player.name} Stratagems", 'body': body}
+                            except Exception:
+                                self._mission_popup = {'title': f"{player.name} Stratagems", 'body': 'No stratagems available.'}
+                            return True
+
         # PRIORITY 2: Let phase manager handle phase-specific events next
         # print(f"🔍 DEBUG: GameView - Delegating to phase manager")
         if self.phase_manager.handle_event(event):
@@ -1503,6 +1649,15 @@ class GameView:
 
     def on_mouse_scroll(self, x, y, scroll_y):
         """Handle mouse scroll events"""
+        # PRIORITY 0.5: Bottom logs scroll (before other panes if mouse over the boxes)
+        try:
+            if hasattr(self, '_bottom_log_boxes') and hasattr(self, '_bottom_log_scroll'):
+                for key, rect in self._bottom_log_boxes.items():
+                    if rect.collidepoint(x, y):
+                        self._bottom_log_scroll[key] = max(0, int(self._bottom_log_scroll.get(key, 0)) - scroll_y)
+                        return
+        except Exception:
+            pass
         # PRIORITY 1: Check if scrolling in unit detail panel first (highest priority)
         if self.detailed_unit:
             # Use the rect that was set during drawing (if it exists)

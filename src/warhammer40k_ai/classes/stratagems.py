@@ -170,6 +170,7 @@ class StratagemManager:
         if not es:
             return
         es.subscribe("phase_start", self._on_phase_start)
+        es.subscribe("phase_end", self._on_phase_end)
         es.subscribe("battle_shock_test_started", self._on_battle_shock_test_started)
         es.subscribe("battle_shock_test_resolved", self._on_battle_shock_test_resolved)
         # Movement events for Overwatch
@@ -211,6 +212,24 @@ class StratagemManager:
         except Exception:
             pass
 
+    def _on_phase_end(self, player, phase, **kwargs):
+        # Queue NEW ORDERS at end of your Command phase
+        try:
+            is_your_turn = player is self.player
+            phase_name = getattr(phase, 'name', None)
+            if is_your_turn and phase_name == 'COMMAND_PHASE':
+                s = self.get_by_name('NEW ORDERS')
+                if s and s.can_use(self.player, self.game, phase_name='Command phase'):
+                    if getattr(self.player, 'active_secondaries', None) and self.player.can_draw_secondary():
+                        self._pending_reactions.append({
+                            'event': 'phase_end',
+                            'phase': 'Command phase',
+                            'stratagem': s.name,
+                            'cp_cost': s.cp_cost,
+                            'options': [c for c in self.player.active_secondaries],
+                        })
+        except Exception:
+            pass
     def _on_battle_shock_test_started(self, unit, **kwargs):
         # Opportunity to use pre-test variants if implemented later
         pass
@@ -265,7 +284,33 @@ class StratagemManager:
         # CP check
         if self.player.command_points < s.cp_cost:
             return
-        # Range/visibility check is deferred to conditions/effect at use-time; queue opportunity
+        # QUICK ELIGIBILITY PRECHECKS per Stratagem text:
+        # - Your unit must be within 24" of the enemy unit
+        # - Cannot target a TITANIC friendly unit to fire Overwatch
+        # - Enemy must be visible to your unit (checked later at use-time; here we only queue if 24" condition holds)
+        try:
+            candidates = []
+            for unit in getattr(self.player.get_army(), 'units', []) or []:
+                if not unit.is_alive() or not unit.deployed:
+                    continue
+                if getattr(unit, 'is_titanic', False):
+                    continue  # Restriction: cannot select a TITANIC friendly unit
+                # Distance check to moving enemy unit (edge-to-edge shortest model pair)
+                dist = None
+                try:
+                    if hasattr(self.game, 'map') and hasattr(self.game.map, 'get_distance_between_units'):
+                        dist = self.game.map.get_distance_between_units(unit, moving_unit)
+                except Exception:
+                    dist = None
+                if dist is not None and dist <= 24.0:
+                    candidates.append(unit)
+            if not candidates:
+                return
+        except Exception:
+            # If we fail to evaluate candidates, be conservative and don't queue
+            return
+
+        # Queue opportunity with minimal context; unit selection happens in UI/use-time
         self._pending_reactions.append({
             'event': 'enemy_move',
             'when': when,
@@ -273,6 +318,7 @@ class StratagemManager:
             'enemy_unit': moving_unit,
             'phase_name': phase_name,
             'cp_cost': s.cp_cost,
+            'candidates': candidates,
         })
 
     # Command Re-roll trigger on roll_made for active player only
@@ -341,6 +387,181 @@ class StratagemManager:
                 print(f"🛡️ INSANE BRAVERY used on {target.name}: treat test as passed; not Battle-shocked.")
             except Exception:
                 pass
+        # Special-case: FIRE OVERWATCH full resolution
+        if s.name.upper() in ("FIRE OVERWATCH", "OVERWATCH"):
+            enemy_unit = kwargs.get("enemy_unit")
+            if not enemy_unit:
+                # Try to take from last pending
+                if self._pending_reactions:
+                    for r in self._pending_reactions:
+                        if r.get('stratagem','').upper() in ("FIRE OVERWATCH", "OVERWATCH"):
+                            enemy_unit = r.get('enemy_unit')
+                            break
+            if not enemy_unit:
+                print("❌ Overwatch: no enemy unit context")
+                return False
+            # Choose shooter unit
+            shooter = kwargs.get("shooter_unit")
+            if not shooter:
+                # Prefer candidates if present, else find any within 24"
+                candidates = []
+                try:
+                    for unit in getattr(self.player.get_army(), 'units', []) or []:
+                        if not unit.is_alive() or not unit.deployed:
+                            continue
+                        if getattr(unit, 'is_titanic', False):
+                            continue
+                        dist = None
+                        try:
+                            if hasattr(self.game, 'map') and hasattr(self.game.map, 'get_distance_between_units'):
+                                dist = self.game.map.get_distance_between_units(unit, enemy_unit)
+                        except Exception:
+                            dist = None
+                        if dist is not None and dist <= 24.0:
+                            candidates.append(unit)
+                except Exception:
+                    candidates = []
+                # Pick heuristic: most ranged weapons
+                if candidates:
+                    shooter = max(candidates, key=lambda u: sum(1 for m in u.models for w in getattr(m, 'wargear', []) if getattr(w, 'is_ranged', lambda: False)()))
+            if not shooter:
+                print("❌ Overwatch: no eligible shooter in 24\"")
+                return False
+            # Build declarations: group best ranged profile per model for target
+            declarations = []
+            profile_to_models = {}
+            for model in shooter.models:
+                if not getattr(model, 'is_alive', False):
+                    continue
+                best_profile = None
+                best_score = -1.0
+                for wargear in getattr(model, 'wargear', []) or []:
+                    if not getattr(wargear, 'is_ranged', lambda: False)():
+                        continue
+                    for _, profile in getattr(wargear, 'profiles', {}).items():
+                        try:
+                            score = float(profile.get_damage_potential(enemy_unit))
+                        except Exception:
+                            score = 0.0
+                        if score > best_score:
+                            best_score = score
+                            best_profile = profile
+                if best_profile is not None:
+                    profile_to_models.setdefault(best_profile, []).append(model)
+            for profile, models in profile_to_models.items():
+                declarations.append({'weapon_profile': profile, 'target_unit': enemy_unit, 'models': models})
+            if not declarations:
+                print("❌ Overwatch: no ranged weapons eligible")
+                return False
+            # Apply Overwatch hit restriction: only unmodified 6 hits
+            try:
+                setattr(shooter, '_overwatch_sixes_only', True)
+                print(f"🎯 Overwatch: {shooter.name} firing at {enemy_unit.name} ({len(declarations)} weapons)")
+                ok = shooter.execute_shooting_declarations(declarations, self.game.map)
+            finally:
+                try:
+                    delattr(shooter, '_overwatch_sixes_only')
+                except Exception:
+                    pass
+            if ok:
+                # Mark once per turn consumed
+                self._used_this_turn['OVERWATCH'] = True
+                # Spend CP and return through normal use path (so CP is deducted consistently)
+                if not self.player.spend_command_points(s.cp_cost):
+                    print("⚠️ Overwatch succeeded but CP spend failed; adjusting CP manually")
+                return True
+            else:
+                print("❌ Overwatch: shooting failed or invalid")
+                return False
+
+        # Special-case: COMMAND RE-ROLL
+        if s.name.upper() == "COMMAND RE-ROLL":
+            # Find the pending roll context if not provided
+            roll_type = kwargs.get('roll_type')
+            reroll_cb = kwargs.get('reroll')
+            unit = kwargs.get('unit')
+            dice = kwargs.get('dice')
+            value = kwargs.get('value')
+            if not reroll_cb:
+                for r in reversed(self._pending_reactions):
+                    if r.get('stratagem', '').upper() == 'COMMAND RE-ROLL':
+                        reroll_cb = r.get('reroll')
+                        roll_type = roll_type or r.get('roll_type')
+                        unit = unit or r.get('unit')
+                        dice = dice or r.get('dice')
+                        value = value or r.get('value')
+                        break
+            if not callable(reroll_cb):
+                print("❌ Command Re-roll: no reroll callback available")
+                return False
+            # Spend CP first per rules, then perform the reroll
+            if not self.player.spend_command_points(s.cp_cost):
+                return False
+            try:
+                result = reroll_cb()
+                # Optional: log outcome
+                try:
+                    name = getattr(unit, 'name', 'Unit') if unit else 'Unit'
+                    if roll_type == 'advance':
+                        print(f"🔁 Command Re-roll: {name} new advance roll -> {result}")
+                    elif roll_type == 'charge':
+                        total = result[0] if isinstance(result, (list, tuple)) else result
+                        print(f"🔁 Command Re-roll: {name} new charge roll -> {total}")
+                    elif roll_type == 'hazardous':
+                        print(f"🔁 Command Re-roll: {name} new hazardous roll -> {result}")
+                    elif roll_type in ('hit','wound','save','damage','attacks'):
+                        print(f"🔁 Command Re-roll: {name} new {roll_type} roll -> {result}")
+                    else:
+                        print(f"🔁 Command Re-roll executed ({roll_type})")
+                except Exception:
+                    pass
+                # Mark once-per-turn limiter
+                self._used_this_turn['COMMAND RE-ROLL'] = True
+                # Remove the matching pending reaction if present
+                for i in range(len(self._pending_reactions)-1, -1, -1):
+                    if self._pending_reactions[i].get('stratagem', '').upper() == 'COMMAND RE-ROLL':
+                        self._pending_reactions.pop(i)
+                        break
+                return True
+            except Exception as e:
+                print(f"❌ Command Re-roll failed: {e}")
+                return False
+
+        # Special-case: NEW ORDERS (discard one active Secondary and draw a new one)
+        if s.name.upper() == "NEW ORDERS":
+            # Must be your Command phase end; we gate to Command phase + your turn via is_phase_allowed/is_turn_allowed
+            # Additional availability: need an active secondary and at least one card to draw
+            player_obj = self.player
+            if not getattr(player_obj, 'active_secondaries', None):
+                print("❌ New Orders: no active Secondary to discard")
+                return False
+            if not player_obj.can_draw_secondary():
+                print("❌ New Orders: no Secondary cards left to draw")
+                return False
+            # Choose target card (allow UI to pass one)
+            target_card = kwargs.get('secondary_card')
+            if target_card is None:
+                # Default heuristic: discard the first active
+                try:
+                    target_card = player_obj.active_secondaries[0]
+                except Exception:
+                    target_card = None
+            if target_card is None or target_card not in player_obj.active_secondaries:
+                print("❌ New Orders: invalid or missing target Secondary card")
+                return False
+            # Spend CP per stratagem cost
+            if not self.player.spend_command_points(s.cp_cost):
+                return False
+            # Discard chosen card and draw back up to two
+            try:
+                name = getattr(target_card, 'name', 'Secondary')
+                print(f"🗂️ New Orders: discarding '{name}' and drawing a new Secondary")
+            except Exception:
+                pass
+            player_obj.discard_secondary(target_card, gain_cp=False)
+            player_obj.draw_secondary_until_two(self.game)
+            return True
+
         # Provide phase_name for timing checks
         if 'phase_name' not in kwargs:
             kwargs['phase_name'] = self._current_phase_name

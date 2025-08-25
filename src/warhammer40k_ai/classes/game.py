@@ -1046,6 +1046,11 @@ class Game:
 
     def next_phase(self):
         """Advance to the next phase."""
+        # Publish end of current phase before advancing
+        try:
+            self.event_system.publish("phase_end", player=self.get_current_player(), phase=self.phase)
+        except Exception:
+            pass
         current_phase_value = self.phase.value
         next_phase_value = (current_phase_value + 1) % len(BattleRoundPhases)
         self.phase = BattleRoundPhases(next_phase_value)
@@ -1139,6 +1144,12 @@ class Game:
             for obj in self.map.objectives:
                 if hasattr(obj, 'location') and hasattr(obj.location, 'update_control'):
                     obj.location.update_control(self)
+
+        # Publish end of Command phase for Stratagems like NEW ORDERS
+        try:
+            self.event_system.publish("phase_end", player=self.get_current_player(), phase=self.phase)
+        except Exception:
+            pass
 
     def is_movement_phase(self) -> bool:
         return self.phase == BattleRoundPhases.MOVEMENT_PHASE
