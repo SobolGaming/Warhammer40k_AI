@@ -111,6 +111,10 @@ class Game:
         self.phase = BattleRoundPhases.COMMAND_PHASE  # Initialize phase to COMMAND_PHASE
         self.do_ai_action = False  # Initialize AI action flag
         
+        # Wire game reference into any pre-supplied players
+        for p in self.players:
+            p.set_game(self)
+
         # Setup phase tracking
         self.setup_phase = SetupPhase.MUSTER_ARMIES  # Start with first setup phase
         self.setup_complete = False  # Track when setup is finished

@@ -30,6 +30,7 @@ from .ui_utils import (
     draw_psyker_icon,
     draw_generic_icon
 )
+from .dialogs.stratagem_dialog import StratagemDialog
 
 # Constants
 TILE_SIZE = 20  # 20 pixels per inch
@@ -1053,6 +1054,12 @@ class GameView:
         self.panning = False
         self.pan_start_pos = (0, 0)
         self.pan_start_offset = (0, 0)
+
+        # Stratagem reaction windows (per-player)
+        # {player_obj: { 'expires_at': int(ms), 'claimed': bool, 'on_timeout': Optional[Callable] }}
+        self._stratagem_windows = {}
+        # Subscribe to movement end to offer opponent Overwatch window
+        self.game.event_system.subscribe("unit_move_ended", self._on_unit_move_ended)
         
         # Create roster panes with reference to all units for color correlation
         # Roster panes now extend to full battlefield height + info pane height
@@ -1093,6 +1100,13 @@ class GameView:
         # Position InfoPane between roster panes and below battlefield
         self.info_pane = InfoPane(scaled_roster_width, scaled_battlefield_height, 
                                 scaled_battlefield_width, scaled_info_height, self.selected_unit)
+        
+        # Stratagem dialog instance
+        screen_width, screen_height = self.screen.get_size()
+        self.stratagem_dialog = StratagemDialog(screen_width, screen_height)
+        # Initialize shared UI state
+        self._ui_hitboxes = {}
+        self._mission_popup = None
 
     def resize_layout(self, screen_width: int, screen_height: int) -> None:
         """Handle window resize: recompute pane sizes and positions based on new screen size."""
@@ -1331,16 +1345,24 @@ class GameView:
         # Determine glow/available state
         glow = False
         count = 0
-        try:
-            mgr = getattr(player, 'stratagems', None)
-            if mgr:
-                pending = mgr.get_pending_reactions() or []
-                avail = mgr.list_available_for_current_phase() or []
-                count = len(pending) + len(avail)
-                glow = count > 0
-        except Exception:
-            glow = False
-            count = 0
+        mgr = player.stratagems
+        pending = mgr.get_pending_reactions() or []
+        avail = mgr.list_available_for_current_phase() or []
+        count = len(pending) + len(avail)
+        glow = count > 0
+
+        # If a stratagem window is active for this player, force glow and show countdown
+        window = self._stratagem_windows.get(player)
+        remaining_label = None
+        if window:
+            now_ms = pygame.time.get_ticks()
+            if not window.get('claimed', False):
+                remaining_ms = max(0, int(window.get('expires_at', 0)) - now_ms)
+                remaining_s = remaining_ms / 1000.0
+                remaining_label = f"{remaining_s:.1f}s"
+            else:
+                remaining_label = "waiting"
+            glow = True
 
         bg = (60, 60, 67) if not glow else (100, 149, 237)
         fg = (255, 255, 255)
@@ -1361,7 +1383,11 @@ class GameView:
         else:
             player_label = getattr(player, 'name', 'Player')
 
-        strat_label = "Stratagem" if count == 0 else f"Stratagem ({count})"
+        strat_label = "Stratagem"
+        if remaining_label is not None:
+            strat_label = f"Stratagem ({remaining_label})"
+        elif count > 0:
+            strat_label = f"Stratagem ({count})"
 
         ts1 = title_font.render(strat_label, True, fg)
         ts2 = sub_font.render(player_label, True, fg)
@@ -1515,21 +1541,39 @@ class GameView:
                     self.close_unit_details()
                     return True
 
+        # PRIORITY 0.8: Stratagem dialog (must capture before other panes)
+        if hasattr(self, 'stratagem_dialog') and self.stratagem_dialog.visible:
+            if self.stratagem_dialog.handle_event(event):
+                return True
+
         # PRIORITY 1: Top pane and overlay handling BEFORE phase-specific handlers
         if event.type == pygame.MOUSEBUTTONDOWN:
             # Mission popup overlay closes on any click
             if getattr(self, '_mission_popup', None):
                 self._mission_popup = None
+                # If a claimed stratagem window exists, resume flow now
+                for p, wnd in list(self._stratagem_windows.items()):
+                    if wnd.get('claimed', False):
+                        cb = wnd.get('on_timeout')
+                        # Clear first to avoid reentrancy issues
+                        del self._stratagem_windows[p]
+                        if callable(cb):
+                            try:
+                                cb()
+                            except Exception:
+                                pass
                 return True
             # Intercept clicks in the top status pane so they don't fall through
-            if hasattr(self, 'top_pane_height_px'):
+            if True:
                 left = self.scaled_roster_width
                 width = self.scaled_battlefield_width
                 top_rect = pygame.Rect(left, 0, width, self.top_pane_height_px)
                 if top_rect.collidepoint(event.pos):
-                    # If clicking on mission buttons, open popup
-                    if hasattr(self, '_ui_hitboxes'):
-                        for _, (rect, card) in list(self._ui_hitboxes.items()):
+                    # If clicking on mission buttons (primary/secondaries), open popup
+                    if self._ui_hitboxes:
+                        for key, (rect, card) in list(self._ui_hitboxes.items()):
+                            if key != 'primary' and not str(key).startswith('sec_'):
+                                continue
                             if rect.collidepoint(event.pos) and card is not None:
                                 title = getattr(card, 'name', 'Mission')
                                 body = getattr(card, 'description', '')
@@ -1539,17 +1583,35 @@ class GameView:
                     return True
 
             # Handle bottom stratagem button clicks
-            if hasattr(self, '_ui_hitboxes'):
+            if self._ui_hitboxes:
                 # Left and right stratagem buttons are stored as 'strat_p1' and 'strat_p2'
                 for key in ('strat_p1', 'strat_p2'):
                     if key in self._ui_hitboxes:
                         rect, player = self._ui_hitboxes[key]
                         if rect.collidepoint(event.pos):
-                            # Build a simple summary body for available reactions/options
-                            try:
-                                mgr = getattr(player, 'stratagems', None)
-                                pending = mgr.get_pending_reactions() if mgr else []
-                                avail = mgr.list_available_for_current_phase() if mgr else []
+                            # If a window exists for this player, mark it claimed to pause flow
+                            if player in self._stratagem_windows:
+                                try:
+                                    self._stratagem_windows[player]['claimed'] = True
+                                except Exception:
+                                    pass
+                            # Open interactive stratagem dialog
+                            def _on_closed():
+                                # When dialog closes, if there was a claimed window, clear it and resume via callback
+                                wnd = self._stratagem_windows.pop(player, None)
+                                if wnd:
+                                    cb = wnd.get('on_timeout')
+                                    if callable(cb):
+                                        try:
+                                            cb()
+                                        except Exception:
+                                            pass
+                            if self.stratagem_dialog:
+                                self.stratagem_dialog.show(player, self.game, on_closed=_on_closed)
+                            else:
+                                mgr = player.stratagems
+                                pending = mgr.get_pending_reactions()
+                                avail = mgr.list_available_for_current_phase()
                                 items = []
                                 for r in pending:
                                     items.append(f"[Reaction] {r.get('stratagem','')} ({r.get('event','')})")
@@ -1557,8 +1619,6 @@ class GameView:
                                     items.append(f"{getattr(s, 'name', 'Stratagem')}")
                                 body = "No stratagems available." if not items else "\n".join(items[:20])
                                 self._mission_popup = {'title': f"{player.name} Stratagems", 'body': body}
-                            except Exception:
-                                self._mission_popup = {'title': f"{player.name} Stratagems", 'body': 'No stratagems available.'}
                             return True
 
         # PRIORITY 2: Let phase manager handle phase-specific events next
@@ -1622,6 +1682,57 @@ class GameView:
                     return True
         
         return False
+
+    # -------- Stratagem window helpers --------
+    def _now_ms(self) -> int:
+        return pygame.time.get_ticks()
+
+    def _tick_stratagem_windows(self) -> None:
+        # Resolve expired windows if not claimed
+        now_ms = self._now_ms()
+        expired = []
+        for p, wnd in list(self._stratagem_windows.items()):
+            if wnd.get('claimed', False):
+                # Claimed windows persist until popup closed (handled in click handler)
+                continue
+            if now_ms >= int(wnd.get('expires_at', 0)):
+                expired.append(p)
+        for p in expired:
+            wnd = self._stratagem_windows.pop(p, None) or {}
+            cb = wnd.get('on_timeout')
+            if callable(cb):
+                cb()
+
+    def start_stratagem_window(self, player, duration_seconds: float = 3.0, on_timeout=None) -> None:
+        expires_at = self._now_ms() + int(max(0.0, float(duration_seconds)) * 1000)
+        self._stratagem_windows[player] = {
+            'expires_at': expires_at,
+            'claimed': False,
+            'on_timeout': on_timeout,
+        }
+
+    def start_phase_end_window_if_needed(self) -> bool:
+        """If at end of Command phase (SPACE pressed), start a 3s window.
+        Returns True if a window was started and phase advancement should be deferred.
+        """
+        # Only for human players
+        current_player = self.game.get_current_player()
+        if current_player.type.name != 'HUMAN':
+            return False
+        # Only when current phase is Command
+        if self.game.phase.name == 'COMMAND_PHASE':
+            # On timeout/resume, actually advance the phase
+            def _advance():
+                self.game.next_phase()
+            self.start_stratagem_window(current_player, duration_seconds=3.0, on_timeout=_advance)
+            return True
+        return False
+
+    def _on_unit_move_ended(self, unit, action: str, **kwargs):
+        """Offer opponent a brief reaction window after a unit completes movement."""
+        owner_player = unit.get_parent_army().player
+        opponent = self.player2 if owner_player is self.player1 else self.player1
+        self.start_stratagem_window(opponent, duration_seconds=3.0, on_timeout=None)
 
     # Note: on_mouse_press is now handled by phase-specific handlers in PhaseManager
 
@@ -1842,6 +1953,8 @@ class GameView:
         return game_x, game_y
 
     def draw(self):
+        # Tick stratagem windows for timeouts
+        self._tick_stratagem_windows()
         self.screen.fill(DARK_GREY)
     
         # Draw roster panes with enhanced styling
@@ -2032,6 +2145,10 @@ class GameView:
 
         # Draw repurposed bottom logs pane
         self._draw_bottom_logs_pane()
+
+        # Draw stratagem dialog if visible
+        if hasattr(self, 'stratagem_dialog') and self.stratagem_dialog.visible:
+            self.stratagem_dialog.draw(self.screen)
 
         # Draw unit details panel if requested
         if self.detailed_unit:

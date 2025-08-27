@@ -493,8 +493,24 @@ def run_unified_game_loop(player_configs: dict) -> dict:
                             if current_player.type == PlayerType.AI:
                                 execute_ai_turn(game, current_player, agents)
                             else:
-                                # Human player - execute turn with fight phase support
-                                execute_human_turn(game, current_player, agents, ui_interface)
+                                # Human player manual advancement
+                                # Special handling: at end of Command phase, open a brief stratagem window
+                                if game.is_command_phase():
+                                    # Start your Command phase processing (draw cards, tests, etc.)
+                                    game.start_command_phase()
+                                    if game_view and hasattr(game_view, 'start_phase_end_window_if_needed'):
+                                        # If a window is started, defer advancing to Movement until it resolves
+                                        started = game_view.start_phase_end_window_if_needed()
+                                        if started:
+                                            continue
+                                    # No window needed; advance immediately
+                                    game.next_phase()
+                                elif game.is_fight_phase():
+                                    # UI-managed fight phase; do nothing and let UI handle it
+                                    pass
+                                else:
+                                    # Other phases advance immediately
+                                    game.next_phase()
                     elif event.key == pygame.K_ESCAPE:
                         if game_view:
                             game_view.close_unit_details()

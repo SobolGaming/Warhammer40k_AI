@@ -161,7 +161,23 @@ class StratagemManager:
         faction_id = getattr(army, "faction_id", None)
         detachment = getattr(army, "detachment_type", None)
         raw = self._waha.get_stratagems_for_faction(faction_id=faction_id, detachment=detachment)
-        self.available = [Stratagem.from_json(s) for s in raw]
+        # Exclude Boarding Actions and similar modes not used in standard games
+        tnorm = lambda t: (t or '').strip().lower()
+        filtered = [s for s in raw if 'boarding actions' not in tnorm(s.get('type')) and 'boarding action' not in tnorm(s.get('type'))]
+        # Prefer Core Stratagem variants and deduplicate by name (case-insensitive)
+        def _sort_key(entry: dict) -> int:
+            type_text = (entry.get('type', '') or '').strip().lower()
+            return 0 if 'core stratagem' in type_text else 1
+        filtered.sort(key=_sort_key)
+        seen_names = set()
+        unique: list[dict] = []
+        for entry in filtered:
+            name_key = (entry.get('name', '') or '').strip().lower()
+            if name_key in seen_names:
+                continue
+            seen_names.add(name_key)
+            unique.append(entry)
+        self.available = [Stratagem.from_json(s) for s in unique]
 
     def _subscribe_events(self) -> None:
         if self._event_subscribed or not self.game:
@@ -583,10 +599,18 @@ class StratagemManager:
     # -------- UI helpers for non-disruptive prompts --------
     def list_available_for_current_phase(self) -> List[Stratagem]:
         phase_name = self._current_phase_name
-        active_player = getattr(self.game, 'get_current_player', lambda: None)()
+        active_player = self.game.get_current_player()
         is_active_turn = active_player is self.player
+        # Hide any stratagem whose name is already present as a pending reaction
+        reaction_names = {str(r.get('stratagem', '')).strip().lower() for r in self._pending_reactions}
         results: List[Stratagem] = []
         for s in self.available:
+            name_key = s.name.strip().lower()
+            if name_key in reaction_names:
+                continue
+            if s.name.upper() in ("COMMAND RE-ROLL", "INSANE BRAVERY"):
+                # Only meaningful as reactions when a roll was made or battle-shock failed
+                continue
             if not s.is_phase_allowed(phase_name or ''):
                 continue
             if not s.is_turn_allowed(is_active_turn):
