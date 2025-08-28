@@ -328,15 +328,20 @@ class WargearProfile:
             'special_effects': []
         }
         
+        # Torrent auto-hits (in case of Overwatch it ignores 6+ restrictions)
+        if self.is_torrent():
+            hit_result['hit'] = True
+            hit_result['special_effects'].append("Torrent (auto-hit)")
+            return hit_result
+
         # Overwatch restriction: only unmodified 6s hit
         if getattr(attacker.parent_unit, '_overwatch_sixes_only', False):
             dice_roll = get_roll("D6")
-            try:
-                weapon_name_for_log = getattr(self, 'parent_wargear', None).name if getattr(self, 'parent_wargear', None) else getattr(self, 'name', 'Weapon')
-                append_dice(attacker.parent_unit.get_parent_army().player.name, f"Overwatch Hit roll: {dice_roll} for {attacker.name} with {weapon_name_for_log}")
-            except Exception:
-                pass
+            weapon_name_for_log = getattr(self, 'parent_wargear', None).name if getattr(self, 'parent_wargear', None) else getattr(self, 'name', 'Weapon')
+            append_dice(attacker.parent_unit.get_parent_army().player.name, f"Overwatch Hit roll: {dice_roll} for {attacker.name} with {weapon_name_for_log}")
             hit_result['roll'] = dice_roll
+            hit_result['needed'] = 6
+            hit_result['final_needed'] = 6
             if dice_roll == 6:
                 hit_result['hit'] = True
                 hit_result['special_effects'].append("Overwatch: 6 required to hit")
@@ -344,11 +349,6 @@ class WargearProfile:
             else:
                 hit_result['hit'] = False
                 hit_result['special_effects'].append("Overwatch: Miss (requires unmodified 6)")
-            return hit_result
-
-        if self.is_torrent():
-            hit_result['hit'] = True
-            hit_result['special_effects'].append("Torrent (auto-hit)")
             return hit_result
 
         # Calculate modifiers first (always do this)

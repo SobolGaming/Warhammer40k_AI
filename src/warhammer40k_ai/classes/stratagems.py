@@ -237,13 +237,20 @@ class StratagemManager:
                 s = self.get_by_name('NEW ORDERS')
                 if s and s.can_use(self.player, self.game, phase_name='Command phase'):
                     if getattr(self.player, 'active_secondaries', None) and self.player.can_draw_secondary():
-                        self._pending_reactions.append({
-                            'event': 'phase_end',
-                            'phase': 'Command phase',
-                            'stratagem': s.name,
-                            'cp_cost': s.cp_cost,
-                            'options': [c for c in self.player.active_secondaries],
-                        })
+                        # Deduplicate if already present for this phase end
+                        already = False
+                        for r in self._pending_reactions:
+                            if r.get('event') == 'phase_end' and r.get('stratagem') == s.name and r.get('phase') == 'Command phase':
+                                already = True
+                                break
+                        if not already:
+                            self._pending_reactions.append({
+                                'event': 'phase_end',
+                                'phase': 'Command phase',
+                                'stratagem': s.name,
+                                'cp_cost': s.cp_cost,
+                                'options': [c for c in self.player.active_secondaries],
+                            })
         except Exception:
             pass
     def _on_battle_shock_test_started(self, unit, **kwargs):
@@ -326,16 +333,34 @@ class StratagemManager:
             # If we fail to evaluate candidates, be conservative and don't queue
             return
 
-        # Queue opportunity with minimal context; unit selection happens in UI/use-time
-        self._pending_reactions.append({
-            'event': 'enemy_move',
-            'when': when,
-            'stratagem': s.name,
-            'enemy_unit': moving_unit,
-            'phase_name': phase_name,
-            'cp_cost': s.cp_cost,
-            'candidates': candidates,
-        })
+        # Queue opportunity with minimal context; UI will choose shooter before resolving
+        # Identify opponent for reaction window
+        try:
+            opponent = next(p for p in self.game.players if p is not owner_player)
+        except Exception:
+            opponent = None
+        # Deduplicate if same enemy move reaction is already queued
+        already = False
+        for r in self._pending_reactions:
+            if r.get('event') == 'enemy_move' and r.get('stratagem') == s.name and r.get('enemy_unit') is moving_unit:
+                already = True
+                break
+        if not already:
+            self._pending_reactions.append({
+                'event': 'enemy_move',
+                'when': when,
+                'stratagem': s.name,
+                'enemy_unit': moving_unit,
+                'phase_name': phase_name,
+                'cp_cost': s.cp_cost,
+                'candidates': candidates,
+            })
+        # Publish a UI hint to start a brief reaction window for the opponent
+        if opponent is not None and hasattr(self.game, 'event_system'):
+            try:
+                self.game.event_system.publish("stratagem_window", player=opponent, duration=3.0)
+            except Exception:
+                pass
 
     # Command Re-roll trigger on roll_made for active player only
     def _on_roll_made(self, player, unit, roll_type: str, value, reroll, dice=None, **kwargs):
@@ -479,6 +504,9 @@ class StratagemManager:
                     delattr(shooter, '_overwatch_sixes_only')
                 except Exception:
                     pass
+                # If execution failed, ensure we do not mark the unit as having shot
+                if not ok and getattr(shooter, 'round_state', None):
+                    shooter.round_state.shot_this_round = False
             if ok:
                 # Mark once per turn consumed
                 self._used_this_turn['OVERWATCH'] = True

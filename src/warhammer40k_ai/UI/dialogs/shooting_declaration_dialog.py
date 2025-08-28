@@ -740,11 +740,15 @@ class ShootingDeclarationDialog(BaseDialog):
         content_height = self.height - content_y
         dialog_surface = pygame.Surface((self.width, content_height), pygame.SRCALPHA)
 
-        # Draw weapons list
+        # Draw weapons and declarations inside their own clipped areas with independent scrolling
+        weapons_clip = pygame.Rect(0, 0, self.width, 250)
+        decl_clip = pygame.Rect(0, 300, self.width, content_height - 360)
+        prev_clip = dialog_surface.get_clip()
+        dialog_surface.set_clip(weapons_clip)
         self._draw_weapons_list(dialog_surface, self.font_medium, self.font_small)
-
-        # Draw declarations list
+        dialog_surface.set_clip(decl_clip)
         self._draw_declarations_list(dialog_surface, self.font_medium, self.font_small)
+        dialog_surface.set_clip(prev_clip)
 
         # Draw buttons using BaseDialog
         self.draw_button(screen, 'execute', "Execute Shooting")
@@ -970,10 +974,14 @@ class ShootingDeclarationDialog(BaseDialog):
             print("❌ No weapon selected for targeting")
             return False
             
-        # Get clicked unit using game view's unit detection
-        clicked_unit = None
-        if self.game_view:
-            clicked_unit = self.game_view.get_unit_at_position(x, y, needs_conversion=False)
+        # Auto-target support (e.g., FIRE OVERWATCH): if force_single_target_unit is set, use it
+        if hasattr(self, 'force_single_target_unit') and self.force_single_target_unit is not None:
+            clicked_unit = self.force_single_target_unit
+        else:
+            # Get clicked unit using game view's unit detection
+            clicked_unit = None
+            if self.game_view:
+                clicked_unit = self.game_view.get_unit_at_position(x, y, needs_conversion=False)
         
         if not clicked_unit:
             print("❌ No unit found at clicked position")

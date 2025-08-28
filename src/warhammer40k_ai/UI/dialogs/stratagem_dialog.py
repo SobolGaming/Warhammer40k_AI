@@ -91,12 +91,6 @@ class StratagemDialog(BaseDialog):
         # If NEW ORDERS without a specified secondary, ask GameView to open selection dialog
         if name and str(name).strip().upper() == 'NEW ORDERS' and 'secondary_card' not in context:
             # Defer to GameView's dialog to collect the card, then re-invoke use
-            gv = getattr(self.game, 'ui', None)
-            # If the game stores a UI reference, use that; else, try to call via player.game
-            try:
-                from ..UI.game_ui import GameView  # type: ignore
-            except Exception:
-                GameView = None  # type: ignore
             # We expect the Game to be owned by a GameView in play mode; inject callback hook
             if hasattr(self, 'on_request_secondary_discard') and callable(self.on_request_secondary_discard):
                 self.on_request_secondary_discard(self.player, self.game, lambda chosen: self._finalize_new_orders(chosen))
@@ -105,6 +99,12 @@ class StratagemDialog(BaseDialog):
             print("❌ NEW ORDERS: UI hook for secondary selection not available")
             return
 
+        # For FIRE OVERWATCH, if shooter is not chosen yet, ask UI to pick one
+        if name and str(name).strip().upper() in ('FIRE OVERWATCH', 'OVERWATCH') and 'shooter_unit' not in context:
+            if hasattr(self, 'on_request_overwatch_shooter') and callable(self.on_request_overwatch_shooter):
+                enemy = context.get('enemy_unit')
+                self.on_request_overwatch_shooter(self.player, self.game, enemy, lambda shooter: self._finalize_overwatch(shooter, context))
+                return
         ok = self.manager.use(name, **context)
         if ok:
             print(f"✅ Used stratagem: {name}")
@@ -129,6 +129,61 @@ class StratagemDialog(BaseDialog):
             if phase_name:
                 context['phase_name'] = phase_name
         ok = self.manager.use(name, **context)
+        if ok:
+            print(f"✅ Used stratagem: {name}")
+            self.hide()
+        else:
+            print(f"❌ Could not use stratagem: {name}")
+
+    def _finalize_overwatch(self, shooter_unit, context) -> None:
+        if getattr(self, '_overwatch_flow_active', False):
+            return
+        if self.selected_index is None or not self.manager or self.selected_index >= len(self.items):
+            return
+        item = self.items[self.selected_index]
+        name = item.get('name')
+        ctx = dict(context)
+        ctx['shooter_unit'] = shooter_unit
+        if item.get('type') == 'reaction':
+            ctx['dequeue'] = True
+        if 'phase_name' not in ctx:
+            phase_name = getattr(self.manager, '_current_phase_name', None)
+            if phase_name:
+                ctx['phase_name'] = phase_name
+        # Interactive Overwatch: open shooting declaration dialog so the player can pick weapons/targets
+        enemy = ctx.get('enemy_unit')
+        if hasattr(self, 'on_request_overwatch_shooting') and callable(self.on_request_overwatch_shooting):
+            # Set sixes-only flag during Overwatch resolution
+            try:
+                setattr(shooter_unit, '_overwatch_sixes_only', True)
+            except Exception:
+                pass
+            # Prevent duplicate invocations and hide this dialog while shooting UI runs
+            self._overwatch_flow_active = True
+            self.visible = False
+            def _done_callback(executed: bool):
+                # Clear sixes-only flag
+                try:
+                    delattr(shooter_unit, '_overwatch_sixes_only')
+                except Exception:
+                    pass
+                self._overwatch_flow_active = False
+                if executed:
+                    # Spend CP and mark once-per-turn use
+                    mgr = self.manager
+                    s = mgr.get_by_name(str(name)) if mgr else None
+                    if s and mgr.player.spend_command_points(s.cp_cost):
+                        mgr._used_this_turn['OVERWATCH'] = True
+                    else:
+                        print("❌ Overwatch: failed to spend CP")
+                    print(f"✅ Used stratagem: {name}")
+                    self.hide()
+                else:
+                    print("❌ Overwatch cancelled or failed")
+            self.on_request_overwatch_shooting(shooter_unit, enemy, _done_callback)
+            return
+        # Fallback: non-interactive path
+        ok = self.manager.use(name, **ctx)
         if ok:
             print(f"✅ Used stratagem: {name}")
             self.hide()

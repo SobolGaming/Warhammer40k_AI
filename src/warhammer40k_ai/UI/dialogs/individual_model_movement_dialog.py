@@ -66,6 +66,12 @@ class IndividualModelMovementDialog(BaseDialog):
                 elif self.movement_type == 'fall_back':
                     action = 'fall_back'
                 _game.event_system.publish("unit_move_started", unit=self.unit, action=action)
+                # Start reaction window for opponent on move start
+                try:
+                    opponent = next(p for p in _game.players if p is not _player)
+                    _game.event_system.publish("stratagem_window", player=opponent, duration=3.0)
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -712,6 +718,12 @@ class IndividualModelMovementDialog(BaseDialog):
                 elif self.movement_type == 'fall_back':
                     action = 'fall_back'
                 _game.event_system.publish("unit_move_ended", unit=self.unit, action=action)
+                # Start a second reaction window for opponent on move end
+                try:
+                    opponent = next(p for p in _game.players if p is not _player)
+                    _game.event_system.publish("stratagem_window", player=opponent, duration=3.0)
+                except Exception:
+                    pass
         except Exception:
             pass
         

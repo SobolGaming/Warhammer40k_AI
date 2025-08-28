@@ -32,6 +32,7 @@ from .ui_utils import (
 )
 from .dialogs.stratagem_dialog import StratagemDialog
 from .dialogs.secondary_discard_dialog import SecondaryDiscardDialog
+from .dialogs.overwatch_shooter_dialog import OverwatchShooterDialog
 
 # Constants
 TILE_SIZE = 20  # 20 pixels per inch
@@ -1061,6 +1062,7 @@ class GameView:
         self._stratagem_windows = {}
         # Subscribe to movement end to offer opponent Overwatch window
         self.game.event_system.subscribe("unit_move_ended", self._on_unit_move_ended)
+        self.game.event_system.subscribe("stratagem_window", self._on_stratagem_window)
         
         # Create roster panes with reference to all units for color correlation
         # Roster panes now extend to full battlefield height + info pane height
@@ -1106,6 +1108,7 @@ class GameView:
         screen_width, screen_height = self.screen.get_size()
         self.stratagem_dialog = StratagemDialog(screen_width, screen_height)
         self.secondary_discard_dialog = SecondaryDiscardDialog(screen_width, screen_height)
+        self.overwatch_shooter_dialog = OverwatchShooterDialog(screen_width, screen_height)
         # Wire UI hook so StratagemDialog can request discard selection
         def _request_secondary_discard(player, game, on_chosen):
             cards = list(getattr(player, 'active_secondaries', []) or [])
@@ -1115,6 +1118,53 @@ class GameView:
             self.secondary_discard_dialog.show(cards, lambda chosen: (self.secondary_discard_dialog.hide(), on_chosen(chosen)))
         # Attach as method on the dialog instance
         setattr(self.stratagem_dialog, 'on_request_secondary_discard', _request_secondary_discard)
+
+        def _request_overwatch_shooter(player, game, enemy_unit, on_chosen):
+            # Build candidate list as StratagemManager did, but UI-driven
+            candidates = []
+            for unit in player.get_army().units or []:
+                if not unit.is_alive() or not unit.deployed:
+                    continue
+                if getattr(unit, 'is_titanic', False):
+                    continue
+                dist = self.game.map.get_distance_between_units(unit, enemy_unit)
+                if dist is not None and dist <= 24.0:
+                    candidates.append(unit)
+            if not candidates:
+                on_chosen(None)
+                return
+            # Show selection dialog for Overwatch shooter
+            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
+                self.overwatch_shooter_dialog.show(candidates, enemy_unit, lambda unit: (self.overwatch_shooter_dialog.hide(), on_chosen(unit)))
+            else:
+                on_chosen(candidates[0])
+        setattr(self.stratagem_dialog, 'on_request_overwatch_shooter', _request_overwatch_shooter)
+
+        def _request_overwatch_shooting(shooter_unit, enemy_unit, on_done):
+            # Reuse ShootingDeclarationDialog for interactive weapon selection/targeting
+            if not hasattr(self, 'shooting_declaration_dialog'):
+                from .dialogs import ShootingDeclarationDialog
+                self.shooting_declaration_dialog = ShootingDeclarationDialog(self.screen.get_width(), self.screen.get_height())
+            # Configure dialog to auto-target the moved enemy unit
+            try:
+                self.shooting_declaration_dialog.force_single_target_unit = enemy_unit
+            except Exception:
+                pass
+            def _cb(_):
+                # Determine success by checking if any declarations were made and executed
+                # The dialog's execute_shooting already executed and hides itself
+                # We approximate success if the shooter's shot_this_round is now True
+                executed = bool(getattr(shooter_unit.round_state, 'shot_this_round', False))
+                on_done(executed)
+            self.shooting_declaration_dialog.show(shooter_unit, _cb, self.game.map, self)
+            # Ensure dialog is visible and receives events immediately
+            self.shooting_declaration_dialog.visible = True
+            # Draw once to register its geometry
+            try:
+                self.shooting_declaration_dialog.draw(self.screen)
+            except Exception:
+                pass
+        setattr(self.stratagem_dialog, 'on_request_overwatch_shooting', _request_overwatch_shooting)
         # Initialize shared UI state
         self._ui_hitboxes = {}
         self._mission_popup = None
@@ -1560,6 +1610,15 @@ class GameView:
         if hasattr(self, 'secondary_discard_dialog') and self.secondary_discard_dialog.visible:
             if self.secondary_discard_dialog.handle_event(event):
                 return True
+        # Overwatch shooter dialog capture
+        if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog.visible:
+            if self.overwatch_shooter_dialog.handle_event(event):
+                return True
+        # Shooting declaration dialog capture (ensure UI responds even outside phase handler)
+        if hasattr(self, 'shooting_declaration_dialog') and (
+            self.shooting_declaration_dialog.visible or self.shooting_declaration_dialog.is_targeting_mode):
+            if self.shooting_declaration_dialog.handle_event(event):
+                return True
 
         # PRIORITY 1: Top pane and overlay handling BEFORE phase-specific handlers
         if event.type == pygame.MOUSEBUTTONDOWN:
@@ -1748,6 +1807,10 @@ class GameView:
         owner_player = unit.get_parent_army().player
         opponent = self.player2 if owner_player is self.player1 else self.player1
         self.start_stratagem_window(opponent, duration_seconds=3.0, on_timeout=None)
+
+    def _on_stratagem_window(self, player, duration: float = 3.0, **kwargs):
+        """Start a reaction window for a specific player (from events)."""
+        self.start_stratagem_window(player, duration_seconds=float(duration) if duration is not None else 3.0, on_timeout=None)
 
     # Note: on_mouse_press is now handled by phase-specific handlers in PhaseManager
 
@@ -2167,6 +2230,9 @@ class GameView:
         # Draw secondary discard dialog if visible
         if hasattr(self, 'secondary_discard_dialog') and self.secondary_discard_dialog.visible:
             self.secondary_discard_dialog.draw(self.screen)
+        # Draw overwatch shooter dialog if visible
+        if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog.visible:
+            self.overwatch_shooter_dialog.draw(self.screen)
 
         # Draw unit details panel if requested
         if self.detailed_unit:
