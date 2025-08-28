@@ -88,15 +88,49 @@ class StratagemDialog(BaseDialog):
                     context['phase_name'] = phase_name
             except Exception:
                 pass
-        ok = False
-        try:
-            ok = self.manager.use(name, **context)
-        except Exception as e:
-            print(f"❌ Stratagem use failed: {e}")
-            ok = False
+        # If NEW ORDERS without a specified secondary, ask GameView to open selection dialog
+        if name and str(name).strip().upper() == 'NEW ORDERS' and 'secondary_card' not in context:
+            # Defer to GameView's dialog to collect the card, then re-invoke use
+            gv = getattr(self.game, 'ui', None)
+            # If the game stores a UI reference, use that; else, try to call via player.game
+            try:
+                from ..UI.game_ui import GameView  # type: ignore
+            except Exception:
+                GameView = None  # type: ignore
+            # We expect the Game to be owned by a GameView in play mode; inject callback hook
+            if hasattr(self, 'on_request_secondary_discard') and callable(self.on_request_secondary_discard):
+                self.on_request_secondary_discard(self.player, self.game, lambda chosen: self._finalize_new_orders(chosen))
+                return
+            # Fallback: close and fail fast if wiring is missing
+            print("❌ NEW ORDERS: UI hook for secondary selection not available")
+            return
+
+        ok = self.manager.use(name, **context)
         if ok:
             print(f"✅ Used stratagem: {name}")
             # Close after successful use; GameView will resume flow via on_closed callback
+            self.hide()
+        else:
+            print(f"❌ Could not use stratagem: {name}")
+
+    def _finalize_new_orders(self, selected_card) -> None:
+        """Called after the user picks which Secondary to discard for NEW ORDERS."""
+        if self.selected_index is None or not self.manager or self.selected_index >= len(self.items):
+            return
+        item = self.items[self.selected_index]
+        name = item.get('name')
+        context = dict(item.get('context', {}))
+        context['secondary_card'] = selected_card
+        # Ensure reaction dequeue if applicable
+        if item.get('type') == 'reaction':
+            context['dequeue'] = True
+        if 'phase_name' not in context:
+            phase_name = getattr(self.manager, '_current_phase_name', None)
+            if phase_name:
+                context['phase_name'] = phase_name
+        ok = self.manager.use(name, **context)
+        if ok:
+            print(f"✅ Used stratagem: {name}")
             self.hide()
         else:
             print(f"❌ Could not use stratagem: {name}")

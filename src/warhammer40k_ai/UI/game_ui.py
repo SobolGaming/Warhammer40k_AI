@@ -31,6 +31,7 @@ from .ui_utils import (
     draw_generic_icon
 )
 from .dialogs.stratagem_dialog import StratagemDialog
+from .dialogs.secondary_discard_dialog import SecondaryDiscardDialog
 
 # Constants
 TILE_SIZE = 20  # 20 pixels per inch
@@ -1104,6 +1105,16 @@ class GameView:
         # Stratagem dialog instance
         screen_width, screen_height = self.screen.get_size()
         self.stratagem_dialog = StratagemDialog(screen_width, screen_height)
+        self.secondary_discard_dialog = SecondaryDiscardDialog(screen_width, screen_height)
+        # Wire UI hook so StratagemDialog can request discard selection
+        def _request_secondary_discard(player, game, on_chosen):
+            cards = list(getattr(player, 'active_secondaries', []) or [])
+            if not cards:
+                on_chosen(None)
+                return
+            self.secondary_discard_dialog.show(cards, lambda chosen: (self.secondary_discard_dialog.hide(), on_chosen(chosen)))
+        # Attach as method on the dialog instance
+        setattr(self.stratagem_dialog, 'on_request_secondary_discard', _request_secondary_discard)
         # Initialize shared UI state
         self._ui_hitboxes = {}
         self._mission_popup = None
@@ -1544,6 +1555,10 @@ class GameView:
         # PRIORITY 0.8: Stratagem dialog (must capture before other panes)
         if hasattr(self, 'stratagem_dialog') and self.stratagem_dialog.visible:
             if self.stratagem_dialog.handle_event(event):
+                return True
+        # Secondary discard dialog should also capture early
+        if hasattr(self, 'secondary_discard_dialog') and self.secondary_discard_dialog.visible:
+            if self.secondary_discard_dialog.handle_event(event):
                 return True
 
         # PRIORITY 1: Top pane and overlay handling BEFORE phase-specific handlers
@@ -2149,6 +2164,9 @@ class GameView:
         # Draw stratagem dialog if visible
         if hasattr(self, 'stratagem_dialog') and self.stratagem_dialog.visible:
             self.stratagem_dialog.draw(self.screen)
+        # Draw secondary discard dialog if visible
+        if hasattr(self, 'secondary_discard_dialog') and self.secondary_discard_dialog.visible:
+            self.secondary_discard_dialog.draw(self.screen)
 
         # Draw unit details panel if requested
         if self.detailed_unit:
