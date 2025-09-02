@@ -3505,7 +3505,23 @@ class DeploymentPhaseHandler(BasePhaseHandler):
             # Valid deployment - unit position is now determined by model positions
             
             if self.game_view.game_map.place_unit(self.game_view.selected_unit):
-                print(f"Unit {self.game_view.selected_unit.name} deployed at ({unit_x:.1f}, {unit_y:.1f})")
+                # Print per-model positions; include z only if non-zero
+                try:
+                    parts = []
+                    for m in self.game_view.selected_unit.models:
+                        pos = m.get_location()
+                        if not pos:
+                            continue
+                        mx, my = pos[0], pos[1]
+                        mz = pos[2] if len(pos) > 2 else 0.0
+                        if abs(mz) < 1e-6:
+                            parts.append(f"({mx:.1f}, {my:.1f})")
+                        else:
+                            parts.append(f"({mx:.1f}, {my:.1f}, {mz:.1f})")
+                    positions_str = ", ".join(parts)
+                    print(f"Unit {self.game_view.selected_unit.name} deployed at: {positions_str}")
+                except Exception:
+                    print(f"Unit {self.game_view.selected_unit.name} deployed at ({unit_x:.1f}, {unit_y:.1f})")
                 self.game_view.selected_unit.deployed = True
                 
                 # Record deployment action

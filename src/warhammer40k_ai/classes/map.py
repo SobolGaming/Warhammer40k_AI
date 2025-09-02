@@ -225,13 +225,37 @@ class Map:
 
         for terrain_feature in self.terrain_features:
             if terrain_feature.footprint.contains(point):
-                # Get height based on terrain type
+                # RUINS: compute floor surface height properly (prefer the lowest floor that contains XY)
+                if getattr(terrain_feature, 'terrain_type', None) == TerrainType.RUINS and hasattr(terrain_feature, 'floors'):
+                    try:
+                        candidate_surfaces = []
+                        for fl in getattr(terrain_feature, 'floors', []) or []:
+                            poly = fl.get('polygon')
+                            if poly is not None and poly.contains(point):
+                                elev = fl.get('elevation', 0.0)
+                                thickness = fl.get('thickness', 0.5)
+                                candidate_surfaces.append(elev + thickness)
+                        if candidate_surfaces:
+                            # Choose the lowest surface (ground first if present)
+                            surface_z = min(candidate_surfaces)
+                            max_height = max(max_height, surface_z)
+                            continue
+                        else:
+                            # Inside RUINS footprint but no explicit floor polygon match; assume ground floor top 0.5"
+                            max_height = max(max_height, 0.5)
+                            continue
+                    except Exception:
+                        # Fall through to generic handling if something goes wrong
+                        pass
+
+                # Generic terrain handling
                 if hasattr(terrain_feature, 'height'):
                     max_height = max(max_height, terrain_feature.height)
                 elif hasattr(terrain_feature, 'rim_height'):
                     max_height = max(max_height, terrain_feature.rim_height)
                 else:
-                    max_height = max(max_height, 2.0)  # Default terrain height
+                    # Default minimal ground height
+                    max_height = max(max_height, 0.0)
 
         return max_height
 
@@ -1152,12 +1176,52 @@ def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float],
                         return 'Error during wall intersection check'
             return None
         
-        # Ground floor (level 0) - allowed, but must not overlap walls
+        # Ground floor (level 0) - allowed anywhere the base does not overlap walls,
+        # with vertical clearance check if an upper floor exists directly overhead at this XY.
         if floor_level == 0:
             if moving_model is not None:
                 wall_reason = _base_overlaps_wall(moving_model, x, y, z)
                 if wall_reason:
                     return {'valid': False, 'reason': wall_reason, 'floor_level': floor_level}
+                # Vertical clearance: if base is under any upper-floor polygon, ensure model height fits the gap
+                try:
+                    base_geom_gf = moving_model.model_base.get_base_shape_at(x, y, getattr(moving_model.model_base, 'facing', 0.0))
+                except Exception:
+                    base_geom_gf = None
+                if base_geom_gf is not None:
+                    # Find the nearest upper floor above this ground floor whose polygon overlaps the base
+                    nearest_upper_floor = None
+                    min_elev = float('inf')
+                    for fl in floors:
+                        elev = fl.get('elevation', 0.0)
+                        if elev <= 0.0:
+                            continue  # Only consider floors above ground
+                        fl_poly = fl.get('polygon')
+                        if fl_poly is None:
+                            continue
+                        try:
+                            overlaps_xy = base_geom_gf.intersects(fl_poly)
+                        except Exception:
+                            overlaps_xy = False
+                        if not overlaps_xy:
+                            continue
+                        if elev < min_elev:
+                            min_elev = elev
+                            nearest_upper_floor = fl
+                    if nearest_upper_floor is not None:
+                        # Compute gap from top of current floor to bottom of next floor
+                        current_top = (current_floor.get('elevation', 0.0) + current_floor.get('thickness', 0.5))
+                        next_bottom = nearest_upper_floor.get('elevation', 0.0)
+                        vertical_gap = max(0.0, next_bottom - current_top)
+                        # Require model height to be strictly less than the gap minus a small safety buffer
+                        safety_buffer = 0.10
+                        model_height = getattr(moving_model.model_base, 'model_height', 2.0)
+                        if model_height >= max(0.0, vertical_gap - safety_buffer):
+                            return {
+                                'valid': False,
+                                'reason': f'Model height {model_height:.2f}" exceeds available vertical gap {vertical_gap:.2f}" under next floor',
+                                'floor_level': floor_level
+                            }
             else:
                 # Validate all models in the unit at their current positions (deployment-time)
                 for model in unit.models:
@@ -1168,6 +1232,42 @@ def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float],
                     wall_reason = _base_overlaps_wall(model, mx, my, mz)
                     if wall_reason:
                         return {'valid': False, 'reason': wall_reason, 'floor_level': floor_level}
+                    # Vertical clearance: if base is under any upper-floor polygon, ensure model height fits the gap
+                    try:
+                        base_geom_gf = model.model_base.get_base_shape_at(mx, my, getattr(model.model_base, 'facing', 0.0))
+                    except Exception:
+                        base_geom_gf = None
+                    if base_geom_gf is not None:
+                        nearest_upper_floor = None
+                        min_elev = float('inf')
+                        for fl in floors:
+                            elev = fl.get('elevation', 0.0)
+                            if elev <= 0.0:
+                                continue
+                            fl_poly = fl.get('polygon')
+                            if fl_poly is None:
+                                continue
+                            try:
+                                overlaps_xy = base_geom_gf.intersects(fl_poly)
+                            except Exception:
+                                overlaps_xy = False
+                            if not overlaps_xy:
+                                continue
+                            if elev < min_elev:
+                                min_elev = elev
+                                nearest_upper_floor = fl
+                        if nearest_upper_floor is not None:
+                            current_top = (current_floor.get('elevation', 0.0) + current_floor.get('thickness', 0.5))
+                            next_bottom = nearest_upper_floor.get('elevation', 0.0)
+                            vertical_gap = max(0.0, next_bottom - current_top)
+                            safety_buffer = 0.10
+                            model_height = getattr(model.model_base, 'model_height', 2.0)
+                            if model_height >= max(0.0, vertical_gap - safety_buffer):
+                                return {
+                                    'valid': False,
+                                    'reason': f'Model height {model_height:.2f}" exceeds available vertical gap {vertical_gap:.2f}" under next floor',
+                                    'floor_level': floor_level
+                                }
             return {'valid': True, 'reason': 'Valid ground floor placement', 'floor_level': floor_level}
         
         # Upper floors - check unit restrictions
@@ -1178,9 +1278,9 @@ def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float],
                 'floor_level': floor_level
             }
         
-        # Check base overhang for upper floors
+        # Check base overhang for upper floors (no overhang allowed on any upper floor)
         floor_poly = current_floor.get('polygon')
-        if floor_level > 0 and floor_poly and not unit.can_overhang_floor():
+        if floor_level > 0 and floor_poly:
             # If a specific moving model is provided, only validate this model at the proposed position
             if moving_model is not None:
                 base_geom = moving_model.model_base.get_base_shape_at(x, y, getattr(moving_model.model_base, 'facing', 0.0))

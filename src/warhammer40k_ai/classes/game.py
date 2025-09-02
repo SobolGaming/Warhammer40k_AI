@@ -599,6 +599,10 @@ class Game:
             model_positions = unit.calculate_model_positions(x, y, self.map, avoid_friendly_units=False, boundary_repulsors=deployment_repulsors)
             
             if not model_positions:
+                try:
+                    print(f"🔴 DEBUG: Infiltrate - no model positions found for {unit.name} at candidate ({x:.1f}, {y:.1f})")
+                except Exception:
+                    pass
                 return False
             
             # CRITICAL: Validate that all models are actually within deployment zone after positioning
@@ -974,22 +978,44 @@ class Game:
                 
                 # Check if any part of the model is in enemy deployment zone
                 if self.is_position_in_enemy_deployment_zone(model_x, model_y, player_name):
+                    try:
+                        model_name = getattr(model, 'name', 'model')
+                        print(f"🔴 DEBUG: Infiltrate - {unit.name} {model_name} at ({model_x:.1f}, {model_y:.1f}) is inside enemy deployment zone")
+                    except Exception:
+                        pass
                     return False
                 
                 # Check 9" distance to enemy deployment zone (from model edge)
                 base_radius = model.model_base.get_radius()
                 distance_to_enemy_zone = self.get_distance_to_enemy_deployment_zone(model_x, model_y, player_name)
                 if distance_to_enemy_zone - base_radius < 9.0:
+                    try:
+                        model_name = getattr(model, 'name', 'model')
+                        print(f"🔴 DEBUG: Infiltrate - {unit.name} {model_name} too close to enemy zone: edge_distance={distance_to_enemy_zone:.2f}\" base_radius={base_radius:.2f}\" < 9\"")
+                    except Exception:
+                        pass
                     return False
                 
                 # Check 9" distance to enemy models (from model edge)
                 distance_to_enemy_models = self.get_distance_to_enemy_models(model_x, model_y, player_name)
                 if distance_to_enemy_models - base_radius < 9.0:
+                    try:
+                        model_name = getattr(model, 'name', 'model')
+                        print(f"🔴 DEBUG: Infiltrate - {unit.name} {model_name} too close to enemy models: edge_distance={distance_to_enemy_models:.2f}\" base_radius={base_radius:.2f}\" < 9\"")
+                    except Exception:
+                        pass
                     return False
                 # RUINS validation: cannot start/end overlapping walls/floors
                 model_z = position[2] if len(position) > 2 else 0.0
                 ruins_validation = validate_ruins_placement(unit, (model_x, model_y, model_z), self.map.terrain_features, moving_model=model)
                 if not ruins_validation['valid']:
+                    try:
+                        model_name = getattr(model, 'name', 'model')
+                        reason = ruins_validation.get('reason', 'unknown')
+                        floor_level = ruins_validation.get('floor_level', '?')
+                        print(f"🔴 DEBUG: Infiltrate - RUINS validation failed for {unit.name} {model_name}: {reason} (floor {floor_level})")
+                    except Exception:
+                        pass
                     return False
             
             return True
