@@ -56,24 +56,28 @@ class IndividualModelMovementDialog(BaseDialog):
         self.awaiting_battlefield_click = False
 
         # Publish unit move started (for Stratagem reactions like Overwatch)
-        try:
-            _player = getattr(self.unit.get_parent_army(), 'player', None)
-            _game = getattr(_player, 'game', None) if _player else None
-            if _game and hasattr(_game, 'event_system'):
-                action = 'move'
-                if self.movement_type == 'advance':
-                    action = 'advance'
-                elif self.movement_type == 'fall_back':
-                    action = 'fall_back'
-                _game.event_system.publish("unit_move_started", unit=self.unit, action=action)
-                # Start reaction window for opponent on move start
-                try:
-                    opponent = next(p for p in _game.players if p is not _player)
-                    _game.event_system.publish("stratagem_window", player=opponent, duration=3.0)
-                except Exception:
-                    pass
-        except Exception:
-            pass
+        # NOTE: Do NOT publish for deployment placement.
+        if self.movement_type != 'deploy':
+            try:
+                _player = getattr(self.unit.get_parent_army(), 'player', None)
+                _game = getattr(_player, 'game', None) if _player else None
+                if _game and hasattr(_game, 'event_system'):
+                    action = 'move'
+                    if self.movement_type == 'advance':
+                        action = 'advance'
+                    elif self.movement_type == 'fall_back':
+                        action = 'fall_back'
+                    elif self.movement_type == 'charge':
+                        action = 'charge'
+                    _game.event_system.publish("unit_move_started", unit=self.unit, action=action)
+                    # Start reaction window for opponent on move start
+                    try:
+                        opponent = next(p for p in _game.players if p is not _player)
+                        _game.event_system.publish("stratagem_window", player=opponent, duration=3.0)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
 
         # Initialize model buttons and dialog buttons
         self._create_model_buttons()
@@ -81,6 +85,13 @@ class IndividualModelMovementDialog(BaseDialog):
 
         print(f"🎯 Individual model movement dialog opened for {unit.name} ({movement_type})")
         print(f"📍 Select a model, then click on the battlefield to move it")
+
+        # In deploy mode, auto-select the first alive model and wait for battlefield click
+        if self.movement_type == 'deploy':
+            for idx, m in enumerate(self.unit.models):
+                if getattr(m, 'is_alive', True):
+                    self._select_model(idx)
+                    break
 
     def _has_unit_already_moved(self, unit, movement_type: str) -> bool:
         """Check if unit has already performed this type of movement this round"""
@@ -381,7 +392,10 @@ class IndividualModelMovementDialog(BaseDialog):
                 break
         
     def handle_battlefield_click(self, battlefield_x: float, battlefield_y: float, battlefield_z: float) -> bool:
-        """Handle battlefield click for model movement"""
+        """Handle battlefield click for model movement or deployment.
+
+        If movement_type is 'deploy', validate using deployment rules per model, not movement rules.
+        """
         if not self.awaiting_battlefield_click or self.selected_model_index is None:
             return False
             
@@ -400,9 +414,48 @@ class IndividualModelMovementDialog(BaseDialog):
 
         # Use provided Z if no selection needed (or single floor)
         destination = (battlefield_x, battlefield_y, battlefield_z)
-        
-        # Attempt to move the selected model
-        success = self._move_model(self.selected_model_index, destination)
+
+        # If we're in deployment mode, run deployment validation and place the model directly
+        if self.movement_type == 'deploy':
+            model = self.unit.models[self.selected_model_index]
+            # Validate single model deployment
+            try:
+                game = model.parent_unit.get_parent_army().player.game
+            except Exception:
+                game = None
+            if not game:
+                print("❌ Deployment failed: game context unavailable")
+                return False
+            # Determine player by unit ownership
+            try:
+                player_name = model.parent_unit.get_parent_army().player.name
+            except Exception:
+                player_name = ''
+            validation = game.is_valid_single_model_deployment(model, battlefield_x, battlefield_y, battlefield_z, player_name)
+            if not validation['valid']:
+                print(f"❌ Deployment invalid for {model.name}: {validation['reason']}")
+                return False
+
+            # Prevent illegal base overlaps during deployment.
+            # This must consider already-placed models in the same unit (unit may not be registered on the map yet).
+            overlap_validation = self._validate_deployment_no_base_overlap(
+                model=model,
+                x=battlefield_x,
+                y=battlefield_y,
+                z=battlefield_z,
+            )
+            if not overlap_validation['valid']:
+                print(f"❌ Deployment invalid for {model.name}: {overlap_validation['reason']}")
+                return False
+
+            # Place the model at destination (preserve facing)
+            current_facing = model.model_base.facing if hasattr(model.model_base, 'facing') else 0.0
+            model.set_location(destination[0], destination[1], destination[2], current_facing)
+            print(f"✅ {model.name} deployed to ({destination[0]:.1f}, {destination[1]:.1f}{'' if abs(destination[2]) < 1e-6 else f', {destination[2]:.1f}'})")
+            success = True
+        else:
+            # Attempt to move the selected model (non-deployment movement)
+            success = self._move_model(self.selected_model_index, destination)
         
         if success:
             # Mark model as moved
@@ -413,18 +466,115 @@ class IndividualModelMovementDialog(BaseDialog):
             
             # Check if all models are moved
             if self._all_models_moved():
-                print(f"✅ All models in {self.unit.name} have been moved")
+                done_word = 'deployed' if self.movement_type == 'deploy' else 'moved'
+                print(f"✅ All models in {self.unit.name} have been {done_word}")
                 # Auto-complete after short delay or continue allowing more moves
                 
-            # Reset selection only on successful movement
-            self.selected_model_index = None
-            self.awaiting_battlefield_click = False
+            # In deploy mode, immediately advance to the next unplaced alive model
+            if self.movement_type == 'deploy':
+                next_idx = None
+                for idx, m in enumerate(self.unit.models):
+                    if not getattr(m, 'is_alive', True):
+                        continue
+                    if idx in self.model_movements and self.model_movements[idx].get('completed', False):
+                        continue
+                    next_idx = idx
+                    break
+
+                if next_idx is not None:
+                    self._select_model(next_idx)
+                else:
+                    self.selected_model_index = None
+                    self.awaiting_battlefield_click = False
+            else:
+                # Reset selection only on successful movement
+                self.selected_model_index = None
+                self.awaiting_battlefield_click = False
         else:
             # On failure, keep the model selected and continue waiting for battlefield clicks
-            print(f"❌ Movement failed for {self.unit.models[self.selected_model_index].name}")
+            fail_word = 'Deployment' if self.movement_type == 'deploy' else 'Movement'
+            print(f"❌ {fail_word} failed for {self.unit.models[self.selected_model_index].name}")
             print(f"🔄 Model remains selected. Try clicking on a valid location.")
         
         return success
+
+    def _validate_deployment_no_base_overlap(self, model, x: float, y: float, z: float) -> dict:
+        """Ensure deployment placement doesn't overlap any model bases.
+
+        Allows base-to-base contact (touching). Disallows overlap area > 0 on the same Z band.
+        """
+        try:
+            from ...utility.model_base import Base as _Base
+        except Exception:
+            _Base = None
+
+        if _Base is None:
+            # If we can't construct temp bases, fall back to letting placement through
+            return {'valid': True, 'reason': 'No overlap checker available'}
+
+        # Build a temporary base at the destination so we can test overlap without mutating the model
+        try:
+            src_base = model.model_base
+            cand = _Base(src_base.base_type, src_base.radius)
+            cand.set_position(float(x), float(y), float(z))
+            cand.set_facing(getattr(src_base, 'facing', 0.0))
+        except Exception:
+            return {'valid': True, 'reason': 'No overlap checker available'}
+
+        def _overlaps_3d(a, b, eps_area: float = 1e-6) -> bool:
+            try:
+                inter = a.get_base_shape().intersection(b.get_base_shape())
+                if inter.is_empty or inter.area <= eps_area:
+                    return False  # touching is OK, no area overlap
+                z_diff = abs(float(getattr(a, 'z', 0.0)) - float(getattr(b, 'z', 0.0)))
+                min_z_sep = max(float(getattr(a, 'model_height', 0.0)), float(getattr(b, 'model_height', 0.0)))
+                return z_diff < min_z_sep
+            except Exception:
+                return False
+
+        # 1) Check against already-placed models in the same unit (based on model_movements completed flags)
+        try:
+            placed_indices = {
+                idx for idx, data in (self.model_movements or {}).items()
+                if data.get('completed', False)
+            }
+        except Exception:
+            placed_indices = set()
+
+        for idx in placed_indices:
+            try:
+                other = self.unit.models[idx]
+                if other is model or not getattr(other, 'is_alive', True):
+                    continue
+                if _overlaps_3d(cand, other.model_base):
+                    return {'valid': False, 'reason': f"Overlaps base with {other.name} (same unit)"}
+            except Exception:
+                continue
+
+        # 2) Check against all deployed units already registered on the map
+        try:
+            for u in getattr(self.game_map, 'units', []) or []:
+                # Skip units not on the battlefield
+                if not getattr(u, 'deployed', False):
+                    continue
+                for other in getattr(u, 'models', []) or []:
+                    if other is model or not getattr(other, 'is_alive', True):
+                        continue
+                    # If this unit is already registered, we still only want to compare against
+                    # models that have actually been placed for this unit.
+                    if u is self.unit:
+                        try:
+                            other_idx = self.unit.models.index(other)
+                        except Exception:
+                            other_idx = None
+                        if other_idx is not None and other_idx not in placed_indices:
+                            continue
+                    if _overlaps_3d(cand, other.model_base):
+                        return {'valid': False, 'reason': f"Overlaps base with {other.name} ({u.name})"}
+        except Exception:
+            pass
+
+        return {'valid': True, 'reason': 'No base overlap'}
 
     def _finalize_click_with_z(self, x: float, y: float, z: float) -> None:
         """Finalize a pending battlefield click after floor selection by moving the model with chosen Z."""
@@ -625,6 +775,19 @@ class IndividualModelMovementDialog(BaseDialog):
         if not self.unit:
             return
 
+        # During deployment, require every alive model to be placed before completing
+        if self.movement_type == 'deploy' and not self._all_models_moved():
+            remaining_models = [
+                idx + 1
+                for idx, model in enumerate(self.unit.models)
+                if model.is_alive and (
+                    idx not in self.model_movements
+                    or not self.model_movements[idx]['completed']
+                )
+            ]
+            print(f"⚠️  Cannot complete deployment: models {remaining_models} still need placement")
+            return
+
         # Validate unit coherency
         from ...utility.calcs import validate_unit_coherency_after_movement
 
@@ -708,24 +871,28 @@ class IndividualModelMovementDialog(BaseDialog):
         self.hide()
 
         # Publish unit move ended (for Stratagem reactions like Overwatch)
-        try:
-            _player = getattr(self.unit.get_parent_army(), 'player', None)
-            _game = getattr(_player, 'game', None) if _player else None
-            if _game and hasattr(_game, 'event_system'):
-                action = 'move'
-                if self.movement_type == 'advance':
-                    action = 'advance'
-                elif self.movement_type == 'fall_back':
-                    action = 'fall_back'
-                _game.event_system.publish("unit_move_ended", unit=self.unit, action=action)
-                # Start a second reaction window for opponent on move end
-                try:
-                    opponent = next(p for p in _game.players if p is not _player)
-                    _game.event_system.publish("stratagem_window", player=opponent, duration=3.0)
-                except Exception:
-                    pass
-        except Exception:
-            pass
+        # NOTE: Do NOT publish for deployment placement.
+        if self.movement_type != 'deploy':
+            try:
+                _player = getattr(self.unit.get_parent_army(), 'player', None)
+                _game = getattr(_player, 'game', None) if _player else None
+                if _game and hasattr(_game, 'event_system'):
+                    action = 'move'
+                    if self.movement_type == 'advance':
+                        action = 'advance'
+                    elif self.movement_type == 'fall_back':
+                        action = 'fall_back'
+                    elif self.movement_type == 'charge':
+                        action = 'charge'
+                    _game.event_system.publish("unit_move_ended", unit=self.unit, action=action)
+                    # Start a second reaction window for opponent on move end
+                    try:
+                        opponent = next(p for p in _game.players if p is not _player)
+                        _game.event_system.publish("stratagem_window", player=opponent, duration=3.0)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
         
     def _skip_movement(self):
         """Skip movement for this unit"""

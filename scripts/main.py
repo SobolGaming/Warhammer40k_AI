@@ -17,6 +17,7 @@ import pygame
 import os
 import argparse
 import logging
+import sys
 from typing import Tuple, Optional
 
 # Suppress pygame initialization messages before importing pygame
@@ -94,28 +95,90 @@ def initialize_game(player1_type: str, player2_type: str,
         TOP_PANE_HEIGHT = int(2 * TILE_SIZE)
         desired_height = BATTLEFIELD_HEIGHT + INFO_PANE_HEIGHT + TOP_PANE_HEIGHT
         
-        # Get monitor resolution
-        info = pygame.display.Info()
-        monitor_width = info.current_w
-        monitor_height = info.current_h
-        
-        # Leave some margin for window decorations and taskbar
-        usable_width = monitor_width - 100
-        usable_height = monitor_height - 150
-        
-        # Scale down if needed to fit monitor
+        # Create the window at full desired size first, then determine which display it actually landed on.
+        # This avoids incorrectly scaling based on the primary monitor when the OS places the window on
+        # a larger external monitor (common with extended displays).
+        screen = pygame.display.set_mode((desired_width, desired_height), pygame.RESIZABLE)
+        pygame.display.set_caption('Warhammer 40,000 Battlefield')
+
+        def _get_target_display_size_for_window() -> Tuple[int, int]:
+            """Best-effort: return (w,h) of the display containing the window."""
+            # Default fallback: use pygame.display.Info (often primary display)
+            info = pygame.display.Info()
+            fallback_w, fallback_h = int(info.current_w), int(info.current_h)
+
+            # SDL2/pygame2 path: determine window position and map it to a display bounds.
+            try:
+                if hasattr(pygame.display, 'get_window_position'):
+                    wx, wy = pygame.display.get_window_position()
+                else:
+                    return fallback_w, fallback_h
+
+                # Try bounds-aware selection when available
+                if hasattr(pygame.display, 'get_num_displays') and hasattr(pygame.display, 'get_display_bounds'):
+                    num = int(pygame.display.get_num_displays())
+                    # Use window center point for robust display selection
+                    cx = int(wx + desired_width // 2)
+                    cy = int(wy + desired_height // 2)
+                    for i in range(num):
+                        bx, by, bw, bh = pygame.display.get_display_bounds(i)
+                        if bx <= cx < bx + bw and by <= cy < by + bh:
+                            return int(bw), int(bh)
+            except Exception:
+                pass
+
+            # Fallback: use largest display if we can enumerate, otherwise Info()
+            try:
+                if hasattr(pygame.display, 'get_desktop_sizes'):
+                    desktop_sizes = pygame.display.get_desktop_sizes()
+                    if desktop_sizes:
+                        best_w, best_h = max(desktop_sizes, key=lambda s: int(s[0]) * int(s[1]))
+                        return int(best_w), int(best_h)
+            except Exception:
+                pass
+
+            return fallback_w, fallback_h
+
+        monitor_width, monitor_height = _get_target_display_size_for_window()
+
+        # Leave margin for decorations. On macOS, the display height reported by SDL/pygame can already
+        # be the usable work area, so aggressive margins can cause unnecessary downscaling.
+        margin_w = 100
+        margin_h = 150
+        if sys.platform == 'darwin':
+            margin_w = 40
+            margin_h = 60
+
+        usable_width = max(1, monitor_width - margin_w)
+        usable_height = max(1, monitor_height - margin_h)
+
+        # Compute scale factor to fit within usable area
         scale_factor = min(1.0, usable_width / desired_width, usable_height / desired_height)
-        
+
+        # If the desired window already fits in the reported display size, never downscale.
+        # This prevents false positives when the "usable" size is already baked into monitor_height.
+        if (desired_width <= monitor_width and desired_height <= monitor_height) and scale_factor < 1.0:
+            scale_factor = 1.0
+
+        if os.environ.get("WH_UI_DISPLAY_DEBUG", "").strip():
+            try:
+                info = pygame.display.Info()
+                print(f"🧭 Display debug: desired={desired_width}x{desired_height} "
+                      f"info={int(info.current_w)}x{int(info.current_h)} "
+                      f"chosen_display={monitor_width}x{monitor_height} "
+                      f"usable={usable_width}x{usable_height} "
+                      f"scale={scale_factor:.2f}")
+            except Exception:
+                pass
+
         if scale_factor < 1.0:
             actual_width = int(desired_width * scale_factor)
             actual_height = int(desired_height * scale_factor)
-            print(f"🖥️  Scaling window to fit monitor: {desired_width}x{desired_height} → {actual_width}x{actual_height} (scale: {scale_factor:.2f})")
+            print(f"🖥️  Scaling window to fit display: {desired_width}x{desired_height} → {actual_width}x{actual_height} (scale: {scale_factor:.2f})")
+            screen = pygame.display.set_mode((actual_width, actual_height), pygame.RESIZABLE)
         else:
-            actual_width = desired_width
-            actual_height = desired_height
-            print(f"🖥️  Using full size window: {actual_width}x{actual_height}")
-        
-        screen = pygame.display.set_mode((actual_width, actual_height), pygame.RESIZABLE)
+            print(f"🖥️  Using full size window: {desired_width}x{desired_height}")
+
         pygame.display.set_caption('Warhammer 40,000 Battlefield')
 
     # Convert string types to PlayerType enum

@@ -225,8 +225,22 @@ class Game:
     def record_deployment_action(self, player: Player, unit: 'Unit', action: str, location: tuple = None) -> None:
         """Record a deployment action for display in the InfoPane."""
         if action == 'deployed' and location:
-            x, y, z = location
-            action_text = f"{unit.name} deployed at ({x:.1f}, {y:.1f})"
+            # Accept both 2D (x,y) and 3D (x,y,z) tuples; ignore extra fields (e.g. facing)
+            try:
+                x = float(location[0])
+                y = float(location[1])
+                z = float(location[2]) if len(location) > 2 else 0.0
+            except Exception:
+                x = y = None
+                z = 0.0
+
+            if x is not None and y is not None:
+                if abs(z) > 1e-6:
+                    action_text = f"{unit.name} deployed at ({x:.1f}, {y:.1f}, {z:.1f})"
+                else:
+                    action_text = f"{unit.name} deployed at ({x:.1f}, {y:.1f})"
+            else:
+                action_text = f"{unit.name} deployed"
         elif action == 'reserves':
             action_text = f"{unit.name} placed in Reserves"
         elif action == 'strategic_reserves':
@@ -1056,6 +1070,45 @@ class Game:
                         pass
                     return False
             return True
+
+    def is_valid_single_model_deployment(self, model: 'Model', x: float, y: float, z: float, player_name: str) -> dict:
+        """Validate deploying a single model at (x,y,z) during deployment.
+
+        Applies deployment-zone rules (infiltrate vs normal) and RUINS placement rules for the model only.
+
+        Returns a dict: { 'valid': bool, 'reason': str }
+        """
+        unit = model.parent_unit
+        # Units destined for reserves are not placed on battlefield
+        if unit.reserve_status in ['reserves', 'strategic_reserves']:
+            return {'valid': False, 'reason': 'Unit is in reserves'}
+
+        # Infiltrate logic: anywhere except inside enemy zone or within 9" from enemy zone/models (edge of base)
+        if unit.has_infiltrate():
+            # Inside enemy zone
+            if self.is_position_in_enemy_deployment_zone(x, y, player_name):
+                return {'valid': False, 'reason': 'Inside enemy deployment zone'}
+            # 9" from enemy zone (from model edge)
+            base_radius = model.model_base.get_radius()
+            distance_to_enemy_zone = self.get_distance_to_enemy_deployment_zone(x, y, player_name)
+            if distance_to_enemy_zone - base_radius < 9.0:
+                return {'valid': False, 'reason': 'Too close to enemy deployment zone (<9\")'}
+            # 9" from enemy models (from model edge)
+            distance_to_enemy_models = self.get_distance_to_enemy_models(x, y, player_name)
+            if distance_to_enemy_models - base_radius < 9.0:
+                return {'valid': False, 'reason': 'Too close to enemy models (<9\")'}
+        else:
+            # Normal deployment: wholly within own zone
+            if not self.is_position_wholly_in_deployment_zone(x, y, model.model_base, player_name):
+                return {'valid': False, 'reason': 'Model base not wholly within deployment zone'}
+
+        # RUINS placement validation for this single model
+        from .map import validate_ruins_placement
+        ruins_validation = validate_ruins_placement(unit, (x, y, z), self.map.terrain_features, moving_model=model)
+        if not ruins_validation['valid']:
+            return {'valid': False, 'reason': f"RUINS: {ruins_validation.get('reason', 'invalid placement')}"}
+
+        return {'valid': True, 'reason': 'Valid single-model deployment'}
 
     def get_distance_between_units(self, unit1: 'Unit', unit2: 'Unit') -> float:
         """Calculate the shortest distance between any two models in the units."""

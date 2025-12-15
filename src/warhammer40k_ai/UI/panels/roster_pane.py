@@ -40,7 +40,7 @@ TEXT_ACCENT = (100, 149, 237)  # Accent text
 DARK_GREY = (30, 30, 30)  # Dark grey for headers
 
 # Button dimensions
-ROSTER_PANE_BUTTON_HEIGHT = 60
+ROSTER_PANE_BUTTON_HEIGHT = 80
 
 class RosterPane(pygame.sprite.Sprite):
     """UI Panel for displaying army rosters and handling unit selection."""
@@ -84,6 +84,17 @@ class RosterPane(pygame.sprite.Sprite):
 
     def create_buttons(self):
         """Create button rectangles for each unit in the roster."""
+        # Recompute button width from current rect and clamp scroll to new max
+        self.button_width = self.rect.width - 20
+        total_content_height = len(self.roster) * (self.button_height + 5) + 40  # +40 for header
+        visible_height = self.rect.height
+        self.max_scroll = max(0, total_content_height - visible_height)
+        # Clamp scroll_offset to new bounds
+        if self.scroll_offset > self.max_scroll:
+            self.scroll_offset = self.max_scroll
+        if self.scroll_offset < 0:
+            self.scroll_offset = 0
+
         self.buttons = []
         for i, unit in enumerate(self.roster):
             button_rect = pygame.Rect(
@@ -93,11 +104,6 @@ class RosterPane(pygame.sprite.Sprite):
                 self.button_height
             )
             self.buttons.append((button_rect, unit))
-        
-        # Calculate max scroll based on content height
-        total_content_height = len(self.roster) * (self.button_height + 5) + 40  # +40 for header
-        visible_height = self.rect.height
-        self.max_scroll = max(0, total_content_height - visible_height)
 
     def scroll(self, delta):
         """Handle scrolling in the roster pane"""
@@ -142,10 +148,58 @@ class RosterPane(pygame.sprite.Sprite):
 
                         def on_deployment_choice(choice):
                             if choice == 'deploy':
+                                print(f"🟢 DEPLOY chosen for {unit.name} - enabling per-model deployment mode")
                                 unit.set_reserve_status('deployed')
-                                unit.deployed = False  # Mark as ready for deployment but not yet placed
-                                self.selected_unit = unit  # Select for battlefield placement
-                                self.game_view.selected_unit = unit  # Also update GameView's selection
+                                unit.deployed = False  # Ready for deployment but not yet placed
+                                self.selected_unit = unit
+                                self.game_view.selected_unit = unit
+                                # Mark per-model deployment mode for this selection
+                                try:
+                                    self.game_view.deployment_mode_for_selected_unit = 'per_model'
+                                except Exception:
+                                    pass
+                                # Open per-model deployment dialog (reuse movement dialog with 'deploy' mode)
+                                if not hasattr(self.game_view, 'individual_model_movement_dialog') or not self.game_view.individual_model_movement_dialog:
+                                    from ..dialogs.individual_model_movement_dialog import IndividualModelMovementDialog
+                                    self.game_view.individual_model_movement_dialog = IndividualModelMovementDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+                                def on_deploy_complete(completed: bool):
+                                    if completed:
+                                        # Mark unit deployed and record action
+                                        unit.deployed = True
+                                        if not hasattr(self.game_view, 'game_map') or self.game_view.game_map is None:
+                                            print("❌ Deployment failed: game map unavailable to register unit")
+                                            return
+                                        if unit not in self.game_view.game_map.units:
+                                            self.game_view.game_map.units.append(unit)
+                                        current_deployment_player = self.game_view.game.get_current_deployment_player()
+                                        if current_deployment_player:
+                                            # Save unit centroid as position for record
+                                            try:
+                                                locs = [m.get_location() for m in unit.models]
+                                                ux = sum(loc[0] for loc in locs) / len(locs)
+                                                uy = sum(loc[1] for loc in locs) / len(locs)
+                                                uz = sum(loc[2] for loc in locs) / len(locs)
+                                                unit.position = (ux, uy, uz)
+                                            except Exception:
+                                                pass
+                                            self.game_view.game.record_deployment_action(current_deployment_player, unit, 'deployed', getattr(unit, 'position', None))
+                                        # Advance to next player's deployment turn
+                                        self.game_view.game.advance_deployment_turn()
+                                        # Clear selection
+                                        self.selected_unit = None
+                                        self.game_view.selected_unit = None
+                                    else:
+                                        print(f"⏭️  {unit.name} deployment cancelled")
+
+                                    # Clear deployment mode flag regardless
+                                    try:
+                                        if hasattr(self.game_view, 'deployment_mode_for_selected_unit'):
+                                            self.game_view.deployment_mode_for_selected_unit = None
+                                    except Exception:
+                                        pass
+                                # Show dialog in deploy mode; max_distance irrelevant for placement
+                                print(f"📣 Opening per-model deployment dialog for {unit.name}")
+                                self.game_view.individual_model_movement_dialog.show(unit, 'deploy', on_deploy_complete, self.game_view.game_map, max_distance=0.0)
                             elif choice == 'reserves':
                                 unit.set_reserve_status('reserves')
                                 unit.deployed = True  # Deployment decision made (but not on battlefield)
@@ -266,24 +320,115 @@ class RosterPane(pygame.sprite.Sprite):
         cost_text = self.font_small.render(f"{unit.get_unit_cost()}pts", True, TEXT_ACCENT)
         surface.blit(cost_text, (x_right - cost_text.get_width(), y_offset))
 
+        # Extra roster details (composition + status), like the legacy pane
+        def _composition_text(u: Unit) -> str:
+            try:
+                alive_models = [m for m in (u.models or []) if getattr(m, 'is_alive', True)]
+                if not alive_models:
+                    return "0 models"
+                # Count by model name for mixed units
+                counts: Dict[str, int] = {}
+                for m in alive_models:
+                    counts[getattr(m, 'name', 'Model')] = counts.get(getattr(m, 'name', 'Model'), 0) + 1
+                if len(counts) == 1:
+                    name, n = next(iter(counts.items()))
+                    return f"{n}x {name}"
+                # Mixed: show up to 2 entries to avoid overflow
+                parts = [f"{n}x {name}" for name, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:2]]
+                remaining = len(counts) - len(parts)
+                if remaining > 0:
+                    parts.append(f"+{remaining} types")
+                return " • ".join(parts)
+            except Exception:
+                try:
+                    return f"{len(u.models)} models"
+                except Exception:
+                    return "models: ?"
+
+        def _tags_text(u: Unit) -> str:
+            tags: List[str] = []
+            try:
+                if bool(getattr(u, 'is_character', False)):
+                    tags.append("Character")
+                if bool(getattr(u, 'is_vehicle', False)):
+                    tags.append("Vehicle")
+                if bool(getattr(u, 'is_monster', False)):
+                    tags.append("Monster")
+                if bool(getattr(u, 'is_aircraft', False)):
+                    tags.append("Aircraft")
+                if bool(getattr(u, 'is_beast', False)):
+                    tags.append("Beast")
+                if bool(getattr(u, 'is_psyker', False)):
+                    tags.append("Psyker")
+                if bool(getattr(u, 'is_battleline', False)):
+                    tags.append("Battleline")
+            except Exception:
+                pass
+            return ", ".join(tags)
+
+        def _status_text(u: Unit) -> str:
+            try:
+                rs = getattr(u, 'reserve_status', None)
+                if rs == 'reserves':
+                    return "Reserves"
+                if rs == 'strategic_reserves':
+                    return "Strategic Reserves"
+                if not getattr(u, 'deployed', False):
+                    return "Not Deployed"
+            except Exception:
+                pass
+            return ""
+
+        # Layout beneath the name line
+        details_x = x_left + icon_size + 8
+        line1_y = y_offset + 20
+        line2_y = y_offset + 38
+
+        # Composition (models + type)
+        comp = _composition_text(unit)
+        comp_surf = self.font_small.render(comp, True, TEXT_SECONDARY)
+        surface.blit(comp_surf, (details_x, line1_y))
+
+        # Status + tags + health
+        status = _status_text(unit)
+        tags = _tags_text(unit)
+        try:
+            total_wounds = sum(getattr(m, '_base_wounds', getattr(m, 'wounds', 0)) for m in (unit.models or []))
+            current_wounds = sum(getattr(m, 'wounds', 0) for m in (unit.models or []))
+            hp = f"HP {current_wounds}/{total_wounds}" if total_wounds else ""
+        except Exception:
+            hp = ""
+
+        parts = [p for p in [status, tags, hp] if p]
+        if parts:
+            line2 = " • ".join(parts)
+            # Trim if it gets too long
+            if len(line2) > 40:
+                line2 = line2[:37] + "..."
+            line2_surf = self.font_tiny.render(line2, True, TEXT_SECONDARY)
+            surface.blit(line2_surf, (details_x, line2_y))
+
     def draw_roster_unit_icon(self, surface: pygame.Surface, center_x: int, center_y: int, size: int, unit: Unit, tint_color: Tuple[int, int, int] = (255, 255, 255)) -> None:
         """Draw the unit's icon in the roster with appropriate tinting."""
         # Create a surface for the icon
         icon_surface = pygame.Surface((size, size), pygame.SRCALPHA)
         
         # Draw the appropriate icon based on unit type
-        if unit.is_character():
-            draw_character_icon(icon_surface, size//2, size//2, size)
-        elif unit.is_vehicle():
+        # NOTE: these are booleans in this codebase, not callables
+        if bool(getattr(unit, 'is_vehicle', False)):
             draw_vehicle_icon(icon_surface, size//2, size//2, size)
-        elif unit.is_monster():
+        elif bool(getattr(unit, 'is_monster', False)):
             draw_monster_icon(icon_surface, size//2, size//2, size)
-        elif unit.is_battleline():
-            draw_battleline_icon(icon_surface, size//2, size//2, size)
-        elif unit.is_aircraft():
+        elif bool(getattr(unit, 'is_aircraft', False)):
             draw_aircraft_icon(icon_surface, size//2, size//2, size)
-        elif unit.is_beast():
+        elif bool(getattr(unit, 'is_beast', False)):
             draw_beast_icon(icon_surface, size//2, size//2, size)
+        elif bool(getattr(unit, 'is_psyker', False)):
+            draw_psyker_icon(icon_surface, size//2, size//2, size)
+        elif bool(getattr(unit, 'is_battleline', False)):
+            draw_battleline_icon(icon_surface, size//2, size//2, size)
+        elif bool(getattr(unit, 'is_character', False)):
+            draw_character_icon(icon_surface, size//2, size//2, size)
         else:
             draw_generic_icon(icon_surface, size//2, size//2, size)
         
