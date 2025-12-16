@@ -70,6 +70,8 @@ class RosterPane(pygame.sprite.Sprite):
         self.buttons = []
         self.scroll_offset = 0
         self.max_scroll = 0
+        # Display names (used to disambiguate duplicate unit names, e.g. "Bloodletters 1")
+        self._unit_display_names: Dict[str, str] = {}
         self.create_buttons()
         self.game_map = None
         self.game_view = None  # Reference to GameView for deployment dialog
@@ -96,6 +98,26 @@ class RosterPane(pygame.sprite.Sprite):
             self.scroll_offset = 0
 
         self.buttons = []
+        # Precompute disambiguated display names for units in this roster.
+        # If multiple units share a name, enumerate them in roster order: "Name 1", "Name 2", ...
+        self._unit_display_names = {}
+        try:
+            name_counts: Dict[str, int] = {}
+            for u in self.roster:
+                nm = getattr(u, 'name', '')
+                name_counts[nm] = name_counts.get(nm, 0) + 1
+            name_running: Dict[str, int] = {}
+            for u in self.roster:
+                nm = getattr(u, 'name', '')
+                uid = getattr(u, '_id', None) or str(id(u))
+                if name_counts.get(nm, 0) > 1:
+                    name_running[nm] = name_running.get(nm, 0) + 1
+                    self._unit_display_names[uid] = f"{nm} {name_running[nm]}"
+                else:
+                    self._unit_display_names[uid] = nm
+        except Exception:
+            self._unit_display_names = {}
+
         for i, unit in enumerate(self.roster):
             button_rect = pygame.Rect(
                 self.rect.left + 10,
@@ -104,6 +126,14 @@ class RosterPane(pygame.sprite.Sprite):
                 self.button_height
             )
             self.buttons.append((button_rect, unit))
+
+    def get_unit_display_name(self, unit: Unit) -> str:
+        """Return a roster-specific display name, enumerating duplicates (e.g. 'Bloodletters 1')."""
+        try:
+            uid = getattr(unit, '_id', None) or str(id(unit))
+            return self._unit_display_names.get(uid, getattr(unit, 'name', 'Unit'))
+        except Exception:
+            return getattr(unit, 'name', 'Unit')
 
     def scroll(self, delta):
         """Handle scrolling in the roster pane"""
@@ -310,7 +340,7 @@ class RosterPane(pygame.sprite.Sprite):
         self.draw_roster_unit_icon(surface, icon_x, icon_y, icon_size, unit, unit_color_tint)
         
         # Unit name (truncated if too long) - moved right to make room for icon
-        unit_name = unit.name
+        unit_name = self.get_unit_display_name(unit)
         if len(unit_name) > 18:  # Reduced to make room for icon
             unit_name = unit_name[:15] + "..."
         name_text = self.font_medium.render(unit_name, True, TEXT_PRIMARY)
@@ -383,15 +413,41 @@ class RosterPane(pygame.sprite.Sprite):
         details_x = x_left + icon_size + 8
         line1_y = y_offset + 20
         line2_y = y_offset + 38
+        line3_y = y_offset + 52
 
         # Composition (models + type)
         comp = _composition_text(unit)
         comp_surf = self.font_small.render(comp, True, TEXT_SECONDARY)
         surface.blit(comp_surf, (details_x, line1_y))
 
-        # Status + tags + health
+        # Optional enhancement line (blue) shown above "Not Deployed"
+        status_y = line2_y
+        try:
+            enh = getattr(unit, 'enhancement', None)
+        except Exception:
+            enh = None
+        if enh:
+            try:
+                enh_points = getattr(enh, 'points', 0)
+                enh_name = getattr(enh, 'name', str(enh))
+                enh_line = f"{enh_name} ({enh_points}pts)"
+            except Exception:
+                enh_line = "Enhancement"
+            enh_surf = self.font_tiny.render(enh_line, True, TEXT_ACCENT)
+            surface.blit(enh_surf, (details_x, line2_y))
+            status_y = line3_y
+
+        # Status + tags + health (+ leader attachment)
         status = _status_text(unit)
         tags = _tags_text(unit)
+        lead = ""
+        try:
+            if bool(getattr(unit, 'is_leader', False)) and getattr(unit, 'attached_to', None):
+                attached = getattr(unit, 'attached_to', None)
+                attached_name = self.get_unit_display_name(attached) if attached else ""
+                lead = f"Leading {attached_name} unit"
+        except Exception:
+            lead = ""
         try:
             total_wounds = sum(getattr(m, '_base_wounds', getattr(m, 'wounds', 0)) for m in (unit.models or []))
             current_wounds = sum(getattr(m, 'wounds', 0) for m in (unit.models or []))
@@ -399,14 +455,14 @@ class RosterPane(pygame.sprite.Sprite):
         except Exception:
             hp = ""
 
-        parts = [p for p in [status, tags, hp] if p]
+        parts = [p for p in [lead, status, tags, hp] if p]
         if parts:
             line2 = " • ".join(parts)
             # Trim if it gets too long
             if len(line2) > 40:
                 line2 = line2[:37] + "..."
             line2_surf = self.font_tiny.render(line2, True, TEXT_SECONDARY)
-            surface.blit(line2_surf, (details_x, line2_y))
+            surface.blit(line2_surf, (details_x, status_y))
 
     def draw_roster_unit_icon(self, surface: pygame.Surface, center_x: int, center_y: int, size: int, unit: Unit, tint_color: Tuple[int, int, int] = (255, 255, 255)) -> None:
         """Draw the unit's icon in the roster with appropriate tinting."""

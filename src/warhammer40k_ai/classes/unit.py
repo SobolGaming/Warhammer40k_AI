@@ -146,8 +146,8 @@ class Unit:
         if 'x' in base_size:
             # This handles the elliptical example: "32 x 16mm"
             major, minor = base_size.split("x")
-            major = convert_mm_to_inches(int(major.strip()) / 2.0)
-            minor = convert_mm_to_inches(int(minor.strip()) / 2.0)
+            major = convert_mm_to_inches(float(major.strip()) / 2.0)
+            minor = convert_mm_to_inches(float(minor.strip()) / 2.0)
             return Base(BaseType.ELLIPTICAL, (major, minor))
         elif 'Use model' in base_size:
             #print(f"{self.name} has guessed HULL base size")
@@ -161,7 +161,7 @@ class Unit:
             return Base(BaseType.CIRCULAR, convert_mm_to_inches(32 / 2.0))
         else:
             # This handles the standard example: "32mm"
-            return Base(BaseType.CIRCULAR, convert_mm_to_inches(int(base_size.strip()) / 2.0))
+            return Base(BaseType.CIRCULAR, convert_mm_to_inches(float(base_size.strip()) / 2.0))
 
     def _parse_unit_composition(self, unit_composition):
         result = {}

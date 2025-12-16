@@ -1,4 +1,5 @@
 import pygame
+import re
 from typing import List, Optional, Callable, Dict, Any
 from .base_dialog import BaseDialog, TEXT_SUCCESS, TEXT_WARNING, BUTTON_SELECTED
 from ...utility.constants import RUINS_FLOOR_HEIGHT
@@ -141,13 +142,15 @@ class IndividualModelMovementDialog(BaseDialog):
             return
             
         # Calculate button layout
-        button_width = 180
+        # Compute width from dialog size so labels have maximum room
+        start_x = 20  # Relative to dialog
+        start_y = 80  # Relative to dialog
         button_height = 30
         button_spacing = 5
         models_per_row = 3
-        
-        start_x = 20  # Relative to dialog
-        start_y = 80  # Relative to dialog
+
+        usable_width = max(0, int(self.width - (start_x * 2)))
+        button_width = max(120, int((usable_width - (button_spacing * (models_per_row - 1))) / models_per_row))
         
         button_index = 0  # Separate index for button positioning
         for i, model in enumerate(self.unit.models):
@@ -179,6 +182,76 @@ class IndividualModelMovementDialog(BaseDialog):
             })
             
             button_index += 1
+
+    def _truncate_text_to_width(self, text: str, font: pygame.font.Font, max_width: int) -> str:
+        """Truncate text with ellipsis so it fits within max_width."""
+        try:
+            if max_width <= 0:
+                return ""
+            if font.size(text)[0] <= max_width:
+                return text
+            ell = "..."
+            ell_w = font.size(ell)[0]
+            if ell_w >= max_width:
+                return ""
+            lo, hi = 0, len(text)
+            # binary search for the longest prefix that fits
+            while lo < hi:
+                mid = (lo + hi) // 2
+                candidate = text[:mid].rstrip() + ell
+                if font.size(candidate)[0] <= max_width:
+                    lo = mid + 1
+                else:
+                    hi = mid
+            # lo is first that fails; use lo-1
+            candidate = text[: max(0, lo - 1)].rstrip() + ell
+            # Ensure fit
+            while candidate and font.size(candidate)[0] > max_width:
+                candidate = candidate[:-4].rstrip() + ell if len(candidate) > 3 else ""
+            return candidate
+        except Exception:
+            return text
+
+    def _truncate_middle_preserve_suffix(self, text: str, font: pygame.font.Font, max_width: int) -> str:
+        """Middle-truncate so the suffix (e.g. ' 1', ' 10') remains visible."""
+        try:
+            if max_width <= 0:
+                return ""
+            if font.size(text)[0] <= max_width:
+                return text
+
+            # Prefer preserving a trailing " <digits>" suffix if present, otherwise last 2 chars
+            m = re.search(r"(\s+\d+)$", text)
+            if m:
+                suffix = m.group(1)
+                prefix = text[: -len(suffix)]
+            else:
+                suffix = text[-2:]
+                prefix = text[:-2]
+
+            mid = " .. "
+            # If even the minimal form doesn't fit, fall back to simple truncation
+            minimal = (suffix or "").strip()
+            if not prefix:
+                return self._truncate_text_to_width(text, font, max_width)
+            if font.size(mid + suffix)[0] >= max_width:
+                return self._truncate_text_to_width(text, font, max_width)
+
+            # Binary search how much prefix we can keep
+            lo, hi = 0, len(prefix)
+            best = ""
+            while lo <= hi:
+                mid_i = (lo + hi) // 2
+                candidate = prefix[:mid_i].rstrip() + mid + suffix.lstrip()
+                if font.size(candidate)[0] <= max_width:
+                    best = candidate
+                    lo = mid_i + 1
+                else:
+                    hi = mid_i - 1
+
+            return best if best else self._truncate_text_to_width(text, font, max_width)
+        except Exception:
+            return self._truncate_text_to_width(text, font, max_width)
     
     def _create_dialog_buttons(self):
         """Create the Complete and Skip buttons using base dialog button system"""
@@ -1123,12 +1196,17 @@ class IndividualModelMovementDialog(BaseDialog):
             if button.get('disabled', False):
                 model_name += f" ({button.get('disabled_reason', 'Unavailable')})"
             elif model_index in self.model_movements and self.model_movements[model_index]['completed']:
-                model_name += " ✓"
+                # No extra marker needed; color already indicates completion
+                pass
             elif not model.is_alive:
                 model_name += " (Dead)"
-                
-            text_surface = self.font_small.render(model_name, True, text_color)
-            text_rect = text_surface.get_rect(center=rect.center)
+
+            # Fit label to button width
+            padding_x = 6
+            fitted = self._truncate_middle_preserve_suffix(model_name, self.font_small, rect.width - (padding_x * 2))
+            text_surface = self.font_small.render(fitted, True, text_color)
+            text_rect = text_surface.get_rect()
+            text_rect.midleft = (rect.left + padding_x, rect.centery)
             screen.blit(text_surface, text_rect)
             
         # Draw instructions
@@ -1138,8 +1216,10 @@ class IndividualModelMovementDialog(BaseDialog):
         else:
             instruction_text = "Select a model, then click on battlefield to move it. ESC to close."
             instruction_color = (200, 200, 200)  # TEXT_SECONDARY
-            
-        instruction_surface = self.font_small.render(instruction_text, True, instruction_color)
+
+        # Fit instructions to dialog width
+        instr_fitted = self._truncate_middle_preserve_suffix(instruction_text, self.font_small, self.width - 40)
+        instruction_surface = self.font_small.render(instr_fitted, True, instruction_color)
         screen.blit(instruction_surface, (self.x + 20, self.y + self.height - 80))
         
         # Draw control buttons using base class method
