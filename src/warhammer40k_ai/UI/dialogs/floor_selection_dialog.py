@@ -6,27 +6,42 @@ Allows players to choose which floor level to target when moving units that can 
 import pygame
 from typing import Optional, Tuple, List
 from .base_dialog import BaseDialog
+from ...utility.constants import RUINS_FLOOR_HEIGHT
 
 
 class FloorSelectionDialog(BaseDialog):
     """Dialog for selecting target floor level in RUINS terrain."""
     
-    def __init__(self, available_floors: List[int], unit_name: str = "Unit"):
+    def __init__(self, available_floors: List[int], unit_name: str = "Unit", disabled_floors: Optional[List[int]] = None):
         """
         Initialize floor selection dialog.
         
         Args:
             available_floors: List of floor levels available (e.g., [0, 1, 2])
             unit_name: Name of unit for display
+            disabled_floors: Floors to show but disallow selecting/confirming
         """
-        super().__init__()
         self.available_floors = sorted(available_floors)
         self.unit_name = unit_name
-        self.selected_floor = available_floors[0] if available_floors else 0
+        self.disabled_floors = set(disabled_floors or [])
+        # Prefer selecting the first enabled floor
+        enabled = [f for f in self.available_floors if f not in self.disabled_floors]
+        self.selected_floor = enabled[0] if enabled else (available_floors[0] if available_floors else 0)
         
         # Dialog dimensions
         self.dialog_width = 400
         self.dialog_height = 200 + len(available_floors) * 40
+
+        # BaseDialog init (needed for show()/visible state)
+        try:
+            screen = pygame.display.get_surface()
+            if screen:
+                sw, sh = screen.get_size()
+            else:
+                sw, sh = (1920, 1080)
+        except Exception:
+            sw, sh = (1920, 1080)
+        super().__init__(sw, sh, width=self.dialog_width, height=self.dialog_height, draggable=False, center=True)
         
         # Colors
         self.bg_color = (45, 45, 48)
@@ -35,6 +50,12 @@ class FloorSelectionDialog(BaseDialog):
         self.button_color = (60, 60, 67)
         self.button_hover_color = (75, 75, 82)
         self.button_selected_color = (0, 122, 204)
+        self.button_disabled_color = (55, 55, 55)
+        self.text_disabled_color = (150, 150, 150)
+
+    # BaseDialog abstract requirement (we don't use BaseDialog's button system here)
+    def _handle_button_click(self, button_name: str) -> bool:
+        return False
         
     def handle_event(self, event: pygame.event.Event) -> Optional[dict]:
         """Handle pygame events."""
@@ -42,15 +63,25 @@ class FloorSelectionDialog(BaseDialog):
             if event.key == pygame.K_ESCAPE:
                 return {"action": "cancel"}
             elif event.key == pygame.K_RETURN or event.key == pygame.K_KP_ENTER:
+                if self.selected_floor in self.disabled_floors:
+                    return None
                 return {"action": "confirm", "floor": self.selected_floor}
             elif event.key == pygame.K_UP:
                 current_index = self.available_floors.index(self.selected_floor)
-                if current_index > 0:
-                    self.selected_floor = self.available_floors[current_index - 1]
+                # Move to previous enabled floor (if any)
+                for i in range(current_index - 1, -1, -1):
+                    cand = self.available_floors[i]
+                    if cand not in self.disabled_floors:
+                        self.selected_floor = cand
+                        break
             elif event.key == pygame.K_DOWN:
                 current_index = self.available_floors.index(self.selected_floor)
-                if current_index < len(self.available_floors) - 1:
-                    self.selected_floor = self.available_floors[current_index + 1]
+                # Move to next enabled floor (if any)
+                for i in range(current_index + 1, len(self.available_floors)):
+                    cand = self.available_floors[i]
+                    if cand not in self.disabled_floors:
+                        self.selected_floor = cand
+                        break
         
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:  # Left click
@@ -81,6 +112,8 @@ class FloorSelectionDialog(BaseDialog):
             button_y = floor_buttons_start_y + i * 40
             if (20 <= rel_x <= self.dialog_width - 20 and 
                 button_y <= rel_y <= button_y + 30):
+                if floor in self.disabled_floors:
+                    return None
                 self.selected_floor = floor
                 return None
         
@@ -91,6 +124,8 @@ class FloorSelectionDialog(BaseDialog):
         
         if (confirm_button_x <= rel_x <= confirm_button_x + 70 and 
             button_y <= rel_y <= button_y + 30):
+            if self.selected_floor in self.disabled_floors:
+                return None
             return {"action": "confirm", "floor": self.selected_floor}
         elif (cancel_button_x <= rel_x <= cancel_button_x + 70 and 
               button_y <= rel_y <= button_y + 30):
@@ -130,7 +165,9 @@ class FloorSelectionDialog(BaseDialog):
             button_rect = pygame.Rect(dialog_x + 20, button_y, self.dialog_width - 40, 30)
             
             # Button color based on selection
-            if floor == self.selected_floor:
+            if floor in self.disabled_floors:
+                button_color = self.button_disabled_color
+            elif floor == self.selected_floor:
                 button_color = self.button_selected_color
             else:
                 button_color = self.button_color
@@ -142,9 +179,11 @@ class FloorSelectionDialog(BaseDialog):
             if floor == 0:
                 floor_text = "Ground Floor (Level 0)"
             else:
-                floor_text = f"Floor Level {floor} ({floor * 4}\" elevation)"
+                elev = float(floor) * float(RUINS_FLOOR_HEIGHT)
+                floor_text = f"Floor Level {floor} ({elev:.1f}\" elevation)"
             
-            text_surface = font_small.render(floor_text, True, self.text_color)
+            txt_color = self.text_disabled_color if floor in self.disabled_floors else self.text_color
+            text_surface = font_small.render(floor_text, True, txt_color)
             text_rect = text_surface.get_rect(center=button_rect.center)
             screen.blit(text_surface, text_rect)
         

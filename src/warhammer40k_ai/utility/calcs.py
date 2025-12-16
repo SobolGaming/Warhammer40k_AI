@@ -1887,68 +1887,39 @@ def check_unit_coherency(unit: 'Unit') -> dict:
     Returns:
         dict: {'coherent': bool, 'reason': str, 'non_coherent_models': List[int]}
     """
-    if len(unit.models) <= 1:
+    alive_indices = [i for i, m in enumerate(unit.models) if getattr(m, 'is_alive', True)]
+    alive_count = len(alive_indices)
+
+    if alive_count <= 1:
         return {'coherent': True, 'reason': 'Single model units are always coherent', 'non_coherent_models': []}
 
-    # Build adjacency graph using 3D coherency rules
-    adjacency_graph = {i: [] for i in range(len(unit.models))}
+    required_neighbors = 2 if alive_count >= 7 else 1
 
-    for i in range(len(unit.models)):
-        for j in range(i + 1, len(unit.models)):
-            model_i = unit.models[i]
-            model_j = unit.models[j]
-
-            if not model_i.is_alive or not model_j.is_alive:
+    non_coherent_models: list[int] = []
+    for i in alive_indices:
+        neighbors = 0
+        for j in alive_indices:
+            if i == j:
                 continue
+            # model_base.coherency_distance() implements (<=2" horizontal AND <=5" vertical) as "0.0 means coherent"
+            try:
+                if unit.models[i].model_base.coherency_distance(unit.models[j].model_base) <= 0.0:
+                    neighbors += 1
+                    if neighbors >= required_neighbors:
+                        break
+            except Exception:
+                continue
+        if neighbors < required_neighbors:
+            non_coherent_models.append(i)
 
-            # Use the new coherency distance calculation
-            coherency_dist = model_i.model_base.coherency_distance(model_j.model_base)
-
-            if coherency_dist <= 0.0:  # In coherency
-                adjacency_graph[i].append(j)
-                adjacency_graph[j].append(i)
-
-    # Check if all models are connected using BFS
-    visited = set()
-    connected_components = []
-
-    for i in range(len(unit.models)):
-        if i not in visited and unit.models[i].is_alive:
-            component = []
-            queue = [i]
-            visited.add(i)
-
-            while queue:
-                current = queue.pop(0)
-                component.append(current)
-
-                for neighbor in adjacency_graph[current]:
-                    if neighbor not in visited:
-                        visited.add(neighbor)
-                        queue.append(neighbor)
-
-            connected_components.append(component)
-
-    # Unit is coherent if all alive models are in one connected component
-    is_coherent = len(connected_components) <= 1
-
-    if not is_coherent:
-        # Find the largest connected component (this should remain)
-        largest_component = max(connected_components, key=len)
-
-        # All models not in the largest component are non-coherent
-        non_coherent_models = []
-        for component in connected_components:
-            if component != largest_component:
-                non_coherent_models.extend(component)
-
+    if non_coherent_models:
         return {
             'coherent': False,
-            'reason': f'Unit has {len(connected_components)} disconnected groups',
+            'reason': f'Models lack required coherency neighbors (alive={alive_count}, required_neighbors={required_neighbors})',
             'non_coherent_models': non_coherent_models
         }
 
-    return {'coherent': True, 'reason': 'All models are connected', 'non_coherent_models': []}
+    return {'coherent': True, 'reason': 'All alive models meet coherency neighbor requirements', 'non_coherent_models': []}
 
 def validate_unit_coherency_after_movement(unit: 'Unit', new_positions: List[Tuple[float, float, float]]) -> Tuple[bool, List[int]]:
     """
@@ -1964,82 +1935,98 @@ def validate_unit_coherency_after_movement(unit: 'Unit', new_positions: List[Tup
     Returns:
         Tuple[bool, List[int]]: (is_coherent, list_of_non_coherent_model_indices)
     """
-    if len(new_positions) != len(unit.models):
-        logger.warning(f"Number of positions ({len(new_positions)}) does not match number of models ({len(unit.models)}) in unit {unit.name}")
-        return False, []
-    
-    # Check if unit has only one model - always coherent
-    if len(unit.models) == 1:
+    # Coherency is evaluated using 10th edition rules:
+    # - Must be within 2" horizontally (base-to-base edge distance) AND within 5" vertically (base-to-base).
+    # - For 2-6 models: each model must be within coherency of at least 1 other model.
+    # - For 7+ models: each model must be within coherency of at least 2 other models.
+    # - For 1 model: always coherent.
+
+    alive_indices = [i for i, m in enumerate(unit.models) if getattr(m, 'is_alive', True)]
+    alive_count = len(alive_indices)
+
+    # Single-model units never need coherency checks
+    if alive_count <= 1:
         return True, []
-    
-    # Build adjacency graph based on coherency distance
-    coherency_distance = unit.coherency_distance
-    adjacency_graph = {}
-    non_coherent_models = []
-    
-    for i, pos_i in enumerate(new_positions):
-        adjacency_graph[i] = []
-        for j, pos_j in enumerate(new_positions):
-            if i != j:
-                # Calculate edge-to-edge distance between model bases
-                model_i = unit.models[i]
-                model_j = unit.models[j]
 
-                # Create temporary bases at the new positions to calculate proper edge-to-edge distance
-                temp_base_i = model_i.model_base.__class__(model_i.model_base.base_type, model_i.model_base.radius)
-                temp_base_i.set_position(pos_i[0], pos_i[1], pos_i[2])
-                temp_base_i.set_facing(model_i.model_base.facing)
+    # Map positions to model indices robustly (some callers pass only alive positions)
+    positions_by_index: dict[int, Tuple[float, float, float]] = {}
+    if len(new_positions) == len(unit.models):
+        for i in alive_indices:
+            pos = new_positions[i]
+            positions_by_index[i] = (pos[0], pos[1], pos[2] if len(pos) > 2 else 0.0)
+    elif len(new_positions) == alive_count:
+        for k, i in enumerate(alive_indices):
+            pos = new_positions[k]
+            positions_by_index[i] = (pos[0], pos[1], pos[2] if len(pos) > 2 else 0.0)
+    else:
+        logger.warning(
+            f"Coherency check: positions length ({len(new_positions)}) does not match unit models ({len(unit.models)}) "
+            f"or alive models ({alive_count}) for unit {unit.name}"
+        )
+        return False, []
 
+    required_neighbors = 2 if alive_count >= 7 else 1
+
+    # Constants: coherency thresholds
+    horiz_limit = 2.0
+    vert_limit = 5.0
+
+    non_coherent_models: list[int] = []
+
+    # Count coherent neighbors for each alive model
+    for i in alive_indices:
+        model_i = unit.models[i]
+        pos_i = positions_by_index[i]
+        neighbors = 0
+
+        # Temp base for accurate edge-to-edge horizontal measurement
+        try:
+            temp_base_i = model_i.model_base.__class__(model_i.model_base.base_type, model_i.model_base.radius)
+            temp_base_i.set_position(pos_i[0], pos_i[1], pos_i[2])
+            temp_base_i.set_facing(getattr(model_i.model_base, 'facing', 0.0))
+            geom_i = temp_base_i.get_base_shape()
+        except Exception:
+            # If geometry can't be built, fail safe (treat as non-coherent)
+            non_coherent_models.append(i)
+            continue
+
+        for j in alive_indices:
+            if i == j:
+                continue
+            model_j = unit.models[j]
+            pos_j = positions_by_index[j]
+
+            # Vertical is base-to-base (not model top/bottom)
+            vertical_dist = abs(float(pos_i[2]) - float(pos_j[2]))
+            if vertical_dist > vert_limit + 1e-6:
+                continue
+
+            # Horizontal is base edge-to-edge on XY plane
+            try:
                 temp_base_j = model_j.model_base.__class__(model_j.model_base.base_type, model_j.model_base.radius)
                 temp_base_j.set_position(pos_j[0], pos_j[1], pos_j[2])
-                temp_base_j.set_facing(model_j.model_base.facing)
+                temp_base_j.set_facing(getattr(model_j.model_base, 'facing', 0.0))
+                geom_j = temp_base_j.get_base_shape()
+                horizontal_dist = geom_i.distance(geom_j)
+            except Exception:
+                continue
 
-                # Use proper edge-to-edge distance calculation
-                distance = temp_base_i.edge_to_edge_distance(temp_base_j)
+            if horizontal_dist <= horiz_limit + 1e-6:
+                neighbors += 1
+                if neighbors >= required_neighbors:
+                    break
 
-                if distance <= coherency_distance:
-                    adjacency_graph[i].append(j)
-    
-    # Check if all models are connected (coherent)
-    # Use BFS to find connected components
-    visited = set()
-    connected_components = []
-    
-    for i in range(len(unit.models)):
-        if i not in visited:
-            component = []
-            queue = [i]
-            visited.add(i)
-            
-            while queue:
-                current = queue.pop(0)
-                component.append(current)
-                
-                for neighbor in adjacency_graph[current]:
-                    if neighbor not in visited:
-                        visited.add(neighbor)
-                        queue.append(neighbor)
-            
-            connected_components.append(component)
-    
-    # Unit is coherent if all models are in one connected component
-    is_coherent = len(connected_components) == 1
-    
-    # If not coherent, find which models are isolated
-    if not is_coherent:
-        # Find the largest connected component (this should remain)
-        largest_component = max(connected_components, key=len)
-        
-        # All models not in the largest component are non-coherent
-        non_coherent_models = []
-        for component in connected_components:
-            if component != largest_component:
-                non_coherent_models.extend(component)
-    
-    logger.debug(f"Unit {unit.name} coherency check: {'PASS' if is_coherent else 'FAIL'}")
+        if neighbors < required_neighbors:
+            non_coherent_models.append(i)
+
+    is_coherent = len(non_coherent_models) == 0
+    logger.debug(
+        f"Unit {unit.name} coherency check: {'PASS' if is_coherent else 'FAIL'} "
+        f"(alive={alive_count}, required_neighbors={required_neighbors})"
+    )
     if not is_coherent:
         logger.debug(f"Non-coherent models: {non_coherent_models}")
-    
+
     return is_coherent, non_coherent_models
 
 def get_individual_model_movement_path(unit: 'Unit', model_index: int, target: Tuple[float, float, float],

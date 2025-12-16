@@ -659,10 +659,13 @@ class Unit:
         self.update_coherency()
 
     def update_coherency(self) -> None:
-        if len(self.models) == 1:
+        # Coherency thresholds depend on the number of models in the unit.
+        # Use alive model count so casualties adjust the requirement correctly.
+        alive_count = len([m for m in self.models if getattr(m, 'is_alive', True)])
+        if alive_count <= 1:
             self.coherency_distance = 2.0
             self.required_neighbors = 0
-        elif len(self.models) > 5:
+        elif alive_count >= 7:
             self.coherency_distance = 2.0
             self.required_neighbors = 2
         else:
@@ -773,59 +776,59 @@ class Unit:
 
     @property
     def is_monster(self) -> bool:
-        return "Monster" in self.keywords
+        return self.has_keyword("Monster")
 
     @property
     def is_vehicle(self) -> bool:
-        return "Vehicle" in self.keywords
+        return self.has_keyword("Vehicle")
 
     @property
     def is_aircraft(self) -> bool:
-        return "Aircraft" in self.keywords
+        return self.has_keyword("Aircraft")
 
     @property
     def is_fortification(self) -> bool:
-        return "Fortification" in self.keywords
+        return self.has_keyword("Fortification")
 
     @property
     def is_character(self) -> bool:
-        return "Character" in self.keywords
+        return self.has_keyword("Character")
 
     @property
     def is_psyker(self) -> bool:
-        return "Psyker" in self.keywords
+        return self.has_keyword("Psyker")
 
     @property
     def is_infantry(self) -> bool:
-        return "Infantry" in self.keywords
+        return self.has_keyword("Infantry")
 
     @property
     def is_beast(self) -> bool:
-        return "Beast" in self.keywords
+        return self.has_keyword("Beast")
 
     @property
     def is_titanic(self) -> bool:
-        return "Titanic" in self.keywords
+        return self.has_keyword("Titanic")
 
     @property
     def is_towering(self) -> bool:
-        return "Towering" in self.keywords
+        return self.has_keyword("Towering")
 
     @property
     def is_flying(self) -> bool:
-        return "Fly" in self.keywords
+        return self.has_keyword("Fly")
 
     @property
     def is_smoke(self) -> bool:
-        return "Smoke" in self.keywords
+        return self.has_keyword("Smoke")
 
     @property
     def is_belisarius_cawl(self) -> bool:
-        return "Belisarius Cawl" in self.keywords
+        return self.has_keyword("Belisarius Cawl")
 
     @property
     def is_imperium_primarch(self) -> bool:
-        return "Imperium" in self.keywords and "Primarch" in self.keywords
+        return self.has_keyword("Imperium") and self.has_keyword("Primarch")
     
     def can_move_through_ruins_walls(self) -> bool:
         """Check if this unit can move through RUINS walls (not just on ground floor)."""
@@ -3939,7 +3942,14 @@ class Unit:
             # Use the corresponding model for each position
             other_model = self.models[i] if i < len(self.models) else self.models[0]
             other_base = self._create_potential_base(pos[0], pos[1], pos[2] if len(pos) > 2 else 0.0, pos[3] if len(pos) > 3 else facing, other_model)
-            if new_base.edge_to_edge_distance(other_base) <= self.coherency_distance:
+            # 10th ed coherency: <=2" horizontal (base edge-to-edge) AND <=5" vertical (base-to-base)
+            try:
+                horizontal = new_base.get_base_shape().distance(other_base.get_base_shape())
+                vertical = abs(float(getattr(new_base, 'z', 0.0)) - float(getattr(other_base, 'z', 0.0)))
+            except Exception:
+                horizontal = float('inf')
+                vertical = float('inf')
+            if horizontal <= self.coherency_distance + 1e-6 and vertical <= 5.0 + 1e-6:
                 found_neighbors += 1
                 if found_neighbors >= current_neighbors_needed:
                     return True
@@ -3961,9 +3971,14 @@ class Unit:
             for j, m2 in enumerate(models):
                 if i == j:
                     continue
-                # use the real edge-to-edge distance between bases
-                d = m1.model_base.edge_to_edge_distance(m2.model_base)
-                if d <= self.coherency_distance + 1e-6:
+                # 10th ed coherency: <=2" horizontal (base edge-to-edge) AND <=5" vertical (base-to-base)
+                try:
+                    horizontal = m1.model_base.get_base_shape().distance(m2.model_base.get_base_shape())
+                    vertical = abs(float(getattr(m1.model_base, 'z', 0.0)) - float(getattr(m2.model_base, 'z', 0.0)))
+                except Exception:
+                    horizontal = float('inf')
+                    vertical = float('inf')
+                if horizontal <= self.coherency_distance + 1e-6 and vertical <= 5.0 + 1e-6:
                     neighbors += 1
                 if neighbors >= self.required_neighbors:
                     break

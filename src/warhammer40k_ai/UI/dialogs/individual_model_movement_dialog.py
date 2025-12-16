@@ -1,6 +1,7 @@
 import pygame
 from typing import List, Optional, Callable, Dict, Any
 from .base_dialog import BaseDialog, TEXT_SUCCESS, TEXT_WARNING, BUTTON_SELECTED
+from ...utility.constants import RUINS_FLOOR_HEIGHT
 
 # Additional colors specific to this dialog
 HIGHLIGHT_COLOR = (255, 255, 0)  # Yellow for model highlighting
@@ -26,6 +27,7 @@ class IndividualModelMovementDialog(BaseDialog):
         # Floor selection sub-dialog state
         self.floor_selection_dialog = None
         self._pending_click_position = None  # (x,y) waiting for floor selection
+        self._pending_floor_z_by_level = None  # {level: z} for the pending click
         
         # UI elements
         self.model_buttons = []
@@ -280,23 +282,33 @@ class IndividualModelMovementDialog(BaseDialog):
                 action = result.get('action')
                 if action == 'confirm':
                     selected_level = result.get('floor', 0)
-                    # Convert level to surface Z (level in 4" increments)
-                    surface_z = float(selected_level) * 4.0  # thickness handled in placement tolerance
+                    # Convert selected level to Z (prefer pending mapping if available)
+                    surface_z = float(selected_level) * float(RUINS_FLOOR_HEIGHT)
+                    try:
+                        if isinstance(self._pending_floor_z_by_level, dict) and selected_level in self._pending_floor_z_by_level:
+                            surface_z = float(self._pending_floor_z_by_level[selected_level])
+                    except Exception:
+                        pass
                     if self._pending_click_position is not None:
                         dest_x, dest_y = self._pending_click_position
                         self.floor_selection_dialog.hide()
-                        # Proceed with move using selected Z
-                        self._finalize_click_with_z(dest_x, dest_y, surface_z)
+                        # Proceed with move/deploy using selected Z
+                        if self.movement_type == 'deploy':
+                            self._finalize_deploy_click_with_z(dest_x, dest_y, surface_z)
+                        else:
+                            self._finalize_click_with_z(dest_x, dest_y, surface_z)
                         self._pending_click_position = None
+                        self._pending_floor_z_by_level = None
                         return True
                 elif action == 'cancel':
                     # Cancel selection; do nothing (user can click again)
                     self.floor_selection_dialog.hide()
                     self._pending_click_position = None
+                    self._pending_floor_z_by_level = None
                     return True
-            # If dialog consumed the event or is visible, stop here
-            # We return True to avoid double-processing the same event
-            # unless result is None, then fall-through for other handlers
+            # IMPORTANT: While floor selection is visible, consume ALL events here
+            # to prevent battlefield clicks from placing models underneath.
+            return True
 
         # Handle ESC key to close dialog
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
@@ -398,19 +410,73 @@ class IndividualModelMovementDialog(BaseDialog):
         """
         if not self.awaiting_battlefield_click or self.selected_model_index is None:
             return False
-            
-        # If multiple RUINS floors are available at this XY, ask user to pick a floor
-        floors_at_xy = self._get_ruins_available_floors(battlefield_x, battlefield_y)
-        if len(floors_at_xy) > 1:
+
+        # If a floor selection dialog is open, ignore battlefield clicks until resolved.
+        if getattr(self, 'floor_selection_dialog', None) is not None and getattr(self.floor_selection_dialog, 'visible', False):
             try:
-                from .floor_selection_dialog import FloorSelectionDialog
-                dialog = FloorSelectionDialog(available_floors=floors_at_xy, unit_name=self.unit.name)
-                self.floor_selection_dialog = dialog
-                self._pending_click_position = (battlefield_x, battlefield_y)
-                dialog.show()
-                return True  # Defer movement until selection
+                print("🏢 Floor selection pending - ignoring battlefield click until confirm/cancel")
             except Exception:
                 pass
+            return True
+
+        # If multiple RUINS floors are valid for this model's BASE at this XY, ask user to pick a floor
+        try:
+            model = self.unit.models[self.selected_model_index]
+        except Exception:
+            model = None
+        floors_at_xy: list[int] = []
+        z_by_level: dict[int, float] = {}
+        disabled_by_validation: list[int] = []
+        if model is not None:
+            floors_at_xy, z_by_level, disabled_by_validation = self._get_ruins_floor_options_for_model_at_xy(model, battlefield_x, battlefield_y)
+
+        # If this RUINS has multiple floors at all, ask user to pick a floor.
+        # Floors that aren't valid at this XY (overhang/walls/clearance/unit restrictions) are shown but disabled.
+        if len(floors_at_xy) > 1:
+            disabled: list[int] = list(disabled_by_validation or [])
+            # For movement/pathing: list all valid floors but disable unreachable ones by distance
+            if self.movement_type != 'deploy':
+                try:
+                    from ...utility.calcs import get_dist
+                    current_pos = model.get_location() if model is not None else None
+                    if current_pos:
+                        for lvl in floors_at_xy:
+                            z = float(z_by_level.get(lvl, float(lvl) * float(RUINS_FLOOR_HEIGHT)))
+                            d = get_dist(battlefield_x - current_pos[0], battlefield_y - current_pos[1], z - (current_pos[2] if len(current_pos) > 2 else 0.0))
+                            if d > float(self.max_distance):
+                                if lvl not in disabled:
+                                    disabled.append(lvl)
+                except Exception:
+                    # keep validation-based disables even if distance calc fails
+                    disabled = list(disabled_by_validation or [])
+            try:
+                mname = getattr(model, 'name', 'Unknown model')
+                print(
+                    f"🏢 RUINS floor selection triggered for {self.unit.name} / {mname} "
+                    f"at ({battlefield_x:.1f}, {battlefield_y:.1f}). "
+                    f"floors={floors_at_xy}, disabled={sorted(disabled)} (movement_type={self.movement_type})"
+                )
+            except Exception:
+                pass
+            try:
+                from .floor_selection_dialog import FloorSelectionDialog
+                dialog = FloorSelectionDialog(available_floors=floors_at_xy, unit_name=self.unit.name, disabled_floors=disabled)
+                self.floor_selection_dialog = dialog
+                self._pending_click_position = (battlefield_x, battlefield_y)
+                self._pending_floor_z_by_level = dict(z_by_level or {})
+                dialog.show()
+                try:
+                    print(f"🏢 Floor selection dialog visible={getattr(dialog, 'visible', None)}")
+                except Exception:
+                    pass
+                return True  # Defer until selection
+            except Exception as e:
+                try:
+                    print(f"❌ Floor selection dialog failed to open: {e}")
+                except Exception:
+                    pass
+                # If UI fails, fall back to using provided Z
+                self._pending_floor_z_by_level = None
 
         # Use provided Z if no selection needed (or single floor)
         destination = (battlefield_x, battlefield_y, battlefield_z)
@@ -497,6 +563,70 @@ class IndividualModelMovementDialog(BaseDialog):
             print(f"🔄 Model remains selected. Try clicking on a valid location.")
         
         return success
+
+    def _finalize_deploy_click_with_z(self, x: float, y: float, z: float) -> None:
+        """Finalize a pending battlefield click after floor selection by DEPLOYING the model with chosen Z."""
+        if self.selected_model_index is None:
+            return
+        model = self.unit.models[self.selected_model_index]
+
+        # Validate single model deployment
+        try:
+            game = model.parent_unit.get_parent_army().player.game
+        except Exception:
+            game = None
+        if not game:
+            print("❌ Deployment failed: game context unavailable")
+            return
+
+        # Determine player by unit ownership
+        try:
+            player_name = model.parent_unit.get_parent_army().player.name
+        except Exception:
+            player_name = ''
+
+        validation = game.is_valid_single_model_deployment(model, x, y, z, player_name)
+        if not validation['valid']:
+            print(f"❌ Deployment invalid for {model.name}: {validation['reason']}")
+            return
+
+        # Prevent illegal base overlaps during deployment.
+        overlap_validation = self._validate_deployment_no_base_overlap(
+            model=model,
+            x=x,
+            y=y,
+            z=z,
+        )
+        if not overlap_validation['valid']:
+            print(f"❌ Deployment invalid for {model.name}: {overlap_validation['reason']}")
+            return
+
+        # Place the model at destination (preserve facing)
+        current_facing = model.model_base.facing if hasattr(model.model_base, 'facing') else 0.0
+        model.set_location(float(x), float(y), float(z), current_facing)
+        print(f"✅ {model.name} deployed to ({float(x):.1f}, {float(y):.1f}{'' if abs(float(z)) < 1e-6 else f', {float(z):.1f}'})")
+
+        # Mark model as deployed
+        self.model_movements[self.selected_model_index] = {
+            'path': [],
+            'completed': True
+        }
+
+        # In deploy mode, immediately advance to the next unplaced alive model
+        next_idx = None
+        for idx, m in enumerate(self.unit.models):
+            if not getattr(m, 'is_alive', True):
+                continue
+            if idx in self.model_movements and self.model_movements[idx].get('completed', False):
+                continue
+            next_idx = idx
+            break
+
+        if next_idx is not None:
+            self._select_model(next_idx)
+        else:
+            self.selected_model_index = None
+            self.awaiting_battlefield_click = False
 
     def _validate_deployment_no_base_overlap(self, model, x: float, y: float, z: float) -> dict:
         """Ensure deployment placement doesn't overlap any model bases.
@@ -592,59 +722,102 @@ class IndividualModelMovementDialog(BaseDialog):
         else:
             print(f"❌ Movement failed after floor selection for {self.unit.models[self.selected_model_index].name}")
 
-    def _get_ruins_available_floors(self, x: float, y: float) -> list[int]:
-        """Return available floor levels (0,1,2,...) at XY inside RUINS footprints that contain the point."""
+    def _get_ruins_floor_options_for_model_at_xy(self, model, x: float, y: float) -> tuple[list[int], dict[int, float], list[int]]:
+        """Return RUINS floor options for this model's BASE at XY.
+
+        Returns:
+        - levels: all floor levels (0,1,2,...) defined for the RUINS that contains the base
+        - z_by_level: mapping level -> representative Z used for validation/movement
+        - disabled_levels: subset of levels that are NOT valid at this XY for this model
+
+        Notes:
+        - Uses BASE geometry (not just the click point).
+        - Requires the base to be wholly within the RUINS footprint to be considered "inside".
+        - Validity per floor is decided by RUINS placement validation (overhang, unit restrictions, walls, clearance).
+        """
         levels: list[int] = []
+        z_by_level: dict[int, float] = {}
+        disabled_levels: list[int] = []
+        if not self.game_map:
+            return levels, z_by_level, disabled_levels
+
         try:
             from shapely.geometry import Point as _ShPoint
         except Exception:
             _ShPoint = None
-        if not self.game_map:
-            return levels
-        point_ok = True
-        if _ShPoint is None:
-            point_ok = False
+
+        # Compute base geometry at XY to enforce "wholly within"
+        base_geom = None
+        try:
+            base_geom = model.model_base.get_base_shape_at(float(x), float(y), float(getattr(model.model_base, 'facing', 0.0)))
+        except Exception:
+            base_geom = None
+
+        from ...classes.map import validate_ruins_placement
+
         for terrain in getattr(self.game_map, 'terrain_features', []) or []:
             try:
                 ttype = getattr(terrain, 'terrain_type', None)
-                # Compare name to avoid import cycles
                 if not ttype or getattr(ttype, 'name', '') != 'RUINS':
                     continue
                 footprint = getattr(terrain, 'footprint', None)
                 if footprint is None:
                     continue
-                contains = False
-                if point_ok:
+
+                # Require base wholly within footprint when possible (allow touching boundary)
+                if base_geom is not None:
                     try:
-                        contains = footprint.contains(_ShPoint(x, y))
+                        if hasattr(footprint, "covers"):
+                            if not footprint.covers(base_geom):
+                                continue
+                        else:
+                            if not footprint.contains(base_geom):
+                                continue
                     except Exception:
-                        contains = False
-                if not point_ok:
-                    # Fallback: assume inside footprint if any floors exist (unsafe but best-effort)
-                    contains = True
-                if not contains:
-                    continue
-                # Ground floor always available inside footprint
-                if 0 not in levels:
-                    levels.append(0)
-                # Add any upper floors whose polygon contains the point
+                        continue
+                else:
+                    # Best-effort fallback: require point inside footprint
+                    if _ShPoint is None:
+                        continue
+                    try:
+                        if not footprint.contains(_ShPoint(float(x), float(y))):
+                            continue
+                    except Exception:
+                        continue
+
+                # Collect candidate levels from floors definition
+                candidate_levels: set[int] = set()
                 for fl in getattr(terrain, 'floors', []) or []:
-                    poly = fl.get('polygon')
                     elev = float(fl.get('elevation', 0.0))
-                    lvl = int(round(elev / 4.0))
-                    if poly is not None:
-                        inside = False
-                        if point_ok:
-                            try:
-                                inside = poly.contains(_ShPoint(x, y))
-                            except Exception:
-                                inside = False
-                        if inside and lvl not in levels:
-                            levels.append(lvl)
+                    lvl = int(round(elev / float(RUINS_FLOOR_HEIGHT)))
+                    candidate_levels.add(lvl)
+                if not candidate_levels:
+                    candidate_levels = {0}
+
+                # We'll show all levels, but disable ones that aren't valid here
+                levels = sorted(candidate_levels)
+                for lvl in levels:
+                    z = float(lvl) * float(RUINS_FLOOR_HEIGHT)
+                    z_by_level[lvl] = z
+                    res = validate_ruins_placement(
+                        unit=self.unit,
+                        position=(float(x), float(y), float(z)),
+                        terrain_features=[terrain],
+                        moving_model=model,
+                    )
+                    if not (res.get('valid') and int(res.get('floor_level', lvl)) == int(lvl)):
+                        disabled_levels.append(lvl)
+
+                # Only prompt for the first RUINS piece containing the base
+                break
             except Exception:
                 continue
-        levels.sort()
-        return levels
+
+        # If nothing is valid, avoid prompting (let normal placement validation handle it)
+        if levels and len(disabled_levels) == len(levels):
+            return [], {}, []
+
+        return levels, z_by_level, disabled_levels
         
     def _move_model(self, model_index: int, destination) -> bool:
         """Move a specific model to the destination"""

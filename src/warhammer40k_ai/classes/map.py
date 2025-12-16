@@ -3,7 +3,13 @@ from enum import Enum, auto
 from .unit import Unit
 from .model import Model
 from ..utility.calcs import get_dist, convert_mm_to_inches, can_traverse_freely
-from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VERTICAL
+from ..utility.constants import (
+    ENGAGEMENT_RANGE_HORIZONTAL,
+    ENGAGEMENT_RANGE_VERTICAL,
+    RUINS_FLOOR_HEIGHT,
+    RUINS_FLOOR_THICKNESS,
+    RUINS_WALL_THICKNESS,
+)
 from shapely.geometry import Polygon, Point, LineString, box
 from shapely.ops import unary_union
 from shapely.affinity import scale, translate
@@ -233,7 +239,7 @@ class Map:
                             poly = fl.get('polygon')
                             if poly is not None and poly.contains(point):
                                 elev = fl.get('elevation', 0.0)
-                                thickness = fl.get('thickness', 0.5)
+                                thickness = fl.get('thickness', RUINS_FLOOR_THICKNESS)
                                 candidate_surfaces.append(elev + thickness)
                         if candidate_surfaces:
                             # Choose the lowest surface (ground first if present)
@@ -241,8 +247,8 @@ class Map:
                             max_height = max(max_height, surface_z)
                             continue
                         else:
-                            # Inside RUINS footprint but no explicit floor polygon match; assume ground floor top 0.5"
-                            max_height = max(max_height, 0.5)
+                            # Inside RUINS footprint but no explicit floor polygon match; assume ground floor top thickness
+                            max_height = max(max_height, RUINS_FLOOR_THICKNESS)
                             continue
                     except Exception:
                         # Fall through to generic handling if something goes wrong
@@ -666,7 +672,7 @@ class TerrainFactory:
 
     @staticmethod
     def create_ruins(footprint_vertices: List[Tuple[float, float]],
-                    wall_height: float = 4.0, num_floors: int = 1,
+                    wall_height: float = RUINS_FLOOR_HEIGHT, num_floors: int = 1,
                     has_windows: bool = True, has_doors: bool = True) -> RuinsTerrain:
         """Create a RUINS terrain with walls, floors, and openings."""
         footprint = Polygon(footprint_vertices)
@@ -680,7 +686,7 @@ class TerrainFactory:
             floors.append({
                 "polygon": footprint,
                 "elevation": floor_level * wall_height,
-                "thickness": 0.5
+                "thickness": RUINS_FLOOR_THICKNESS
             })
 
         # Create walls around perimeter
@@ -691,14 +697,14 @@ class TerrainFactory:
 
             # Create wall segment with thickness
             wall_line = LineString([start_point, end_point])
-            wall_polygon = wall_line.buffer(0.25)  # 0.5" thick walls
+            wall_polygon = wall_line.buffer(RUINS_WALL_THICKNESS / 2.0)
 
             for floor_level in range(num_floors + 1):
                 walls.append({
                     "polygon": wall_polygon,
                     "z_bottom": floor_level * wall_height,
                     "z_top": (floor_level + 1) * wall_height,
-                    "thickness": 0.5
+                    "thickness": RUINS_WALL_THICKNESS
                 })
 
                 # Add windows and doors
@@ -785,7 +791,7 @@ class TerrainFactory:
         # Footprint polygon
         footprint = Polygon([(0.0, 0.0), (12.0, 0.0), (12.0, 6.0), (0.0, 6.0)])
 
-        wall_thickness = 0.5
+        wall_thickness = RUINS_WALL_THICKNESS
         half_t = wall_thickness / 2.0
 
         # Define core wall line segments
@@ -812,24 +818,24 @@ class TerrainFactory:
         def add_wall(poly: Polygon, floor_level: int, height: float) -> None:
             walls.append({
                 "polygon": poly,
-                "z_bottom": float(floor_level * 4.0),
-                "z_top": float(floor_level * 4.0 + height),
+                "z_bottom": float(floor_level * RUINS_FLOOR_HEIGHT),
+                "z_top": float(floor_level * RUINS_FLOOR_HEIGHT + height),
                 "thickness": wall_thickness
             })
 
-        # Ground floor walls (no windows), height 4"; short walls extend full 6" length
-        add_wall(long_wall_poly, floor_level=0, height=4.0)
-        add_wall(short_wall_left_poly_ground, floor_level=0, height=4.0)
-        add_wall(short_wall_right_poly_ground, floor_level=0, height=4.0)
+        # Ground floor walls (no windows), height equals floor height; short walls extend full 6" length
+        add_wall(long_wall_poly, floor_level=0, height=RUINS_FLOOR_HEIGHT)
+        add_wall(short_wall_left_poly_ground, floor_level=0, height=RUINS_FLOOR_HEIGHT)
+        add_wall(short_wall_right_poly_ground, floor_level=0, height=RUINS_FLOOR_HEIGHT)
 
-        # First floor walls (with windows), height 4"; short walls are 4" long
-        add_wall(long_wall_poly, floor_level=1, height=4.0)
-        add_wall(short_wall_left_poly_upper, floor_level=1, height=4.0)
-        add_wall(short_wall_right_poly_upper, floor_level=1, height=4.0)
+        # First floor walls (with windows), height equals floor height; short walls are 4" long
+        add_wall(long_wall_poly, floor_level=1, height=RUINS_FLOOR_HEIGHT)
+        add_wall(short_wall_left_poly_upper, floor_level=1, height=RUINS_FLOOR_HEIGHT)
+        add_wall(short_wall_right_poly_upper, floor_level=1, height=RUINS_FLOOR_HEIGHT)
 
-        # Windows on first floor: 1"-3" above the floor
-        z1_bottom = 1.0 + 4.0
-        z1_top = 3.0 + 4.0
+        # Windows on first floor: keep within a 3" wall height (0.75"-2.25" above floor)
+        z1_bottom = 0.75 + RUINS_FLOOR_HEIGHT
+        z1_top = 2.25 + RUINS_FLOOR_HEIGHT
 
         # Long wall: three 2" windows at 1" from each end and centered segments
         for x_start, x_end in [(2.0, 4.0), (5.0, 7.0), (8.0, 10.0)]:
@@ -869,17 +875,17 @@ class TerrainFactory:
         floors.append({
             "polygon": footprint,
             "elevation": 0.0,
-            "thickness": 0.5
+            "thickness": RUINS_FLOOR_THICKNESS
         })
         floors.append({
             "polygon": upper_floor_poly,
-            "elevation": 4.0,
-            "thickness": 0.5
+            "elevation": RUINS_FLOOR_HEIGHT,
+            "thickness": RUINS_FLOOR_THICKNESS
         })
         floors.append({
             "polygon": upper_floor_poly,
-            "elevation": 8.0,
-            "thickness": 0.5
+            "elevation": RUINS_FLOOR_HEIGHT * 2.0,
+            "thickness": RUINS_FLOOR_THICKNESS
         })
 
         return RuinsTerrain(footprint, walls=walls, openings=openings, floors=floors)
@@ -910,7 +916,7 @@ class TerrainFactory:
         # Footprint polygon
         footprint = Polygon([(0.0, 0.0), (12.0, 0.0), (12.0, 6.0), (0.0, 6.0)])
 
-        wall_thickness = 0.5
+        wall_thickness = RUINS_WALL_THICKNESS
         half_t = wall_thickness / 2.0
 
         # Centerlines inset by 0.25" so buffered walls remain within footprint
@@ -942,28 +948,28 @@ class TerrainFactory:
         def add_wall(poly: Polygon, floor_level: int, height: float) -> None:
             walls.append({
                 "polygon": poly,
-                "z_bottom": float(floor_level * 4.0),
-                "z_top": float(floor_level * 4.0 + height),
+                "z_bottom": float(floor_level * RUINS_FLOOR_HEIGHT),
+                "z_top": float(floor_level * RUINS_FLOOR_HEIGHT + height),
                 "thickness": wall_thickness
             })
 
-        # Ground floor (level 0) walls: height 4"
-        add_wall(long_poly_ground, floor_level=0, height=4.0)
-        add_wall(short_poly_ground, floor_level=0, height=4.0)
+        # Ground floor (level 0) walls: height equals floor height
+        add_wall(long_poly_ground, floor_level=0, height=RUINS_FLOOR_HEIGHT)
+        add_wall(short_poly_ground, floor_level=0, height=RUINS_FLOOR_HEIGHT)
 
-        # First floor (level 1) walls: height 4"
-        add_wall(long_poly_l1, floor_level=1, height=4.0)
-        add_wall(short_poly_l1, floor_level=1, height=4.0)
+        # First floor (level 1) walls: height equals floor height
+        add_wall(long_poly_l1, floor_level=1, height=RUINS_FLOOR_HEIGHT)
+        add_wall(short_poly_l1, floor_level=1, height=RUINS_FLOOR_HEIGHT)
 
-        # Second floor (level 2) walls: height 4" (per variant requirement)
-        add_wall(long_poly_l2, floor_level=2, height=4.0)
-        add_wall(short_poly_l2, floor_level=2, height=4.0)
+        # Second floor (level 2) walls: height equals floor height
+        add_wall(long_poly_l2, floor_level=2, height=RUINS_FLOOR_HEIGHT)
+        add_wall(short_poly_l2, floor_level=2, height=RUINS_FLOOR_HEIGHT)
 
-        # Windows (LOS only): 1"-3" above floor level
-        z1_bottom = 1.0 + 4.0
-        z1_top = 3.0 + 4.0
-        z2_bottom = 1.0 + 8.0
-        z2_top = 3.0 + 8.0
+        # Windows (LOS only): keep within a 3" wall height (0.75"-2.25" above floor)
+        z1_bottom = 0.75 + RUINS_FLOOR_HEIGHT
+        z1_top = 2.25 + RUINS_FLOOR_HEIGHT
+        z2_bottom = 0.75 + RUINS_FLOOR_HEIGHT * 2.0
+        z2_top = 2.25 + RUINS_FLOOR_HEIGHT * 2.0
 
         # First floor windows
         # Long wall (8" span x=4..12): two 2" windows centered in span
@@ -1008,21 +1014,21 @@ class TerrainFactory:
         floors.append({
             "polygon": footprint,
             "elevation": 0.0,
-            "thickness": 0.5
+            "thickness": RUINS_FLOOR_THICKNESS
         })
         # First floor: right triangle with legs 8 (x) and 6 (y), right angle at (12,6)
         floor1 = Polygon([(12.0, 6.0), (4.0, 6.0), (12.0, 0.0)])
         floors.append({
             "polygon": floor1,
-            "elevation": 4.0,
-            "thickness": 0.5
+            "elevation": RUINS_FLOOR_HEIGHT,
+            "thickness": RUINS_FLOOR_THICKNESS
         })
         # Second floor: right triangle with legs 4 (x) and 3 (y), right angle at (12,6)
         floor2 = Polygon([(12.0, 6.0), (8.0, 6.0), (12.0, 3.0)])
         floors.append({
             "polygon": floor2,
-            "elevation": 8.0,
-            "thickness": 0.5
+            "elevation": RUINS_FLOOR_HEIGHT * 2.0,
+            "thickness": RUINS_FLOOR_THICKNESS
         })
 
         return RuinsTerrain(footprint, walls=walls, openings=openings, floors=floors)
@@ -1139,7 +1145,7 @@ def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float],
         closest_floor_distance = float('inf')
         for floor in floors:
             floor_elev = floor.get('elevation', 0.0)
-            floor_thickness = floor.get('thickness', 0.5)
+            floor_thickness = floor.get('thickness', RUINS_FLOOR_THICKNESS)
             floor_surface = floor_elev + floor_thickness
             
             # Check if z is close to this floor surface
@@ -1147,7 +1153,7 @@ def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float],
             if distance < closest_floor_distance and distance < 1.0:  # Allow 1" tolerance
                 closest_floor_distance = distance
                 current_floor = floor
-                floor_level = int(round(floor_elev / 4.0))
+                floor_level = int(round(float(floor_elev) / float(RUINS_FLOOR_HEIGHT)))
         
         # If no floor found, assume ground level (z=0) is valid
         if current_floor is None:
@@ -1210,7 +1216,7 @@ def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float],
                             nearest_upper_floor = fl
                     if nearest_upper_floor is not None:
                         # Compute gap from top of current floor to bottom of next floor
-                        current_top = (current_floor.get('elevation', 0.0) + current_floor.get('thickness', 0.5))
+                        current_top = (current_floor.get('elevation', 0.0) + current_floor.get('thickness', RUINS_FLOOR_THICKNESS))
                         next_bottom = nearest_upper_floor.get('elevation', 0.0)
                         vertical_gap = max(0.0, next_bottom - current_top)
                         # Require model height to be strictly less than the gap minus a small safety buffer
@@ -1257,7 +1263,7 @@ def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float],
                                 min_elev = elev
                                 nearest_upper_floor = fl
                         if nearest_upper_floor is not None:
-                            current_top = (current_floor.get('elevation', 0.0) + current_floor.get('thickness', 0.5))
+                            current_top = (current_floor.get('elevation', 0.0) + current_floor.get('thickness', RUINS_FLOOR_THICKNESS))
                             next_bottom = nearest_upper_floor.get('elevation', 0.0)
                             vertical_gap = max(0.0, next_bottom - current_top)
                             safety_buffer = 0.10
@@ -1284,7 +1290,16 @@ def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float],
             # If a specific moving model is provided, only validate this model at the proposed position
             if moving_model is not None:
                 base_geom = moving_model.model_base.get_base_shape_at(x, y, getattr(moving_model.model_base, 'facing', 0.0))
-                if not floor_poly.contains(base_geom):
+                # "Wholly within" should allow touching the boundary
+                ok = False
+                try:
+                    if hasattr(floor_poly, "covers"):
+                        ok = floor_poly.covers(base_geom)
+                    else:
+                        ok = floor_poly.contains(base_geom)
+                except Exception:
+                    ok = False
+                if not ok:
                     return {
                         'valid': False,
                         'reason': f'Model base would overhang floor on level {floor_level}',
@@ -1297,7 +1312,15 @@ def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float],
                     if model_pos:
                         mx, my = model_pos[0], model_pos[1]
                         base_geom = model.model_base.get_base_shape_at(mx, my, getattr(model.model_base, 'facing', 0.0))
-                        if not floor_poly.contains(base_geom):
+                        ok = False
+                        try:
+                            if hasattr(floor_poly, "covers"):
+                                ok = floor_poly.covers(base_geom)
+                            else:
+                                ok = floor_poly.contains(base_geom)
+                        except Exception:
+                            ok = False
+                        if not ok:
                             return {
                                 'valid': False,
                                 'reason': f'Model base would overhang floor on level {floor_level}',

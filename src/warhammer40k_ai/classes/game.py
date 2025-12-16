@@ -2355,7 +2355,8 @@ class Game:
                                 poly = fl.get('polygon')
                                 elev = float(fl.get('elevation', 0.0))
                                 try:
-                                    level = int(round(elev / 4.0))
+                                    from ..utility.constants import RUINS_FLOOR_HEIGHT
+                                    level = int(round(elev / float(RUINS_FLOOR_HEIGHT)))
                                 except Exception:
                                     level = 0
                                 if hasattr(poly, 'exterior'):

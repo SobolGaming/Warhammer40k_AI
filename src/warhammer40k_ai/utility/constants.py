@@ -6,6 +6,16 @@ ENGAGEMENT_RANGE_HORIZONTAL = 1.0  # inches - base-to-base horizontal distance
 ENGAGEMENT_RANGE_VERTICAL = 5.0    # inches - vertical distance
 FREELY_CLIMBABLE_RANGE = 2.0  # inches
 
+# =============================================================================
+# RUINS (tournament-standard defaults)
+# =============================================================================
+# While official specs vary, common tournament convention is:
+# - 3" between floors (base-to-base vertical separation)
+# - ~0.12" (≈ 1/8") thick floors/walls
+RUINS_FLOOR_HEIGHT = 3.0      # inches between successive floor base Zs
+RUINS_FLOOR_THICKNESS = 0.12  # inches
+RUINS_WALL_THICKNESS = 0.12   # inches
+
 # Fight phase movement distances
 PILE_IN_DISTANCE = 3.0  # inches - standard pile-in distance
 CONSOLIDATE_DISTANCE = 3.0  # inches - standard consolidate distance
