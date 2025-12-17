@@ -763,14 +763,25 @@ class GameView:
         self._draw_scroll_text_box(boxes[3], p2_actions, key='p2_actions', title=f"{p2_name} Actions")
 
     def _draw_stratagem_button(self, rect: pygame.Rect, player) -> None:
-        # Determine glow/available state
+        # Determine glow/available state.
+        # During setup (pre-deployment), stratagems should not appear "available" yet.
+        in_setup = False
+        try:
+            if hasattr(self.game, "is_in_setup_phase") and callable(self.game.is_in_setup_phase):
+                in_setup = bool(self.game.is_in_setup_phase())
+            else:
+                in_setup = not bool(getattr(self.game, "setup_complete", True))
+        except Exception:
+            in_setup = False
+
         glow = False
         count = 0
-        mgr = player.stratagems
-        pending = mgr.get_pending_reactions() or []
-        avail = mgr.list_available_for_current_phase() or []
-        count = len(pending) + len(avail)
-        glow = count > 0
+        mgr = getattr(player, "stratagems", None)
+        if not in_setup and mgr is not None:
+            pending = mgr.get_pending_reactions() or []
+            avail = mgr.list_available_for_current_phase() or []
+            count = len(pending) + len(avail)
+            glow = count > 0
 
         # If a stratagem window is active for this player, force glow and show countdown
         window = self._stratagem_windows.get(player)
@@ -784,6 +795,12 @@ class GameView:
             else:
                 remaining_label = "waiting"
             glow = True
+
+        # Visually "disable" during setup even if something tries to register as available.
+        if in_setup:
+            glow = False
+            remaining_label = None
+            count = 0
 
         bg = (60, 60, 67) if not glow else (100, 149, 237)
         fg = (255, 255, 255)
@@ -809,6 +826,8 @@ class GameView:
             strat_label = f"Stratagem ({remaining_label})"
         elif count > 0:
             strat_label = f"Stratagem ({count})"
+        elif in_setup:
+            strat_label = "Stratagems (Setup)"
 
         ts1 = title_font.render(strat_label, True, fg)
         ts2 = sub_font.render(player_label, True, fg)
@@ -1023,6 +1042,21 @@ class GameView:
                     if key in self._ui_hitboxes:
                         rect, player = self._ui_hitboxes[key]
                         if rect.collidepoint(event.pos):
+                            # During setup (pre-deployment), stratagems are not actionable.
+                            try:
+                                in_setup = False
+                                if hasattr(self.game, "is_in_setup_phase") and callable(self.game.is_in_setup_phase):
+                                    in_setup = bool(self.game.is_in_setup_phase())
+                                else:
+                                    in_setup = not bool(getattr(self.game, "setup_complete", True))
+                                if in_setup:
+                                    self._mission_popup = {
+                                        'title': "Stratagems",
+                                        'body': "Stratagems become available once the battle begins (after setup/deployment)."
+                                    }
+                                    return True
+                            except Exception:
+                                pass
                             # If a window exists for this player, mark it claimed to pause flow
                             if player in self._stratagem_windows:
                                 try:
