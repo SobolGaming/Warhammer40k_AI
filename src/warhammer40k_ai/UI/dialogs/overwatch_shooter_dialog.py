@@ -13,14 +13,25 @@ class OverwatchShooterDialog(BaseDialog):
         self.selected_index: Optional[int] = None
         self.on_confirm: Optional[Callable[[Any], None]] = None
         self.enemy_unit: Any = None
+        self._title: Optional[str] = None
+        self._subtitle: Optional[str] = None
         self.list_rect = None
 
-    def show(self, candidates: List[Any], enemy_unit: Any, on_confirm: Callable[[Any], None]):
+    def show(
+        self,
+        candidates: List[Any],
+        enemy_unit: Any,
+        on_confirm: Callable[[Any], None],
+        title: Optional[str] = None,
+        subtitle: Optional[str] = None,
+    ):
         super().show()
         self.candidates = list(candidates)
         self.enemy_unit = enemy_unit
         self.selected_index = 0 if self.candidates else None
         self.on_confirm = on_confirm
+        self._title = title
+        self._subtitle = subtitle
 
     def hide(self):
         super().hide()
@@ -28,6 +39,8 @@ class OverwatchShooterDialog(BaseDialog):
         self.selected_index = None
         self.on_confirm = None
         self.enemy_unit = None
+        self._title = None
+        self._subtitle = None
 
     def _handle_button_click(self, button_name: str) -> bool:
         if button_name == 'select':
@@ -46,8 +59,8 @@ class OverwatchShooterDialog(BaseDialog):
             return
         self.draw_dialog_background(screen)
         enemy_name = getattr(self.enemy_unit, 'name', 'Enemy unit') if self.enemy_unit else 'Enemy unit'
-        title = "Select Overwatch Shooter"
-        subtitle = f"Choose a unit to fire at {enemy_name}"
+        title = self._title or "Select Overwatch Shooter"
+        subtitle = self._subtitle or f"Choose a unit to fire at {enemy_name}"
         self.draw_title_bar(screen, title, subtitle)
         self._update_buttons()
 

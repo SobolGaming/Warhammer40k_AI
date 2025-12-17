@@ -1084,6 +1084,56 @@ class TerrainFactory:
 
         return RuinsTerrain(footprint, walls=walls, openings=openings, floors=floors)
 
+    @staticmethod
+    def create_preset_ruin_rect_6x4_variant1() -> RuinsTerrain:
+        """Create a low RUINS preset (6" x 4") Variant 1 - rubble/debris/broken columns.
+
+        This is intended for the blue-dotted rectangles in the GT layout diagrams:
+        - Max height: 2" (so it behaves like low rubble rather than tall LOS-blocking ruins)
+        - No upper floors
+        - A handful of small, irregular-ish obstacles inside the footprint to represent
+          broken columns / rocks. These are modeled as RUINS walls (solid, no movement through)
+          at z ∈ [0, 2].
+        """
+        # Footprint polygon (authored at origin)
+        footprint = Polygon([(0.0, 0.0), (6.0, 0.0), (6.0, 4.0), (0.0, 4.0)])
+
+        wall_thickness = RUINS_WALL_THICKNESS
+        walls: List[dict] = []
+        openings: List[dict] = []
+        floors: List[dict] = []
+
+        def add_rubble(poly: Polygon) -> None:
+            # Keep it simple: treat rubble as short solid obstacles
+            walls.append({
+                "polygon": poly,
+                "z_bottom": 0.0,
+                "z_top": 2.0,
+                "thickness": wall_thickness,
+            })
+
+        # A deterministic scatter of rubble/columns (all kept within the footprint)
+        # Sizes are small enough to "look like" debris without forming a full wall.
+        rubble_pieces = [
+            box(0.6, 0.6, 1.3, 1.4),   # broken column base
+            box(2.0, 0.8, 2.6, 1.6),   # rocks
+            box(4.4, 0.7, 5.2, 1.3),   # column
+            box(1.0, 2.4, 1.8, 3.2),   # rubble pile
+            box(2.8, 2.2, 3.6, 3.0),   # rocks
+            box(4.2, 2.5, 5.4, 3.1),   # broken wall chunk
+        ]
+        for rp in rubble_pieces:
+            add_rubble(rp)
+
+        # Ground surface (primarily for floor-level determination); low rubble has no upper floors.
+        floors.append({
+            "polygon": footprint,
+            "elevation": 0.0,
+            "thickness": RUINS_FLOOR_THICKNESS,
+        })
+
+        return RuinsTerrain(footprint, walls=walls, openings=openings, floors=floors)
+
 
 def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float], 
                             terrain_features: List['TerrainFeature'], moving_model: Optional['Model'] = None) -> dict:

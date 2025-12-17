@@ -476,6 +476,30 @@ class GameView:
                 on_chosen(candidates[0])
         setattr(self.stratagem_dialog, 'on_request_overwatch_shooter', _request_overwatch_shooter)
 
+        def _request_rapid_ingress_unit(player, game, candidates, on_chosen):
+            # Candidates are the units in reserves that can arrive this battle round
+            cand = list(candidates or [])
+            if not cand:
+                # Fallback: compute from game state
+                try:
+                    cand = list(game.get_units_that_can_arrive_from_reserves(player))
+                except Exception:
+                    cand = []
+            if not cand:
+                on_chosen(None)
+                return
+            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
+                self.overwatch_shooter_dialog.show(
+                    cand,
+                    None,
+                    lambda unit: (self.overwatch_shooter_dialog.hide(), on_chosen(unit)),
+                    title="Select Rapid Ingress Unit",
+                    subtitle="Choose a unit in Reserves to arrive now",
+                )
+            else:
+                on_chosen(cand[0])
+        setattr(self.stratagem_dialog, 'on_request_rapid_ingress_unit', _request_rapid_ingress_unit)
+
         def _request_overwatch_shooting(shooter_unit, enemy_unit, on_done):
             # Reuse ShootingDeclarationDialog for interactive weapon selection/targeting
             if not hasattr(self, 'shooting_declaration_dialog'):

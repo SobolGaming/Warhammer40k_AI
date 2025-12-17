@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Example for generating and visualizing a preset 12"x6" RUINS piece with specific walls/windows.
+Example for generating and visualizing preset RUINS pieces (including low rubble variants).
 """
 
 import os, sys
@@ -123,7 +123,19 @@ def place_unit_in_ruin(ruin, num_models=5, base_mm=32, floor_level=0, model_heig
     interior = ruin.footprint.difference(walls_union)
 
     # Floor elevation and platform area (upper floors are smaller than footprint)
-    floor = next(fl for fl in ruin.floors if abs(fl["elevation"] - floor_level*4.0) < 1e-6)
+    # Some presets (e.g. low rubble) only have ground floor; clamp gracefully.
+    target_elev = float(floor_level) * 4.0
+    floor = None
+    for fl in ruin.floors:
+        if abs(float(fl.get("elevation", 0.0)) - target_elev) < 1e-6:
+            floor = fl
+            break
+    if floor is None:
+        # Fall back to the lowest floor (usually elevation 0)
+        if not ruin.floors:
+            return []
+        floor = sorted(ruin.floors, key=lambda f: float(f.get("elevation", 0.0)))[0]
+        floor_level = int(round(float(floor.get("elevation", 0.0)) / 4.0))
     z_base = floor["elevation"] + floor.get("thickness", 0.5)
     # If a higher floor exists, ensure model height fits fully between floors; otherwise, disallow placement
     higher_floors = sorted([fl for fl in ruin.floors if fl["elevation"] > floor["elevation"]], key=lambda f: f["elevation"])
@@ -172,14 +184,21 @@ def place_unit_in_ruin(ruin, num_models=5, base_mm=32, floor_level=0, model_heig
 
 def main():
     import argparse
-    parser = argparse.ArgumentParser(description='Visualize preset 12x6 RUINS variants')
-    parser.add_argument('--preset', choices=['variant1', 'variant2', 'variant3'], default='variant1', help='Which preset to visualize')
-    parser.add_argument('--floor', type=int, default=1, help='Floor level to place example models (0,1,2)')
+    parser = argparse.ArgumentParser(description='Visualize preset RUINS variants (12x6 and low rubble)')
+    parser.add_argument(
+        '--preset',
+        choices=['variant1', 'variant2', 'variant3', 'rubble6x4'],
+        default='variant1',
+        help='Which preset to visualize'
+    )
+    parser.add_argument('--floor', type=int, default=1, help='Floor level to place example models (0,1,2). For rubble6x4, this is clamped to ground.')
     parser.add_argument('--models', type=int, default=5, help='Number of example models to place')
     args = parser.parse_args()
 
     # Create selected preset ruin
-    if args.preset == 'variant3':
+    if args.preset == 'rubble6x4':
+        ruin = TerrainFactory.create_preset_ruin_rect_6x4_variant1()
+    elif args.preset == 'variant3':
         ruin = TerrainFactory.create_preset_ruin_rect_12x6_variant3()
     elif args.preset == 'variant2':
         ruin = TerrainFactory.create_preset_ruin_rect_12x6_variant2()
@@ -190,7 +209,9 @@ def main():
     models = place_unit_in_ruin(ruin, num_models=args.models, base_mm=32, floor_level=args.floor, model_height_in=2.0)
 
     # Visualize with dynamic title
-    visualize_ruin_3d(ruin, models=models, title=f'Preset 12"x6" RUINS ({args.preset})')
+    bxmin, bymin, bxmax, bymax = ruin.footprint.bounds
+    size_lbl = f'{(bxmax-bxmin):.0f}"x{(bymax-bymin):.0f}"'
+    visualize_ruin_3d(ruin, models=models, title=f'Preset RUINS {size_lbl} ({args.preset})')
 
 
 if __name__ == "__main__":

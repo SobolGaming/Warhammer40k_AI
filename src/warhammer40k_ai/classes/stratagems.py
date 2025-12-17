@@ -156,6 +156,19 @@ class StratagemManager:
             'COMMAND RE-ROLL': False,
         }
 
+    def _dequeue_reaction_by_name(self, stratagem_name: str) -> None:
+        """Remove the first pending reaction matching this stratagem name."""
+        try:
+            target = (stratagem_name or "").strip().lower()
+            if not target:
+                return
+            for i, r in enumerate(list(self._pending_reactions)):
+                if str(r.get("stratagem", "")).strip().lower() == target:
+                    self._pending_reactions.pop(i)
+                    return
+        except Exception:
+            return
+
     def _build_available(self) -> None:
         army = self.player.get_army()
         faction_id = getattr(army, "faction_id", None)
@@ -251,6 +264,53 @@ class StratagemManager:
                                 'cp_cost': s.cp_cost,
                                 'options': [c for c in self.player.active_secondaries],
                             })
+        except Exception:
+            pass
+
+        # Queue RAPID INGRESS at end of opponent's Movement phase
+        try:
+            # Event supplies the active player as `player`. We offer this to the NON-active player.
+            is_opponents_turn = player is not self.player
+            phase_name = getattr(phase, 'name', None)
+            if is_opponents_turn and phase_name == 'MOVEMENT_PHASE':
+                s = self.get_by_name('RAPID INGRESS')
+                if not s:
+                    return
+                # Must have at least one eligible unit in Reserves that could arrive this battle round
+                candidates = []
+                try:
+                    # Prefer Game helper if present
+                    if hasattr(self.game, 'get_units_that_can_arrive_from_reserves'):
+                        candidates = list(self.game.get_units_that_can_arrive_from_reserves(self.player))
+                    else:
+                        candidates = [u for u in getattr(self.player.get_army(), 'units', []) or []
+                                      if getattr(u, 'is_in_reserves', lambda: False)()
+                                      and getattr(u, 'can_arrive_from_reserves', lambda _t: False)(getattr(self.game, 'turn', 0))]
+                except Exception:
+                    candidates = []
+                if not candidates:
+                    return
+                # Timing checks (CP/turn/phase)
+                if not s.can_use(self.player, self.game, phase_name='Movement phase'):
+                    return
+                # Deduplicate per phase end
+                for r in self._pending_reactions:
+                    if r.get('event') == 'phase_end' and str(r.get('stratagem', '')).upper() == 'RAPID INGRESS':
+                        return
+                self._pending_reactions.append({
+                    'event': 'phase_end',
+                    'phase': 'Movement phase',
+                    'phase_name': 'Movement phase',
+                    'stratagem': s.name,
+                    'cp_cost': s.cp_cost,
+                    'candidates': candidates,
+                })
+                # Offer a brief reaction window to the player who can use it
+                if hasattr(self.game, 'event_system'):
+                    try:
+                        self.game.event_system.publish("stratagem_window", player=self.player, duration=3.0)
+                    except Exception:
+                        pass
         except Exception:
             pass
     def _on_battle_shock_test_started(self, unit, **kwargs):
@@ -495,6 +555,7 @@ class StratagemManager:
                 print("❌ Overwatch: no ranged weapons eligible")
                 return False
             # Apply Overwatch hit restriction: only unmodified 6 hits
+            ok = False
             try:
                 setattr(shooter, '_overwatch_sixes_only', True)
                 print(f"🎯 Overwatch: {shooter.name} firing at {enemy_unit.name} ({len(declarations)} weapons)")
@@ -510,6 +571,9 @@ class StratagemManager:
             if ok:
                 # Mark once per turn consumed
                 self._used_this_turn['OVERWATCH'] = True
+                # If this was a queued reaction, drop it
+                if kwargs.get('dequeue') is True:
+                    self._dequeue_reaction_by_name(s.name)
                 # Spend CP and return through normal use path (so CP is deducted consistently)
                 if not self.player.spend_command_points(s.cp_cost):
                     print("⚠️ Overwatch succeeded but CP spend failed; adjusting CP manually")
@@ -604,6 +668,72 @@ class StratagemManager:
                 pass
             player_obj.discard_secondary(target_card, gain_cp=False)
             player_obj.draw_secondary_until_two(self.game)
+            if kwargs.get('dequeue') is True:
+                self._dequeue_reaction_by_name(s.name)
+            return True
+
+        # Special-case: RAPID INGRESS (arrive from reserves at end of opponent's Movement phase)
+        if s.name.upper() == "RAPID INGRESS":
+            # Choose target unit
+            target = kwargs.get("unit") or kwargs.get("target_unit")
+            if target is None:
+                # Try candidates from queued reaction context
+                cand = kwargs.get("candidates") or []
+                if cand:
+                    # Prefer Deep Strike units (non-strategic reserves) first
+                    try:
+                        target = next((u for u in cand if not getattr(u, "is_in_strategic_reserves", lambda: False)()), cand[0])
+                    except Exception:
+                        target = cand[0]
+            if target is None:
+                print("❌ Rapid Ingress: no target unit provided")
+                return False
+            # Validate ownership + reserves status
+            try:
+                if target.get_parent_army().player is not self.player:
+                    print("❌ Rapid Ingress: target unit does not belong to player")
+                    return False
+            except Exception:
+                return False
+            if not getattr(target, "is_in_reserves", lambda: False)():
+                print("❌ Rapid Ingress: target unit is not in reserves")
+                return False
+            # Restriction: cannot arrive in a battle round it would not normally be able to
+            if not getattr(target, "can_arrive_from_reserves", lambda _t: False)(getattr(self.game, "turn", 0)):
+                print("❌ Rapid Ingress: target unit cannot arrive from reserves this battle round")
+                return False
+            # Determine placement
+            position = kwargs.get("position")
+            if position is None:
+                try:
+                    position = self.game.find_valid_reserves_position(target) if hasattr(self.game, "find_valid_reserves_position") else None
+                except Exception:
+                    position = None
+            if not position:
+                print("❌ Rapid Ingress: could not find a valid placement position")
+                return False
+            # Attempt arrival
+            try:
+                ok = target.arrive_from_reserves(position, getattr(self.game, "turn", 0), getattr(self.game, "map", None))
+            except Exception as e:
+                print(f"❌ Rapid Ingress: arrival failed: {e}")
+                return False
+            if not ok:
+                print("❌ Rapid Ingress: arrival failed")
+                return False
+            # Add to map unit list if needed
+            try:
+                if hasattr(self.game, "map") and hasattr(self.game.map, "units"):
+                    if target not in self.game.map.units:
+                        self.game.map.units.append(target)
+            except Exception:
+                pass
+            # Spend CP (after success to avoid consuming CP on placement failure)
+            if not self.player.spend_command_points(s.cp_cost):
+                print("⚠️ Rapid Ingress succeeded but CP spend failed; adjusting CP manually")
+            print(f"🪂 Rapid Ingress: {target.name} arrived from reserves")
+            if kwargs.get('dequeue') is True:
+                self._dequeue_reaction_by_name(s.name)
             return True
 
         # Provide phase_name for timing checks
@@ -617,11 +747,7 @@ class StratagemManager:
                 self._used_this_turn[key] = True
             # If this was a queued reaction, drop it
             if 'dequeue' in kwargs and kwargs['dequeue'] is True:
-                if self._pending_reactions:
-                    try:
-                        self._pending_reactions.pop(0)
-                    except Exception:
-                        pass
+                self._dequeue_reaction_by_name(s.name)
         return ok
 
     # -------- UI helpers for non-disruptive prompts --------

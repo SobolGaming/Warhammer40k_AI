@@ -105,6 +105,13 @@ class StratagemDialog(BaseDialog):
                 enemy = context.get('enemy_unit')
                 self.on_request_overwatch_shooter(self.player, self.game, enemy, lambda shooter: self._finalize_overwatch(shooter, context))
                 return
+
+        # For RAPID INGRESS, if unit not chosen yet, ask UI to pick one from reserves
+        if name and str(name).strip().upper() == 'RAPID INGRESS' and 'unit' not in context and 'target_unit' not in context:
+            if hasattr(self, 'on_request_rapid_ingress_unit') and callable(self.on_request_rapid_ingress_unit):
+                candidates = context.get('candidates') or []
+                self.on_request_rapid_ingress_unit(self.player, self.game, candidates, lambda unit: self._finalize_rapid_ingress(unit, context))
+                return
         ok = self.manager.use(name, **context)
         if ok:
             print(f"✅ Used stratagem: {name}")
@@ -174,6 +181,12 @@ class StratagemDialog(BaseDialog):
                     s = mgr.get_by_name(str(name)) if mgr else None
                     if s and mgr.player.spend_command_points(s.cp_cost):
                         mgr._used_this_turn['OVERWATCH'] = True
+                        # If this was a queued reaction, drop it to avoid repeated offers
+                        try:
+                            if ctx.get('dequeue') is True and hasattr(mgr, '_dequeue_reaction_by_name'):
+                                mgr._dequeue_reaction_by_name(s.name)
+                        except Exception:
+                            pass
                     else:
                         print("❌ Overwatch: failed to spend CP")
                     print(f"✅ Used stratagem: {name}")
@@ -183,6 +196,27 @@ class StratagemDialog(BaseDialog):
             self.on_request_overwatch_shooting(shooter_unit, enemy, _done_callback)
             return
         # Fallback: non-interactive path
+        ok = self.manager.use(name, **ctx)
+        if ok:
+            print(f"✅ Used stratagem: {name}")
+            self.hide()
+        else:
+            print(f"❌ Could not use stratagem: {name}")
+
+    def _finalize_rapid_ingress(self, unit, context) -> None:
+        """Called after the user picks the unit to arrive for RAPID INGRESS."""
+        if self.selected_index is None or not self.manager or self.selected_index >= len(self.items):
+            return
+        item = self.items[self.selected_index]
+        name = item.get('name')
+        ctx = dict(context)
+        ctx['unit'] = unit
+        if item.get('type') == 'reaction':
+            ctx['dequeue'] = True
+        if 'phase_name' not in ctx:
+            phase_name = getattr(self.manager, '_current_phase_name', None)
+            if phase_name:
+                ctx['phase_name'] = phase_name
         ok = self.manager.use(name, **ctx)
         if ok:
             print(f"✅ Used stratagem: {name}")

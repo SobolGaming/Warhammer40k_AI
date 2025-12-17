@@ -1129,6 +1129,14 @@ class Game:
 
     def next_phase(self):
         """Advance to the next phase."""
+        # Phase-end system actions that should occur before we publish phase_end.
+        # NOTE: Reinforcements (arriving from reserves) occur at the end of the Movement phase.
+        try:
+            if getattr(self.phase, "name", None) == "MOVEMENT_PHASE":
+                self.handle_reserves_arrival_phase()
+        except Exception:
+            pass
+
         # Publish end of current phase before advancing
         try:
             self.event_system.publish("phase_end", player=self.get_current_player(), phase=self.phase)
