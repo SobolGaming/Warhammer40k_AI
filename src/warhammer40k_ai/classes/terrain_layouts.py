@@ -16,6 +16,7 @@ RuinPresetId = Literal[
     'ruin_rect_12x6_variant1',
     'ruin_rect_12x6_variant2',
     'ruin_rect_12x6_variant3',
+    'ruin_rect_12x6_variant4',
     'ruin_rect_6x4_variant1',
 ]
 
@@ -324,6 +325,8 @@ def _instantiate_simple(spec: TerrainPlacementSimple) -> TerrainFeature:
         ruin = TerrainFactory.create_preset_ruin_rect_12x6_variant2()
     elif spec.preset == 'ruin_rect_12x6_variant3':
         ruin = TerrainFactory.create_preset_ruin_rect_12x6_variant3()
+    elif spec.preset == 'ruin_rect_12x6_variant4':
+        ruin = TerrainFactory.create_preset_ruin_rect_12x6_variant4()
     elif spec.preset == 'ruin_rect_6x4_variant1':
         ruin = TerrainFactory.create_preset_ruin_rect_6x4_variant1()
     else:
@@ -347,6 +350,9 @@ def _instantiate_from_spec(spec: Union[TerrainPlacementSpec, TerrainPlacementSim
         return _instantiate_ruin_rect_12x6_variant2(spec)
     if spec.preset == 'ruin_rect_12x6_variant3':
         return _instantiate_ruin_rect_12x6_variant3(spec)
+    if spec.preset == 'ruin_rect_12x6_variant4':
+        # Variant4 has mixed-height internals; currently supported via TerrainPlacementSimple only.
+        raise ValueError("ruin_rect_12x6_variant4 must be placed using TerrainPlacementSimple")
     if spec.preset == 'ruin_rect_6x4_variant1':
         # Low rubble ruins are currently only supported via TerrainPlacementSimple
         raise ValueError("ruin_rect_6x4_variant1 must be placed using TerrainPlacementSimple")

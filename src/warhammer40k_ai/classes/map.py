@@ -1134,6 +1134,91 @@ class TerrainFactory:
 
         return RuinsTerrain(footprint, walls=walls, openings=openings, floors=floors)
 
+    @staticmethod
+    def create_preset_ruin_rect_12x6_variant4() -> RuinsTerrain:
+        """Create RUINS preset (12" x 6") Variant 4 - 8x6 two-level section + 4x6 low rubble.
+
+        Structure (authored at origin):
+        - Overall footprint: 12x6 rectangle
+        - Left section (x=0..4, y=0..6): low rubble (<=2" height)
+        - Right section (x=4..12, y=0..6): a solid 8x6 structure with:
+          • Ground floor (level 0): present
+          • First floor (level 1): platform 8x4 on the TOP edge (y=2..6)
+          • No doors, no windows (openings list is empty)
+          • Walls only exist on the TOP long edge of the 8" section (y=6, x=4..12)
+          • First floor has a short parapet wall (~2" height) on that same top edge
+        """
+        footprint = Polygon([(0.0, 0.0), (12.0, 0.0), (12.0, 6.0), (0.0, 6.0)])
+
+        wall_thickness = RUINS_WALL_THICKNESS
+        half_t = wall_thickness / 2.0
+
+        walls: List[dict] = []
+        openings: List[dict] = []  # explicitly none
+        floors: List[dict] = []
+
+        def add_wall(poly: Polygon, floor_level: int, height: float) -> None:
+            walls.append({
+                "polygon": poly,
+                "z_bottom": float(floor_level * RUINS_FLOOR_HEIGHT),
+                "z_top": float(floor_level * RUINS_FLOOR_HEIGHT + height),
+                "thickness": wall_thickness,
+            })
+
+        # --- Low rubble section (x=0..4, y=0..6), max height 2"
+        def add_rubble(poly: Polygon) -> None:
+            walls.append({
+                "polygon": poly,
+                "z_bottom": 0.0,
+                "z_top": 2.0,
+                "thickness": wall_thickness,
+            })
+
+        rubble_pieces = [
+            box(0.5, 0.6, 1.4, 1.5),
+            box(2.0, 0.8, 3.5, 1.6),
+            box(0.7, 2.2, 1.6, 3.1),
+            box(2.3, 2.6, 3.7, 3.3),
+            box(0.6, 4.2, 1.8, 5.0),
+            box(2.2, 4.4, 3.6, 5.3),
+        ]
+        for rp in rubble_pieces:
+            add_rubble(rp)
+
+        # --- 8x6 two-level section (x=4..12, y=0..6)
+        # Walls: ONLY the top long edge wall (y=6) for the 8" span (x=4..12).
+        # Plus a 4" wall segment on the right edge (x=12) spanning y=2..6.
+        # Use inset centerline so buffered wall stays within the footprint.
+        y2 = 2.0
+        top_line = LineString([(4.0 + half_t, 6.0 - half_t), (12.0 - half_t, 6.0 - half_t)])
+        right_line_4in = LineString([(12.0 - half_t, y2 + half_t), (12.0 - half_t, 6.0 - half_t)])
+        add_wall(top_line.buffer(half_t), floor_level=0, height=RUINS_FLOOR_HEIGHT)
+        add_wall(right_line_4in.buffer(half_t), floor_level=0, height=RUINS_FLOOR_HEIGHT)
+
+        # First-floor platform: 8x4 on the TOP edge (y=2..6)
+        floor1_poly = box(4.0, 2.0, 12.0, 6.0)
+
+        # Short parapet on first floor (1" tall) on the top and right edges.
+        parapet_h = 1.0
+        p_top = LineString([(4.0 + half_t, 6.0 - half_t), (12.0 - half_t, 6.0 - half_t)]).buffer(half_t)
+        p_right_4in = LineString([(12.0 - half_t, y2 + half_t), (12.0 - half_t, 6.0 - half_t)]).buffer(half_t)
+        add_wall(p_top, floor_level=1, height=parapet_h)
+        add_wall(p_right_4in, floor_level=1, height=parapet_h)
+
+        # Floors: ground floor (full footprint); first floor (platform only)
+        floors.append({
+            "polygon": footprint,
+            "elevation": 0.0,
+            "thickness": RUINS_FLOOR_THICKNESS,
+        })
+        floors.append({
+            "polygon": floor1_poly,
+            "elevation": RUINS_FLOOR_HEIGHT,
+            "thickness": RUINS_FLOOR_THICKNESS,
+        })
+
+        return RuinsTerrain(footprint, walls=walls, openings=openings, floors=floors)
+
 
 def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float], 
                             terrain_features: List['TerrainFeature'], moving_model: Optional['Model'] = None) -> dict:

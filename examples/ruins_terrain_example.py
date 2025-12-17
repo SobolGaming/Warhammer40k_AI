@@ -187,7 +187,7 @@ def main():
     parser = argparse.ArgumentParser(description='Visualize preset RUINS variants (12x6 and low rubble)')
     parser.add_argument(
         '--preset',
-        choices=['variant1', 'variant2', 'variant3', 'rubble6x4'],
+        choices=['variant1', 'variant2', 'variant3', 'variant4', 'rubble6x4'],
         default='variant1',
         help='Which preset to visualize'
     )
@@ -198,6 +198,8 @@ def main():
     # Create selected preset ruin
     if args.preset == 'rubble6x4':
         ruin = TerrainFactory.create_preset_ruin_rect_6x4_variant1()
+    elif args.preset == 'variant4':
+        ruin = TerrainFactory.create_preset_ruin_rect_12x6_variant4()
     elif args.preset == 'variant3':
         ruin = TerrainFactory.create_preset_ruin_rect_12x6_variant3()
     elif args.preset == 'variant2':
