@@ -777,15 +777,15 @@ class TerrainFactory:
         Details:
         - Footprint: 12" x 6" rectangle
         - Wall thickness: 0.5"
-        - Walls 0" inward from both short edges and one long edge (y=0), flush to that long edge
-          • Short walls: ground floor 6" long (y=0 to y=6); upper floors 4" long (y=0 to y=4) at x=0 and x=12
-          • Long wall: 12" long from x=0 to x=12 along y=0
+        - Walls flush to the bottom long edge (y=0) with adjusted spans:
+          • Long wall: inset 2" from each side (x=2..10) along y=0, on all levels
+          • Short walls: moved in to meet the long wall ends, at x=2 and x=10; 4" long (y=0..4) on all levels
         - Ground floor (level 0): 4" wall height, no windows
         - First floor (level 1): 4" wall height, windows
-          • Long wall: three 2" windows, at x=[2-4], [5-7], [8-10]
+          • Long wall: two 2" windows (shorter wall span), at x=[3-5], [7-9]
           • Short walls: one 2" window each, spanning y=[2-4]
           • All windows 1"-3" above that floor (allows LOS only)
-        - Second floor (level 2): 2" damaged walls, no windows
+        - Second floor (level 2): 1" parapets, no windows
         - No doors
         """
         # Footprint polygon
@@ -796,13 +796,15 @@ class TerrainFactory:
 
         # Define core wall line segments
         # Center wall lines are inset by 0.25" from footprint edges so buffered walls stay within footprint
-        long_wall_line = LineString([(0.25, 0.25), (11.75, 0.25)])
-        # Upper floors (levels 1,2) short walls: 4" long (centerline y from 0.25 to 3.75)
-        short_wall_left_line_upper = LineString([(0.25, 0.25), (0.25, 3.75)])
-        short_wall_right_line_upper = LineString([(11.75, 0.25), (11.75, 3.75)])
-        # Ground floor short walls: 6" long (centerline y from 0.25 to 5.75)
-        short_wall_left_line_ground = LineString([(0.25, 0.25), (0.25, 5.75)])
-        short_wall_right_line_ground = LineString([(11.75, 0.25), (11.75, 5.75)])
+        # Long wall is inset by 2" from each short edge (x=2..10) -> centerline x=2.25..9.75
+        long_wall_line = LineString([(2.25, 0.25), (9.75, 0.25)])
+        # Short walls are 4" long and meet the long wall at x=2 and x=10.
+        # Use inset centerlines so buffered walls stay within footprint.
+        short_wall_left_line_upper = LineString([(2.0 + half_t, 0.25), (2.0 + half_t, 3.75)])
+        short_wall_right_line_upper = LineString([(10.0 - half_t, 0.25), (10.0 - half_t, 3.75)])
+        # Ground floor short walls are also 4" long now
+        short_wall_left_line_ground = short_wall_left_line_upper
+        short_wall_right_line_ground = short_wall_right_line_upper
 
         # Buffer to thickness to create polygons
         long_wall_poly = long_wall_line.buffer(half_t)
@@ -837,8 +839,8 @@ class TerrainFactory:
         z1_bottom = 0.75 + RUINS_FLOOR_HEIGHT
         z1_top = 2.25 + RUINS_FLOOR_HEIGHT
 
-        # Long wall: three 2" windows at 1" from each end and centered segments
-        for x_start, x_end in [(2.0, 4.0), (5.0, 7.0), (8.0, 10.0)]:
+        # Long wall: two 2" windows within the shortened span x=2..10
+        for x_start, x_end in [(3.0, 5.0), (7.0, 9.0)]:
             openings.append({
                 # Align with long wall thickness at y = 0.25 ± 0.25
                 "polygon": box(x_start, 0.25 - half_t, x_end, 0.25 + half_t),
@@ -848,30 +850,30 @@ class TerrainFactory:
                 "allows_los": True
             })
 
-        # Short wall windows: y from 1" to 3", centered on x=2 and x=10 lines
+        # Short wall windows: y from 1" to 3", centered on x=2 and x=10 walls
         openings.append({
-            "polygon": box(0.25 - half_t, 1.0, 0.25 + half_t, 3.0),
+            "polygon": box((2.0 + half_t) - half_t, 1.0, (2.0 + half_t) + half_t, 3.0),
             "z_bottom": z1_bottom,
             "z_top": z1_top,
             "allows_movement": False,
             "allows_los": True
         })
         openings.append({
-            "polygon": box(11.75 - half_t, 1.0, 11.75 + half_t, 3.0),
+            "polygon": box((10.0 - half_t) - half_t, 1.0, (10.0 - half_t) + half_t, 3.0),
             "z_bottom": z1_bottom,
             "z_top": z1_top,
             "allows_movement": False,
             "allows_los": True
         })
 
-        # Second floor walls (damaged), height 2"; short walls are 4" long
-        add_wall(long_wall_poly, floor_level=2, height=2.0)
-        add_wall(short_wall_left_poly_upper, floor_level=2, height=2.0)
-        add_wall(short_wall_right_poly_upper, floor_level=2, height=2.0)
+        # Second floor walls (parapets), height 1"; short walls are 4" long
+        add_wall(long_wall_poly, floor_level=2, height=1.0)
+        add_wall(short_wall_left_poly_upper, floor_level=2, height=1.0)
+        add_wall(short_wall_right_poly_upper, floor_level=2, height=1.0)
 
-        # Floors: ground (0) uses full footprint; upper floors extend fully under wall thickness
-        # Long wall thickness spans y ∈ [0.0, 0.5] (centerline at 0.25), so floors should start at y=0.0
-        upper_floor_poly = box(0.0, 0.0, 12.0, 4.0)
+        # Floors: ground (0) uses full footprint; upper floors are narrowed to match long-wall span.
+        # Upper floors extend to y=4 and x=2..10 (aligned with the inset long wall).
+        upper_floor_poly = box(2.0, 0.0, 10.0, 4.0)
         floors.append({
             "polygon": footprint,
             "elevation": 0.0,
@@ -892,25 +894,27 @@ class TerrainFactory:
 
     @staticmethod
     def create_preset_ruin_rect_12x6_variant2() -> RuinsTerrain:
-        """Create RUINS preset (12" x 6") Variant 2 - L shape.
+        """Create RUINS preset (12" x 6") Variant 2 - mirror of Variant 3 (top-right corner).
 
-        Characteristics:
-        - Same thickness (0.5"), same wall heights (ground 4", first 4", second 4"), 3 levels (0,1,2)
-        - Long wall on the TOP long side (y=6):
-          • Ground: 12" long (x=0..12)
-          • 1st:    8" long  (x=4..12)
-          • 2nd:    4" long  (x=8..12)
-        - Short wall on the RIGHT short side (x=12):
-          • Ground: 6" long (y=0..6)
-          • 1st:    6" long (y=0..6)
-          • 2nd:    3" long (y=3..6)  (anchored to the top corner)
-        - The top-right corner (12,6) is the shared meeting corner of the long wall’s right end
-          and the short wall’s top end across levels.
-        - Floors:
-          • Ground: full 12x6 rectangle
-          • 1st:    right-angled triangle with legs 8 (x) and 6 (y), right angle at (12,6)
-          • 2nd:    right-angled triangle with legs 4 (x) and 3 (y), right angle at (12,6)
-        - Windows: similar style to variant1 but sized to new spans (LOS only)
+        Connecting corner: top-right (12,6)
+        - Top long-edge wall (y=6), measured leftwards from the connecting corner:
+          • Ground: 8" span (x=4..12)
+          • 1st:    8" span (x=4..12)
+          • 2nd:    6" span (x=6..12)  (parapet, 1" tall)
+        - Right short-edge wall (x=12), measured downwards from the connecting corner:
+          • Ground: 4" span (y=2..6)
+          • 1st:    3" span (y=3..6)
+          • 2nd:    2" span (y=4..6)  (parapet, 1" tall)
+
+        Windows/doors:
+        - Ground floor: none
+        - 1st: windows (LOS-only) mirrored from Variant 3
+        - 2nd: none (parapet)
+
+        Floors (triangular, matching wall legs):
+        - Ground: full 12x6 footprint
+        - 1st: right triangle with legs 8 (x) and 3 (y), right angle at (12,6)
+        - 2nd: right triangle with legs 6 (x) and 2 (y), right angle at (12,6)
         """
 
         # Footprint polygon
@@ -918,28 +922,6 @@ class TerrainFactory:
 
         wall_thickness = RUINS_WALL_THICKNESS
         half_t = wall_thickness / 2.0
-
-        # Centerlines inset by 0.25" so buffered walls remain within footprint
-        # Long wall along TOP edge (y ~ 6)
-        y_top_cl = 6.0 - half_t  # 5.75
-        long_line_ground = LineString([(0.25, y_top_cl), (11.75, y_top_cl)])
-        long_line_l1 = LineString([(4.25, y_top_cl), (11.75, y_top_cl)])
-        long_line_l2 = LineString([(8.25, y_top_cl), (11.75, y_top_cl)])
-
-        # Short wall along RIGHT edge (x ~ 12)
-        x_right_cl = 12.0 - half_t  # 11.75
-        short_line_ground = LineString([(x_right_cl, 0.25), (x_right_cl, 5.75)])
-        short_line_l1 = LineString([(x_right_cl, 0.25), (x_right_cl, 5.75)])
-        short_line_l2 = LineString([(x_right_cl, 3.25), (x_right_cl, 5.75)])  # 3" span anchored to top
-
-        # Buffer to wall polygons
-        long_poly_ground = long_line_ground.buffer(half_t)
-        long_poly_l1 = long_line_l1.buffer(half_t)
-        long_poly_l2 = long_line_l2.buffer(half_t)
-
-        short_poly_ground = short_line_ground.buffer(half_t)
-        short_poly_l1 = short_line_l1.buffer(half_t)
-        short_poly_l2 = short_line_l2.buffer(half_t)
 
         walls: List[dict] = []
         openings: List[dict] = []
@@ -953,27 +935,37 @@ class TerrainFactory:
                 "thickness": wall_thickness
             })
 
-        # Ground floor (level 0) walls: height equals floor height
-        add_wall(long_poly_ground, floor_level=0, height=RUINS_FLOOR_HEIGHT)
-        add_wall(short_poly_ground, floor_level=0, height=RUINS_FLOOR_HEIGHT)
+        # Centerlines inset so buffered walls remain within footprint
+        y_top_cl = 6.0 - half_t  # 5.75
+        x_right_cl = 12.0 - half_t  # 11.75
 
-        # First floor (level 1) walls: height equals floor height
-        add_wall(long_poly_l1, floor_level=1, height=RUINS_FLOOR_HEIGHT)
-        add_wall(short_poly_l1, floor_level=1, height=RUINS_FLOOR_HEIGHT)
+        # Top wall spans (measured left from x=12): ground/l1 are 8", l2 is 6" parapet
+        top_line_g = LineString([(4.0 + half_t, y_top_cl), (12.0 - half_t, y_top_cl)])
+        top_line_l1 = LineString([(4.0 + half_t, y_top_cl), (12.0 - half_t, y_top_cl)])
+        top_line_l2 = LineString([(6.0 + half_t, y_top_cl), (12.0 - half_t, y_top_cl)])
 
-        # Second floor (level 2) walls: height equals floor height
-        add_wall(long_poly_l2, floor_level=2, height=RUINS_FLOOR_HEIGHT)
-        add_wall(short_poly_l2, floor_level=2, height=RUINS_FLOOR_HEIGHT)
+        # Right wall spans (measured down from y=6): ground 4", l1 3", l2 2" parapet
+        right_line_g = LineString([(x_right_cl, 2.0 + half_t), (x_right_cl, 6.0 - half_t)])
+        right_line_l1 = LineString([(x_right_cl, 3.0 + half_t), (x_right_cl, 6.0 - half_t)])
+        right_line_l2 = LineString([(x_right_cl, 4.0 + half_t), (x_right_cl, 6.0 - half_t)])
+
+        # Ground + first floors are full-height walls
+        add_wall(top_line_g.buffer(half_t), floor_level=0, height=RUINS_FLOOR_HEIGHT)
+        add_wall(right_line_g.buffer(half_t), floor_level=0, height=RUINS_FLOOR_HEIGHT)
+        add_wall(top_line_l1.buffer(half_t), floor_level=1, height=RUINS_FLOOR_HEIGHT)
+        add_wall(right_line_l1.buffer(half_t), floor_level=1, height=RUINS_FLOOR_HEIGHT)
+
+        # Second floor is parapet (1")
+        add_wall(top_line_l2.buffer(half_t), floor_level=2, height=1.0)
+        add_wall(right_line_l2.buffer(half_t), floor_level=2, height=1.0)
 
         # Windows (LOS only): keep within a 3" wall height (0.75"-2.25" above floor)
         z1_bottom = 0.75 + RUINS_FLOOR_HEIGHT
         z1_top = 2.25 + RUINS_FLOOR_HEIGHT
-        z2_bottom = 0.75 + RUINS_FLOOR_HEIGHT * 2.0
-        z2_top = 2.25 + RUINS_FLOOR_HEIGHT * 2.0
 
         # First floor windows
-        # Long wall (8" span x=4..12): two 2" windows centered in span
-        for x_start, x_end in [(5.0, 7.0), (9.0, 11.0)]:
+        # Top wall span x=4..12: two 2" windows (mirrored from Variant 3)
+        for x_start, x_end in [(6.0, 8.0), (9.0, 11.0)]:
             openings.append({
                 "polygon": box(x_start, y_top_cl - half_t, x_end, y_top_cl + half_t),
                 "z_bottom": z1_bottom,
@@ -981,30 +973,11 @@ class TerrainFactory:
                 "allows_movement": False,
                 "allows_los": True
             })
-        # Short wall (6" span y=0..6): two 2" vertical windows centered
-        for y_start, y_end in [(1.0, 3.0), (3.0, 5.0)]:
-            openings.append({
-                "polygon": box(x_right_cl - half_t, y_start, x_right_cl + half_t, y_end),
-                "z_bottom": z1_bottom,
-                "z_top": z1_top,
-                "allows_movement": False,
-                "allows_los": True
-            })
-
-        # Second floor windows (walls are 4" high in this variant)
-        # Long wall (4" span x=8..12): one 2" window near center
-        openings.append({
-            "polygon": box(9.0, y_top_cl - half_t, 11.0, y_top_cl + half_t),
-            "z_bottom": z2_bottom,
-            "z_top": z2_top,
-            "allows_movement": False,
-            "allows_los": True
-        })
-        # Short wall (3" span y=3..6): one 2" vertical window near top
+        # Right wall span y=3..6: one vertical window centered in span (mirrored)
         openings.append({
             "polygon": box(x_right_cl - half_t, 3.5, x_right_cl + half_t, 5.5),
-            "z_bottom": z2_bottom,
-            "z_top": z2_top,
+            "z_bottom": z1_bottom,
+            "z_top": z1_top,
             "allows_movement": False,
             "allows_los": True
         })
@@ -1016,15 +989,15 @@ class TerrainFactory:
             "elevation": 0.0,
             "thickness": RUINS_FLOOR_THICKNESS
         })
-        # First floor: right triangle with legs 8 (x) and 6 (y), right angle at (12,6)
-        floor1 = Polygon([(12.0, 6.0), (4.0, 6.0), (12.0, 0.0)])
+        # First floor: right triangle legs 8 (x) and 3 (y), right angle at (12,6)
+        floor1 = Polygon([(12.0, 6.0), (4.0, 6.0), (12.0, 3.0)])
         floors.append({
             "polygon": floor1,
             "elevation": RUINS_FLOOR_HEIGHT,
             "thickness": RUINS_FLOOR_THICKNESS
         })
-        # Second floor: right triangle with legs 4 (x) and 3 (y), right angle at (12,6)
-        floor2 = Polygon([(12.0, 6.0), (8.0, 6.0), (12.0, 3.0)])
+        # Second floor: right triangle legs 6 (x) and 2 (y), right angle at (12,6)
+        floor2 = Polygon([(12.0, 6.0), (6.0, 6.0), (12.0, 4.0)])
         floors.append({
             "polygon": floor2,
             "elevation": RUINS_FLOOR_HEIGHT * 2.0,
@@ -1035,52 +1008,116 @@ class TerrainFactory:
 
     @staticmethod
     def create_preset_ruin_rect_12x6_variant3() -> RuinsTerrain:
-        """Create RUINS preset (12" x 6") Variant 3 - reverse L shape.
+        """Create RUINS preset (12" x 6") Variant 3 - adjusted reverse-L wall spans.
 
-        Variant 3 is a horizontal mirror of Variant 2 across the vertical axis through x=6,
-        so it's an exact left-right mirror (y-axis through the middle), preserving top/bottom.
+        This is similar in intent to the old Variant 3 (a mirror of Variant 2), but with
+        corrected wall spans relative to the connecting corner between the long wall and
+        the short wall.
+
+        Connecting corner: top-left (0,6)
+        - Top long-edge wall (y=6):
+          • Ground: 8" span from the connecting corner (x=0..8)
+          • 1st:    8" span from the connecting corner (x=0..8)
+          • 2nd:    6" span from the connecting corner (x=0..6)  (parapet)
+        - Left short-edge wall (x=0), measured down from the connecting corner:
+          • Ground: 4" span (y=2..6)
+          • 1st:    3" span (y=3..6)
+          • 2nd:    2" span (y=4..6)  (parapet)
+
+        Windows/doors:
+        - Ground floor: none
+        - 1st/2nd: windows (LOS-only) sized to the shortened wall spans.
+
+        Floors: aligned to the wall extents and kept triangular:
+        - Ground: full 12x6 footprint
+        - 1st: right triangle with legs 8 (x) and 3 (y), right angle at the connecting corner (0,6)
+        - 2nd: right triangle with legs 6 (x) and 2 (y), right angle at the connecting corner (0,6)
         """
+        footprint = Polygon([(0.0, 0.0), (12.0, 0.0), (12.0, 6.0), (0.0, 6.0)])
 
-        # Build variant 2 then mirror across x=6 (left-right flip)
-        v2 = TerrainFactory.create_preset_ruin_rect_12x6_variant2()
-        try:
-            from shapely.affinity import scale as _sh_scale
-        except Exception:
-            # If affinity not available, fall back to returning v2 (non-mirrored)
-            return v2
+        wall_thickness = RUINS_WALL_THICKNESS
+        half_t = wall_thickness / 2.0
 
-        def _mirror_geom(g):
-            try:
-                return _sh_scale(g, xfact=-1.0, yfact=1.0, origin=(6.0, 0.0))
-            except Exception:
-                return g
-
-        # Mirror all geometries
-        footprint = _mirror_geom(v2.footprint)
         walls: List[dict] = []
-        for w in v2.walls:
-            walls.append({
-                "polygon": _mirror_geom(w["polygon"]),
-                "z_bottom": w["z_bottom"],
-                "z_top": w["z_top"],
-                "thickness": w.get("thickness", 0.5),
-            })
         openings: List[dict] = []
-        for op in v2.openings:
-            openings.append({
-                "polygon": _mirror_geom(op["polygon"]),
-                "z_bottom": op["z_bottom"],
-                "z_top": op["z_top"],
-                "allows_movement": op.get("allows_movement", False),
-                "allows_los": op.get("allows_los", False),
-            })
         floors: List[dict] = []
-        for fl in v2.floors:
-            floors.append({
-                "polygon": _mirror_geom(fl["polygon"]),
-                "elevation": fl["elevation"],
-                "thickness": fl.get("thickness", 0.5),
+
+        def add_wall(poly: Polygon, floor_level: int, height: float) -> None:
+            walls.append({
+                "polygon": poly,
+                "z_bottom": float(floor_level * RUINS_FLOOR_HEIGHT),
+                "z_top": float(floor_level * RUINS_FLOOR_HEIGHT + height),
+                "thickness": wall_thickness,
             })
+
+        # Centerlines inset by 0.25" so buffered walls remain within footprint
+        y_top_cl = 6.0 - half_t  # 5.75
+        x_left_cl = 0.0 + half_t  # 0.25
+
+        # Top wall spans (buffered to reach x=0..N)
+        top_line_g = LineString([(0.0 + half_t, y_top_cl), (8.0 - half_t, y_top_cl)])
+        top_line_l1 = LineString([(0.0 + half_t, y_top_cl), (8.0 - half_t, y_top_cl)])
+        top_line_l2 = LineString([(0.0 + half_t, y_top_cl), (6.0 - half_t, y_top_cl)])
+
+        # Left wall spans (buffered to reach y=Y0..6)
+        left_line_g = LineString([(x_left_cl, 2.0 + half_t), (x_left_cl, 6.0 - half_t)])
+        left_line_l1 = LineString([(x_left_cl, 3.0 + half_t), (x_left_cl, 6.0 - half_t)])
+        left_line_l2 = LineString([(x_left_cl, 4.0 + half_t), (x_left_cl, 6.0 - half_t)])
+
+        # Walls: 4" tall at each level (standard RUINS_FLOOR_HEIGHT)
+        add_wall(top_line_g.buffer(half_t), floor_level=0, height=RUINS_FLOOR_HEIGHT)
+        add_wall(left_line_g.buffer(half_t), floor_level=0, height=RUINS_FLOOR_HEIGHT)
+
+        add_wall(top_line_l1.buffer(half_t), floor_level=1, height=RUINS_FLOOR_HEIGHT)
+        add_wall(left_line_l1.buffer(half_t), floor_level=1, height=RUINS_FLOOR_HEIGHT)
+
+        # 2nd floor is a low parapet (1") rather than a full-height wall; no windows there.
+        add_wall(top_line_l2.buffer(half_t), floor_level=2, height=1.0)
+        add_wall(left_line_l2.buffer(half_t), floor_level=2, height=1.0)
+
+        # Windows (LOS only): keep within a ~3" wall height (0.75"-2.25" above that floor)
+        z1_bottom = 0.75 + RUINS_FLOOR_HEIGHT
+        z1_top = 2.25 + RUINS_FLOOR_HEIGHT
+
+        # 1st floor windows
+        # Top wall span x=0..8: two 2" windows
+        for x_start, x_end in [(1.0, 3.0), (4.0, 6.0)]:
+            openings.append({
+                "polygon": box(x_start, y_top_cl - half_t, x_end, y_top_cl + half_t),
+                "z_bottom": z1_bottom,
+                "z_top": z1_top,
+                "allows_movement": False,
+                "allows_los": True,
+            })
+        # Left wall span y=3..6 (3" total): one vertical window centered in span
+        openings.append({
+            "polygon": box(x_left_cl - half_t, 3.5, x_left_cl + half_t, 5.5),
+            "z_bottom": z1_bottom,
+            "z_top": z1_top,
+            "allows_movement": False,
+            "allows_los": True,
+        })
+
+        # Floors (aligned to the wall extents; triangular)
+        floors.append({
+            "polygon": footprint,
+            "elevation": 0.0,
+            "thickness": RUINS_FLOOR_THICKNESS,
+        })
+        # First floor: right triangle legs 8 (x) and 3 (y), right angle at (0,6)
+        floor1 = Polygon([(0.0, 6.0), (8.0, 6.0), (0.0, 3.0)])
+        floors.append({
+            "polygon": floor1,
+            "elevation": RUINS_FLOOR_HEIGHT,
+            "thickness": RUINS_FLOOR_THICKNESS,
+        })
+        # Second floor: right triangle legs 6 (x) and 2 (y), right angle at (0,6)
+        floor2 = Polygon([(0.0, 6.0), (6.0, 6.0), (0.0, 4.0)])
+        floors.append({
+            "polygon": floor2,
+            "elevation": RUINS_FLOOR_HEIGHT * 2.0,
+            "thickness": RUINS_FLOOR_THICKNESS,
+        })
 
         return RuinsTerrain(footprint, walls=walls, openings=openings, floors=floors)
 
@@ -1216,6 +1253,55 @@ class TerrainFactory:
             "elevation": RUINS_FLOOR_HEIGHT,
             "thickness": RUINS_FLOOR_THICKNESS,
         })
+
+        return RuinsTerrain(footprint, walls=walls, openings=openings, floors=floors)
+
+    @staticmethod
+    def create_preset_ruin_rect_12x6_variant5() -> RuinsTerrain:
+        """Create RUINS preset (12" x 6") Variant 5 - Variant4 with the corner walls anchored bottom-right.
+
+        Variant 5 is a vertical mirror of Variant 4 across the horizontal axis through y=3,
+        so the 4" right-edge wall segment (and its floor-1 parapet) that is anchored to the
+        top-right corner in Variant 4 becomes anchored to the bottom-right corner.
+        """
+        v4 = TerrainFactory.create_preset_ruin_rect_12x6_variant4()
+        try:
+            from shapely.affinity import scale as _sh_scale
+        except Exception:
+            return v4
+
+        def _mirror_geom(g):
+            try:
+                # Mirror top/bottom within 0..6 by flipping y about y=3
+                return _sh_scale(g, xfact=1.0, yfact=-1.0, origin=(0.0, 3.0))
+            except Exception:
+                return g
+
+        footprint = _mirror_geom(v4.footprint)
+        walls: List[dict] = []
+        for w in v4.walls:
+            walls.append({
+                "polygon": _mirror_geom(w["polygon"]),
+                "z_bottom": w["z_bottom"],
+                "z_top": w["z_top"],
+                "thickness": w.get("thickness", 0.5),
+            })
+        openings: List[dict] = []
+        for op in v4.openings:
+            openings.append({
+                "polygon": _mirror_geom(op["polygon"]),
+                "z_bottom": op["z_bottom"],
+                "z_top": op["z_top"],
+                "allows_movement": op.get("allows_movement", False),
+                "allows_los": op.get("allows_los", False),
+            })
+        floors: List[dict] = []
+        for fl in v4.floors:
+            floors.append({
+                "polygon": _mirror_geom(fl["polygon"]),
+                "elevation": fl["elevation"],
+                "thickness": fl.get("thickness", 0.5),
+            })
 
         return RuinsTerrain(footprint, walls=walls, openings=openings, floors=floors)
 
