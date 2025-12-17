@@ -18,6 +18,7 @@ RuinPresetId = Literal[
     'ruin_rect_12x6_variant3',
     'ruin_rect_12x6_variant4',
     'ruin_rect_12x6_variant5',
+    'ruin_rect_10x5_variant1',
     'ruin_rect_6x4_variant1',
 ]
 
@@ -330,6 +331,8 @@ def _instantiate_simple(spec: TerrainPlacementSimple) -> TerrainFeature:
         ruin = TerrainFactory.create_preset_ruin_rect_12x6_variant4()
     elif spec.preset == 'ruin_rect_12x6_variant5':
         ruin = TerrainFactory.create_preset_ruin_rect_12x6_variant5()
+    elif spec.preset == 'ruin_rect_10x5_variant1':
+        ruin = TerrainFactory.create_preset_ruin_rect_10x5_variant1()
     elif spec.preset == 'ruin_rect_6x4_variant1':
         ruin = TerrainFactory.create_preset_ruin_rect_6x4_variant1()
     else:
@@ -359,6 +362,9 @@ def _instantiate_from_spec(spec: Union[TerrainPlacementSpec, TerrainPlacementSim
     if spec.preset == 'ruin_rect_12x6_variant5':
         # Variant5 is a mirrored Variant4; currently supported via TerrainPlacementSimple only.
         raise ValueError("ruin_rect_12x6_variant5 must be placed using TerrainPlacementSimple")
+    if spec.preset == 'ruin_rect_10x5_variant1':
+        # Variant10x5 has mixed-height internals; currently supported via TerrainPlacementSimple only.
+        raise ValueError("ruin_rect_10x5_variant1 must be placed using TerrainPlacementSimple")
     if spec.preset == 'ruin_rect_6x4_variant1':
         # Low rubble ruins are currently only supported via TerrainPlacementSimple
         raise ValueError("ruin_rect_6x4_variant1 must be placed using TerrainPlacementSimple")
@@ -390,6 +396,9 @@ class TerrainLayoutsRegistry:
             # Variant 4 (12x6 mixed rubble + 2-level section)
             TerrainPlacementSimple(preset='ruin_rect_12x6_variant4', rotation_degrees=270.0, world_origin=(5.0, 16.0)),
             TerrainPlacementSimple(preset='ruin_rect_12x6_variant4', rotation_degrees=90.0, world_origin=(55.0, 28.0)),
+            # 10x5 mixed rubble + 2-level section
+            TerrainPlacementSimple(preset='ruin_rect_10x5_variant1', rotation_degrees=0.0, world_origin=(20.0, 4.0)),
+            TerrainPlacementSimple(preset='ruin_rect_10x5_variant1', rotation_degrees=180.0, world_origin=(40.0, 40.0)),
             # Low rubble (6x4) pieces
             TerrainPlacementSimple(preset='ruin_rect_6x4_variant1', rotation_degrees=0.0, world_origin=(30.0, 9.0)),
             TerrainPlacementSimple(preset='ruin_rect_6x4_variant1', rotation_degrees=180.0, world_origin=(30.0, 35.0)),

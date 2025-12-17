@@ -1305,6 +1305,94 @@ class TerrainFactory:
 
         return RuinsTerrain(footprint, walls=walls, openings=openings, floors=floors)
 
+    @staticmethod
+    def create_preset_ruin_rect_10x5_variant1() -> RuinsTerrain:
+        """Create RUINS preset (10" x 5") Variant 1 - 3.5x5 rubble + 6.5x5 two-level ruins.
+
+        Structure (authored at origin):
+        - Overall footprint: 10x5 rectangle
+        - Left section (x=0..3.5, y=0..5): low rubble (<=2" height)
+        - Right section (x=3.5..10, y=0..5): a 6.5x5 two-level ruins section with:
+          • Ground + first floor platform (full 6.5x5)
+          • No doors, no windows
+          • Walls only on:
+            - The joining edge between the two sections (x=3.5, y=0..5)
+            - The top edge of the 6.5" section (y=5, x=3.5..10)
+          • First-floor parapet (1" tall) along those same edges
+        """
+        footprint = Polygon([(0.0, 0.0), (10.0, 0.0), (10.0, 5.0), (0.0, 5.0)])
+
+        wall_thickness = RUINS_WALL_THICKNESS
+        half_t = wall_thickness / 2.0
+
+        walls: List[dict] = []
+        openings: List[dict] = []  # explicitly none
+        floors: List[dict] = []
+
+        def add_wall(poly: Polygon, floor_level: int, height: float) -> None:
+            walls.append({
+                "polygon": poly,
+                "z_bottom": float(floor_level * RUINS_FLOOR_HEIGHT),
+                "z_top": float(floor_level * RUINS_FLOOR_HEIGHT + height),
+                "thickness": wall_thickness,
+            })
+
+        # --- Low rubble section (x=0..3.5, y=0..5), max height 2"
+        def add_rubble(poly: Polygon) -> None:
+            walls.append({
+                "polygon": poly,
+                "z_bottom": 0.0,
+                "z_top": 2.0,
+                "thickness": wall_thickness,
+            })
+
+        rubble_pieces = [
+            box(0.4, 0.5, 1.1, 1.2),
+            box(1.6, 0.6, 2.6, 1.3),
+            box(0.6, 2.0, 1.4, 2.8),
+            box(2.0, 2.2, 3.1, 3.0),
+            box(0.5, 3.7, 1.5, 4.4),
+            box(2.1, 3.6, 3.3, 4.3),
+        ]
+        for rp in rubble_pieces:
+            add_rubble(rp)
+
+        # --- 6.5x5 two-level ruins section (x=3.5..10, y=0..5)
+        x_join = 3.5
+        y_top = 5.0
+
+        # Join wall is internal, can sit on x=3.5; keep endpoints inset in y.
+        join_line = LineString([(x_join, 0.0 + half_t), (x_join, y_top - half_t)])
+        # Top wall needs to be inset in y to keep buffered wall inside footprint.
+        top_line = LineString([(x_join + half_t, y_top - half_t), (10.0 - half_t, y_top - half_t)])
+
+        add_wall(join_line.buffer(half_t), floor_level=0, height=RUINS_FLOOR_HEIGHT)
+        add_wall(top_line.buffer(half_t), floor_level=0, height=RUINS_FLOOR_HEIGHT)
+
+        # First-floor platform is the full 6.5x5 section
+        floor1_poly = box(x_join, 0.0, 10.0, y_top)
+
+        # First-floor parapet (1") along same edges as walls
+        parapet_h = 1.0
+        p_join = LineString([(x_join, 0.0 + half_t), (x_join, y_top - half_t)]).buffer(half_t)
+        p_top = LineString([(x_join + half_t, y_top - half_t), (10.0 - half_t, y_top - half_t)]).buffer(half_t)
+        add_wall(p_join, floor_level=1, height=parapet_h)
+        add_wall(p_top, floor_level=1, height=parapet_h)
+
+        # Floors: ground (full footprint), first (ruins section)
+        floors.append({
+            "polygon": footprint,
+            "elevation": 0.0,
+            "thickness": RUINS_FLOOR_THICKNESS,
+        })
+        floors.append({
+            "polygon": floor1_poly,
+            "elevation": RUINS_FLOOR_HEIGHT,
+            "thickness": RUINS_FLOOR_THICKNESS,
+        })
+
+        return RuinsTerrain(footprint, walls=walls, openings=openings, floors=floors)
+
 
 def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float], 
                             terrain_features: List['TerrainFeature'], moving_model: Optional['Model'] = None) -> dict:

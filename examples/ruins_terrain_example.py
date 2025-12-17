@@ -313,7 +313,7 @@ def main():
     group = parser.add_mutually_exclusive_group(required=False)
     group.add_argument(
         '--preset',
-        choices=['variant1', 'variant2', 'variant3', 'variant4', 'variant5', 'rubble6x4'],
+        choices=['variant1', 'variant2', 'variant3', 'variant4', 'variant5', 'rubble6x4', 'ruin10x5'],
         default=None,
         help='Visualize a single preset ruin'
     )
@@ -340,6 +340,8 @@ def main():
     # Create selected preset ruin
     if preset == 'rubble6x4':
         ruin = TerrainFactory.create_preset_ruin_rect_6x4_variant1()
+    elif preset == 'ruin10x5':
+        ruin = TerrainFactory.create_preset_ruin_rect_10x5_variant1()
     elif preset == 'variant4':
         ruin = TerrainFactory.create_preset_ruin_rect_12x6_variant4()
     elif preset == 'variant5':
