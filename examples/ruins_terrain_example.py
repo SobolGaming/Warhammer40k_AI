@@ -313,7 +313,7 @@ def main():
     group = parser.add_mutually_exclusive_group(required=False)
     group.add_argument(
         '--preset',
-        choices=['variant1', 'variant2', 'variant3', 'variant4', 'variant5', 'rubble6x4', 'ruin10x5'],
+        choices=['variant1', 'variant2', 'variant3', 'variant4', 'variant5', 'variant6', 'rubble6x4', 'ruin6x4_v2', 'ruin10x5', 'ruin10x5_v2', 'ruin10x5_v3'],
         default=None,
         help='Visualize a single preset ruin'
     )
@@ -340,12 +340,20 @@ def main():
     # Create selected preset ruin
     if preset == 'rubble6x4':
         ruin = TerrainFactory.create_preset_ruin_rect_6x4_variant1()
+    elif preset == 'ruin6x4_v2':
+        ruin = TerrainFactory.create_preset_ruin_rect_6x4_variant2()
     elif preset == 'ruin10x5':
         ruin = TerrainFactory.create_preset_ruin_rect_10x5_variant1()
+    elif preset == 'ruin10x5_v2':
+        ruin = TerrainFactory.create_preset_ruin_rect_10x5_variant2()
+    elif preset == 'ruin10x5_v3':
+        ruin = TerrainFactory.create_preset_ruin_rect_10x5_variant3()
     elif preset == 'variant4':
         ruin = TerrainFactory.create_preset_ruin_rect_12x6_variant4()
     elif preset == 'variant5':
         ruin = TerrainFactory.create_preset_ruin_rect_12x6_variant5()
+    elif preset == 'variant6':
+        ruin = TerrainFactory.create_preset_ruin_rect_12x6_variant6()
     elif preset == 'variant3':
         ruin = TerrainFactory.create_preset_ruin_rect_12x6_variant3()
     elif preset == 'variant2':

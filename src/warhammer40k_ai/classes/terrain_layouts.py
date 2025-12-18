@@ -18,8 +18,12 @@ RuinPresetId = Literal[
     'ruin_rect_12x6_variant3',
     'ruin_rect_12x6_variant4',
     'ruin_rect_12x6_variant5',
+    'ruin_rect_12x6_variant6',
     'ruin_rect_10x5_variant1',
+    'ruin_rect_10x5_variant2',
+    'ruin_rect_10x5_variant3',
     'ruin_rect_6x4_variant1',
+    'ruin_rect_6x4_variant2',
 ]
 
 
@@ -331,10 +335,18 @@ def _instantiate_simple(spec: TerrainPlacementSimple) -> TerrainFeature:
         ruin = TerrainFactory.create_preset_ruin_rect_12x6_variant4()
     elif spec.preset == 'ruin_rect_12x6_variant5':
         ruin = TerrainFactory.create_preset_ruin_rect_12x6_variant5()
+    elif spec.preset == 'ruin_rect_12x6_variant6':
+        ruin = TerrainFactory.create_preset_ruin_rect_12x6_variant6()
     elif spec.preset == 'ruin_rect_10x5_variant1':
         ruin = TerrainFactory.create_preset_ruin_rect_10x5_variant1()
+    elif spec.preset == 'ruin_rect_10x5_variant2':
+        ruin = TerrainFactory.create_preset_ruin_rect_10x5_variant2()
+    elif spec.preset == 'ruin_rect_10x5_variant3':
+        ruin = TerrainFactory.create_preset_ruin_rect_10x5_variant3()
     elif spec.preset == 'ruin_rect_6x4_variant1':
         ruin = TerrainFactory.create_preset_ruin_rect_6x4_variant1()
+    elif spec.preset == 'ruin_rect_6x4_variant2':
+        ruin = TerrainFactory.create_preset_ruin_rect_6x4_variant2()
     else:
         raise ValueError(f"Unknown preset '{spec.preset}'")
 
@@ -362,12 +374,23 @@ def _instantiate_from_spec(spec: Union[TerrainPlacementSpec, TerrainPlacementSim
     if spec.preset == 'ruin_rect_12x6_variant5':
         # Variant5 is a mirrored Variant4; currently supported via TerrainPlacementSimple only.
         raise ValueError("ruin_rect_12x6_variant5 must be placed using TerrainPlacementSimple")
+    if spec.preset == 'ruin_rect_12x6_variant6':
+        # Variant6 has mixed rubble/ruins internals; currently supported via TerrainPlacementSimple only.
+        raise ValueError("ruin_rect_12x6_variant6 must be placed using TerrainPlacementSimple")
     if spec.preset == 'ruin_rect_10x5_variant1':
         # Variant10x5 has mixed-height internals; currently supported via TerrainPlacementSimple only.
         raise ValueError("ruin_rect_10x5_variant1 must be placed using TerrainPlacementSimple")
+    if spec.preset == 'ruin_rect_10x5_variant2':
+        # Variant10x5 has mixed-height internals; currently supported via TerrainPlacementSimple only.
+        raise ValueError("ruin_rect_10x5_variant2 must be placed using TerrainPlacementSimple")
+    if spec.preset == 'ruin_rect_10x5_variant3':
+        # Variant10x5 has mixed-height internals; currently supported via TerrainPlacementSimple only.
+        raise ValueError("ruin_rect_10x5_variant3 must be placed using TerrainPlacementSimple")
     if spec.preset == 'ruin_rect_6x4_variant1':
         # Low rubble ruins are currently only supported via TerrainPlacementSimple
         raise ValueError("ruin_rect_6x4_variant1 must be placed using TerrainPlacementSimple")
+    if spec.preset == 'ruin_rect_6x4_variant2':
+        raise ValueError("ruin_rect_6x4_variant2 must be placed using TerrainPlacementSimple")
     raise ValueError(f"Unknown preset '{spec.preset}'")
 
 
@@ -387,6 +410,10 @@ class TerrainLayoutsRegistry:
             TerrainPlacementSimple(preset='ruin_rect_6x4_variant1', rotation_degrees=270.0, world_origin=(28.0, 44.0)),
             TerrainPlacementSimple(preset='ruin_rect_12x6_variant5', rotation_degrees=0.0, world_origin=(4.0, 22.0)),
             TerrainPlacementSimple(preset='ruin_rect_12x6_variant5', rotation_degrees=180.0, world_origin=(56.0, 22.0)),
+            TerrainPlacementSimple(preset='ruin_rect_6x4_variant1', rotation_degrees=135.0, world_origin=(26.6, 20.6)),
+            TerrainPlacementSimple(preset='ruin_rect_6x4_variant1', rotation_degrees=315.0, world_origin=(33.4, 23.4)),
+            TerrainPlacementSimple(preset='ruin_rect_10x5_variant3', rotation_degrees=45.0, world_origin=(23.0, 10.0)),
+            TerrainPlacementSimple(preset='ruin_rect_10x5_variant3', rotation_degrees=225.0, world_origin=(37.0, 34.0)),
         ],
         2: [
             TerrainPlacementSimple(preset='ruin_rect_12x6_variant1', rotation_degrees=math.degrees(math.atan2(4, 4.5)), world_origin=(17.0, 15.5)),
@@ -413,11 +440,14 @@ class TerrainLayoutsRegistry:
             # Variant 4 (12x6 mixed rubble + 2-level section)
             TerrainPlacementSimple(preset='ruin_rect_12x6_variant4', rotation_degrees=270.0 + math.degrees(math.atan2(8, 9)), world_origin=(2.0, 19.0)),
             TerrainPlacementSimple(preset='ruin_rect_12x6_variant4', rotation_degrees=90.0 + math.degrees(math.atan2(8, 9)), world_origin=(58.0, 25.0)),
+            # 10x5 variants
+            TerrainPlacementSimple(preset='ruin_rect_10x5_variant3', rotation_degrees=math.degrees(math.atan2(7.8, 6.0)), world_origin=(21.0, 14.0)),
+            TerrainPlacementSimple(preset='ruin_rect_10x5_variant3', rotation_degrees=180.0 + math.degrees(math.atan2(7.8, 6.0)), world_origin=(39.0, 30.0)),
             # Low rubble (6x4) pieces
             TerrainPlacementSimple(preset='ruin_rect_6x4_variant1', rotation_degrees=0.0, world_origin=(10.0, 4.0)),
             TerrainPlacementSimple(preset='ruin_rect_6x4_variant1', rotation_degrees=180.0, world_origin=(50.0, 40.0)),
-            TerrainPlacementSimple(preset='ruin_rect_6x4_variant1', rotation_degrees=math.degrees(math.atan2(5, 4)) + 180.0, world_origin=(23.0, 31.0)),
-            TerrainPlacementSimple(preset='ruin_rect_6x4_variant1', rotation_degrees=math.degrees(math.atan2(5, 4)) + 0.0, world_origin=(37.0, 13.0)),
+            TerrainPlacementSimple(preset='ruin_rect_6x4_variant1', rotation_degrees=math.degrees(math.atan2(7.8, 6.0)) + 180.0, world_origin=(22.8, 31.0)),
+            TerrainPlacementSimple(preset='ruin_rect_6x4_variant1', rotation_degrees=math.degrees(math.atan2(7.8, 6.0)) + 0.0, world_origin=(37.2, 13.0)),
         ],
         4: [
             TerrainPlacementSimple(preset='ruin_rect_12x6_variant1', rotation_degrees=math.degrees(math.atan2(4, 4.5)), world_origin=(8.0, 27.5)),
@@ -427,6 +457,9 @@ class TerrainLayoutsRegistry:
             # Variant 4 (12x6 mixed rubble + 2-level section)
             TerrainPlacementSimple(preset='ruin_rect_12x6_variant4', rotation_degrees=math.degrees(math.atan2(9.5, 7)), world_origin=(35.0, 2.5)),
             TerrainPlacementSimple(preset='ruin_rect_12x6_variant4', rotation_degrees=180.0 + math.degrees(math.atan2(9.5, 7)), world_origin=(25.0, 41.5)),
+            # 10x5 variants
+            TerrainPlacementSimple(preset='ruin_rect_10x5_variant2', rotation_degrees=180.0 + math.degrees(math.atan2(7.6, 6.6)), world_origin=(21.0, 27.0)),
+            TerrainPlacementSimple(preset='ruin_rect_10x5_variant2', rotation_degrees=math.degrees(math.atan2(7.6, 6.6)), world_origin=(39.0, 17.0)),
             # Low rubble (6x4) pieces
             TerrainPlacementSimple(preset='ruin_rect_6x4_variant1', rotation_degrees=90.0, world_origin=(8.0, 19.0)),
             TerrainPlacementSimple(preset='ruin_rect_6x4_variant1', rotation_degrees=270.0, world_origin=(52.0, 25.0)),
@@ -441,6 +474,9 @@ class TerrainLayoutsRegistry:
             # Variant 4 (12x6 mixed rubble + 2-level section)
             TerrainPlacementSimple(preset='ruin_rect_12x6_variant4', rotation_degrees=math.degrees(math.atan2(6.0, 10.4)), world_origin=(46.5, 2.0)),
             TerrainPlacementSimple(preset='ruin_rect_12x6_variant4', rotation_degrees=180.0 + math.degrees(math.atan2(6.0, 10.4)), world_origin=(13.5, 42.0)),
+            # 10x5 variants
+            TerrainPlacementSimple(preset='ruin_rect_10x5_variant3', rotation_degrees=0.0, world_origin=(16.0, 24.0)),
+            TerrainPlacementSimple(preset='ruin_rect_10x5_variant3', rotation_degrees=180.0, world_origin=(44.0, 20.0)),
             # Low rubble (6x4) pieces
             TerrainPlacementSimple(preset='ruin_rect_6x4_variant1', rotation_degrees=0.0, world_origin=(12.0, 4.0)),
             TerrainPlacementSimple(preset='ruin_rect_6x4_variant1', rotation_degrees=180.0, world_origin=(48.0, 40.0)),
@@ -455,6 +491,9 @@ class TerrainLayoutsRegistry:
             # Variant 4 (12x6 mixed rubble + 2-level section)
             TerrainPlacementSimple(preset='ruin_rect_12x6_variant4', rotation_degrees=0.0, world_origin=(10.0, 4.0)),
             TerrainPlacementSimple(preset='ruin_rect_12x6_variant4', rotation_degrees=180.0, world_origin=(50.0, 40.0)),
+            # 10x5 variants
+            TerrainPlacementSimple(preset='ruin_rect_10x5_variant2', rotation_degrees=math.degrees(math.atan2(7.4, 6.6)), world_origin=(40.4, 18.6)),
+            TerrainPlacementSimple(preset='ruin_rect_10x5_variant2', rotation_degrees=180.0 + math.degrees(math.atan2(7.4, 6.6)), world_origin=(19.6, 25.4)),
             # Low rubble (6x4) pieces
             TerrainPlacementSimple(preset='ruin_rect_6x4_variant1', rotation_degrees=0.0, world_origin=(24.0, 12.0)),
             TerrainPlacementSimple(preset='ruin_rect_6x4_variant1', rotation_degrees=180.0, world_origin=(36.0, 32.0)),
@@ -469,6 +508,15 @@ class TerrainLayoutsRegistry:
             TerrainPlacementSimple(preset='ruin_rect_6x4_variant1', rotation_degrees=180.0, world_origin=(12.0, 44.0)),
             TerrainPlacementSimple(preset='ruin_rect_12x6_variant5', rotation_degrees=90.0, world_origin=(12.0, 28.0)),
             TerrainPlacementSimple(preset='ruin_rect_12x6_variant5', rotation_degrees=270.0, world_origin=(48.0, 16.0)),
+            # 10x5 variants
+            TerrainPlacementSimple(preset='ruin_rect_10x5_variant3', rotation_degrees=270.0, world_origin=(37.0, 18.0)),
+            TerrainPlacementSimple(preset='ruin_rect_10x5_variant3', rotation_degrees=90.0, world_origin=(23.0, 26.0)),
+            # 6x4 corner ruin (left + top walls)
+            TerrainPlacementSimple(preset='ruin_rect_6x4_variant2', rotation_degrees=90.0, world_origin=(23.0, 20.0)),
+            TerrainPlacementSimple(preset='ruin_rect_6x4_variant2', rotation_degrees=270.0, world_origin=(37.0, 24.0)),
+            # 12x6 variant 6
+            TerrainPlacementSimple(preset='ruin_rect_12x6_variant6', rotation_degrees=90.0, world_origin=(14.0, 8.0)),
+            TerrainPlacementSimple(preset='ruin_rect_12x6_variant6', rotation_degrees=270.0, world_origin=(46.0, 36.0)),
         ],
         8: [
             TerrainPlacementSimple(preset='ruin_rect_12x6_variant1', rotation_degrees=90.0, world_origin=(28.0, 0.0)),
@@ -482,6 +530,9 @@ class TerrainLayoutsRegistry:
             TerrainPlacementSimple(preset='ruin_rect_6x4_variant1', rotation_degrees=270.0, world_origin=(23.0, 28.0)),
             TerrainPlacementSimple(preset='ruin_rect_12x6_variant5', rotation_degrees=90.0, world_origin=(19.0, 13.0)),
             TerrainPlacementSimple(preset='ruin_rect_12x6_variant5', rotation_degrees=270.0, world_origin=(41.0, 31.0)),
+            # 10x5 variants
+            TerrainPlacementSimple(preset='ruin_rect_10x5_variant2', rotation_degrees=270.0 + math.degrees(math.atan2(8.0, 6.0)), world_origin=(4.0, 10.0)),
+            TerrainPlacementSimple(preset='ruin_rect_10x5_variant2', rotation_degrees=90.0 + math.degrees(math.atan2(8.0, 6.0)), world_origin=(56.0, 34.0)),
         ],
     }
 
