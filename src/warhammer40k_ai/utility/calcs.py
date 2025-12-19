@@ -1392,6 +1392,14 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
 
     # Note: Deployment zone validation for scout movement is handled at a higher level
     # by the Game class validation methods, not in the pathfinding system
+    
+    # Apply movement-type-specific final-position validation (pile-in, consolidate, scout, etc.)
+    # This is intentionally done here because the pathfinding system (including the straight-line
+    # fast path) relies on `is_position_valid_unified_detailed` to validate the destination.
+    if is_final_position and game_map is not None:
+        final_validation = validate_final_position(model, position, validation_rules, game_map)
+        if not final_validation.get('valid', False):
+            return final_validation
 
     return {'valid': True, 'reason': 'Position is valid'}
 
@@ -1574,7 +1582,7 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
         
         # Find enemy models within potential pile-in range for optimization
         # Only consider enemies within (ENGAGEMENT_RANGE + PILE_IN_DISTANCE) of current position
-        from .constants import ENGAGEMENT_RANGE_HORIZONTAL, PILE_IN_DISTANCE
+        from .constants import PILE_IN_DISTANCE
         max_relevant_distance = ENGAGEMENT_RANGE_HORIZONTAL + PILE_IN_DISTANCE
         
         enemy_models = []
@@ -1637,8 +1645,167 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
                     print(f"🔍 DEBUG: Base contact not required - closest enemy too far ({max_distance_to_enemy:.2f}\" > {pile_in_distance:.2f}\")")
 
     if validation_rules.get('must_end_closer_to_enemies_or_objectives', False):
-        # TODO: Implement consolidate validation (must end closer to enemies or objectives)
-        pass
+        # Consolidate validation (10th edition):
+        # - Each model must end closer to the closest enemy model
+        # - If it is possible to end within Engagement Range of an enemy unit, the model must do so
+        # - If not possible, the model may instead end closer to the closest objective marker and within range of it
+        current_pos = model.get_location()
+        if not current_pos:
+            return {'valid': False, 'reason': 'Cannot determine current model position'}
+
+        from ..utility.model_base import Base
+        current_base = Base(model.model_base.base_type, model.model_base.radius)
+        current_base.x, current_base.y, current_base.z = current_pos[0], current_pos[1], current_pos[2]
+
+        new_base = Base(model.model_base.base_type, model.model_base.radius)
+        new_base.x, new_base.y, new_base.z = position[0], position[1], position[2]
+
+        from .constants import CONSOLIDATE_DISTANCE, BASE_CONTACT_EPSILON
+        from ..utility.constants import ENGAGEMENT_RANGE_VERTICAL
+        from shapely.geometry import Point as _ShPoint
+
+        # Helper: determine if new position is within engagement range of ANY enemy model
+        def _is_in_engagement_range_of_any_enemy(enemy_models: list) -> bool:
+            for em in enemy_models:
+                try:
+                    horiz = new_base.edge_to_edge_distance(em.model_base)
+                    vert = new_base.vertical_distance(em.model_base)
+                    if horiz <= ENGAGEMENT_RANGE_HORIZONTAL and vert <= ENGAGEMENT_RANGE_VERTICAL:
+                        return True
+                except Exception:
+                    continue
+            return False
+
+        # Find relevant enemy models (optimize to those that could be reached into engagement)
+        max_relevant_distance = ENGAGEMENT_RANGE_HORIZONTAL + CONSOLIDATE_DISTANCE
+        enemy_models = []
+        for unit in getattr(game_map, 'units', []) or []:
+            if unit.faction == model.parent_unit.faction or not unit.is_alive() or not unit.deployed:
+                continue
+            for enemy_model in getattr(unit, 'models', []) or []:
+                if not getattr(enemy_model, 'is_alive', False):
+                    continue
+                # Filter to models that matter for "engagement possible" check
+                try:
+                    dist = current_base.edge_to_edge_distance(enemy_model.model_base)
+                except Exception:
+                    continue
+                if dist <= max_relevant_distance:
+                    enemy_models.append(enemy_model)
+
+        if enemy_models:
+            # Closest enemy model by edge-to-edge distance
+            closest_enemy = None
+            closest_distance = float('inf')
+            for em in enemy_models:
+                try:
+                    d = current_base.edge_to_edge_distance(em.model_base)
+                except Exception:
+                    continue
+                if d < closest_distance:
+                    closest_distance = d
+                    closest_enemy = em
+
+            if closest_enemy is not None:
+                # If engagement range is achievable (based on distance), require ending in engagement range
+                engagement_possible = closest_distance <= max_relevant_distance
+                in_engagement = _is_in_engagement_range_of_any_enemy(enemy_models)
+                if engagement_possible and not in_engagement:
+                    return {
+                        'valid': False,
+                        'reason': 'Consolidate must end within engagement range of an enemy unit when possible'
+                    }
+
+                # Must end closer to the closest enemy model (even if not reaching engagement)
+                try:
+                    new_distance_to_closest = new_base.edge_to_edge_distance(closest_enemy.model_base)
+                except Exception:
+                    new_distance_to_closest = float('inf')
+
+                if new_distance_to_closest >= closest_distance:
+                    return {
+                        'valid': False,
+                        'reason': f'Consolidate must end closer to closest enemy ({closest_enemy.name}): {new_distance_to_closest:.2f}" ≥ {closest_distance:.2f}"'
+                    }
+
+                # Prefer base contact if achievable within consolidate distance
+                if validation_rules.get('prefer_base_contact', False):
+                    if closest_distance <= CONSOLIDATE_DISTANCE and new_distance_to_closest > BASE_CONTACT_EPSILON:
+                        return {
+                            'valid': False,
+                            'reason': f'Consolidate must end in base contact with closest enemy ({closest_enemy.name}) when possible'
+                        }
+
+                # If we got here, consolidate is valid via enemy interaction
+                return {'valid': True, 'reason': 'Valid final position'}
+
+        # Enemy engagement not achievable (or no relevant enemies) -> objective fallback
+        objectives = getattr(game_map, 'objectives', []) or []
+        if not objectives:
+            return {'valid': False, 'reason': 'Consolidate cannot end in engagement range and no objective markers are available'}
+
+        # Normalize objective representation (ObjectivePoint, Objective w/ location, or tuples)
+        def _objective_xy_radius(obj):
+            # ObjectivePoint
+            if hasattr(obj, 'x') and hasattr(obj, 'y'):
+                r = float(getattr(obj, 'control_radius', 3.0))
+                return float(obj.x), float(obj.y), r
+            # Objective with location
+            loc = getattr(obj, 'location', None)
+            if loc is not None and hasattr(loc, 'x') and hasattr(loc, 'y'):
+                r = float(getattr(obj, 'control_radius', 3.0))
+                return float(loc.x), float(loc.y), r
+            # Tuple/list
+            if isinstance(obj, (tuple, list)) and len(obj) >= 2:
+                r = float(getattr(obj, 'control_radius', 3.0))
+                return float(obj[0]), float(obj[1]), r
+            return None
+
+        closest_obj = None
+        closest_obj_center_dist = float('inf')
+        for obj in objectives:
+            parsed = _objective_xy_radius(obj)
+            if not parsed:
+                continue
+            ox, oy, orad = parsed
+            d = get_dist(ox - current_pos[0], oy - current_pos[1])
+            if d < closest_obj_center_dist:
+                closest_obj_center_dist = d
+                closest_obj = (obj, ox, oy, orad)
+
+        if closest_obj is None:
+            return {'valid': False, 'reason': 'No valid objective markers found for consolidate objective fallback'}
+
+        obj, ox, oy, orad = closest_obj
+        current_obj_dist = get_dist(ox - current_pos[0], oy - current_pos[1])
+        new_obj_dist = get_dist(ox - position[0], oy - position[1])
+
+        if new_obj_dist >= current_obj_dist:
+            return {
+                'valid': False,
+                'reason': f'Consolidate (objective fallback) must end closer to closest objective ({getattr(obj, "name", "objective")}): {new_obj_dist:.2f}" ≥ {current_obj_dist:.2f}"'
+            }
+
+        # Must end within range of objective marker (use objective control area intersection)
+        try:
+            objective_area = _ShPoint(ox, oy).buffer(orad)
+            new_shape = new_base.get_base_shape()
+            if not new_shape.intersects(objective_area):
+                return {
+                    'valid': False,
+                    'reason': f'Consolidate (objective fallback) must end within {orad:.1f}" of the objective marker'
+                }
+        except Exception:
+            # Fallback: center distance check using model base longest radius
+            try:
+                model_r = float(getattr(model.model_base, 'get_longest_radius', lambda: model.model_base.get_radius())())
+            except Exception:
+                model_r = 0.0
+            if get_dist(ox - position[0], oy - position[1]) > (orad + model_r):
+                return {
+                    'valid': False,
+                    'reason': f'Consolidate (objective fallback) must end within {orad:.1f}" of the objective marker'
+                }
 
     # Check scout rules
     if validation_rules.get('min_distance_from_enemies', 0) > 0:

@@ -157,8 +157,8 @@ class IndividualModelMovementDialog(BaseDialog):
             if not model.is_alive:
                 continue
             
-            # Check if model is in base contact (for pile-in visual feedback)
-            in_base_contact = self.movement_type == 'pile_in' and self._is_model_in_base_contact(model)
+            # Models already in base-to-base contact cannot Pile In or Consolidate
+            in_base_contact = self.movement_type in ('pile_in', 'consolidate') and self._is_model_in_base_contact(model)
             if in_base_contact:
                 print(f"🔍 DEBUG: {model.name} already in base contact - will be shown as disabled")
                 
