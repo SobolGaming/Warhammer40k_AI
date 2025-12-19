@@ -151,6 +151,109 @@ class WargearProfile:
         # Return the estimated damage potential
         return expected_damage
 
+    ###########################################################################
+    ### Weapon characteristic modifiers (terrain, etc.)
+    ###########################################################################
+    def _get_game_map_from_model(self, attacker: 'Model'):
+        """Best-effort lookup of the current game map from an attacking model.
+
+        This keeps weapon resolution decoupled from UI/simulation scaffolding and
+        safely returns None when running in isolated tests.
+        """
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit else None
+            player = getattr(army, "player", None) if army else None
+            game = getattr(player, "game", None) if player else None
+            return getattr(game, "map", None) if game else None
+        except Exception:
+            return None
+
+    def _plunging_fire_applies(self, attacker: 'Model', target: 'Unit') -> bool:
+        """PLUNGING FIRE:
+        - Attacker is wholly within a RUINS terrain feature
+        - Attacker is >= 6" above ground level
+        - Every model in the target unit is at ground level
+        - Ranged attacks only
+        """
+        # Ranged attacks only
+        try:
+            if not (self.parent_wargear and self.parent_wargear.is_ranged()):
+                return False
+        except Exception:
+            return False
+
+        # Attacker must be >= 6" from ground level (z measured in inches)
+        try:
+            attacker_z = float(getattr(attacker, "z", 0.0))
+        except Exception:
+            attacker_z = 0.0
+        if attacker_z < 6.0:
+            return False
+
+        # Target unit must have all alive models at ground level
+        alive_targets = [m for m in getattr(target, "models", []) if getattr(m, "is_alive", True)]
+        if not alive_targets:
+            return False
+        for m in alive_targets:
+            try:
+                z = float(getattr(m, "z", 0.0))
+            except Exception:
+                z = 0.0
+            # Ground level tolerance matches RUINS placement validation tolerance (±1")
+            if abs(z) >= 1.0:
+                return False
+
+        # Attacker must be wholly within a RUINS feature footprint
+        game_map = self._get_game_map_from_model(attacker)
+        if not game_map or not hasattr(game_map, "terrain_features"):
+            return False
+
+        base_geom = None
+        try:
+            mb = getattr(attacker, "model_base", None)
+            if mb is not None:
+                base_geom = mb.get_base_shape_at(mb.x, mb.y, getattr(mb, "facing", 0.0))
+        except Exception:
+            base_geom = None
+        if base_geom is None:
+            return False
+
+        try:
+            from .map import TerrainType
+        except Exception:
+            return False
+
+        for terrain in getattr(game_map, "terrain_features", []) or []:
+            try:
+                if getattr(terrain, "terrain_type", None) != TerrainType.RUINS:
+                    continue
+                footprint = getattr(terrain, "footprint", None)
+                if footprint is None:
+                    continue
+                # "Wholly within" should allow touching the boundary
+                if hasattr(footprint, "covers"):
+                    if footprint.covers(base_geom):
+                        return True
+                else:
+                    if footprint.contains(base_geom):
+                        return True
+            except Exception:
+                continue
+
+        return False
+
+    def get_effective_ap(self, attacker: 'Model', target: 'Unit') -> int:
+        """Return AP after applying global modifiers like Plunging Fire."""
+        try:
+            ap_val = int(self.ap)
+        except Exception:
+            ap_val = 0
+        if self._plunging_fire_applies(attacker, target):
+            # Improve AP by 1: AP -1 becomes -2, AP 0 becomes -1, etc.
+            ap_val -= 1
+        return ap_val
+
     def attack(self, target: 'Unit', attacker: 'Model') -> None:
         # Initialize attack result tracking
         # Build proper weapon name: parent weapon + profile (if not default)
@@ -210,6 +313,15 @@ class WargearProfile:
             attack_result.attacks_dice_rolls = []
 
         closest_target, closest_dist = attacker.return_closest_model_in_unit(target)
+
+        # Apply AP modifiers that depend on attacker/target context (e.g., Plunging Fire)
+        effective_ap = self.get_effective_ap(attacker, target)
+        try:
+            base_ap = int(self.ap)
+        except Exception:
+            base_ap = effective_ap
+        if effective_ap == (base_ap - 1):
+            attack_result.attacks_special_modifiers.append("Plunging Fire (AP improved by 1)")
         
         # Apply attack modifiers
         if closest_dist <= (self.range.max / 2) and self.is_rapid_fire() > 0:
@@ -273,7 +385,7 @@ class WargearProfile:
                 
             save_result = None
             if not wound_instance['mortal_wound']:
-                save_result = self._save_with_tracking(target_model, wound_instance, self.ap)
+                save_result = self._save_with_tracking(target_model, wound_instance, effective_ap)
                 attack_result.save_results.append(save_result)
             
             # Apply damage if save failed or mortal wound
