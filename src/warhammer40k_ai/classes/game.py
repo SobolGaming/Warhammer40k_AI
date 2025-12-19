@@ -115,6 +115,12 @@ class Game:
         for p in self.players:
             p.set_game(self)
 
+        # Install default rules subscribers (e.g. on-kill rewards)
+        try:
+            self._install_default_event_subscribers()
+        except Exception:
+            pass
+
         # Setup phase tracking
         self.setup_phase = SetupPhase.MUSTER_ARMIES  # Start with first setup phase
         self.setup_complete = False  # Track when setup is finished
@@ -134,6 +140,207 @@ class Game:
         self.completed_actions_this_turn: List[Dict[str, Any]] = []
         self.models_destroyed_this_turn: List['Model'] = []
         self.destroyed_units_this_battle_round_by_player: Dict[Player, int] = {}
+
+    def _install_default_event_subscribers(self) -> None:
+        """Install non-UI rule subscribers that operate off the event system."""
+        self.event_system.subscribe("model_destroyed", self._on_model_destroyed_rules)
+        self.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_rules)
+
+    def _on_model_destroyed_rules(self, attacker_model=None, attacker_unit=None, target_model=None, target_unit=None, **_kwargs) -> None:
+        # Generic partial support for "gain CP when this model destroys an enemy KEYWORD unit/model".
+        if attacker_unit is None or target_unit is None:
+            return
+
+        # Must be an enemy destroy event
+        try:
+            if attacker_unit.get_parent_army() == target_unit.get_parent_army():
+                return
+        except Exception:
+            return
+
+        specs = []
+        try:
+            specs = attacker_unit.get_kill_reward_specs(model=attacker_model)
+        except Exception:
+            specs = []
+
+        if not specs:
+            return
+
+        target_keywords = set()
+        try:
+            target_keywords = {str(k).upper() for k in getattr(target_unit, "keywords", []) or []}
+        except Exception:
+            target_keywords = set()
+
+        for spec in specs:
+            if spec.get("trigger") != "model_destroyed":
+                continue
+
+            # Optional restriction: melee only (Feared Interrogator)
+            if spec.get("requires_melee", False):
+                try:
+                    wp = _kwargs.get("weapon_profile", None)
+                    pw = getattr(wp, "parent_wargear", None)
+                    if pw is None or not getattr(pw, "is_melee", lambda: False)():
+                        continue
+                except Exception:
+                    continue
+
+            # Keyword matching
+            required = set(spec.get("target_keywords", spec.get("required_target_keywords", set())) or set())
+            mode = (spec.get("target_keyword_mode", "all") or "all").lower()
+            if required:
+                if mode == "any":
+                    if required.isdisjoint(target_keywords):
+                        continue
+                else:
+                    if not required.issubset(target_keywords):
+                        continue
+
+            if spec.get("type") == "gain_cp_on_destroy":
+                cp = int(spec.get("cp", 1) or 1)
+                try:
+                    player = attacker_unit.get_parent_army().player
+                    if player is None:
+                        continue
+                    before = player.command_points
+                    player.gain_command_point() if cp == 1 else setattr(player, "command_points", before + cp)
+                    try:
+                        self.event_system.publish(
+                            "command_points_gained",
+                            player=player,
+                            amount=cp,
+                            reason=spec.get("source_ability", ""),
+                            attacker_unit=attacker_unit,
+                            target_unit=target_unit,
+                            attacker_model=attacker_model,
+                            target_model=target_model,
+                        )
+                    except Exception:
+                        pass
+                except Exception:
+                    continue
+
+            if spec.get("type") == "heal_on_destroy":
+                # Heal the destroying model (if present)
+                if attacker_model is None:
+                    continue
+                heal_expr = spec.get("heal_expr")
+                if not heal_expr:
+                    continue
+                try:
+                    from warhammer40k_ai.utility.dice import get_roll
+                    amount = get_roll(heal_expr)
+                    attacker_model.heal(amount)
+                    try:
+                        self.event_system.publish(
+                            "model_healed",
+                            model=attacker_model,
+                            unit=attacker_unit,
+                            amount=amount,
+                            reason=spec.get("source_ability", ""),
+                        )
+                    except Exception:
+                        pass
+                except Exception:
+                    continue
+
+    def _on_unit_destroyed_rules(self, unit=None, destroyed_by_unit=None, destroyed_by_model=None, destroyed_by_weapon_profile=None, **_kwargs) -> None:
+        # Generic partial support for "... destroys an enemy <KEYWORD> unit, gain X CP".
+        if unit is None or destroyed_by_unit is None:
+            return
+
+        try:
+            if destroyed_by_unit.get_parent_army() == unit.get_parent_army():
+                return
+        except Exception:
+            return
+
+        specs = []
+        try:
+            specs = destroyed_by_unit.get_kill_reward_specs(model=destroyed_by_model)
+        except Exception:
+            specs = []
+
+        if not specs:
+            return
+
+        target_keywords = set()
+        try:
+            target_keywords = {str(k).upper() for k in getattr(unit, "keywords", []) or []}
+        except Exception:
+            target_keywords = set()
+
+        for spec in specs:
+            if spec.get("trigger") != "unit_destroyed":
+                continue
+
+            # Optional restriction: melee only
+            if spec.get("requires_melee", False):
+                try:
+                    wp = destroyed_by_weapon_profile
+                    pw = getattr(wp, "parent_wargear", None)
+                    if wp is None or pw is None or not getattr(pw, "is_melee", lambda: False)():
+                        continue
+                except Exception:
+                    continue
+
+            required = set(spec.get("target_keywords", spec.get("required_target_keywords", set())) or set())
+            mode = (spec.get("target_keyword_mode", "all") or "all").lower()
+            if required:
+                if mode == "any":
+                    if required.isdisjoint(target_keywords):
+                        continue
+                else:
+                    if not required.issubset(target_keywords):
+                        continue
+
+            if spec.get("type") == "gain_cp_on_destroy":
+                cp = int(spec.get("cp", 1) or 1)
+                try:
+                    player = destroyed_by_unit.get_parent_army().player
+                    if player is None:
+                        continue
+                    before = player.command_points
+                    player.gain_command_point() if cp == 1 else setattr(player, "command_points", before + cp)
+                    try:
+                        self.event_system.publish(
+                            "command_points_gained",
+                            player=player,
+                            amount=cp,
+                            reason=spec.get("source_ability", ""),
+                            attacker_unit=destroyed_by_unit,
+                            target_unit=unit,
+                            attacker_model=destroyed_by_model,
+                        )
+                    except Exception:
+                        pass
+                except Exception:
+                    continue
+
+            if spec.get("type") == "heal_on_destroy":
+                if destroyed_by_model is None:
+                    continue
+                heal_expr = spec.get("heal_expr")
+                if not heal_expr:
+                    continue
+                try:
+                    from warhammer40k_ai.utility.dice import get_roll
+                    amount = get_roll(heal_expr)
+                    destroyed_by_model.heal(amount)
+                    try:
+                        self.event_system.publish(
+                            "model_healed",
+                            model=destroyed_by_model,
+                            unit=destroyed_by_unit,
+                            amount=amount,
+                            reason=spec.get("source_ability", ""),
+                        )
+                    except Exception:
+                        pass
+                except Exception:
+                    continue
 
     def add_player(self, player: Player) -> None:
         """Add a player to the game."""

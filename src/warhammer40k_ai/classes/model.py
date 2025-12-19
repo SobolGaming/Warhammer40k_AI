@@ -125,7 +125,13 @@ class Model:
     ################
     ### Modifiers
     ################
-    def take_damage(self, amount: int = 0, is_mortal: bool = False, weapon_profile: Optional['WargearProfile'] = None) -> int:
+    def take_damage(
+        self,
+        amount: int = 0,
+        is_mortal: bool = False,
+        weapon_profile: Optional['WargearProfile'] = None,
+        game_map: Optional['Map'] = None,
+    ) -> int:
         fnp_abilities = self.parent_unit.has_feel_no_pain()
         if fnp_abilities:
             # Find the best applicable Feel No Pain ability (lowest dice value)
@@ -155,14 +161,7 @@ class Model:
         print(f"{self.name} takes {amount} damage. It is {'Alive' if self.is_alive else 'Dead'}")
         excess_damage = 0
         if not self.is_alive:
-            # Check for "Fights on Death" ability before removing from battlefield
-            if self.has_fights_on_death():
-                print(f"⚡ {self.name} has 'Fights on Death' - remains on battlefield temporarily")
-                # TODO: Mark model for death fight sequence instead of immediate removal
-                # For now, still die immediately since death fight sequence isn't implemented
-                self.die()
-            else:
-                self.die()
+            self.die(game_map=game_map)
             # below is left-over from 9th edition - excess damage is lost in 10th edition
             if is_mortal and abs(self.wounds) > 0:
                 excess_damage = abs(self.wounds)
@@ -239,31 +238,24 @@ class Model:
         
         return False  # Condition not met
 
-    def has_fights_on_death(self) -> bool:
-        """Check if this model has a 'Fights on Death' type ability.
-        
-        This is a stub implementation. In the future, this would check for specific
-        abilities like 'Fights on Death', 'Last Stand', 'Death Throes', etc.
-        
-        Returns:
-            bool: True if the model can fight after being reduced to 0 wounds
-        """
-        # TODO: Implement actual ability checking
-        # For now, return False - no models have this ability
-        # Future implementation would check self.abilities or parent_unit.abilities
-        # for abilities with keywords like "fights on death", "last stand", etc.
-        return False
-
-    def die(self) -> None:
+    def die(self, game_map: Optional['Map'] = None) -> None:
         # Suppress print for comprehensive attack summary
         # print(f"{self.name} [{self.id}] has Died!!!")
         #self.callbacks[hook_events.ENEMY_MODEL_KILLED].append(self)
-        self.parent_unit.remove_model(self, False)
+        # Trigger on-death abilities (before the model is removed from its unit)
+        try:
+            if getattr(self, "parent_unit", None) is not None:
+                self.parent_unit._handle_model_destroyed(model=self, game_map=game_map)
+        except Exception:
+            # Never let reactive abilities crash core death/removal.
+            pass
+
+        self.parent_unit.remove_model(self, False, game_map=game_map)
 
     # Fleeing is like dying but does not trigger any rules of when a "model is destroyed"
-    def flee(self) -> None:
+    def flee(self, game_map: Optional['Map'] = None) -> None:
         logger.info(f"{self.name} [{self.id}] has Fled!!!")
-        self.parent_unit.remove_model(self, True)
+        self.parent_unit.remove_model(self, True, game_map=game_map)
 
     def heal(self, amount: int = 0) -> None:
         self.wounds = min(self._base_wounds, self.wounds + amount)

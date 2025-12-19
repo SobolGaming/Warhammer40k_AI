@@ -440,7 +440,7 @@ class WargearProfile:
                 if save_result and not save_result['saved']:
                     attack_result.total_saves_failed += 1
                 
-                damage_result = self._damage_target_with_tracking(target_model, attacker, wound_instance)
+                damage_result = self._damage_target_with_tracking(target_model, attacker, wound_instance, game_map=game_map)
                 attack_result.damage_results.append(damage_result)
                 attack_result.total_damage_dealt += damage_result['damage_applied']
                 
@@ -468,7 +468,7 @@ class WargearProfile:
                 pass
             if hazard_roll == 1:
                 attack_result.hazardous_damage = 3
-                attacker.take_damage(3, is_mortal=True, weapon_profile=None)
+                attacker.take_damage(3, is_mortal=True, weapon_profile=None, game_map=game_map)
         
         # Print comprehensive attack summary
         self._print_attack_summary(attack_result)
@@ -829,7 +829,7 @@ class WargearProfile:
         print(f"⚠️  Unknown invulnerable save condition format: '{condition}' - applying save")
         return True
 
-    def _damage_target_with_tracking(self, target_model: 'Model', attacker: 'Model', attack_instance: Dict) -> Dict:
+    def _damage_target_with_tracking(self, target_model: 'Model', attacker: 'Model', attack_instance: Dict, game_map: Optional['Map'] = None) -> Dict:
         """Damage application with detailed tracking"""
         damage_result = {
             'damage_rolled': 0,
@@ -871,7 +871,7 @@ class WargearProfile:
         
         # Apply damage with detailed tracking
         was_alive = target_model.is_alive
-        damage_result.update(self._apply_damage_with_tracking(target_model, damage_value, attack_instance['mortal_wound']))
+        damage_result.update(self._apply_damage_with_tracking(target_model, attacker, damage_value, attack_instance['mortal_wound'], game_map=game_map))
         damage_result['model_killed'] = was_alive and not target_model.is_alive
         
         if attack_instance['mortal_wound']:
@@ -879,7 +879,7 @@ class WargearProfile:
         
         return damage_result
 
-    def _apply_damage_with_tracking(self, target_model: 'Model', damage_amount: int, is_mortal: bool) -> Dict:
+    def _apply_damage_with_tracking(self, target_model: 'Model', attacker: 'Model', damage_amount: int, is_mortal: bool, game_map: Optional['Map'] = None) -> Dict:
         """Apply damage with detailed tracking of Feel No Pain saves"""
         from warhammer40k_ai.utility.dice import get_roll
         
@@ -925,7 +925,32 @@ class WargearProfile:
         
         # Handle model death
         if not target_model.is_alive:
-            target_model.die()
+            # Publish destruction event with attacker/target context (best-effort).
+            # This is the primary hook for "on kill" abilities like Trophy Taker.
+            try:
+                target_unit = getattr(target_model, "parent_unit", None)
+                attacker_unit = getattr(attacker, "parent_unit", None)
+                if target_unit is not None:
+                    setattr(target_unit, "_last_destroyed_by_model", attacker)
+                    setattr(target_unit, "_last_destroyed_by_unit", attacker_unit)
+                    setattr(target_unit, "_last_destroyed_by_weapon_profile", self)
+
+                game = attacker_unit.get_parent_army().player.game if attacker_unit is not None else None
+                if game is not None and hasattr(game, "event_system"):
+                    game.event_system.publish(
+                        "model_destroyed",
+                        attacker_model=attacker,
+                        attacker_unit=attacker_unit,
+                        target_model=target_model,
+                        target_unit=target_unit,
+                        weapon_profile=self,
+                        is_mortal=is_mortal,
+                        game_map=game_map,
+                    )
+            except Exception:
+                pass
+
+            target_model.die(game_map=game_map)
             # Calculate excess damage (10th edition: excess damage is lost)
             if is_mortal and abs(target_model.wounds) > 0:
                 result['excess_damage'] = abs(target_model.wounds)

@@ -487,6 +487,183 @@ class Unit:
         #    self.parent_detachment.removeUnit(self)
         self.update_coherency()
 
+        # Publish unit destroyed event (best-effort). Note: "destroyed" should not
+        # trigger for fleeing/removal-type effects.
+        if (not fleed) and len(self.models) < 1:
+            try:
+                game = self.get_parent_army().player.game
+                game.event_system.publish(
+                    "unit_destroyed",
+                    unit=self,
+                    last_model=model,
+                    destroyed_by_model=getattr(self, "_last_destroyed_by_model", None),
+                    destroyed_by_unit=getattr(self, "_last_destroyed_by_unit", None),
+                    destroyed_by_weapon_profile=getattr(self, "_last_destroyed_by_weapon_profile", None),
+                    game_map=game_map,
+                )
+            except Exception:
+                pass
+
+    def _handle_model_destroyed(self, model: Model, game_map: Optional['Map'] = None) -> None:
+        """Handle reactive 'on death' mechanics before the model is removed.
+
+        This is invoked from `Model.die()` right before `Unit.remove_model()`.
+        """
+        if game_map is None:
+            return
+
+        # Guard: only once per model (avoid double-trigger if die() is called twice)
+        if getattr(model, "_on_death_reactions_resolved", False):
+            return
+        model._on_death_reactions_resolved = True
+
+        # Publish a generic event hook for UI/agents (best-effort)
+        try:
+            game = self.get_parent_army().player.game
+            game.event_system.publish("model_destroyed_before_removal", unit=self, model=model)
+        except Exception:
+            pass
+
+        # Temporarily treat the model as "alive" so existing targeting/engagement checks work.
+        original_wounds = getattr(model, "_wounds", None)
+        try:
+            if original_wounds is not None and original_wounds <= 0:
+                model._wounds = 1
+
+            # Prefer Fight on Death when engaged; otherwise try Shoot on Death.
+            did_fight = False
+            if self.has_fight_on_death():
+                did_fight = self._try_fight_on_death(model=model, game_map=game_map)
+
+            if (not did_fight) and self.has_shoot_on_death():
+                self._try_shoot_on_death(model=model, game_map=game_map)
+        finally:
+            if original_wounds is not None:
+                model._wounds = original_wounds
+
+    def _try_fight_on_death(self, model: Model, game_map: 'Map') -> bool:
+        """Attempt to resolve Fight-on-Death for a single destroyed model."""
+        if getattr(model, "_fight_on_death_used", False):
+            return False
+
+        enemy_units = [u for u in game_map.get_enemy_units(self) if u.is_alive()]
+        engaged = [u for u in enemy_units if game_map.is_within_engagement_range(self, u)]
+        if not engaged:
+            return False
+
+        # Choose the closest engaged unit (edge-to-edge)
+        def _closest_dist(enemy_unit: 'Unit') -> float:
+            best = float("inf")
+            for em in enemy_unit.models:
+                if not em.is_alive:
+                    continue
+                try:
+                    best = min(best, model.model_base.edge_to_edge_distance(em.model_base))
+                except Exception:
+                    continue
+            return best
+
+        target_unit = min(engaged, key=_closest_dist)
+
+        melee_profiles = []
+        for wargear in getattr(model, "wargear", []) or []:
+            try:
+                if not wargear.is_melee():
+                    continue
+            except Exception:
+                continue
+            if not getattr(wargear, "profiles", None):
+                continue
+            profile = wargear.profiles.get("default") or next(iter(wargear.profiles.values()))
+            melee_profiles.append(profile)
+
+        if not melee_profiles:
+            return False
+
+        model._fight_on_death_used = True
+        try:
+            game = self.get_parent_army().player.game
+            game.event_system.publish("fight_on_death_triggered", unit=self, model=model, target=target_unit)
+        except Exception:
+            pass
+
+        print(f"⚡ {model.name} fights on death into {target_unit.name}")
+        for profile in melee_profiles:
+            try:
+                profile.attack(target_unit, model, game_map=game_map)
+            except Exception as e:
+                print(f"❌ Fight on Death attack error: {e}")
+
+        return True
+
+    def _try_shoot_on_death(self, model: Model, game_map: 'Map') -> bool:
+        """Attempt to resolve Shoot-on-Death for a single destroyed model."""
+        if getattr(model, "_shoot_on_death_used", False):
+            return False
+
+        # Collect one profile per ranged weapon (choose 'default' or the first profile).
+        ranged_profiles = []
+        for wargear in getattr(model, "wargear", []) or []:
+            try:
+                if not wargear.is_ranged():
+                    continue
+            except Exception:
+                continue
+            if not getattr(wargear, "profiles", None):
+                continue
+            profile = wargear.profiles.get("default") or next(iter(wargear.profiles.values()))
+            ranged_profiles.append(profile)
+
+        if not ranged_profiles:
+            return False
+
+        enemy_units = [u for u in game_map.get_enemy_units(self) if u.is_alive()]
+        if not enemy_units:
+            return False
+
+        # Choose the closest unit that at least one profile can shoot.
+        best_target = None
+        best_dist = float("inf")
+        for enemy_unit in enemy_units:
+            for profile in ranged_profiles:
+                try:
+                    if not self._can_model_shoot_weapon_at_target(model, profile, enemy_unit, game_map):
+                        continue
+                except Exception:
+                    continue
+                # compute distance to closest enemy model
+                d = float("inf")
+                for em in enemy_unit.models:
+                    if not em.is_alive:
+                        continue
+                    try:
+                        d = min(d, model.model_base.edge_to_edge_distance(em.model_base))
+                    except Exception:
+                        continue
+                if d < best_dist:
+                    best_dist = d
+                    best_target = enemy_unit
+
+        if best_target is None:
+            return False
+
+        model._shoot_on_death_used = True
+        try:
+            game = self.get_parent_army().player.game
+            game.event_system.publish("shoot_on_death_triggered", unit=self, model=model, target=best_target)
+        except Exception:
+            pass
+
+        print(f"⚡ {model.name} shoots on death into {best_target.name}")
+        shots_executed = 0
+        for profile in ranged_profiles:
+            try:
+                shots_executed += self._execute_weapon_attacks(profile, best_target, [model], game_map)
+            except Exception as e:
+                print(f"❌ Shoot on Death attack error: {e}")
+
+        return shots_executed > 0
+
     def _trigger_deadly_demise(self, dying_model: Model, game_map: 'Map') -> None:
         """Trigger Deadly Demise ability when a model is killed.
         
@@ -540,7 +717,7 @@ class Unit:
             print(f"💥 {target_unit.name} suffers {damage_amount} mortal wounds from Deadly Demise!")
             
             # Apply mortal wounds to the target unit
-            models_destroyed = self._apply_mortal_wounds_to_unit(target_unit, damage_amount)
+            models_destroyed = self._apply_mortal_wounds_to_unit(target_unit, damage_amount, game_map=game_map)
             total_damage_dealt += damage_amount
             
             if models_destroyed > 0:
@@ -605,7 +782,7 @@ class Unit:
         
         return units_within_range
 
-    def _apply_mortal_wounds_to_unit(self, target_unit: 'Unit', mortal_wound_amount: int) -> int:
+    def _apply_mortal_wounds_to_unit(self, target_unit: 'Unit', mortal_wound_amount: int, game_map: Optional['Map'] = None) -> int:
         """Apply mortal wounds to a unit, distributing them among models.
         
         Args:
@@ -642,7 +819,7 @@ class Unit:
                 break  # No models to apply wounds to
             
             # Apply the mortal wound
-            target_model.take_damage(1, is_mortal=True, weapon_profile=None)
+            target_model.take_damage(1, is_mortal=True, weapon_profile=None, game_map=game_map)
             
             # Check if the model was destroyed
             if not target_model.is_alive:
@@ -4278,6 +4455,276 @@ class Unit:
         self._ability_cache['fight_first'] = found
         
         return found
+
+    def has_fight_on_death(self) -> bool:
+        """Check if the unit has a Fight on Death style ability.
+
+        This is implemented as a pattern match against keywords / abilities text.
+        The actual resolution is handled at model death time (see `_handle_model_destroyed`).
+        """
+        if 'fight_on_death' in getattr(self, '_ability_cache', {}):
+            return self._ability_cache['fight_on_death']
+
+        found, _ = self._find_ability_with_patterns([
+            "fight on death",
+            "fights on death",
+            "fight when destroyed",
+            "fight when this model is destroyed",
+            "fight before removing",
+            "fight before it is removed",
+            "fight before it is removed from play",
+            "fight when slain",
+            "fight when killed",
+            "last stand",
+        ])
+
+        if not hasattr(self, '_ability_cache'):
+            self._ability_cache = {}
+        self._ability_cache['fight_on_death'] = found
+        return found
+
+    def has_shoot_on_death(self) -> bool:
+        """Check if the unit has a Shoot on Death style ability.
+
+        Implemented as a pattern match; resolution occurs at model death time.
+        """
+        if 'shoot_on_death' in getattr(self, '_ability_cache', {}):
+            return self._ability_cache['shoot_on_death']
+
+        found, _ = self._find_ability_with_patterns([
+            "shoot on death",
+            "shoots on death",
+            "shoot when destroyed",
+            "shoot when this model is destroyed",
+            "shoot before removing",
+            "shoot before it is removed",
+            "shoot before it is removed from play",
+            "shoot when slain",
+            "shoot when killed",
+        ])
+
+        if not hasattr(self, '_ability_cache'):
+            self._ability_cache = {}
+        self._ability_cache['shoot_on_death'] = found
+        return found
+
+    def _normalize_rules_text(self, text: str) -> str:
+        """Normalize Wahapedia-style text for rule pattern matching."""
+        if not text:
+            return ""
+        # Strip HTML tags like <span class="kwb">CHARACTER</span>
+        try:
+            text = re.sub(r"<[^>]+>", " ", text)
+        except Exception:
+            pass
+        # Normalize whitespace and punctuation spacing
+        text = text.replace("\n", " ").replace("\r", " ")
+        text = re.sub(r"\s+", " ", text).strip()
+        return text
+
+    def _iter_ability_entries_for_rules(self, model: Optional['Model'] = None):
+        """Yield (name, description) pairs for unit/model abilities."""
+        # Unit-level abilities
+        for a in getattr(self, "possible_abilities", []) or []:
+            if isinstance(a, str):
+                yield a, a
+            else:
+                yield getattr(a, "name", "") or "", getattr(a, "description", "") or ""
+
+        # Model-level abilities (if provided)
+        if model is not None:
+            try:
+                for a in getattr(model, "abilities", {}).values():
+                    if isinstance(a, str):
+                        yield a, a
+                    else:
+                        yield getattr(a, "name", "") or "", getattr(a, "description", "") or ""
+            except Exception:
+                pass
+
+    def _parse_cp_on_kill_specs_from_text(self, ability_name: str, ability_desc: str) -> List[dict]:
+        """Parse partial support for 'gain CP when destroying enemy keyword unit/model' abilities.
+
+        This intentionally focuses on broad, extendible text patterns rather than specific names.
+        """
+        normalized = self._normalize_rules_text(ability_desc)
+        txt = normalized.lower()
+
+        # Must look like a 'destroy' trigger and reference CP gain.
+        if "gain" not in txt or "cp" not in txt:
+            return []
+        if "destroys" not in txt or "enemy" not in txt:
+            return []
+
+        # Extract CP amount (default 1 if implied)
+        cp = 1
+        try:
+            m = re.search(r"gain\s+(\d+)\s*cp", txt, flags=re.IGNORECASE)
+            if m:
+                cp = int(m.group(1))
+        except Exception:
+            cp = 1
+
+        # Detect what is being destroyed: unit vs model (defaults to model_destroyed)
+        trigger = "model_destroyed"
+        try:
+            # If text explicitly says "... destroys an enemy <X> unit", use unit_destroyed
+            if re.search(r"destroys\s+an?\s+enemy\b.*\bunit\b", txt):
+                trigger = "unit_destroyed"
+            # If it explicitly says model, prefer model_destroyed
+            if re.search(r"destroys\s+an?\s+enemy\b.*\bmodel\b", txt):
+                trigger = "model_destroyed"
+        except Exception:
+            trigger = "model_destroyed"
+
+        # Restriction extraction (extendible)
+        requires_melee = False
+        try:
+            # e.g. "with a melee attack"
+            if "melee attack" in txt or "with a melee" in txt:
+                requires_melee = True
+        except Exception:
+            requires_melee = False
+
+        # Keyword extraction (extendible)
+        keyword_map = {
+            "character": "CHARACTER",
+            "epic hero": "EPIC HERO",
+            "monster": "MONSTER",
+            "vehicle": "VEHICLE",
+            "psyker": "PSYKER",
+        }
+
+        target_keywords = []
+        for needle, kw in keyword_map.items():
+            if needle in txt:
+                target_keywords.append(kw)
+
+        # Determine keyword match mode. If multiple keywords are mentioned and "or" appears,
+        # treat as ANY. Otherwise default to ALL.
+        target_keyword_mode = "all"
+        try:
+            if len(target_keywords) > 1 and " or " in txt:
+                target_keyword_mode = "any"
+        except Exception:
+            target_keyword_mode = "all"
+
+        return [{
+            "type": "gain_cp_on_destroy",
+            "trigger": trigger,
+            "cp": cp,
+            # empty set means "any target" (e.g. The Great Wolf)
+            "target_keywords": set(target_keywords),
+            "target_keyword_mode": target_keyword_mode,
+            "requires_melee": requires_melee,
+            "source_ability": ability_name or "",
+        }]
+
+    def _parse_heal_on_kill_specs_from_text(self, ability_name: str, ability_desc: str) -> List[dict]:
+        """Parse partial support for 'regain wounds when destroying enemy keyword unit/model' abilities."""
+        normalized = self._normalize_rules_text(ability_desc)
+        txt = normalized.lower()
+
+        if "destroys" not in txt or "enemy" not in txt:
+            return []
+        if "regains" not in txt or "lost wounds" not in txt:
+            return []
+
+        # Determine trigger (unit vs model). Default to unit_destroyed if "unit" appears near destroy.
+        trigger = "model_destroyed"
+        try:
+            if re.search(r"destroys\s+an?\s+enemy\b.*\bunit\b", txt):
+                trigger = "unit_destroyed"
+            if re.search(r"destroys\s+an?\s+enemy\b.*\bmodel\b", txt):
+                trigger = "model_destroyed"
+        except Exception:
+            trigger = "unit_destroyed"
+
+        # Parse heal amount expression (e.g. D6, D3, 3)
+        heal_expr = None
+        try:
+            m = re.search(r"regains\s+up\s+to\s+(\d+|d\d+)\s+lost wounds", txt, flags=re.IGNORECASE)
+            if m:
+                heal_expr = m.group(1).upper()
+        except Exception:
+            heal_expr = None
+        if not heal_expr:
+            return []
+
+        requires_melee = False
+        try:
+            if "melee attack" in txt or "with a melee" in txt:
+                requires_melee = True
+        except Exception:
+            requires_melee = False
+
+        keyword_map = {
+            "character": "CHARACTER",
+            "epic hero": "EPIC HERO",
+            "monster": "MONSTER",
+            "vehicle": "VEHICLE",
+            "psyker": "PSYKER",
+        }
+        target_keywords = []
+        for needle, kw in keyword_map.items():
+            if needle in txt:
+                target_keywords.append(kw)
+
+        # If there are no keywords, we can't safely implement the intent.
+        if not target_keywords:
+            return []
+
+        target_keyword_mode = "all"
+        try:
+            # Champion Slayer: "CHARACTER or MONSTER"
+            if len(target_keywords) > 1 and " or " in txt:
+                target_keyword_mode = "any"
+        except Exception:
+            target_keyword_mode = "all"
+
+        return [{
+            "type": "heal_on_destroy",
+            "trigger": trigger,
+            "heal_expr": heal_expr,
+            "target_keywords": set(target_keywords),
+            "target_keyword_mode": target_keyword_mode,
+            "requires_melee": requires_melee,
+            "source_ability": ability_name or "",
+        }]
+
+    def get_kill_reward_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """Return parsed 'on destroy' reward specs for this unit (and optionally a specific model).
+
+        Used by the event system to support abilities like Trophy Taker / Feeder Tendrils /
+        Skulls for Khorne / The Great Wolf / Feared Interrogator / Champion Slayer (partial support).
+        """
+        # Cache unit-level specs (model-specific specs are not cached here)
+        cache_key = "kill_reward_specs_base"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            base_specs = self._ability_cache[cache_key]
+        else:
+            base_specs: List[dict] = []
+            for n, d in self._iter_ability_entries_for_rules(model=None):
+                base_specs.extend(self._parse_cp_on_kill_specs_from_text(n, d))
+                base_specs.extend(self._parse_heal_on_kill_specs_from_text(n, d))
+            if not hasattr(self, "_ability_cache"):
+                self._ability_cache = {}
+            self._ability_cache[cache_key] = base_specs
+
+        # Add model-specific specs (if any)
+        if model is None:
+            return list(base_specs)
+
+        model_specs: List[dict] = []
+        for n, d in self._iter_ability_entries_for_rules(model=model):
+            # Avoid double-counting unit-level entries by only parsing model abilities here.
+            # We already parsed unit-level in base_specs.
+            if n and any(s.get("source_ability") == n for s in base_specs):
+                continue
+            model_specs.extend(self._parse_cp_on_kill_specs_from_text(n, d))
+            model_specs.extend(self._parse_heal_on_kill_specs_from_text(n, d))
+
+        return list(base_specs) + model_specs
     
     def is_eligible_to_fight(self, game_map: 'Map') -> bool:
         """Check if the unit is eligible to fight in the Fight Phase.

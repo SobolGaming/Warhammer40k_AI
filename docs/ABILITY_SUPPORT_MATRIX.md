@@ -22,6 +22,10 @@ These mechanics are currently recognized by searching ability names and/or descr
 - Deadly Demise
 - Feel No Pain
 - Fights First
+- Fight on Death
+- Shoot on Death
+- Gain CP on destroy (keyword-based / “enemy unit” patterns) (partial)
+- Heal on destroy (regain lost wounds) (partial)
 - Redeploy (post-deploy)
 - Advance+Shoot (exact wording)
 - Fall Back+Shoot (exact wording)
