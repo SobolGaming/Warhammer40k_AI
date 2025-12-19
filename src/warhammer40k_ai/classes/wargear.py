@@ -290,6 +290,16 @@ class WargearProfile:
         hit_instances = []
         num_attacks = 0
 
+        # INDIRECT FIRE (penalty only if no models in target unit are visible to attacking unit at selection time)
+        indirect_fire_no_visible = False
+        try:
+            if self.is_indirect_fire() and game_map is not None:
+                attacker_unit = attacker.parent_unit
+                if hasattr(attacker_unit, "_attacking_unit_has_any_los_to_target_unit"):
+                    indirect_fire_no_visible = not attacker_unit._attacking_unit_has_any_los_to_target_unit(target, game_map)
+        except Exception:
+            indirect_fire_no_visible = False
+
         # Roll attacks for this specific weapon instance
         if isinstance(self.attacks, Count):
             # Provide reroll callback for attacks count
@@ -344,6 +354,9 @@ class WargearProfile:
                 'below_half_distance': closest_dist <= (self.range.max / 2),
                 'damage': 0
             }
+
+            if indirect_fire_no_visible:
+                attack_instance["indirect_fire_no_visible"] = True
             
             # Check if we hit
             hit_result = self._hit_target_with_tracking(target, attacker, attack_instance)
@@ -383,6 +396,19 @@ class WargearProfile:
             target_model = self.opponent_wound_allocation(target)
             if target_model is None:
                 continue
+
+            # INDIRECT FIRE: if no target models were visible at selection time, the target gains Benefit of Cover
+            # (unless the weapon ignores cover). This stacks with terrain evaluation but is not cumulative (+1 max).
+            try:
+                if indirect_fire_no_visible:
+                    ignores_cover = False
+                    if self.parent_wargear is not None and hasattr(self.parent_wargear, "is_ignores_cover"):
+                        ignores_cover = bool(self.parent_wargear.is_ignores_cover())
+                    if not ignores_cover:
+                        wound_instance["benefit_of_cover"] = True
+                        wound_instance.setdefault("benefit_of_cover_source", "INDIRECT FIRE")
+            except Exception:
+                pass
 
             # Benefit of Cover (RUINS/WOODS only for now, evaluated per allocated model)
             # NOTE: The actual +1 modifier is applied during the save roll, and only for armor saves.
@@ -489,6 +515,11 @@ class WargearProfile:
         if self.is_heavy() and attacker.parent_unit.round_state.remained_stationary_this_round:
             dice_modifier += 1
             hit_result['modifiers'].append("+1 from Heavy (stationary)")
+
+        # INDIRECT FIRE: if no target models were visible at selection time, -1 to hit
+        if attack_instance.get("indirect_fire_no_visible", False):
+            dice_modifier -= 1
+            hit_result['modifiers'].append("-1 from Indirect Fire (no target models visible)")
         
         # Check for target modifiers (like Stealth)
         if hasattr(target, 'has_stealth') and target.has_stealth():
@@ -529,6 +560,13 @@ class WargearProfile:
         except Exception:
             pass
         
+        # INDIRECT FIRE: if no target models were visible at selection time,
+        # an unmodified hit roll of 1, 2, or 3 always fails.
+        if attack_instance.get("indirect_fire_no_visible", False) and dice_roll in (1, 2, 3):
+            hit_result['hit'] = False
+            hit_result['special_effects'].append("Indirect Fire: 1-3 always fail (no target models visible)")
+            return hit_result
+
         if dice_roll == 1:  # unmodified dice roll of 1 is always a miss
             hit_result['hit'] = False
             hit_result['special_effects'].append("Natural 1 (auto-miss)")

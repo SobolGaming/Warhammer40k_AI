@@ -2555,10 +2555,16 @@ class Unit:
         
         if min_distance > weapon_profile.range.max:
             return False
-            
-        # Check line of sight
-        if not self._has_line_of_sight_to_target(model, target_unit, game_map):
-            return False
+
+        # Check line of sight (INDIRECT FIRE weapons can target without LOS)
+        try:
+            if not getattr(weapon_profile, "is_indirect_fire", lambda: False)():
+                if not self._has_line_of_sight_to_target(model, target_unit, game_map):
+                    return False
+        except Exception:
+            # If anything goes wrong determining indirect/LOS, fall back to requiring LOS
+            if not self._has_line_of_sight_to_target(model, target_unit, game_map):
+                return False
             
         # Check Lone Operative restriction
         if target_unit.has_lone_operative():
@@ -2571,6 +2577,18 @@ class Unit:
             return False
             
         return True
+
+    def _attacking_unit_has_any_los_to_target_unit(self, target_unit, game_map) -> bool:
+        """Return True if ANY model in this unit has LOS to ANY model in target_unit."""
+        try:
+            for m in self.models:
+                if not getattr(m, "is_alive", False):
+                    continue
+                if self._has_line_of_sight_to_target(m, target_unit, game_map):
+                    return True
+        except Exception:
+            pass
+        return False
     
     def _has_line_of_sight_to_target(self, shooting_model, target_unit, game_map) -> bool:
         """Check if shooting model has line of sight to target unit.

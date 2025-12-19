@@ -120,3 +120,33 @@ class TestBenefitOfCover:
         res_cov = wp._save_with_tracking(target.models[0], {"mortal_wound": False, "benefit_of_cover": True, "benefit_of_cover_source": "WOODS"}, ap=0)
         assert res_cov["saved"] is False
 
+    def test_indirect_fire_allows_shooting_without_los(self):
+        game_map = Map(width=48, height=72)
+        attacker = create_unit("Attacker", 10.0, 10.0, faction="A", model_count=1, save="4")
+        target = create_unit("Target", 30.0, 10.0, faction="B", model_count=1, save="4")
+        attach_to_armies(game_map, [attacker], [target])
+
+        # Ruins footprint between attacker and target -> blocks LOS normally.
+        ruins = TerrainFactory.create_ruins([(15.0, 8.0), (25.0, 8.0), (25.0, 12.0), (15.0, 12.0)], wall_height=4.0, num_floors=1)
+        game_map.add_terrain_feature(ruins)
+
+        indirect_wp = WargearProfile("default", {"range": "48", "A": "1", "BS_WS": "4", "S": "4", "AP": "0", "D": "1", "description": "Indirect Fire"})
+        assert attacker._can_model_shoot_weapon_at_target(attacker.models[0], indirect_wp, target, game_map) is True
+
+    def test_indirect_fire_hit_roll_1_2_3_always_fail_and_minus_one_to_hit(self, monkeypatch):
+        import warhammer40k_ai.classes.wargear as wargear_mod
+
+        # First test: 1-3 always fail (use roll=3)
+        monkeypatch.setattr(wargear_mod, "get_roll", lambda _expr: 3)
+        attacker = create_unit("Attacker", 10.0, 10.0, faction="A", model_count=1, save="4")
+        target = create_unit("Target", 30.0, 10.0, faction="B", model_count=1, save="4")
+        wp = WargearProfile("default", {"range": "48", "A": "1", "BS_WS": "2", "S": "4", "AP": "0", "D": "1", "description": "Indirect Fire"})
+        hit = wp._hit_target_with_tracking(target, attacker.models[0], {"indirect_fire_no_visible": True})
+        assert hit["hit"] is False
+
+        # Second test: -1 to hit matters (use roll=4 vs BS 4+ should miss)
+        monkeypatch.setattr(wargear_mod, "get_roll", lambda _expr: 4)
+        wp2 = WargearProfile("default", {"range": "48", "A": "1", "BS_WS": "4", "S": "4", "AP": "0", "D": "1", "description": "Indirect Fire"})
+        hit2 = wp2._hit_target_with_tracking(target, attacker.models[0], {"indirect_fire_no_visible": True})
+        assert hit2["hit"] is False
+
