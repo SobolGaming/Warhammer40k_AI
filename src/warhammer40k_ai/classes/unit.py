@@ -2858,8 +2858,8 @@ class Unit:
                     weapon_display += f" #{weapon_instance}"
                 print(f"🎯 {model.name} attacking with {weapon_display}")
                 
-                # Execute the attack using the weapon profile
-                weapon_profile.attack(target_unit, model)
+                # Execute the attack using the weapon profile (pass game_map for cover/terrain context)
+                weapon_profile.attack(target_unit, model, game_map=game_map)
                 # Count successful execution of the attack (not damage dealt)
                 successful_attacks += 1
             except Exception as e:

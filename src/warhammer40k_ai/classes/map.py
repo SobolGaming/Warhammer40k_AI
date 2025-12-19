@@ -1,4 +1,4 @@
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any
 from enum import Enum, auto
 from .unit import Unit
 from .model import Model
@@ -213,6 +213,250 @@ class Map:
                 if test_base.collides_with(other_model.model_base):
                     return True
         return False
+
+    ###########################################################################
+    # Benefit of Cover (terrain-based save bonus)
+    ###########################################################################
+    def _sample_model_points_3d(self, model: Model, perimeter_points: int = 8, z_levels: int = 3) -> List[Tuple[float, float, float]]:
+        """Sample points on a model's 3D volume for visibility tests."""
+        base_shape = model.model_base.get_base_shape()
+        exterior = base_shape.exterior
+
+        perimeter_samples: List[Tuple[float, float]] = []
+        if exterior.length > 0 and perimeter_points > 0:
+            step = exterior.length / perimeter_points
+            for i in range(perimeter_points):
+                p = exterior.interpolate(step * i)
+                perimeter_samples.append((p.x, p.y))
+
+        centroid = base_shape.centroid
+        xy_points = [(centroid.x, centroid.y)] + perimeter_samples
+
+        z_bottom = model.model_base.z
+        z_top = model.model_base.z + getattr(model.model_base, 'model_height', 2.0)
+        if z_levels <= 1:
+            z_samples = [z_bottom + 0.01]
+        elif z_levels == 2:
+            z_samples = [z_bottom + 0.01, z_top - 0.01]
+        else:
+            z_mid = (z_bottom + z_top) / 2.0
+            z_samples = [z_bottom + 0.01, z_mid, z_top - 0.01]
+
+        points_3d: List[Tuple[float, float, float]] = []
+        for (x, y) in xy_points:
+            for z in z_samples:
+                points_3d.append((x, y, z))
+        return points_3d
+
+    def _segment_blocked_by_terrain_feature(
+        self,
+        p0: Tuple[float, float, float],
+        p1: Tuple[float, float, float],
+        terrain: 'TerrainFeature',
+        shooter_model: Model,
+        target_model: Model,
+    ) -> bool:
+        """Return True if the segment is blocked by *this* terrain feature."""
+        line2d = LineString([(p0[0], p0[1]), (p1[0], p1[1])])
+        if line2d.length == 0:
+            return False
+
+        def z_at_t(t: float) -> float:
+            return p0[2] + t * (p1[2] - p0[2])
+
+        footprint = getattr(terrain, 'footprint', None)
+        if footprint is None:
+            return False
+
+        # RUINS special visibility rules (tournament-style)
+        is_ruins = hasattr(terrain, 'walls') and hasattr(terrain, 'openings')
+        if is_ruins:
+            shooter_shape = shooter_model.model_base.get_base_shape()
+            target_shape = target_model.model_base.get_base_shape()
+            shooter_inside_any = footprint.intersects(shooter_shape)
+            target_inside_any = footprint.intersects(target_shape)
+            shooter_wholly_within = footprint.covers(shooter_shape)
+            shooter_is_aircraft = False
+            target_is_aircraft = False
+            shooter_is_towering = False
+            try:
+                shooter_is_aircraft = bool(shooter_model.parent_unit.is_aircraft())
+                target_is_aircraft = bool(target_model.parent_unit.is_aircraft())
+                shooter_is_towering = bool(shooter_model.parent_unit.is_towering())
+            except Exception:
+                pass
+
+            # Aircraft always use normal LOS: skip blanket ruins blocking.
+            if not (shooter_is_aircraft or target_is_aircraft):
+                # Outside-to-outside across footprint blocks.
+                if not shooter_inside_any and not target_inside_any and line2d.intersects(footprint):
+                    return True
+
+                # Partially-inside (not wholly within) cannot see out unless towering.
+                if shooter_inside_any and not shooter_wholly_within and not shooter_is_towering:
+                    if not target_inside_any:
+                        return True
+
+        # Walls/openings handling (RUINS)
+        walls = getattr(terrain, 'walls', None)
+        openings = getattr(terrain, 'openings', None)
+        if walls:
+            for wall in walls:
+                wall_poly = wall.get('polygon')
+                if wall_poly is None:
+                    continue
+                if not line2d.intersects(wall_poly):
+                    continue
+                inter = line2d.intersection(wall_poly)
+                if inter.is_empty:
+                    continue
+                if inter.geom_type == 'Point':
+                    inter_pt = inter
+                elif inter.geom_type in ('LineString', 'MultiPoint', 'MultiLineString'):
+                    inter_pt = inter.centroid
+                else:
+                    inter_pt = inter.representative_point()
+
+                t = line2d.project(inter_pt) / line2d.length if line2d.length > 0 else 0.0
+                if t <= 1e-6 or t >= 1.0 - 1e-6:
+                    continue
+                z_here = z_at_t(t)
+                z_bottom = wall.get('z_bottom', 0.0)
+                z_top = wall.get('z_top', z_bottom)
+
+                if z_bottom <= z_here <= z_top:
+                    allowed = False
+                    if openings:
+                        for op in openings:
+                            if not op.get('allows_los', False):
+                                continue
+                            op_poly = op.get('polygon')
+                            if op_poly is None:
+                                continue
+                            if not op_poly.contains(inter_pt):
+                                continue
+                            if op.get('z_bottom', -1e9) <= z_here <= op.get('z_top', 1e9):
+                                allowed = True
+                                break
+                    if not allowed:
+                        return True
+            return False
+
+        # Generic terrain: footprint blocks within vertical span
+        if not line2d.intersects(footprint):
+            return False
+        inter = line2d.intersection(footprint)
+        if inter.is_empty:
+            return False
+        if inter.geom_type == 'Point':
+            inter_pt = inter
+        elif inter.geom_type in ('LineString', 'MultiPoint', 'MultiLineString'):
+            inter_pt = inter.centroid
+        else:
+            inter_pt = inter.representative_point()
+        t = line2d.project(inter_pt) / line2d.length if line2d.length > 0 else 0.0
+        if t <= 1e-6 or t >= 1.0 - 1e-6:
+            return False
+        z_here = z_at_t(t)
+
+        min_z, max_z = 0.0, 0.0
+        if hasattr(terrain, 'height'):
+            min_z, max_z = 0.0, float(getattr(terrain, 'height'))
+        elif hasattr(terrain, 'rim_height'):
+            min_z, max_z = 0.0, float(getattr(terrain, 'rim_height'))
+        elif hasattr(terrain, 'bounding_box') and isinstance(terrain.bounding_box, dict):
+            try:
+                min_z = float(terrain.bounding_box.get('min', (0, 0, 0))[2])
+                max_z = float(terrain.bounding_box.get('max', (0, 0, 0))[2])
+            except Exception:
+                min_z, max_z = 0.0, 2.0
+        else:
+            max_z = 2.0
+
+        return min_z <= z_here <= max_z
+
+    def _is_fully_visible_due_to_terrain(self, shooter_model: Model, target_model: Model, terrain: 'TerrainFeature') -> bool:
+        """True iff every sampled point on target is visible to shooter w.r.t this terrain."""
+        shooter_points = self._sample_model_points_3d(shooter_model, perimeter_points=8, z_levels=3)
+        target_points = self._sample_model_points_3d(target_model, perimeter_points=8, z_levels=3)
+
+        for tp in target_points:
+            any_visible = False
+            for sp in shooter_points:
+                if not self._segment_blocked_by_terrain_feature(sp, tp, terrain, shooter_model, target_model):
+                    any_visible = True
+                    break
+            if not any_visible:
+                return False
+        return True
+
+    def get_benefit_of_cover_for_ranged_attack(
+        self,
+        attacking_unit: Unit,
+        target_model: Model,
+        weapon_profile: Optional[Any] = None,
+        ap: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Evaluate Benefit of Cover for RUINS/WOODS for a single ranged attack allocation.
+
+        RUINS & WOODS:
+        - If target_model is wholly within the terrain feature, OR
+        - If target_model is not fully visible to every model in attacking_unit because of that terrain feature,
+          then target_model has Benefit of Cover against that attack.
+
+        TODO: Extend this method to support other terrain types (Crater, Barricade, etc.).
+        """
+        result: Dict[str, Any] = {
+            "has_benefit_of_cover": False,
+            "source_terrain_type": None,
+            "reason": None,
+        }
+
+        # If weapon ignores cover, it cancels Benefit of Cover.
+        try:
+            if weapon_profile is not None:
+                parent_wg = getattr(weapon_profile, "parent_wargear", None)
+                if parent_wg is not None and hasattr(parent_wg, "is_ignores_cover") and parent_wg.is_ignores_cover():
+                    return result
+        except Exception:
+            pass
+
+        # Evaluate per terrain feature. Multiple instances are not cumulative, so we early-return on first match.
+        for terrain in getattr(self, "terrain_features", []):
+            ttype = getattr(terrain, "terrain_type", None)
+            if ttype not in (TerrainType.RUINS, TerrainType.WOODS):
+                continue
+
+            footprint = getattr(terrain, "footprint", None)
+            if footprint is None:
+                continue
+
+            # Wholly within (2D footprint-based: base wholly within footprint)
+            try:
+                base_shape = target_model.model_base.get_base_shape()
+                if footprint.covers(base_shape):
+                    result["has_benefit_of_cover"] = True
+                    result["source_terrain_type"] = getattr(ttype, "name", str(ttype))
+                    result["reason"] = "Target model wholly within terrain feature"
+                    return result
+            except Exception:
+                pass
+
+            # Not fully visible to every model in the attacking unit because of this terrain feature.
+            for attacker_model in getattr(attacking_unit, "models", []):
+                if not getattr(attacker_model, "is_alive", False):
+                    continue
+                try:
+                    fully_visible = self._is_fully_visible_due_to_terrain(attacker_model, target_model, terrain)
+                except Exception:
+                    fully_visible = True
+                if not fully_visible:
+                    result["has_benefit_of_cover"] = True
+                    result["source_terrain_type"] = getattr(ttype, "name", str(ttype))
+                    result["reason"] = f"Not fully visible to {getattr(attacker_model, 'name', 'an attacker model')} due to terrain"
+                    return result
+
+        return result
 
     def get_height_at_point(self, x: float, y: float) -> float:
         """

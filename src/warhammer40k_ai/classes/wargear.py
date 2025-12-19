@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .model import Model
     from .unit import Unit
+    from .map import Map
 
 # Attack result data structure for comprehensive reporting
 @dataclass
@@ -254,7 +255,7 @@ class WargearProfile:
             ap_val -= 1
         return ap_val
 
-    def attack(self, target: 'Unit', attacker: 'Model') -> None:
+    def attack(self, target: 'Unit', attacker: 'Model', game_map: Optional['Map'] = None) -> None:
         # Initialize attack result tracking
         # Build proper weapon name: parent weapon + profile (if not default)
         weapon_display_name = self.name
@@ -382,6 +383,26 @@ class WargearProfile:
             target_model = self.opponent_wound_allocation(target)
             if target_model is None:
                 continue
+
+            # Benefit of Cover (RUINS/WOODS only for now, evaluated per allocated model)
+            # NOTE: The actual +1 modifier is applied during the save roll, and only for armor saves.
+            try:
+                is_melee = False
+                if self.parent_wargear is not None and hasattr(self.parent_wargear, "is_melee"):
+                    is_melee = bool(self.parent_wargear.is_melee())
+                if (not is_melee) and game_map is not None:
+                    cover_info = game_map.get_benefit_of_cover_for_ranged_attack(
+                        attacking_unit=attacker.parent_unit,
+                        target_model=target_model,
+                        weapon_profile=self,
+                        ap=effective_ap,
+                    )
+                    if cover_info.get("has_benefit_of_cover", False):
+                        wound_instance["benefit_of_cover"] = True
+                        wound_instance["benefit_of_cover_source"] = cover_info.get("source_terrain_type")
+                        wound_instance["benefit_of_cover_reason"] = cover_info.get("reason")
+            except Exception:
+                pass
                 
             save_result = None
             if not wound_instance['mortal_wound']:
@@ -695,7 +716,27 @@ class WargearProfile:
             save_result['special_effects'].append("Natural 1 (auto-fail)")
             return save_result
 
-        dice_modifier = 0  # TODO - handle positive & negative modifiers
+        dice_modifier = 0  # positive/negative save modifiers
+
+        # Benefit of Cover:
+        # - Add 1 to the saving throw against ranged attacks.
+        # - Does not apply to invulnerable saving throws.
+        # - Models with a Save characteristic of 3+ or better cannot benefit vs AP 0.
+        # - Multiple instances are not cumulative (we only ever apply +1).
+        try:
+            if save_result.get('save_type') == 'armor' and attack_instance.get('benefit_of_cover', False):
+                ap_val = int(ap)
+                if not (ap_val == 0 and int(target_model.save) <= 3):
+                    dice_modifier += 1
+                    src = attack_instance.get('benefit_of_cover_source')
+                    if src:
+                        save_result['special_effects'].append(f"Benefit of Cover ({src})")
+                    else:
+                        save_result['special_effects'].append("Benefit of Cover")
+        except Exception:
+            pass
+
+        # TODO: Apply other save modifiers (abilities, stratagems, etc.)
         dice_modifier = min(dice_modifier, 1)  # modifications are capped at +1
         save_result['saved'] = (dice_roll + dice_modifier) >= save_value
         
