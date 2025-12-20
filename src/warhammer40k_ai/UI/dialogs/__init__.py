@@ -10,6 +10,8 @@ from .movement_choice_dialog import MovementChoiceDialog
 from .scout_choice_dialog import ScoutChoiceDialog
 from .shooting_declaration_dialog import ShootingDeclarationDialog
 from .weapon_choice_dialog import WeaponChoiceDialog
+from .transport_embark_dialog import TransportEmbarkDialog
+from .transport_disembark_dialog import TransportDisembarkDialog
 
 __all__ = [
     'BaseDialog',
@@ -24,4 +26,6 @@ __all__ = [
     'ScoutChoiceDialog',
     'ShootingDeclarationDialog',
     'WeaponChoiceDialog',
+    'TransportEmbarkDialog',
+    'TransportDisembarkDialog',
 ] 

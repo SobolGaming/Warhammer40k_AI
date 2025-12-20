@@ -120,7 +120,9 @@ class Unit:
         self.arrived_from_reserves_this_turn = False  # Flag for movement/charge restrictions
 
         # Transport / embark state
+        self.transport_rules_text: str = str(getattr(datasheet, "transport", "") or "")
         self.transport_capacity: int = self._parse_transport_capacity(datasheet)
+        self.transport_required_keywords, self.transport_excluded_keywords = self._parse_transport_restrictions(datasheet)
         self.transport_passengers: List['Unit'] = []
         self.embarked_in: Optional['Unit'] = None  # The transport unit this unit is embarked within (if any)
 
@@ -965,6 +967,19 @@ class Unit:
         Wahapedia data typically stores this as an ability entry on the datasheet (often "Transport"),
         with descriptions like "Transport Capacity: 12" or "Transport 12".
         """
+        # Prefer the explicit `datasheet.transport` field (Wahapedia)
+        try:
+            t = str(getattr(datasheet, "transport", "") or "").strip()
+            if t:
+                m = re.search(r"transport\s+capacity\s+(?:of\s+)?(\d+)", t, flags=re.IGNORECASE)
+                if m:
+                    return int(m.group(1))
+                m = re.search(r"transport\s*capacity\s*[:\-]\s*(\d+)", t, flags=re.IGNORECASE)
+                if m:
+                    return int(m.group(1))
+        except Exception:
+            pass
+
         try:
             keywords = getattr(datasheet, "keywords", []) or []
             if "Transport" not in keywords and "Dedicated Transport" not in keywords:
@@ -1012,6 +1027,62 @@ class Unit:
                     continue
         return 0
 
+    def _parse_transport_restrictions(self, datasheet) -> Tuple[set[str], set[str]]:
+        """
+        Parse best-effort keyword restrictions from the datasheet's `transport` text.
+
+        Example:
+        "This model has a transport capacity of 12 HERETIC ASTARTES INFANTRY models.
+         It cannot transport TERMINATOR, JUMP PACK, OBLITERATOR or POSSESSED models."
+        """
+        required: set[str] = set()
+        excluded: set[str] = set()
+
+        try:
+            text = str(getattr(datasheet, "transport", "") or "")
+        except Exception:
+            text = ""
+        if not text:
+            return required, excluded
+
+        # Required clause between capacity number and "models"
+        m = re.search(r"transport\s+capacity\s+(?:of\s+)?\d+\s+(.+?)\s+models?\b", text, flags=re.IGNORECASE)
+        req_clause = (m.group(1) or "").strip() if m else ""
+        if req_clause:
+            known: List[str] = []
+            try:
+                known.extend(list(getattr(datasheet, "keywords", []) or []))
+            except Exception:
+                pass
+            try:
+                known.extend(list(getattr(datasheet, "faction_keywords", []) or []))
+            except Exception:
+                pass
+            # Common keywords seen in transport restrictions
+            known.extend(["Infantry", "Beast", "Mounted", "Jump Pack", "Terminator", "Possessed", "Obliterator", "Gravis", "Phobos"])
+
+            upper_clause = req_clause.upper()
+            for kw in known:
+                try:
+                    if re.search(rf"(?<![A-Z0-9]){re.escape(str(kw).upper())}(?![A-Z0-9])", upper_clause):
+                        required.add(str(kw))
+                except Exception:
+                    continue
+
+        # Excluded clause: "cannot transport ..."
+        m2 = re.search(r"cannot\s+transport\s+(.+?)(?:\.\s*|$)", text, flags=re.IGNORECASE)
+        excl_clause = (m2.group(1) or "").strip() if m2 else ""
+        if excl_clause:
+            excl_clause = re.sub(r"\bmodels?\b", "", excl_clause, flags=re.IGNORECASE).strip()
+            parts = re.split(r"\s*,\s*|\s+or\s+|\s+and\s+", excl_clause, flags=re.IGNORECASE)
+            for p in parts:
+                token = (p or "").strip()
+                if not token:
+                    continue
+                excluded.add(token.title() if token.isupper() else token)
+
+        return required, excluded
+
     def get_transport_slots_required(self) -> int:
         """How many transport 'slots' this unit uses. Default: 1 per alive model."""
         # Datasheets can have non-1 model slot costs (e.g. Terminators, Jump Packs), but we don't
@@ -1052,10 +1123,21 @@ class Unit:
                 return False
         except Exception:
             return False
-        # Default core restriction: transports carry Infantry (unless datasheet says otherwise)
-        # This is a safe baseline and can be extended later with datasheet parsing.
-        if not passenger_unit.is_infantry:
-            return False
+        # Datasheet-specific restrictions (from Wahapedia `datasheet.transport` field when present)
+        req = getattr(self, "transport_required_keywords", set()) or set()
+        excl = getattr(self, "transport_excluded_keywords", set()) or set()
+        if req:
+            for kw in req:
+                if not passenger_unit.has_any_keyword(str(kw)):
+                    return False
+        else:
+            # Default core restriction: transports carry Infantry (unless specified otherwise)
+            if not passenger_unit.is_infantry:
+                return False
+        if excl:
+            for kw in excl:
+                if passenger_unit.has_any_keyword(str(kw)):
+                    return False
         # Capacity
         needed = passenger_unit.get_transport_slots_required()
         if needed <= 0:
@@ -1177,6 +1259,23 @@ class Unit:
 
     def has_keyword(self, keyword: str) -> bool:
         return keyword.lower() in [keyword.lower() for keyword in self.keywords]
+
+    def has_any_keyword(self, keyword: str) -> bool:
+        """Case-insensitive keyword check across keywords + faction_keywords."""
+        kw = (keyword or "").lower().strip()
+        if not kw:
+            return False
+        try:
+            if kw in [k.lower() for k in (self.keywords or [])]:
+                return True
+        except Exception:
+            pass
+        try:
+            if kw in [k.lower() for k in (self.faction_keywords or [])]:
+                return True
+        except Exception:
+            pass
+        return False
 
     @property
     def movement(self) -> int:

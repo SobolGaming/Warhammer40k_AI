@@ -3873,6 +3873,11 @@ class BattlePhaseHandler(BasePhaseHandler):
         }
         
         if choice not in choice_mapping:
+            # Transport actions (not MovementAction enum)
+            if choice == 'embark' and getattr(unit, "is_transport", False):
+                return self._show_transport_embark_dialog(unit)
+            if choice == 'disembark' and getattr(unit, "is_transport", False):
+                return self._show_transport_disembark_dialog(unit)
             print(f"❌ Invalid movement choice: {choice}")
             return
         
@@ -3924,6 +3929,88 @@ class BattlePhaseHandler(BasePhaseHandler):
             self.game_view.individual_model_movement_dialog.show(
                 unit, choice, on_movement_complete, self.game.map, max_distance
             )
+
+    def _show_transport_embark_dialog(self, transport_unit) -> None:
+        """Show a dialog listing only valid units that can embark into the selected transport."""
+        from .dialogs import TransportEmbarkDialog
+
+        # Compute candidates using the same checks as the dialog (but here so it stays correct even if dialog not refreshed)
+        candidates = []
+        try:
+            if transport_unit.models and transport_unit.models[0].is_alive:
+                t_model = transport_unit.models[0]
+                for u in list(getattr(self.game.map, "units", []) or []):
+                    if u is None or u == transport_unit:
+                        continue
+                    try:
+                        if not u.is_alive():
+                            continue
+                        if u.get_parent_army() != transport_unit.get_parent_army():
+                            continue
+                        if not transport_unit.can_transport(u):
+                            continue
+                        if getattr(u.round_state, "remained_stationary_this_round", False):
+                            continue
+                        if getattr(u.round_state, "disembarked_this_round", False):
+                            continue
+                        ok = True
+                        for m in u.models:
+                            if not m.is_alive:
+                                continue
+                            if m.model_base.edge_to_edge_distance(t_model.model_base) > 3.0 + 1e-6:
+                                ok = False
+                                break
+                        if not ok:
+                            continue
+                        candidates.append(u)
+                    except Exception:
+                        continue
+        except Exception:
+            candidates = []
+
+        if not hasattr(self.game_view, "transport_embark_dialog"):
+            self.game_view.transport_embark_dialog = TransportEmbarkDialog(
+                self.game_view.screen.get_width(),
+                self.game_view.screen.get_height(),
+            )
+
+        def _confirm(selected_units):
+            if not selected_units:
+                return
+            for u in selected_units:
+                try:
+                    u.embark(transport_unit)
+                except Exception as e:
+                    print(f"❌ Embark failed: {e}")
+
+        self.game_view.transport_embark_dialog.show(transport_unit, candidates, _confirm)
+
+    def _show_transport_disembark_dialog(self, transport_unit) -> None:
+        """Show a dialog to pick which embarked unit(s) to disembark from this transport."""
+        from .dialogs import TransportDisembarkDialog
+
+        passengers = list(getattr(transport_unit, "transport_passengers", []) or [])
+        if not passengers:
+            print(f"❌ {transport_unit.name} has no embarked units")
+            return
+
+        if not hasattr(self.game_view, "transport_disembark_dialog"):
+            self.game_view.transport_disembark_dialog = TransportDisembarkDialog(
+                self.game_view.screen.get_width(),
+                self.game_view.screen.get_height(),
+            )
+
+        def _confirm(selected_units):
+            if not selected_units:
+                return
+            # Disembark sequentially to respect space/collisions
+            for u in selected_units:
+                try:
+                    u.disembark(game_map=self.game.map, transport_unit=transport_unit, destroyed_transport=False, emergency=False, current_turn=self.game.turn)
+                except Exception as e:
+                    print(f"❌ Disembark failed: {e}")
+
+        self.game_view.transport_disembark_dialog.show(transport_unit, passengers, _confirm)
     
     def _handle_battlefield_action(self, x: int, y: int) -> bool:
         """Handle battlefield actions based on current battle phase"""
