@@ -1,6 +1,7 @@
 from typing import List, Dict, Any, Optional, Tuple
 from enum import Enum
 import logging
+import copy
 from .event_system import EventSystem
 from .map import Map, Objective
 from .mission_cards import PrimaryMissionCard, SecondaryMissionCard
@@ -145,6 +146,8 @@ class Game:
         """Install non-UI rule subscribers that operate off the event system."""
         self.event_system.subscribe("model_destroyed", self._on_model_destroyed_rules)
         self.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_rules)
+        # Transport core rules (Destroyed Transport -> Disembark + mortals + battleshock)
+        self.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_transport_rules)
 
     def _on_model_destroyed_rules(self, attacker_model=None, attacker_unit=None, target_model=None, target_unit=None, **_kwargs) -> None:
         # Generic partial support for "gain CP when this model destroys an enemy KEYWORD unit/model".
@@ -341,6 +344,55 @@ class Game:
                         pass
                 except Exception:
                     continue
+
+    def _on_unit_destroyed_transport_rules(self, unit=None, last_model=None, game_map=None, **_kwargs) -> None:
+        """
+        10th edition core Transport rule: when a Transport is destroyed, any embarked units must
+        immediately disembark (or emergency disembark), take mortal wounds, and become battle-shocked.
+        """
+        if unit is None or game_map is None:
+            return
+        try:
+            if not getattr(unit, "is_transport", False):
+                return
+        except Exception:
+            return
+
+        passengers = list(getattr(unit, "transport_passengers", []) or [])
+        if not passengers:
+            return
+
+        # Capture last known transport base for disembark distance checks.
+        try:
+            if last_model is not None and getattr(last_model, "model_base", None) is not None:
+                unit._last_known_base = copy.deepcopy(last_model.model_base)
+        except Exception:
+            unit._last_known_base = getattr(unit, "_last_known_base", None)
+
+        for p in passengers:
+            try:
+                # Ensure passenger is not still in map list before disembarking (avoid duplicates)
+                if hasattr(game_map, "units") and p in game_map.units:
+                    game_map.units.remove(p)
+            except Exception:
+                pass
+            try:
+                p.disembark(
+                    game_map=game_map,
+                    transport_unit=unit,
+                    destroyed_transport=True,
+                    emergency=False,
+                    current_turn=self.turn,
+                )
+            except Exception:
+                # Never allow transport destruction to crash the game loop
+                continue
+
+        # Clear passengers list (disembark() should already remove them, but be defensive)
+        try:
+            unit.transport_passengers = []
+        except Exception:
+            pass
 
     def add_player(self, player: Player) -> None:
         """Add a player to the game."""

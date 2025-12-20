@@ -13,6 +13,7 @@ import uuid
 import copy
 import re
 import numpy as np
+import math
 from enum import Enum, auto
 from shapely.affinity import translate
 from ..utility.dice import DiceCollection
@@ -38,6 +39,11 @@ class UnitRoundState:
     moved_this_round: bool = False  # Track if unit has moved during movement phase
     num_lost_models_this_round: int = 0
     advance_roll: int = None  # Store advance roll for the round
+    # Transport / Embark / Disembark tracking
+    embarked_this_round: bool = False
+    disembarked_this_round: bool = False
+    disembarked_from_moved_transport: bool = False  # Counts as Normal move, cannot move further or charge this turn
+    disembarked_from_destroyed_transport: bool = False  # Counts as Normal move, cannot charge this turn
     # Mission actions
     performing_action_name: Optional[str] = None
     action_started_turn: Optional[int] = None
@@ -112,6 +118,11 @@ class Unit:
         self.reserve_status = 'deployed'  # 'deployed', 'reserves', 'strategic_reserves'
         self.reserve_turn_deployed = None  # Turn when unit arrived from reserves
         self.arrived_from_reserves_this_turn = False  # Flag for movement/charge restrictions
+
+        # Transport / embark state
+        self.transport_capacity: int = self._parse_transport_capacity(datasheet)
+        self.transport_passengers: List['Unit'] = []
+        self.embarked_in: Optional['Unit'] = None  # The transport unit this unit is embarked within (if any)
 
         # Initialize round-tracked variables
         self.initialize_round()
@@ -944,6 +955,147 @@ class Unit:
         return "Transport" in self.keywords
 
     @property
+    def is_embarked(self) -> bool:
+        return self.embarked_in is not None
+
+    def _parse_transport_capacity(self, datasheet) -> int:
+        """
+        Best-effort parsing for 10th edition Transport Capacity.
+
+        Wahapedia data typically stores this as an ability entry on the datasheet (often "Transport"),
+        with descriptions like "Transport Capacity: 12" or "Transport 12".
+        """
+        try:
+            keywords = getattr(datasheet, "keywords", []) or []
+            if "Transport" not in keywords and "Dedicated Transport" not in keywords:
+                return 0
+        except Exception:
+            # If keywords can't be read, fall back to parsing abilities only.
+            pass
+
+        candidates: List[str] = []
+        try:
+            if hasattr(datasheet, 'datasheets_abilities'):
+                for a in datasheet.datasheets_abilities:
+                    # Prefer raw description/name if present
+                    n = str(a.get("name", "") or "")
+                    d = str(a.get("description", "") or "")
+                    if d:
+                        candidates.append(f"{n} {d}".strip())
+                    elif n:
+                        candidates.append(n.strip())
+        except Exception:
+            candidates = []
+
+        # Also include parsed Ability objects (already cleaned) as a fallback
+        try:
+            for a in getattr(self, "possible_abilities", []) or []:
+                candidates.append(f"{getattr(a, 'name', '')} {getattr(a, 'description', '')}".strip())
+        except Exception:
+            pass
+
+        text = " \n ".join([c for c in candidates if c])
+        if not text:
+            return 0
+
+        # Common patterns across sources
+        patterns = [
+            r"transport\s*capacity\s*[:\-]\s*(\d+)",
+            r"\btransport\s*\(?\s*(\d+)\s*\)?\b",
+        ]
+        for pat in patterns:
+            m = re.search(pat, text, flags=re.IGNORECASE)
+            if m:
+                try:
+                    return int(m.group(1))
+                except Exception:
+                    continue
+        return 0
+
+    def get_transport_slots_required(self) -> int:
+        """How many transport 'slots' this unit uses. Default: 1 per alive model."""
+        # Datasheets can have non-1 model slot costs (e.g. Terminators, Jump Packs), but we don't
+        # have a unified schema for that yet. Keep this conservative and overridable.
+        try:
+            return sum(1 for m in self.models if getattr(m, "is_alive", False))
+        except Exception:
+            return len(self.models)
+
+    @property
+    def transport_slots_used(self) -> int:
+        try:
+            return sum(u.get_transport_slots_required() for u in (self.transport_passengers or []) if u and u.is_alive())
+        except Exception:
+            return 0
+
+    @property
+    def transport_slots_remaining(self) -> int:
+        return max(0, int(self.transport_capacity or 0) - int(self.transport_slots_used or 0))
+
+    def can_transport(self, passenger_unit: 'Unit') -> bool:
+        """Core eligibility + capacity check (datasheet-specific restrictions are best-effort)."""
+        if passenger_unit is None:
+            return False
+        if passenger_unit == self:
+            return False
+        if not self.is_transport:
+            return False
+        if not self.is_alive():
+            return False
+        if passenger_unit.is_embarked:
+            return False
+        # Must be a friendly unit
+        try:
+            if self.get_parent_army() is None or passenger_unit.get_parent_army() is None:
+                return False
+            if self.get_parent_army() != passenger_unit.get_parent_army():
+                return False
+        except Exception:
+            return False
+        # Default core restriction: transports carry Infantry (unless datasheet says otherwise)
+        # This is a safe baseline and can be extended later with datasheet parsing.
+        if not passenger_unit.is_infantry:
+            return False
+        # Capacity
+        needed = passenger_unit.get_transport_slots_required()
+        if needed <= 0:
+            return False
+        if self.transport_capacity <= 0:
+            return False
+        return (self.transport_slots_used + needed) <= self.transport_capacity
+
+    def add_passenger(self, passenger_unit: 'Unit', game_map: Optional['Map'] = None) -> bool:
+        """Embark bookkeeping. Removes passenger from map if provided."""
+        if not self.can_transport(passenger_unit):
+            return False
+        if passenger_unit in self.transport_passengers:
+            return True
+        self.transport_passengers.append(passenger_unit)
+        passenger_unit.embarked_in = self
+        passenger_unit.round_state.embarked_this_round = True
+        # Remove from battlefield representation
+        try:
+            if game_map is not None and hasattr(game_map, "units") and passenger_unit in game_map.units:
+                game_map.units.remove(passenger_unit)
+        except Exception:
+            pass
+        # Clear a concrete battlefield position while embarked
+        passenger_unit.position = None
+        return True
+
+    def remove_passenger(self, passenger_unit: 'Unit') -> None:
+        try:
+            if passenger_unit in self.transport_passengers:
+                self.transport_passengers.remove(passenger_unit)
+        except Exception:
+            pass
+        try:
+            if passenger_unit.embarked_in == self:
+                passenger_unit.embarked_in = None
+        except Exception:
+            pass
+
+    @property
     def is_leader(self) -> bool:
         return len(self.can_be_attached_to) > 0
 
@@ -1247,6 +1399,13 @@ class Unit:
 
     def _execute_action(self, action: int, destination: Tuple[float, float, float], game_map: 'Map', advance_roll: int = None) -> bool:
         """Execute a movement action for the unit."""
+        # Transport disembark restrictions: if you disembarked from a moved/destroyed transport,
+        # you count as having made a Normal move and cannot move further this turn.
+        if getattr(self.round_state, "disembarked_from_moved_transport", False) or getattr(self.round_state, "disembarked_from_destroyed_transport", False):
+            if action in (MovementAction.MOVE.value, MovementAction.ADVANCE.value, MovementAction.FALL_BACK.value):
+                print(f"❌ {self.name} cannot move further after disembarking this turn")
+                return False
+
         # If the unit is currently performing a mission Action and moves (excluding pile-in/consolidation handled elsewhere), cancel the Action
         def _cancel_action_due_to_move():
             if getattr(self.round_state, 'performing_action_name', None):
@@ -3373,17 +3532,512 @@ class Unit:
             print(f"{self.name} does not have ability: {ability.name}.")
 
     def embark(self, transport_unit: 'Unit') -> None:
-        """Embarks onto a transport unit."""
-        if transport_unit.can_transport(self):
-            transport_unit.add_passenger(self)
+        """
+        Embark (10th edition core rules, best-effort):
+        - End a Normal/Advance/Fall Back move with all models within 3" of a friendly Transport.
+        - Capacity must allow it.
+        - Cannot embark and disembark in the same phase/turn (tracked by round_state flags).
+        """
+        # Backwards-compatible signature; if no map context is available, do only capacity bookkeeping.
+        game_map = None
+        try:
+            # Allow callers to pass a map via attribute if they use Unit.player.game.map patterns
+            _player = getattr(self.get_parent_army(), 'player', None)
+            _game = getattr(_player, 'game', None) if _player else None
+            game_map = getattr(_game, 'map', None)
+        except Exception:
+            game_map = None
+
+        if self.round_state.disembarked_this_round:
+            print(f"❌ {self.name} cannot embark after disembarking this turn")
+            return
+
+        if not transport_unit.can_transport(self):
+            print(f"{self.name} cannot embark onto {transport_unit.name}.")
+            return
+
+        # Pre-battle "declare embarked units" support: during setup/deployment, units can start embarked
+        # without having moved or being within 3". If neither unit is deployed yet, allow embark bookkeeping only.
+        try:
+            if (not getattr(self, "deployed", False)) and (not getattr(transport_unit, "deployed", False)):
+                ok = transport_unit.add_passenger(self, game_map=None)
+                if ok:
+                    print(f"{self.name} starts embarked within {transport_unit.name}.")
+                else:
+                    print(f"{self.name} cannot embark onto {transport_unit.name}.")
+                return
+        except Exception:
+            pass
+
+        # Must have actually moved (Normal/Advance/Fall Back) this round (not remain stationary)
+        if getattr(self.round_state, "remained_stationary_this_round", False):
+            print(f"❌ {self.name} cannot embark (did not move this phase)")
+            return
+
+        # Must be within 3" with all models
+        try:
+            if transport_unit.models and transport_unit.models[0].is_alive:
+                t_model = transport_unit.models[0]
+                for m in self.models:
+                    if not m.is_alive:
+                        continue
+                    d = m.model_base.edge_to_edge_distance(t_model.model_base)
+                    if d > 3.0 + 1e-6:
+                        print(f"❌ {self.name} cannot embark: not all models are within 3\" of {transport_unit.name}")
+                        return
+        except Exception:
+            # If we can't evaluate distances, still allow capacity bookkeeping (useful for setup)
+            pass
+
+        ok = transport_unit.add_passenger(self, game_map=game_map)
+        if ok:
             print(f"{self.name} embarks onto {transport_unit.name}.")
         else:
             print(f"{self.name} cannot embark onto {transport_unit.name}.")
 
-    def disembark(self) -> None:
-        """Disembarks from a transport unit."""
-        # Logic to disembark
-        print(f"{self.name} disembarks from transport.")
+    def _find_disembark_positions(
+        self,
+        transport_base,
+        game_map: 'Map',
+        max_distance: float,
+        require_not_in_engagement: bool = True,
+    ) -> Optional[List[Tuple[float, float, float, float]]]:
+        """
+        Attempt to find legal placements for all models in this unit wholly within
+        `max_distance` of the transport, without collisions and (optionally) not within engagement range.
+        """
+        if transport_base is None:
+            return None
+        if not self.models:
+            return []
+
+        # Determine anchor point & radii
+        tx, ty = float(getattr(transport_base, "x", 0.0)), float(getattr(transport_base, "y", 0.0))
+        tz = float(getattr(transport_base, "z", 0.0))
+        try:
+            tr = float(transport_base.get_longest_radius())
+        except Exception:
+            try:
+                tr = float(transport_base.get_radius())
+            except Exception:
+                tr = 1.0
+
+        enemy_units = [u for u in game_map.get_enemy_units(self) if u.is_alive()]
+        enemy_models = []
+        for eu in enemy_units:
+            for em in eu.models:
+                if getattr(em, "is_alive", False):
+                    enemy_models.append(em)
+
+        placed: List[Tuple[float, float, float, float]] = []
+        facing = 0.0
+
+        for idx, model in enumerate(self.models):
+            if not model.is_alive:
+                continue
+            try:
+                mr = float(model.model_base.get_longest_radius())
+            except Exception:
+                try:
+                    mr = float(model.model_base.get_radius())
+                except Exception:
+                    mr = 1.0
+
+            # Minimum distance to avoid overlapping the transport base itself
+            min_center = tr + mr + 0.05
+            max_center = max_distance + tr + mr + 1e-6
+
+            found = None
+            # Spiral-ish sampling around the transport
+            for ring in np.arange(0.0, max(0.01, max_center - min_center) + 0.001, 0.5):
+                r = float(min_center + ring)
+                if r > max_center + 1e-6:
+                    break
+                for deg in range(0, 360, 15):
+                    ang = math.radians(deg)
+                    x = tx + math.cos(ang) * r
+                    y = ty + math.sin(ang) * r
+                    z = tz
+
+                    # Base-to-base "within max_distance" check
+                    try:
+                        candidate_base = self._create_potential_base(x, y, z, facing, model=model)
+                        edge = candidate_base.edge_to_edge_distance(transport_base)
+                        if edge > max_distance + 1e-6:
+                            continue
+                    except Exception:
+                        pass
+
+                    # Collision checks vs battlefield
+                    try:
+                        if not game_map.is_within_boundary(model, destination=(x, y)):
+                            continue
+                        if game_map.check_collision_with_obstacles(model, destination=(x, y)):
+                            continue
+                        if game_map.check_collision_with_other_friendly_units(model, destination=(x, y)):
+                            continue
+                        if game_map.check_collision_with_other_enemy_units(model, destination=(x, y)):
+                            continue
+                    except Exception:
+                        continue
+
+                    # Collision checks within this unit
+                    try:
+                        if self._collides_with_unit_models(x, y, z, facing, placed, model=model):
+                            continue
+                        if not self._is_coherent_within_unit(x, y, z, facing, placed, model=model):
+                            continue
+                    except Exception:
+                        # If coherency logic fails, allow placement but still avoid collisions.
+                        pass
+
+                    # Disembark requirement: not within engagement range of any enemy models
+                    if require_not_in_engagement and enemy_models:
+                        try:
+                            candidate_base = self._create_potential_base(x, y, z, facing, model=model)
+                            too_close = False
+                            for em in enemy_models:
+                                if not getattr(em, "is_alive", False):
+                                    continue
+                                horizontal = candidate_base.edge_to_edge_distance(em.model_base)
+                                vertical = abs(float(getattr(candidate_base, "z", 0.0)) - float(getattr(em.model_base, "z", 0.0)))
+                                if horizontal <= 1.0 + 1e-6 and vertical <= 5.0 + 1e-6:
+                                    too_close = True
+                                    break
+                            if too_close:
+                                continue
+                        except Exception:
+                            pass
+
+                    found = (x, y, z, facing)
+                    break
+                if found is not None:
+                    break
+
+            if found is None:
+                return None
+            placed.append(found)
+
+        return placed
+
+    def _find_single_disembark_position(
+        self,
+        *,
+        model: Model,
+        transport_base,
+        game_map: 'Map',
+        max_distance: float,
+        placed: List[Tuple[float, float, float, float]],
+        require_not_in_engagement: bool = True,
+    ) -> Optional[Tuple[float, float, float, float]]:
+        """Find a valid disembark position for one model given already-placed models."""
+        if transport_base is None:
+            return None
+        tx, ty = float(getattr(transport_base, "x", 0.0)), float(getattr(transport_base, "y", 0.0))
+        tz = float(getattr(transport_base, "z", 0.0))
+        try:
+            tr = float(transport_base.get_longest_radius())
+        except Exception:
+            try:
+                tr = float(transport_base.get_radius())
+            except Exception:
+                tr = 1.0
+        try:
+            mr = float(model.model_base.get_longest_radius())
+        except Exception:
+            try:
+                mr = float(model.model_base.get_radius())
+            except Exception:
+                mr = 1.0
+
+        enemy_units = [u for u in game_map.get_enemy_units(self) if u.is_alive()]
+        enemy_models = []
+        for eu in enemy_units:
+            for em in eu.models:
+                if getattr(em, "is_alive", False):
+                    enemy_models.append(em)
+
+        facing = 0.0
+        min_center = tr + mr + 0.05
+        max_center = max_distance + tr + mr + 1e-6
+
+        for ring in np.arange(0.0, max(0.01, max_center - min_center) + 0.001, 0.5):
+            r = float(min_center + ring)
+            if r > max_center + 1e-6:
+                break
+            for deg in range(0, 360, 15):
+                ang = math.radians(deg)
+                x = tx + math.cos(ang) * r
+                y = ty + math.sin(ang) * r
+                z = tz
+
+                # Base-to-base "within max_distance" check
+                try:
+                    candidate_base = self._create_potential_base(x, y, z, facing, model=model)
+                    edge = candidate_base.edge_to_edge_distance(transport_base)
+                    if edge > max_distance + 1e-6:
+                        continue
+                except Exception:
+                    pass
+
+                # Collision checks vs battlefield
+                try:
+                    if not game_map.is_within_boundary(model, destination=(x, y)):
+                        continue
+                    if game_map.check_collision_with_obstacles(model, destination=(x, y)):
+                        continue
+                    if game_map.check_collision_with_other_friendly_units(model, destination=(x, y)):
+                        continue
+                    if game_map.check_collision_with_other_enemy_units(model, destination=(x, y)):
+                        continue
+                except Exception:
+                    continue
+
+                # Collision checks within this unit
+                try:
+                    if self._collides_with_unit_models(x, y, z, facing, placed, model=model):
+                        continue
+                    if not self._is_coherent_within_unit(x, y, z, facing, placed, model=model):
+                        continue
+                except Exception:
+                    pass
+
+                if require_not_in_engagement and enemy_models:
+                    try:
+                        candidate_base = self._create_potential_base(x, y, z, facing, model=model)
+                        for em in enemy_models:
+                            if not getattr(em, "is_alive", False):
+                                continue
+                            horizontal = candidate_base.edge_to_edge_distance(em.model_base)
+                            vertical = abs(float(getattr(candidate_base, "z", 0.0)) - float(getattr(em.model_base, "z", 0.0)))
+                            if horizontal <= 1.0 + 1e-6 and vertical <= 5.0 + 1e-6:
+                                raise ValueError("engagement")
+                    except Exception:
+                        continue
+
+                return (x, y, z, facing)
+
+        return None
+
+    def disembark(
+        self,
+        game_map: Optional['Map'] = None,
+        transport_unit: Optional['Unit'] = None,
+        *,
+        destroyed_transport: bool = False,
+        emergency: bool = False,
+        current_turn: int = 1,
+    ) -> bool:
+        """
+        Disembark (10th edition core rules, best-effort).
+
+        - Normally: set up wholly within 3" of the transport and not within engagement range.
+        - If the transport moved normally this phase: this unit counts as having made a Normal move,
+          cannot move further this turn, and cannot declare a charge this turn.
+        - Cannot disembark after the transport Advanced or Fell Back this turn.
+        - Destroyed transport: immediate disembark; mortal wounds; battle-shock; counts as Normal move; cannot charge.
+        - Emergency disembarkation (only on destroyed transport when 3" setup is impossible):
+          set up wholly within 6"; harsher mortals; models that cannot be set up are destroyed.
+        """
+        if game_map is None:
+            print(f"❌ {self.name} cannot disembark (no map context)")
+            return False
+
+        if self.round_state.embarked_this_round and not destroyed_transport:
+            print(f"❌ {self.name} cannot disembark after embarking this turn")
+            return False
+
+        if self.round_state.disembarked_this_round:
+            return False
+
+        if transport_unit is None:
+            transport_unit = self.embarked_in
+        if transport_unit is None:
+            print(f"❌ {self.name} is not embarked in a transport")
+            return False
+
+        # Transport state restrictions for normal disembark
+        if not destroyed_transport:
+            if getattr(transport_unit.round_state, "advanced_this_round", False) or getattr(transport_unit.round_state, "fell_back_this_round", False):
+                print(f"❌ {self.name} cannot disembark: {transport_unit.name} Advanced/Fell Back this turn")
+                return False
+
+        # Determine transport base reference (alive transport uses its current model base)
+        transport_base = None
+        try:
+            if transport_unit.models and transport_unit.models[0].is_alive:
+                transport_base = transport_unit.models[0].model_base
+        except Exception:
+            transport_base = None
+
+        if transport_base is None:
+            # If transport is destroyed, caller should supply a transport_unit that has a last-known base available
+            # via attribute `_last_known_base` (set by Game destroyed transport handler).
+            transport_base = getattr(transport_unit, "_last_known_base", None)
+
+        if transport_base is None:
+            print(f"❌ {self.name} cannot disembark (missing transport position)")
+            return False
+
+        # Choose disembark radius
+        disembark_distance = 6.0 if emergency else 3.0
+
+        placements = self._find_disembark_positions(
+            transport_base=transport_base,
+            game_map=game_map,
+            max_distance=disembark_distance,
+            require_not_in_engagement=True,
+        )
+
+        if placements is None and destroyed_transport and not emergency:
+            # Try emergency disembarkation
+            return self.disembark(
+                game_map=game_map,
+                transport_unit=transport_unit,
+                destroyed_transport=True,
+                emergency=True,
+                current_turn=current_turn,
+            )
+
+        if placements is None:
+            if destroyed_transport and emergency:
+                # Emergency disembarkation: models that cannot be set up are destroyed (not necessarily the whole unit).
+                print(f"⚠️  {self.name} emergency disembarkation: could not place all models within 6\"; destroying any unplaced models")
+                alive_models = [m for m in self.models if getattr(m, "is_alive", False)]
+                placed_positions: List[Tuple[float, float, float, float]] = []
+                placed_models: List[Model] = []
+                unplaced_models: List[Model] = []
+                for m in alive_models:
+                    pos = self._find_single_disembark_position(
+                        model=m,
+                        transport_base=transport_base,
+                        game_map=game_map,
+                        max_distance=6.0,
+                        placed=placed_positions,
+                        require_not_in_engagement=True,
+                    )
+                    if pos is None:
+                        unplaced_models.append(m)
+                        continue
+                    placed_positions.append(pos)
+                    placed_models.append(m)
+
+                # Commit placements (if any)
+                for m, pos in zip(placed_models, placed_positions):
+                    try:
+                        m.set_location(*pos)
+                    except Exception:
+                        pass
+
+                # Destroy any unplaced models (so they don't interfere with placement validation)
+                for m in unplaced_models:
+                    try:
+                        m.wounds = 0
+                        m.die(game_map=game_map)
+                    except Exception:
+                        pass
+
+                if placed_models:
+                    try:
+                        if hasattr(game_map, "place_unit") and not game_map.place_unit(self):
+                            # If battlefield validation fails, treat as no placements
+                            placed_models = []
+                            placed_positions = []
+                    except Exception:
+                        pass
+
+                # Remove from passengers list (even if unit ended up destroyed)
+                try:
+                    transport_unit.remove_passenger(self)
+                except Exception:
+                    pass
+                if not placed_models:
+                    # Nothing could be set up; unit is likely destroyed or cannot disembark at all
+                    return False
+
+                # Emergency disembarkation from a destroyed transport still applies destroyed-transport effects
+                self.round_state.disembarked_this_round = True
+                self.round_state.disembarked_from_destroyed_transport = True
+                self.round_state.moved_this_round = True
+                self.round_state.remained_stationary_this_round = False
+
+                # Battle-shock until next Command phase
+                try:
+                    if not self.is_battle_shocked():
+                        self.apply_status_effect(BattleShockEffect(current_turn))
+                except Exception:
+                    pass
+
+                # Mortal wounds on 1-3
+                try:
+                    for m in list(self.models):
+                        if not getattr(m, "is_alive", False):
+                            continue
+                        roll = get_roll("D6")
+                        if roll <= 3:
+                            m.take_damage(1, is_mortal=True, game_map=game_map)
+                except Exception:
+                    pass
+
+                return True
+            print(f"❌ {self.name} cannot disembark: no valid placement found")
+            return False
+
+        # Commit placements
+        for model, pos in zip([m for m in self.models if m.is_alive], placements):
+            model.set_location(*pos)
+        # Add back to map (place_unit validates collisions)
+        if hasattr(game_map, "place_unit"):
+            if not game_map.place_unit(self):
+                print(f"❌ {self.name} disembark failed: map placement validation failed")
+                return False
+        else:
+            try:
+                game_map.units.append(self)
+            except Exception:
+                pass
+
+        # Remove from transport passengers list
+        try:
+            transport_unit.remove_passenger(self)
+        except Exception:
+            pass
+
+        self.round_state.disembarked_this_round = True
+
+        # Apply moved/charge restrictions depending on cause
+        if destroyed_transport:
+            self.round_state.disembarked_from_destroyed_transport = True
+            self.round_state.moved_this_round = True
+            self.round_state.remained_stationary_this_round = False
+            # Battle-shock until next Command phase
+            try:
+                if not self.is_battle_shocked():
+                    self.apply_status_effect(BattleShockEffect(current_turn))
+            except Exception:
+                pass
+            # Mortal wounds
+            try:
+                # Destroyed transport: on 1 take 1 MW; Emergency: on 1-3 take 1 MW
+                threshold = 3 if emergency else 1
+                for m in list(self.models):
+                    if not getattr(m, "is_alive", False):
+                        continue
+                    roll = get_roll("D6")
+                    if roll <= threshold:
+                        m.take_damage(1, is_mortal=True, game_map=game_map)
+            except Exception:
+                pass
+        else:
+            # If the transport moved normally this phase, disembarking unit counts as having made a Normal move,
+            # cannot move further and cannot charge.
+            if getattr(transport_unit.round_state, "moved_this_round", False) and not getattr(transport_unit.round_state, "remained_stationary_this_round", False):
+                if not getattr(transport_unit.round_state, "advanced_this_round", False) and not getattr(transport_unit.round_state, "fell_back_this_round", False):
+                    self.round_state.disembarked_from_moved_transport = True
+                    self.round_state.moved_this_round = True
+                    self.round_state.remained_stationary_this_round = False
+
+        return True
 
     def take_damage(self, amount: int):
         pass
@@ -4071,6 +4725,10 @@ class Unit:
             return False
             
         if self.round_state.advanced_this_round and not self.can_charge_after_advance():
+            return False
+
+        # Transport disembark restrictions (10th ed core)
+        if getattr(self.round_state, "disembarked_from_moved_transport", False) or getattr(self.round_state, "disembarked_from_destroyed_transport", False):
             return False
             
         if self.round_state.fell_back_this_round:
