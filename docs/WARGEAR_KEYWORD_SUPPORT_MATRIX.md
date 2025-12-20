@@ -134,11 +134,11 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <td bgcolor="#d4edda">No-LOS penalties and grants target Benefit of Cover (unless Ignores Cover).</td>
 </tr>
 <tr>
-<td bgcolor="#f8d7da"><code>lance</code></td>
-<td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
-<td bgcolor="#f8d7da">40</td>
-<td bgcolor="#f8d7da">Lance<br/>lance</td>
-<td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
+<td bgcolor="#d4edda"><code>lance</code></td>
+<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
+<td bgcolor="#d4edda">40</td>
+<td bgcolor="#d4edda">Lance<br/>lance</td>
+<td bgcolor="#d4edda">If the bearer charged this turn, +1 to wound rolls for this weapon.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>lethal hits</code></td>
@@ -239,11 +239,11 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <td bgcolor="#d4edda">Auto-hits (also works under Overwatch restriction).</td>
 </tr>
 <tr>
-<td bgcolor="#f8d7da"><code>twin-linked</code></td>
-<td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
-<td bgcolor="#f8d7da">595</td>
-<td bgcolor="#f8d7da">TWIN-LINKED<br/>TwIN-lINkED<br/>twin-linked</td>
-<td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
+<td bgcolor="#d4edda"><code>twin-linked</code></td>
+<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
+<td bgcolor="#d4edda">595</td>
+<td bgcolor="#d4edda">TWIN-LINKED<br/>TwIN-lINkED<br/>twin-linked</td>
+<td bgcolor="#d4edda">Re-roll failed wound rolls for attacks made with this weapon.</td>
 </tr>
 </tbody>
 </table>

@@ -149,6 +149,8 @@ def _keyword_support(canon: str, examples: Set[str]) -> Tuple[str, str]:
         "extra attacks": "Melee selection supports 1 primary weapon plus all [EXTRA ATTACKS] weapons.",
         "one shot": "Enforced: each model can use a ONE SHOT weapon once per battle.",
         "pistol": "Engaged shooting + pistol-vs-other-ranged choice enforced (10e).",
+        "lance": "If the bearer charged this turn, +1 to wound rolls for this weapon.",
+        "twin-linked": "Re-roll failed wound rolls for attacks made with this weapon.",
     }
 
     # Partials: some related logic exists but full 10e rules not fully enforced.

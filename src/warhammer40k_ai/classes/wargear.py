@@ -154,6 +154,11 @@ class WargearProfile:
                 else:
                     chance_to_wound = 2/6
 
+        # TWIN-LINKED: re-roll failed wound rolls (boosts wound probability).
+        # If base probability is p, rerolling failures gives: p + (1-p)*p = 1 - (1-p)^2.
+        if self.is_twin_linked():
+            chance_to_wound = 1.0 - (1.0 - chance_to_wound) ** 2
+
         # Average damage per hit
         if isinstance(self.damage, DiceCollection):
             avg_damage = self.damage.stat_average()
@@ -699,6 +704,26 @@ class WargearProfile:
             except Exception:
                 pass
             return new_roll
+        # Precompute wound-roll modifiers (10e-style +/-1 cap)
+        dice_modifier = 0
+        try:
+            # LANCE: if bearer made a Charge move this turn, add 1 to this attack's Wound roll.
+            # (Applied only for melee attacks.)
+            is_melee = False
+            try:
+                is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+            except Exception:
+                is_melee = False
+            if is_melee and self.is_lance():
+                charged = bool(getattr(attacker.parent_unit.round_state, "charged_this_round", False))
+                if charged:
+                    dice_modifier += 1
+                    wound_result['modifiers'].append("+1 to wound from Lance (charged)")
+        except Exception:
+            pass
+
+        dice_modifier = min(max(dice_modifier, -1), 1)
+
         dice_roll = get_roll("D6")
         try:
             weapon_name_for_log = getattr(self, 'parent_wargear', None).name if getattr(self, 'parent_wargear', None) else getattr(self, 'name', 'Weapon')
@@ -714,62 +739,81 @@ class WargearProfile:
         except Exception:
             pass
 
-        if dice_roll == 1:  # unmodified dice roll of 1 is always a miss
-            wound_result['wound'] = False
-            wound_result['special_effects'].append("Natural 1 (auto-fail)")
-            return wound_result
-        elif dice_roll == 6:  # unmodified dice roll of 6 is always a hit
-            wound_result['wound'] = True
-            wound_result['special_effects'].append("Natural 6 (auto-wound)")
-            attack_instance['crit_wound'] = True
-            if self.is_devastating_wounds():
-                wound_result['special_effects'].append("Devastating Wounds")
-                attack_instance['mortal_wound'] = True
-            return wound_result
-
-        anti_keyword, anti_value = self.is_anti()
-        if anti_keyword and target.has_keyword(anti_keyword):
-            if dice_roll >= anti_value:
-                wound_result['wound'] = True
-                wound_result['special_effects'].append(f"Anti-{anti_keyword} {anti_value}+")
+        def _apply_wound_roll(roll: int) -> bool:
+            """Apply wound logic for a given (unmodified) roll; respects dice_modifier."""
+            # Natural 1 always fails
+            if roll == 1:
+                return False
+            # Natural 6 always wounds (critical wound)
+            if roll == 6:
+                wound_result['special_effects'].append("Natural 6 (auto-wound)")
                 attack_instance['crit_wound'] = True
                 if self.is_devastating_wounds():
                     wound_result['special_effects'].append("Devastating Wounds")
                     attack_instance['mortal_wound'] = True
-                return wound_result
+                return True
 
-        # Determine base wound threshold based on S vs T
-        base_needed = None
-        strength_comparison = ""
-        if strength >= (target_toughness * 2):
-            base_needed = 2
-            strength_comparison = f"S{strength} ≥ 2×T{target_toughness}"
-        elif strength > target_toughness:
-            base_needed = 3
-            strength_comparison = f"S{strength} > T{target_toughness}"
-        elif strength == target_toughness:
-            base_needed = 4
-            strength_comparison = f"S{strength} = T{target_toughness}"
-        elif strength <= (target_toughness / 2):
-            base_needed = 6
-            strength_comparison = f"S{strength} ≤ T{target_toughness}/2"
+            # Anti-X can make a roll count as a critical wound
+            anti_keyword, anti_value = self.is_anti()
+            if anti_keyword and target.has_keyword(anti_keyword):
+                if roll >= anti_value:
+                    wound_result['special_effects'].append(f"Anti-{anti_keyword} {anti_value}+")
+                    attack_instance['crit_wound'] = True
+                    if self.is_devastating_wounds():
+                        wound_result['special_effects'].append("Devastating Wounds")
+                        attack_instance['mortal_wound'] = True
+                    return True
+
+            # Determine base wound threshold based on S vs T
+            base_needed = None
+            strength_comparison = ""
+            if strength >= (target_toughness * 2):
+                base_needed = 2
+                strength_comparison = f"S{strength} ≥ 2×T{target_toughness}"
+            elif strength > target_toughness:
+                base_needed = 3
+                strength_comparison = f"S{strength} > T{target_toughness}"
+            elif strength == target_toughness:
+                base_needed = 4
+                strength_comparison = f"S{strength} = T{target_toughness}"
+            elif strength <= (target_toughness / 2):
+                base_needed = 6
+                strength_comparison = f"S{strength} ≤ T{target_toughness}/2"
+            else:
+                base_needed = 5
+                strength_comparison = f"S{strength} < T{target_toughness}"
+
+            # Note: positive dice_modifier makes it easier (lower needed), capped elsewhere to +/-1
+            final_needed = base_needed - dice_modifier
+            # Clamp within [2, 6] (wound rolls can never be improved beyond 2+ / worsened beyond 6+)
+            final_needed = min(max(final_needed, 2), 6)
+
+            wound_result['needed'] = base_needed
+            wound_result['final_needed'] = final_needed
+            if strength_comparison:
+                wound_result.setdefault('strength_comparison', strength_comparison)
+            return roll >= final_needed
+
+        # First attempt
+        if dice_roll == 6:
+            wound_result['wound'] = True
+            wound_result['wound'] = _apply_wound_roll(dice_roll)
         else:
-            base_needed = 5
-            strength_comparison = f"S{strength} < T{target_toughness}"
-        
-        wound_result['needed'] = base_needed
-        wound_result['strength_comparison'] = strength_comparison
-        
-        # Calculate wound modifiers
-        dice_modifier = 0
-        # TODO: Add wound modifiers here (abilities, stratagems, etc.)
-        
-        dice_modifier = min(max(dice_modifier, -1), 1)  # modifications are capped between -1 and 1
-        final_needed = base_needed - dice_modifier  # Note: positive dice_modifier makes it easier (lower needed)
-        
-        wound_result['final_needed'] = final_needed
-        wound_result['wound'] = dice_roll >= final_needed
-        
+            wound_result['wound'] = _apply_wound_roll(dice_roll)
+
+        # TWIN-LINKED: re-roll failed wound rolls once.
+        try:
+            if (not wound_result['wound']) and self.is_twin_linked():
+                reroll = _reroll_wound()
+                wound_result['special_effects'].append("Twin-linked (re-roll failed wound)")
+                wound_result['reroll'] = reroll
+                wound_result['wound'] = _apply_wound_roll(reroll)
+        except Exception:
+            pass
+
+        if dice_roll == 1:
+            wound_result['special_effects'].append("Natural 1 (auto-fail)")
+
         return wound_result
 
     def _save_with_tracking(self, target_model: 'Model', attack_instance: Dict, ap: int) -> Dict:
