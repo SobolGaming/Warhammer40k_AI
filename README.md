@@ -96,10 +96,22 @@ python3 -m warhammer40k_ai.UI.wahapedia_ui
 ## Files and Documentation
 
 - `README.md`: This file
-- `PLAYER_CONFIGURATION.md`: Detailed player type configuration guide
-- `DEPLOYMENT_ARCHITECTURE.md`: Deployment system implementation details
-- `CHECKPOINT_MIGRATION.md`: AI checkpoint management and migration
-- `README_training.md`: In-depth training system documentation
+
+### Documentation (clickable)
+
+- **Support matrices**
+  - [Ability Support Matrix](docs/ABILITY_SUPPORT_MATRIX.md)
+  - [Stratagem Support Matrix](docs/STRATAGEM_SUPPORT_MATRIX.md)
+- **Design/implementation docs**
+  - [Player configuration](docs/PLAYER_CONFIGURATION.md)
+  - [Deployment architecture](docs/DEPLOYMENT_ARCHITECTURE.md)
+  - [Mission deployment system](docs/MISSION_DEPLOYMENT_SYSTEM.md)
+  - [Mission selection dialog](docs/MISSION_SELECTION_DIALOG.md)
+  - [Reserve limits implementation](docs/RESERVE_LIMITS_IMPLEMENTATION.md)
+  - [Ruins terrain system](docs/RUINS_TERRAIN_SYSTEM.md)
+  - [Pile-in implementation](docs/PILE_IN_IMPLEMENTATION.md)
+  - [Checkpoint migration](docs/CHECKPOINT_MIGRATION.md)
+  - [Training README](docs/README_training.md)
 
 ## Project Structure
 
