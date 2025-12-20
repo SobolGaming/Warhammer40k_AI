@@ -146,6 +146,7 @@ def _keyword_support(canon: str, examples: Set[str]) -> Tuple[str, str]:
         "torrent": "Auto-hits (also works under Overwatch restriction).",
         "anti": "Critical wound threshold vs matching target keyword (e.g. Anti-Infantry 4+).",
         "melta": "Adds damage at half range (integer values supported).",
+        "extra attacks": "Melee selection supports 1 primary weapon plus all [EXTRA ATTACKS] weapons.",
     }
 
     # Partials: some related logic exists but full 10e rules not fully enforced.
@@ -157,18 +158,7 @@ def _keyword_support(canon: str, examples: Set[str]) -> Tuple[str, str]:
 
     if c in supported_notes:
         # Validate parameter parsing limitations for some keyword families.
-        if c == "rapid fire" and not _is_all_int_suffix(examples, "rapid fire"):
-            return ("Partial", "Rapid Fire is implemented, but non-integer values (e.g. D3) are not supported.")
-        if c == "sustained hits" and not _is_all_int_suffix(examples, "sustained hits"):
-            return ("Partial", "Sustained Hits is implemented, but non-integer values (e.g. D3) are not supported.")
-        if c == "melta":
-            # melta parsing expects integer values
-            for ex in examples:
-                t = _normalize_token(ex)
-                if t.startswith("melta "):
-                    parts = t.split()
-                    if len(parts) >= 2 and not parts[1].isdigit():
-                        return ("Partial", "Melta is implemented, but non-integer values are not supported.")
+        # Rapid Fire / Sustained Hits / Melta support dice expressions in the engine now.
         if c == "anti":
             # anti parsing expects "anti-<keyword> <num>+"
             for ex in examples:

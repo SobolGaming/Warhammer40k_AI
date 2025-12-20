@@ -78,11 +78,11 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <td bgcolor="#d4edda">Critical wounds become mortal wounds.</td>
 </tr>
 <tr>
-<td bgcolor="#f8d7da"><code>extra attacks</code></td>
-<td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
-<td bgcolor="#f8d7da">134</td>
-<td bgcolor="#f8d7da">EXTRA ATTACKS<br/>extra attacks</td>
-<td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
+<td bgcolor="#d4edda"><code>extra attacks</code></td>
+<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
+<td bgcolor="#d4edda">134</td>
+<td bgcolor="#d4edda">EXTRA ATTACKS<br/>extra attacks</td>
+<td bgcolor="#d4edda">Melee selection supports 1 primary weapon plus all [EXTRA ATTACKS] weapons.</td>
 </tr>
 <tr>
 <td bgcolor="#f8d7da"><code>harpooned</code></td>
@@ -155,11 +155,11 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
 </tr>
 <tr>
-<td bgcolor="#fff3cd"><code>melta</code></td>
-<td bgcolor="#fff3cd"><b>🟨 Partial</b></td>
-<td bgcolor="#fff3cd">261</td>
-<td bgcolor="#fff3cd">MELTA 2<br/>MElTA 2<br/>melta 1</td>
-<td bgcolor="#fff3cd">Melta is implemented, but non-integer values are not supported.</td>
+<td bgcolor="#d4edda"><code>melta</code></td>
+<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
+<td bgcolor="#d4edda">261</td>
+<td bgcolor="#d4edda">MELTA 2<br/>MElTA 2<br/>melta 1</td>
+<td bgcolor="#d4edda">Adds damage at half range (integer values supported).</td>
 </tr>
 <tr>
 <td bgcolor="#f8d7da"><code>one shot</code></td>
@@ -204,11 +204,11 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
 </tr>
 <tr>
-<td bgcolor="#fff3cd"><code>rapid fire</code></td>
-<td bgcolor="#fff3cd"><b>🟨 Partial</b></td>
-<td bgcolor="#fff3cd">695</td>
-<td bgcolor="#fff3cd">RAPID FIRE 1<br/>RAPID FIRE 2<br/>RAPID FIRE 3</td>
-<td bgcolor="#fff3cd">Rapid Fire is implemented, but non-integer values (e.g. D3) are not supported.</td>
+<td bgcolor="#d4edda"><code>rapid fire</code></td>
+<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
+<td bgcolor="#d4edda">695</td>
+<td bgcolor="#d4edda">RAPID FIRE 1<br/>RAPID FIRE 2<br/>RAPID FIRE 3</td>
+<td bgcolor="#d4edda">Adds attacks at half range.</td>
 </tr>
 <tr>
 <td bgcolor="#f8d7da"><code>reverberating summons</code></td>
@@ -225,11 +225,11 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
 </tr>
 <tr>
-<td bgcolor="#fff3cd"><code>sustained hits</code></td>
-<td bgcolor="#fff3cd"><b>🟨 Partial</b></td>
-<td bgcolor="#fff3cd">479</td>
-<td bgcolor="#fff3cd">SUSTAINED HITS 1<br/>SUSTAINED HITS 2<br/>SUSTAINED HITS 3</td>
-<td bgcolor="#fff3cd">Sustained Hits is implemented, but non-integer values (e.g. D3) are not supported.</td>
+<td bgcolor="#d4edda"><code>sustained hits</code></td>
+<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
+<td bgcolor="#d4edda">479</td>
+<td bgcolor="#d4edda">SUSTAINED HITS 1<br/>SUSTAINED HITS 2<br/>SUSTAINED HITS 3</td>
+<td bgcolor="#d4edda">Critical hits generate extra hits (integer values supported).</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>torrent</code></td>

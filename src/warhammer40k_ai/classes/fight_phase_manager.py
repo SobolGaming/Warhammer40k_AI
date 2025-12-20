@@ -425,21 +425,53 @@ class FightPhaseManager:
             print(f"🎯 {target_unit.name} takes {total_damage} damage")
 
     def _auto_select_melee_weapons(self, unit: Unit) -> List:
-        """Auto-select all available melee weapons for a unit."""
+        """Auto-select melee weapons for a unit (fallback).
+
+        Respects the EXTRA ATTACKS rule:
+        - Select ONE melee weapon that does NOT have EXTRA ATTACKS (if any)
+        - Also select ALL melee weapons that DO have EXTRA ATTACKS
+        """
         weapon_declarations = []
 
         for model in unit.models:
             if not model.is_alive:
                 continue
 
-            for wargear in model.wargear:
-                if hasattr(wargear, 'profiles') and wargear.is_melee():
-                    for profile_name, profile in wargear.profiles.items():
-                        weapon_declarations.append({
-                            'model': model,
-                            'weapon_profile': profile,
-                            'profile_name': profile_name
-                        })
+            # Collect melee profiles by category
+            primary_candidates = []  # (profile, profile_name)
+            extra_attack_profiles = []  # (profile, profile_name)
+
+            for wargear in getattr(model, "wargear", []) or []:
+                try:
+                    if not (hasattr(wargear, "profiles") and wargear.is_melee()):
+                        continue
+                except Exception:
+                    continue
+                for profile_name, profile in getattr(wargear, "profiles", {}).items():
+                    try:
+                        if getattr(profile, "is_extra_attacks", lambda: False)():
+                            extra_attack_profiles.append((profile, profile_name))
+                        else:
+                            primary_candidates.append((profile, profile_name))
+                    except Exception:
+                        primary_candidates.append((profile, profile_name))
+
+            # Pick one primary weapon deterministically (first listed)
+            if primary_candidates:
+                profile, profile_name = primary_candidates[0]
+                weapon_declarations.append({
+                    'model': model,
+                    'weapon_profile': profile,
+                    'profile_name': profile_name
+                })
+
+            # Always include all extra attacks profiles
+            for profile, profile_name in extra_attack_profiles:
+                weapon_declarations.append({
+                    'model': model,
+                    'weapon_profile': profile,
+                    'profile_name': profile_name
+                })
 
         print(f"🗡️ Auto-selected {len(weapon_declarations)} melee weapons for {unit.name}")
         return weapon_declarations

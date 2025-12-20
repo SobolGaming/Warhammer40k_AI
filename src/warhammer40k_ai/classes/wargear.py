@@ -89,6 +89,32 @@ class WargearProfile:
     def get_keywords(self) -> List[str]:
         return self.keywords
 
+    def _get_keyword_suffix_count(self, prefix: str, default: int = 1) -> Count:
+        """
+        Parse keyword forms like:
+        - "rapid fire" or "rapid fire 1" or "rapid fire D3"
+        - "melta" or "melta 2" or "melta D3+2"
+        Returns a Count (flat or dice). If absent, returns Count(FLAT, 0).
+        """
+        try:
+            p = (prefix or "").strip().lower()
+            if not p:
+                return Count.from_string("0")
+            for kw in self.get_keywords():
+                raw = (kw or "").strip()
+                k = raw.lower()
+                if k == p:
+                    return Count.from_string(str(default))
+                if k.startswith(p + " "):
+                    suffix = raw[len(prefix):].strip()
+                    if not suffix:
+                        return Count.from_string(str(default))
+                    # Normalize common cases: "d3" -> "D3"
+                    return Count.from_string(suffix.upper())
+        except Exception:
+            pass
+        return Count.from_string("0")
+
     ###########################################################################
     ### Wargear profile damage potential
     ###########################################################################
@@ -137,11 +163,16 @@ class WargearProfile:
         #######################################################################
         # Handle special rules (simplified)
         #######################################################################
-        # Handle 'Sustained Hits'
-        sustained_hits_value = self.is_sustained_hits()
-        if sustained_hits_value > 0:
-            sustained_hits_bonus = avg_attacks * chance_to_hit * (sustained_hits_value / 6.0)
-            avg_attacks += sustained_hits_bonus
+        # Handle 'Sustained Hits' (approximation)
+        # Sustained Hits triggers on critical hits (unmodified 6s) and adds extra hits equal to X.
+        # We estimate expected bonus hits as: avg_attacks * chance_to_hit * (avg_X / 6).
+        if self.is_sustained_hits():
+            try:
+                avg_x = float(self.get_sustained_hits_bonus().stat_average())
+                sustained_hits_bonus = avg_attacks * chance_to_hit * (avg_x / 6.0)
+                avg_attacks += sustained_hits_bonus
+            except Exception:
+                pass
 
         # TODO - handle rest of special rules
         #######################################################################
@@ -335,9 +366,17 @@ class WargearProfile:
             attack_result.attacks_special_modifiers.append("Plunging Fire (AP improved by 1)")
         
         # Apply attack modifiers
-        if closest_dist <= (self.range.max / 2) and self.is_rapid_fire() > 0:
-            attack_result.attacks_special_modifiers.append(f"Rapid Fire +{self.is_rapid_fire()}")
-            num_attacks += self.is_rapid_fire()
+        if closest_dist <= (self.range.max / 2) and self.is_rapid_fire():
+            # Support Rapid Fire N / Rapid Fire D3 / Rapid Fire D6+X, etc.
+            try:
+                rf = self.get_rapid_fire_bonus()
+                rf_bonus = int(rf.resolve())
+                attack_result.attacks_special_modifiers.append(f"Rapid Fire +{rf_bonus} ({rf})")
+                num_attacks += rf_bonus
+            except Exception:
+                # Conservative fallback
+                attack_result.attacks_special_modifiers.append("Rapid Fire +1")
+                num_attacks += 1
 
         if self.is_blast():
             target_model_count = len(target.models)
@@ -579,9 +618,16 @@ class WargearProfile:
             if self.is_lethal_hits():
                 hit_result['special_effects'].append("Lethal Hits")
                 attack_instance['lethal_hit'] = True
-            if self.is_sustained_hits() > 0:
-                hit_result['special_effects'].append(f"Sustained Hits {self.is_sustained_hits()}")
-                attack_instance['sustained_hit'] = self.is_sustained_hits()
+            if self.is_sustained_hits():
+                # Support Sustained Hits X / Sustained Hits D3 / etc. Roll per critical hit.
+                try:
+                    sh = self.get_sustained_hits_bonus()
+                    sh_val = int(sh.resolve())
+                    hit_result['special_effects'].append(f"Sustained Hits {sh} (+{sh_val})")
+                    attack_instance['sustained_hit'] = sh_val
+                except Exception:
+                    hit_result['special_effects'].append("Sustained Hits (+1)")
+                    attack_instance['sustained_hit'] = 1
             return hit_result
 
         # Normal hit resolution
@@ -865,9 +911,16 @@ class WargearProfile:
         damage_result['damage_rolled'] = damage_value
         
         if self.is_melta() and attack_instance['below_half_distance']:
-            melta_bonus = self.is_melta()
-            damage_value += melta_bonus
-            damage_result['special_effects'].append(f"Melta +{melta_bonus}")
+            # Support Melta N / Melta D3 / Melta D6+X, etc.
+            try:
+                melta = self.get_melta_bonus()
+                melta_bonus = int(melta.resolve())
+                damage_value += melta_bonus
+                damage_result['special_effects'].append(f"Melta +{melta_bonus} ({melta})")
+            except Exception:
+                # Conservative fallback
+                damage_value += 1
+                damage_result['special_effects'].append("Melta +1")
         
         # Apply damage with detailed tracking
         was_alive = target_model.is_alive
@@ -1172,6 +1225,21 @@ class WargearProfile:
     def is_extra_attacks(self) -> int:
         return 'extra attacks' in [keyword.lower() for keyword in self.get_keywords()]
 
+    def is_one_shot(self) -> bool:
+        return 'one shot' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def one_shot_key(self) -> str:
+        """Stable-ish identifier for per-model one-shot tracking."""
+        try:
+            parent = getattr(self, "parent_wargear", None)
+            parent_name = getattr(parent, "name", "") if parent is not None else ""
+            profile_name = getattr(self, "name", "") or ""
+            if parent_name:
+                return f"{parent_name}::{profile_name}"
+            return profile_name
+        except Exception:
+            return str(getattr(self, "name", ""))
+
     def can_shoot_after_advance(self) -> bool:
         """Check if this weapon can be shot after advancing.
         
@@ -1179,43 +1247,26 @@ class WargearProfile:
         """
         return self.is_assault()
 
-    def is_sustained_hits(self) -> int:
-        for keyword in self.get_keywords():
-            if keyword.lower().startswith('sustained hits'):
-                parts = keyword.split()
-                if len(parts) > 2:
-                    if parts[2].isdigit():
-                        return int(parts[2])
-                    else:
-                        raise Exception(f"Invalid sustained hits value: {keyword}")
-                return 1  # Default to 1 if no number is specified
-        return 0
+    def is_sustained_hits(self) -> bool:
+        return any((k or "").strip().lower().startswith("sustained hits") for k in self.get_keywords())
 
-    def is_rapid_fire(self) -> int:
-        for keyword in self.get_keywords():
-            if keyword.lower().startswith('rapid fire'):
-                parts = keyword.split()
-                if len(parts) > 2:
-                    if parts[2].isdigit():
-                        return int(parts[2])
-                    else:
-                        raise Exception(f"Invalid rapid fire value: {keyword}")
-                return 1  # Default to 1 if no number is specified
-        return 0
+    def get_sustained_hits_bonus(self) -> Count:
+        # Defaults to Sustained Hits 1 when unspecified
+        return self._get_keyword_suffix_count("sustained hits", default=1)
 
-    def is_melta(self) -> int:
-        for keyword in self.get_keywords():
-            if keyword.lower().startswith('melta'):
-                parts = keyword.split()
-                # Expected forms:
-                # - "melta" (default to 1)
-                # - "melta X" (integer)
-                if len(parts) == 1:
-                    return 1
-                if len(parts) >= 2 and parts[1].isdigit():
-                    return int(parts[1])
-                raise Exception(f"Invalid melta value: {keyword}")
-        return 0
+    def is_rapid_fire(self) -> bool:
+        return any((k or "").strip().lower().startswith("rapid fire") for k in self.get_keywords())
+
+    def get_rapid_fire_bonus(self) -> Count:
+        # Defaults to Rapid Fire 1 when unspecified
+        return self._get_keyword_suffix_count("rapid fire", default=1)
+
+    def is_melta(self) -> bool:
+        return any((k or "").strip().lower().startswith("melta") for k in self.get_keywords())
+
+    def get_melta_bonus(self) -> Count:
+        # Defaults to Melta 1 when unspecified
+        return self._get_keyword_suffix_count("melta", default=1)
 
     def is_anti(self):
         for keyword in self.get_keywords():

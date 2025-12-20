@@ -2967,6 +2967,17 @@ class Unit:
             
             if not has_weapon:
                 continue
+
+            # ONE SHOT: weapons with this keyword can only be used once per battle (per model).
+            try:
+                if getattr(weapon_profile, "is_one_shot", lambda: False)():
+                    key = getattr(weapon_profile, "one_shot_key", lambda: "")()
+                    used = getattr(model, "_one_shot_used", set())
+                    if key and key in used:
+                        continue
+            except Exception:
+                # If anything goes wrong, do not block the shot.
+                pass
                 
             # Check range and line of sight
             if self._can_model_shoot_weapon_at_target(model, weapon_profile, target_unit, game_map):
@@ -3286,6 +3297,16 @@ class Unit:
         for model in models_with_weapon:
             if not model.is_alive:
                 continue
+
+            # ONE SHOT: prevent repeated use (per model)
+            try:
+                if getattr(weapon_profile, "is_one_shot", lambda: False)():
+                    key = getattr(weapon_profile, "one_shot_key", lambda: "")()
+                    used = getattr(model, "_one_shot_used", set())
+                    if key and key in used:
+                        continue
+            except Exception:
+                pass
                 
             # Check if this model can still shoot this weapon at this target
             if not self._can_model_shoot_weapon_at_target(model, weapon_profile, target_unit, game_map):
@@ -3315,6 +3336,19 @@ class Unit:
                 weapon_profile.attack(target_unit, model, game_map=game_map)
                 # Count successful execution of the attack (not damage dealt)
                 successful_attacks += 1
+
+                # Mark ONE SHOT weapons as expended after firing (hit or miss).
+                try:
+                    if getattr(weapon_profile, "is_one_shot", lambda: False)():
+                        key = getattr(weapon_profile, "one_shot_key", lambda: "")()
+                        if key:
+                            used = getattr(model, "_one_shot_used", set())
+                            if not isinstance(used, set):
+                                used = set()
+                            used.add(key)
+                            setattr(model, "_one_shot_used", used)
+                except Exception:
+                    pass
             except Exception as e:
                 print(f"❌ Error executing attack with {weapon_profile.name}: {e}")
                 # Don't increment successful_attacks if there was an exception

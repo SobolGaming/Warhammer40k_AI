@@ -329,6 +329,46 @@ class TestFightPhaseManager(unittest.TestCase):
         self.assertEqual(stage_info["active_player"], "Player 2")
         self.assertFalse(stage_info["is_complete"])
 
+    def test_auto_select_melee_weapons_respects_extra_attacks(self):
+        """Fallback melee selection should pick 1 primary + all EXTRA ATTACKS weapons per model."""
+        from types import SimpleNamespace
+
+        class _Profile:
+            def __init__(self, name: str, extra: bool):
+                self.name = name
+                self._extra = extra
+
+            def is_extra_attacks(self) -> bool:
+                return self._extra
+
+        class _Wargear:
+            def __init__(self, profiles: dict):
+                self.profiles = profiles
+
+            def is_melee(self) -> bool:
+                return True
+
+        # Build a unit with one model that has 2 primary weapons and 1 extra-attacks weapon
+        primary1 = _Profile("Chainsword", extra=False)
+        primary2 = _Profile("Power fist", extra=False)
+        extra = _Profile("Attack squig", extra=True)
+
+        wargear = _Wargear({"a": primary1, "b": primary2, "c": extra})
+        model = SimpleNamespace(is_alive=True, name="Model", wargear=[wargear])
+        unit = SimpleNamespace(name="Unit", models=[model])
+
+        decls = self.manager._auto_select_melee_weapons(unit)
+        # Expect: exactly 2 declarations (1 primary + 1 extra)
+        self.assertEqual(len(decls), 2)
+        chosen_profiles = [d["weapon_profile"] for d in decls]
+
+        # Exactly one non-extra chosen
+        non_extra = [p for p in chosen_profiles if not p.is_extra_attacks()]
+        extras = [p for p in chosen_profiles if p.is_extra_attacks()]
+        self.assertEqual(len(non_extra), 1)
+        self.assertEqual(len(extras), 1)
+        self.assertEqual(extras[0].name, "Attack squig")
+
 
 class TestUnitFightingEligibility(unittest.TestCase):
     """Test unit eligibility for fighting."""
