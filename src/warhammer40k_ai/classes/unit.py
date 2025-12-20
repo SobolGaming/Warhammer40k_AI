@@ -2506,9 +2506,8 @@ class Unit:
     def can_shoot_after_fall_back(self, profile) -> bool:
         """Check if this unit can shoot after falling back with the given weapon profile.
         
-        A unit can shoot after falling back if either:
-        1. The weapon profile is a Pistol weapon, OR
-        2. The unit has an ability that allows shooting after falling back
+        In 10th edition, Falling Back normally makes a unit not eligible to shoot.
+        A unit can only shoot after falling back if it has an ability that explicitly allows it.
         
         Args:
             profile: The weapon profile to check
@@ -2516,10 +2515,6 @@ class Unit:
         Returns:
             bool: True if the unit can shoot this weapon after falling back
         """
-        # Check for Pistol weapons (can always shoot after falling back)
-        if profile.is_pistol():
-            return True
-            
         # Check for unit abilities that allow shooting after falling back
         if self.has_fell_back_and_shoot():
             return True
@@ -2887,6 +2882,90 @@ class Unit:
                 print(f"❌ {self.name} cannot shoot after falling back")
                 return False
             
+        # Enforce PISTOL selection rules (10e):
+        # - For non-VEHICLE/non-MONSTER models: if any non-pistol ranged weapons are selected, pistols cannot also be used.
+        # - While within Engagement Range: only Pistols can be used by non-VEHICLE/non-MONSTER models.
+        # This is enforced best-effort by filtering models out of conflicting declarations.
+        try:
+            is_vehicle_or_monster = bool(self.is_vehicle or self.is_monster)
+            # Determine if this unit is engaged with any enemy
+            engaged = False
+            try:
+                engaged = any(
+                    game_map.is_within_engagement_range(self, enemy)
+                    for enemy in game_map.get_enemy_units(self)
+                    if enemy.is_alive()
+                )
+            except Exception:
+                engaged = False
+
+            # Build per-model "has pistol decl" and "has other decl"
+            by_model: dict[int, dict[str, bool]] = {}
+            for decl in weapon_declarations:
+                wp = decl.get("weapon_profile")
+                if wp is None:
+                    continue
+                is_pistol = False
+                try:
+                    is_pistol = bool(wp.is_pistol())
+                except Exception:
+                    is_pistol = False
+                for m in decl.get("models") or []:
+                    if not getattr(m, "is_alive", False):
+                        continue
+                    key = id(m)
+                    entry = by_model.setdefault(key, {"pistol": False, "other": False})
+                    if is_pistol:
+                        entry["pistol"] = True
+                    else:
+                        entry["other"] = True
+
+            # Filter declarations
+            filtered_decls: list[dict] = []
+            for decl in weapon_declarations:
+                wp = decl.get("weapon_profile")
+                if wp is None:
+                    filtered_decls.append(decl)
+                    continue
+                try:
+                    wp_is_pistol = bool(wp.is_pistol())
+                except Exception:
+                    wp_is_pistol = False
+                keep_models = []
+                removed = 0
+                for m in decl.get("models") or []:
+                    if not getattr(m, "is_alive", False):
+                        removed += 1
+                        continue
+                    flags = by_model.get(id(m), {"pistol": False, "other": False})
+                    if is_vehicle_or_monster:
+                        # VEHICLE/MONSTER are not subject to the pistol-vs-other exclusivity rule.
+                        keep_models.append(m)
+                        continue
+                    if engaged:
+                        # Engaged non-VEHICLE/non-MONSTER: only pistols.
+                        if wp_is_pistol:
+                            keep_models.append(m)
+                        else:
+                            removed += 1
+                        continue
+                    # Not engaged non-VEHICLE/non-MONSTER:
+                    # If both pistol and other were selected, prefer "other" and drop pistols.
+                    if flags["pistol"] and flags["other"] and wp_is_pistol:
+                        removed += 1
+                        continue
+                    keep_models.append(m)
+                if removed and keep_models:
+                    new_decl = dict(decl)
+                    new_decl["models"] = keep_models
+                    filtered_decls.append(new_decl)
+                elif keep_models:
+                    filtered_decls.append(decl)
+                # else: drop empty declaration
+            weapon_declarations = filtered_decls
+        except Exception:
+            pass
+
         print(f"🎯 {self.name} executing {len(weapon_declarations)} shooting declarations...")
         
         # Mark unit as having shot this round (regardless of success)
@@ -3274,13 +3353,24 @@ class Unit:
             return True
             
         # If engaged, check weapon type and target
-        if weapon_profile.is_pistol():
-            return True
-            
-        if weapon_profile.is_indirect_fire():
-            return True
-            
-        if self.is_vehicle:
+        # PISTOL (10e):
+        # - A unit can shoot with Pistols while within Engagement Range.
+        # - When it does so, it must target an enemy unit it is within Engagement Range of.
+        try:
+            if weapon_profile.is_pistol():
+                return game_map.is_within_engagement_range(self, target_unit)
+        except Exception:
+            pass
+
+        # VEHICLE / MONSTER (Big Guns Never Tire style behavior):
+        # Allow shooting while engaged (subject to other restrictions elsewhere).
+        if self.is_vehicle or self.is_monster:
+            # Best-effort: BLAST weapons cannot be used to target units within Engagement Range of the shooter.
+            try:
+                if game_map.is_within_engagement_range(self, target_unit) and weapon_profile.is_blast():
+                    return False
+            except Exception:
+                pass
             return True
             
         # Check if target is the unit we're engaged with
@@ -3288,7 +3378,7 @@ class Unit:
             return weapon_profile.is_pistol()
             
         # If target is different from engaged unit, only vehicles can shoot
-        return self.is_vehicle
+        return False
     
     def _execute_weapon_attacks(self, weapon_profile, target_unit, models_with_weapon, game_map, weapon_instance=None) -> int:
         """Execute attacks with a specific weapon profile"""

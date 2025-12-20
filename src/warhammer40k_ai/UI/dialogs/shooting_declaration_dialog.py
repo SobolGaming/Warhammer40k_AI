@@ -192,6 +192,15 @@ class ShootingDeclarationDialog(BaseDialog):
                     for profile_name, profile in wargear.profiles.items():
                         # Check if weapon can be used
                         if self._can_use_weapon(profile):
+                            # ONE SHOT: if this model already used this weapon, don't list it as available.
+                            try:
+                                if getattr(profile, "is_one_shot", lambda: False)():
+                                    key = getattr(profile, "one_shot_key", lambda: "")()
+                                    used = getattr(model, "_one_shot_used", set())
+                                    if key and key in used:
+                                        continue
+                            except Exception:
+                                pass
                             individual_weapons.append({
                                 'profile': profile,
                                 'wargear': wargear,
@@ -477,6 +486,15 @@ class ShootingDeclarationDialog(BaseDialog):
         models = []
         for model in self.unit.models:
             if model.is_alive:
+                # ONE SHOT: exclude models that already used this weapon.
+                try:
+                    if getattr(weapon_profile, "is_one_shot", lambda: False)():
+                        key = getattr(weapon_profile, "one_shot_key", lambda: "")()
+                        used = getattr(model, "_one_shot_used", set())
+                        if key and key in used:
+                            continue
+                except Exception:
+                    pass
                 for wargear in model.wargear:
                     for profile_name, profile in wargear.profiles.items():
                         if profile == weapon_profile:

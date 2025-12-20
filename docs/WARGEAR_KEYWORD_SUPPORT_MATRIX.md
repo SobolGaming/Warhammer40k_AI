@@ -159,21 +159,21 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <td bgcolor="#d4edda"><b>🟩 Supported</b></td>
 <td bgcolor="#d4edda">261</td>
 <td bgcolor="#d4edda">MELTA 2<br/>MElTA 2<br/>melta 1</td>
-<td bgcolor="#d4edda">Adds damage at half range (integer values supported).</td>
+<td bgcolor="#d4edda">Adds damage at half range (supports dice values like D3/D6+X).</td>
 </tr>
 <tr>
-<td bgcolor="#f8d7da"><code>one shot</code></td>
-<td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
-<td bgcolor="#f8d7da">123</td>
-<td bgcolor="#f8d7da">one shot</td>
-<td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
+<td bgcolor="#d4edda"><code>one shot</code></td>
+<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
+<td bgcolor="#d4edda">123</td>
+<td bgcolor="#d4edda">one shot</td>
+<td bgcolor="#d4edda">Enforced: each model can use a ONE SHOT weapon once per battle.</td>
 </tr>
 <tr>
-<td bgcolor="#fff3cd"><code>pistol</code></td>
-<td bgcolor="#fff3cd"><b>🟨 Partial</b></td>
-<td bgcolor="#fff3cd">862</td>
-<td bgcolor="#fff3cd">PISTOL<br/>PISTOl<br/>Pistol</td>
-<td bgcolor="#fff3cd">Used for fall back + shoot gating; full PISTOL targeting/engagement rules are not fully enforced.</td>
+<td bgcolor="#d4edda"><code>pistol</code></td>
+<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
+<td bgcolor="#d4edda">862</td>
+<td bgcolor="#d4edda">PISTOL<br/>PISTOl<br/>Pistol</td>
+<td bgcolor="#d4edda">Engaged shooting + pistol-vs-other-ranged choice enforced (10e).</td>
 </tr>
 <tr>
 <td bgcolor="#f8d7da"><code>plasma warhead</code></td>
@@ -208,7 +208,7 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <td bgcolor="#d4edda"><b>🟩 Supported</b></td>
 <td bgcolor="#d4edda">695</td>
 <td bgcolor="#d4edda">RAPID FIRE 1<br/>RAPID FIRE 2<br/>RAPID FIRE 3</td>
-<td bgcolor="#d4edda">Adds attacks at half range.</td>
+<td bgcolor="#d4edda">Adds attacks at half range (supports dice values like D3/D6+X).</td>
 </tr>
 <tr>
 <td bgcolor="#f8d7da"><code>reverberating summons</code></td>
@@ -229,7 +229,7 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <td bgcolor="#d4edda"><b>🟩 Supported</b></td>
 <td bgcolor="#d4edda">479</td>
 <td bgcolor="#d4edda">SUSTAINED HITS 1<br/>SUSTAINED HITS 2<br/>SUSTAINED HITS 3</td>
-<td bgcolor="#d4edda">Critical hits generate extra hits (integer values supported).</td>
+<td bgcolor="#d4edda">Critical hits generate extra hits (supports dice values like D3/D6+X; rolled per critical hit).</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>torrent</code></td>

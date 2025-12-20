@@ -141,17 +141,18 @@ def _keyword_support(canon: str, examples: Set[str]) -> Tuple[str, str]:
         "indirect fire": "No-LOS penalties and grants target Benefit of Cover (unless Ignores Cover).",
         "lethal hits": "Critical hits auto-wound.",
         "plunging fire": "AP improves by 1 when plunging fire conditions are met.",
-        "rapid fire": "Adds attacks at half range.",
-        "sustained hits": "Critical hits generate extra hits (integer values supported).",
+        "rapid fire": "Adds attacks at half range (supports dice values like D3/D6+X).",
+        "sustained hits": "Critical hits generate extra hits (supports dice values like D3/D6+X; rolled per critical hit).",
         "torrent": "Auto-hits (also works under Overwatch restriction).",
         "anti": "Critical wound threshold vs matching target keyword (e.g. Anti-Infantry 4+).",
-        "melta": "Adds damage at half range (integer values supported).",
+        "melta": "Adds damage at half range (supports dice values like D3/D6+X).",
         "extra attacks": "Melee selection supports 1 primary weapon plus all [EXTRA ATTACKS] weapons.",
+        "one shot": "Enforced: each model can use a ONE SHOT weapon once per battle.",
+        "pistol": "Engaged shooting + pistol-vs-other-ranged choice enforced (10e).",
     }
 
     # Partials: some related logic exists but full 10e rules not fully enforced.
     partial_notes: Dict[str, str] = {
-        "pistol": "Used for fall back + shoot gating; full PISTOL targeting/engagement rules are not fully enforced.",
         "psychic": "Used for conditional FNP parsing (e.g. 'against psychic attacks'); no other special handling.",
         "feel no pain": "Supported as a defensive mechanic, but this list is extracted from weapon keywords; treat as informational.",
     }

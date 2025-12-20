@@ -287,6 +287,22 @@ class WargearProfile:
         return ap_val
 
     def attack(self, target: 'Unit', attacker: 'Model', game_map: Optional['Map'] = None) -> None:
+        # ONE SHOT: enforce once per battle per model per weapon.
+        # (Higher-level code also filters declarations, but this is the final guard.)
+        try:
+            if self.is_one_shot():
+                key = self.one_shot_key()
+                used = getattr(attacker, "_one_shot_used", set())
+                if key and key in used:
+                    try:
+                        wname = getattr(getattr(self, "parent_wargear", None), "name", None) or getattr(self, "name", "Weapon")
+                        print(f"⚠️ ONE SHOT already used for {attacker.name}: {wname}")
+                    except Exception:
+                        pass
+                    return
+        except Exception:
+            pass
+
         # Initialize attack result tracking
         # Build proper weapon name: parent weapon + profile (if not default)
         weapon_display_name = self.name
@@ -511,6 +527,19 @@ class WargearProfile:
         
         # Print comprehensive attack summary
         self._print_attack_summary(attack_result)
+
+        # ONE SHOT: mark expended after resolving (hit or miss).
+        try:
+            if self.is_one_shot():
+                key = self.one_shot_key()
+                if key:
+                    used = getattr(attacker, "_one_shot_used", set())
+                    if not isinstance(used, set):
+                        used = set()
+                    used.add(key)
+                    setattr(attacker, "_one_shot_used", used)
+        except Exception:
+            pass
         
         return
 
@@ -1235,7 +1264,8 @@ class WargearProfile:
             parent_name = getattr(parent, "name", "") if parent is not None else ""
             profile_name = getattr(self, "name", "") or ""
             if parent_name:
-                return f"{parent_name}::{profile_name}"
+                # Track at the weapon level so alternative profiles don't bypass ONE SHOT.
+                return parent_name
             return profile_name
         except Exception:
             return str(getattr(self, "name", ""))
