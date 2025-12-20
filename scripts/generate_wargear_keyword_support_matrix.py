@@ -195,6 +195,15 @@ def _row_color(status: str) -> str:
     return "#f8d7da"  # red-ish
 
 
+def _status_icon(status: str) -> str:
+    # Fallback for renderers that strip HTML attributes/styles
+    if status == "Supported":
+        return "🟩"
+    if status == "Partial":
+        return "🟨"
+    return "🟥"
+
+
 def _write_md(counts: Dict[str, int], examples: Dict[str, Set[str]]) -> None:
     os.makedirs(DOCS_DIR, exist_ok=True)
 
@@ -235,12 +244,15 @@ def _write_md(counts: Dict[str, int], examples: Dict[str, Set[str]]) -> None:
         status, notes = _keyword_support(meta.canonical, examples.get(meta.canonical, set()))
         bg = _row_color(status)
         ex_text = "<br/>".join(_escape_html(e) for e in meta.examples) if meta.examples else ""
-        lines.append(f"<tr style=\"background-color: {bg};\">")
-        lines.append(f"<td><code>{_escape_html(meta.canonical)}</code></td>")
-        lines.append(f"<td><b>{_escape_html(status)}</b></td>")
-        lines.append(f"<td>{meta.count}</td>")
-        lines.append(f"<td>{ex_text}</td>")
-        lines.append(f"<td>{_escape_html(notes)}</td>")
+        # Many renderers strip CSS from HTML in Markdown. `bgcolor` is more broadly supported,
+        # so apply it per-cell. Also include a status icon fallback.
+        icon = _status_icon(status)
+        lines.append("<tr>")
+        lines.append(f"<td bgcolor=\"{bg}\"><code>{_escape_html(meta.canonical)}</code></td>")
+        lines.append(f"<td bgcolor=\"{bg}\"><b>{_escape_html(icon)} {_escape_html(status)}</b></td>")
+        lines.append(f"<td bgcolor=\"{bg}\">{meta.count}</td>")
+        lines.append(f"<td bgcolor=\"{bg}\">{ex_text}</td>")
+        lines.append(f"<td bgcolor=\"{bg}\">{_escape_html(notes)}</td>")
         lines.append("</tr>")
 
     lines.append("</tbody>")
