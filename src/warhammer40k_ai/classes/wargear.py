@@ -1207,8 +1207,14 @@ class WargearProfile:
         for keyword in self.get_keywords():
             if keyword.lower().startswith('melta'):
                 parts = keyword.split()
-                assert len(parts) == 2
-                return int(parts[2])
+                # Expected forms:
+                # - "melta" (default to 1)
+                # - "melta X" (integer)
+                if len(parts) == 1:
+                    return 1
+                if len(parts) >= 2 and parts[1].isdigit():
+                    return int(parts[1])
+                raise Exception(f"Invalid melta value: {keyword}")
         return 0
 
     def is_anti(self):
