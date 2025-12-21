@@ -263,9 +263,33 @@ class Model:
         self._check_damaged_profile()
 
     def _check_damaged_profile(self) -> None:
-        if self.parent_unit and self.parent_unit.damaged_profile and self.parent_unit.damaged_profile_desc:
-            if self.is_alive and self.wounds in self.parent_unit.damaged_profile:
-                self._apply_damaged_profile(self.parent_unit.damaged_profile_desc)
+        """
+        Apply or clear damaged-profile effects.
+
+        Note: damaged profiles are primarily used by single-model units (Vehicles/Monsters),
+        so we apply them at the parent-unit level.
+        """
+        if not (self.parent_unit and getattr(self.parent_unit, "damaged_profile", None) and getattr(self.parent_unit, "damaged_profile_desc", None)):
+            return
+
+        try:
+            active = bool(self.is_alive and (self.wounds in self.parent_unit.damaged_profile))
+        except Exception:
+            active = False
+
+        try:
+            if active:
+                # Unit-level handler parses and applies a supported subset.
+                if hasattr(self.parent_unit, "_apply_damaged_profile_effects"):
+                    self.parent_unit._apply_damaged_profile_effects(self.parent_unit.damaged_profile_desc)
+                else:
+                    self._apply_damaged_profile(self.parent_unit.damaged_profile_desc)
+            else:
+                if hasattr(self.parent_unit, "_clear_damaged_profile_effects"):
+                    self.parent_unit._clear_damaged_profile_effects()
+        except Exception:
+            # Never let degraded-profile parsing break damage application.
+            pass
 
     def _apply_damaged_profile(self, profile: str) -> None:
         # Implement the logic to apply the damaged profile

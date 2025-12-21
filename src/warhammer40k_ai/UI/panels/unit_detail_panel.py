@@ -133,6 +133,61 @@ class UnitDetailPanel(pygame.sprite.Sprite):
             leaders_text = self.font_tiny.render(line, True, TEXT_SECONDARY)
             surface.blit(leaders_text, (x_left, y_pos))
             y_pos += 14
+
+        # Leader footer / attachment constraints (datasheet-provided text)
+        # Some datasheets include important "Leader" exceptions/constraints in `leader_footer`.
+        # Surface these to the player here as read-only notes.
+        try:
+            footer_items = []
+            # Show any leader_footer present on the hovered unit AND on attached leaders (if any).
+            candidates = []
+            try:
+                candidates.append(unit)
+            except Exception:
+                pass
+            candidates.extend(leaders or [])
+            # De-dup by object id
+            seen_ids = set()
+            uniq = []
+            for c in candidates:
+                if c is None:
+                    continue
+                cid = id(c)
+                if cid in seen_ids:
+                    continue
+                seen_ids.add(cid)
+                uniq.append(c)
+
+            for u in uniq:
+                ds = getattr(u, "_datasheet", None)
+                footer = None
+                # WahaHelper wraps datasheets as SimpleNamespace, so leader_footer is an attribute there.
+                if ds is not None:
+                    footer = getattr(ds, "leader_footer", None)
+                # Defensive fallback if someone stored it directly
+                if footer is None:
+                    footer = getattr(u, "leader_footer", None)
+                footer = (footer or "").strip()
+                if footer:
+                    footer_items.append((getattr(u, "name", "Leader"), footer))
+        except Exception:
+            footer_items = []
+
+        if footer_items:
+            y_pos += 6
+            lf_header = self.font_medium.render("Leader constraints:", True, TEXT_PRIMARY)
+            surface.blit(lf_header, (x_left, y_pos))
+            y_pos += 20
+            for who, footer in footer_items:
+                who_line = self.font_small.render(f"• {who}", True, TEXT_ACCENT)
+                surface.blit(who_line, (x_left + 5, y_pos))
+                y_pos += 16
+                wrapped = self.wrap_text(footer, self.font_tiny, self.width - 40)
+                for line in wrapped:
+                    txt = self.font_tiny.render(line, True, TEXT_SECONDARY)
+                    surface.blit(txt, (x_left + 10, y_pos))
+                    y_pos += 12
+                y_pos += 4
         
         y_pos += 10
         

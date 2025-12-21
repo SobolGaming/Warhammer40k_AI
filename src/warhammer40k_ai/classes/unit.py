@@ -104,6 +104,9 @@ class Unit:
         else:
             self.damaged_profile = None
             self.damaged_profile_desc = None
+        # Track active degraded-profile modifiers so we can remove them on healing.
+        self._damaged_profile_active: bool = False
+        self._damaged_profile_stat_deltas: dict[str, int] = {}
 
         self.attached_to = None  # For Leaders, to track which unit they are attached to
         self.enhancement = enhancement  # The Enhancement assigned to this unit (if any)
@@ -141,6 +144,146 @@ class Unit:
         
         # Ability cache for performance optimization
         self._ability_cache = {}
+
+    def _add_stat_additive(self, key: str, delta: int) -> None:
+        """Apply an additive stat delta, tracking it for later removal (damaged profiles)."""
+        from .status_effects import UnitStatsModifier
+
+        if getattr(self, "stats", None) is None:
+            self.stats = {}
+        cur = self.stats.get(key, (UnitStatsModifier.NONE, 0))
+        mode, val = cur[0], cur[1]
+        # If stat is currently OVERRIDE (e.g. Battle-shock OC=0), additive doesn't matter.
+        # Keep OVERRIDE untouched.
+        if mode == UnitStatsModifier.OVERRIDE:
+            return
+        if mode == UnitStatsModifier.ADDITIVE:
+            self.stats[key] = (UnitStatsModifier.ADDITIVE, int(val) + int(delta))
+        else:
+            self.stats[key] = (UnitStatsModifier.ADDITIVE, int(delta))
+        self._damaged_profile_stat_deltas[key] = int(self._damaged_profile_stat_deltas.get(key, 0)) + int(delta)
+
+    def _clear_damaged_profile_effects(self) -> None:
+        """Remove previously-applied degraded profile modifiers (best-effort)."""
+        from .status_effects import UnitStatsModifier
+
+        # Remove stat deltas
+        for key, delta in list(getattr(self, "_damaged_profile_stat_deltas", {}).items()):
+            try:
+                cur = self.stats.get(key)
+                if not cur:
+                    continue
+                mode, val = cur[0], cur[1]
+                if mode == UnitStatsModifier.ADDITIVE:
+                    new_val = int(val) - int(delta)
+                    if new_val == 0:
+                        self.stats[key] = (UnitStatsModifier.NONE, 0)
+                    else:
+                        self.stats[key] = (UnitStatsModifier.ADDITIVE, new_val)
+            except Exception:
+                continue
+        self._damaged_profile_stat_deltas = {}
+
+        # Remove non-stat effects
+        try:
+            if getattr(self, "special_rules", None) is None:
+                self.special_rules = {}
+            for k in (
+                "damaged_hit_roll_modifier",
+                "damaged_half_attacks",
+                "damaged_melee_attacks_bonus",
+                "damaged_attacks_bonus_weapon_name",
+                "damaged_attacks_bonus_weapon_amount",
+                "relics_of_matriarchs_max_choices",
+            ):
+                if k in self.special_rules:
+                    del self.special_rules[k]
+        except Exception:
+            pass
+        self._damaged_profile_active = False
+
+    def _apply_damaged_profile_effects(self, profile_text: str) -> None:
+        """
+        Apply a *small* subset of common damaged-profile effects from Wahapedia text.
+
+        Supported patterns (10e):
+        - "subtract N from the Hit roll" -> -N to hit (capped later with other modifiers)
+        - "subtract N from ... Objective Control characteristic" -> OC -N
+        - "subtract N\" from ... Move characteristic" / "subtract N from ... Move characteristic" -> Move -N
+        - "halve the Attacks characteristic of ... weapons" -> halve attacks (round up)
+        - "add N to the Attacks characteristic of this model's melee weapons" -> +N attacks for melee weapons
+        - "add N to the Attacks characteristic of this model's <weapon name>" -> +N attacks for that weapon only
+        - "the Attacks characteristics of all of its weapons are halved" -> halve attacks (round up)
+        - "only select one ability when using its Relics of the Matriarchs ability" -> set a limiter flag (future hook)
+
+        Everything else is currently informational only.
+        """
+        import re
+
+        # Start from a clean slate to avoid double-stacking across multiple checks.
+        self._clear_damaged_profile_effects()
+
+        t = (profile_text or "").replace("’", "'")
+        t = re.sub(r"\s+", " ", t).strip()
+        tl = t.lower()
+
+        if getattr(self, "special_rules", None) is None:
+            self.special_rules = {}
+
+        # -N to hit
+        m = re.search(r"subtract\s+(\d+)\s+from\s+the\s+hit\s+roll", tl)
+        if m:
+            try:
+                self.special_rules["damaged_hit_roll_modifier"] = -int(m.group(1))
+            except Exception:
+                pass
+
+        # OC penalty (this model's / its / this unit's)
+        m = re.search(r"subtract\s+(\d+)\s+from\s+(?:this\s+(?:model|unit)'?s|its)\s+objective\s+control\s+characteristic", tl)
+        if m:
+            try:
+                self._add_stat_additive("objective_control", -int(m.group(1)))
+            except Exception:
+                pass
+
+        # Move penalty (with or without inch mark)
+        m = re.search(r"subtract\s+(\d+)\s*(?:\"|inches)?\s+from\s+(?:this\s+model'?s|its)\s+move\s+characteristic", tl)
+        if m:
+            try:
+                self._add_stat_additive("movement", -int(m.group(1)))
+            except Exception:
+                pass
+
+        # Halve attacks characteristic of weapons
+        if ("halve the attacks characteristic" in tl and "weapon" in tl) or ("attacks characteristics of all of its weapons are halved" in tl):
+            self.special_rules["damaged_half_attacks"] = True
+
+        # Add N to Attacks characteristic (melee weapons)
+        m = re.search(r"add\s+(\d+)\s+to\s+the\s+attacks\s+characteristic\s+of\s+this\s+model'?s\s+melee\s+weapons", tl)
+        if m:
+            try:
+                self.special_rules["damaged_melee_attacks_bonus"] = int(m.group(1))
+            except Exception:
+                pass
+
+        # Add N to Attacks characteristic of a specific named weapon ("this model's Slaughter and Carnage")
+        m = re.search(r"add\s+(\d+)\s+to\s+the\s+attacks\s+characteristic\s+of\s+this\s+model'?s\s+([a-z0-9 \-']+)", tl)
+        if m and "melee weapons" not in tl:
+            try:
+                amt = int(m.group(1))
+                wname = m.group(2).strip().rstrip(".")
+                # Avoid capturing generic "weapons"
+                if wname and wname not in ("weapons", "weapon"):
+                    self.special_rules["damaged_attacks_bonus_weapon_name"] = wname
+                    self.special_rules["damaged_attacks_bonus_weapon_amount"] = amt
+            except Exception:
+                pass
+
+        # Triumph of Saint Katherine: relic-selection limiter (future hook)
+        if "relics of the matriarchs" in tl and "only select one ability" in tl:
+            self.special_rules["relics_of_matriarchs_max_choices"] = 1
+
+        self._damaged_profile_active = True
 
     def _parse_attribute(self, attribute_value: str) -> int:
         # Remove " and + from the attribute value

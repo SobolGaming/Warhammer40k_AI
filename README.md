@@ -104,6 +104,7 @@ python3 -m warhammer40k_ai.UI.wahapedia_ui
   - [Stratagem Support Matrix](docs/STRATAGEM_SUPPORT_MATRIX.md)
   - [Enhancement Support Matrix](docs/ENHANCEMENT_SUPPORT_MATRIX.md)
   - [Wargear Keyword Support Matrix](docs/WARGEAR_KEYWORD_SUPPORT_MATRIX.md)
+  - [Damaged Profile Support Matrix](docs/DAMAGED_PROFILE_SUPPORT_MATRIX.md)
 - **Design/implementation docs**
   - [Player configuration](docs/PLAYER_CONFIGURATION.md)
   - [Deployment architecture](docs/DEPLOYMENT_ARCHITECTURE.md)

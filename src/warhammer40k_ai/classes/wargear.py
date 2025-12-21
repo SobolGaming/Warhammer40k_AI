@@ -391,6 +391,38 @@ class WargearProfile:
             pass
             attack_result.attacks_dice_rolls = []
 
+        # Damaged profile: add attacks to melee weapons (+N).
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                bonus = int(getattr(attacker.parent_unit, "special_rules", {}).get("damaged_melee_attacks_bonus", 0) or 0)
+                if bonus:
+                    num_attacks += bonus
+                    attack_result.attacks_special_modifiers.append(f"Damaged profile +{bonus}A (melee)")
+        except Exception:
+            pass
+
+        # Damaged profile: add attacks to a specific named weapon (+N).
+        try:
+            wname = str(getattr(attacker.parent_unit, "special_rules", {}).get("damaged_attacks_bonus_weapon_name", "") or "").strip().lower()
+            amt = int(getattr(attacker.parent_unit, "special_rules", {}).get("damaged_attacks_bonus_weapon_amount", 0) or 0)
+            if wname and amt:
+                parent_name = str(getattr(getattr(self, "parent_wargear", None), "name", "") or "").strip().lower()
+                # Match either exact or substring.
+                if parent_name and (parent_name == wname or wname in parent_name or parent_name in wname):
+                    num_attacks += amt
+                    attack_result.attacks_special_modifiers.append(f"Damaged profile +{amt}A ({wname})")
+        except Exception:
+            pass
+
+        # Damaged profile: halve attacks characteristic of the model's weapons (round up).
+        try:
+            if bool(getattr(attacker.parent_unit, "special_rules", {}).get("damaged_half_attacks", False)):
+                before = int(num_attacks)
+                num_attacks = (before + 1) // 2
+                attack_result.attacks_special_modifiers.append("Damaged profile: halve Attacks (round up)")
+        except Exception:
+            pass
+
         closest_target, closest_dist = attacker.return_closest_model_in_unit(target)
 
         # Apply AP modifiers that depend on attacker/target context (e.g., Plunging Fire)
@@ -420,6 +452,12 @@ class WargearProfile:
             num_attacks_modifier = int(target_model_count / 5)
             attack_result.attacks_special_modifiers.append(f"Blast +{num_attacks_modifier}")
             num_attacks += num_attacks_modifier
+
+        # Ensure the reported attacks count matches the final resolved count after all modifiers.
+        try:
+            attack_result.attacks_rolled = int(num_attacks)
+        except Exception:
+            pass
 
         # Process each attack
         for attack_num in range(num_attacks):
@@ -690,6 +728,18 @@ class WargearProfile:
         if hasattr(target, 'has_stealth') and target.has_stealth():
             dice_modifier -= 1
             hit_result['modifiers'].append("-1 from target Stealth")
+
+        # Damaged profile: subtract N from the Hit roll (stored as negative modifier).
+        try:
+            dm = int(getattr(attacker.parent_unit, "special_rules", {}).get("damaged_hit_roll_modifier", 0) or 0)
+            if dm:
+                dice_modifier += dm
+                if dm < 0:
+                    hit_result['modifiers'].append(f"{dm} from Damaged profile (to hit)")
+                else:
+                    hit_result['modifiers'].append(f"+{dm} from Damaged profile (to hit)")
+        except Exception:
+            pass
         
         # Add other potential modifiers here
         # TODO: Add more hit modifiers (cover, moving, etc.)
