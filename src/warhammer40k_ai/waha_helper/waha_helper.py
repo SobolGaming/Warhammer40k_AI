@@ -319,12 +319,21 @@ class WahaHelper:
         """
         if enhancement_id in self.enhancements:
             enhancement_data = self.enhancements[enhancement_id]
-            return Enhancement(
-                name=enhancement_data['name'],
-                eligible_keywords=enhancement_data.get('keywords', []),
-                points=int(enhancement_data.get('cost', 0)),
-                description=enhancement_data.get('description', '')
-            )
+            try:
+                return Enhancement.from_waha_dict(enhancement_data)
+            except Exception:
+                # Backwards-compatible fallback
+                return Enhancement(
+                    id=str(enhancement_data.get("id", "") or enhancement_id),
+                    name=enhancement_data.get('name', ''),
+                    faction_id=enhancement_data.get('faction_id', ''),
+                    detachment=enhancement_data.get('detachment', ''),
+                    detachment_id=enhancement_data.get('detachment_id', ''),
+                    points=int(enhancement_data.get('cost', 0) or 0),
+                    description=enhancement_data.get('description', ''),
+                    legend=enhancement_data.get('legend', ''),
+                    eligible_keywords=set(),
+                )
         return None
 
     def get_enhancement_by_name(self, name: str) -> Enhancement:
@@ -333,12 +342,20 @@ class WahaHelper:
         """
         for enhancement in self.enhancements.values():
             if self.strip_special_chars(enhancement['name']) == self.strip_special_chars(name):
-                return Enhancement(
-                    name=enhancement['name'],
-                    eligible_keywords=enhancement.get('keywords', []),
-                    points=int(enhancement.get('cost', 0)),
-                    description=enhancement.get('description', '')
-                )
+                try:
+                    return Enhancement.from_waha_dict(enhancement)
+                except Exception:
+                    return Enhancement(
+                        id=str(enhancement.get("id", "") or ""),
+                        name=enhancement.get('name', ''),
+                        faction_id=enhancement.get('faction_id', ''),
+                        detachment=enhancement.get('detachment', ''),
+                        detachment_id=enhancement.get('detachment_id', ''),
+                        points=int(enhancement.get('cost', 0) or 0),
+                        description=enhancement.get('description', ''),
+                        legend=enhancement.get('legend', ''),
+                        eligible_keywords=set(),
+                    )
         return None
 
     def get_ability(self, ability_id: str) -> Ability:

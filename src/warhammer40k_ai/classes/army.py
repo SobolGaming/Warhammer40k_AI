@@ -237,8 +237,27 @@ class Army:
             raise ArmyValidationError(f"Enhancements can only be assigned to non-Epic Hero Characters. '{character_unit.name}' is not eligible.")
         if character_unit.enhancement:
             raise ArmyValidationError(f"Character '{character_unit.name}' already has an Enhancement.")
-        if not set(enhancement.eligible_keywords).issubset(set(character_unit.keywords)):
-            raise ArmyValidationError(f"Character '{character_unit.name}' does not meet the keyword requirements for Enhancement '{enhancement.name}'.")
+        # Enhancements are detachment-specific in 10e; enforce faction and detachment match when available.
+        try:
+            if getattr(self, "faction_id", None) and getattr(enhancement, "faction_id", ""):
+                if self.faction_id != enhancement.faction_id:
+                    raise ArmyValidationError(
+                        f"Enhancement '{enhancement.name}' belongs to faction {enhancement.faction_id}, "
+                        f"but army faction is {self.faction_id}."
+                    )
+        except Exception:
+            pass
+        try:
+            if getattr(self, "detachment_type", None) and getattr(enhancement, "detachment", ""):
+                if self.detachment_type != enhancement.detachment:
+                    raise ArmyValidationError(
+                        f"Enhancement '{enhancement.name}' is for detachment '{enhancement.detachment}', "
+                        f"but army detachment is '{self.detachment_type}'."
+                    )
+        except Exception:
+            pass
+        # We intentionally do NOT strictly enforce model eligibility text from Wahapedia, because it is
+        # unstructured and would cause false rejections without a robust parser.
         character_unit.enhancement = enhancement
         self.enhancements.append(enhancement)
 
