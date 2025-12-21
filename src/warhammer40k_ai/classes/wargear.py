@@ -1988,6 +1988,32 @@ def parse_wargear_item(item_str: str) -> list[tuple[int, str]]:
     return full_result
 
 def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[WargearOption]:
+    def _norm_name(s: str) -> str:
+        s = (s or "").replace("’", "'").lower().strip()
+        s = re.sub(r"[^\w\s\-']", " ", s)
+        s = s.replace("'", "")
+        s = re.sub(r"\s+", " ", s).strip()
+        return s
+
+    def _count_actor_models(actor: str) -> int:
+        """
+        Best-effort count of models in the unit that match an actor string.
+        Used for "All X in this unit..." which is an all-or-none choice.
+        """
+        if not unit_ptr or not getattr(unit_ptr, "models", None):
+            return 1
+        a = _norm_name(actor)
+        if a in ("model", "this model", "unit"):
+            return len(unit_ptr.models)
+        n = 0
+        for m in unit_ptr.models:
+            mn = _norm_name(getattr(m, "name", ""))
+            if not mn:
+                continue
+            if a == mn or a in mn or mn in a:
+                n += 1
+        return n or len(unit_ptr.models)
+
     def _normalize_options_text(text: str) -> str:
         """
         Datasheets_options.json frequently contains HTML lists, e.g.
@@ -2174,9 +2200,18 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
             items_to_replace = parse_wargear_itemlist(match.group(1))
             replacement_items, limit = parse_wargear_string_ending(match.group(2))
             item_limit = Quantity(min=1, max=limit)
+        elif match := re.match(r"^all models in this unit can each have their ([\w\s'-]+) replaced with (.*)", description):
+            # "All" is an all-or-none boolean (every model or none).
+            actor = "model"
+            model_n = len(unit_ptr.models) if unit_ptr and getattr(unit_ptr, "models", None) else 1
+            model_limit = Quantity(min=model_n, max=model_n)
+            items_to_replace = parse_wargear_itemlist(match.group(1))
+            replacement_items, limit = parse_wargear_string_ending(match.group(2))
+            item_limit = Quantity(min=1, max=limit)
         elif match := re.match(r"^all of the ([\w\s'-]+)s in this unit can each have their ([\w\s'-]+) replaced with (.*)", description):
             actor, _ = parse_warger_actor_string(match.group(1))
-            model_limit = Quantity(min=len(unit_ptr.models), max=len(unit_ptr.models))
+            model_n = _count_actor_models(actor)
+            model_limit = Quantity(min=model_n, max=model_n)
             items_to_replace = parse_wargear_itemlist(match.group(2))
             replacement_items, limit = parse_wargear_string_ending(match.group(3))
             item_limit = Quantity(min=1, max=limit)

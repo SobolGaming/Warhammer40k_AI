@@ -777,11 +777,57 @@ class Unit:
                     return wg
             return None
 
+        def _model_has_bundle(model, bundle) -> bool:
+            """
+            bundle: list[(qty, item_name)] describing the items that must exist on the model.
+            """
+            if not bundle:
+                return True
+            counts: dict[str, int] = {}
+            for wg in list(getattr(model, "wargear", []) or []):
+                if not wg:
+                    continue
+                nm = _norm(getattr(wg, "name", ""))
+                counts[nm] = counts.get(nm, 0) + 1
+            for qty, nm in bundle:
+                want = _norm(nm)
+                if counts.get(want, 0) < int(qty):
+                    return False
+            return True
+
+        def _pick_matching_from_bundle(model):
+            """
+            wargear_from can represent alternatives (A or B). Pick the first bundle that matches this model.
+            Returns None if none match.
+            """
+            from_bundles = list(getattr(wargear_option, "wargear_from", []) or [])
+            if not from_bundles:
+                return []
+            for bundle in from_bundles:
+                if _model_has_bundle(model, bundle):
+                    return bundle
+            return None
+
         # Select models eligible for this option
         actor = getattr(wargear_option, "model_name", "") or ""
         eligible_models = [m for m in (self.models or []) if _actor_matches_model(actor, getattr(m, "name", "")) and _conditions_met(m)]
         if not eligible_models:
             return
+
+        # "All ..." semantics: if model_quantity is exact (min==max), treat as all-or-none.
+        req_min = int(getattr(getattr(wargear_option, "model_quantity", None), "min", 0) or 0)
+        req_max = int(getattr(getattr(wargear_option, "model_quantity", None), "max", 0) or 0)
+        all_or_none = req_min > 0 and req_min == req_max
+
+        if all_or_none:
+            # Must apply to exactly the required number of models, otherwise none.
+            if len(eligible_models) != req_min:
+                return
+            # For replacements: ensure every model can satisfy a "from" bundle.
+            if getattr(wargear_option, "wargear_type", None) == WargearOptionType.REPLACEMENT:
+                for m in eligible_models:
+                    if _pick_matching_from_bundle(m) is None:
+                        return
 
         # Apply model limit (max)
         max_models = _effective_model_limit_max()
@@ -797,21 +843,20 @@ class Unit:
         for model in eligible_models:
             # Replacement: remove wargear_from then add choice items.
             if getattr(wargear_option, "wargear_type", None) == WargearOptionType.REPLACEMENT:
-                try:
-                    for from_choice in list(getattr(wargear_option, "wargear_from", []) or []):
-                        for qty, nm in (from_choice or []):
-                            tgt = _norm(nm)
-                            # remove qty occurrences
-                            removed = 0
-                            kept = []
-                            for wg in list(getattr(model, "wargear", []) or []):
-                                if wg and removed < int(qty) and _norm(getattr(wg, "name", "")) == tgt:
-                                    removed += 1
-                                    continue
-                                kept.append(wg)
-                            model.wargear = kept
-                except Exception:
-                    pass
+                bundle = _pick_matching_from_bundle(model)
+                if bundle is None:
+                    # For non-all-or-none options, just skip models that don't match the "from" clause.
+                    continue
+                for qty, nm in bundle:
+                    tgt = _norm(nm)
+                    removed = 0
+                    kept = []
+                    for wg in list(getattr(model, "wargear", []) or []):
+                        if wg and removed < int(qty) and _norm(getattr(wg, "name", "")) == tgt:
+                            removed += 1
+                            continue
+                        kept.append(wg)
+                    model.wargear = kept
 
             # Add items from the selected choice
             for qty, nm in choice:
