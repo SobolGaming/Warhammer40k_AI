@@ -180,23 +180,130 @@ class Unit:
             return Base(BaseType.CIRCULAR, convert_mm_to_inches(float(base_size.strip()) / 2.0))
 
     def _parse_unit_composition(self, unit_composition):
-        result = {}
-        for comp in unit_composition:
-            if comp['description'].startswith("This unit can contain a maximum of "):
+        """
+        Parse `datasheets_unit_composition` entries.
+
+        Most entries are simple:
+        - "1 Boss Nob"
+        - "2-5 Space Marine Bikers"
+
+        Some entries are composite (multiple parts):
+        - "1 Runtherd and 10 Gretchin"
+        - "1 Grenadier Sergeant, 7 Grenadiers and 1 Heavy Weapons Team"
+
+        We ignore pure informational lines like:
+        - "This unit can contain a maximum of 10 models."
+        - "10 MODELS MAXIMUM"
+        """
+        import re
+
+        def _split_top_level_commas(text: str) -> list[str]:
+            parts: list[str] = []
+            buf: list[str] = []
+            depth = 0
+            for ch in text:
+                if ch == "(":
+                    depth += 1
+                elif ch == ")" and depth > 0:
+                    depth -= 1
+                if ch == "," and depth == 0:
+                    seg = "".join(buf).strip()
+                    if seg:
+                        parts.append(seg)
+                    buf = []
+                else:
+                    buf.append(ch)
+            tail = "".join(buf).strip()
+            if tail:
+                parts.append(tail)
+            return parts
+
+        def _split_top_level_and(text: str) -> list[str]:
+            # Split on " and " only when it looks like it separates entries (next token starts with a digit/range),
+            # and only at top-level (not inside parentheses).
+            parts: list[str] = []
+            buf: list[str] = []
+            depth = 0
+            i = 0
+            while i < len(text):
+                ch = text[i]
+                if ch == "(":
+                    depth += 1
+                elif ch == ")" and depth > 0:
+                    depth -= 1
+                if depth == 0 and text[i : i + 5].lower() == " and ":
+                    nxt = text[i + 5 : i + 15].lstrip()
+                    if nxt and re.match(r"^\d", nxt):
+                        seg = "".join(buf).strip()
+                        if seg:
+                            parts.append(seg)
+                        buf = []
+                        i += 5
+                        continue
+                buf.append(ch)
+                i += 1
+            tail = "".join(buf).strip()
+            if tail:
+                parts.append(tail)
+            return parts
+
+        # Optional overall cap from informational lines like "10 MODELS MAXIMUM".
+        # This is useful for validation and for complex compositions we don't fully model yet.
+        self.unit_models_maximum = None
+
+        result: dict[str, tuple[int, int]] = {}
+        for comp in unit_composition or []:
+            desc = str(comp.get("description", "") or "").strip()
+            if not desc:
                 continue
-            if comp['description'] == "OR":
+
+            dlow = desc.strip().rstrip(".").lower()
+            # Capture max models (do not treat as composition entry).
+            if dlow.startswith("this unit can contain a maximum of "):
+                mmax = re.search(r"maximum of\s+(\d+)\s+models", dlow)
+                if mmax:
+                    try:
+                        self.unit_models_maximum = int(mmax.group(1))
+                    except Exception:
+                        pass
                 continue
-            if comp['description'].startswith("One of the following:"):
-                #print(f"{self.name} - NEED TO HANDLE UNIT COMPOSITION")
+            if dlow.endswith("models maximum"):
+                mmax = re.search(r"(\d+)\s+models maximum", dlow)
+                if mmax:
+                    try:
+                        self.unit_models_maximum = int(mmax.group(1))
+                    except Exception:
+                        pass
                 continue
-            parts = comp['description'].split()
-            count = parts[0]
-            model_name = ' '.join(parts[1:])  # Everything after the number
-            if '-' in count:
-                min_size, max_size = map(int, count.split('-'))
-            else:
-                min_size = max_size = int(count)
-            result[model_name] = (min_size, max_size)
+            if dlow == "or":
+                continue
+            if dlow.startswith("one of the following:"):
+                continue
+
+            # Remove trailing keyword annotation after an en-dash (" – EPIC HERO", etc.)
+            main = desc.split(" – ", 1)[0].strip().rstrip(".")
+
+            # Split into segments at top level: commas, then "and" separators.
+            segments: list[str] = []
+            for seg in _split_top_level_commas(main):
+                for s2 in _split_top_level_and(seg):
+                    s2 = s2.strip().rstrip(".")
+                    if s2:
+                        segments.append(s2)
+
+            for seg in segments or [main]:
+                seg = seg.strip().rstrip(".")
+                m = re.match(r"^(?P<count>\d+(?:-\d+)?)\s+(?P<name>.+)$", seg)
+                if not m:
+                    continue
+                count = m.group("count")
+                model_name = m.group("name").strip().rstrip(".")
+                if "-" in count:
+                    min_size, max_size = map(int, count.split("-", 1))
+                else:
+                    min_size = max_size = int(count)
+                result[model_name] = (min_size, max_size)
+
         return result
 
     def _create_models(self, datasheet, quantity=None):
@@ -206,6 +313,15 @@ class Unit:
         if quantity is None:
             # If no quantity is specified, use the minimum number of models
             quantity = sum(min_size for _, (min_size, _) in self.unit_composition.items())
+
+        # Enforce an overall maximum if provided in datasheet composition metadata.
+        try:
+            max_cap = getattr(self, "unit_models_maximum", None)
+            if isinstance(max_cap, int) and max_cap > 0 and quantity > max_cap:
+                print(f"⚠️  {self.name} requested size {quantity} exceeds maximum {max_cap}; clamping to {max_cap}.")
+                quantity = max_cap
+        except Exception:
+            pass
 
         for model_name, (min_size, max_size) in self.unit_composition.items():
             if isinstance(max_size, tuple):
