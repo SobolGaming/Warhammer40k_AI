@@ -166,7 +166,16 @@ class HumanUIInterface:
         position_selected = False
         
         print(f"Click on the battlefield to place {unit.name}")
-        print(f"Deployment zone: X({deployment_zone['x_range'][0]:.1f} - {deployment_zone['x_range'][1]:.1f}), Y({deployment_zone['y_range'][0]:.1f} - {deployment_zone['y_range'][1]:.1f})")
+        # Compute a bounding box for display only from mission polygons
+        try:
+            xs, ys = [], []
+            for mz in (deployment_zone.get('mission_zones') or []):
+                for vx, vy in getattr(mz, 'vertices', []):
+                    xs.append(float(vx)); ys.append(float(vy))
+            if xs and ys:
+                print(f"Deployment zone bounds: X({min(xs):.1f} - {max(xs):.1f}), Y({min(ys):.1f} - {max(ys):.1f})")
+        except Exception:
+            pass
         
         # Wait for position selection
         clock = pygame.time.Clock()
@@ -175,8 +184,7 @@ class HumanUIInterface:
                 if event.type == pygame.QUIT:
                     pygame.quit()
                     # Return center of deployment zone as default
-                    x_center = (deployment_zone['x_range'][0] + deployment_zone['x_range'][1]) / 2
-                    y_center = (deployment_zone['y_range'][0] + deployment_zone['y_range'][1]) / 2
+                    x_center, y_center = self._zone_centroid(deployment_zone)
                     return x_center, y_center
                 
                 elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -193,8 +201,7 @@ class HumanUIInterface:
                 
                 elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     # Cancel and use center of deployment zone
-                    x_center = (deployment_zone['x_range'][0] + deployment_zone['x_range'][1]) / 2
-                    y_center = (deployment_zone['y_range'][0] + deployment_zone['y_range'][1]) / 2
+                    x_center, y_center = self._zone_centroid(deployment_zone)
                     selected_position = (x_center, y_center)
                     position_selected = True
                     print(f"Position selection cancelled, using center of deployment zone")
@@ -205,10 +212,9 @@ class HumanUIInterface:
         self.current_unit_for_placement = None
         self.current_deployment_zone = None
         
-        return selected_position if selected_position else (
-            (deployment_zone['x_range'][0] + deployment_zone['x_range'][1]) / 2,
-            (deployment_zone['y_range'][0] + deployment_zone['y_range'][1]) / 2
-        )
+        if selected_position:
+            return selected_position
+        return self._zone_centroid(deployment_zone)
     
     def screen_to_game_coords(self, screen_pos: Tuple[int, int]) -> Tuple[float, float]:
         """Convert screen coordinates to game coordinates."""
@@ -222,29 +228,35 @@ class HumanUIInterface:
     
     def is_position_in_zone(self, x: float, y: float, zone: dict) -> bool:
         """Check if a position is within the deployment zone."""
-        x_min, x_max = zone['x_range']
-        y_min, y_max = zone['y_range']
-        return x_min <= x <= x_max and y_min <= y <= y_max
+        mzs = zone.get('mission_zones') or []
+        if not mzs:
+            raise RuntimeError("Deployment zone missing mission_zones polygons (invalid configuration).")
+        for mz in mzs:
+            if mz.contains_point(x, y):
+                return True
+        return False
+
+    def _zone_centroid(self, zone: dict) -> Tuple[float, float]:
+        """Best-effort centroid for a compound mission zone."""
+        mzs = zone.get('mission_zones') or []
+        if not mzs:
+            raise RuntimeError("Deployment zone missing mission_zones polygons (invalid configuration).")
+        try:
+            xs, ys = [], []
+            for mz in mzs:
+                for vx, vy in getattr(mz, 'vertices', []):
+                    xs.append(float(vx)); ys.append(float(vy))
+            if xs and ys:
+                return (sum(xs) / len(xs), sum(ys) / len(ys))
+        except Exception:
+            pass
+        # Fallback to battlefield center if something is very wrong
+        return (30.0, 22.0)
     
     def update(self, screen):
         """Update and draw UI components."""
-        # Draw deployment choice dialog if visible (highest priority)
-        if self.deployment_choice_dialog.visible:
-            self.deployment_choice_dialog.draw(screen)
-        
         if self.reserves_arrival_panel.visible:
             self.reserves_arrival_panel.draw(screen)
-        
-        # Draw scout choice dialog if visible
-        if self.scout_choice_dialog.visible:
-            #print(f"🔍 Drawing scout choice dialog in HumanUIInterface.update")
-            self.scout_choice_dialog.draw(screen)
-        
-        # Draw fight unit selection dialog if visible
-        if self.fight_unit_selection_dialog.visible:
-            self.fight_unit_selection_dialog.draw(screen)
-        
-        # Note: melee weapon declaration dialog is now drawn directly through game_view instance
         
         # Draw placement indicator if in placement mode
         if self.placement_mode and self.current_unit_for_placement:
@@ -255,19 +267,19 @@ class HumanUIInterface:
         if not self.current_unit_for_placement or not self.current_deployment_zone:
             return
         
-        # Draw deployment zone outline
+        # Draw deployment zone outline (mission polygons)
         zone = self.current_deployment_zone
-        x_min, x_max = zone['x_range']
-        y_min, y_max = zone['y_range']
-        
-        # Convert to screen coordinates
-        screen_x_min = int(x_min * TILE_SIZE * self.zoom_level)
-        screen_y_min = int(y_min * TILE_SIZE * self.zoom_level)
-        screen_width = int((x_max - x_min) * TILE_SIZE)
-        screen_height = int((y_max - y_min) * TILE_SIZE)
-        
-        zone_rect = pygame.Rect(screen_x_min, screen_y_min, screen_width, screen_height)
-        pygame.draw.rect(screen, TEXT_ACCENT, zone_rect, 3)
+        mzs = zone.get('mission_zones') or []
+        if not mzs:
+            raise RuntimeError("Deployment zone missing mission_zones polygons (invalid configuration).")
+        for mz in mzs:
+            pts = []
+            for vx, vy in getattr(mz, "vertices", []):
+                sx = int(vx * TILE_SIZE * self.zoom_level)
+                sy = int(vy * TILE_SIZE * self.zoom_level)
+                pts.append((sx, sy))
+            if len(pts) >= 3:
+                pygame.draw.polygon(screen, TEXT_ACCENT, pts, 3)
         
         # Draw unit name
         font = pygame.font.SysFont('Arial', 16, bold=True)
@@ -287,49 +299,13 @@ class HumanUIInterface:
             screen.blit(instr_text, (10, 40 + i * 20))
     
     def handle_event(self, event):
-        """Handle pygame events for all UI components."""
-        handled = False
+        """Handle pygame events for non-dialog UI components only.
 
-        # Debug: Log event type and which dialogs are visible
-        # TODO: Uncomment for event debugging
-        # if event.type in [pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP]:
-        #     event_name = "KEYDOWN" if event.type == pygame.KEYDOWN else ("MOUSEBUTTONDOWN" if event.type == pygame.MOUSEBUTTONDOWN else "MOUSEBUTTONUP")
-        #     print(f"🔍 DEBUG: HumanUIInterface.handle_event - {event_name}")
-        #     print(f"🔍 DEBUG: Dialog visibility - deployment:{self.deployment_choice_dialog.visible}, scout:{self.scout_choice_dialog.visible}, fight:{self.fight_unit_selection_dialog.visible}")
-
-        # Let deployment choice dialog handle events first (highest priority)
-        if self.deployment_choice_dialog.visible:
-            # print(f"🔍 DEBUG: HumanUIInterface - Delegating to deployment_choice_dialog")
-            handled = self.deployment_choice_dialog.handle_event(event)
-
-        # Let reserves dialog handle events
-
-
-        # Let reserves arrival panel handle events
-        if not handled and self.reserves_arrival_panel.visible:
-            # print(f"🔍 DEBUG: HumanUIInterface - Delegating to reserves_arrival_panel")
-            handled = self.reserves_arrival_panel.handle_event(event)
-
-        # Let scout choice dialog handle events
-        if not handled and self.scout_choice_dialog.visible:
-            # print(f"🔍 DEBUG: HumanUIInterface - Delegating to scout_choice_dialog")
-            handled = self.scout_choice_dialog.handle_event(event)
-
-        # Let fight unit selection dialog handle events
-        if not handled and self.fight_unit_selection_dialog.visible:
-            # print(f"🔍 DEBUG: HumanUIInterface - Delegating to fight_unit_selection_dialog")
-            handled = self.fight_unit_selection_dialog.handle_event(event)
-
-        # Note: melee weapon declaration dialog events are now handled directly through game_view instance
-
-        if handled:
-            # print(f"🔍 DEBUG: HumanUIInterface - Event was handled by a dialog")
-            pass
-        else:
-            # print(f"🔍 DEBUG: HumanUIInterface - Event was not handled by any dialog")
-            pass
-
-        return handled
+        Dialogs are exclusively handled by DialogManager.
+        """
+        if self.reserves_arrival_panel.visible:
+            return bool(self.reserves_arrival_panel.handle_event(event))
+        return False
 
     def show_scout_dialog(self, unit, callback, game_map=None):
         """Show the scout move dialog for a unit."""
@@ -384,6 +360,10 @@ class GameView:
         # Set reference back to game view in UI interface for dialog access
         if ui_interface:
             ui_interface.game_view = self
+
+        # Central dialog manager (modal stack)
+        from .dialogs import DialogManager
+        self.dialog_manager = DialogManager(self)
         
         # Phase-based event handling system
         self.phase_manager = PhaseManager(self)
@@ -519,11 +499,6 @@ class GameView:
             self.shooting_declaration_dialog.show(shooter_unit, _cb, self.game.map, self)
             # Ensure dialog is visible and receives events immediately
             self.shooting_declaration_dialog.visible = True
-            # Draw once to register its geometry
-            try:
-                self.shooting_declaration_dialog.draw(self.screen)
-            except Exception:
-                pass
         setattr(self.stratagem_dialog, 'on_request_overwatch_shooting', _request_overwatch_shooting)
         # Initialize shared UI state
         self._ui_hitboxes = {}
@@ -997,24 +972,6 @@ class GameView:
                     self.close_unit_details()
                     return True
 
-        # PRIORITY 0.8: Stratagem dialog (must capture before other panes)
-        if hasattr(self, 'stratagem_dialog') and self.stratagem_dialog.visible:
-            if self.stratagem_dialog.handle_event(event):
-                return True
-        # Secondary discard dialog should also capture early
-        if hasattr(self, 'secondary_discard_dialog') and self.secondary_discard_dialog.visible:
-            if self.secondary_discard_dialog.handle_event(event):
-                return True
-        # Overwatch shooter dialog capture
-        if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog.visible:
-            if self.overwatch_shooter_dialog.handle_event(event):
-                return True
-        # Shooting declaration dialog capture (ensure UI responds even outside phase handler)
-        if hasattr(self, 'shooting_declaration_dialog') and (
-            self.shooting_declaration_dialog.visible or self.shooting_declaration_dialog.is_targeting_mode):
-            if self.shooting_declaration_dialog.handle_event(event):
-                return True
-
         # PRIORITY 1: Top pane and overlay handling BEFORE phase-specific handlers
         if event.type == pygame.MOUSEBUTTONDOWN:
             # Mission popup overlay closes on any click
@@ -1092,6 +1049,10 @@ class GameView:
                                             pass
                             if self.stratagem_dialog:
                                 self.stratagem_dialog.show(player, self.game, on_closed=_on_closed)
+                                try:
+                                    self.dialog_manager.open(self.stratagem_dialog, modal=True)
+                                except Exception:
+                                    pass
                             else:
                                 mgr = player.stratagems
                                 pending = mgr.get_pending_reactions()
@@ -1686,16 +1647,6 @@ class GameView:
         # Draw repurposed bottom logs pane
         self._draw_bottom_logs_pane()
 
-        # Draw stratagem dialog if visible
-        if hasattr(self, 'stratagem_dialog') and self.stratagem_dialog.visible:
-            self.stratagem_dialog.draw(self.screen)
-        # Draw secondary discard dialog if visible
-        if hasattr(self, 'secondary_discard_dialog') and self.secondary_discard_dialog.visible:
-            self.secondary_discard_dialog.draw(self.screen)
-        # Draw overwatch shooter dialog if visible
-        if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog.visible:
-            self.overwatch_shooter_dialog.draw(self.screen)
-
         # Draw unit details panel if requested
         if self.detailed_unit:
             self.unit_detail_panel.draw(self.screen, self.detailed_unit, 
@@ -1707,59 +1658,13 @@ class GameView:
             for unit in current_player.get_army().units:
                 self.draw_move_path(unit)
 
-        # Draw UI interface components (reserves dialogs, etc.)
+        # Draw UI interface components (non-dialog overlays like reserves arrival panel)
         if self.ui_interface:
             self.ui_interface.update(self.screen)
-        
-        # Draw movement choice dialog if visible
-        if hasattr(self, 'movement_choice_dialog') and self.movement_choice_dialog.visible:
-            self.movement_choice_dialog.draw(self.screen)
-        
-        # Draw individual model movement dialog if visible
-        if hasattr(self, 'individual_model_movement_dialog') and self.individual_model_movement_dialog.visible:
-            self.individual_model_movement_dialog.draw(self.screen)
 
-        # Draw coherency violation dialog if visible
-        if hasattr(self, 'coherency_violation_dialog') and self.coherency_violation_dialog.visible:
-            self.coherency_violation_dialog.draw(self.screen)
-        
-        # Draw weapon choice dialog if visible
-        if hasattr(self, 'weapon_choice_dialog') and self.weapon_choice_dialog.visible:
-            self.weapon_choice_dialog.draw(self.screen)
-        
-        # Draw shooting declaration dialog
-        if hasattr(self, 'shooting_declaration_dialog') and self.shooting_declaration_dialog.visible:
-            self.shooting_declaration_dialog.draw(self.screen)
-        
-        # Draw charge declaration dialog
-        if hasattr(self, 'charge_declaration_dialog') and self.charge_declaration_dialog.visible:
-            self.charge_declaration_dialog.draw(self.screen)
-
-        # Draw melee weapon declaration dialog if visible
-        if hasattr(self, 'melee_weapon_declaration_dialog') and self.melee_weapon_declaration_dialog.visible:
-            self.melee_weapon_declaration_dialog.draw(self.screen)
-        
-        # Draw fight target selection dialog if visible
-        if hasattr(self, 'fight_target_selection_dialog') and self.fight_target_selection_dialog.visible:
-            self.fight_target_selection_dialog.draw(self.screen)
-        
-        # Draw target model selection dialog if visible
-        if hasattr(self, 'target_model_selection_dialog') and self.target_model_selection_dialog.visible:
-            self.target_model_selection_dialog.draw(self.screen)
-        
-        # Draw mission selection dialog if visible
-        if hasattr(self, 'mission_selection_dialog') and self.mission_selection_dialog.visible:
-            self.mission_selection_dialog.draw(self.screen)
-
-        # Draw leader attachment dialog if visible (Declare Battle Formations)
-        if hasattr(self, 'leader_attachment_dialog') and self.leader_attachment_dialog and self.leader_attachment_dialog.visible:
-            self.leader_attachment_dialog.draw(self.screen)
-
-        # Draw transport embark/disembark dialogs if visible (created on-demand during movement)
-        if hasattr(self, 'transport_embark_dialog') and self.transport_embark_dialog and getattr(self.transport_embark_dialog, 'visible', False):
-            self.transport_embark_dialog.draw(self.screen)
-        if hasattr(self, 'transport_disembark_dialog') and self.transport_disembark_dialog and getattr(self.transport_disembark_dialog, 'visible', False):
-            self.transport_disembark_dialog.draw(self.screen)
+        # Draw all dialogs via the centralized modal stack (includes UI-interface dialogs).
+        if hasattr(self, 'dialog_manager') and self.dialog_manager:
+            self.dialog_manager.draw(self.screen)
 
         # Finally, draw mission popup overlay above everything if present
         if getattr(self, '_mission_popup', None):
@@ -2129,47 +2034,8 @@ def draw_deployment_zones(screen: pygame.Surface, deployment_zones: dict, player
                         center_y = (min_y + max_y) // 2 - text_rect.height // 2
                         screen.blit(text_surface, (center_x, center_y))
         else:
-            # Fall back to old rectangular system
-            x_start, x_end = zone['x_range']
-            y_start, y_end = zone['y_range']
-            
-            # Convert to screen coordinates
-            screen_x_start = int(x_start * TILE_SIZE * zoom_level + offset_x)
-            screen_y_start = int(y_start * TILE_SIZE * zoom_level + offset_y)
-            screen_x_end = int(x_end * TILE_SIZE * zoom_level + offset_x)
-            screen_y_end = int(y_end * TILE_SIZE * zoom_level + offset_y)
-            
-            # Calculate width and height
-            zone_width = screen_x_end - screen_x_start
-            zone_height = screen_y_end - screen_y_start
-            
-            # Skip drawing if zone is off-screen or invalid
-            if zone_width <= 0 or zone_height <= 0:
-                continue
-            
-            # Create a surface with per-pixel alpha for transparency
-            zone_surface = pygame.Surface((zone_width, zone_height), pygame.SRCALPHA)
-            zone_surface.fill(color)
-            
-            # Blit the transparent zone onto the battlefield
-            screen.blit(zone_surface, (screen_x_start, screen_y_start))
-            
-            # Draw a thicker border around the deployment zone for better visibility
-            pygame.draw.rect(screen, border_color, 
-                            (screen_x_start, screen_y_start, zone_width, zone_height), 4)
-            
-            # Draw corner markers for extra visibility
-            corner_size = max(8, int(8 * zoom_level))
-            corners = [
-                (screen_x_start, screen_y_start),  # Top-left
-                (screen_x_end - corner_size, screen_y_start),  # Top-right
-                (screen_x_start, screen_y_end - corner_size),  # Bottom-left
-                (screen_x_end - corner_size, screen_y_end - corner_size)  # Bottom-right
-            ]
-            
-            for corner_x, corner_y in corners:
-                pygame.draw.rect(screen, border_color, 
-                               (corner_x, corner_y, corner_size, corner_size))
+            # Deployment zones must be mission polygon zones; no rectangular fallback.
+            continue
             
             # Add zone label with better positioning
             font = pygame.font.SysFont('Arial', max(14, int(16 * zoom_level)), bold=True)
@@ -2292,6 +2158,10 @@ def draw_prominent_unit_icon(screen: pygame.Surface, center_x: int, center_y: in
     draw_rotated_tinted_unit_icon(screen, center_x, center_y, icon_size, unit, icon_tint, base.facing)
     
     # For multi-model units, draw individual model identifier
+    try:
+        models = unit.get_models_for_rendering()
+    except Exception:
+        models = getattr(unit, "models", []) or []
     if len(models) > 1:
         draw_model_identifier(screen, center_x, center_y, icon_size, model_index, unit, is_highlighted)
     
@@ -2716,96 +2586,6 @@ class SetupPhaseHandler(BasePhaseHandler):
     """Handles events during setup phases"""
     
     def handle_event(self, event: pygame.event.Event) -> bool:
-        # Handle leader attachment dialog first (if active)
-        if (hasattr(self.game_view, 'leader_attachment_dialog') and
-            self.game_view.leader_attachment_dialog and
-            self.game_view.leader_attachment_dialog.visible):
-            # While a modal dialog is open, don't allow SPACE to advance setup phases.
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
-                return True
-            return self.game_view.leader_attachment_dialog.handle_event(event)
-
-        # Handle mission selection dialog first (if active)
-        if (hasattr(self.game_view, 'mission_selection_dialog') and 
-            self.game_view.mission_selection_dialog.visible):
-            result = self.game_view.mission_selection_dialog.handle_event(event)
-            if result:
-                if result["action"] == "confirm":
-                    # Apply selected mission
-                    combination = result["combination"]
-                    layout = result["layout"]
-                    
-                    self.game.selected_mission_info = {
-                        "combination_id": combination["id"],
-                        "primary": combination["primary"],
-                        "deployment": combination["deployment"],
-                        "layout": layout
-                    }
-                    
-                    print(f"✅ Mission selected: {combination['id']} - {combination['primary']} / {combination['deployment']} / Layout {layout}")
-                    
-                    # Assign Primary Mission card to both players
-                    try:
-                        from warhammer40k_ai.classes.mission_cards import (
-                            TakeAndHoldPrimary,
-                            TerraformPrimary,
-                            LinchpinPrimary,
-                            PurgeTheFoePrimary,
-                            ScorchedEarthPrimary,
-                            HiddenSuppliesPrimary,
-                            SupplyDropPrimary,
-                            PrimaryMissionCard,
-                        )
-                        primary_name = (combination.get('primary') or '').strip().lower()
-                        card = None
-                        if primary_name == 'take and hold':
-                            card = TakeAndHoldPrimary()
-                        elif primary_name == 'terraform':
-                            card = TerraformPrimary()
-                        elif primary_name == 'linchpin':
-                            card = LinchpinPrimary()
-                        elif primary_name == 'purge the foe':
-                            card = PurgeTheFoePrimary()
-                        elif primary_name == 'scorched earth':
-                            card = ScorchedEarthPrimary()
-                        elif primary_name == 'hidden supplies':
-                            card = HiddenSuppliesPrimary()
-                        elif primary_name == 'supply drop':
-                            card = SupplyDropPrimary()
-                        else:
-                            # Stub primary for unimplemented ones
-                            class _StubPrimary(PrimaryMissionCard):
-                                def __init__(self, name):
-                                    super().__init__(name=name, description=f"Stub for {name}")
-                                def score_at_command_phase(self, game, player) -> int:
-                                    return 0
-                                def score_at_end_of_turn(self, game, player) -> int:
-                                    return 0
-                            card = _StubPrimary(combination.get('primary', 'Primary'))
-                        for p in self.game.players:
-                            p.set_primary_mission(card)
-                    except Exception as e:
-                        print(f"⚠️ Failed to assign primary mission card: {e}")
-                    
-                    # Hide dialog and advance phase
-                    self.game_view.mission_selection_dialog.visible = False
-                    
-                    # Execute the phase and advance
-                    self.game.execute_current_setup_phase()
-                    self.game.advance_setup_phase()
-                    return True
-                    
-                elif result["action"] == "cancel":
-                    # Hide dialog and advance with default
-                    self.game_view.mission_selection_dialog.visible = False
-                    print("📋 Mission selection cancelled - using default")
-                    
-                    # Execute the phase and advance
-                    self.game.execute_current_setup_phase()
-                    self.game.advance_setup_phase()
-                    return True
-            return True  # Dialog is handling events
-        
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_SPACE:
                 # Handle setup phase advancement
@@ -2878,18 +2658,86 @@ class SetupPhaseHandler(BasePhaseHandler):
     
     def _show_mission_selection_dialog(self):
         """Show the mission selection dialog for SELECT_MISSION_OBJECTIVES phase."""
-        from .dialogs import MissionSelectionDialog
+        from .dialogs import MissionSelectionDialog, MissionSelectionModal
         
         # Create mission selection dialog
-        dialog = MissionSelectionDialog(
+        inner = MissionSelectionDialog(
             self.game_view.screen.get_width(),
             self.game_view.screen.get_height()
         )
-        
-        # Store dialog in game view for event handling
-        self.game_view.mission_selection_dialog = dialog
-        dialog.visible = True
-        
+
+        modal = MissionSelectionModal(inner)
+        self.game_view.mission_selection_dialog = modal  # keep reference for debugging
+
+        def _apply_result(result: dict) -> None:
+            combination = result["combination"]
+            layout = result["layout"]
+            self.game.selected_mission_info = {
+                "combination_id": combination["id"],
+                "primary": combination["primary"],
+                "deployment": combination["deployment"],
+                "layout": layout
+            }
+            print(f"✅ Mission selected: {combination['id']} - {combination['primary']} / {combination['deployment']} / Layout {layout}")
+
+            # Assign Primary Mission card to both players
+            try:
+                from warhammer40k_ai.classes.mission_cards import (
+                    TakeAndHoldPrimary,
+                    TerraformPrimary,
+                    LinchpinPrimary,
+                    PurgeTheFoePrimary,
+                    ScorchedEarthPrimary,
+                    HiddenSuppliesPrimary,
+                    SupplyDropPrimary,
+                    PrimaryMissionCard,
+                )
+                primary_name = (combination.get('primary') or '').strip().lower()
+                card = None
+                if primary_name == 'take and hold':
+                    card = TakeAndHoldPrimary()
+                elif primary_name == 'terraform':
+                    card = TerraformPrimary()
+                elif primary_name == 'linchpin':
+                    card = LinchpinPrimary()
+                elif primary_name == 'purge the foe':
+                    card = PurgeTheFoePrimary()
+                elif primary_name == 'scorched earth':
+                    card = ScorchedEarthPrimary()
+                elif primary_name == 'hidden supplies':
+                    card = HiddenSuppliesPrimary()
+                elif primary_name == 'supply drop':
+                    card = SupplyDropPrimary()
+                else:
+                    class _StubPrimary(PrimaryMissionCard):
+                        def __init__(self, name):
+                            super().__init__(name=name, description=f"Stub for {name}")
+                        def score_at_command_phase(self, game, player) -> int:
+                            return 0
+                        def score_at_end_of_turn(self, game, player) -> int:
+                            return 0
+                    card = _StubPrimary(combination.get('primary', 'Primary'))
+                for p in self.game.players:
+                    p.set_primary_mission(card)
+            except Exception as e:
+                print(f"⚠️ Failed to assign primary mission card: {e}")
+
+            # Execute the phase and advance
+            self.game.execute_current_setup_phase()
+            self.game.advance_setup_phase()
+
+        def _cancel() -> None:
+            print("📋 Mission selection cancelled - using default")
+            self.game.execute_current_setup_phase()
+            self.game.advance_setup_phase()
+
+        modal.show(on_confirm=_apply_result, on_cancel=_cancel)
+        # Push to modal stack
+        try:
+            self.game_view.dialog_manager.open(modal, modal=True)
+        except Exception:
+            pass
+
         print("📋 Mission Selection Dialog opened - choose from approved combinations A-T")
 
     def _show_leader_attachment_dialog(self):
@@ -2905,7 +2753,7 @@ class SetupPhaseHandler(BasePhaseHandler):
         self.game_view.leader_attachment_dialog = dialog
 
         def _on_done():
-            # Apply/validate leader attachments, then execute phase and advance
+            # Apply/validate leader attachments, then proceed to transport assignments (then execute/advance)
             try:
                 for p in self.game.players:
                     army = p.get_army()
@@ -2921,9 +2769,8 @@ class SetupPhaseHandler(BasePhaseHandler):
             except Exception:
                 pass
 
-            # Execute the phase and advance
-            self.game.execute_current_setup_phase()
-            self.game.advance_setup_phase()
+            # Next: declare which units start embarked within transports
+            self._show_transport_assignment_dialog()
 
         def _on_cancel():
             # Stay in this phase; do nothing else
@@ -2942,11 +2789,73 @@ class SetupPhaseHandler(BasePhaseHandler):
         dialog.show(all_units, on_confirm=_on_done, on_cancel=_on_cancel)
         dialog.visible = True
         try:
-            dialog.draw(self.game_view.screen)
+            self.game_view.dialog_manager.open(dialog, modal=True)
         except Exception:
             pass
 
         print("📋 Leader Attachment Dialog opened - select leaders and attach to eligible units")
+
+    def _show_transport_assignment_dialog(self):
+        """Show the transport assignment dialog for DECLARE_BATTLE_FORMATIONS phase."""
+        from .dialogs import TransportAssignmentDialog
+
+        dialog = TransportAssignmentDialog(
+            self.game_view.screen.get_width(),
+            self.game_view.screen.get_height()
+        )
+        self.game_view.transport_assignment_dialog = dialog
+
+        # Use both armies' units; the dialog filters passengers by transport.can_transport()
+        all_units = []
+        try:
+            if self.game_view.player1 and self.game_view.player1.get_army():
+                all_units.extend(self.game_view.player1.get_army().units)
+            if self.game_view.player2 and self.game_view.player2.get_army():
+                all_units.extend(self.game_view.player2.get_army().units)
+        except Exception:
+            pass
+
+        def _apply(assignments):
+            # assignments: {transport_unit: [passenger_units]}
+            try:
+                # Clear any previous start-embarked assignments
+                for u in list(all_units):
+                    if getattr(u, "is_transport", False):
+                        continue
+                    if getattr(u, "embarked_in", None) is not None and (not getattr(u, "deployed", False)):
+                        try:
+                            t = u.embarked_in
+                            if t is not None:
+                                t.remove_passenger(u)
+                        except Exception:
+                            pass
+                # Apply new
+                for transport, passengers in (assignments or {}).items():
+                    for pu in list(passengers or []):
+                        try:
+                            pu.embark(transport)
+                        except Exception:
+                            pass
+            except Exception as e:
+                print(f"⚠️ Transport assignment failed: {e}")
+
+            # Execute the phase and advance
+            self.game.execute_current_setup_phase()
+            self.game.advance_setup_phase()
+
+        def _skip():
+            # Execute the phase and advance without changing transport assignments
+            self.game.execute_current_setup_phase()
+            self.game.advance_setup_phase()
+
+        dialog.show(all_units, on_confirm=_apply, on_cancel=_skip)
+        dialog.visible = True
+        try:
+            self.game_view.dialog_manager.open(dialog, modal=True)
+        except Exception:
+            pass
+
+        print("📋 Transport Assignment Dialog opened - select transports and units to start embarked")
 
     
     def get_allowed_actions(self) -> List[str]:
@@ -2956,22 +2865,9 @@ class DeploymentPhaseHandler(BasePhaseHandler):
     """Handles events during deployment phase"""
     
     def handle_event(self, event: pygame.event.Event) -> bool:
-        # Handle deployment choice dialog first (highest priority)
-        if (self.game_view.ui_interface and 
-            hasattr(self.game_view.ui_interface, 'deployment_choice_dialog') and 
-            self.game_view.ui_interface.deployment_choice_dialog.visible):
-            return self.game_view.ui_interface.deployment_choice_dialog.handle_event(event)
-        
         # Handle UI interface events
         if self.game_view.ui_interface and self.game_view.ui_interface.handle_event(event):
             return True
-        
-        # Handle individual model movement dialog events (per-model deployment) with high priority
-        if (hasattr(self.game_view, 'individual_model_movement_dialog') and
-            self.game_view.individual_model_movement_dialog and
-            self.game_view.individual_model_movement_dialog.visible):
-            if self.game_view.individual_model_movement_dialog.handle_event(event):
-                return True
         
         # Handle deployment-specific mouse events
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -3199,71 +3095,6 @@ class BattlePhaseHandler(BasePhaseHandler):
         if event.type == pygame.MOUSEMOTION:
             # print(f"🔍 DEBUG: BattlePhaseHandler.handle_event - MOUSEMOTION at {event.pos}")
             pass
-
-        # Handle transport dialogs first (modal)
-        if (hasattr(self.game_view, 'transport_embark_dialog') and self.game_view.transport_embark_dialog and
-            getattr(self.game_view.transport_embark_dialog, 'visible', False)):
-            return self.game_view.transport_embark_dialog.handle_event(event)
-        if (hasattr(self.game_view, 'transport_disembark_dialog') and self.game_view.transport_disembark_dialog and
-            getattr(self.game_view.transport_disembark_dialog, 'visible', False)):
-            return self.game_view.transport_disembark_dialog.handle_event(event)
-
-        # Handle weapon choice dialog first (highest priority)
-        if (hasattr(self.game_view, 'weapon_choice_dialog') and
-            self.game_view.weapon_choice_dialog.visible):
-            if event.type == pygame.MOUSEMOTION:
-                print(f"🔍 DEBUG: BattlePhaseHandler - weapon_choice_dialog is visible, delegating")
-            return self.game_view.weapon_choice_dialog.handle_event(event)
-        
-        # Handle melee weapon declaration dialog (high priority for fight phase)
-        if (hasattr(self.game_view, 'melee_weapon_declaration_dialog') and
-            self.game_view.melee_weapon_declaration_dialog.visible):
-            return self.game_view.melee_weapon_declaration_dialog.handle_event(event)
-        
-        # Handle fight unit selection dialog (high priority for fight phase)
-        if (self.game_view.ui_interface and 
-            hasattr(self.game_view.ui_interface, 'fight_unit_selection_dialog') and
-            self.game_view.ui_interface.fight_unit_selection_dialog.visible):
-            return self.game_view.ui_interface.fight_unit_selection_dialog.handle_event(event)
-        
-        # Handle fight target selection dialog (high priority for fight phase)
-        if (hasattr(self.game_view, 'fight_target_selection_dialog') and
-            self.game_view.fight_target_selection_dialog.visible):
-            return self.game_view.fight_target_selection_dialog.handle_event(event)
-        
-        # Handle target model selection dialog (high priority for fight phase)
-        if (hasattr(self.game_view, 'target_model_selection_dialog') and
-            self.game_view.target_model_selection_dialog.visible):
-            return self.game_view.target_model_selection_dialog.handle_event(event)
-        
-        # Handle shooting declaration dialog
-        if (hasattr(self.game_view, 'shooting_declaration_dialog') and
-            (self.game_view.shooting_declaration_dialog.visible or 
-             self.game_view.shooting_declaration_dialog.is_targeting_mode)):
-            # Only return if the dialog actually consumed the event
-            if self.game_view.shooting_declaration_dialog.handle_event(event):
-                return True
-        
-        # Handle charge declaration dialog
-        if (hasattr(self.game_view, 'charge_declaration_dialog') and
-            self.game_view.charge_declaration_dialog.visible):
-            return self.game_view.charge_declaration_dialog.handle_event(event)
-        
-        # Handle movement choice dialog
-        if (hasattr(self.game_view, 'movement_choice_dialog') and
-            self.game_view.movement_choice_dialog.visible):
-            return self.game_view.movement_choice_dialog.handle_event(event)
-        
-        # Handle individual model movement dialog
-        if (hasattr(self.game_view, 'individual_model_movement_dialog') and
-            self.game_view.individual_model_movement_dialog.visible):
-            if self.game_view.individual_model_movement_dialog.handle_event(event):
-                return True
-
-        # Handle coherency violation dialog
-        if (hasattr(self.game_view, 'coherency_violation_dialog') and
-            self.game_view.coherency_violation_dialog.visible):
-            return self.game_view.coherency_violation_dialog.handle_event(event)
         
         # Handle keyboard events
         if event.type == pygame.KEYDOWN:
@@ -4560,6 +4391,14 @@ class PhaseManager:
     
     def handle_event(self, event: pygame.event.Event) -> bool:
         """Route event to appropriate phase handler"""
+        # Global dialog routing (modal stack) always goes first.
+        try:
+            if hasattr(self.game_view, "dialog_manager") and self.game_view.dialog_manager:
+                if self.game_view.dialog_manager.handle_event(event):
+                    return True
+        except Exception:
+            pass
+
         handler = self.get_current_handler()
         handler_name = handler.__class__.__name__
 
@@ -5129,20 +4968,6 @@ class PreBattlePhaseHandler(BasePhaseHandler):
         if event.type == pygame.MOUSEMOTION and self.awaiting_battlefield_click:
             self.mouse_pos = event.pos
         
-        # If a scout dialog is visible, let it handle the event
-        if self.game_view.ui_interface.scout_choice_dialog.visible:
-            # print(f"🔍 DEBUG: PreBattlePhaseHandler: Scout dialog visible, handling event")
-            return self.game_view.ui_interface.scout_choice_dialog.handle_event(event)
-        else:
-            pass
-            # print(f"🔍 DEBUG: PreBattlePhaseHandler: Scout dialog not visible (visible={self.game_view.ui_interface.scout_choice_dialog.visible})")
-        
-        # Handle individual model movement dialog (for scout moves)
-        if (hasattr(self.game_view, 'individual_model_movement_dialog') and
-            self.game_view.individual_model_movement_dialog.visible):
-            if self.game_view.individual_model_movement_dialog.handle_event(event):
-                return True
-
         # Handle mouse motion for path preview during individual model movement
         if event.type == pygame.MOUSEMOTION:
             # print(f"🔍 DEBUG: PreBattlePhaseHandler mouse motion event received")

@@ -47,6 +47,11 @@ class UnitDetailPanel(pygame.sprite.Sprite):
 
     def draw(self, surface: pygame.Surface, unit: Unit, x: int, y: int):
         """Draw detailed unit information at the specified position"""
+        # Use the attached-unit root for display (bodyguard if leader attached)
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
         # Adjust position to keep panel on screen
         screen_width, screen_height = surface.get_size()
         if x + self.width > screen_width:
@@ -71,10 +76,21 @@ class UnitDetailPanel(pygame.sprite.Sprite):
         x_right = x + self.width - 15
         
         # Unit name and cost
-        unit_name = self.font_large.render(unit.name, True, TEXT_PRIMARY)
+        unit_name = self.font_large.render(root.name, True, TEXT_PRIMARY)
         surface.blit(unit_name, (x_left, y_pos))
         
-        cost_text = self.font_medium.render(f"{unit.get_unit_cost()} points", True, TEXT_ACCENT)
+        # Cost: include attached leaders with their bodyguard
+        cost_val = 0
+        try:
+            cost_val += int(root.get_unit_cost())
+        except Exception:
+            pass
+        try:
+            for l in list(getattr(root, "attached_leaders", []) or []):
+                cost_val += int(l.get_unit_cost())
+        except Exception:
+            pass
+        cost_text = self.font_medium.render(f"{cost_val} points", True, TEXT_ACCENT)
         cost_rect = cost_text.get_rect()
         surface.blit(cost_text, (x_right - cost_rect.width, y_pos))
         
@@ -91,15 +107,31 @@ class UnitDetailPanel(pygame.sprite.Sprite):
             pass
         
         # Faction and keywords
-        faction_text = self.font_small.render(f"Faction: {unit.faction}", True, TEXT_SECONDARY)
+        faction_text = self.font_small.render(f"Faction: {root.faction}", True, TEXT_SECONDARY)
         surface.blit(faction_text, (x_left, y_pos))
         y_pos += 20
         
         # Keywords (single line, no wrapping)
-        if unit.keywords:
-            keywords_str = "Keywords: " + ", ".join(unit.keywords)
+        try:
+            keywords = list(root.get_effective_keywords())
+        except Exception:
+            keywords = list(getattr(root, "keywords", []) or [])
+        if keywords:
+            keywords_str = "Keywords: " + ", ".join(keywords)
             keyword_text = self.font_tiny.render(keywords_str, True, TEXT_SECONDARY)
             surface.blit(keyword_text, (x_left, y_pos))
+            y_pos += 14
+
+        # Attached leaders summary
+        try:
+            leaders = list(getattr(root, "attached_leaders", []) or [])
+        except Exception:
+            leaders = []
+        if leaders:
+            names = [getattr(l, "name", "Leader") for l in leaders]
+            line = "Leaders: " + ", ".join(names)
+            leaders_text = self.font_tiny.render(line, True, TEXT_SECONDARY)
+            surface.blit(leaders_text, (x_left, y_pos))
             y_pos += 14
         
         y_pos += 10
@@ -111,7 +143,12 @@ class UnitDetailPanel(pygame.sprite.Sprite):
         
         # Model details
         model_groups = {}
-        for model in unit.models:
+        # Include attached leaders' models in composition
+        try:
+            models_to_show = list(root.get_models_for_rendering())
+        except Exception:
+            models_to_show = list(getattr(root, "models", []) or [])
+        for model in models_to_show:
             if model.name not in model_groups:
                 model_groups[model.name] = []
             model_groups[model.name].append(model)
@@ -169,13 +206,30 @@ class UnitDetailPanel(pygame.sprite.Sprite):
         
         y_pos += 15
         
-        # Abilities
-        if unit.possible_abilities:
+        # Abilities (effective: union across attached unit)
+        try:
+            members = root.get_attached_unit_members()
+        except Exception:
+            members = [root]
+        abilities = []
+        try:
+            seen = set()
+            for u in members:
+                for ab in (getattr(u, "possible_abilities", []) or []):
+                    key = (getattr(ab, "name", ""), getattr(ab, "parameter", ""), getattr(ab, "description", ""))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    abilities.append(ab)
+        except Exception:
+            abilities = list(getattr(root, "possible_abilities", []) or [])
+
+        if abilities:
             abilities_header = self.font_medium.render("Abilities:", True, TEXT_PRIMARY)
             surface.blit(abilities_header, (x_left, y_pos))
             y_pos += 25
             
-            for ability in unit.possible_abilities:  # Show all abilities
+            for ability in abilities:  # Show all abilities
                 # Include parameter in ability name if available (e.g., "Feel No Pain 5+")
                 ability_display_name = ability.name
                 if hasattr(ability, 'parameter') and ability.parameter:
@@ -197,19 +251,19 @@ class UnitDetailPanel(pygame.sprite.Sprite):
                     y_pos += 5  # Extra spacing after each ability
         
         # Enhancement
-        if unit.enhancement:
+        if root.enhancement:
             y_pos += 10
             enh_header = self.font_medium.render("Enhancement:", True, TEXT_PRIMARY)
             surface.blit(enh_header, (x_left, y_pos))
             y_pos += 20
             
-            enh_name = self.font_small.render(f"• {unit.enhancement.name} ({unit.enhancement.points}pts)", True, TEXT_ACCENT)
+            enh_name = self.font_small.render(f"• {root.enhancement.name} ({root.enhancement.points}pts)", True, TEXT_ACCENT)
             surface.blit(enh_name, (x_left + 5, y_pos))
             y_pos += 18
             
             # Enhancement description
-            if hasattr(unit.enhancement, 'description') and unit.enhancement.description:
-                desc_wrapped = self.wrap_text(unit.enhancement.description, self.font_tiny, self.width - 40)
+            if hasattr(root.enhancement, 'description') and root.enhancement.description:
+                desc_wrapped = self.wrap_text(root.enhancement.description, self.font_tiny, self.width - 40)
                 for line in desc_wrapped:
                     desc_text = self.font_tiny.render(line, True, TEXT_SECONDARY)
                     surface.blit(desc_text, (x_left + 10, y_pos))

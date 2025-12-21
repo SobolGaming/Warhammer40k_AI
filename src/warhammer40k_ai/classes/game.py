@@ -781,85 +781,10 @@ class Game:
 
     def _get_infiltrate_search_zones(self, player_name: str, battlefield_width: float, battlefield_height: float) -> list:
         """Get valid search zones for infiltrate units (avoiding enemy deployment zones and 9\" buffer)."""
-        zones = []
-        
-        if not hasattr(self, 'deployment_zones') or not self.deployment_zones:
-            # No deployment zones defined - use entire battlefield with buffer
-            return [(3.0, battlefield_width - 3.0, 3.0, battlefield_height - 3.0)]
-        
-        # For infiltrate, we need to avoid enemy deployment zones + 9" buffer
-        # Create multiple zones including No Man's Land areas
-        
-        # Find enemy deployment zones
-        enemy_zones = []
-        friendly_zones = []
-        for zone_player_name, zone in self.deployment_zones.items():
-            if zone_player_name != player_name:
-                enemy_zones.append(zone)
-            else:
-                friendly_zones.append(zone)
-        
-        if not enemy_zones:
-            # No enemy zones - use entire battlefield
-            return [(3.0, battlefield_width - 3.0, 3.0, battlefield_height - 3.0)]
-        
-        # Create comprehensive search zones for Infiltrate units
-        # 1. Areas around friendly deployment zone (but outside it)
-        for friendly_zone in friendly_zones:
-            fx_min, fx_max = friendly_zone['x_range']
-            fy_min, fy_max = friendly_zone['y_range']
-            
-            # Zone in front of friendly deployment (towards center)
-            if fx_max + 3.0 < battlefield_width / 2:
-                zones.append((fx_max, battlefield_width / 2, 3.0, battlefield_height - 3.0))
-            elif fx_min - 3.0 > battlefield_width / 2:
-                zones.append((battlefield_width / 2, fx_min, 3.0, battlefield_height - 3.0))
-        
-        # 2. No Man's Land (center area, avoiding enemy zones + 9" buffer)
-        center_x_min = battlefield_width * 0.25
-        center_x_max = battlefield_width * 0.75
-        center_y_min = battlefield_height * 0.25  
-        center_y_max = battlefield_height * 0.75
-        
-        # Check if center area is clear of enemy zones + buffer
-        center_clear = True
-        for enemy_zone in enemy_zones:
-            ex_min, ex_max = enemy_zone['x_range']
-            ey_min, ey_max = enemy_zone['y_range']
-            
-            # Check if center area overlaps with enemy zone + 9" buffer
-            if not (center_x_max < ex_min - 9.0 or center_x_min > ex_max + 9.0 or
-                    center_y_max < ey_min - 9.0 or center_y_min > ey_max + 9.0):
-                center_clear = False
-                break
-        
-        if center_clear:
-            zones.append((center_x_min, center_x_max, center_y_min, center_y_max))
-        
-        # 3. Flanking zones (sides of the battlefield, avoiding enemy zones + buffer)
-        for enemy_zone in enemy_zones:
-            ex_min, ex_max = enemy_zone['x_range']
-            ey_min, ey_max = enemy_zone['y_range']
-            
-            # Zone to the left of enemy zone (if space available)
-            if ex_min - 9.0 > 3.0:
-                zones.append((3.0, ex_min - 9.0, 3.0, battlefield_height - 3.0))
-            
-            # Zone to the right of enemy zone (if space available)
-            if ex_max + 9.0 < battlefield_width - 3.0:
-                zones.append((ex_max + 9.0, battlefield_width - 3.0, 3.0, battlefield_height - 3.0))
-        
-        # If no valid zones found, return a small safe zone in the center
-        if not zones:
-            center_x = battlefield_width / 2
-            center_y = battlefield_height / 2
-            zones.append((center_x - 5, center_x + 5, center_y - 5, center_y + 5))
-        
-        print(f"🔍 DEBUG: Infiltrate search zones for {player_name}: {len(zones)} zones created")
-        for i, zone in enumerate(zones):
-            print(f"🔍 DEBUG: Zone {i+1}: x={zone[0]:.1f}-{zone[1]:.1f}, y={zone[2]:.1f}-{zone[3]:.1f}")
-        
-        return zones
+        # We intentionally do NOT derive "safe" search rectangles from deployment-zone bounding boxes.
+        # Infiltrate legality is enforced by the validation logic itself (enemy zone + 9" buffer + enemy models).
+        margin = 3.0
+        return [(margin, battlefield_width - margin, margin, battlefield_height - margin)]
 
     def _deploy_unit_at_position(self, unit: 'Unit', x: float, y: float, z: float) -> bool:
         """Deploy a unit at the specified position using the same flow as manual deployment."""
@@ -952,7 +877,7 @@ class Game:
     def is_model_wholly_in_deployment_zone(self, model: 'Model', player_name: str) -> bool:
         """Check if a model's entire base is wholly within a player's deployment zone."""
         if not hasattr(self, 'deployment_zones') or not self.deployment_zones:
-            return True  # If no deployment zones defined, allow anywhere
+            raise RuntimeError("Deployment zones not configured (invalid configuration).")
         
         if player_name not in self.deployment_zones:
             return False
@@ -964,56 +889,19 @@ class Game:
         base = model.model_base
         base_radius = base.get_radius()
         
-        # Check if this zone has mission_zones (new system)
-        if 'mission_zones' in zone:
-            # Use the new base checking methods for accurate validation
-            for mission_zone in zone['mission_zones']:
-                # Check if the entire model base is wholly within this mission zone
-                if base.base_type.name == 'CIRCULAR':
-                    if mission_zone.contains_circular_base(model_x, model_y, base_radius):
-                        return True  # Found a zone that contains the entire base
-                else:
-                    # For non-circular bases, get the base vertices
-                    base_vertices = base.get_vertices_at_position(model_x, model_y)
-                    if mission_zone.contains_polygon_base(base_vertices):
-                        return True  # Found a zone that contains the entire base
-            
-            # If no mission zone contains the entire base, placement is invalid
-            return False
-        else:
-            # Fall back to old system for compatibility
-            x_min, x_max = zone['x_range']
-            y_min, y_max = zone['y_range']
-            
-            # For circular bases, check that center +/- radius is within zone
+        # Require mission_zones polygons
+        if 'mission_zones' not in zone or not zone['mission_zones']:
+            raise RuntimeError("Deployment zone missing mission_zones polygons (invalid configuration).")
+
+        for mission_zone in zone['mission_zones']:
             if base.base_type.name == 'CIRCULAR':
-                return (x_min <= model_x - base_radius and 
-                        model_x + base_radius <= x_max and
-                        y_min <= model_y - base_radius and 
-                        model_y + base_radius <= y_max)
-            
-            # For elliptical bases, use the major axis as the effective radius
-            elif base.base_type.name == 'ELLIPTICAL':
-                major_radius = max(base.radius) if isinstance(base.radius, tuple) else base.radius
-                return (x_min <= model_x - major_radius and 
-                        model_x + major_radius <= x_max and
-                        y_min <= model_y - major_radius and 
-                        model_y + major_radius <= y_max)
-            
-            # For hull bases, use a rectangular approximation
-            elif base.base_type.name == 'HULL':
-                length, width = base.radius if isinstance(base.radius, tuple) else (base.radius, base.radius)
-                return (x_min <= model_x - length and 
-                        model_x + length <= x_max and
-                        y_min <= model_y - width and 
-                        model_y + width <= y_max)
-            
-            # Default: treat as circular with radius
+                if mission_zone.contains_circular_base(model_x, model_y, base_radius):
+                    return True
             else:
-                return (x_min <= model_x - base_radius and 
-                        model_x + base_radius <= x_max and
-                        y_min <= model_y - base_radius and 
-                        model_y + base_radius <= y_max)
+                base_vertices = base.get_vertices_at_position(model_x, model_y)
+                if mission_zone.contains_polygon_base(base_vertices):
+                    return True
+        return False
 
     def is_position_wholly_in_deployment_zone(self, x: float, y: float, model_base, player_name: str) -> bool:
         """Check if a model base at (x,y) is wholly within the player's deployment zone,
@@ -1062,10 +950,12 @@ class Game:
         
         for zone_player_name, zone in self.deployment_zones.items():
             if zone_player_name != player_name:
-                x_min, x_max = zone['x_range']
-                y_min, y_max = zone['y_range']
-                if x_min <= x <= x_max and y_min <= y <= y_max:
-                    return True
+                # Deployment zones are polygons (mission_zones). No rectangular fallback is supported.
+                if 'mission_zones' not in zone or not zone['mission_zones']:
+                    raise RuntimeError("Deployment zone missing mission_zones polygons (invalid configuration).")
+                for mission_zone in zone['mission_zones']:
+                    if mission_zone.contains_point(x, y):
+                        return True
         return False
 
     def get_distance_to_enemy_deployment_zone(self, x: float, y: float, player_name: str) -> float:
@@ -1143,38 +1033,7 @@ class Game:
                                     if cg is not None and not cg.is_empty:
                                         repulsors.append(cg)
                     else:
-                        # Legacy rectangular ranges
-                        x_min, x_max = zone['x_range']
-                        y_min, y_max = zone['y_range']
-                        # Create repulsor polygons just outside the deployment zone boundaries
-                        left_repulsor = Polygon([
-                            (x_min - repulsor_thickness, y_min - repulsor_thickness),
-                            (x_min, y_min - repulsor_thickness),
-                            (x_min, y_max + repulsor_thickness),
-                            (x_min - repulsor_thickness, y_max + repulsor_thickness)
-                        ])
-                        repulsors.append(left_repulsor)
-                        right_repulsor = Polygon([
-                            (x_max, y_min - repulsor_thickness),
-                            (x_max + repulsor_thickness, y_min - repulsor_thickness),
-                            (x_max + repulsor_thickness, y_max + repulsor_thickness),
-                            (x_max, y_max + repulsor_thickness)
-                        ])
-                        repulsors.append(right_repulsor)
-                        bottom_repulsor = Polygon([
-                            (x_min - repulsor_thickness, y_min - repulsor_thickness),
-                            (x_max + repulsor_thickness, y_min - repulsor_thickness),
-                            (x_max + repulsor_thickness, y_min),
-                            (x_min - repulsor_thickness, y_min)
-                        ])
-                        repulsors.append(bottom_repulsor)
-                        top_repulsor = Polygon([
-                            (x_min - repulsor_thickness, y_max),
-                            (x_max + repulsor_thickness, y_max),
-                            (x_max + repulsor_thickness, y_max + repulsor_thickness),
-                            (x_min - repulsor_thickness, y_max + repulsor_thickness)
-                        ])
-                        repulsors.append(top_repulsor)
+                        raise RuntimeError("Deployment zone missing mission_zones polygons (invalid configuration).")
         
         elif context == 'movement':
             # For movement, add battlefield edge boundaries as repulsors
@@ -2718,18 +2577,32 @@ class Game:
             
             # Set up deployment zones if not already done
             if not hasattr(self, 'deployment_zones') or not self.deployment_zones:
-                battlefield_width, battlefield_height = self.get_battlefield_size()
-                deployment_depth = 18.0
-                self.deployment_zones = {
-                    self.players[0].name: {
-                        'x_range': (0, deployment_depth),
-                        'y_range': (0, battlefield_height)
-                    },
-                    self.players[1].name: {
-                        'x_range': (battlefield_width - deployment_depth, battlefield_width),
-                        'y_range': (0, battlefield_height)
+                # Always use mission polygon deployment zones (no rectangular legacy zones).
+                try:
+                    mission_name = None
+                    try:
+                        mission_name = (getattr(self, "selected_mission_info", None) or {}).get("deployment")
+                    except Exception:
+                        mission_name = None
+                    mission_name = mission_name or "Crucible of Battle"
+
+                    from .deployment import DeploymentManager
+                    deployment_manager = DeploymentManager(self, mission_name=mission_name)
+                    zones = deployment_manager.create_deployment_zones()
+                    defender_zone = next(z for z in zones if z.get("zone_type") == "defender")
+                    attacker_zone = next(z for z in zones if z.get("zone_type") == "attacker")
+
+                    defender_idx = getattr(self, "defender_index", None)
+                    attacker_idx = getattr(self, "attacker_index", None)
+                    if defender_idx is None or attacker_idx is None:
+                        defender_idx, attacker_idx = 0, 1
+
+                    self.deployment_zones = {
+                        self.players[defender_idx].name: defender_zone,
+                        self.players[attacker_idx].name: attacker_zone,
                     }
-                }
+                except Exception as e:
+                    raise RuntimeError(f"Failed to initialize mission deployment zones: {e}")
             
             # Initialize deployment tracking
             if not hasattr(self, 'deployment_turn_index'):

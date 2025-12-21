@@ -482,6 +482,28 @@ class IndividualModelMovementDialog(BaseDialog):
         
         # Let subclass handle other events
         return self._handle_other_events(event)
+
+    def should_passthrough_event(self, event: pygame.event.Event) -> bool:
+        """
+        Hint for DialogManager: allow the phase handler to receive certain events when this dialog
+        intentionally returns False.
+
+        This is required for battlefield clicks during per-model movement/deployment:
+        the phase handler converts screen->game coords and calls handle_battlefield_click().
+        """
+        try:
+            if not self.visible:
+                return False
+            if event.type == pygame.MOUSEBUTTONDOWN and getattr(event, "button", None) == 1:
+                if self.awaiting_battlefield_click:
+                    mouse_pos = getattr(event, "pos", None)
+                    if mouse_pos:
+                        dialog_rect = pygame.Rect(self.x, self.y, self.width, self.height)
+                        if not dialog_rect.collidepoint(mouse_pos):
+                            return True
+        except Exception:
+            return False
+        return False
     
     def _handle_other_events(self, event: pygame.event.Event) -> bool:
         """Handle other events not processed by the main event handler"""

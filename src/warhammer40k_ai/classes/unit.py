@@ -1161,8 +1161,19 @@ class Unit:
         """How many transport 'slots' this unit uses. Default: 1 per alive model."""
         # Datasheets can have non-1 model slot costs (e.g. Terminators, Jump Packs), but we don't
         # have a unified schema for that yet. Keep this conservative and overridable.
+        # Attached leader units should never be embarked separately; count them via the bodyguard.
         try:
-            return sum(1 for m in self.models if getattr(m, "is_alive", False))
+            if bool(getattr(self, "is_attached_leader", False)):
+                return 0
+        except Exception:
+            pass
+        try:
+            # If this unit has attached leaders, include their models for capacity.
+            try:
+                models = self.get_models_for_collision()
+            except Exception:
+                models = self.models
+            return sum(1 for m in models if getattr(m, "is_alive", False))
         except Exception:
             return len(self.models)
 
@@ -1229,6 +1240,27 @@ class Unit:
         self.transport_passengers.append(passenger_unit)
         passenger_unit.embarked_in = self
         passenger_unit.round_state.embarked_this_round = True
+        # If passenger is an attached-unit root, mark attached leaders as embarked too.
+        try:
+            for l in list(getattr(passenger_unit, "attached_leaders", []) or []):
+                if l is None:
+                    continue
+                l.embarked_in = self
+                try:
+                    l.round_state.embarked_this_round = True
+                except Exception:
+                    pass
+                try:
+                    if game_map is not None and hasattr(game_map, "units") and l in game_map.units:
+                        game_map.units.remove(l)
+                except Exception:
+                    pass
+                try:
+                    l.position = None
+                except Exception:
+                    pass
+        except Exception:
+            pass
         # Remove from battlefield representation
         try:
             if game_map is not None and hasattr(game_map, "units") and passenger_unit in game_map.units:
@@ -1248,6 +1280,15 @@ class Unit:
         try:
             if passenger_unit.embarked_in == self:
                 passenger_unit.embarked_in = None
+        except Exception:
+            pass
+        # Clear embarked state for attached leaders as well.
+        try:
+            for l in list(getattr(passenger_unit, "attached_leaders", []) or []):
+                if l is None:
+                    continue
+                if getattr(l, "embarked_in", None) == self:
+                    l.embarked_in = None
         except Exception:
             pass
 
@@ -4601,8 +4642,13 @@ class Unit:
             print(f"❌ {self.name} cannot disembark: no valid placement found")
             return False
 
-        # Commit placements
-        for model, pos in zip([m for m in self.models if m.is_alive], placements):
+        # Commit placements (include attached leaders' models if any)
+        try:
+            placement_models = [m for m in self.get_models_for_collision() if getattr(m, "is_alive", False)]
+        except Exception:
+            placement_models = [m for m in self.models if getattr(m, "is_alive", False)]
+
+        for model, pos in zip(placement_models, placements):
             model.set_location(*pos)
         # Add back to map (place_unit validates collisions)
         if hasattr(game_map, "place_unit"):

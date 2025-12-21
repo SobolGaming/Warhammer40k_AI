@@ -187,7 +187,18 @@ class InfoPane(pygame.sprite.Sprite):
                 # Show deployment zone info
                 if hasattr(game, 'deployment_zones') and deployment_player.name in game.deployment_zones:
                     zone = game.deployment_zones[deployment_player.name]
-                    zone_text = f"📍 Zone: X({zone['x_range'][0]:.0f}\"-{zone['x_range'][1]:.0f}\") Y({zone['y_range'][0]:.0f}\"-{zone['y_range'][1]:.0f}\")"
+                    # Display bounds derived from mission polygons (no rectangular deployment zones)
+                    try:
+                        xs, ys = [], []
+                        for mz in (zone.get('mission_zones') or []):
+                            for vx, vy in getattr(mz, 'vertices', []):
+                                xs.append(float(vx)); ys.append(float(vy))
+                        if xs and ys:
+                            zone_text = f"📍 Zone: X({min(xs):.0f}\"-{max(xs):.0f}\") Y({min(ys):.0f}\"-{max(ys):.0f}\")"
+                        else:
+                            zone_text = "📍 Zone: (mission polygons)"
+                    except Exception:
+                        zone_text = "📍 Zone: (mission polygons)"
                     zone_surface = self.font_small.render(zone_text, True, TEXT_SECONDARY)
                     zone_rect = zone_surface.get_rect(center=(x_center, y_offset))
                     surface.blit(zone_surface, zone_rect)

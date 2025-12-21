@@ -163,9 +163,8 @@ class DeploymentManager:
     
     def create_deployment_zones(self) -> List[dict]:
         """Create deployment zones based on the selected mission."""
-        mission_zones = self.mission.get_deployment_zones()
-        
-        # Convert mission deployment zones to the format expected by the game
+        # Convert mission deployment zones to the format expected by the game.
+        # Deployment legality is always evaluated against mission polygon zones (no legacy x/y ranges).
         zones = []
         
         # Group zones by type
@@ -179,9 +178,6 @@ class DeploymentManager:
                 'name': 'Defender Zone',
                 'zone_type': 'defender',
                 'mission_zones': defender_zones,  # Store original zones for detailed checking
-                # For compatibility, create a bounding box
-                'x_range': self._get_zone_x_range(defender_zones),
-                'y_range': self._get_zone_y_range(defender_zones)
             }
             zones.append(defender_zone)
         
@@ -191,28 +187,10 @@ class DeploymentManager:
                 'name': 'Attacker Zone', 
                 'zone_type': 'attacker',
                 'mission_zones': attacker_zones,
-                'x_range': self._get_zone_x_range(attacker_zones),
-                'y_range': self._get_zone_y_range(attacker_zones)
             }
             zones.append(attacker_zone)
         
         return zones
-    
-    def _get_zone_x_range(self, zones) -> Tuple[float, float]:
-        """Get the X range that encompasses all zones."""
-        all_x = []
-        for zone in zones:
-            for x, y in zone.vertices:
-                all_x.append(x)
-        return (min(all_x), max(all_x))
-    
-    def _get_zone_y_range(self, zones) -> Tuple[float, float]:
-        """Get the Y range that encompasses all zones."""
-        all_y = []
-        for zone in zones:
-            for x, y in zone.vertices:
-                all_y.append(y)
-        return (min(all_y), max(all_y))
     
     def setup_mission_objectives(self) -> None:
         """Set up objectives based on the selected mission."""

@@ -39,10 +39,14 @@ class LeaderAttachmentDialog(BaseDialog):
         self._message: str = ""
         self._message_color = TEXT_SECONDARY
 
+        # Display names (disambiguate duplicate unit names like "Warp Spiders 1")
+        self._unit_display_names = {}
+
     def show(self, army_units: List, on_confirm: Callable[[], None], on_cancel: Optional[Callable[[], None]] = None) -> None:
         self.army_units = list(army_units or [])
         self.leaders = [u for u in self.army_units if bool(getattr(u, "is_leader", False))]
         self.bodyguards = [u for u in self.army_units if not bool(getattr(u, "is_leader", False))]
+        self._recompute_display_names()
         self.selected_leader_idx = 0 if self.leaders else None
         self.leader_scroll = 0
         self.target_scroll = 0
@@ -59,6 +63,7 @@ class LeaderAttachmentDialog(BaseDialog):
         self.army_units = []
         self.leaders = []
         self.bodyguards = []
+        self._unit_display_names = {}
         self.selected_leader_idx = None
         self.target_rows = []
         self.selected_target_idx = None
@@ -160,17 +165,35 @@ class LeaderAttachmentDialog(BaseDialog):
         eligible = []
         for bg in self.bodyguards:
             try:
-                if leader.can_attach_to(bg):
+                if not leader.can_attach_to(bg):
+                    continue
+                # Enforce "1 Leader unless special rule allows 2 Leaders" at the UI level:
+                # If the bodyguard is already at capacity, do not list it (unless it's the leader's current attachment).
+                current = getattr(leader, "attached_to", None)
+                if bg is current:
                     eligible.append(bg)
+                    continue
+                try:
+                    max_leaders = int(bg.max_attached_leaders())
+                except Exception:
+                    max_leaders = 1
+                try:
+                    current_leaders = list(getattr(bg, "attached_leaders", []) or [])
+                except Exception:
+                    current_leaders = []
+                if len(current_leaders) >= max_leaders:
+                    continue
+                eligible.append(bg)
             except Exception:
                 continue
 
         # Sort by name for stability
-        eligible.sort(key=lambda u: str(getattr(u, "name", "")))
+        eligible.sort(key=lambda u: str(self._get_display_name(u)))
         for bg in eligible:
             attached = getattr(leader, "attached_to", None)
-            prefix = "✓ " if attached is bg else ""
-            self.target_rows.append((f"{prefix}{getattr(bg, 'name', 'Unit')}", bg))
+            # ASCII-only marker to avoid font glyph issues on some platforms
+            prefix = "[x] " if attached is bg else ""
+            self.target_rows.append((f"{prefix}{self._get_display_name(bg)}", bg))
 
         # Default selected row reflects current attachment
         current = getattr(leader, "attached_to", None)
@@ -208,11 +231,53 @@ class LeaderAttachmentDialog(BaseDialog):
                 self._message_color = TEXT_SECONDARY
             else:
                 leader.attach_to_unit(target_unit)
-                self._message = f"{leader.name}: attached to {target_unit.name}"
+                self._message = f"{leader.name}: attached to {self._get_display_name(target_unit)}"
                 self._message_color = TEXT_SECONDARY
         except Exception as e:
             self._message = str(e)
             self._message_color = TEXT_WARNING
+
+    def _recompute_display_names(self) -> None:
+        """
+        Compute roster-like disambiguated names per-army:
+        if multiple units share a name within the same army, enumerate them: "Name 1", "Name 2", ...
+        """
+        self._unit_display_names = {}
+        try:
+            def _army_key(u):
+                try:
+                    a = u.get_parent_army()
+                    return getattr(a, "_id", None) or str(id(a))
+                except Exception:
+                    return "no_army"
+
+            # Count duplicates per (army, name)
+            name_counts = {}
+            for u in self.army_units:
+                nm = getattr(u, "name", "")
+                key = (_army_key(u), nm)
+                name_counts[key] = name_counts.get(key, 0) + 1
+
+            # Enumerate in provided order (stable)
+            running = {}
+            for u in self.army_units:
+                nm = getattr(u, "name", "")
+                uid = getattr(u, "_id", None) or str(id(u))
+                key = (_army_key(u), nm)
+                if name_counts.get(key, 0) > 1:
+                    running[key] = running.get(key, 0) + 1
+                    self._unit_display_names[uid] = f"{nm} {running[key]}"
+                else:
+                    self._unit_display_names[uid] = nm
+        except Exception:
+            self._unit_display_names = {}
+
+    def _get_display_name(self, unit) -> str:
+        try:
+            uid = getattr(unit, "_id", None) or str(id(unit))
+            return self._unit_display_names.get(uid, getattr(unit, "name", "Unit"))
+        except Exception:
+            return getattr(unit, "name", "Unit")
 
     def _create_buttons(self) -> None:
         self.buttons.clear()
@@ -258,8 +323,9 @@ class LeaderAttachmentDialog(BaseDialog):
                 pygame.draw.rect(screen, PANEL_BORDER, rect, 1)
             leader = self.leaders[i]
             attached_to = getattr(leader, "attached_to", None)
-            status = f" → {getattr(attached_to, 'name', '')}" if attached_to is not None else ""
-            txt = self.font_small.render(f"{leader.name}{status}", True, TEXT_SECONDARY)
+            # ASCII-only arrow for broad font support
+            status = f" -> {self._get_display_name(attached_to)}" if attached_to is not None else ""
+            txt = self.font_small.render(f"{self._get_display_name(leader)}{status}", True, TEXT_SECONDARY)
             screen.blit(txt, (rect.x + 10, rect.y + 12))
 
         # Draw target rows

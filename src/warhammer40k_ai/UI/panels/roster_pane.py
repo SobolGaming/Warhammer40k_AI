@@ -154,6 +154,15 @@ class RosterPane(pygame.sprite.Sprite):
 
                     # Check if this is during deployment phase and unit is not deployed
                     if not unit.deployed and self.game_view and self.game_view.ui_interface:
+                        # Units that start embarked (Declare Battle Formations) cannot be deployed separately.
+                        try:
+                            if getattr(unit, "is_embarked", False) or getattr(unit, "embarked_in", None) is not None:
+                                t = getattr(unit, "embarked_in", None)
+                                tname = getattr(t, "name", "Transport") if t is not None else "a Transport"
+                                print(f"🚫 {self.get_unit_display_name(unit)} is embarked in {tname} and cannot be deployed separately.")
+                                return
+                        except Exception:
+                            pass
                         # Check if deployment zones are loaded (deployment has officially started)
                         has_deployment_zones = hasattr(self.game_view.game, 'deployment_zones')
                         zones_exist = self.game_view.game.deployment_zones if has_deployment_zones else None
@@ -376,6 +385,22 @@ class RosterPane(pygame.sprite.Sprite):
             unit_name = unit_name[:15] + "..."
         name_text = self.font_medium.render(unit_name, True, TEXT_PRIMARY)
         surface.blit(name_text, (x_left + icon_size + 8, y_offset))
+
+        # For attached units, show leaders on their own line under the name (not on the name line).
+        leader_line = ""
+        try:
+            leaders = list(getattr(unit, "attached_leaders", []) or [])
+            if leaders:
+                # Use roster display name for leaders too (handles duplicates)
+                names = []
+                for l in leaders:
+                    try:
+                        names.append(self.get_unit_display_name(l))
+                    except Exception:
+                        names.append(getattr(l, "name", "Leader"))
+                leader_line = "Leaders: " + ", ".join(names[:2]) + (f" +{len(names)-2}" if len(names) > 2 else "")
+        except Exception:
+            leader_line = ""
         
         # Unit cost (include attached leaders with their bodyguard for display)
         cost_val = 0
@@ -449,6 +474,11 @@ class RosterPane(pygame.sprite.Sprite):
 
         def _status_text(u: Unit) -> str:
             try:
+                # Embarked status has priority (it explains why you can't deploy the unit)
+                if getattr(u, "embarked_in", None) is not None:
+                    t = getattr(u, "embarked_in", None)
+                    tname = getattr(t, "name", "Transport") if t is not None else "Transport"
+                    return f"Embarked in {tname}"
                 rs = getattr(u, 'reserve_status', None)
                 if rs == 'reserves':
                     return "Reserves"
@@ -473,6 +503,11 @@ class RosterPane(pygame.sprite.Sprite):
 
         # Optional enhancement line (blue) shown above "Not Deployed"
         status_y = line2_y
+        # If leaders exist, render them as a dedicated line and push subsequent content down.
+        if leader_line:
+            leader_surf = self.font_tiny.render(leader_line, True, TEXT_SECONDARY)
+            surface.blit(leader_surf, (details_x, line2_y))
+            status_y = line3_y
         try:
             enh = getattr(unit, 'enhancement', None)
         except Exception:
@@ -488,17 +523,9 @@ class RosterPane(pygame.sprite.Sprite):
             surface.blit(enh_surf, (details_x, line2_y))
             status_y = line3_y
 
-        # Status + tags + health (+ leader attachment)
+        # Status + tags + health
         status = _status_text(unit)
         tags = _tags_text(unit)
-        lead = ""
-        try:
-            if bool(getattr(unit, 'is_leader', False)) and getattr(unit, 'attached_to', None):
-                attached = getattr(unit, 'attached_to', None)
-                attached_name = self.get_unit_display_name(attached) if attached else ""
-                lead = f"Leading {attached_name} unit"
-        except Exception:
-            lead = ""
         try:
             all_models = []
             try:
@@ -516,7 +543,7 @@ class RosterPane(pygame.sprite.Sprite):
         except Exception:
             hp = ""
 
-        parts = [p for p in [lead, status, tags, hp] if p]
+        parts = [p for p in [status, tags, hp] if p]
         if parts:
             line2 = " • ".join(parts)
             # Trim if it gets too long
@@ -524,6 +551,29 @@ class RosterPane(pygame.sprite.Sprite):
                 line2 = line2[:37] + "..."
             line2_surf = self.font_tiny.render(line2, True, TEXT_SECONDARY)
             surface.blit(line2_surf, (details_x, status_y))
+
+        # Extra transport info: show embarked passengers on the transport's card
+        try:
+            if bool(getattr(unit, "is_transport", False)):
+                passengers = list(getattr(unit, "transport_passengers", []) or [])
+                if passengers:
+                    # Display up to 2 passenger unit names (roster display names), then "+N"
+                    names = []
+                    for pu in passengers:
+                        try:
+                            names.append(self.get_unit_display_name(pu))
+                        except Exception:
+                            names.append(getattr(pu, "name", "Unit"))
+                    shown = names[:2]
+                    extra = len(names) - len(shown)
+                    tail = f" +{extra}" if extra > 0 else ""
+                    p_line = f"Embarked: {', '.join(shown)}{tail}"
+                    # Draw on the lowest line slot (or below status)
+                    py = min(button_rect.bottom - 14, status_y + 14)
+                    p_surf = self.font_tiny.render(p_line[:46] + ("..." if len(p_line) > 46 else ""), True, TEXT_SECONDARY)
+                    surface.blit(p_surf, (details_x, py))
+        except Exception:
+            pass
 
     def draw_roster_unit_icon(self, surface: pygame.Surface, center_x: int, center_y: int, size: int, unit: Unit, tint_color: Tuple[int, int, int] = (255, 255, 255)) -> None:
         """Draw the unit's icon in the roster with appropriate tinting."""
