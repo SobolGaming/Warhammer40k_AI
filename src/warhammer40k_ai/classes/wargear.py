@@ -1671,7 +1671,8 @@ class WargearOption:
         elif isinstance(model_quantity, tuple):
             self.model_quantity = Quantity(*model_quantity)
         else:
-            self.model_quantity = ModelQuantity(min=1, max=1)  # Default values
+            # Default values
+            self.model_quantity = Quantity(min=1, max=1)
         self.item_quantity = item_quantity
         self.conditionals = [conditional.lower() for conditional in conditionals] if conditionals else []
 
@@ -1904,8 +1905,9 @@ def parse_warger_actor_string(actor_str: str) -> str:
         actor = actor_str[:-1]
     if " equipped with " in actor:
         match = re.match(r"^([\w\s'-]+) equipped with an? (.*)", actor)
-        actor = match.group(1)
-        condition = "equipped with " + match.group(2)
+        if match:
+            actor = match.group(1)
+            condition = "equipped with " + match.group(2)
     return actor, condition
 
 def parse_wargear_string_ending(ending: str) -> tuple[list[tuple[int, str]], int]:
@@ -1986,6 +1988,27 @@ def parse_wargear_item(item_str: str) -> list[tuple[int, str]]:
     return full_result
 
 def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[WargearOption]:
+    def _normalize_options_text(text: str) -> str:
+        """
+        Datasheets_options.json frequently contains HTML lists, e.g.
+          "... one of the following:<ul><li>1 x</li><li>1 y</li></ul>"
+        Normalize those into a semicolon-delimited form that our parser understands.
+        """
+        if not text:
+            return ""
+        t = text.replace("’", "'")
+        # turn <li> boundaries into semicolon separators before stripping tags
+        t = re.sub(r"</li\s*>", ";", t, flags=re.IGNORECASE)
+        t = re.sub(r"<li[^>]*>", "", t, flags=re.IGNORECASE)
+        t = re.sub(r"</?(?:ul|ol)[^>]*>", " ", t, flags=re.IGNORECASE)
+        t = re.sub(r"<br\s*/?>", ";", t, flags=re.IGNORECASE)
+        # strip remaining tags
+        t = re.sub(r"<[^>]+>", " ", t)
+        # normalize whitespace around separators
+        t = re.sub(r"\s*;\s*", "; ", t)
+        t = re.sub(r"\s+", " ", t).strip()
+        return t
+
     post_conditionals = []
 
     # stored variables
@@ -2004,10 +2027,14 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
         replacement_items = []
 
         # some sanitization of inconsistencies
-        description = line.lower().replace("’", "'").replace(".", "").replace('model"s', "model's").replace("for every four ", "for every 4 ")
+        description = _normalize_options_text(line).lower()
+        description = description.replace(".", "").replace('model"s', "model's").replace("for every four ", "for every 4 ")
         description = description.replace(" one of the following ", " one of the following: ").replace(" 1 of the following: ", " one of the following: ").replace(" 2 of the following: ", " two of the following: ")
         description = description.replace("up to two ", "up to 2 ").replace("up to three ", "up to 3 ").replace("up to four ", "up to 4 ")
-        print(f"\nDESCRIPTION: {description}")
+        # Debug spam is very noisy during army parsing. Enable manually while developing.
+        DEBUG = False
+        if DEBUG:
+            print(f"\nDESCRIPTION: {description}")
         if "(" in description and ")" in description:
             marker_1 = description.find("(")
             marker_2 = description.find(")")
@@ -2027,13 +2054,24 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
             conditions.append(condition)
             replacement_items, limit = parse_wargear_string_ending(match.group(3))
             item_limit = Quantity(min=1, max=limit)
-        elif match := re.match(r"^(?:this|the|1|one) ([\w\s'-]+) can (?:each |)be equipped with:? (.*)", description):
+        elif match := re.match(r"^(?:this|the|a|an|1|one) ([\w\s'-]+) can (?:each |)be equipped with:? (.*)", description):
             assert not is_replacement
             actor, condition = parse_warger_actor_string(match.group(1))
             conditions.append(condition)
             replacement_items, limit = parse_wargear_string_ending(match.group(2))
             item_limit = Quantity(min=1, max=limit)
-        elif match := re.match(r"^(?:this|the|1|one|each) ([\w\s-]+)'s? ([\w\s'-]+) can be replaced with:? (.*)", description):
+        elif match := re.match(r"^(?:this|the|a|an|1|one) ([\w\s'-]+) can be equipped with up to (\d+) ([\w\s'-]+)", description):
+            # e.g. "This model can be equipped with up to 4 big shootas"
+            assert not is_replacement
+            actor, condition = parse_warger_actor_string(match.group(1))
+            conditions.append(condition)
+            try:
+                limit = int(match.group(2))
+            except Exception:
+                limit = 1
+            replacement_items = parse_wargear_item([match.group(3).strip()])
+            item_limit = Quantity(min=1, max=limit)
+        elif match := re.match(r"^(?:this|the|a|an|1|one|each) ([\w\s'-]+)'s? ([\w\s'-]+) can be replaced with:? (.*)", description):
             actor, condition = parse_warger_actor_string(match.group(1))
             conditions.append(condition)
             items_to_replace = parse_wargear_itemlist(match.group(2))
@@ -2098,10 +2136,11 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
                 raise Exception(f"UNHANDLED 'UP TO' ADDITIONAL: {description}")
         elif match := re.match(r"^for every (\d+) ([\w\s']+) in th[ei]s? unit([,:]+) (.*)", description):
             break_symbol = match.group(3)
-            if break_symbol == ",":
+            if break_symbol in (",", ":"):
                 wgo_list = parse_alternate_3([match.group(4)], unit_ptr)
                 for wgo in wgo_list:
-                    wgo.conditionals.append(description.split(break_symbol)[0].strip())
+                    # Condition text is everything before the break symbol
+                    wgo.conditionals.append(description.split(break_symbol, 1)[0].strip())
                 wargear_options.extend(wgo_list)
                 called_recursively = True
             else:
@@ -2124,7 +2163,7 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
             items_to_replace = parse_wargear_item([match.group(2)])
             replacement_items, limit = parse_wargear_string_ending(match.group(3))
             item_limit = Quantity(min=1, max=limit)
-        elif match := re.match(r"^(?:this|the|1|one) ([\w\s'-]+) can have its ([\w\s'-]+) replaced with (.*)", description):
+        elif match := re.match(r"^(?:this|the|a|an|1|one) ([\w\s'-]+) can have its ([\w\s'-]+) replaced with (.*)", description):
             actor, condition = parse_warger_actor_string(match.group(1))
             items_to_replace = parse_wargear_item([match.group(2)])
             replacement_items, limit = parse_wargear_string_ending(match.group(3))
@@ -2178,18 +2217,21 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
             replacement_items = parse_wargear_itemlist(match.group(2))
             item_limit = Quantity(min=1, max=len(replacement_items))
         else:
-            print(f"UNKNOWN: {line}")
+            if DEBUG:
+                print(f"UNKNOWN: {line}")
             unhandled = True
 
         if not called_recursively:
-            print(f"CONDITIONS: {conditions}")
-            print(f"MODEL LIMIT: {model_limit}")
-            print(f"ACTOR: {actor}")
-            print(f"BASE WARGEAR: {items_to_replace}")
-            print(f"ITEM LIMIT: {item_limit}")
+            if DEBUG:
+                print(f"CONDITIONS: {conditions}")
+                print(f"MODEL LIMIT: {model_limit}")
+                print(f"ACTOR: {actor}")
+                print(f"BASE WARGEAR: {items_to_replace}")
+                print(f"ITEM LIMIT: {item_limit}")
 
             if is_replacement:
-                print(f"REPLACEMENT OPTIONS: {replacement_items}\n")
+                if DEBUG:
+                    print(f"REPLACEMENT OPTIONS: {replacement_items}\n")
                 wargear_options.append(WargearOption(
                     WargearOptionType.REPLACEMENT,
                     items_to_replace,
@@ -2200,7 +2242,8 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
                     conditions
                 ))
             else:
-                print(f"ITEMS TO ADD: {replacement_items}\n")
+                if DEBUG:
+                    print(f"ITEMS TO ADD: {replacement_items}\n")
                 wargear_options.append(WargearOption(
                     WargearOptionType.ADDITIONAL,
                     items_to_replace,
@@ -2212,7 +2255,8 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
                 ))
 
         if unhandled:
-            print(f"UNHANDLED: {str_list}")
+            if DEBUG:
+                print(f"UNHANDLED: {str_list}")
             #raise Exception(f"UNHANDLED: {str_list}")
 
     for conditional in post_conditionals:

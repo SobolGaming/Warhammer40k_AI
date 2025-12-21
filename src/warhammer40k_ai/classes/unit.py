@@ -602,7 +602,7 @@ class Unit:
                                     starting_wargear.append(wargear)
                 else:
                     continue
-            elif match := re.match(r"^(?:the|every|a) (\D+) is equipped with: (.*)$", entry):
+            elif match := re.match(r"^(?:the|every|a|an) (\D+) is equipped with: (.*)$", entry):
                 actors = [match.group(1)]
                 if " and " in actors[0]:
                     actors = actors[0].split(" and ")
@@ -698,71 +698,169 @@ class Unit:
         self.wargear_options = wargear_options
 
     def apply_wargear_option(self, wargear_option: WargearOption):
-        # Extract wargear names from the nested structure
-        wargear_names = []
-        if isinstance(wargear_option.wargear_to, list):
-            for item_group in wargear_option.wargear_to:
-                if isinstance(item_group, list):
-                    for item in item_group:
-                        if isinstance(item, tuple) and len(item) >= 2:
-                            wargear_names.append(item[1])  # Extract name from (quantity, name) tuple
-                        elif isinstance(item, str):
-                            wargear_names.append(item)
-                elif isinstance(item_group, str):
-                    wargear_names.append(item_group)
-        elif isinstance(wargear_option.wargear_to, str):
-            wargear_names.append(wargear_option.wargear_to)
-        
-        if not wargear_names:
-            return  # No valid wargear to apply
-        
-        # Find eligible models
-        eligible_models = []
-        for model in self.models:
-            # Check if model name matches (case-insensitive)
-            model_name_matches = model.name.lower() == wargear_option.model_name.lower()
-            
-            # Check if any of the wargear names are already equipped
-            already_has_wargear = any(wargear_name in model.optional_wargear for wargear_name in wargear_names)
-            
-            # Check conditionals (exclusion rules)
-            meets_conditionals = True
-            if wargear_option.conditionals:
-                for conditional in wargear_option.conditionals:
-                    # Handle "not equipped with X" conditions
-                    if conditional.startswith("not equipped with "):
-                        excluded_item = conditional.replace("not equipped with ", "").strip()
-                        if excluded_item in model.optional_wargear:
-                            meets_conditionals = False
-                            break
-            
-            if model_name_matches and not already_has_wargear and meets_conditionals:
-                eligible_models.append(model)
+        """
+        Apply a wargear option to the unit.
 
-        if len(eligible_models) < wargear_option.model_quantity.min:
-            # If no eligible models found, this might be due to conditionals, so just skip silently
+        IMPORTANT:
+        - A wargear option is a *rule* granting allowed additions/replacements. This method applies one chosen
+          option outcome to models (used by army-list parsing and any future UI selection).
+        - `wargear_option.wargear_to` is a list of possible "choices", each being a list of (qty, item_name) tuples.
+        """
+        import re
+        from warhammer40k_ai.classes.wargear import WargearOptionType
+
+        def _norm(s: str) -> str:
+            s = (s or "").replace("’", "'").lower().strip()
+            s = re.sub(r"<[^>]+>", " ", s)
+            s = re.sub(r"[^\w\s\-']", " ", s)
+            s = s.replace("'", "")
+            s = re.sub(r"\s+", " ", s).strip()
+            return s
+
+        def _iter_choice_item_names() -> list[str]:
+            out: list[str] = []
+            for choice in (wargear_option.wargear_to or []):
+                for qty, nm in (choice or []):
+                    if nm:
+                        out.append(_norm(str(nm)))
+            return out
+
+        def _actor_matches_model(actor: str, model_name: str) -> bool:
+            a = _norm(actor)
+            m = _norm(model_name)
+            if not a or not m:
+                return False
+            if a in ("model", "this model", "unit"):
+                return True
+            return a == m or a in m or m in a
+
+        def _effective_model_limit_max() -> int:
+            """Apply common scaling conditionals (e.g. 'For every 5 models in this unit,...')."""
+            max_models = int(getattr(wargear_option.model_quantity, "max", 1) or 1)
+            # Scale by "for every N models in this unit"
+            for cond in list(getattr(wargear_option, "conditionals", []) or []):
+                m = re.search(r"for every\s+(\d+)\s+[\w\s']+\s+in th[ei]s unit", (cond or "").lower())
+                if m:
+                    try:
+                        n = int(m.group(1))
+                        if n > 0:
+                            max_models = max_models * max(1, (len(self.models) // n))
+                    except Exception:
+                        pass
+            return max_models
+
+        def _conditions_met(model) -> bool:
+            # Best-effort: currently only supports "not equipped with X".
+            for cond in list(getattr(wargear_option, "conditionals", []) or []):
+                cl = (cond or "").lower().strip()
+                if cl.startswith("not equipped with "):
+                    excluded = _norm(cl.replace("not equipped with ", ""))
+                    # Check both currently equipped wargear and already-picked option names
+                    try:
+                        for wg in getattr(model, "wargear", []) or []:
+                            if _norm(getattr(wg, "name", "")) == excluded:
+                                return False
+                    except Exception:
+                        pass
+                    try:
+                        for ow in getattr(model, "optional_wargear", []) or []:
+                            if _norm(ow) == excluded:
+                                return False
+                    except Exception:
+                        pass
+            return True
+
+        def _find_wargear(item_name: str):
+            wanted = _norm(item_name)
+            for wg in (getattr(self, "possible_wargear", []) or []):
+                if wg and _norm(getattr(wg, "name", "")) == wanted:
+                    return wg
+            return None
+
+        # Select models eligible for this option
+        actor = getattr(wargear_option, "model_name", "") or ""
+        eligible_models = [m for m in (self.models or []) if _actor_matches_model(actor, getattr(m, "name", "")) and _conditions_met(m)]
+        if not eligible_models:
             return
 
-        # Apply wargear to eligible models up to the limit
-        count = 0
-        max_count = min(len(eligible_models), wargear_option.item_quantity.max if hasattr(wargear_option.item_quantity, 'max') else wargear_option.item_quantity)
-        
+        # Apply model limit (max)
+        max_models = _effective_model_limit_max()
+        eligible_models = eligible_models[:max_models]
+
+        # Choose the first "choice" by default (callers can filter options beforehand).
+        choices = list(getattr(wargear_option, "wargear_to", []) or [])
+        if not choices:
+            return
+        choice = choices[0]
+
+        # Apply to models
         for model in eligible_models:
-            if count >= max_count:
-                break
-            # Add the first wargear name to the model's optional wargear
-            if wargear_names:
-                model.optional_wargear.append(wargear_names[0])
-            count += 1
+            # Replacement: remove wargear_from then add choice items.
+            if getattr(wargear_option, "wargear_type", None) == WargearOptionType.REPLACEMENT:
+                try:
+                    for from_choice in list(getattr(wargear_option, "wargear_from", []) or []):
+                        for qty, nm in (from_choice or []):
+                            tgt = _norm(nm)
+                            # remove qty occurrences
+                            removed = 0
+                            kept = []
+                            for wg in list(getattr(model, "wargear", []) or []):
+                                if wg and removed < int(qty) and _norm(getattr(wg, "name", "")) == tgt:
+                                    removed += 1
+                                    continue
+                                kept.append(wg)
+                            model.wargear = kept
+                except Exception:
+                    pass
+
+            # Add items from the selected choice
+            for qty, nm in choice:
+                wg = _find_wargear(nm)
+                if wg is None:
+                    # Keep as optional note (so UI/printouts can still show it)
+                    try:
+                        model.optional_wargear.append(str(nm))
+                    except Exception:
+                        pass
+                    continue
+                for _ in range(int(qty) if qty else 1):
+                    model.wargear.append(wg)
 
     def apply_wargear_options(self, wargear_name: Optional[str] = None) -> None:
-        for optional_wargear in self.wargear_options:
-            if wargear_name:
-                if optional_wargear.wargear_to == wargear_name:
-                    self.apply_wargear_option(optional_wargear)
-                    break
-            else:
-                self.apply_wargear_option(optional_wargear)
+        """
+        Apply wargear options.
+
+        - If `wargear_name` is provided: apply the first option that can yield that wargear item (best-effort).
+        - If not provided: do nothing (options are *available choices*, not auto-applied upgrades).
+        """
+        import re
+
+        def _norm(s: str) -> str:
+            s = (s or "").replace("’", "'").lower().strip()
+            s = re.sub(r"[^\w\s\-']", " ", s)
+            s = s.replace("'", "")
+            s = re.sub(r"\s+", " ", s).strip()
+            return s
+
+        if not wargear_name:
+            return
+
+        wanted = _norm(wargear_name)
+        for opt in list(getattr(self, "wargear_options", []) or []):
+            try:
+                for choice in (getattr(opt, "wargear_to", []) or []):
+                    for qty, nm in (choice or []):
+                        if _norm(nm) == wanted:
+                            # Reorder choice list to put the matching choice first, then apply.
+                            choices = list(opt.wargear_to)
+                            idx = choices.index(choice)
+                            if idx != 0:
+                                choices[0], choices[idx] = choices[idx], choices[0]
+                                opt.wargear_to = choices
+                            self.apply_wargear_option(opt)
+                            return
+            except Exception:
+                continue
 
     def add_wargear(self, wargear: List[Wargear]=[], model_name: str=None) -> None:
         for model_instance in self.models:

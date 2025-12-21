@@ -72,6 +72,18 @@ class TestDatasheetsWargearParsing(unittest.TestCase):
         self.assertTrue(prof.is_sustained_hits())
         self.assertTrue(prof.is_twin_linked())
 
+    def test_loadout_parses_an_model_prefix(self):
+        # Ensure "An X is equipped with:" is parsed (not just "A X is equipped with:")
+        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.classes.wargear import Wargear
+
+        u = Unit.__new__(Unit)
+        u.possible_wargear = [Wargear({"name": "onslaught gatling cannon", "type": "Ranged", "range": "24", "A": "1", "BS_WS": "3+", "S": "5", "AP": "0", "D": "1", "description": ""})]
+        loadout = "An Invader ATV is equipped with: onslaught gatling cannon."
+        found = u._parse_loadout(loadout, model_name="invader atv")
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0].name.lower(), "onslaught gatling cannon")
+
 
 if __name__ == "__main__":
     unittest.main()
