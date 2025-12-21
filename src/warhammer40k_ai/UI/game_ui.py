@@ -1751,6 +1751,16 @@ class GameView:
         if hasattr(self, 'mission_selection_dialog') and self.mission_selection_dialog.visible:
             self.mission_selection_dialog.draw(self.screen)
 
+        # Draw leader attachment dialog if visible (Declare Battle Formations)
+        if hasattr(self, 'leader_attachment_dialog') and self.leader_attachment_dialog and self.leader_attachment_dialog.visible:
+            self.leader_attachment_dialog.draw(self.screen)
+
+        # Draw transport embark/disembark dialogs if visible (created on-demand during movement)
+        if hasattr(self, 'transport_embark_dialog') and self.transport_embark_dialog and getattr(self.transport_embark_dialog, 'visible', False):
+            self.transport_embark_dialog.draw(self.screen)
+        if hasattr(self, 'transport_disembark_dialog') and self.transport_disembark_dialog and getattr(self.transport_disembark_dialog, 'visible', False):
+            self.transport_disembark_dialog.draw(self.screen)
+
         # Finally, draw mission popup overlay above everything if present
         if getattr(self, '_mission_popup', None):
             self._draw_mission_popup_overlay(self._mission_popup.get('title', 'Mission'), self._mission_popup.get('body', ''))
@@ -2710,6 +2720,9 @@ class SetupPhaseHandler(BasePhaseHandler):
         if (hasattr(self.game_view, 'leader_attachment_dialog') and
             self.game_view.leader_attachment_dialog and
             self.game_view.leader_attachment_dialog.visible):
+            # While a modal dialog is open, don't allow SPACE to advance setup phases.
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
+                return True
             return self.game_view.leader_attachment_dialog.handle_event(event)
 
         # Handle mission selection dialog first (if active)
@@ -3186,6 +3199,14 @@ class BattlePhaseHandler(BasePhaseHandler):
         if event.type == pygame.MOUSEMOTION:
             # print(f"🔍 DEBUG: BattlePhaseHandler.handle_event - MOUSEMOTION at {event.pos}")
             pass
+
+        # Handle transport dialogs first (modal)
+        if (hasattr(self.game_view, 'transport_embark_dialog') and self.game_view.transport_embark_dialog and
+            getattr(self.game_view.transport_embark_dialog, 'visible', False)):
+            return self.game_view.transport_embark_dialog.handle_event(event)
+        if (hasattr(self.game_view, 'transport_disembark_dialog') and self.game_view.transport_disembark_dialog and
+            getattr(self.game_view.transport_disembark_dialog, 'visible', False)):
+            return self.game_view.transport_disembark_dialog.handle_event(event)
 
         # Handle weapon choice dialog first (highest priority)
         if (hasattr(self.game_view, 'weapon_choice_dialog') and
