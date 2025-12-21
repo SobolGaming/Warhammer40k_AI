@@ -153,6 +153,9 @@ class OptionRow:
 class PatternGroup:
     key: str
     count: int
+    supported_count: int
+    partial_count: int
+    not_impl_count: int
     examples: Tuple[str, ...]
     status: str
     notes: str
@@ -182,29 +185,52 @@ def main() -> None:
     for r in rows:
         groups.setdefault(_pattern_key(r.description), []).append(r)
 
+    # Cache per-line classification to keep grouping + summary consistent
+    status_cache: Dict[str, Tuple[str, str]] = {}
+    def _status_for(desc: str) -> Tuple[str, str]:
+        if desc not in status_cache:
+            status_cache[desc] = _support_for_desc(desc)
+        return status_cache[desc]
+
     pattern_groups: List[PatternGroup] = []
     for key, items in groups.items():
-        # Determine status by sampling a few (if any are Not implemented, keep key Partial unless all Not implemented)
-        sample = items[:20]
-        statuses = [_support_for_desc(s.description)[0] for s in sample]
-        if all(s == "Not implemented" for s in statuses):
-            status, notes = "Not implemented", "No sampled rows in this pattern could be parsed."
-        elif all(s == "Supported" for s in statuses):
-            status, notes = "Supported", "All sampled rows in this pattern are parsed and simple to apply."
+        statuses = [_status_for(s.description)[0] for s in items]
+        supported_c = sum(1 for s in statuses if s == "Supported")
+        partial_c = sum(1 for s in statuses if s == "Partial")
+        not_impl_c = sum(1 for s in statuses if s == "Not implemented")
+
+        # Dominant status for readability, but we also print the breakdown columns.
+        if supported_c >= partial_c and supported_c >= not_impl_c:
+            status = "Supported"
+        elif partial_c >= not_impl_c:
+            status = "Partial"
         else:
-            status, notes = "Partial", "This pattern is parsed in many cases, but includes constraints/variants we don’t fully enforce yet."
+            status = "Not implemented"
+
+        notes = f"Breakdown: Supported={supported_c}, Partial={partial_c}, Not implemented={not_impl_c}."
 
         examples = tuple(
             f"{it.datasheet_name} (`{it.datasheet_id}`): {_canonicalize(it.description)[:140]}{'…' if len(_canonicalize(it.description)) > 140 else ''}"
             for it in sorted(items, key=lambda x: (x.datasheet_name.lower(), x.datasheet_id))[:3]
         )
-        pattern_groups.append(PatternGroup(key=key, count=len(items), examples=examples, status=status, notes=notes))
+        pattern_groups.append(
+            PatternGroup(
+                key=key,
+                count=len(items),
+                supported_count=supported_c,
+                partial_count=partial_c,
+                not_impl_count=not_impl_c,
+                examples=examples,
+                status=status,
+                notes=notes,
+            )
+        )
 
     pattern_groups.sort(key=lambda pg: (-pg.count, pg.key.lower()))
 
     total = len(rows)
-    supported_n = sum(1 for r in rows if _support_for_desc(r.description)[0] == "Supported")
-    partial_n = sum(1 for r in rows if _support_for_desc(r.description)[0] == "Partial")
+    supported_n = sum(1 for r in rows if _status_for(r.description)[0] == "Supported")
+    partial_n = sum(1 for r in rows if _status_for(r.description)[0] == "Partial")
     not_impl_n = total - supported_n - partial_n
 
     lines: List[str] = []
@@ -233,6 +259,9 @@ def main() -> None:
     lines.append("<th>Canonical pattern</th>")
     lines.append("<th>Status</th>")
     lines.append("<th>Count</th>")
+    lines.append("<th>Supported</th>")
+    lines.append("<th>Partial</th>")
+    lines.append("<th>Not implemented</th>")
     lines.append("<th>Examples</th>")
     lines.append("<th>Notes</th>")
     lines.append("</tr>")
@@ -247,6 +276,9 @@ def main() -> None:
         lines.append(f"<td bgcolor=\"{bg}\"><code>{_escape_html(pg.key)}</code></td>")
         lines.append(f"<td bgcolor=\"{bg}\"><b>{_escape_html(icon)} {_escape_html(pg.status)}</b></td>")
         lines.append(f"<td bgcolor=\"{bg}\">{pg.count}</td>")
+        lines.append(f"<td bgcolor=\"{bg}\">{pg.supported_count}</td>")
+        lines.append(f"<td bgcolor=\"{bg}\">{pg.partial_count}</td>")
+        lines.append(f"<td bgcolor=\"{bg}\">{pg.not_impl_count}</td>")
         lines.append(f"<td bgcolor=\"{bg}\">{ex}</td>")
         lines.append(f"<td bgcolor=\"{bg}\">{_escape_html(pg.notes)}</td>")
         lines.append("</tr>")
