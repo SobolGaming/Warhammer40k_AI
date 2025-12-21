@@ -143,6 +143,50 @@ class TestDatasheetsOptionsConstraints(unittest.TestCase):
         total = sum(1 for m in u.models for wg in m.wargear if wg.name == "plasma gun")
         self.assertEqual(total, 1)
 
+    def test_apply_by_name_is_strictly_non_ambiguous(self):
+        """
+        If a wargear name appears in multiple different option-choices, apply_wargear_options(name) should
+        not guess. It should no-op until a disambiguating item is chosen.
+        """
+        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.classes.wargear import WargearOption, WargearOptionType, Quantity
+
+        plasma = self._make_wargear("plasma gun")
+        melta = self._make_wargear("meltagun")
+        flamer = self._make_wargear("flamer")
+
+        u = Unit.__new__(Unit)
+        u.models = [SimpleNamespace(name="Model", wargear=[], optional_wargear=[])]
+        u.possible_wargear = [plasma, melta, flamer]
+        u.wargear_options = [
+            WargearOption(
+                WargearOptionType.ADDITIONAL,
+                wargear_from=[],
+                wargear_to=[[(1, "plasma gun")]],
+                model_name="model",
+                model_quantity=Quantity(min=1, max=1),
+                item_quantity=Quantity(min=1, max=1),
+                conditionals=[],
+            ),
+            WargearOption(
+                WargearOptionType.ADDITIONAL,
+                wargear_from=[],
+                wargear_to=[[(1, "plasma gun"), (1, "meltagun")]],
+                model_name="model",
+                model_quantity=Quantity(min=1, max=1),
+                item_quantity=Quantity(min=1, max=1),
+                conditionals=[],
+            ),
+        ]
+
+        # plasma gun is ambiguous (present in both options) -> no-op
+        u.apply_wargear_options("plasma gun")
+        self.assertEqual([wg.name for wg in u.models[0].wargear], [])
+
+        # meltagun is unique to the second option's choice -> applies that choice
+        u.apply_wargear_options("meltagun")
+        self.assertEqual(sorted([wg.name for wg in u.models[0].wargear]), sorted(["plasma gun", "meltagun"]))
+
 
 if __name__ == "__main__":
     unittest.main()

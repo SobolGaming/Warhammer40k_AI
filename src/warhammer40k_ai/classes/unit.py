@@ -968,53 +968,41 @@ class Unit:
             return
 
         wanted = _norm(wargear_name)
+
+        # STRICT SELECTION RULE:
+        # `wargear_name` must uniquely identify exactly one (option, choice) in this unit.
+        # If it matches multiple choices/options, we do nothing rather than guessing.
+        matches: list[tuple[object, object]] = []
         for opt in list(getattr(self, "wargear_options", []) or []):
-            try:
-                all_choices = list(getattr(opt, "wargear_to", []) or [])
-                if not all_choices:
-                    continue
-
-                # Find all choices that contain the wanted item.
-                matching_choices = []
-                for choice in all_choices:
-                    for qty, nm in (choice or []):
-                        if _norm(nm) == wanted:
-                            matching_choices.append(choice)
-                            break
-
-                if not matching_choices:
-                    continue
-
-                # If the wanted item is present in multiple choices, it may be non-disambiguating
-                # (e.g. "Axe of Khorne" is present in BOTH Bloodthirster choices).
-                # In that case: do not apply (wait for a more specific item like "lash of khorne").
-                if len(matching_choices) > 1:
-                    try:
-                        choice_sets = [
-                            {_norm(nm) for qty, nm in (c or []) if nm}
-                            for c in all_choices
-                        ]
-                        common = set.intersection(*choice_sets) if choice_sets else set()
-                        if wanted in common:
-                            return
-                    except Exception:
-                        # If we can't reason about it, avoid making a wrong choice.
-                        return
-
-                    # Still ambiguous even if not common -> avoid guessing.
-                    return
-
-                # Exactly one match -> apply that choice.
-                choice = matching_choices[0]
-                choices = list(all_choices)
-                idx = choices.index(choice)
-                if idx != 0:
-                    choices[0], choices[idx] = choices[idx], choices[0]
-                    opt.wargear_to = choices
-                self.apply_wargear_option(opt)
-                return
-            except Exception:
+            all_choices = list(getattr(opt, "wargear_to", []) or [])
+            if not all_choices:
                 continue
+            for choice in all_choices:
+                if not choice:
+                    continue
+                for qty, nm in (choice or []):
+                    if _norm(nm) == wanted:
+                        matches.append((opt, choice))
+                        break
+
+        if not matches:
+            return
+
+        if len(matches) != 1:
+            # Ambiguous (common filler items like "close combat weapon", or shared bundle items like "axe of khorne").
+            return
+
+        opt, choice = matches[0]
+        # Reorder choices to put selected choice first, then apply.
+        try:
+            choices = list(getattr(opt, "wargear_to", []) or [])
+            idx = choices.index(choice)
+            if idx != 0:
+                choices[0], choices[idx] = choices[idx], choices[0]
+                opt.wargear_to = choices
+            self.apply_wargear_option(opt)
+        except Exception:
+            return
 
     def add_wargear(self, wargear: List[Wargear]=[], model_name: str=None) -> None:
         for model_instance in self.models:
