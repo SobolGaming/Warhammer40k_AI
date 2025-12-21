@@ -364,6 +364,18 @@ class GameView:
         # Central dialog manager (modal stack)
         from .dialogs import DialogManager
         self.dialog_manager = DialogManager(self)
+
+        # Wire combat UI hooks into the Map (used by core combat code like WargearProfile.attack()).
+        try:
+            if self.game and getattr(self.game, "map", None) is not None:
+                self.game.map.precision_allocation_provider = self._precision_allocation_provider
+        except Exception:
+            pass
+        try:
+            if self.game_map is not None:
+                self.game_map.precision_allocation_provider = self._precision_allocation_provider
+        except Exception:
+            pass
         
         # Phase-based event handling system
         self.phase_manager = PhaseManager(self)
@@ -503,6 +515,63 @@ class GameView:
         # Initialize shared UI state
         self._ui_hitboxes = {}
         self._mission_popup = None
+
+    def _precision_allocation_provider(self, attacker_model, target_unit, character_models, weapon_profile):
+        """
+        Blocking modal prompt for PRECISION allocation.
+        Returns: selected CHARACTER model to allocate to, or None to allocate normally to bodyguard.
+        """
+        try:
+            from .dialogs import PrecisionAllocationDialog
+        except Exception:
+            return None
+
+        # Create (or reuse) dialog instance
+        if not hasattr(self, "precision_allocation_dialog") or self.precision_allocation_dialog is None:
+            self.precision_allocation_dialog = PrecisionAllocationDialog(self.screen.get_width(), self.screen.get_height())
+
+        dlg = self.precision_allocation_dialog
+        choice_holder = {"choice": None, "done": False}
+
+        def _on_choice(chosen):
+            choice_holder["choice"] = chosen
+            choice_holder["done"] = True
+
+        # Weapon label
+        try:
+            wname = getattr(getattr(weapon_profile, "parent_wargear", None), "name", None) or getattr(weapon_profile, "name", "Weapon")
+        except Exception:
+            wname = "Weapon"
+
+        dlg.show(attacker_model, target_unit, wname, list(character_models or []), on_choice=_on_choice)
+        try:
+            self.dialog_manager.open(dlg, modal=True)
+        except Exception:
+            pass
+
+        # Block until choice is made (or ESC closes dialog -> defaults to bodyguard)
+        clock = pygame.time.Clock()
+        while dlg.visible and not choice_holder["done"]:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    return None
+                # Route only through dialog manager (modal)
+                try:
+                    self.dialog_manager.handle_event(event)
+                except Exception:
+                    pass
+            try:
+                self.draw()
+            except Exception:
+                try:
+                    dlg.draw(self.screen)
+                    pygame.display.update()
+                except Exception:
+                    pass
+            clock.tick(60)
+
+        return choice_holder["choice"]
 
     def resize_layout(self, screen_width: int, screen_height: int) -> None:
         """Handle window resize: recompute pane sizes and positions based on new screen size."""

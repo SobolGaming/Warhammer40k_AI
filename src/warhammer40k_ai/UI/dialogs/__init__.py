@@ -16,6 +16,7 @@ from .leader_attachment_dialog import LeaderAttachmentDialog
 from .dialog_manager import DialogManager
 from .mission_selection_modal import MissionSelectionModal
 from .transport_assignment_dialog import TransportAssignmentDialog
+from .precision_allocation_dialog import PrecisionAllocationDialog
 
 __all__ = [
     'BaseDialog',
@@ -36,4 +37,5 @@ __all__ = [
     'DialogManager',
     'MissionSelectionModal',
     'TransportAssignmentDialog',
+    'PrecisionAllocationDialog',
 ] 

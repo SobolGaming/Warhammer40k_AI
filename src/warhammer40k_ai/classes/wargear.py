@@ -341,6 +341,8 @@ class WargearProfile:
         wound_instances = []
         hit_instances = []
         num_attacks = 0
+        precision_choice_set = False
+        precision_choice_model = None  # None means allocate normally to bodyguards
 
         # INDIRECT FIRE (penalty only if no models in target unit are visible to attacking unit at selection time)
         indirect_fire_no_visible = False
@@ -452,8 +454,76 @@ class WargearProfile:
 
         # Process saves and damage
         for wound_instance in wound_instances:
-            # Allocate damage instances to the target unit
-            target_model = self.opponent_wound_allocation(target)
+            # PRECISION (10e): after a successful wound vs an Attached Unit, attacker may allocate
+            # the wound to a visible CHARACTER model in that unit.
+            target_model = None
+            if self.is_precision() and game_map is not None:
+                try:
+                    root = target.get_attached_unit_root()
+                except Exception:
+                    root = target
+                try:
+                    has_attached_leaders = bool(getattr(root, "attached_leaders", []) or [])
+                except Exception:
+                    has_attached_leaders = False
+
+                if has_attached_leaders:
+                    # Collect visible CHARACTER models in the attached unit.
+                    try:
+                        all_models = root.get_models_for_collision()
+                    except Exception:
+                        all_models = list(getattr(root, "models", []) or [])
+                    char_models = []
+                    for m in all_models:
+                        try:
+                            if not getattr(m, "is_alive", True):
+                                continue
+                            pu = getattr(m, "parent_unit", None)
+                            if pu is None:
+                                continue
+                            if not bool(getattr(pu, "is_character", False)):
+                                continue
+                            # Visibility requirement
+                            if hasattr(game_map, "can_model_see_model") and callable(getattr(game_map, "can_model_see_model")):
+                                if not game_map.can_model_see_model(attacker, m):
+                                    continue
+                            char_models.append(m)
+                        except Exception:
+                            continue
+
+                    if char_models:
+                        # Ask once per weapon_profile.attack() call and cache choice for remaining wounds.
+                        if not precision_choice_set:
+                            precision_choice_set = True
+                            provider = getattr(game_map, "precision_allocation_provider", None)
+                            try:
+                                attacker_player = attacker.parent_unit.get_parent_army().player
+                                is_human = bool(getattr(getattr(attacker_player, "type", None), "name", "") == "HUMAN")
+                            except Exception:
+                                is_human = False
+
+                            if callable(provider) and is_human:
+                                try:
+                                    precision_choice_model = provider(attacker, root, char_models, self)
+                                except Exception:
+                                    precision_choice_model = None
+                            else:
+                                # AI / headless: default to CHARACTER when available
+                                precision_choice_model = char_models[0]
+
+                        # If player chose a character model, allocate there (only if still alive/visible)
+                        if precision_choice_model is not None:
+                            try:
+                                if getattr(precision_choice_model, "is_alive", True):
+                                    if hasattr(game_map, "can_model_see_model") and callable(getattr(game_map, "can_model_see_model")):
+                                        if game_map.can_model_see_model(attacker, precision_choice_model):
+                                            target_model = precision_choice_model
+                            except Exception:
+                                target_model = None
+
+            # Default allocation if precision didn't override it
+            if target_model is None:
+                target_model = self.opponent_wound_allocation(target)
             if target_model is None:
                 continue
 

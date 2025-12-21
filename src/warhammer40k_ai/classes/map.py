@@ -29,6 +29,8 @@ class Map:
         self.deployment_zones = {}
         self.units = []
         self.occupied_positions = set()
+        # UI hook (optional): set by GameView to allow combat code to request modals (e.g., PRECISION allocation)
+        self.precision_allocation_provider = None
 
     def create_boundary_polygon(self) -> Polygon:
         """
@@ -411,6 +413,34 @@ class Map:
             if not any_visible:
                 return False
         return True
+
+    def can_model_see_model(self, shooter_model: Model, target_model: Model) -> bool:
+        """
+        Best-effort line-of-sight check for visibility requirements (e.g. PRECISION).
+
+        Returns True if there exists at least one sampled point on the target that is not blocked
+        from at least one sampled point on the shooter by any terrain feature.
+        """
+        try:
+            shooter_points = self._sample_model_points_3d(shooter_model, perimeter_points=6, z_levels=2)
+            target_points = self._sample_model_points_3d(target_model, perimeter_points=6, z_levels=2)
+        except Exception:
+            return True
+
+        terrain_features = list(getattr(self, "terrain_features", []) or [])
+        for tp in target_points:
+            for sp in shooter_points:
+                blocked = False
+                for terrain in terrain_features:
+                    try:
+                        if self._segment_blocked_by_terrain_feature(sp, tp, terrain, shooter_model, target_model):
+                            blocked = True
+                            break
+                    except Exception:
+                        continue
+                if not blocked:
+                    return True
+        return False
 
     def get_benefit_of_cover_for_ranged_attack(
         self,

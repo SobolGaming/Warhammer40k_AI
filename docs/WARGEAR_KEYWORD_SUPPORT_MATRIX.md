@@ -183,11 +183,11 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
 </tr>
 <tr>
-<td bgcolor="#f8d7da"><code>precision</code></td>
-<td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
-<td bgcolor="#f8d7da">156</td>
-<td bgcolor="#f8d7da">PRECISION<br/>Precision<br/>precision</td>
-<td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
+<td bgcolor="#d4edda"><code>precision</code></td>
+<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
+<td bgcolor="#d4edda">156</td>
+<td bgcolor="#d4edda">PRECISION<br/>Precision<br/>precision</td>
+<td bgcolor="#d4edda">10e Attached Units: after a successful wound, if a visible CHARACTER model exists in the Attached Unit, the attacker may allocate the wound to that CHARACTER instead of normal bodyguard allocation. UI prompts once per weapon profile attack and caches the choice for remaining attacks.</td>
 </tr>
 <tr>
 <td bgcolor="#fff3cd"><code>psychic</code></td>
