@@ -6,27 +6,29 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 - **Implemented**: the stratagem has explicit gameplay logic in the engine (beyond CP spend + logging).
 - **Partial**: some gameplay logic exists, but key restrictions/timing/text are not fully matched.
 - **Not implemented**: no gameplay effect logic wired yet.
-- **Not supported**: currently excluded by game-mode filtering (e.g. Boarding Actions).
 
 ## Summary
 
-- Total stratagem rows: 1119
-- Core (global) stratagem rows (`faction_id == ""`): 19
-- Faction stratagem rows: 1100 (detachment-specific: 1100)
+- Total stratagem rows: 1091
+- Core (global) stratagem rows (`faction_id == ""`): 23
+- Faction stratagem rows: 1068 (detachment-specific: 1068)
+- Excluded (Boarding Actions detachments / mode): 235
 
 ## Core Stratagems
 
-> Note: Boarding Actions (and similar mode-specific) stratagems are present in Wahapedia data, but are not used in standard games by this engine today.
-
-### Boarding Actions
+### Challenger
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
 |---|---:|---|---:|---|---|---|---|
-| BATTLEFIELD COMMAND | `000009218003` | Boarding Actions – Strategic Ploy Stratagem | 1 | Either player’s turn | Any phase | **Not supported** | Boarding Actions are filtered out by `StratagemManager._build_available()`. |
-| COMMAND RE-ROLL | `000009218002` | Boarding Actions – Epic Deed Stratagem | 1 | Either player’s turn | Any phase | **Not supported** | Boarding Actions are filtered out by `StratagemManager._build_available()`. |
-| COUNTER-OFFENSIVE | `000009218004` | Boarding Actions – Strategic Ploy Stratagem | 2 | Either player’s turn | Fight phase | **Not supported** | Boarding Actions are filtered out by `StratagemManager._build_available()`. |
-| EXPLOSIVE CLEARANCE | `000009218006` | Boarding Actions – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not supported** | Boarding Actions are filtered out by `StratagemManager._build_available()`. |
-| INSANE BRAVERY | `000009218005` | Boarding Actions – Epic Deed Stratagem | 1 | Your turn | Command phase | **Not supported** | Boarding Actions are filtered out by `StratagemManager._build_available()`. |
+| ALL IN | `000010254002` | Challenger – Strategic Ploy Stratagem | 0 | Your turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| BURST OF SPEED | `000010247002` | Challenger – Strategic Ploy Stratagem | 0 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| FORCE A BREACH | `000010249002` | Challenger – Strategic Ploy Stratagem | 0 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| GREAT HASTE | `000010250002` | Challenger – Strategic Ploy Stratagem | 0 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| HARBOURED POWER | `000010253002` | Challenger – Wargear Stratagem | 0 | Your turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| OPPORTUNISTIC STRIKE | `000010248002` | Challenger – Strategic Ploy Stratagem | 0 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| PIVOTAL MOMENT | `000010251002` | Challenger – Strategic Ploy Stratagem | 0 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| RENEWED FOCUS | `000010252002` | Challenger – Battle Tactic Stratagem | 0 | Your turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| STRATEGIC RETREAT | `000010255002` | Challenger – Strategic Ploy Stratagem | 0 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
 ### Core
 
@@ -111,24 +113,6 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | PASSION OF THE PENITENT | `000009030004` | Penitent Host – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | PURITY OF SUFFERING | `000009030003` | Penitent Host – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
-#### Penitents and Pilgrims
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| CONTEMPT FOR DEATH | `000009317003` | Penitents and Pilgrims – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| FEVERED ZEALOTS | `000009317004` | Penitents and Pilgrims – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| SAVAGE FRENZY | `000009317005` | Penitents and Pilgrims – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| SLICK WITH GORE | `000009317002` | Penitents and Pilgrims – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
-#### Pious Protectors
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| FINAL TESTAMENT | `000009309002` | Pious Protectors – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| PRAYER OF PRECISION | `000009309003` | Pious Protectors – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| RADIANT ILLUMINATION | `000009309005` | Pious Protectors – Strategic Ploy Stratagem | 1 | Opponent’s turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| REPEL BOARDERS | `000009309004` | Pious Protectors – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement or Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
 ### Adeptus Custodes (`AC`) — `https://wahapedia.ru/wh40k10ed/factions/adeptus-custodes`
 
 #### Auric Champions
@@ -141,15 +125,6 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | SUPERHUMAN RESERVES | `000008931003` | Auric Champions – Epic Deed Stratagem | 2 | Either player’s turn | Any phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | THE EMPEROR’S AUSPICE | `000008931004` | Auric Champions – Epic Deed Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | VIGIL UNENDING | `000008931006` | Auric Champions – Epic Deed Stratagem | 2 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
-#### Black Ship Guardians
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| BLADES OF THE VIGILATORS | `000009274002` | Black Ship Guardians – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| CORNERED PREY | `000009274004` | Black Ship Guardians – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| FOCUSED FEAR | `000009274003` | Black Ship Guardians – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| PUNISHMENT OF THE PROSECUTORS | `000009274005` | Black Ship Guardians – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
 #### Lions of the Emperor
 
@@ -206,15 +181,6 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | TALONED PINCER | `000008922006` | Talons Of The Emperor – Battle Tactic Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | TALONS INTERLOCKED | `000008922003` | Talons Of The Emperor – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
-#### Voyagers in Darkness
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| ARTIFICER ROUNDS | `000009265004` | Voyagers in Darkness – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| AURIC STORM | `000009265005` | Voyagers in Darkness – Strategic Ploy Stratagem | 1 | Your turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| BREACHING BEHEMOTHS | `000009265003` | Voyagers in Darkness – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| INESCAPABLE VENGEANCE | `000009265002` | Voyagers in Darkness – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
 ### Adeptus Mechanicus (`AdM`) — `https://wahapedia.ru/wh40k10ed/factions/adeptus-mechanicus`
 
 #### Cohort Cybernetica
@@ -239,15 +205,6 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | TRIBUTE OF EMPHATIC VENERATION | `000008565005` | Data-Psalm Conclave – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | VERSE OF VENGEANCE | `000008565004` | Data-Psalm Conclave – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
-#### Electromartyrs
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| AUTO-VENGEANCE | `000009282002` | Electromartyrs – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| BALLISTIC SYNCHRONY | `000009282003` | Electromartyrs – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| OMNI-TARGETERS | `000009282004` | Electromartyrs – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| SAVIOUR SYSTEMS | `000009282005` | Electromartyrs – Battle Tactic Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
 #### Explorator Maniple
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
@@ -270,15 +227,6 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | NEURAL OVERLOAD | `000009746004` | Haloscreed Battle Clade – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | TARGETING OVERRIDE | `000009746003` | Haloscreed Battle Clade – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
-#### Machine Cult
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| ELECTROGHEIST VISITATIONS | `000009299002` | Machine Cult – Wargear Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| OMNISSIAH’S GUIDANCE | `000009299003` | Machine Cult – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| POWER OF THE MOTIVE FORCE | `000009299004` | Machine Cult – Strategic Ploy Stratagem | 1 | Your turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| TETHER-TENDRILS | `000009299005` | Machine Cult – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
 #### Rad-Zone Corps
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
@@ -289,15 +237,6 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | EXTINCTION ORDER | `000008386003` | Rad-Zone Corps – Strategic Ploy Stratagem | 1 | Your turn | Command phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | LETHAL DOSAGE | `000008386006` | Rad-Zone Corps – Wargear Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | PRE-CALIBRATED PURGE SOLUTION | `000008386005` | Rad-Zone Corps – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
-#### Response Clade
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| ACCESS OVERRIDES | `000009291003` | Response Clade – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| INTEGRATIVE WITHDRAWAL | `000009291005` | Response Clade – Strategic Ploy Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| PRECOGNITATED FIREFIELDS | `000009291004` | Response Clade – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| RESPONSIVE SHIELDING | `000009291002` | Response Clade – Wargear Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
 #### Skitarii Hunter Cohort
 
@@ -378,24 +317,6 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | VAUL’S VENGEANCE | `000009912004` | Guardian Battlehost – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | WARDING SALVOES | `000009912002` | Guardian Battlehost – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
-#### Khaine’s Arrow
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| ARTIFICER ROUNDS | `000009326004` | Khaine’s Arrow – Strategic Ploy Stratagem | 1 | Your turn | Command phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| AURIC STORM | `000009326005` | Khaine’s Arrow – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| BLADEFOCUS | `000009326003` | Khaine’s Arrow – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| VOID GHOSTS | `000009326002` | Khaine’s Arrow – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
-#### Protector Host
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| RAPID AMBUSH | `000009335005` | Protector Host – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| SHIELD OF BLADES | `000009335004` | Protector Host – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement or Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| SHURIKEN STORM | `000009335003` | Protector Host – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| VOID GHOSTS | `000009335002` | Protector Host – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
 #### Seer Council
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
@@ -407,6 +328,17 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | PSYCHIC SHIELD | `000009924007` | Seer Council – Strategic Ploy Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | UNSHROUDED TRUTH | `000009924004` | Seer Council – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
+#### Serpent’s Brood
+
+| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
+|---|---:|---|---:|---|---|---|---|
+| FANGS OF THE BROOD | `000010650002` | Serpent’s Brood – Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| SKYWARD LUNGE | `000010650007` | Serpent’s Brood – Stratagem | 1 | Opponent’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| STRIKING STRIDE | `000010650004` | Serpent’s Brood – Stratagem | 1 | Your turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| VENOMOUS WRATH | `000010650003` | Serpent’s Brood – Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| WEAVERS’ COILS | `000010650005` | Serpent’s Brood – Stratagem | 1 | Your turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| WEAVING STRIDE | `000010650006` | Serpent’s Brood – Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+
 #### Spirit Conclave
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
@@ -417,15 +349,6 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | SOUL BRIDGE | `000009908005` | Spirit Conclave – Strategic Ploy Stratagem | 1 | Your turn | Command phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | SPIRIT TOKEN | `000009908006` | Spirit Conclave – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | WRAITHBONE ARMOUR | `000009908003` | Spirit Conclave – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
-#### Star-dancer Masque
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| ACROBATIC LEAPS | `000009352005` | Star-dancer Masque – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| DARTING STRIKES | `000009352003` | Star-dancer Masque – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| SERPENT STRIKE | `000009352004` | Star-dancer Masque – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| VOID GHOSTS | `000009352002` | Star-dancer Masque – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
 #### Warhost
 
@@ -448,15 +371,6 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | OVERFLIGHT | `000009904003` | Windrider Host – Strategic Ploy Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | SPIRALLING EVASION | `000009904007` | Windrider Host – Battle Tactic Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | WIND OF BLADES | `000009904004` | Windrider Host – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
-#### Wraiths of the Void
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| D-STRIKE | `000009343004` | Wraiths of the Void – Strategic Ploy Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| GUARDIAN CONSTRUCTS | `000009343002` | Wraiths of the Void – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| UNFLINCHING FIRE | `000009343005` | Wraiths of the Void – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement or Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| WRAITHSIGHT | `000009343003` | Wraiths of the Void – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
 ### Astra Militarum (`AM`) — `https://wahapedia.ru/wh40k10ed/factions/astra-militarum`
 
@@ -482,14 +396,16 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | REINFORCEMENTS! | `000008381003` | Combined Arms – Strategic Ploy Stratagem | 2 | Either player’s turn | Any phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | STALWART PROTECTOR | `000008381007` | Combined Arms – Battle Tactic Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
-#### Embarked Regiment
+#### Grizzled Company
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
 |---|---:|---|---:|---|---|---|---|
-| AGAINST THE ODDS | `000009381002` | Embarked Regiment – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| BRUTAL CHOKE POINT | `000009381005` | Embarked Regiment – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement or Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| DUCK AND COVER | `000009381003` | Embarked Regiment – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| IDLE HANDS | `000009381004` | Embarked Regiment – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| ADDITIONAL ARMOUR | `000010638007` | Grizzled Company – Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| MORDIAN MINUTE | `000010638006` | Grizzled Company – Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| NO RETREAT! | `000010638003` | Grizzled Company – Stratagem | 1 | Your turn | Command phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| PURGING FIRE | `000010638005` | Grizzled Company – Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| SNAP TO IT | `000010638002` | Grizzled Company – Stratagem | 1 | Either player’s turn | Any phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| VETERAN SHARPSHOOTERS | `000010638004` | Grizzled Company – Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
 #### Hammer of the Emperor
 
@@ -535,15 +451,6 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | OVER THE TOP | `000009858003` | Siege Regiment – Strategic Ploy Stratagem | 2 | Your turn | Command phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | TRENCH FIGHTERS | `000009858002` | Siege Regiment – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
-#### Tempestus Boarding Regiment
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| AGAINST THE ODDS | `000009390002` | Tempestus Boarding Regiment – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| BRUTAL CHOKE POINT | `000009390005` | Tempestus Boarding Regiment – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| DUCK AND COVER | `000009390003` | Tempestus Boarding Regiment – Strategic Ploy Stratagem | 1 | Your turn | Command phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| IDLE HANDS | `000009390004` | Tempestus Boarding Regiment – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
 ### Chaos Daemons (`CD`) — `https://wahapedia.ru/wh40k10ed/factions/chaos-daemons`
 
 #### Blood Legion
@@ -557,39 +464,6 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | SKULLS BEGET BLOOD | `000009816004` | Blood Legion – Strategic Ploy Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | WRATH UNDENIABLE | `000009816002` | Blood Legion – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
-#### Daemonic Incursion
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| CORRUPT REALSPACE | `000008437002` | Demonic Incursion – Strategic Ploy Stratagem | 1 | Either player’s turn | Command phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| DAEMONIC INVULNERABILITY | `000008437007` | Demonic Incursion – Battle Tactic Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| DENIZENS OF THE WARP | `000008437005` | Demonic Incursion – Strategic Ploy Stratagem | 1 | Either player’s turn | Any phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| DRAUGHT OF TERROR | `000008437004` | Demonic Incursion – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| INCORPOREAL TERRORS | `000009548005` | Daemonic Incursion – Battle Tactic Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| INSUBSTANTIAL ENTITIES | `000009548004` | Daemonic Incursion – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| PARTING BLOWS | `000009548002` | Daemonic Incursion – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| THE REALM OF CHAOS | `000008437006` | Demonic Incursion – Battle Tactic Stratagem | 1 | Opponent’s turn | Any phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| UNREAL SPEED | `000009548003` | Daemonic Incursion – Strategic Ploy Stratagem | 1 | Your turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| WARP SURGE | `000008437003` | Demonic Incursion – Strategic Ploy Stratagem | 1 | Your turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
-#### Dread Carnival
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| DANCE OF DEATH | `000009573004` | Dread Carnival – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| INSUBSTANTIAL ENTITIES | `000009573005` | Dread Carnival – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| SEDUCTIVE WHISPERS | `000009573002` | Dread Carnival – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| SOPORIFIC SCENT | `000009573003` | Dread Carnival – Battle Tactic Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
-#### Infernal Onslaught
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| ABJECT HORROR | `000009556003` | Infernal Onslaught – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| INSUBSTANTIAL ENTITIES | `000009556004` | Infernal Onslaught – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| SWIFT AS MURDER | `000009556005` | Infernal Onslaught – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| UNSTOPPABLE SLAUGHTERERS | `000009556002` | Infernal Onslaught – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
 #### Legion of Excess
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
@@ -601,15 +475,6 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | SENSORY EXCRUCIATION | `000009807004` | Legion of Excess – Strategic Ploy Stratagem | 1 | Your turn | Command phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | THIEVES OF PAIN | `000009807002` | Legion of Excess – Strategic Ploy Stratagem | 1 | Either player’s turn | Any phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
-#### Pandaemoniac Inferno
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| FATE SYPHONING | `000009581002` | Pandaemoniac Inferno – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| FICKLE BLESSINGS | `000009581003` | Pandaemoniac Inferno – Strategic Ploy Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| ILLUSORY PRESENCE | `000009581004` | Pandaemoniac Inferno – Strategic Ploy Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| INSUBSTANTIAL ENTITIES | `000009581005` | Pandaemoniac Inferno – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
 #### Plague Legion
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
@@ -620,15 +485,6 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | PLAGUE OF WOES | `000009820007` | Plague Legion – Strategic Ploy Stratagem | 1 | Opponent’s turn | Command phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | ROT AND RENEWAL | `000009820005` | Plague Legion – Strategic Ploy Stratagem | 1 | Your turn | Movement or Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | SEEPING VIRULENCE | `000009820002` | Plague Legion – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
-#### Rotten and Rusted
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| FOUL RESILIENCE | `000009565002` | Rotten and Rusted – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| GLEEFUL INVASION | `000009565004` | Rotten and Rusted – Strategic Ploy Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| INSUBSTANTIAL ENTITIES | `000009565005` | Rotten and Rusted – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| SICKLY CONTAMINANTS | `000009565003` | Rotten and Rusted – Strategic Ploy Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
 #### Scintillating Legion
 
@@ -654,6 +510,17 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 
 ### Chaos Knights (`QT`) — `https://wahapedia.ru/wh40k10ed/factions/chaos-knights`
 
+#### Houndpack Lance
+
+| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
+|---|---:|---|---:|---|---|---|---|
+| ANIMALISTIC RAGE | `000010313005` | Houndpack Lance – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| CUNNING HUNTER | `000010313004` | Houndpack Lance – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| ENCIRCLING PACK | `000010313007` | Houndpack Lance – Strategic Ploy Stratagem | 1 | Opponent’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| HARRYING HOUNDS | `000010313006` | Houndpack Lance – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| HUNGRY FOR COMBAT | `000010313003` | Houndpack Lance – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| VOX-HOWL | `000010313002` | Houndpack Lance – Battle Tactic Stratagem | 2 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+
 #### Iconoclast Fiefdom
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
@@ -665,16 +532,38 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | WORTHLESS CHATTEL | `000009766006` | Iconoclast Fiefdom – Strategic Ploy Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | WRETCHED MASSES | `000009766003` | Iconoclast Fiefdom – Battle Tactic Stratagem | 2 | Either player’s turn | Any phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
+#### Infernal Lance
+
+| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
+|---|---:|---|---:|---|---|---|---|
+| CORRUPTING TAINT | `000010305004` | Infernal Lance – Epic Deed Stratagem | 1 | Your turn | Command phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| DIABOLIC BULWARK | `000010305007` | Infernal Lance – Wargear Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| HELLFORGED CONSTRUCTION | `000010305003` | Infernal Lance – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| PROFANE SYMBIOSIS | `000010305002` | Infernal Lance – Battle Tactic Stratagem | 1 | Either player’s turn | Any phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| UNLEASH BALEFIRE | `000010305005` | Infernal Lance – Wargear Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| WARP VISION | `000010305006` | Infernal Lance – Wargear Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+
+#### Lords of Dread
+
+| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
+|---|---:|---|---:|---|---|---|---|
+| CLAIMED FOR THE DARK GODS | `000010309002` | Lords of Dread – Epic Deed Stratagem | 1 | Either player’s turn | Command phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| CRUSHED LIKE VERMIN | `000010309007` | Lords of Dread – Epic Deed Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| RUNES OF DISDAIN | `000010309004` | Lords of Dread – Epic Deed Stratagem | 2 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| SPITEFUL DEMISE | `000010309003` | Lords of Dread – Epic Deed Stratagem | 1 | Either player’s turn | Any phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| TITANIC DUEL | `000010309005` | Lords of Dread – Epic Deed Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| TROPHY HUNTER | `000010309006` | Lords of Dread – Epic Deed Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+
 #### Traitoris Lance
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
 |---|---:|---|---:|---|---|---|---|
 | A LONG LEASH | `000008517005` | Traitoris Lance – Strategic Ploy Stratagem | 1 | Your turn | Command phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| DIABOLIC BULWARK | `000008517007` | Traitoris Lance – Wargear Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| DISDAIN FOR THE WEAK | `000008517003` | Traitoris Lance – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| DREAD HOUNDS | `000008517002` | Traitoris Lance – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| KNIGHTS OF SHADE | `000008517006` | Traitoris Lance – Epic Deed Stratagem | 1 | Your turn | Movement or Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| PTERRORSHADES | `000008517004` | Traitoris Lance – Wargear Stratagem | 1 | Either player’s turn | Any phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| CONQUERORS WITHOUT MERCY | `000008517003` | Traitoris Lance – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| DISDAIN FOR THE WEAK | `000008517004` | Traitoris Lance – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| IMPERIOUS ADVANCE | `000008517006` | Traitoris Lance – Epic Deed Stratagem | 1 | Your turn | Movement or Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| PTERRORSHADES | `000008517002` | Traitoris Lance – Wargear Stratagem | 1 | Either player’s turn | Any phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| STORM OF DARKNESS | `000008517007` | Traitoris Lance – Strategic Ploy Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
 ### Chaos Space Marines (`CSM`) — `https://wahapedia.ru/wh40k10ed/factions/chaos-space-marines`
 
@@ -688,15 +577,6 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | SHROUD OF CHAOS | `000010152007` | Cabal of Chaos – Battle Tactic Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | SOULSEEKERS | `000010152005` | Cabal of Chaos – Strategic Ploy Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | UNHOLY HASTE | `000010152006` | Cabal of Chaos – Epic Deed Stratagem | 1 | Your turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
-#### Champions of Chaos
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| AGGRESSIVE STRIKE | `000009521005` | Champions of Chaos – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| IMPERIOUS ADVANCE | `000009521002` | Champions of Chaos – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| INFERNAL PATRONS | `000009521004` | Champions of Chaos – Strategic Ploy Stratagem | 1 | Either player’s turn | Any phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| MALIGN WILL | `000009521003` | Champions of Chaos – Strategic Ploy Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
 #### Chaos Cult
 
@@ -726,9 +606,9 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 |---|---:|---|---:|---|---|---|---|
 | COILS OF DECEPTION | `000008965005` | Deceptors – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | DETONATOR | `000008965002` | Deceptors – Wargear Stratagem | 1 | Either player’s turn | Any phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| FROM ALL SIDES | `000008965003` | Deceptors – Battle Tactic Stratagem | 1 | Either player’s turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| FROM ALL SIDES | `000008965003` | Deceptors – Battle Tactic Stratagem | 1 | Your turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | PICK THEM OFF | `000008965004` | Deceptors – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| RELENTLESS PURSUIT | `000008965006` | Deceptors – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| RELENTLESS PURSUIT | `000008965006` | Deceptors – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | SCRAMBLED COORDINATES | `000008965007` | Deceptors – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
 #### Dread Talons
@@ -753,14 +633,16 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | SIEGECRAFT | `000008977007` | Fellhammer Siege-Host – Strategic Ploy Stratagem | 1 | Opponent’s turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | STEADFAST DETERMINATION | `000008977006` | Fellhammer Siege-Host – Strategic Ploy Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
-#### Infernal Reavers
+#### Nightmare Hunt
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
 |---|---:|---|---:|---|---|---|---|
-| CRUEL EXECUTION | `000009504005` | Infernal Reavers – Strategic Ploy Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| INVETERATE MURDERERS | `000009504002` | Infernal Reavers – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| LOW CUNNING | `000009504003` | Infernal Reavers – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| NEXT PRIZE | `000009504004` | Infernal Reavers – Strategic Ploy Stratagem | 1 | Your turn | Command phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| HORRIFIC INCURSION | `000010642007` | Nightmare Hunt – Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| MALICIOUS SURGE | `000010642005` | Nightmare Hunt – Stratagem | 1 | Your turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| PREY ON THE WEAK | `000010642003` | Nightmare Hunt – Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| RELENTLESS TERROR | `000010642006` | Nightmare Hunt – Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| SADISTIC DISPLAY | `000010642004` | Nightmare Hunt – Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| TALONS SUNK DEEP | `000010642002` | Nightmare Hunt – Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
 #### Pactbound Zealots
 
@@ -795,15 +677,6 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | PREDATORY PURSUIT | `000008986006` | Soulforged Warpack – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | UNSTOPPABLE RAMPAGE | `000008986005` | Soulforged Warpack – Strategic Ploy Stratagem | 1 | Your turn | Movement or Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
-#### Underdeck Uprising
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| CRUDE SABOTAGE | `000009513004` | Underdeck Uprising – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| FLEETING MIGHT | `000009513003` | Underdeck Uprising – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| INFERNAL ALTARS | `000009513002` | Underdeck Uprising – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| STORM THE BRIDGE! | `000009513005` | Underdeck Uprising – Strategic Ploy Stratagem | 1 | Your turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
 #### Veterans of the Long War
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
@@ -816,15 +689,6 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | MILLENNIA OF EXPERIENCE | `000008961007` | Veterans of the Long War – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
 ### Death Guard (`DG`) — `https://wahapedia.ru/wh40k10ed/factions/death-guard`
-
-#### Arch-Contaminators
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| ALLIES OF ENTROPY | `000009417002` | Arch-Contaminators – Strategic Ploy Stratagem | 1 | Either player’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| CLOUD OF FLIES | `000009417005` | Arch-Contaminators – Battle Tactic Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| CORROSIVE CURSE | `000009417004` | Arch-Contaminators – Strategic Ploy Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| SEED OF CORRUPTION | `000009417003` | Arch-Contaminators – Strategic Ploy Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
 #### Champions of Contagion
 
@@ -892,24 +756,6 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | MIRESLICK | `000010136007` | Tallyband Summoners – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | PERSISTENT PESTS | `000010136002` | Tallyband Summoners – Strategic Ploy Stratagem | 1 | Either player’s turn | Any phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
-#### Unclean Uprising
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| PATH OF PESTILENCE | `000009409003` | Unclean Uprising – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| POX FLARE | `000009409002` | Unclean Uprising – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| SHAMBLING ONSLAUGHT | `000009409005` | Unclean Uprising – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| THE DEAD RISE | `000009409004` | Vectors of Decay – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
-#### Vectors of Decay
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| CHINKS IN THE ARMOUR | `000009399002` | Vectors of Decay – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| GROTESQUE DEMISE | `000009399003` | Vectors of Decay – Strategic Ploy Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| INFESTATION | `000009399004` | Embarked Regiment – Strategic Ploy Stratagem | 1 | Either player’s turn | Any phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| SEEPING CORROSION | `000009399005` | Vectors of Decay – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
 #### Virulent Vectorium
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
@@ -923,34 +769,38 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 
 ### Drukhari (`DRU`) — `https://wahapedia.ru/wh40k10ed/factions/drukhari`
 
-#### Kabalite Corsairs
+#### Covenite Coterie
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
 |---|---:|---|---:|---|---|---|---|
-| DECKPLATE SWEEPERS | `000009434003` | Kabalite Corsairs – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| ELUSIVE DUELLISTS | `000009434002` | Kabalite Corsairs – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| OPPORTUNISTIC THIEVES | `000009434005` | Kabalite Corsairs – Strategic Ploy Stratagem | 1 | Your turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| TAKE THEM ALIVE | `000009434004` | Kabalite Corsairs – Strategic Ploy Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| CONNOISSEURS OF PAIN | `000010585006` | Covenite Coterie – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| DISTILLERS OF FEAR | `000010585005` | Covenite Coterie – Strategic Ploy Stratagem | 2 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| ENFOLDING NIGHTMARE | `000010585007` | Covenite Coterie – Strategic Ploy Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| POISONER’S ART | `000010585004` | Covenite Coterie – Epic Deed Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| POSTMORTALITY | `000010585002` | Covenite Coterie – Epic Deed Stratagem | 1 | Either player’s turn | Any phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| SYMPHONY OF SUFFERING | `000010585003` | Covenite Coterie – Epic Deed Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
-#### Painbringers
+#### Kabalite Cartel
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
 |---|---:|---|---:|---|---|---|---|
-| HORRIFYING FORM | `000009451002` | Painbringers – Strategic Ploy Stratagem | 1 | Either player’s turn | Any phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| MOULDED MUSCULATURE | `000009451004` | Painbringers – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| TERRIFYING AURA | `000009451005` | Painbringers – Strategic Ploy Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| UNFEELING ABOMINATIONS | `000009451003` | Painbringers – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| DEADLY DECEIVERS | `000010589007` | Kabalite Cartel – Strategic Ploy Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| DOUBLE-CROSS | `000010589002` | Kabalite Cartel – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| ENEMIES WITHOUT NUMBER | `000010589005` | Kabalite Cartel – Epic Deed Stratagem | 1 | Your turn | Command phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| MAKING A POINT | `000010589006` | Kabalite Cartel – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| TAILORED TOXINS | `000010589004` | Kabalite Cartel – Epic Deed Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| TAKEN ALIVE | `000010589003` | Kabalite Cartel – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
 #### Realspace Raiders
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
 |---|---:|---|---:|---|---|---|---|
-| ACROBATIC DISPLAY | `000008510004` | Realspace Raiders – Epic Deed Stratagem | 1 | Your turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| ALLIANCE OF AGONY | `000008510005` | Realspace Raiders – Battle Tactic Stratagem | 1 | Either player’s turn | Any phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| INSENSIBLE TO PAIN | `000008510007` | Realspace Raiders – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| PREY ON THE WEAK | `000008510002` | Realspace Raiders – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| QUICKSILVER REACTIONS | `000008510006` | Realspace Raiders – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| STRIKE AND FADE | `000008510003` | Realspace Raiders – Epic Deed Stratagem | 2 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| DARK HARVEST | `000010575005` | Realspace Raiders – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| EAGER FOR THE KILL | `000010575006` | Realspace Raiders – Battle Tactic Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| FIGHTING SHADOWS | `000010575003` | Realspace Raiders – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| INSENSIBLE TO PAIN | `000010575002` | Realspace Raiders – Battle Tactic Stratagem | 2 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| INSTINCTIVE SPITE | `000010575004` | Realspace Raiders – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| RAID AND FADE | `000010575007` | Realspace Raiders – Strategic Ploy Stratagem | 2 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
 #### Reaper’s Wager
 
@@ -963,34 +813,27 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | SCINTILLATING TEMPO | `000009782006` | Reaper’s Wager – Strategic Ploy Stratagem | 1 | Your turn | Movement or Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | SHORTEN THE ODDS | `000009782005` | Reaper’s Wager – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
-#### Ship-killer Cult
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| HYPERAGILITY | `000009442002` | Ship-killer Cult – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| NO OBSTACLE | `000009442004` | Ship-killer Cult – Strategic Ploy Stratagem | 1 | Your turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| PHANTASM GRENADES | `000009442005` | Ship-killer Cult – Wargear Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| TOYING WITH THE PREY | `000009442003` | Ship-killer Cult – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
 #### Skysplinter Assault
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
 |---|---:|---|---:|---|---|---|---|
-| NIGHT SHIELD | `000008716007` | Skysplinter Assault – Wargear Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| POUNCE ON THE PREY | `000008716004` | Skysplinter Assault – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| SKYBORNE ANNIHILATION | `000008716005` | Skysplinter Assault – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| SWOOPING MOCKERY | `000008716006` | Skysplinter Assault – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| VICIOUS BLADES | `000008716002` | Skysplinter Assault – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| WRAITHLIKE RETREAT | `000008716003` | Skysplinter Assault – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| NIGHT SHIELD | `000010577007` | Skysplinter Assault – Wargear Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| POUNCE ON THE PREY | `000010577004` | Skysplinter Assault – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| SKYBORNE ANNIHILATION | `000010577005` | Skysplinter Assault – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| SWOOPING MOCKERY | `000010577006` | Skysplinter Assault – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| VICIOUS BLADES | `000010577002` | Skysplinter Assault – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| WRAITHLIKE RETREAT | `000010577003` | Skysplinter Assault – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
-#### Space Lane Raiders
+#### Spectacle of Spite
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
 |---|---:|---|---:|---|---|---|---|
-| CREW-THIEVES | `000009426003` | Space Lane Raiders – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| SHIPBOARD SHADES | `000009426002` | Space Lane Raiders – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| VETERAN PIRATES | `000009426005` | Space Lane Raiders – Strategic Ploy Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| VOIDSHIP GLADIATORS | `000009426004` | Space Lane Raiders – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| A CHALLENGE MET | `000010581006` | Spectacle of Spite – Battle Tactic Stratagem | 2 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| ACROBATIC DISPLAY | `000010581007` | Spectacle of Spite – Battle Tactic Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| BERSERK FUGUE | `000010581002` | Spectacle of Spite – Strategic Ploy Stratagem | 2 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| DEADLY DEBUT | `000010581003` | Spectacle of Spite – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| FEIGNED WEAKNESS | `000010581004` | Spectacle of Spite – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| PRETERNATURAL AGILITY | `000010581005` | Spectacle of Spite – Strategic Ploy Stratagem | 1 | Your turn | Movement or Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
 ### Emperor’s Children (`EC`) — `https://wahapedia.ru/wh40k10ed/factions/emperor-s-children`
 
@@ -1015,6 +858,17 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | PROTECTION OF THE DARK PRINCE | `000010015002` | Coterie of the Conceited – Strategic Ploy Stratagem | 1 | Either player’s turn | Any phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | UNBOUND ARROGANCE | `000010015006` | Coterie of the Conceited – Epic Deed Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | UNSHAKEABLE OPPONENTS | `000010015003` | Coterie of the Conceited – Epic Deed Stratagem | 1 | Either player’s turn | Command phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+
+#### Court of the Phoenician
+
+| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
+|---|---:|---|---:|---|---|---|---|
+| CATALYTIC STIMULUS | `000010655007` | Court of the Phoenician – Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| CLOSE-QUARTERS EXCRUCIATION | `000010655005` | Court of the Phoenician – Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| CONTEMPTUOUS DISREGARD | `000010655002` | Court of the Phoenician – Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| EUPHORIC INSPIRATION | `000010655006` | Court of the Phoenician – Stratagem | 1 | Your turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| PRIDEFUL SUPERIORITY | `000010655003` | Court of the Phoenician – Stratagem | 2 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| SINUOUS BREACH | `000010655004` | Court of the Phoenician – Stratagem | 1 | Your turn | Movement or Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
 #### Mercurial Host
 
@@ -1084,15 +938,6 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | SUPPRESS AND OVERWHELM | `000009085004` | Brood Brother Auxilia – Strategic Ploy Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | SYMBIOTIC DESTRUCTION | `000009085006` | Brood Brother Auxilia – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
-#### Cult Unveiled
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| FOR THE BROOD | `000009461004` | Cult Unveiled – Strategic Ploy Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| LURKING MENACE | `000009461005` | Cult Unveiled – Battle Tactic Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| OUT OF HIDING | `000009461003` | Cult Unveiled – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| PLANNED EXTRACTION | `000009461002` | Cult Unveiled – Strategic Ploy Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
 #### Final Day
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
@@ -1104,15 +949,6 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | PSI SURGE | `000009828003` | Final Day – Strategic Ploy Stratagem | 1 | Either player’s turn | Any phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | RESISTANCE TUNNELS | `000009828007` | Final Day – Strategic Ploy Stratagem | 1 | Opponent’s turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
-#### Genespawn Onslaught
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| GROWING DREAD | `000009469005` | Genespawn Onslaught – Strategic Ploy Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| MONSTROUS MOMENTUM | `000009469002` | Genespawn Onslaught – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| SOLDIERS OF THE STAR CHILDREN | `000009469004` | Genespawn Onslaught – Strategic Ploy Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| UNSTOPPABLE BRUTES | `000009469003` | Genespawn Onslaught – Strategic Ploy Stratagem | 1 | Your turn | Movement or Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
 #### Host of Ascension
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
@@ -1120,18 +956,9 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | A DEADLY SNARE | `000009068007` | Host of Ascension – Strategic Ploy Stratagem | 1 | Opponent’s turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | COORDINATED TRAP | `000009068002` | Host of Ascension – Battle Tactic Stratagem | 2 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | LYING IN WAIT | `000009068005` | Host of Ascension – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| PRIMED AND READIED | `000009068003` | Host of Ascension – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| RETURN TO THE SHADOWS | `000009068006` | Host of Ascension – Strategic Ploy Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| PRIMED AND READIED | `000009068003` | Host of Ascension – Battle Tactic Stratagem | 2 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| RETURN TO THE SHADOWS | `000009068006` | Host of Ascension – Strategic Ploy Stratagem | 1 | Opponent’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | TUNNEL CRAWLERS | `000009068004` | Host of Ascension – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
-#### Infestation Swarm
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| HUNTING GROUNDS | `000009477004` | Infestation Swarm – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| HYPERADRENAL REFLEXES | `000009477002` | Infestation Swarm – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| OUTFLANK | `000009477005` | Infestation Swarm – Strategic Ploy Stratagem | 1 | Opponent’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| PERVASIVE DREAD | `000009477003` | Infestation Swarm – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
 #### Outlander Claw
 
@@ -1157,34 +984,60 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 
 ### Grey Knights (`GK`) — `https://wahapedia.ru/wh40k10ed/factions/grey-knights`
 
-#### Baneslayer Strike
+#### Augurium Task Force
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
 |---|---:|---|---:|---|---|---|---|
-| ARMOURED AEGIS | `000009494002` | Baneslayer Strike – Epic Deed Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| PSYBOLT AMMUNITION | `000009494005` | Baneslayer Strike – Wargear Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| RELENTLESS BOARDERS | `000009494004` | Baneslayer Strike – Strategic Ploy Stratagem | 1 | Your turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| SANCTIC CIRCLE | `000009494003` | Baneslayer Strike – Epic Deed Stratagem | 2 | Your turn | Command phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| AGGRESSIVE ANTICIPATION | `000010365002` | Augurium Task Force – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| APPOINTED HOUR | `000010365003` | Augurium Task Force – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| FOREWARNED EVASION | `000010365004` | Augurium Task Force – Epic Deed Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| MIRAGE OF ECHOES | `000010365007` | Augurium Task Force – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| NECESSARY END | `000010365005` | Augurium Task Force – Epic Deed Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| REDIRECTED STRIKE | `000010365006` | Augurium Task Force – Epic Deed Stratagem | 1 | Your turn | Command phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
-#### Teleport Strike Force
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| DEATH FROM THE WARP | `000008457003` | Teleport Strike Force – Battle Tactic Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| HALOED IN SOULFIRE | `000008457007` | Teleport Strike Force – Strategic Ploy Stratagem | 2 | Either player’s turn | Any phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| MISTS OF DEIMOS | `000008457005` | Teleport Strike Force – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| PROGNISTICATED ARRIVAL | `000008457004` | Teleport Strike Force – Epic Deed Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| RADIANT STRIKE | `000008457006` | Teleport Strike Force – Battle Tactic Stratagem | 2 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| TRUESILVER ARMOUR | `000008457002` | Teleport Strike Force – Wargear Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
-#### Void Purge Force
+#### Banishers
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
 |---|---:|---|---:|---|---|---|---|
-| BREACH-SHOCK | `000009486002` | Void Purge Force – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| HEXBANE WARDS | `000009486003` | Void Purge Force – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| SANCTIFIED SLAUGHTER | `000009486005` | Void Purge Force – Battle Tactic Stratagem | 1 | Your turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| TRANSLOCATION | `000009486004` | Void Purge Force – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| CELERITY | `000010357005` | Banishers – Epic Deed Stratagem | 1 | Your turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| CHAOS BANE | `000010357004` | Banishers – Epic Deed Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| CIRCLE OF SANCTUARY | `000010357006` | Banishers – Epic Deed Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| HEXWROUGHT REPRISAL | `000010357002` | Banishers – Epic Deed Stratagem | 1 | Either player’s turn | Any phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| SHADOW OF ANARCH | `000010357007` | Banishers – Epic Deed Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| WARDING CHANT | `000010357003` | Banishers – Epic Deed Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+
+#### Brotherhood Strike
+
+| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
+|---|---:|---|---:|---|---|---|---|
+| COMBAT MANIFESTATION | `000010349003` | Brotherhood Strike – Epic Deed Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| DUTY UNENDING | `000010349005` | Brotherhood Strike – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| EXPEDITIOUS EXIT | `000010349007` | Brotherhood Strike – Strategic Ploy Stratagem | 2 | Opponent’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| PURGATION PATTERN | `000010349004` | Brotherhood Strike – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| SHINING VEIL | `000010349006` | Brotherhood Strike – Battle Tactic Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| TRUESILVER CHANNELLING | `000010349002` | Brotherhood Strike – Strategic Ploy Stratagem | 2 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+
+#### Hallowed Conclave
+
+| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
+|---|---:|---|---:|---|---|---|---|
+| GIANTS OF THE BATTLEFIELD | `000010353002` | Hallowed Conclave – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| GRIND THEM UNDERFOOT | `000010353005` | Hallowed Conclave – Strategic Ploy Stratagem | 1 | Your turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| POINT-BLANK PURGATION | `000010353004` | Hallowed Conclave – Strategic Ploy Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| PRECOGNITIVE STRATEGIES | `000010353006` | Hallowed Conclave – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| SHINING RESOLVE | `000010353007` | Hallowed Conclave – Strategic Ploy Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| UNENDING FIDELITY | `000010353003` | Hallowed Conclave – Strategic Ploy Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+
+#### Sanctic Spearhead
+
+| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
+|---|---:|---|---:|---|---|---|---|
+| ABOMINUS-CLASS TARGETS | `000010361003` | Sanctic Spearhead – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| ARGENT WRATH | `000010361007` | Sanctic Spearhead – Strategic Ploy Stratagem | 1 | Your turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| ARMOURED AEGIS | `000010361004` | Sanctic Spearhead – Strategic Ploy Stratagem | 1 | Your turn | Command phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| FORCE WAVE | `000010361006` | Sanctic Spearhead – Strategic Ploy Stratagem | 1 | Your turn | Movement or Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| REDOUBLED ASSAULT | `000010361005` | Sanctic Spearhead – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| TRUESILVER WILL | `000010361002` | Sanctic Spearhead – Epic Deed Stratagem | 1 | Either player’s turn | Any phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
 #### Warpbane Task Force
 
@@ -1209,15 +1062,6 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | MASTERS OF THE VOID | `000009139003` | Imperialis Fleet – Epic Deed Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | SELFLESS BODYGUARD | `000009139007` | Imperialis Fleet – Epic Deed Stratagem | 1 | Opponent’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | VIOLENT ACQUISITION | `000009139002` | Imperialis Fleet – Strategic Ploy Stratagem | 2 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
-#### Interdiction Team
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| ARBITRARY EXECUTION | `000009370004` | Interdiction Team – Strategic Ploy Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| CRACKDOWN | `000009370002` | Interdiction Team – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| DUTY AND DEATH | `000009370003` | Interdiction Team – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| INESCAPABLE JUDGEMENT | `000009370005` | Interdiction Team – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
 #### Ordo Hereticus Purgation Force
 
@@ -1263,27 +1107,18 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | PRIME TARGET | `000009758002` | Veiled Blade Elimination Force – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | WILL‑SAPPING SALVO | `000009758004` | Veiled Blade Elimination Force – Strategic Ploy Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
-#### Voidship’s Company
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| AMMO RATIONS | `000009361003` | Voidship’s Company – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| BOARDING DRILL | `000009361004` | Voidship’s Company – Strategic Ploy Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| BREACH AND CLEAR | `000009361002` | Voidship’s Company – Battle Tactic Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| SHIP’S WATCH | `000009361005` | Voidship’s Company – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement or Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
 ### Imperial Knights (`QI`) — `https://wahapedia.ru/wh40k10ed/factions/imperial-knights`
 
-#### Noble Lance
+#### Gate Warden Lance
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
 |---|---:|---|---:|---|---|---|---|
-| ROTATE ION SHIELDS | `000008465003` | Noble Lance – Wargear Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| SHOULDER THE BURDEN | `000008465007` | Noble Lance – Battle Tactic Stratagem | 2 | Your turn | Command phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| SQUIRES' DUTY | `000008465002` | Noble Lance – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| THUNDERSTOMP | `000008465004` | Noble Lance – Epic Deed Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| TROPHY CLAIM | `000008465006` | Noble Lance – Epic Deed Stratagem | 2 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| VALIANT LAST STAND | `000008465005` | Noble Lance – Epic Deed Stratagem | 2 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| DRIVE THEM OUT! | `000010498002` | Gate Warden Lance – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| FORTRESS OF INTIMIDATION | `000010498007` | Gate Warden Lance – Epic Deed Stratagem | 1 | Opponent’s turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| LANCEBREAKER | `000010498003` | Gate Warden Lance – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| MARSHAL THE DEFENCE | `000010498005` | Gate Warden Lance – Battle Tactic Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| STEADFAST SUPERIORITY | `000010498004` | Gate Warden Lance – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| TITANIC BOMBARDMENT | `000010498006` | Gate Warden Lance – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
 #### Questor Forgepact
 
@@ -1296,7 +1131,62 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | THRONEGHEIST FURY | `000009762007` | Questor Forgepact – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | VENGEANCE OF THE MACHINE CULT | `000009762003` | Questor Forgepact – Strategic Ploy Stratagem | 1 | Either player’s turn | Any phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
+#### Questoris Companions
+
+| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
+|---|---:|---|---:|---|---|---|---|
+| COURAGEOUS STAND | `000010503002` | Questoris Companions – Epic Deed Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| DRIVEN BY THE PAST | `000010503007` | Questoris Companions – Epic Deed Stratagem | 1 | Your turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| HERO’S TREAD | `000010503005` | Questoris Companions – Epic Deed Stratagem | 1 | Your turn | Command phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| MOMENT OF GLORY | `000010503004` | Questoris Companions – Epic Deed Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| TITANIC DUEL | `000010503003` | Questoris Companions – Epic Deed Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| UNSTOPPABLE WARRIOR | `000010503006` | Questoris Companions – Epic Deed Stratagem | 2 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+
+#### Spearhead-At-Arms
+
+| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
+|---|---:|---|---:|---|---|---|---|
+| EXEMPLAR’S WISDOM | `000010507003` | Spearhead-At-Arms – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| LET DUTY BE YOUR SHIELD | `000010507006` | Spearhead-At-Arms – Epic Deed Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| MANTLE OF THE MENTOR | `000010507004` | Spearhead-At-Arms – Strategic Ploy Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| SQUIRES OFTHE HUNT | `000010507007` | Spearhead-At-Arms – Strategic Ploy Stratagem | 1 | Opponent’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| THIN THEIR RANKS | `000010507005` | Spearhead-At-Arms – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| VIRTUE OF COURAGE | `000010507002` | Spearhead-At-Arms – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+
+#### Valourstrike Lance
+
+| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
+|---|---:|---|---:|---|---|---|---|
+| FULL TILT | `000010494004` | Valourstrike Lance – Battle Tactic Stratagem | 2 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| ROTATE ION SHIELDS | `000010494007` | Valourstrike Lance – Wargear Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| RUN THEM THROUGH! | `000010494002` | Valourstrike Lance – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| TACTICAL FOIL | `000010494006` | Valourstrike Lance – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| THUNDERSTOMP | `000010494003` | Valourstrike Lance – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| VOW OF RETRIBUTION | `000010494005` | Valourstrike Lance – Strategic Ploy Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+
 ### Leagues of Votann (`LoV`) — `https://wahapedia.ru/wh40k10ed/factions/leagues-of-votann`
+
+#### Brandfast Oathband
+
+| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
+|---|---:|---|---:|---|---|---|---|
+| BASTION RUNNING | `000010448003` | Brandfast Oathband – Battle Tactic Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| ILLUMINATED PRIORITY | `000010448004` | Brandfast Oathband – Wargear Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| INEXORABLE EFFICIENCY | `000010448005` | Brandfast Oathband – Strategic Ploy Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| OPPORTUNISTIC ESCALATION | `000010448006` | Brandfast Oathband – Strategic Ploy Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| SECURE POSITIONS | `000010448002` | Brandfast Oathband – Strategic Ploy Stratagem | 1 | Either player’s turn | Any phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| VENGEANCE FLARE | `000010448007` | Brandfast Oathband – Strategic Ploy Stratagem | 2 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+
+#### Dêlve Assault Shift
+
+| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
+|---|---:|---|---:|---|---|---|---|
+| AUGMENTED ASSAULT | `000010444004` | Dêlve Assault Shift – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| CYBERSTIMM INFUSION | `000010444002` | Dêlve Assault Shift – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| HIDDEN ACCESSWAYS | `000010444007` | Dêlve Assault Shift – Strategic Ploy Stratagem | 1 | Opponent’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| TECTONIC FRACTURE | `000010444005` | Dêlve Assault Shift – Strategic Ploy Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| UNSTOPPABLE FORCE | `000010444003` | Dêlve Assault Shift – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| WEAVEWËRKE BUTTRESS | `000010444006` | Dêlve Assault Shift – Strategic Ploy Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
 #### Hearthband
 
@@ -1309,34 +1199,38 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | SURE OF PURPOSE | `000009824003` | Hearthband – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | UNYIELDING AGGRESSION | `000009824005` | Hearthband – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
-#### Hearthfire Strike
+#### Hearthfyre Arsenal
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
 |---|---:|---|---:|---|---|---|---|
-| ECONOMY OF AGGRESSION | `000009538004` | Hearthfire Strike – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| GRAVITRONIC PULSE | `000009538005` | Hearthfire Strike – Battle Tactic Stratagem | 1 | Your turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| PAN-SPECTRAL VISUALISER | `000009538003` | Hearthfire Strike – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| WEAVEFIELD FLARE | `000009538002` | Hearthfire Strike – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| COGITATED NEED | `000010452007` | Hearthfyre Arsenal – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| DELAYED-FIRE ROUNDS | `000010452004` | Hearthfyre Arsenal – Wargear Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| FIRST CONCERN | `000010452003` | Hearthfyre Arsenal – Strategic Ploy Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| PREVENTATIVE PURGE | `000010452006` | Hearthfyre Arsenal – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| UNWAVERING ACCURACY | `000010452002` | Hearthfyre Arsenal – Battle Tactic Stratagem | 2 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| WALL OF STEEL | `000010452005` | Hearthfyre Arsenal – Battle Tactic Stratagem | 1 | Your turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
-#### Oathband
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| ANCESTRAL SENTENCE | `000008499004` | Oathband – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| NEWFOUND NEMESIS | `000008499006` | Oathband – Strategic Ploy Stratagem | 1 | Opponent’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| ORDERED RETREAT | `000008499003` | Oathband – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| REACTIVE REPRISAL | `000008499005` | Oathband – Battle Tactic Stratagem | 2 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| VOID ARMOUR | `000008499007` | Oathband – Wargear Stratagem | 1 | Opponent’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| WARRIOR PRIDE | `000008499002` | Oathband – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
-#### Void Salvagers
+#### Needgaârd Oathband
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
 |---|---:|---|---:|---|---|---|---|
-| CORRIDOR COVERED | `000009530005` | Void Salvagers – Battle Tactic Stratagem | 1 | Opponent’s turn | Movement or Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| JUDGED AND PUNISHED | `000009530004` | Void Salvagers – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| POINT-BLANK FIRE | `000009530003` | Void Salvagers – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| RELIC CYPHER | `000009530002` | Void Salvagers – Strategic Ploy Stratagem | 1 | Your turn | Command phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| ANCESTRAL SENTENCE | `000010436005` | Needgaârd Oathband – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| HONOUR OF THE HOLD | `000010436003` | Needgaârd Oathband – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| HUNTR’S MARK | `000010436006` | Needgaârd Oathband – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| ORDERED RETREAT | `000010436004` | Needgaârd Oathband – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| REACTIVE REPRISAL | `000010436007` | Needgaârd Oathband – Strategic Ploy Stratagem | 2 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| VOID HARDENED | `000010436002` | Needgaârd Oathband – Wargear Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+
+#### Persecution Prospect
+
+| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
+|---|---:|---|---:|---|---|---|---|
+| ADAPTABLE AVARICE | `000010440002` | Persecution Prospect – Strategic Ploy Stratagem | 1 | Either player’s turn | Any phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| CLAIMSTAKER REFLEX | `000010440006` | Persecution Prospect – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| DISPERSED FORMATION | `000010440007` | Persecution Prospect – Strategic Ploy Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| EXPOSED FLAWS | `000010440004` | Persecution Prospect – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| FRONTIER MOMENTUM | `000010440003` | Persecution Prospect – Battle Tactic Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| RANGER TACTICS | `000010440005` | Persecution Prospect – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
 ### Necrons (`NEC`) — `https://wahapedia.ru/wh40k10ed/factions/necrons`
 
@@ -1373,24 +1267,6 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | SOLAR PULSE | `000008547004` | Canoptek Court – Strategic Ploy Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | SUBOPTIMAL FACADE | `000008547007` | Canoptek Court – Strategic Ploy Stratagem | 1 | Opponent’s turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
-#### Canoptek Harvesters
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| NANOSCARAB VIRUS | `000009605005` | Canoptek Harvesters – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| PHASE-SHIFT | `000009605004` | Canoptek Harvesters – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| QUANTUM FLARE-SHIELD | `000009605003` | Canoptek Harvesters – Wargear Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| TARGETING ALGORITHMS | `000009605002` | Canoptek Harvesters – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
-#### Deranged Outcasts
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| BATHED IN BLOOD | `000009597002` | Deranged Outcasts – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| RUSH TO SLAUGHTER | `000009597004` | Deranged Outcasts – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| SHADOW STALKERS | `000009597003` | Deranged Outcasts – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| TERRIFYING AMBUSH | `000009597005` | Deranged Outcasts – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
 #### Hypercrypt Legion
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
@@ -1423,15 +1299,6 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | MERCILESS RECLAMATION | `000009750002` | Starshatter Arsenal – Battle Tactic Stratagem | 2 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | REACTIVE REPOSITION | `000009750007` | Starshatter Arsenal – Strategic Ploy Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | UNYIELDING FORMS | `000009750003` | Starshatter Arsenal – Battle Tactic Stratagem | 2 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
-#### Tomb Ship Complement
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| CONCENTRATED ATOMISATION | `000009589004` | Tomb Ship Complement – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| DISINTEGRATION BEAMS | `000009589005` | Tomb Ship Complement – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| DISRUPTION FIELDS | `000009589002` | Tomb Ship Complement – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| UNWAVERING DEFENCE | `000009589003` | Tomb Ship Complement – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
 ### Orks (`ORK`) — `https://wahapedia.ru/wh40k10ed/factions/orks`
 
@@ -1479,15 +1346,6 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | GO GET ’EM! | `000008882007` | Green Tide – Strategic Ploy Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | TIDE OF MUSCLE | `000008882006` | Green Tide – Epic Deed Stratagem | 1 | Your turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
-#### Kaptin Killers
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| CORNERED AND KRUMPED | `000009624005` | Kaptin Killers – Battle Tactic Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| LOOT ON THE MOVE | `000009624002` | Kaptin Killers – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| PILE THROUGH | `000009624003` | Kaptin Killers – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| PIT FIGHTER | `000009624004` | Kaptin Killers – Epic Deed Stratagem | 1 | Your turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
 #### Kult of Speed
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
@@ -1509,15 +1367,6 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | LONG, UNCONTROLLED BURSTS | `000009992005` | More Dakka! – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | ORKS IS STILL ORKS | `000009992002` | More Dakka! – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | SPESHUL SHELLS | `000009992006` | More Dakka! – Wargear Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
-#### Ramship Raiders
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| EAGER TO FIGHT | `000009616004` | Ramship Raiders – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| ENRAGED RUSH | `000009616005` | Ramship Raiders – Strategic Ploy Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| PILE THROUGH | `000009616002` | Ramship Raiders – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| RAMBOYZ RAMPAGE | `000009616003` | Ramship Raiders – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
 #### Taktikal Brigade
 
@@ -1587,14 +1436,16 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | KRAKEN ROUNDS | `000008523005` | Black Spear Task Force – Wargear Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | SITE-TO-SITE TELEPORTATION | `000008523007` | Black Spear Task Force – Strategic Ploy Stratagem | 1 | Opponent’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
-#### Boarding Strike
+#### Blade of Ultramar
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
 |---|---:|---|---:|---|---|---|---|
-| CERAMITE BULWARK | `000009241003` | Boarding Strike – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| DUTY AND DEFIANCE | `000009241004` | Boarding Strike – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| IN THE EMPEROR’S NAME | `000009241002` | Boarding Strike – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| VOX-AMPLIFIED ROAR | `000009241005` | Boarding Strike – Strategic Ploy Stratagem | 1 | Your turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| ARMOUR OF CONTEMPT | `000010634002` | Blade of Ultramar – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| COURAGE AND HONOUR! | `000010634004` | Blade of Ultramar – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| EXEMPLARY VIGILANCE | `000010634006` | Blade of Ultramar – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| PRACTICAL TACTICS | `000010634007` | Blade of Ultramar – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| TACTICAL FORESIGHT | `000010634003` | Blade of Ultramar – Epic Deed Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| ULTRAMARIAN ADAPTIVITY | `000010634005` | Blade of Ultramar – Strategic Ploy Stratagem | 1 | Your turn | Command phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
 #### Champions of Fenris
 
@@ -1607,16 +1458,16 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | RUNES OF CLAIMING | `000009852004` | Champions of Fenris – Strategic Ploy Stratagem | 1 | Your turn | Command phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | STALKING WOLVES | `000009852006` | Champions of Fenris – Strategic Ploy Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
-#### Champions of Russ
+#### Companions of Vehemence
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
 |---|---:|---|---:|---|---|---|---|
-| ARMOUR OF CONTEMPT | `000008531002` | Champions of Russ – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| DEATH HOWL | `000008531005` | Champions of Russ – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| GO FOR THE THROAT | `000008531003` | Champions of Russ – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| RELENTLESS ASSAULT | `000008531007` | Champions of Russ – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| RUNIC WARDS | `000008531004` | Champions of Russ – Wargear Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| WARRIOR PRIDE | `000008531006` | Champions of Russ – Epic Deed Stratagem | 1 | Your turn | Command phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| DEVOUT PUSH | `000010393002` | Companions of Vehemence – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| DREAD CRUSADERS | `000010393007` | Companions of Vehemence – Strategic Ploy Stratagem | 1 | Opponent’s turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| FOR THE EMPEROR'S HONOUR! | `000010393004` | Companions of Vehemence – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| HEARTS HARDENED TO DUTY | `000010393003` | Companions of Vehemence – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| HERESY BEGETS RETRIBUTION | `000010393006` | Companions of Vehemence – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| PIOUS ENMITY | `000010393005` | Companions of Vehemence – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
 #### Company of Hunters
 
@@ -1629,6 +1480,17 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | RAPID REAPPRAISAL | `000008779007` | Company Of Hunters – Battle Tactic Stratagem | 1 | Opponent’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | TALON STRIKE | `000008779004` | Company Of Hunters – Strategic Ploy Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
+#### Emperor’s Shield
+
+| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
+|---|---:|---|---:|---|---|---|---|
+| ARMOUR OF CONTEMPT | `000010461002` | Emperor's Shield – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| DISCIPLINED EXTERMINATION | `000010461006` | Emperor's Shield – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| DROPSHIP EXTRACTION | `000010461007` | Emperor's Shield – Battle Tactic Stratagem | 1 | Opponent’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| FURY OF THE FIRST | `000010461003` | Emperor's Shield – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| OBDURATE VENGEANCE | `000010461004` | Emperor's Shield – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| WRATHFUL CONQUERORS | `000010461005` | Emperor's Shield – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+
 #### Firestorm Assault Force
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
@@ -1640,6 +1502,17 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | ONSLAUGHT OF FIRE | `000008483006` | Firestorm Assault Force – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | RAPID EMBARKATION | `000008483004` | Firestorm Assault Force – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
+#### Forgefather’s Seekers
+
+| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
+|---|---:|---|---:|---|---|---|---|
+| ARMOUR OF CONTEMPT | `000010369002` | Forgefather’s Seekers – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| BLAZING EARTH | `000010369007` | Forgefather’s Seekers – Strategic Ploy Stratagem | 1 | Opponent’s turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| BURNING VENGEANCE | `000010369006` | Forgefather’s Seekers – Battle Tactic Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| CRUCIBLE OF BATTLE | `000010369003` | Forgefather’s Seekers – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| IMMOLATION PROTOCOLS | `000010369005` | Forgefather’s Seekers – Battle Tactic Stratagem | 2 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| WRATHFUL INFERNO | `000010369004` | Forgefather’s Seekers – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+
 #### Gladius Task Force
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
@@ -1650,6 +1523,28 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | ONLY IN DEATH DOES DUTY END | `000008352003` | Gladius Task Force – Epic Deed Stratagem | 2 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | SQUAD TACTICS | `000008352007` | Gladius Task Force – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | STORM OF FIRE | `000008352006` | Gladius Task Force – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+
+#### Godhammer Assault Force
+
+| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
+|---|---:|---|---:|---|---|---|---|
+| A CEASELESS CAUSE | `000010401002` | Godhammer Assault Force – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| BLESSED HULL | `000010401007` | Godhammer Assault Force – Battle Tactic Stratagem | 2 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| CONDEMNATORY INFO-SCREED | `000010401006` | Godhammer Assault Force – Battle Tactic Stratagem | 1 | Your turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| FOCUSED HATRED | `000010401005` | Godhammer Assault Force – Strategic Ploy Stratagem | 1 | Your turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| GAUNTLET OF THE GOD-EMPEROR | `000010401004` | Godhammer Assault Force – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| UNCOMPROMISING EGRESS | `000010401003` | Godhammer Assault Force – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+
+#### Hammer of Avernii
+
+| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
+|---|---:|---|---:|---|---|---|---|
+| ARMOUR OF CONTEMPT | `000010624002` | Hammer of Avernii – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| AUGMETIC FORTITUDE | `000010624006` | Hammer of Avernii – Battle Tactic Stratagem | 1 | Opponent’s turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| COGITATED FEROCITY | `000010624005` | Hammer of Avernii – Strategic Ploy Stratagem | 1 | Your turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| DOMINATOR BEACON | `000010624004` | Hammer of Avernii – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| DROPSHIP EXTRACTION | `000010624007` | Hammer of Avernii – Strategic Ploy Stratagem | 1 | Opponent’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| RUTHLESS BUTCHERY | `000010624003` | Hammer of Avernii – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
 #### Inner Circle Task Force
 
@@ -1706,25 +1601,82 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | OVERPOWERING EXACTION | `000009734002` | Lion’s Blade Task Force – Strategic Ploy Stratagem | 1 | Either player’s turn | Command or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | STRENGTH IN UNITY | `000009734004` | Lion’s Blade Task Force – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
-#### Pilum Strike Team
+#### Rage-cursed Onslaught
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
 |---|---:|---|---:|---|---|---|---|
-| ENHANCED EFFICIENCY | `000009249003` | Pilum Strike Team – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| FIGHTING RETREAT | `000009249004` | Pilum Strike Team – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| KNIFE WORK | `000009249002` | Pilum Strike Team – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| MASTER MARKSMEN | `000009249005` | Pilum Strike Team – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| A GRIM WARNING | `000010646002` | Rage-cursed Onslaught – Stratagem | 1 | Either player’s turn | Any phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| ARMOUR OF CONTEMPT | `000010646003` | Rage-cursed Onslaught – Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| DEATHLESS DUTY | `000010646006` | Rage-cursed Onslaught – Stratagem | 2 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| INSENSATE RAMPAGE | `000010646004` | Rage-cursed Onslaught – Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| LIMB FROM LIMB | `000010646005` | Rage-cursed Onslaught – Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| RED WRATH | `000010646007` | Rage-cursed Onslaught – Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
-#### Righteous Crusaders
+#### Saga of the Beastslayer
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
 |---|---:|---|---:|---|---|---|---|
-| ARMOUR OF CONTEMPT | `000008527006` | Righteous Crusaders – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| CRUSADER'S WRATH | `000008527005` | Righteous Crusaders – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| DEVOUT PUSH | `000008527007` | Righteous Crusaders – Strategic Ploy Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| FERVENT ACCLAMATION | `000008527003` | Righteous Crusaders – Epic Deed Stratagem | 1 | Your turn | Command phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| NO ESCAPE | `000008527002` | Righteous Crusaders – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| VICIOUS RIPOSTE | `000008527004` | Righteous Crusaders – Epic Deed Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| COORDINATED STRIKE | `000010270007` | Saga of the Beastslayer – Strategic Ploy Stratagem | 1 | Opponent’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| IMPETUOSITY | `000010270006` | Saga of the Beastslayer – Strategic Ploy Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| PINNING FIRE | `000010270004` | Saga of the Beastslayer – Strategic Ploy Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| SHOCK CAVALRY | `000010270003` | Saga of the Beastslayer – Strategic Ploy Stratagem | 1 | Your turn | Movement or Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| THUNDEROUS PURSUIT | `000010270005` | Saga of the Beastslayer – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| UNBRIDLED FEROCITY | `000010270002` | Saga of the Beastslayer – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+
+#### Saga of the Bold
+
+| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
+|---|---:|---|---:|---|---|---|---|
+| ALPHA STRIKE | `000010266005` | Saga of the Bold – Epic Deed Stratagem | 1 | Your turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| BIRTH OF A SAGA | `000010266004` | Saga of the Bold – Epic Deed Stratagem | 1 | Your turn | Command phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| CHAMPION’S GUIDANCE | `000010266003` | Saga of the Bold – Epic Deed Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| COUNTERCHARGE | `000010266007` | Saga of the Bold – Epic Deed Stratagem | 2 | Opponent’s turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| HEROIC RESOLVE | `000010266006` | Saga of the Bold – Epic Deed Stratagem | 2 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| INSPIRING PRESENCE | `000010266002` | Saga of the Bold – Epic Deed Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+
+#### Saga of the Great Wolf
+
+| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
+|---|---:|---|---:|---|---|---|---|
+| BATTLE INSTINCTS | `000010661007` | Saga of the Great Wolf – Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| EYE OF THE PACK | `000010661006` | Saga of the Great Wolf – Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| FENRISIAN FEROCITY | `000010661004` | Saga of the Great Wolf – Stratagem | 1 | Your turn | Movement or Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| GRIMNAR’S COMMAND | `000010661003` | Saga of the Great Wolf – Stratagem | 1 | Your turn | Command phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| THE FOE FORESEEN | `000010661002` | Saga of the Great Wolf – Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| UNRELENTING HUNTERS | `000010661005` | Saga of the Great Wolf – Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+
+#### Saga of the Hunter
+
+| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
+|---|---:|---|---:|---|---|---|---|
+| BOUNDING ADVANCE | `000010262006` | Saga of the Hunter – Strategic Ploy Stratagem | 1 | Your turn | Movement or Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| CHOSEN PREY | `000010262005` | Saga of the Hunter – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| HUNTERS’ TRAIL | `000010262002` | Saga of the Hunter – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| MARKED FOR DESTRUCTION | `000010262007` | Saga of the Hunter – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| OVERWHELMING ONSLAUGHT | `000010262004` | Saga of the Hunter – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| TERRITORIAL ADVANTAGE | `000010262003` | Saga of the Hunter – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+
+#### Shadowmark Talon
+
+| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
+|---|---:|---|---:|---|---|---|---|
+| ARMOUR OF CONTEMPT | `000010467002` | Shadowmark Talon – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| FEINT AND THRUST | `000010467004` | Shadowmark Talon – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| INTO DARKNESS | `000010467007` | Shadowmark Talon – Strategic Ploy Stratagem | 1 | Opponent’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| LAY LOW THE TYRANTS | `000010467003` | Shadowmark Talon – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| RAPTORIAL VIGILANCE | `000010467006` | Shadowmark Talon – Battle Tactic Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| STUNNING FUSILLADE | `000010467005` | Shadowmark Talon – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+
+#### Spearpoint Task Force
+
+| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
+|---|---:|---|---:|---|---|---|---|
+| ARMOUR OF CONTEMPT | `000010630002` | Spearpoint Task Force – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| EVASIVE MANOEUVRES | `000010630006` | Spearpoint Task Force – Battle Tactic Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| HUNTER’S INSTINCTS | `000010630005` | Spearpoint Task Force – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| MOBILE LETHALITY | `000010630004` | Spearpoint Task Force – Battle Tactic Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| SPEAR THRUST AND SABRE SWING | `000010630003` | Spearpoint Task Force – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| WITHDRAW AND REGROUP | `000010630007` | Spearpoint Task Force – Strategic Ploy Stratagem | 1 | Opponent’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
 #### Stormlance Task Force
 
@@ -1736,15 +1688,6 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | RIDE HARD, RIDE FAST | `000008487006` | Stormlance Task Force – Battle Tactic Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | SHOCK ASSAULT | `000008487005` | Stormlance Task Force – Battle Tactic Stratagem | 1 | Your turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | WIND-SWIFT EVASION | `000008487007` | Stormlance Task Force – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
-#### Terminator Assault
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| CARVE A PATH | `000009256004` | Terminator Assault – Strategic Ploy Stratagem | 1 | Your turn | Movement or Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| CLEANSING SWEEP | `000009256005` | Terminator Assault – Battle Tactic Stratagem | 1 | Opponent’s turn | Movement or Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| FOCUSING SHRINE | `000009256003` | Terminator Assault – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| TOWER OF STRENGTH | `000009256002` | Terminator Assault – Strategic Ploy Stratagem | 1 | Either player’s turn | Any phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
 #### The Angelic Host
 
@@ -1790,6 +1733,17 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | STRIKE FROM THE SHADOWS | `000008491005` | Vanguard Spearhead – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | SURGICAL STRIKES | `000008491004` | Vanguard Spearhead – Battle Tactic Stratagem | 2 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
+#### Vindication Task Force
+
+| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
+|---|---:|---|---:|---|---|---|---|
+| LITANIES OF PURGATION | `000010397003` | Vindication Task Force – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| PERFERVID INTERVENTION | `000010397007` | Vindication Task Force – Strategic Ploy Stratagem | 2 | Opponent’s turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| RECITATION OF THE REVERED | `000010397006` | Vindication Task Force – Strategic Ploy Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| RECLAIM OUR HONOUR! | `000010397005` | Vindication Task Force – Strategic Ploy Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| REFUSAL TO YIELD | `000010397002` | Vindication Task Force – Epic Deed Stratagem | 1 | Either player’s turn | Any phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| SPOOR OF THE UNHOLY | `000010397004` | Vindication Task Force – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+
 #### Wrath of the Rock
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
@@ -1824,33 +1778,6 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | FRACTAL DISJUNCTION | `000010198005` | Changehost of Deceit – Strategic Ploy Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | GLIMMERSHIFT PORTAL | `000010198007` | Changehost of Deceit – Strategic Ploy Stratagem | 1 | Opponent’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | SULPHUROUS VEIL | `000010198002` | Changehost of Deceit – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
-#### Chosen Cabal
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| COSTLY BLESSING | `000009655002` | Chosen Cabal – Epic Deed Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| EMPYRIC DESECRATION | `000009655003` | Chosen Cabal – Epic Deed Stratagem | 1 | Your turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| INFERNO BOLTERS | `000009655004` | Chosen Cabal – Strategic Ploy Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| TZEENTCH’S BOON | `000009655005` | Chosen Cabal – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
-#### Devoted Thralls
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| BESTIAL SURGE | `000009664005` | Devoted Thralls – Strategic Ploy Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| FELL SACRIFICE | `000009664004` | Devoted Thralls – Strategic Ploy Stratagem | 1 | Opponent’s turn | Command phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| FLESH CHANGE | `000009664003` | Devoted Thralls – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| PSYCHIC INGRESS | `000009664002` | Devoted Thralls – Epic Deed Stratagem | 1 | Either player’s turn | Any phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
-#### Fateseekers
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| ENDURING ANIMUS | `000009673002` | Fateseekers – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| INVISIBLE ASSAILANTS | `000009673005` | Fateseekers – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| PHANTASMIC MUNITIONS | `000009673004` | Fateseekers – Strategic Ploy Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| STRATEGIC VISION | `000009673003` | Fateseekers – Strategic Ploy Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
 #### Grand Coven
 
@@ -1920,24 +1847,6 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | SECURE BIOMASS | `000008413006` | Assimilation Swarm – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | TYRANNOFORMED | `000008413004` | Assimilation Swarm – Strategic Ploy Stratagem | 1 | Either player’s turn | Command phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
-#### Biotide
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| LIVING AVALANCHE | `000009700002` | Biotide – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| ONRUSHING HORDE | `000009700005` | Biotide – Battle Tactic Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| SQUIRMING MASSES | `000009700003` | Biotide – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| SWARM HUNTERS | `000009700004` | Biotide – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
-#### Boarding Swarm
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| ADRENALISED SLAUGHTER | `000009691003` | Boarding Swarm – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| LITHE KILLERS | `000009691002` | Boarding Swarm – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| PREDATORY POUNCE | `000009691005` | Boarding Swarm – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| TALON-TIP SWARM | `000009691004` | Boarding Swarm – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
 #### Crusher Stampede
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
@@ -1948,15 +1857,6 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | SAVAGE ROAR | `000008422004` | Crusher Stampede – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | SWARM-GUIDED SALVOES | `000008422006` | Crusher Stampede – Battle Tactic Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | UNTRAMMELLED FEROCITY | `000008422005` | Crusher Stampede – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
-#### Infestation Swarm
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| HUNTING GROUNDS | `000009725004` | Infestation Swarm – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| HYPERADRENAL REFLEXES | `000009725002` | Infestation Swarm – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| OUTFLANK | `000009725005` | Infestation Swarm – Strategic Ploy Stratagem | 1 | Opponent’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| PERVASIVE DREAD | `000009725003` | Infestation Swarm – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
 #### Invasion Fleet
 
@@ -1990,15 +1890,6 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | REINFORCED HIVE NODE | `000008556005` | Synaptic Nexus – Battle Tactic Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | SYNAPTIC CHANNELLING | `000008556003` | Synaptic Nexus – Battle Tactic Stratagem | 1 | Either player’s turn | Command phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | THE SMOTHERING SHADOW | `000008556002` | Synaptic Nexus – Strategic Ploy Stratagem | 1 | Either player’s turn | Any phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
-#### Tyranid Attack
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| BIO-ACID SURGE | `000009682002` | Tyranid Attack – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| EXPENDABLE BIOMASS | `000009682004` | Tyranid Attack – Strategic Ploy Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| HIVE SIGHT | `000009682005` | Tyranid Attack – Strategic Ploy Stratagem | 1 | Your turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| PHAGIC SPORES | `000009682003` | Tyranid Attack – Wargear Stratagem | 1 | Either player’s turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
 #### Unending Swarm
 
@@ -2079,15 +1970,6 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | JOIN THE HUNT | `000008822002` | Kroot Hunting Pack – Battle Tactic Stratagem | 2 | Either player’s turn | Any phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | THE GRISLY FEAST | `000008822005` | Kroot Hunting Pack – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
-#### Kroot Raiding Party
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| BOARDING BLADES | `000009646002` | Kroot Raiding Party – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| BRUTE FORCE | `000009646004` | Kroot Raiding Party – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| SWEEPING AMBUSH | `000009646003` | Kroot Raiding Party – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| TANGLEBOMB BOLAS | `000009646005` | Kroot Raiding Party – Wargear Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
 #### Mont’ka
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
@@ -2110,15 +1992,6 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | THE SHORTENED BLADE | `000008816004` | Retaliation Cadre – Strategic Ploy Stratagem | 2 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | THE TORCHSTAR GAMBIT | `000008816006` | Retaliation Cadre – Strategic Ploy Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
-#### Starfire Cadre
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| FIRING LINE | `000009637002` | Starfire Cadre – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| PULSE BARRAGE | `000009637005` | Starfire Cadre – Battle Tactic Stratagem | 1 | Opponent’s turn | Movement or Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| RESPONSIVE VOLLEY | `000009637004` | Starfire Cadre – Battle Tactic Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| RETREATING FIRE | `000009637003` | Starfire Cadre – Strategic Ploy Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
 ### World Eaters (`WE`) — `https://wahapedia.ru/wh40k10ed/factions/world-eaters`
 
 #### Berzerker Warband
@@ -2131,15 +2004,6 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | FRENZIED RESILIENCE | `000008431004` | Berzerker Warband – Battle Tactic Stratagem | 2 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | HACK AND SLASH | `000008431003` | Berzerker Warband – Battle Tactic Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | SKULLS FOR THE SKULL THRONE! | `000008431005` | Berzerker Warband – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
-#### Boarding Butchers
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| COWARDS’ BANE | `000009709005` | Boarding Butchers – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| SAVAGE RESILIENCE | `000009709004` | Boarding Butchers – Battle Tactic Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| TERRIFYING SCREAMS | `000009709002` | Boarding Butchers – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| UNSTOPPABLE RAGE | `000009709003` | Boarding Butchers – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
 #### Cult of Blood
 
@@ -2184,15 +2048,6 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | IMMORTAL FURY | `000010083004` | Possessed Slaughterband – Battle Tactic Stratagem | 2 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | RAPID MANIFESTATION | `000010083005` | Possessed Slaughterband – Strategic Ploy Stratagem | 1 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | WARP STALKERS | `000010083006` | Possessed Slaughterband – Strategic Ploy Stratagem | 1 | Your turn | Movement or Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-
-#### Skullsworn
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| BLOOD RITE | `000009717002` | Skullsworn – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| FURIOUS MOMENTUM | `000009717003` | Skullsworn – Strategic Ploy Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| RUINOUS RAMPAGE | `000009717004` | Skullsworn – Strategic Ploy Stratagem | 1 | Your turn | Movement or Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| SHOCKING ONSLAUGHT | `000009717005` | Skullsworn – Battle Tactic Stratagem | 1 | Opponent’s turn | Movement or Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
 #### Vessels of Wrath
 

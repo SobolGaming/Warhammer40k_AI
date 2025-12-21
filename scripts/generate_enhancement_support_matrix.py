@@ -9,6 +9,9 @@ Support definitions (current engine state):
 - Supported: enhancement rules effects are applied by the engine.
 - Partial: enhancement can be loaded/assigned/scored (points/UI), but effects are not executed.
 - Not implemented: enhancement cannot be loaded/assigned at all.
+
+Exclusions:
+- Detachments with `type == "Boarding Actions"` (from `wahapedia_data/Detachments.json`) are excluded from reporting.
 """
 
 from __future__ import annotations
@@ -82,6 +85,24 @@ def _load_enhancements() -> List[EnhRow]:
     return out
 
 
+def _load_boarding_actions_detachment_ids() -> set[str]:
+    path = os.path.join(WAHA_DIR, "Detachments.json")
+    if not os.path.exists(path):
+        return set()
+    raw = _read_json(path)
+    ids: set[str] = set()
+    for d in raw:
+        try:
+            if (d.get("type") or "").strip().lower() != "boarding actions":
+                continue
+            did = (d.get("id") or "").strip()
+            if did:
+                ids.add(did)
+        except Exception:
+            continue
+    return ids
+
+
 def _normalize(text: str) -> str:
     t = (text or "").replace("’", "'").replace("“", '"').replace("”", '"')
     t = re.sub(r"\s+", " ", t).strip()
@@ -134,7 +155,7 @@ def _support_status(row: EnhRow) -> Tuple[str, str]:
     return ("Partial", "Loadable/assignable + points counted + UI display; rules effects not executed yet.")
 
 
-def _write_md(rows: List[EnhRow], factions: Dict[str, Dict[str, str]]) -> None:
+def _write_md(rows: List[EnhRow], factions: Dict[str, Dict[str, str]], excluded: int = 0) -> None:
     os.makedirs(DOCS_DIR, exist_ok=True)
 
     by_faction: Dict[str, List[EnhRow]] = {}
@@ -161,6 +182,8 @@ def _write_md(rows: List[EnhRow], factions: Dict[str, Dict[str, str]]) -> None:
     lines.append("")
     lines.append(f"- Total enhancements: {len(rows)}")
     lines.append(f"- Factions: {len(by_faction)}")
+    if excluded:
+        lines.append(f"- Excluded (Boarding Actions detachments): {excluded}")
     lines.append("")
     lines.append("## Faction Enhancements")
     lines.append("")
@@ -199,7 +222,13 @@ def main() -> None:
         raise SystemExit(f"wahapedia_data dir not found at: {WAHA_DIR}")
     factions = _load_factions()
     rows = _load_enhancements()
-    _write_md(rows, factions)
+    ba_ids = _load_boarding_actions_detachment_ids()
+    excluded = 0
+    if ba_ids:
+        before = len(rows)
+        rows = [r for r in rows if (r.detachment_id or "").strip() not in ba_ids]
+        excluded = before - len(rows)
+    _write_md(rows, factions, excluded=excluded)
     print(f"Wrote {OUT_PATH} ({len(rows)} enhancements).")
 
 

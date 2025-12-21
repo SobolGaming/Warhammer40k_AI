@@ -7,6 +7,10 @@ We treat the comma-separated "weapon abilities" list as keywords (after strippin
 Output:
 - HTML table (for row coloring) with Supported/Partial/Not implemented.
 - Includes occurrence counts and a couple example renderings per keyword group.
+
+Note on Boarding Actions detachments:
+- This matrix is generated from `Datasheets_wargear.json`, which is **not detachment-scoped** (no detachment_id/type),
+  so "Boarding Actions" detachment filtering does not apply here in a meaningful way.
 """
 
 from __future__ import annotations
@@ -212,6 +216,8 @@ def _write_md(counts: Dict[str, int], examples: Dict[str, Set[str]]) -> None:
     lines.append("# Wargear keyword support matrix (Wahapedia)")
     lines.append("")
     lines.append("Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).")
+    lines.append("")
+    lines.append("> Note: Boarding Actions detachment filtering is not applicable here (wargear keywords are not detachment-scoped in Wahapedia data).")
     lines.append("")
     lines.append("## Legend")
     lines.append("")

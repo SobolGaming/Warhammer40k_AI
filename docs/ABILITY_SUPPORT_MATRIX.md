@@ -9,22 +9,23 @@ Generated from `wahapedia_data/Abilities.json`, `wahapedia_data/Datasheets_abili
 
 ## Summary
 
-- Abilities.json rows: 66 (core: 11, faction-specific: 55)
-- Detachment_abilities.json rows: 213
-- Datasheets_abilities.json rows: 6756
+- Abilities.json rows: 90 (core: 11, faction-specific: 79)
+- Detachment_abilities.json rows: 197
+- Datasheets_abilities.json rows: 6975
 
 ### Datasheet ability row types (from `Datasheets_abilities.json`)
 
 | Type | Rows |
 |---|---:|
-| Datasheet | 2441 |
-| Core | 1978 |
-| Faction | 1402 |
-| Wargear | 389 |
-| Wargear profile | 227 |
-| Special (правая колонка) | 171 |
-| Fortification (левая колонка) | 81 |
-| Primarch | 67 |
+| Datasheet | 2539 |
+| Core | 2019 |
+| Faction | 1449 |
+| Wargear | 405 |
+| Wargear profile | 229 |
+| Special (правая колонка) | 168 |
+| Fortification (левая колонка) | 94 |
+| Primarch | 71 |
+| Без заголовка | 1 |
 
 ## Recognized mechanics (pattern-based)
 
@@ -53,17 +54,17 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Deadly Demise | `000008339` | 711 | 711 | **Supported** | Deadly Demise |
-| Deep Strike | `000008343` | 336 | 336 | **Supported** | Deep Strike |
-| Feel No Pain | `000008338` | 111 | 111 | **Supported** | Feel No Pain |
-| Fights First | `000008340` | 26 | 26 | **Supported** | Fights First |
-| Firing Deck | `000008334` | 57 | 57 | **Partial** | Firing Deck |
-| Hover | `000008342` | 58 | 58 | **Not implemented** |  |
-| Infiltrators | `000008345` | 68 | 68 | **Supported** | Infiltrators |
-| Leader | `000008346` | 391 | 391 | **Partial** | Leader data exists, but full Attached allocation/rules enforcement is incomplete. |
-| Lone Operative | `000008336` | 48 | 48 | **Supported** | Lone Operative |
-| Scouts | `000008344` | 95 | 95 | **Supported** | Scouts |
-| Stealth | `000008337` | 77 | 77 | **Supported** | Stealth |
+| Deadly Demise | `000008339` | 718 | 718 | **Supported** | Deadly Demise |
+| Deep Strike | `000008343` | 343 | 343 | **Supported** | Deep Strike |
+| Feel No Pain | `000008338` | 113 | 113 | **Supported** | Feel No Pain |
+| Fights First | `000008340` | 25 | 25 | **Supported** | Fights First |
+| Firing Deck | `000008334` | 59 | 59 | **Partial** | Firing Deck |
+| Hover | `000008342` | 57 | 57 | **Not implemented** |  |
+| Infiltrators | `000008345` | 69 | 69 | **Supported** | Infiltrators |
+| Leader | `000008346` | 406 | 406 | **Partial** | Leader data exists, but full Attached allocation/rules enforcement is incomplete. |
+| Lone Operative | `000008336` | 50 | 50 | **Supported** | Lone Operative |
+| Scouts | `000008344` | 100 | 100 | **Supported** | Scouts |
+| Stealth | `000008337` | 79 | 79 | **Supported** | Stealth |
 
 ## Faction Abilities
 
@@ -89,14 +90,20 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
+| Designer’s Note | `000008536` | 0 | 0 | **Not implemented** |  |
 | Super-heavy Walker | `000008538` | 4 | 4 | **Not implemented** |  |
+| Titanic Support | `000008534` | 0 | 0 | **Not implemented** |  |
+| Titanicus Traitoris | `000008535` | 0 | 0 | **Not implemented** |  |
+| Towering Example | `000008533` | 0 | 0 | **Not implemented** |  |
 
 ### Aeldari (`AE`) — `https://wahapedia.ru/wh40k10ed/factions/aeldari`
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
+| Agile Manoeuvres | `000009895` | 0 | 0 | **Not implemented** |  |
 | Battle Focus | `000009894` | 81 | 81 | **Not implemented** |  |
 | Disparate Paths | `000009896` | 19 | 19 | **Not implemented** |  |
+| Strands of Fate | `000008445` | 0 | 0 | **Not implemented** |  |
 
 ### Astra Militarum (`AM`) — `https://wahapedia.ru/wh40k10ed/factions/astra-militarum`
 
@@ -108,6 +115,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
+| Daemonic Pact | `000008434` | 0 | 0 | **Not implemented** |  |
 | Dark Pacts | `000008359` | 38 | 38 | **Not implemented** |  |
 | The Shadow of Chaos | `000008433` | 68 | 68 | **Not implemented** |  |
 
@@ -116,8 +124,9 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Dark Pacts | `000008359` | 17 | 17 | **Not implemented** |  |
-| Harbingers of Dread | `000008512` | 19 | 19 | **Not implemented** |  |
-| Super-heavy Walker | `000008513` | 13 | 13 | **Not implemented** |  |
+| Dreadblades | `000008514` | 0 | 0 | **Not implemented** |  |
+| Harbingers of Dread | `000008512` | 20 | 20 | **Not implemented** |  |
+| Super-heavy Walker | `000008513` | 14 | 14 | **Not implemented** |  |
 
 ### Chaos Space Marines (`CSM`) — `https://wahapedia.ru/wh40k10ed/factions/chaos-space-marines`
 
@@ -125,6 +134,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 |---|---:|---:|---:|---|---|
 | Blessings of Khorne | `000008428` | 1 | 1 | **Not implemented** |  |
 | Cabal of Sorcerers | `000008424` | 1 | 1 | **Supported** | Lone Operative |
+| Cult of the Dark Gods | `000008360` | 0 | 0 | **Not implemented** |  |
 | Dark Pacts | `000008359` | 103 | 103 | **Not implemented** |  |
 | Nurgle’s Gift (Aura) | `000008396` | 1 | 1 | **Not implemented** |  |
 | Oath of Moment | `000008350` | 0 | 0 | **Not implemented** |  |
@@ -135,7 +145,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Dark Pacts | `000008359` | 0 | 0 | **Not implemented** |  |
-| Nurgle’s Gift (Aura) | `000008396` | 61 | 61 | **Not implemented** |  |
+| Nurgle’s Gift (Aura) | `000008396` | 65 | 65 | **Not implemented** |  |
 | Oath of Moment | `000008350` | 0 | 0 | **Not implemented** |  |
 | Pact of Decay | `000010120` | 6 | 6 | **Not implemented** |  |
 
@@ -144,8 +154,9 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Battle Focus | `000009894` | 10 | 10 | **Not implemented** |  |
+| Corsairs and Travelling Players | `000009974` | 0 | 0 | **Not implemented** |  |
 | Disparate Paths | `000009896` | 8 | 8 | **Not implemented** |  |
-| Power From Pain | `000008507` | 27 | 27 | **Not implemented** |  |
+| Power from Pain | `000008507` | 30 | 30 | **Not implemented** |  |
 
 ### Emperor’s Children (`EC`) — `https://wahapedia.ru/wh40k10ed/factions/emperor-s-children`
 
@@ -166,49 +177,63 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Teleport Assault | `000008453` | 18 | 18 | **Not implemented** |  |
+| Gate of Infinity | `000010345` | 20 | 20 | **Not implemented** |  |
 
 ### Imperial Agents (`AoI`) — `https://wahapedia.ru/wh40k10ed/factions/imperial-agents`
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Assigned Agents | `000008452` | 43 | 43 | **Not implemented** |  |
+| Assigned Agents | `000008452` | 45 | 45 | **Not implemented** |  |
 | Kill Team | `000008519` | 5 | 5 | **Not implemented** |  |
 
 ### Imperial Knights (`QI`) — `https://wahapedia.ru/wh40k10ed/factions/imperial-knights`
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Code Chivalric | `000008458` | 20 | 20 | **Partial** | Gain CP on destroy (partial) |
+| Bondsman | `000008459` | 0 | 0 | **Not implemented** |  |
+| Code Chivalric | `000008458` | 21 | 21 | **Not implemented** |  |
 | Doctrina Imperatives | `000008382` | 5 | 5 | **Not implemented** |  |
-| Super-heavy Walker | `000008460` | 17 | 17 | **Not implemented** |  |
+| Freeblades | `000008461` | 0 | 0 | **Not implemented** |  |
+| Super-heavy Walker | `000008460` | 18 | 18 | **Not implemented** |  |
 
 ### Leagues of Votann (`LoV`) — `https://wahapedia.ru/wh40k10ed/factions/leagues-of-votann`
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Eye of the Ancestors | `000008498` | 13 | 13 | **Not implemented** |  |
+| Prioritised Efficiency | `000010432` | 21 | 21 | **Not implemented** |  |
 
 ### Necrons (`NEC`) — `https://wahapedia.ru/wh40k10ed/factions/necrons`
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Reanimation Protocols | `000008369` | 60 | 60 | **Not implemented** |  |
+| Reanimation Protocols | `000008369` | 63 | 63 | **Not implemented** |  |
 
 ### Orks (`ORK`) — `https://wahapedia.ru/wh40k10ed/factions/orks`
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Waaagh! | `000003676` | 87 | 87 | **Supported** | Advance+Charge (exact wording) |
+| Waaagh! | `000003676` | 86 | 86 | **Supported** | Advance+Charge (exact wording) |
 
 ### Space Marines (`SM`) — `https://wahapedia.ru/wh40k10ed/factions/space-marines`
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Assigned Agents | `000008452` | 1 | 1 | **Not implemented** |  |
+| Curse of the Wulfen | `000010256` | 4 | 4 | **Not implemented** |  |
+| Deathwatch | `000009853` | 0 | 0 | **Supported** | Scouts |
+| Heirs of Sigismund | `000010389` | 0 | 0 | **Not implemented** |  |
 | Kill Team | `000008519` | 1 | 1 | **Not implemented** |  |
-| Mission Tactics | `000008521` | 9 | 9 | **Not implemented** |  |
-| Oath of Moment | `000008350` | 277 | 277 | **Not implemented** |  |
+| Kill Teams | `000009792` | 0 | 0 | **Not implemented** |  |
+| Mission Tactics | `000008521` | 10 | 10 | **Not implemented** |  |
+| Oath of Moment | `000008350` | 275 | 275 | **Not implemented** |  |
+| Sagas | `000010257` | 0 | 0 | **Not implemented** |  |
+| Sons of Russ | `000010258` | 0 | 0 | **Not implemented** |  |
+| Space Marine Chapters | `000008351` | 0 | 0 | **Supported** | Scouts |
+| Templar Vows | `000008526` | 19 | 19 | **Supported** | Advance+Charge (exact wording) |
+| The Deathwing | `000008808` | 0 | 0 | **Not implemented** |  |
+| The Ravenwing | `000008768` | 0 | 0 | **Not implemented** |  |
+| The Sons of Sanguinius | `000009183` | 0 | 0 | **Not implemented** |  |
+| The Unforgiven | `000008767` | 0 | 0 | **Not implemented** |  |
 
 ### Thousand Sons (`TS`) — `https://wahapedia.ru/wh40k10ed/factions/thousand-sons`
 
@@ -281,18 +306,6 @@ These mechanics are currently recognized by searching ability names/descriptions
 |---|---:|---:|---:|---|---|
 | Desperate for Redemption | `000009028` | 5 | 5 | **Not implemented** |  |
 
-#### Penitents and Pilgrims
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Bloody Redemption | `000009315` | 2 | 2 | **Not implemented** |  |
-
-#### Pious Protectors
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| The Emperor Protects | `000009307` | 16 | 16 | **Not implemented** |  |
-
 ### Adeptus Custodes (`AC`) — `https://wahapedia.ru/wh40k10ed/factions/adeptus-custodes`
 
 #### Auric Champions
@@ -300,12 +313,6 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Assemblage of Might | `000008929` | 8 | 8 | **Not implemented** |  |
-
-#### Black Ship Guardians
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Priority Quarry | `000009272` | 5 | 5 | **Not implemented** |  |
 
 #### Lions of the Emperor
 
@@ -318,7 +325,6 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Creeping Dread (Aura) | `000008924` | 6 | 6 | **Not implemented** |  |
-| KEYWORDS | `000008925` | 0 | 0 | **Not implemented** |  |
 
 #### Shield Host
 
@@ -338,12 +344,6 @@ These mechanics are currently recognized by searching ability names/descriptions
 |---|---:|---:|---:|---|---|
 | Revered Companions | `000008920` | 31 | 31 | **Supported** | Feel No Pain |
 
-#### Voyagers in Darkness
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Overwhelming Magnificence | `000009263` | 11 | 11 | **Not implemented** |  |
-
 ### Adeptus Mechanicus (`AdM`) — `https://wahapedia.ru/wh40k10ed/factions/adeptus-mechanicus`
 
 #### Cohort Cybernetica
@@ -358,12 +358,6 @@ These mechanics are currently recognized by searching ability names/descriptions
 |---|---:|---:|---:|---|---|
 | Benedictions Of The Omnissiah | `000008563` | 12 | 12 | **Not implemented** |  |
 
-#### Electromartyrs
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Overload Machine Spirits | `000009280` | 13 | 13 | **Not implemented** |  |
-
 #### Explorator Maniple
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
@@ -376,23 +370,11 @@ These mechanics are currently recognized by searching ability names/descriptions
 |---|---:|---:|---:|---|---|
 | Noospheric Transference | `000009744` | 36 | 36 | **Supported** | Advance+Charge (exact wording), Stealth |
 
-#### Machine Cult
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Canticles of the Omnissiah | `000009297` | 9 | 9 | **Not implemented** |  |
-
 #### Rad-Zone Corps
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Rad-bombardment | `000008384` | 36 | 36 | **Not implemented** |  |
-
-#### Response Clade
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Procedural Elimination | `000009289` | 5 | 5 | **Not implemented** |  |
 
 #### Skitarii Hunter Cohort
 
@@ -432,35 +414,23 @@ These mechanics are currently recognized by searching ability names/descriptions
 |---|---:|---:|---:|---|---|
 | Defend at All Costs | `000009910` | 7 | 7 | **Not implemented** |  |
 
-#### Khaine’s Arrow
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Unerring Strike | `000009324` | 23 | 23 | **Not implemented** |  |
-
-#### Protector Host
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Determined Defence | `000009333` | 3 | 3 | **Not implemented** |  |
-
 #### Seer Council
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Strands of Fate | `000009922` | 93 | 93 | **Not implemented** |  |
 
+#### Serpent’s Brood
+
+| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
+|---|---:|---:|---:|---|---|
+| Boons of the Brood | `000010648` | 8 | 8 | **Not implemented** |  |
+
 #### Spirit Conclave
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Shepherds of the Dead | `000009906` | 11 | 11 | **Not implemented** |  |
-
-#### Star-dancer Masque
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Faolchú’s Last Flight | `000009350` | 5 | 5 | **Not implemented** |  |
 
 #### Warhost
 
@@ -473,12 +443,6 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Ride the Wind | `000009902` | 7 | 7 | **Not implemented** |  |
-
-#### Wraiths of the Void
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Wraith-Marked | `000009341` | 3 | 3 | **Not implemented** |  |
 
 ### Astra Militarum (`AM`) — `https://wahapedia.ru/wh40k10ed/factions/astra-militarum`
 
@@ -495,11 +459,11 @@ These mechanics are currently recognized by searching ability names/descriptions
 |---|---:|---:|---:|---|---|
 | Born Soldiers | `000008379` | 67 | 67 | **Not implemented** |  |
 
-#### Embarked Regiment
+#### Grizzled Company
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Get Down! | `000009379` | 16 | 16 | **Not implemented** |  |
+| Ruthless Discipline | `000010636` | 128 | 128 | **Not implemented** |  |
 
 #### Hammer of the Emperor
 
@@ -525,12 +489,6 @@ These mechanics are currently recognized by searching ability names/descriptions
 |---|---:|---:|---:|---|---|
 | Artillery Support | `000009856` | 128 | 128 | **Supported** | Stealth |
 
-#### Tempestus Boarding Regiment
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Purge-Sweep Protocols | `000009388` | 2 | 2 | **Not implemented** |  |
-
 ### Chaos Daemons (`CD`) — `https://wahapedia.ru/wh40k10ed/factions/chaos-daemons`
 
 #### Blood Legion
@@ -544,20 +502,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Unnatural Energies | `000009546` | 71 | 71 | **Not implemented** |  |
 | Warp Rifts | `000008436` | 68 | 68 | **Supported** | Deep Strike |
-
-#### Dread Carnival
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Lithe Killers | `000009571` | 5 | 5 | **Not implemented** |  |
-
-#### Infernal Onslaught
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Brutal Entrance | `000009554` | 6 | 6 | **Not implemented** |  |
 
 #### Legion of Excess
 
@@ -566,23 +511,11 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Beguiling Aura | `000009804` | 18 | 18 | **Not implemented** |  |
 | Seductive Gambit | `000009805` | 18 | 18 | **Supported** | Fights First |
 
-#### Pandaemoniac Inferno
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Living Flame | `000009579` | 7 | 7 | **Not implemented** |  |
-
 #### Plague Legion
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Melancholic Miasma | `000009818` | 15 | 15 | **Not implemented** |  |
-
-#### Rotten and Rusted
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Toxic Miasma | `000009563` | 7 | 7 | **Not implemented** |  |
 
 #### Scintillating Legion
 
@@ -599,17 +532,35 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 ### Chaos Knights (`QT`) — `https://wahapedia.ru/wh40k10ed/factions/chaos-knights`
 
+#### Houndpack Lance
+
+| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
+|---|---:|---:|---:|---|---|
+| Marked Prey | `000010311` | 6 | 6 | **Not implemented** |  |
+
 #### Iconoclast Fiefdom
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Dreaded Masters | `000009764` | 13 | 13 | **Not implemented** |  |
+| Dreaded Masters | `000009764` | 14 | 14 | **Not implemented** |  |
+
+#### Infernal Lance
+
+| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
+|---|---:|---:|---:|---|---|
+| Malefic Surge | `000010303` | 20 | 20 | **Supported** | Feel No Pain |
+
+#### Lords of Dread
+
+| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
+|---|---:|---:|---:|---|---|
+| Tyrannical Court | `000010307` | 20 | 20 | **Not implemented** |  |
 
 #### Traitoris Lance
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Forged in Terror (Aura) | `000008518` | 19 | 19 | **Not implemented** |  |
+| Paragons of Terror | `000008518` | 20 | 20 | **Not implemented** |  |
 
 ### Chaos Space Marines (`CSM`) — `https://wahapedia.ru/wh40k10ed/factions/chaos-space-marines`
 
@@ -618,12 +569,6 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Empyric Wellspring | `000010150` | 107 | 107 | **Not implemented** |  |
-
-#### Champions of Chaos
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Dark Purpose | `000009519` | 6 | 6 | **Not implemented** |  |
 
 #### Chaos Cult
 
@@ -656,11 +601,11 @@ These mechanics are currently recognized by searching ability names/descriptions
 |---|---:|---:|---:|---|---|
 | Iron Fortitude | `000008975` | 90 | 90 | **Not implemented** |  |
 
-#### Infernal Reavers
+#### Nightmare Hunt
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Dark Rewards | `000009502` | 35 | 35 | **Not implemented** |  |
+| Terror Made Manifest | `000010640` | 107 | 107 | **Not implemented** |  |
 
 #### Pactbound Zealots
 
@@ -680,12 +625,6 @@ These mechanics are currently recognized by searching ability names/descriptions
 |---|---:|---:|---:|---|---|
 | Debt to the Soul Forge | `000008984` | 11 | 11 | **Not implemented** |  |
 
-#### Underdeck Uprising
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Fanatical Onslaught | `000009511` | 7 | 7 | **Not implemented** |  |
-
 #### Veterans of the Long War
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
@@ -693,12 +632,6 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Focus of Hatred | `000008959` | 90 | 90 | **Not implemented** |  |
 
 ### Death Guard (`DG`) — `https://wahapedia.ru/wh40k10ed/factions/death-guard`
-
-#### Arch-Contaminators
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Inescapable Corruption | `000009415` | 5 | 5 | **Not implemented** |  |
 
 #### Champions of Contagion
 
@@ -736,18 +669,6 @@ These mechanics are currently recognized by searching ability names/descriptions
 |---|---:|---:|---:|---|---|
 | Reverberant Rancidity | `000010134` | 67 | 67 | **Not implemented** |  |
 
-#### Unclean Uprising
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Relentless Spread | `000009407` | 11 | 11 | **Not implemented** |  |
-
-#### Vectors of Decay
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Sevenfold Offerings | `000009397` | 14 | 14 | **Not implemented** |  |
-
 #### Virulent Vectorium
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
@@ -756,49 +677,41 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 ### Drukhari (`DRU`) — `https://wahapedia.ru/wh40k10ed/factions/drukhari`
 
-#### Kabalite Corsairs
+#### Covenite Coterie
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Raid and Pillage | `000009432` | 6 | 6 | **Not implemented** |  |
+| Stitchflesh Abominations | `000010583` | 6 | 6 | **Not implemented** |  |
 
-#### Painbringers
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Regenerative Agony | `000009449` | 4 | 4 | **Supported** | Feel No Pain |
-
-#### Realspace Raiders 
+#### Kabalite Cartel
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Corsairs and Travelling Players | `000009973` | 40 | 40 | **Not implemented** |  |
-| Realspace Raiders | `000008509` | 40 | 40 | **Not implemented** |  |
+| Murderous Agenda | `000010587` | 12 | 12 | **Not implemented** |  |
+
+#### Realspace Raiders
+
+| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
+|---|---:|---:|---:|---|---|
+| Alliance of Agony | `000010572` | 9 | 9 | **Not implemented** |  |
 
 #### Reaper’s Wager
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Callous Competition | `000009780` | 40 | 40 | **Not implemented** |  |
-
-#### Ship-killer Cult
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Appetite for Adulation | `000009440` | 5 | 5 | **Not implemented** |  |
+| Callous Competition | `000009780` | 43 | 43 | **Not implemented** |  |
 
 #### Skysplinter Assault
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Corsairs and Travelling Players | `000009974` | 40 | 40 | **Not implemented** |  |
-| Rain Of Cruelty | `000008714` | 40 | 40 | **Not implemented** |  |
+| Rain Of Cruelty | `000008714` | 18 | 18 | **Not implemented** |  |
 
-#### Space Lane Raiders
+#### Spectacle of Spite
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Commorrite Rivalries | `000009424` | 5 | 5 | **Not implemented** |  |
+| Combat Drugs | `000010579` | 5 | 5 | **Not implemented** |  |
 
 ### Emperor’s Children (`EC`) — `https://wahapedia.ru/wh40k10ed/factions/emperor-s-children`
 
@@ -813,6 +726,13 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Pledges to the Dark Prince | `000010013` | 17 | 17 | **Not implemented** |  |
+
+#### Court of the Phoenician
+
+| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
+|---|---:|---:|---:|---|---|
+| Master of the Pageant | `000010653` | 17 | 17 | **Not implemented** |  |
+| Sensational Performance | `000010652` | 17 | 17 | **Not implemented** |  |
 
 #### Mercurial Host
 
@@ -830,7 +750,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Mechanised Murder | `000010005` | 9 | 9 | **Not implemented** |  |
+| Mechanised Murder | `000010005` | 11 | 11 | **Not implemented** |  |
 
 #### Slaanesh’s Chosen
 
@@ -853,35 +773,17 @@ These mechanics are currently recognized by searching ability names/descriptions
 | BROOD BROTHERS | `000009083` | 0 | 0 | **Not implemented** |  |
 | Integrated Tactics | `000009082` | 123 | 123 | **Not implemented** |  |
 
-#### Cult Unveiled
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Harassing Fire | `000009459` | 10 | 10 | **Not implemented** |  |
-
 #### Final Day
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Psionic Parasitism | `000009826` | 25 | 25 | **Not implemented** |  |
-
-#### Genespawn Onslaught
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Blessed Visages | `000009467` | 5 | 5 | **Not implemented** |  |
+| Psionic Parasitism | `000009826` | 36 | 36 | **Not implemented** |  |
 
 #### Host of Ascension
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | A Perfect Ambush | `000009066` | 25 | 25 | **Not implemented** |  |
-
-#### Infestation Swarm
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Half-Glimpsed Shadows | `000009475` | 2 | 2 | **Not implemented** |  |
 
 #### Outlander Claw
 
@@ -897,29 +799,41 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 ### Grey Knights (`GK`) — `https://wahapedia.ru/wh40k10ed/factions/grey-knights`
 
-#### Baneslayer Strike
+#### Augurium Task Force
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Pre-Emptive Strike | `000009492` | 9 | 9 | **Supported** | Deep Strike |
+| Prescient Redeployment | `000010363` | 31 | 31 | **Supported** | Redeploy |
 
-#### Teleport Strike Force
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Teleport Shunt | `000008455` | 32 | 32 | **Supported** | Deep Strike |
-
-#### Void Purge Force
+#### Banishers
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| An Urgent Duty | `000009484` | 15 | 15 | **Not implemented** |  |
+| Channelled Force | `000010355` | 31 | 31 | **Not implemented** |  |
+
+#### Brotherhood Strike
+
+| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
+|---|---:|---:|---:|---|---|
+| Fury of Titan | `000010347` | 31 | 31 | **Supported** | Deep Strike |
+
+#### Hallowed Conclave
+
+| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
+|---|---:|---:|---:|---|---|
+| Duty Before All | `000010351` | 9 | 9 | **Supported** | Fall Back+Shoot (exact wording) |
+
+#### Sanctic Spearhead
+
+| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
+|---|---:|---:|---:|---|---|
+| Mailed Fist | `000010359` | 14 | 14 | **Not implemented** |  |
 
 #### Warpbane Task Force
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Hallowed Ground | `000009776` | 32 | 32 | **Not implemented** |  |
+| Hallowed Ground | `000009776` | 31 | 31 | **Not implemented** |  |
 
 ### Imperial Agents (`AoI`) — `https://wahapedia.ru/wh40k10ed/factions/imperial-agents`
 
@@ -927,13 +841,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| At all Costs | `000009137` | 43 | 43 | **Not implemented** |  |
-
-#### Interdiction Team
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Chastisor Auto-Vox | `000009368` | 3 | 3 | **Not implemented** |  |
+| At all Costs | `000009137` | 45 | 45 | **Not implemented** |  |
 
 #### Ordo Hereticus Purgation Force
 
@@ -951,7 +859,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Deathwatch Mission Tactics | `000009125` | 11 | 11 | **Not implemented** |  |
+| Deathwatch Mission Tactics | `000009125` | 12 | 12 | **Not implemented** |  |
 
 #### Veiled Blade Elimination Force
 
@@ -959,51 +867,76 @@ These mechanics are currently recognized by searching ability names/descriptions
 |---|---:|---:|---:|---|---|
 | Extremis Sanction | `000009756` | 4 | 4 | **Not implemented** |  |
 
-#### Voidship’s Company
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Beseechment Codes | `000009359` | 3 | 3 | **Not implemented** |  |
-
 ### Imperial Knights (`QI`) — `https://wahapedia.ru/wh40k10ed/factions/imperial-knights`
 
-#### Noble Lance
+#### Gate Warden Lance
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Indomitable Heroes | `000008463` | 21 | 21 | **Supported** | Feel No Pain |
+| Dauntless Defenders | `000010496` | 22 | 22 | **Not implemented** |  |
 
 #### Questor Forgepact
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Cogbound Alliance | `000009760` | 26 | 26 | **Not implemented** |  |
+| Cogbound Alliance | `000009760` | 27 | 27 | **Not implemented** |  |
+
+#### Questoris Companions
+
+| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
+|---|---:|---:|---:|---|---|
+| Heroes of Legend | `000010500` | 22 | 22 | **Not implemented** |  |
+| Valour’s Reward | `000010501` | 22 | 22 | **Not implemented** |  |
+
+#### Spearhead-At-Arms
+
+| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
+|---|---:|---:|---:|---|---|
+| Knightly Teachings | `000010505` | 22 | 22 | **Not implemented** |  |
+
+#### Valourstrike Lance
+
+| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
+|---|---:|---:|---:|---|---|
+| Bold Gallantry | `000010492` | 22 | 22 | **Not implemented** |  |
 
 ### Leagues of Votann (`LoV`) — `https://wahapedia.ru/wh40k10ed/factions/leagues-of-votann`
+
+#### Brandfast Oathband
+
+| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
+|---|---:|---:|---:|---|---|
+| Mobile Sensor Relays | `000010446` | 19 | 19 | **Not implemented** |  |
+
+#### Dêlve Assault Shift
+
+| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
+|---|---:|---:|---:|---|---|
+| Fury From The Dêlve | `000010442` | 1 | 1 | **Supported** | Deep Strike |
 
 #### Hearthband
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Methodical Annihilation | `000009822` | 13 | 13 | **Not implemented** |  |
+| Methodical Annihilation | `000009822` | 21 | 21 | **Not implemented** |  |
 
-#### Hearthfire Strike
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Wrought in Wrath | `000009536` | 2 | 2 | **Not implemented** |  |
-
-#### Oathband
+#### Hearthfyre Arsenal
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Ruthless Efficiency | `000008497` | 13 | 13 | **Partial** | Gain CP on destroy (partial) |
+| Optimal Application | `000010450` | 6 | 6 | **Not implemented** |  |
 
-#### Void Salvagers
+#### Needgaârd Oathband
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Stalwart Advance | `000009528` | 10 | 10 | **Not implemented** |  |
+| Martial Leverage | `000010434` | 21 | 21 | **Not implemented** |  |
+
+#### Persecution Prospect
+
+| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
+|---|---:|---:|---:|---|---|
+| Assailed From Every Angle | `000010438` | 21 | 21 | **Not implemented** |  |
 
 ### Necrons (`NEC`) — `https://wahapedia.ru/wh40k10ed/factions/necrons`
 
@@ -1023,25 +956,13 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Power Matrix | `000008545` | 14 | 14 | **Not implemented** |  |
-
-#### Canoptek Harvesters
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Retribution Protocols | `000009603` | 6 | 6 | **Not implemented** |  |
-
-#### Deranged Outcasts
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Terrifying Charge | `000009595` | 5 | 5 | **Not implemented** |  |
+| Power Matrix | `000008545` | 17 | 17 | **Not implemented** |  |
 
 #### Hypercrypt Legion
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Hyperphasing | `000008553` | 60 | 60 | **Not implemented** |  |
+| Hyperphasing | `000008553` | 63 | 63 | **Not implemented** |  |
 
 #### Obeisance Phalanx
 
@@ -1053,13 +974,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Relentless Onslaught | `000009748` | 60 | 60 | **Not implemented** |  |
-
-#### Tomb Ship Complement
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Conquest Protocols | `000009587` | 22 | 22 | **Not implemented** |  |
+| Relentless Onslaught | `000009748` | 63 | 63 | **Not implemented** |  |
 
 ### Orks (`ORK`) — `https://wahapedia.ru/wh40k10ed/factions/orks`
 
@@ -1080,19 +995,13 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | KEYWORDS | `000008876` | 0 | 0 | **Not implemented** |  |
-| Try Dat Button! | `000008875` | 16 | 16 | **Not implemented** |  |
+| Try Dat Button! | `000008875` | 17 | 17 | **Not implemented** |  |
 
 #### Green Tide
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Mob Mentality | `000008880` | 1 | 1 | **Not implemented** |  |
-
-#### Kaptin Killers
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Comin’ Through | `000009622` | 8 | 8 | **Not implemented** |  |
 
 #### Kult of Speed
 
@@ -1106,23 +1015,17 @@ These mechanics are currently recognized by searching ability names/descriptions
 |---|---:|---:|---:|---|---|
 | Dakka! Dakka! Dakka! | `000009990` | 41 | 41 | **Not implemented** |  |
 
-#### Ramship Raiders
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Belligerent Boarders | `000009614` | 27 | 27 | **Not implemented** |  |
-
 #### Taktikal Brigade
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Lissen ’Ere | `000009794` | 16 | 16 | **Supported** | Stealth |
+| Lissen ’Ere | `000009794` | 17 | 17 | **Supported** | Stealth |
 
 #### War Horde
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Get Stuck In | `000008365` | 87 | 87 | **Not implemented** |  |
+| Get Stuck In | `000008365` | 86 | 86 | **Not implemented** |  |
 
 ### Space Marines (`SM`) — `https://wahapedia.ru/wh40k10ed/factions/space-marines`
 
@@ -1130,61 +1033,87 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Extremis-level Threat | `000008493` | 279 | 279 | **Not implemented** |  |
+| Extremis-level Threat | `000008493` | 296 | 296 | **Not implemented** |  |
 
 #### Angelic Inheritors
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Legacy of the Angel | `000009834` | 279 | 279 | **Supported** | Advance+Shoot (exact wording), Fall Back+Shoot (exact wording) |
+| Legacy of the Angel | `000009834` | 296 | 296 | **Supported** | Advance+Shoot (exact wording), Fall Back+Shoot (exact wording) |
 
 #### Anvil Siege Force
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Shield of the Imperium | `000008473` | 279 | 279 | **Not implemented** |  |
+| Shield of the Imperium | `000008473` | 296 | 296 | **Not implemented** |  |
 
 #### Black Spear Task Force
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Mission Tactics | `000008521` | 267 | 267 | **Not implemented** |  |
+| Mission Tactics | `000008521` | 283 | 283 | **Not implemented** |  |
 
-#### Boarding Strike
+#### Blade of Ultramar
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Drive Home the Blade | `000009242` | 99 | 99 | **Not implemented** |  |
+| Mastered Doctrines | `000010632` | 296 | 296 | **Supported** | Advance+Charge (exact wording), Advance+Shoot (exact wording), Fall Back+Shoot (exact wording) |
 
 #### Champions of Fenris
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| The Great Wolf Watches | `000009850` | 165 | 165 | **Not implemented** |  |
+| The Great Wolf Watches | `000009850` | 181 | 181 | **Not implemented** |  |
 
-#### Champions of Russ
+#### Companions of Vehemence
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Deeds Worthy of Saga | `000008530` | 279 | 279 | **Supported** | Feel No Pain |
+| Righteous Fervour | `000010391` | 296 | 296 | **Not implemented** |  |
 
 #### Company of Hunters
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Masters Of Manoeuvre | `000008777` | 279 | 279 | **Supported** | Advance+Shoot (exact wording), Fall Back+Shoot (exact wording) |
+| Masters Of Manoeuvre | `000008777` | 296 | 296 | **Supported** | Advance+Shoot (exact wording), Fall Back+Shoot (exact wording) |
+
+#### Emperor’s Shield
+
+| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
+|---|---:|---:|---:|---|---|
+| Wrath of Dorn | `000010459` | 296 | 296 | **Not implemented** |  |
 
 #### Firestorm Assault Force
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Close-range Eradication | `000008481` | 279 | 279 | **Not implemented** |  |
+| Close-range Eradication | `000008481` | 296 | 296 | **Not implemented** |  |
+
+#### Forgefather’s Seekers
+
+| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
+|---|---:|---:|---:|---|---|
+| Vulkan’s Quest | `000010367` | 296 | 296 | **Not implemented** |  |
 
 #### Gladius Task Force
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Combat Doctrines | `000008355` | 279 | 279 | **Supported** | Advance+Charge (exact wording), Advance+Shoot (exact wording), Fall Back+Shoot (exact wording) |
+| Combat Doctrines | `000008355` | 296 | 296 | **Supported** | Advance+Charge (exact wording), Advance+Shoot (exact wording), Fall Back+Shoot (exact wording) |
+
+#### Godhammer Assault Force
+
+| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
+|---|---:|---:|---:|---|---|
+| Shock and Awe | `000010399` | 296 | 296 | **Not implemented** |  |
+
+#### Hammer of Avernii
+
+| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
+|---|---:|---:|---:|---|---|
+| Calculated Annihilation | `000010620` | 296 | 296 | **Not implemented** |  |
+| Recalculating | `000010621` | 296 | 296 | **Not implemented** |  |
+| Restrictions | `000010622` | 0 | 0 | **Not implemented** |  |
 
 #### Inner Circle Task Force
 
@@ -1196,13 +1125,13 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Armoured Wrath | `000008477` | 279 | 279 | **Not implemented** |  |
+| Armoured Wrath | `000008477` | 296 | 296 | **Not implemented** |  |
 
 #### Liberator Assault Group
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Red Thirst | `000008374` | 279 | 279 | **Not implemented** |  |
+| Red Thirst | `000008374` | 296 | 296 | **Not implemented** |  |
 
 #### Librarius Conclave
 
@@ -1214,37 +1143,67 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| In The Lion’s Claws | `000009732` | 279 | 279 | **Not implemented** |  |
+| In The Lion’s Claws | `000009732` | 296 | 296 | **Not implemented** |  |
 
-#### Pilum Strike Team
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Relentless Salvoes | `000009247` | 10 | 10 | **Supported** | Advance+Shoot (exact wording), Fall Back+Shoot (exact wording) |
-
-#### Righteous Crusaders
+#### Rage-cursed Onslaught
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Templar Vows | `000008526` | 279 | 279 | **Supported** | Feel No Pain |
+| Maddened Ferocity | `000010644` | 296 | 296 | **Not implemented** |  |
+
+#### Saga of the Beastslayer
+
+| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
+|---|---:|---:|---:|---|---|
+| Legendary Slayers | `000010268` | 296 | 296 | **Not implemented** |  |
+
+#### Saga of the Bold
+
+| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
+|---|---:|---:|---:|---|---|
+| Heroes All | `000010264` | 41 | 41 | **Not implemented** |  |
+
+#### Saga of the Great Wolf
+
+| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
+|---|---:|---:|---:|---|---|
+| Howling Onslaught | `000010658` | 296 | 296 | **Not implemented** |  |
+| Master of Wolves | `000010657` | 296 | 296 | **Not implemented** |  |
+| Restrictions | `000010659` | 0 | 0 | **Not implemented** |  |
+
+#### Saga of the Hunter
+
+| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
+|---|---:|---:|---:|---|---|
+| Pack’s Quarry | `000010260` | 41 | 41 | **Not implemented** |  |
+
+#### Shadowmark Talon
+
+| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
+|---|---:|---:|---:|---|---|
+| Masters of Shadow | `000010463` | 296 | 296 | **Not implemented** |  |
+| Restrictions | `000010465` | 0 | 0 | **Not implemented** |  |
+| Unparalleled Tactician | `000010464` | 1 | 1 | **Not implemented** |  |
+
+#### Spearpoint Task Force
+
+| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
+|---|---:|---:|---:|---|---|
+| Restrictions | `000010628` | 0 | 0 | **Not implemented** |  |
+| Storm-swift Onslaught | `000010626` | 296 | 296 | **Supported** | Advance+Charge (exact wording) |
+| Wrath of the First Khan | `000010627` | 296 | 296 | **Not implemented** |  |
 
 #### Stormlance Task Force
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Lightning Assault | `000008485` | 279 | 279 | **Supported** | Advance+Charge (exact wording) |
-
-#### Terminator Assault
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Sacred Oath | `000009254` | 15 | 15 | **Not implemented** |  |
+| Lightning Assault | `000008485` | 296 | 296 | **Supported** | Advance+Charge (exact wording) |
 
 #### The Angelic Host
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Upon Wings of Fire | `000009189` | 21 | 21 | **Supported** | Deep Strike |
+| Upon Wings of Fire | `000009189` | 22 | 22 | **Supported** | Deep Strike |
 
 #### The Lost Brethren
 
@@ -1256,25 +1215,31 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Grim Resolve | `000008770` | 279 | 279 | **Not implemented** |  |
+| Grim Resolve | `000008770` | 296 | 296 | **Not implemented** |  |
 
 #### Vanguard Spearhead
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Shadow Masters | `000008489` | 279 | 279 | **Not implemented** |  |
+| Shadow Masters | `000008489` | 296 | 296 | **Not implemented** |  |
+
+#### Vindication Task Force
+
+| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
+|---|---:|---:|---:|---|---|
+| Purge and Sanctify | `000010395` | 9 | 9 | **Not implemented** |  |
 
 #### Wrath of the Rock
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Dutiful Tenacity | `000010154` | 169 | 169 | **Not implemented** |  |
+| Dutiful Tenacity | `000010154` | 185 | 185 | **Not implemented** |  |
 
 #### Wrathful Procession
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Zealous Litanies | `000009842` | 279 | 279 | **Not implemented** |  |
+| Zealous Litanies | `000009842` | 296 | 296 | **Not implemented** |  |
 
 ### Thousand Sons (`TS`) — `https://wahapedia.ru/wh40k10ed/factions/thousand-sons`
 
@@ -1283,24 +1248,6 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Infernal Pacts | `000010196` | 60 | 60 | **Not implemented** |  |
-
-#### Chosen Cabal
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Witchsight | `000009653` | 10 | 10 | **Not implemented** |  |
-
-#### Devoted Thralls
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Fervent Devotees | `000009662` | 26 | 26 | **Not implemented** |  |
-
-#### Fateseekers
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Methodical Conquest | `000009671` | 6 | 6 | **Not implemented** |  |
 
 #### Grand Coven
 
@@ -1340,29 +1287,11 @@ These mechanics are currently recognized by searching ability names/descriptions
 |---|---:|---:|---:|---|---|
 | Feed the Swarm | `000008411` | 5 | 5 | **Not implemented** |  |
 
-#### Biotide
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Unstoppable Swarm | `000009698` | 5 | 5 | **Not implemented** |  |
-
-#### Boarding Swarm
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Priority Predation | `000009689` | 6 | 6 | **Not implemented** |  |
-
 #### Crusher Stampede
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Enraged Behemoths | `000008403` | 27 | 27 | **Not implemented** |  |
-
-#### Infestation Swarm
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Half-Glimpsed Shadows | `000009723` | 2 | 2 | **Not implemented** |  |
 
 #### Invasion Fleet
 
@@ -1381,12 +1310,6 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Synaptic Imperatives | `000008420` | 55 | 55 | **Not implemented** |  |
-
-#### Tyranid Attack
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Xeno-Terror | `000009680` | 7 | 7 | **Not implemented** |  |
 
 #### Unending Swarm
 
@@ -1434,12 +1357,6 @@ These mechanics are currently recognized by searching ability names/descriptions
 | KEYWORDS | `000008820` | 0 | 0 | **Not implemented** |  |
 | Skirmish Fighters | `000008819` | 11 | 11 | **Not implemented** |  |
 
-#### Kroot Raiding Party
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Guerrilla Ambushers | `000009644` | 7 | 7 | **Not implemented** |  |
-
 #### Mont’ka
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
@@ -1452,12 +1369,6 @@ These mechanics are currently recognized by searching ability names/descriptions
 |---|---:|---:|---:|---|---|
 | Bonded Heroes | `000008814` | 17 | 17 | **Not implemented** |  |
 
-#### Starfire Cadre
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Markerlight Precision | `000009635` | 13 | 13 | **Not implemented** |  |
-
 ### World Eaters (`WE`) — `https://wahapedia.ru/wh40k10ed/factions/world-eaters`
 
 #### Berzerker Warband
@@ -1465,12 +1376,6 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Relentless Rage | `000008430` | 53 | 53 | **Not implemented** |  |
-
-#### Boarding Butchers
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Focused Ferocity | `000009707` | 8 | 8 | **Not implemented** |  |
 
 #### Cult of Blood
 
@@ -1495,12 +1400,6 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Brazen Fury | `000010081` | 3 | 3 | **Not implemented** |  |
-
-#### Skullsworn
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Reap the Tally | `000009715` | 4 | 4 | **Not implemented** |  |
 
 #### Vessels of Wrath
 
@@ -1933,7 +1832,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Senior Officer | 1 | 1 | **Not implemented** |  |
 | Sentinel Directives | 1 | 1 | **Not implemented** |  |
 | Sentry Programming | 1 | 1 | **Not implemented** |  |
-| Servo‑sentry | 1 | 1 | **Supported** | Deep Strike |
+| Servo-sentry | 1 | 1 | **Supported** | Deep Strike |
 | Shock Troops | 1 | 1 | **Not implemented** |  |
 | Siege Bombardment | 1 | 1 | **Not implemented** |  |
 | Storm Troopers | 1 | 1 | **Not implemented** |  |
@@ -2018,6 +1917,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Daemon Lord of Nurgle (Aura) | 1 | 1 | **Not implemented** |  |
 | Daemon Lord of Slaanesh (Aura) | 1 | 1 | **Not implemented** |  |
 | Daemon Lord of Tzeentch (Aura) | 1 | 1 | **Not implemented** |  |
+| Daemonic Lord | 1 | 1 | **Supported** | Lone Operative |
 | Daemonkin (Psychic) | 1 | 1 | **Not implemented** |  |
 | Dark Favour (Psychic) | 1 | 1 | **Not implemented** |  |
 | Dark Ritual | 1 | 1 | **Not implemented** |  |
@@ -2132,8 +2032,9 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Bastion of Firepower | 1 | 1 | **Not implemented** |  |
 | Beastmaster | 1 | 1 | **Not implemented** |  |
 | Bestial Raiders | 1 | 1 | **Not implemented** |  |
-| Bloodlust | 1 | 1 | **Supported** | Advance+Charge (exact wording) |
+| Bloodlust | 1 | 1 | **Not implemented** |  |
 | Brigand | 1 | 1 | **Not implemented** |  |
+| Close-range Killers (Aura) | 1 | 1 | **Not implemented** |  |
 | Consumed with Hunger (Aura) | 1 | 1 | **Not implemented** |  |
 | Covering Fire | 1 | 1 | **Not implemented** |  |
 | Cursed Flames | 1 | 1 | **Not implemented** |  |
@@ -2153,6 +2054,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Infernal Aegis (Aura) | 1 | 1 | **Not implemented** |  |
 | Karnivore | 1 | 1 | **Not implemented** |  |
 | Macro-extinction Protocols | 1 | 1 | **Not implemented** |  |
+| Methodical Destruction | 1 | 1 | **Not implemented** |  |
 | Mischief Makers (Aura) | 1 | 1 | **Not implemented** |  |
 | Mutated Bodyguard | 1 | 1 | **Supported** | Feel No Pain |
 | Obsessive Ruthlessness | 1 | 1 | **Not implemented** |  |
@@ -2321,6 +2223,8 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 |---|---:|---:|---|---|
 | Assault Ramp | 4 | 4 | **Not implemented** |  |
 | Aerial Assault | 2 | 2 | **Supported** | Deep Strike |
+| Chaos Lord | 2 | 2 | **Not implemented** |  |
+| Desiccation Conduit (Aura) | 2 | 2 | **Not implemented** |  |
 | Hovering Death | 2 | 2 | **Supported** | Fall Back+Shoot (exact wording) |
 | Interceptor | 2 | 2 | **Not implemented** |  |
 | Armoured Resilience | 1 | 1 | **Not implemented** |  |
@@ -2378,10 +2282,12 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Mischief Makers (Aura) | 1 | 1 | **Not implemented** |  |
 | Nurgle’s Rot (Psychic) | 1 | 1 | **Not implemented** |  |
 | Pestilent Fallout (Psychic) | 1 | 1 | **Not implemented** |  |
+| Pestilent Familiar (Psychic) | 1 | 1 | **Not implemented** |  |
 | Pinning Bombardment | 1 | 1 | **Not implemented** |  |
 | Powerful Volley | 1 | 1 | **Not implemented** |  |
 | Putrefying Stink | 1 | 1 | **Not implemented** |  |
 | Putrescent Fog (Aura) | 1 | 1 | **Not implemented** |  |
+| Putrescent Vitality (Psychic) | 1 | 1 | **Not implemented** |  |
 | Revolting Regeneration | 1 | 1 | **Not implemented** |  |
 | Rolling Fortress | 1 | 1 | **Not implemented** |  |
 | Rotating Death | 1 | 1 | **Not implemented** |  |
@@ -2410,57 +2316,89 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---|---|
 | Eradicate the Foe | 2 | 2 | **Not implemented** |  |
+| Acrobatic Gladiators (Pain) | 1 | 1 | **Supported** | Advance+Charge (exact wording) |
 | Acrobatic Grace | 1 | 1 | **Not implemented** |  |
-| Aethersails | 1 | 1 | **Not implemented** |  |
-| Athletic Aerialists | 1 | 1 | **Not implemented** |  |
+| Aerialists | 1 | 1 | **Not implemented** |  |
+| Agonising Suppression (Pain) | 1 | 1 | **Not implemented** |  |
+| Airborne Evasion | 1 | 1 | **Not implemented** |  |
+| Archon of the Poisoned Tongue (Pain) | 1 | 1 | **Not implemented** |  |
+| Archon’s Will | 1 | 1 | **Not implemented** |  |
+| Assassins’ Poisons (Pain) | 1 | 1 | **Not implemented** |  |
+| Battlefield Butchery (Pain) | 1 | 1 | **Not implemented** |  |
 | Beastmaster | 1 | 1 | **Not implemented** |  |
 | Blitz | 1 | 1 | **Not implemented** |  |
+| Bloody Spectacle | 1 | 1 | **Not implemented** |  |
+| Blur of Blades | 1 | 1 | **Supported** | Fights First |
 | Blur of Movement | 1 | 1 | **Supported** | Advance+Charge (exact wording) |
-| Brides of Death | 1 | 1 | **Supported** | Fights First |
+| Brides of Death (Pain) | 1 | 1 | **Not implemented** |  |
 | Cegorach’s Favour | 1 | 1 | **Not implemented** |  |
 | Choreographer of War | 1 | 1 | **Not implemented** |  |
-| Combat Drugs | 1 | 1 | **Supported** | Fights First |
+| Court of the Archon | 1 | 1 | **Supported** | Feel No Pain |
 | Cruel Amusement | 1 | 1 | **Not implemented** |  |
+| Cruel Enforcers | 1 | 1 | **Not implemented** |  |
 | Dance of Death | 1 | 1 | **Not implemented** |  |
+| Deadly Retinue (Pain) | 1 | 1 | **Not implemented** |  |
 | Death is Not Enough | 1 | 1 | **Not implemented** |  |
-| Devious Mastermind (Aura) | 1 | 1 | **Not implemented** |  |
+| Decapitating Strikes (Pain) | 1 | 1 | **Not implemented** |  |
+| Devious Mastermind | 1 | 1 | **Not implemented** |  |
+| Devoted to Pain | 1 | 1 | **Not implemented** |  |
+| Electromagentic Cascade (Pain) | 1 | 1 | **Not implemented** |  |
+| Engine of Destruction (Pain) | 1 | 1 | **Not implemented** |  |
 | Eviscerating Fly-by | 1 | 1 | **Not implemented** |  |
-| Fade Away | 1 | 1 | **Supported** | Redeploy |
+| Experimental Enhancements (Pain) | 1 | 1 | **Not implemented** |  |
+| Fade Away (Pain) | 1 | 1 | **Supported** | Redeploy |
+| Father of Pain | 1 | 1 | **Supported** | Feel No Pain |
 | Fear Incarnate (Aura) | 1 | 1 | **Not implemented** |  |
-| Fleshcraft | 1 | 1 | **Not implemented** |  |
+| Fleshcraft (Pain) | 1 | 1 | **Not implemented** |  |
 | Fog of Dreams (Psychic) | 1 | 1 | **Not implemented** |  |
+| Goaded Savagery (Pain) | 1 | 1 | **Not implemented** |  |
 | Ground Attack Craft | 1 | 1 | **Not implemented** |  |
-| Hit and Run | 1 | 1 | **Supported** | Fall Back+Shoot (exact wording) |
+| Ground-attack Craft | 1 | 1 | **Not implemented** |  |
+| Hatred Eternal (Pain) | 1 | 1 | **Not implemented** |  |
 | Horrific Regeneration | 1 | 1 | **Not implemented** |  |
-| Lhamaean | 1 | 1 | **Not implemented** |  |
-| Master of Blades | 1 | 1 | **Not implemented** |  |
-| Master of Pain | 1 | 1 | **Supported** | Feel No Pain |
-| Medusae | 1 | 1 | **Not implemented** |  |
-| Mindless Killing Machines | 1 | 1 | **Not implemented** |  |
+| Lithe Agility (Pain) | 1 | 1 | **Not implemented** |  |
+| Macro-steroids (Pain) | 1 | 1 | **Not implemented** |  |
+| Master of Blades (Pain) | 1 | 1 | **Not implemented** |  |
+| Matchless Swiftness (Pain) | 1 | 1 | **Not implemented** |  |
+| Mind Like a Steel Trap (Aura) | 1 | 1 | **Not implemented** |  |
+| Mindless Killing Machines (Pain) | 1 | 1 | **Not implemented** |  |
+| Monstrous Charge | 1 | 1 | **Not implemented** |  |
+| Murderous Crossfire | 1 | 1 | **Not implemented** |  |
 | No Escape | 1 | 1 | **Not implemented** |  |
+| Nowhere to Hide (Pain) | 1 | 1 | **Not implemented** |  |
+| Nowhere to Run (Pain) | 1 | 1 | **Not implemented** |  |
+| Onslaught | 1 | 1 | **Not implemented** |  |
 | Overlord | 1 | 1 | **Not implemented** |  |
-| Pain Engine | 1 | 1 | **Not implemented** |  |
-| Pain Parasite (Aura) | 1 | 1 | **Not implemented** |  |
+| Pain Adept | 1 | 1 | **Not implemented** |  |
+| Pain Engine (Aura) | 1 | 1 | **Not implemented** |  |
+| Pain Parasite (Pain) | 1 | 1 | **Not implemented** |  |
 | Piratical Raiders | 1 | 1 | **Not implemented** |  |
 | Polychromatic Camouflage | 1 | 1 | **Not implemented** |  |
+| Precognisant | 1 | 1 | **Supported** | Redeploy |
+| Rapid Deployment (Pain) | 1 | 1 | **Not implemented** |  |
 | Rapid Embarkation | 1 | 1 | **Not implemented** |  |
 | Reaver Band | 1 | 1 | **Not implemented** |  |
 | Reavers of the Void | 1 | 1 | **Not implemented** |  |
 | Reckless Abandon | 1 | 1 | **Not implemented** |  |
-| Sadistic Raiders | 1 | 1 | **Not implemented** |  |
+| Sadistic Raiders (Pain) | 1 | 1 | **Not implemented** |  |
+| Sculptor of Torments (Pain) | 1 | 1 | **Not implemented** |  |
 | Scything Charge | 1 | 1 | **Not implemented** |  |
+| Shade Weavers | 1 | 1 | **Not implemented** |  |
+| Shredding Fire (Pain) | 1 | 1 | **Not implemented** |  |
+| Silent Executioner | 1 | 1 | **Not implemented** |  |
+| Skyboard Evasion | 1 | 1 | **Not implemented** |  |
 | Skyleap | 1 | 1 | **Supported** | Redeploy |
-| Sslyth | 1 | 1 | **Not implemented** |  |
+| Splinter Racks (Pain) | 1 | 1 | **Not implemented** |  |
 | Storm of Blades | 1 | 1 | **Not implemented** |  |
-| Strafing Run | 1 | 1 | **Not implemented** |  |
-| The Torturer’s Craft | 1 | 1 | **Not implemented** |  |
+| Swooping Descent (Pain) | 1 | 1 | **Supported** | Deep Strike |
 | Thrilling Spectacle | 1 | 1 | **Not implemented** |  |
 | Tormentors | 1 | 1 | **Not implemented** |  |
+| Torture Device | 1 | 1 | **Not implemented** |  |
+| Torturer’s Craft | 1 | 1 | **Not implemented** |  |
 | Treacherous Illusion (Psychic) | 1 | 1 | **Not implemented** |  |
-| Ur-ghul | 1 | 1 | **Supported** | Fights First |
-| Vicious Execution | 1 | 1 | **Not implemented** |  |
+| Vanguard of the Dark City | 1 | 1 | **Not implemented** |  |
 | Void Mine | 1 | 1 | **Not implemented** |  |
-| Winged Strike | 1 | 1 | **Not implemented** |  |
+| Winged Strike (Pain) | 1 | 1 | **Not implemented** |  |
 
 #### Emperor’s Children (`EC`)
 
@@ -2492,6 +2430,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Obsessive Annunciation | 1 | 1 | **Not implemented** |  |
 | Perfectionists | 1 | 1 | **Not implemented** |  |
 | Scuttling Horrors | 1 | 1 | **Not implemented** |  |
+| Serpentine | 1 | 1 | **Not implemented** |  |
 | Soporific Musk | 1 | 1 | **Not implemented** |  |
 | Stimulated by Pain | 1 | 1 | **Not implemented** |  |
 | Terrifying Crescendo | 1 | 1 | **Not implemented** |  |
@@ -2586,7 +2525,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Horsemasters | 1 | 1 | **Supported** | Fall Back+Shoot (exact wording) |
 | Hulking Bodyguards | 1 | 1 | **Not implemented** |  |
 | Hypersensory Abilities | 1 | 1 | **Not implemented** |  |
-| Hypersensory Arra | 1 | 1 | **Not implemented** |  |
+| Hypersensory Array | 1 | 1 | **Not implemented** |  |
 | Industrialised Destruction | 1 | 1 | **Not implemented** |  |
 | It Itches! | 1 | 1 | **Not implemented** |  |
 | Jungle Fighters | 1 | 1 | **Not implemented** |  |
@@ -2666,54 +2605,56 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---|---|
-| Assault Ramp | 4 | 4 | **Not implemented** |  |
-| Fire Support | 2 | 2 | **Not implemented** |  |
-| Wisdom of the Ancients (Aura) | 2 | 2 | **Not implemented** |  |
+| Assault Ramp | 3 | 3 | **Not implemented** |  |
+| Warrior Strategist | 2 | 2 | **Not implemented** |  |
 | Aerial Assault | 1 | 1 | **Supported** | Deep Strike |
 | Armoured Resilience | 1 | 1 | **Not implemented** |  |
-| Astral Aim (Psychic) | 1 | 1 | **Not implemented** |  |
-| Awaken the Machine Spirit | 1 | 1 | **Not implemented** |  |
+| Attuned Onslaught (Psychic) | 1 | 1 | **Not implemented** |  |
+| Blessing of the Omnissiah | 1 | 1 | **Not implemented** |  |
 | Champion of the Order of Purifiers (Psychic) | 1 | 1 | **Not implemented** |  |
-| Dread Bearing (Aura) | 1 | 1 | **Not implemented** |  |
-| Empyric Amplification (Psychic) | 1 | 1 | **Not implemented** |  |
-| Empyric Reprisal (Psychic) | 1 | 1 | **Supported** | Advance+Shoot (exact wording), Fall Back+Shoot (exact wording) |
-| Ethereal Castigation (Psychic) | 1 | 1 | **Supported** | Fights First |
+| Clarion of Haste (Psychic) | 1 | 1 | **Supported** | Advance+Charge (exact wording) |
 | Exemplar of the Silvered Host | 1 | 1 | **Not implemented** |  |
-| Focused Mind (Psychic) | 1 | 1 | **Not implemented** |  |
-| Foresight of the Prognosticars (Psychic) | 1 | 1 | **Not implemented** |  |
+| Eye of Judgement (Psychic) | 1 | 1 | **Not implemented** |  |
+| Fire Focus | 1 | 1 | **Not implemented** |  |
+| Fire Support | 1 | 1 | **Not implemented** |  |
+| Force Edge (Psychic) | 1 | 1 | **Not implemented** |  |
+| Foresight (Psychic) | 1 | 1 | **Not implemented** |  |
+| Guardians of the Machine | 1 | 1 | **Not implemented** |  |
+| Guidance of the Ancients (Psychic) | 1 | 1 | **Not implemented** |  |
+| Haloed in Soulfire (Psychic) | 1 | 1 | **Not implemented** |  |
 | Hammer Aflame (Psychic) | 1 | 1 | **Not implemented** |  |
 | Hammerhand (Psychic) | 1 | 1 | **Not implemented** |  |
-| Heroism’s Favour | 1 | 1 | **Not implemented** |  |
-| Inner Fortitude (Psychic) | 1 | 1 | **Not implemented** |  |
+| Indomitable Spirit (Psychic) | 1 | 1 | **Supported** | Advance+Shoot (exact wording), Fall Back+Shoot (exact wording) |
+| Inspiring Exemplar | 1 | 1 | **Not implemented** |  |
 | Interceptor | 1 | 1 | **Not implemented** |  |
-| Martial Fury | 1 | 1 | **Not implemented** |  |
-| Master Strategist | 1 | 1 | **Not implemented** |  |
-| Might of Purity (Psychic) | 1 | 1 | **Not implemented** |  |
+| Litanies of Sanctity | 1 | 1 | **Not implemented** |  |
+| Might of Titan (Psychic) | 1 | 1 | **Not implemented** |  |
 | Mindlock | 1 | 1 | **Not implemented** |  |
-| Omnissiah’s Blessing | 1 | 1 | **Not implemented** |  |
 | One With the Warp (Psychic) | 1 | 1 | **Supported** | Deep Strike |
 | Personal Teleporters | 1 | 1 | **Not implemented** |  |
 | Retinue | 1 | 1 | **Supported** | Deep Strike |
+| Righteous Persecution | 1 | 1 | **Not implemented** |  |
 | Sanctic Hood | 1 | 1 | **Supported** | Feel No Pain |
 | Sanctifying Ritual (Psychic) | 1 | 1 | **Not implemented** |  |
 | Sanctity of Purpose | 1 | 1 | **Not implemented** |  |
 | Sanctuary (Psychic) | 1 | 1 | **Not implemented** |  |
-| Self Repair | 1 | 1 | **Not implemented** |  |
 | Strafing Run | 1 | 1 | **Not implemented** |  |
 | Strands of Fate (Psychic) | 1 | 1 | **Not implemented** |  |
 | Surge of Wrath (Psychic) | 1 | 1 | **Not implemented** |  |
 | Techmarine | 1 | 1 | **Supported** | Lone Operative |
+| Truesilver Aegis (Aura) | 1 | 1 | **Supported** | Feel No Pain |
 | Untouchable Purity | 1 | 1 | **Supported** | Feel No Pain |
-| Vortex of Doom (Psychic) | 1 | 1 | **Supported** | Lone Operative |
-| Words of Power (Psychic) | 1 | 1 | **Not implemented** |  |
+| Wisdom of the Ancients (Aura) | 1 | 1 | **Not implemented** |  |
+| Zealous Path | 1 | 1 | **Not implemented** |  |
 
 #### Imperial Agents (`AoI`)
 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---|---|
-| Authority of the Inquisition | 6 | 6 | **Not implemented** |  |
+| Authority of the Inquisition | 7 | 7 | **Not implemented** |  |
 | Backroom Deals | 3 | 3 | **Supported** | Infiltrators |
 | Warrant of Trade | 3 | 3 | **Supported** | Redeploy |
+| Death to the Alien | 2 | 2 | **Not implemented** |  |
 | Power of the Rosette | 2 | 2 | **Not implemented** |  |
 | Self Repair | 2 | 2 | **Not implemented** |  |
 | A Weaponsmith, Not a Warlord | 1 | 1 | **Not implemented** |  |
@@ -2725,7 +2666,6 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Catechism of Death | 1 | 1 | **Not implemented** |  |
 | Cherub | 1 | 1 | **Not implemented** |  |
 | Deadshot | 1 | 1 | **Supported** | Lone Operative |
-| Death to the Alien | 1 | 1 | **Not implemented** |  |
 | Dedication to Duty | 1 | 1 | **Not implemented** |  |
 | Defenders of the Faith | 1 | 1 | **Not implemented** |  |
 | Dominate Will (Psychic) | 1 | 1 | **Not implemented** |  |
@@ -2742,6 +2682,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Incensor Cherub | 1 | 1 | **Not implemented** |  |
 | Inconceivable Augmentation | 1 | 1 | **Not implemented** |  |
 | Indomitor Doctrines | 1 | 1 | **Not implemented** |  |
+| Kill Team | 1 | 1 | **Not implemented** |  |
 | Lord of Deceit (Aura) | 1 | 1 | **Not implemented** |  |
 | Loyal Henchmen | 1 | 1 | **Not implemented** |  |
 | Malefic Warding | 1 | 1 | **Not implemented** |  |
@@ -2772,6 +2713,8 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Unflinching | 1 | 1 | **Not implemented** |  |
 | Unstoppable Champion | 1 | 1 | **Not implemented** |  |
 | Unsubtle Crusader | 1 | 1 | **Supported** | Scouts |
+| Vox-cast Proclamations (Aura) | 1 | 1 | **Not implemented** |  |
+| Ward Against the Malefic Arts | 1 | 1 | **Not implemented** |  |
 | Xenos Hunter | 1 | 1 | **Not implemented** |  |
 | Zealot | 1 | 1 | **Not implemented** |  |
 
@@ -2790,6 +2733,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Crusader’s Duty (Bondsman) | 1 | 1 | **Not implemented** |  |
 | Data-spike | 1 | 1 | **Not implemented** |  |
 | Defend the Divine Work | 1 | 1 | **Not implemented** |  |
+| Defender’s Duty (Bondsman) | 1 | 1 | **Not implemented** |  |
 | Errant’s Duty (Bondsman) | 1 | 1 | **Not implemented** |  |
 | Exemplar of the Code | 1 | 1 | **Not implemented** |  |
 | Gallant’s Duty (Bondsman) | 1 | 1 | **Not implemented** |  |
@@ -2804,7 +2748,6 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Martial Pride | 1 | 1 | **Not implemented** |  |
 | Mentor (Bondsman) | 1 | 1 | **Not implemented** |  |
 | Objective Scouted | 1 | 1 | **Not implemented** |  |
-| Overwhelming Firestorm | 1 | 1 | **Not implemented** |  |
 | Paladin’s Duty (Bondsman) | 1 | 1 | **Not implemented** |  |
 | Protection Protocols | 1 | 1 | **Not implemented** |  |
 | Punishing Salvoes | 1 | 1 | **Not implemented** |  |
@@ -2812,13 +2755,15 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Repair Auto-simulacra | 1 | 1 | **Not implemented** |  |
 | Searing Flames | 1 | 1 | **Not implemented** |  |
 | Seasoned Noble | 1 | 1 | **Not implemented** |  |
+| Selfless Protector | 1 | 1 | **Not implemented** |  |
 | Servo-skull Uplink | 1 | 1 | **Not implemented** |  |
 | Shock Charge | 1 | 1 | **Not implemented** |  |
-| Skyfire Protocols | 1 | 1 | **Not implemented** |  |
 | Storm of Bolts | 1 | 1 | **Not implemented** |  |
 | Styrix’s Duty (Bondsman) | 1 | 1 | **Not implemented** |  |
 | Sunderer of Fortresses | 1 | 1 | **Not implemented** |  |
+| Suppression Protocols | 1 | 1 | **Not implemented** |  |
 | Thin Their Ranks | 1 | 1 | **Not implemented** |  |
+| Thundershock | 1 | 1 | **Not implemented** |  |
 | Titan Hunter | 1 | 1 | **Not implemented** |  |
 | Warden’s Duty (Bondsman) | 1 | 1 | **Not implemented** |  |
 
@@ -2826,25 +2771,39 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---|---|
-| Grim Efficiency | 2 | 2 | **Not implemented** |  |
 | Ancestral Fortune | 1 | 1 | **Not implemented** |  |
 | Blistering Advance | 1 | 1 | **Not implemented** |  |
-| Brôkhyr’s Guild | 1 | 1 | **Not implemented** |  |
+| Breaching Fire | 1 | 1 | **Not implemented** |  |
+| Brôkhyr Guild Support | 1 | 1 | **Supported** | Lone Operative |
+| Computational Mastermind | 1 | 1 | **Not implemented** |  |
 | Cyberstimms | 1 | 1 | **Not implemented** |  |
+| Decisive Destruction | 1 | 1 | **Not implemented** |  |
+| Destabilising Quakes | 1 | 1 | **Not implemented** |  |
 | Exemplar of the Einhyr | 1 | 1 | **Not implemented** |  |
-| Fire Support | 1 | 1 | **Not implemented** |  |
-| Fortify (Psychic) | 1 | 1 | **Not implemented** |  |
+| Forgewrought Expertise | 1 | 1 | **Not implemented** |  |
+| Fortify (Psychic) | 1 | 1 | **Supported** | Feel No Pain |
+| Geomantic Hunters | 1 | 1 | **Not implemented** |  |
+| Grim Efficiency | 1 | 1 | **Not implemented** |  |
 | Grimnyr’s Regard | 1 | 1 | **Not implemented** |  |
+| Grudge-fuelled Fortitude | 1 | 1 | **Not implemented** |  |
 | Kindred Hero | 1 | 1 | **Not implemented** |  |
 | Luck Has. Need Keeps. Toil Earns | 1 | 1 | **Not implemented** |  |
 | Mass Driver Accelerators | 1 | 1 | **Not implemented** |  |
+| Merciless Eradication | 1 | 1 | **Not implemented** |  |
+| MultiCOG Targeting | 1 | 1 | **Not implemented** |  |
 | Multispectral Visor | 1 | 1 | **Not implemented** |  |
-| Oathband Bodyguard | 1 | 1 | **Not implemented** |  |
-| Oathband Covering Fire | 1 | 1 | **Not implemented** |  |
-| Outflanking Mag-Riders | 1 | 1 | **Supported** | Redeploy |
+| Opportunistic Manoeuvre | 1 | 1 | **Not implemented** |  |
+| Outflanking Mag-riders | 1 | 1 | **Not implemented** |  |
+| Panspectral Scanning | 1 | 1 | **Not implemented** |  |
 | Pragmatic Hunters | 1 | 1 | **Not implemented** |  |
+| Predictive Guidance | 1 | 1 | **Not implemented** |  |
+| Purge Response | 1 | 1 | **Not implemented** |  |
+| Resource Transmutation | 1 | 1 | **Not implemented** |  |
+| Scanner Uplinks | 1 | 1 | **Not implemented** |  |
+| Science Guild Support | 1 | 1 | **Supported** | Lone Operative |
+| Seized Opportunity | 1 | 1 | **Not implemented** |  |
 | Subterranean Explosives | 1 | 1 | **Not implemented** |  |
-| The Destined | 1 | 1 | **Not implemented** |  |
+| Unhinged Vengeance | 1 | 1 | **Not implemented** |  |
 
 #### Necrons (`NEC`)
 
@@ -2882,6 +2841,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Gravitational Field | 1 | 1 | **Not implemented** |  |
 | Gravitic Pulse | 1 | 1 | **Not implemented** |  |
 | Guardian Protocols | 1 | 1 | **Not implemented** |  |
+| Harassment Swarm (Aura) | 1 | 1 | **Not implemented** |  |
 | Harbinger of Despair | 1 | 1 | **Not implemented** |  |
 | Harbinger of Destruction | 1 | 1 | **Not implemented** |  |
 | Hard-wired for Destruction | 1 | 1 | **Not implemented** |  |
@@ -2902,6 +2862,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Multi-threat Eliminator | 1 | 1 | **Not implemented** |  |
 | Nanoscarab Reanimation Beam (Aura) | 1 | 1 | **Not implemented** |  |
 | Nightmare Shroud (Aura) | 1 | 1 | **Not implemented** |  |
+| Obelisk Node Control | 1 | 1 | **Not implemented** |  |
 | Optimised for Slaughter | 1 | 1 | **Not implemented** |  |
 | Overwhelming Obliteration | 1 | 1 | **Not implemented** |  |
 | Phase Shift Generator (Aura) | 1 | 1 | **Not implemented** |  |
@@ -2920,6 +2881,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Systematic Vigour | 1 | 1 | **Not implemented** |  |
 | Targeting Relay | 1 | 1 | **Not implemented** |  |
 | Technomancer | 1 | 1 | **Not implemented** |  |
+| Tectonic Reverberations | 1 | 1 | **Not implemented** |  |
 | Teleportation Matrix | 1 | 1 | **Not implemented** |  |
 | Terrifying Monstrosity | 1 | 1 | **Not implemented** |  |
 | The Lord’s Will | 1 | 1 | **Not implemented** |  |
@@ -2936,6 +2898,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Tunnelling Horrors | 1 | 1 | **Supported** | Redeploy |
 | United In Destruction | 1 | 1 | **Not implemented** |  |
 | Voice of the Triarch | 1 | 1 | **Not implemented** |  |
+| Weapon Sentinels | 1 | 1 | **Not implemented** |  |
 | Whirling Onslaught | 1 | 1 | **Not implemented** |  |
 | Wraith Form | 1 | 1 | **Not implemented** |  |
 | Ziggurat Dock | 1 | 1 | **Not implemented** |  |
@@ -2949,7 +2912,6 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Mekaniak | 3 | 3 | **Not implemented** |  |
 | Bomb Squigs | 2 | 2 | **Not implemented** |  |
 | Clankin’ Forward | 2 | 2 | **Not implemented** |  |
-| Da Revolushun! | 2 | 2 | **Not implemented** |  |
 | Dead Rippy | 2 | 2 | **Not implemented** |  |
 | Deff from Above | 2 | 2 | **Not implemented** |  |
 | Drive-by Dakka | 2 | 2 | **Not implemented** |  |
@@ -2968,7 +2930,6 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Big Booms | 1 | 1 | **Not implemented** |  |
 | Bizarrely Resilient | 1 | 1 | **Not implemented** |  |
 | Blastajet Attack Run | 1 | 1 | **Not implemented** |  |
-| Bludgeoning Cheer | 1 | 1 | **Not implemented** |  |
 | Boom Bomb | 1 | 1 | **Not implemented** |  |
 | Burna Bomb | 1 | 1 | **Not implemented** |  |
 | Buzzer Squigs | 1 | 1 | **Not implemented** |  |
@@ -2979,6 +2940,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Da Boss Iz Watchin’ | 1 | 1 | **Not implemented** |  |
 | Da Boss’ Ladz | 1 | 1 | **Not implemented** |  |
 | Da Jump (Psychic) | 1 | 1 | **Not implemented** |  |
+| Da Revolushun! | 1 | 1 | **Not implemented** |  |
 | Dakkastorm | 1 | 1 | **Not implemented** |  |
 | Dat’s Our Loot! | 1 | 1 | **Not implemented** |  |
 | Dead Brutal | 1 | 1 | **Not implemented** |  |
@@ -2988,7 +2950,6 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Drill Through | 1 | 1 | **Not implemented** |  |
 | Drive-by Krumpin' | 1 | 1 | **Not implemented** |  |
 | Dust Trails (Aura) | 1 | 1 | **Not implemented** |  |
-| Explosive Presents (Aura) | 1 | 1 | **Not implemented** |  |
 | Fix Dat Armour Up | 1 | 1 | **Not implemented** |  |
 | Flashiest Gitz | 1 | 1 | **Not implemented** |  |
 | Fuel-mixa Grot | 1 | 1 | **Not implemented** |  |
@@ -2998,7 +2959,6 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Gargantuan | 1 | 1 | **Not implemented** |  |
 | Get Da Good Bitz | 1 | 1 | **Not implemented** |  |
 | Ghazghkull’s Waaagh! Banner (Aura) | 1 | 1 | **Not implemented** |  |
-| Gifts for All! (Aura) | 1 | 1 | **Not implemented** |  |
 | Grot Riggers | 1 | 1 | **Not implemented** |  |
 | Gun-crazy Show-offs | 1 | 1 | **Not implemented** |  |
 | Has Yoo Been a Good Little Grot This Year? | 1 | 1 | **Not implemented** |  |
@@ -3021,6 +2981,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Prophet of Da Great Waaagh! | 1 | 1 | **Not implemented** |  |
 | Ramshackle but Rugged | 1 | 1 | **Not implemented** |  |
 | Red Skull Kommandos | 1 | 1 | **Not implemented** |  |
+| Redistributin’ da Gifts | 1 | 1 | **Not implemented** |  |
 | Rivetin’ Dakka | 1 | 1 | **Not implemented** |  |
 | Roar of Mork (Psychic) | 1 | 1 | **Not implemented** |  |
 | Rolling Fortress | 1 | 1 | **Not implemented** |  |
@@ -3058,29 +3019,26 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---|---|
-| Rites of Battle | 11 | 11 | **Not implemented** |  |
-| Assault Ramp | 10 | 10 | **Not implemented** |  |
+| Assault Ramp | 11 | 11 | **Not implemented** |  |
 | Black Rage | 10 | 10 | **Not implemented** |  |
+| Rites of Battle | 10 | 10 | **Not implemented** |  |
 | Astartes Banner | 9 | 9 | **Not implemented** |  |
-| Tactical Precision | 7 | 7 | **Not implemented** |  |
-| Honour or Death | 6 | 6 | **Not implemented** |  |
+| Honour or Death | 7 | 7 | **Not implemented** |  |
+| Litany of Hate | 6 | 6 | **Not implemented** |  |
 | Psychic Hood | 6 | 6 | **Supported** | Feel No Pain |
+| Tactical Precision | 6 | 6 | **Not implemented** |  |
+| Teleport Homer | 6 | 6 | **Not implemented** |  |
+| Inspiring Leader | 5 | 5 | **Supported** | Advance+Shoot (exact wording), Fall Back+Shoot (exact wording) |
 | Narthecium | 5 | 5 | **Not implemented** |  |
-| Teleport Homer | 5 | 5 | **Not implemented** |  |
-| Blessing of the Omnissiah | 4 | 4 | **Not implemented** |  |
-| Inspiring Leader | 4 | 4 | **Supported** | Advance+Shoot (exact wording), Fall Back+Shoot (exact wording) |
-| Litany of Hate | 4 | 4 | **Not implemented** |  |
 | Sanguinary Priest | 4 | 4 | **Supported** | Feel No Pain |
-| Vengeance of the Omnissiah | 4 | 4 | **Not implemented** |  |
+| Blessing of the Omnissiah | 3 | 3 | **Not implemented** |  |
 | Blood Chalice | 3 | 3 | **Not implemented** |  |
 | Death Vision of Sanguinius | 3 | 3 | **Not implemented** |  |
-| Ferocious Assault | 3 | 3 | **Not implemented** |  |
-| Finest Hour | 3 | 3 | **Not implemented** |  |
+| Hunting Hounds | 3 | 3 | **Not implemented** |  |
 | Pack Leader | 3 | 3 | **Not implemented** |  |
-| Rotating Death | 3 | 3 | **Not implemented** |  |
 | Unbreakable Duty | 3 | 3 | **Supported** | Feel No Pain |
 | Vanguard Assault | 3 | 3 | **Not implemented** |  |
-| Wisdom of the Ancients (Aura) | 3 | 3 | **Not implemented** |  |
+| Vengeance of the Omnissiah | 3 | 3 | **Not implemented** |  |
 | Aerial Assault | 2 | 2 | **Supported** | Deep Strike |
 | An Honourable Death in Combat | 2 | 2 | **Not implemented** |  |
 | Annihilator | 2 | 2 | **Not implemented** |  |
@@ -3090,11 +3048,12 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Armoured Spearhead | 2 | 2 | **Not implemented** |  |
 | Assault Vehicle | 2 | 2 | **Not implemented** |  |
 | Catechism of Death | 2 | 2 | **Not implemented** |  |
+| Death to the Alien | 2 | 2 | **Not implemented** |  |
 | Designer’s Note | 2 | 2 | **Not implemented** |  |
 | Drop Pod Assault | 2 | 2 | **Not implemented** |  |
 | Duty Eternal | 2 | 2 | **Not implemented** |  |
-| Emergency Combat Embarkation | 2 | 2 | **Not implemented** |  |
-| Executioner | 2 | 2 | **Not implemented** |  |
+| Ferocious Assault | 2 | 2 | **Not implemented** |  |
+| Finest Hour | 2 | 2 | **Not implemented** |  |
 | Fire and Redeploy | 2 | 2 | **Supported** | Redeploy |
 | Fire Support | 2 | 2 | **Not implemented** |  |
 | Forlorn Hero | 2 | 2 | **Supported** | Advance+Charge (exact wording), Scouts |
@@ -3107,83 +3066,96 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Into the Foe | 2 | 2 | **Not implemented** |  |
 | Iron Priest | 2 | 2 | **Supported** | Lone Operative |
 | Martial Superiority | 2 | 2 | **Not implemented** |  |
+| Master Tactician | 2 | 2 | **Not implemented** |  |
 | Mental Fortress (Psychic) | 2 | 2 | **Not implemented** |  |
 | Outrider Escort | 2 | 2 | **Not implemented** |  |
 | Pinning Bombardment | 2 | 2 | **Not implemented** |  |
 | Righteous Zeal | 2 | 2 | **Not implemented** |  |
+| Rotating Death | 2 | 2 | **Not implemented** |  |
 | Self Repair | 2 | 2 | **Not implemented** |  |
 | Sentinel Protocols | 2 | 2 | **Not implemented** |  |
 | Spiritual Leader | 2 | 2 | **Not implemented** |  |
 | Strafing Run | 2 | 2 | **Not implemented** |  |
 | Suppression Fire | 2 | 2 | **Not implemented** |  |
 | Swift Assault | 2 | 2 | **Not implemented** |  |
-| Target Priority | 2 | 2 | **Supported** | Fall Back+Shoot (exact wording) |
 | Techmarine | 2 | 2 | **Supported** | Lone Operative |
+| Tempormortis | 2 | 2 | **Supported** | Fights First |
 | Terminatus Assault | 2 | 2 | **Not implemented** |  |
-| The Great Wolf | 2 | 2 | **Not implemented** |  |
+| Wisdom of the Ancients (Aura) | 2 | 2 | **Not implemented** |  |
 | Aerial Deployment | 1 | 1 | **Not implemented** |  |
 | Aggressive Hunter | 1 | 1 | **Not implemented** |  |
 | Alpha Hunter | 1 | 1 | **Supported** | Scouts |
 | Alpha Predator | 1 | 1 | **Not implemented** |  |
+| Ancient Tactician | 1 | 1 | **Not implemented** |  |
 | Angelic Visage | 1 | 1 | **Not implemented** |  |
 | Angel’s Wrath | 1 | 1 | **Not implemented** |  |
 | Annihilator Protocols | 1 | 1 | **Not implemented** |  |
 | Anvil of Endurance | 1 | 1 | **Not implemented** |  |
+| Armour of Faith | 1 | 1 | **Not implemented** |  |
 | Armour of Fate | 1 | 1 | **Not implemented** |  |
 | Atomantic Arc-reactor | 1 | 1 | **Not implemented** |  |
 | Aura of Fervour (Aura) | 1 | 1 | **Not implemented** |  |
 | Author of the Codex | 1 | 1 | **Not implemented** |  |
 | Ballistus Strike | 1 | 1 | **Not implemented** |  |
 | Battle-lust | 1 | 1 | **Not implemented** |  |
-| Berserk Charge | 1 | 1 | **Not implemented** |  |
+| Berserk Charge | 1 | 1 | **Supported** | Advance+Charge (exact wording) |
 | Berserk Fury | 1 | 1 | **Not implemented** |  |
+| Bestial Fury | 1 | 1 | **Not implemented** |  |
 | Bestial Rage | 1 | 1 | **Not implemented** |  |
 | Blackstar Cluster Launcher | 1 | 1 | **Not implemented** |  |
+| Blackwing Mantle | 1 | 1 | **Not implemented** |  |
 | Bladeguard | 1 | 1 | **Not implemented** |  |
 | Born of Wolves | 1 | 1 | **Not implemented** |  |
 | Braziers of Judgement | 1 | 1 | **Not implemented** |  |
 | Brutalis Charge | 1 | 1 | **Not implemented** |  |
 | Catechism of Fire | 1 | 1 | **Not implemented** |  |
 | Ceramite Cover | 1 | 1 | **Not implemented** |  |
+| Cerebrex Logic Engine | 1 | 1 | **Supported** | Redeploy, Scouts |
 | Chainsword Doctrines | 1 | 1 | **Not implemented** |  |
 | Champion of the Kingsguard | 1 | 1 | **Not implemented** |  |
 | Chosen Companions | 1 | 1 | **Not implemented** |  |
 | Chronus | 1 | 1 | **Supported** | Lone Operative |
 | Close In for the Kill | 1 | 1 | **Not implemented** |  |
 | Close-quarters Firepower | 1 | 1 | **Not implemented** |  |
+| Cold and Calculating | 1 | 1 | **Not implemented** |  |
+| Combat Disembarkation | 1 | 1 | **Not implemented** |  |
 | Combat Squads | 1 | 1 | **Not implemented** |  |
 | Combat Support | 1 | 1 | **Not implemented** |  |
 | Command Squad | 1 | 1 | **Not implemented** |  |
 | Concealed Positions | 1 | 1 | **Not implemented** |  |
+| Condemnatory Annihilation | 1 | 1 | **Not implemented** |  |
 | Crewed Artillery | 1 | 1 | **Not implemented** |  |
 | Crusade of Wrath | 1 | 1 | **Not implemented** |  |
-| Cunning Hunters | 1 | 1 | **Supported** | Advance+Shoot (exact wording), Fall Back+Shoot (exact wording) |
+| Cunning Hunters | 1 | 1 | **Not implemented** |  |
 | Cut Off Their Escape | 1 | 1 | **Not implemented** |  |
 | Dark Angels Bodyguard | 1 | 1 | **Supported** | Lone Operative |
+| Deadly Stalkers | 1 | 1 | **Not implemented** |  |
 | Deadly Terror | 1 | 1 | **Not implemented** |  |
-| Death Frenzy | 1 | 1 | **Not implemented** |  |
 | Death Mask of Sanguinius | 1 | 1 | **Not implemented** |  |
-| Death to the Alien | 1 | 1 | **Not implemented** |  |
 | Death-hold | 1 | 1 | **Not implemented** |  |
 | Deathstorm Assault | 1 | 1 | **Not implemented** |  |
 | Deathwing | 1 | 1 | **Not implemented** |  |
 | Decimator Protocols | 1 | 1 | **Not implemented** |  |
 | Deeds of Heroism | 1 | 1 | **Not implemented** |  |
 | Defensive Array | 1 | 1 | **Not implemented** |  |
+| Deployment Complete | 1 | 1 | **Not implemented** |  |
 | Deredeo Strike | 1 | 1 | **Not implemented** |  |
 | Destructor | 1 | 1 | **Not implemented** |  |
 | Driven by Fury | 1 | 1 | **Not implemented** |  |
 | Echo of the Ravenspire | 1 | 1 | **Not implemented** |  |
 | Embittered | 1 | 1 | **Not implemented** |  |
+| Emergency Combat Embarkation | 1 | 1 | **Not implemented** |  |
 | Engulfing Fear (Psychic) | 1 | 1 | **Not implemented** |  |
 | Enmity for the Unworthy | 1 | 1 | **Not implemented** |  |
 | Evade and Survive | 1 | 1 | **Not implemented** |  |
 | Even In Death I Serve | 1 | 1 | **Supported** | Deadly Demise |
+| Executioner | 1 | 1 | **Not implemented** |  |
 | Exemplar of Hate | 1 | 1 | **Not implemented** |  |
 | Exhortation of Rage | 1 | 1 | **Not implemented** |  |
+| Exploit Their Cowardice | 1 | 1 | **Not implemented** |  |
 | Feared Interrogator | 1 | 1 | **Not implemented** |  |
 | Fearsome Assault | 1 | 1 | **Not implemented** |  |
-| Ferocious Charge | 1 | 1 | **Not implemented** |  |
+| Fervour of the Ancients (Aura) | 1 | 1 | **Not implemented** |  |
 | Fire Discipline | 1 | 1 | **Not implemented** |  |
 | For the Chapter! | 1 | 1 | **Not implemented** |  |
 | For the Khan! | 1 | 1 | **Not implemented** |  |
@@ -3193,16 +3165,22 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Frenzied Reprisal | 1 | 1 | **Not implemented** |  |
 | Frozen Prey | 1 | 1 | **Not implemented** |  |
 | Fury Unbound | 1 | 1 | **Not implemented** |  |
+| Gift of the Iron Wolf | 1 | 1 | **Not implemented** |  |
 | Gifted Commander | 1 | 1 | **Not implemented** |  |
+| Glory of Ultramar | 1 | 1 | **Not implemented** |  |
 | Grand Master of the Deathwing | 1 | 1 | **Not implemented** |  |
 | Grand Master of the Ravenwing | 1 | 1 | **Supported** | Advance+Shoot (exact wording) |
 | Guardian of the Lost | 1 | 1 | **Not implemented** |  |
 | Guiding Hand | 1 | 1 | **Not implemented** |  |
+| Guile of the Wolf (Aura) | 1 | 1 | **Not implemented** |  |
 | Hailstrike | 1 | 1 | **Not implemented** |  |
+| Hammer Blow | 1 | 1 | **Not implemented** |  |
 | Hammerstrike | 1 | 1 | **Not implemented** |  |
+| Headhunters | 1 | 1 | **Not implemented** |  |
 | Headstrong | 1 | 1 | **Not implemented** |  |
+| Healing Balms | 1 | 1 | **Not implemented** |  |
 | Heirs of Azkaellon | 1 | 1 | **Not implemented** |  |
-| Hero of Sevaston III | 1 | 1 | **Not implemented** |  |
+| Heroic Last Stand | 1 | 1 | **Not implemented** |  |
 | High Marshal | 1 | 1 | **Not implemented** |  |
 | Honour Guard | 1 | 1 | **Not implemented** |  |
 | Honour Guard of Macragge | 1 | 1 | **Supported** | Feel No Pain |
@@ -3213,38 +3191,45 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Icon of Obstinacy | 1 | 1 | **Not implemented** |  |
 | Icon of Old Caliban (Aura) | 1 | 1 | **Supported** | Stealth |
 | Incendiary Terror | 1 | 1 | **Not implemented** |  |
+| Indomitable Assault | 1 | 1 | **Not implemented** |  |
 | Indomitor Doctrines | 1 | 1 | **Not implemented** |  |
 | Inner Circle | 1 | 1 | **Not implemented** |  |
+| Inspirational Exemplar | 1 | 1 | **Not implemented** |  |
 | Inspired Retribution | 1 | 1 | **Not implemented** |  |
+| Interception Strike | 1 | 1 | **Not implemented** |  |
 | Intractable Will | 1 | 1 | **Not implemented** |  |
 | Inviolable Transport | 1 | 1 | **Not implemented** |  |
 | Iron Father | 1 | 1 | **Supported** | Lone Operative |
 | Isolate and Destroy | 1 | 1 | **Not implemented** |  |
+| Judgement of the Omnissiah | 1 | 1 | **Not implemented** |  |
+| Judgement of the Weak | 1 | 1 | **Not implemented** |  |
 | Keep the Banner High | 1 | 1 | **Not implemented** |  |
+| Knight Champion of Macragge | 1 | 1 | **Not implemented** |  |
 | Knights of Caliban | 1 | 1 | **Not implemented** |  |
 | Last Laugh | 1 | 1 | **Not implemented** |  |
 | Lead From the Front | 1 | 1 | **Supported** | Scouts |
+| Legacy of Jerulas | 1 | 1 | **Not implemented** |  |
 | Legendary Tenacity | 1 | 1 | **Not implemented** |  |
+| Let Loose the Wolves | 1 | 1 | **Not implemented** |  |
 | Lightning Assault | 1 | 1 | **Not implemented** |  |
 | Lightning-fast Manoeuvres | 1 | 1 | **Not implemented** |  |
 | Line-breaker | 1 | 1 | **Not implemented** |  |
 | Litanies of the Devout | 1 | 1 | **Not implemented** |  |
-| Lord of Deceit (Aura) | 1 | 1 | **Not implemented** |  |
 | Lord of Slaughter | 1 | 1 | **Supported** | Advance+Charge (exact wording) |
 | Lord of the Pyroclasts | 1 | 1 | **Not implemented** |  |
 | Lord of the Wolfkin | 1 | 1 | **Not implemented** |  |
-| Lord of Tír na nÓg | 1 | 1 | **Not implemented** |  |
 | Lost to Fury | 1 | 1 | **Not implemented** |  |
 | Magna-grapple | 1 | 1 | **Not implemented** |  |
 | Mantle of the Troll King | 1 | 1 | **Not implemented** |  |
 | Mark the Target | 1 | 1 | **Not implemented** |  |
+| Martial Honour | 1 | 1 | **Not implemented** |  |
 | Mass of Doom | 1 | 1 | **Not implemented** |  |
 | Master of Deceit | 1 | 1 | **Supported** | Redeploy |
 | Master of Manoeuvre | 1 | 1 | **Not implemented** |  |
 | Master of Prescience (Psychic) | 1 | 1 | **Not implemented** |  |
+| Master of Shadows | 1 | 1 | **Not implemented** |  |
 | Master of the Fleet | 1 | 1 | **Supported** | Deep Strike |
 | Master of the Forge | 1 | 1 | **Not implemented** |  |
-| Master Tactician | 1 | 1 | **Not implemented** |  |
 | Masterful Tactician | 1 | 1 | **Not implemented** |  |
 | Meteoric Descent | 1 | 1 | **Supported** | Deep Strike |
 | Might of Heroes (Psychic) | 1 | 1 | **Not implemented** |  |
@@ -3253,9 +3238,10 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Morkai’s Howl | 1 | 1 | **Not implemented** |  |
 | Mortis Strike | 1 | 1 | **Not implemented** |  |
 | Multi-spectrum Array | 1 | 1 | **Not implemented** |  |
-| Murder-maker | 1 | 1 | **Not implemented** |  |
+| Murder-maker (Aura) | 1 | 1 | **Not implemented** |  |
 | Nowhere to Hide | 1 | 1 | **Not implemented** |  |
 | Oath of Rynn | 1 | 1 | **Not implemented** |  |
+| Oathbound | 1 | 1 | **Not implemented** |  |
 | Objective Secured | 1 | 1 | **Not implemented** |  |
 | Omni-scramblers | 1 | 1 | **Not implemented** |  |
 | Orbital Comms Array (Aura) | 1 | 1 | **Not implemented** |  |
@@ -3263,22 +3249,28 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Overcharged Engines | 1 | 1 | **Not implemented** |  |
 | Overwhelming Short-range Firepower | 1 | 1 | **Not implemented** |  |
 | Pelt of the Doppegangrel | 1 | 1 | **Not implemented** |  |
+| Pious Fervour | 1 | 1 | **Not implemented** |  |
 | Powerful Volley | 1 | 1 | **Not implemented** |  |
+| Predatory Instinct | 1 | 1 | **Not implemented** |  |
 | Press the Attack | 1 | 1 | **Not implemented** |  |
 | Primarch of the First Legion | 1 | 1 | **Not implemented** |  |
+| Prioritised Eradication | 1 | 1 | **Not implemented** |  |
 | Priority Objective Identified | 1 | 1 | **Not implemented** |  |
+| Priority Target Acquisition | 1 | 1 | **Not implemented** |  |
 | Rampart | 1 | 1 | **Not implemented** |  |
+| Reaping Tally | 1 | 1 | **Not implemented** |  |
 | Recitation of Faith | 1 | 1 | **Supported** | Feel No Pain |
 | Redeemer of the Lost | 1 | 1 | **Not implemented** |  |
 | Refuse to Accept Defeat | 1 | 1 | **Not implemented** |  |
 | Refuse to Yield | 1 | 1 | **Not implemented** |  |
+| Remorseless Persecution | 1 | 1 | **Supported** | Advance+Charge (exact wording) |
 | Reposition Under Covering Fire | 1 | 1 | **Not implemented** |  |
 | Rites of Tempering | 1 | 1 | **Supported** | Feel No Pain |
 | Rolling Fortress | 1 | 1 | **Not implemented** |  |
-| Runic Armour | 1 | 1 | **Not implemented** |  |
+| Rugged Resilience | 1 | 1 | **Not implemented** |  |
+| Savage Frenzy | 1 | 1 | **Not implemented** |  |
 | Savage Fury | 1 | 1 | **Not implemented** |  |
 | Seeker of Lost Relics | 1 | 1 | **Supported** | Feel No Pain |
-| Sentinel of Deminoor | 1 | 1 | **Not implemented** |  |
 | Sentry Programming | 1 | 1 | **Not implemented** |  |
 | Shadowmaster | 1 | 1 | **Not implemented** |  |
 | Shield of Sanguinius (Aura, Psychic) | 1 | 1 | **Supported** | Feel No Pain |
@@ -3291,17 +3283,18 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Signum | 1 | 1 | **Not implemented** |  |
 | Signum Array | 1 | 1 | **Not implemented** |  |
 | Silent Fury | 1 | 1 | **Not implemented** |  |
-| Skilful Parry | 1 | 1 | **Not implemented** |  |
+| Skilled Riders | 1 | 1 | **Not implemented** |  |
 | Skyfire Protocols | 1 | 1 | **Not implemented** |  |
 | Slayer’s Oath | 1 | 1 | **Not implemented** |  |
+| Spear of Chogoris | 1 | 1 | **Supported** | Advance+Shoot (exact wording), Fall Back+Shoot (exact wording) |
 | Specialised Weapon System | 1 | 1 | **Not implemented** |  |
 | Spectrus Doctrines | 1 | 1 | **Supported** | Redeploy |
 | Speed of the Hunter | 1 | 1 | **Not implemented** |  |
+| Stabilised Disembarkation | 1 | 1 | **Not implemented** |  |
 | Stasis Bomb | 1 | 1 | **Not implemented** |  |
 | Sternguard Focus | 1 | 1 | **Not implemented** |  |
 | Storm Assault | 1 | 1 | **Not implemented** |  |
 | Storm of Vengeance | 1 | 1 | **Not implemented** |  |
-| Stormcaller (Psychic) | 1 | 1 | **Supported** | Stealth |
 | Strafing Enfilade | 1 | 1 | **Not implemented** |  |
 | Strategic Dispersal | 1 | 1 | **Not implemented** |  |
 | Strategic Knowledge | 1 | 1 | **Supported** | Advance+Shoot (exact wording), Fall Back+Shoot (exact wording) |
@@ -3309,27 +3302,29 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Sunderer of Fortresses | 1 | 1 | **Not implemented** |  |
 | Supreme Grand Master | 1 | 1 | **Not implemented** |  |
 | Surgical Precision | 1 | 1 | **Not implemented** |  |
-| Swift Hunters | 1 | 1 | **Supported** | Advance+Charge (exact wording) |
 | Tactical Instinct | 1 | 1 | **Not implemented** |  |
 | Talonmaster | 1 | 1 | **Supported** | Lone Operative |
 | Talonstrike Doctrines | 1 | 1 | **Not implemented** |  |
 | Tank Commander | 1 | 1 | **Not implemented** |  |
 | Target Elimination | 1 | 1 | **Not implemented** |  |
+| Target Priority | 1 | 1 | **Supported** | Fall Back+Shoot (exact wording) |
 | Target Sighted | 1 | 1 | **Not implemented** |  |
 | Targeter Optics | 1 | 1 | **Not implemented** |  |
+| Tempered Ferocity | 1 | 1 | **Not implemented** |  |
+| Tempest’s Wrath (Psychic) | 1 | 1 | **Not implemented** |  |
 | Temple Relics | 1 | 1 | **Not implemented** |  |
-| Tempormortis | 1 | 1 | **Supported** | Fights First |
 | Termite Assault | 1 | 1 | **Not implemented** |  |
 | Terror Troops (Aura) | 1 | 1 | **Not implemented** |  |
 | The Emperor’s Shield | 1 | 1 | **Not implemented** |  |
 | The Fierce Eye | 1 | 1 | **Not implemented** |  |
+| The Great Wolf | 1 | 1 | **Not implemented** |  |
 | The Imperium’s Sword | 1 | 1 | **Not implemented** |  |
 | The Quickening (Psychic) | 1 | 1 | **Supported** | Advance+Charge (exact wording) |
 | The Red Grail | 1 | 1 | **Not implemented** |  |
 | The Spiritshield Helm | 1 | 1 | **Supported** | Feel No Pain |
+| Thunderous Charge | 1 | 1 | **Not implemented** |  |
 | Thunderous Impact | 1 | 1 | **Not implemented** |  |
 | Thunderstrike | 1 | 1 | **Not implemented** |  |
-| Tip of the Spear | 1 | 1 | **Not implemented** |  |
 | Titan-killer | 1 | 1 | **Not implemented** |  |
 | To the Last | 1 | 1 | **Not implemented** |  |
 | Total Obliteration | 1 | 1 | **Not implemented** |  |
@@ -3339,26 +3334,29 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Turbo-boost | 1 | 1 | **Not implemented** |  |
 | Tyrannic War Veterans | 1 | 1 | **Not implemented** |  |
 | Ultramarines Bodyguard | 1 | 1 | **Supported** | Lone Operative |
+| Ultramarines Honour Guard | 1 | 1 | **Not implemented** |  |
 | Unflinching | 1 | 1 | **Not implemented** |  |
 | Unorthodox Strategist (Aura) | 1 | 1 | **Not implemented** |  |
 | Unstoppable Champion | 1 | 1 | **Not implemented** |  |
 | Unto the Anvil | 1 | 1 | **Not implemented** |  |
 | Unyielding in the Face of the Foe | 1 | 1 | **Not implemented** |  |
 | Vanquish the Foe | 1 | 1 | **Not implemented** |  |
+| Vehement Aggression | 1 | 1 | **Not implemented** |  |
 | Veil of Time (Psychic) | 1 | 1 | **Not implemented** |  |
+| Vengeful Exhortation | 1 | 1 | **Not implemented** |  |
+| Violent Fury | 1 | 1 | **Not implemented** |  |
+| Virtuous Onslaught | 1 | 1 | **Not implemented** |  |
 | Visions of Heresy | 1 | 1 | **Not implemented** |  |
 | Vivispectrum | 1 | 1 | **Not implemented** |  |
-| Voice of Eternity | 1 | 1 | **Not implemented** |  |
 | Voice of Experience | 1 | 1 | **Not implemented** |  |
-| Vow-sworn Bladesmen | 1 | 1 | **Not implemented** |  |
 | War Howl | 1 | 1 | **Supported** | Advance+Charge (exact wording) |
 | Warden of the Imperium Nihilus | 1 | 1 | **Not implemented** |  |
 | Watch Master | 1 | 1 | **Not implemented** |  |
 | Whirlwind of Gore | 1 | 1 | **Not implemented** |  |
+| Wind Walker (Psychic) | 1 | 1 | **Not implemented** |  |
 | Wings of Sanguinius (Psychic) | 1 | 1 | **Not implemented** |  |
-| Wolf Guard | 1 | 1 | **Not implemented** |  |
-| Wolf Helm of Russ (Aura) | 1 | 1 | **Not implemented** |  |
 | Wrathful Rampage | 1 | 1 | **Not implemented** |  |
+| Zealot’s Fervour | 1 | 1 | **Not implemented** |  |
 
 #### Thousand Sons (`TS`)
 
@@ -3480,7 +3478,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Harpoon Barbs | 1 | 1 | **Not implemented** |  |
 | Hive Commander | 1 | 1 | **Not implemented** |  |
 | Hive Defences | 1 | 1 | **Not implemented** |  |
-| Hypersensory Arra | 1 | 1 | **Not implemented** |  |
+| Hypersensory Array | 1 | 1 | **Not implemented** |  |
 | Hypertoxic Miasma (Aura) | 1 | 1 | **Not implemented** |  |
 | Hypnotic Gaze (Psychic) | 1 | 1 | **Not implemented** |  |
 | Irresistible Force | 1 | 1 | **Not implemented** |  |
@@ -3761,6 +3759,8 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---|---|
 | TRAVELLING PLAYERS | 3 | 3 | **Not implemented** |  |
+| COURT OF THE ARCHON | 1 | 1 | **Not implemented** |  |
+| MONSTROUS HULKS | 1 | 1 | **Not implemented** |  |
 | PATH OF DAMNATION | 1 | 1 | **Not implemented** |  |
 
 #### Emperor’s Children (`EC`)
@@ -3781,32 +3781,47 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---|---|
-| ATTACHED UNIT | 4 | 4 | **Not implemented** |  |
+| ATTACHED UNIT | 5 | 5 | **Not implemented** |  |
 | TRANSPORT | 3 | 3 | **Not implemented** |  |
 | INQUISITORIAL AGENT | 1 | 1 | **Not implemented** |  |
 | INQUISITORIAL RETINUE | 1 | 1 | **Not implemented** |  |
+
+#### Imperial Knights (`QI`)
+
+| Ability | Occurrences (rows) | Datasheets | Status | Notes |
+|---|---:|---:|---|---|
+| USING SIR HEKHTUR | 1 | 1 | **Not implemented** |  |
 
 #### Necrons (`NEC`)
 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---|---|
 | FORTIFICATION | 3 | 3 | **Not implemented** |  |
+| CANOPTEK RETINUE | 1 | 1 | **Not implemented** |  |
+| VANGUARD PROTOCOLS | 1 | 1 | **Supported** | Scouts |
 
 #### Orks (`ORK`)
 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---|---|
 | ATTACHED UNIT | 1 | 1 | **Not implemented** |  |
+| PATROL SQUAD | 1 | 1 | **Not implemented** |  |
 
 #### Space Marines (`SM`)
 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---|---|
-| INSPIRING COMMANDER | 6 | 6 | **Not implemented** |  |
-| ATTACHED UNIT | 2 | 2 | **Not implemented** |  |
+| INSPIRING COMMANDER | 5 | 5 | **Not implemented** |  |
+| ATTACHED UNIT | 3 | 3 | **Not implemented** |  |
+| CAPTAIN OF THE HONOUR GUARD | 1 | 1 | **Not implemented** |  |
+| CHAPTER MASTER OF THE RAVEN GUARD | 1 | 1 | **Supported** | Lone Operative |
+| CHOSEN OF THE EMPEROR | 1 | 1 | **Not implemented** |  |
 | CRIMSON FISTS | 1 | 1 | **Not implemented** |  |
+| EMBARKING WITHIN TRANSPORTS | 1 | 1 | **Not implemented** |  |
 | FLESH TEARERS | 1 | 1 | **Not implemented** |  |
+| FORCE OF UNTAMED DESTRUCTION | 1 | 1 | **Not implemented** |  |
 | HONOUR GUARD OF MACRAGGE | 1 | 1 | **Not implemented** |  |
+| LORD CALGAR | 1 | 1 | **Not implemented** |  |
 
 #### Thousand Sons (`TS`)
 
@@ -3846,9 +3861,9 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---|---|
-| Invocation of Machine Vengeance (Aura) | 1 | 1 | **Not implemented** |  |
+| Invocation of Machine Vengeance | 1 | 1 | **Not implemented** |  |
 | Mantra of Discipline | 1 | 1 | **Not implemented** |  |
-| Shroudpsalm (Aura) | 1 | 1 | **Not implemented** |  |
+| Shroudpsalm (Aura) | 1 | 1 | **Supported** | Stealth |
 
 #### Chaos Daemons (`CD`)
 
@@ -3887,6 +3902,15 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Diseased Influence | 1 | 1 | **Not implemented** |  |
 | Inflamed Reprisal | 1 | 1 | **Not implemented** |  |
 
+#### Drukhari (`DRU`)
+
+| Ability | Occurrences (rows) | Datasheets | Status | Notes |
+|---|---:|---:|---|---|
+| Aethersails | 1 | 1 | **Not implemented** |  |
+| Masters of the Shadowed Sky | 1 | 1 | **Not implemented** |  |
+| Speed of the Kill | 1 | 1 | **Not implemented** |  |
+| Visions of Butchery | 1 | 1 | **Not implemented** |  |
+
 #### Emperor’s Children (`EC`)
 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
@@ -3899,23 +3923,23 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---|---|
-| Bringer of Unity (Aura) | 1 | 1 | **Not implemented** |  |
 | Phaeron of the Blades (Aura) | 1 | 1 | **Not implemented** |  |
 | Phaeron of the Stars (Aura) | 1 | 1 | **Not implemented** |  |
+| Relentless March (Aura) | 1 | 1 | **Not implemented** |  |
 
 #### Space Marines (`SM`)
 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---|---|
-| Banner of Fallen Crusaders | 1 | 1 | **Supported** | Advance+Charge (exact wording) |
+| Banner of the Emperor Victorious | 1 | 1 | **Not implemented** |  |
+| Column from the Major Altar | 1 | 1 | **Not implemented** |  |
 | Martial Exemplar (Aura) | 1 | 1 | **Not implemented** |  |
 | Master of Battle | 1 | 1 | **Not implemented** |  |
 | Mist-wreathed Shadow Realms | 1 | 1 | **Not implemented** |  |
 | No Hiding From the Watchers (Aura) | 1 | 1 | **Supported** | Feel No Pain |
 | Primarch of the XIII (Aura) | 1 | 1 | **Not implemented** |  |
-| Remnant of the Fallen Temple | 1 | 1 | **Supported** | Feel No Pain |
-| Sceptre of Anointing | 1 | 1 | **Not implemented** |  |
 | Supreme Strategist | 1 | 1 | **Not implemented** |  |
+| Water from the Stoup of Elucidation | 1 | 1 | **Not implemented** |  |
 
 #### Thousand Sons (`TS`)
 
@@ -4034,8 +4058,8 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---|---|
+| ARCHON’S RETINUE | 1 | 1 | **Supported** | Scouts |
 | CORSAIRS | 1 | 1 | **Not implemented** |  |
-| COURT OF THE ARCHON | 1 | 1 | **Not implemented** |  |
 
 #### Genestealer Cults (`GC`)
 
@@ -4071,14 +4095,6 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | NAVY BODYGUARD | 1 | 1 | **Not implemented** |  |
 | Rites of Teleportation | 1 | 1 | **Supported** | Deep Strike |
 
-#### Imperial Knights (`QI`)
-
-| Ability | Occurrences (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---|---|
-| CANIS REX | 1 | 1 | **Not implemented** |  |
-| SIR HEKHTUR | 1 | 1 | **Not implemented** |  |
-| USING SIR HEKHTUR | 1 | 1 | **Not implemented** |  |
-
 #### Necrons (`NEC`)
 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
@@ -4105,18 +4121,17 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---|---|
-| ATTACHED UNIT | 22 | 22 | **Not implemented** |  |
-| ATTACHED UNITS | 2 | 2 | **Not implemented** |  |
+| ATTACHED UNIT | 20 | 20 | **Not implemented** |  |
+| ATTACHED UNITS | 6 | 6 | **Not implemented** |  |
 | DEATH COMPANY | 2 | 2 | **Not implemented** |  |
-| LOGAN GRIMNAR | 2 | 2 | **Not implemented** |  |
 | SUPREME COMMANDER | 2 | 2 | **Not implemented** |  |
 | TYCHO | 2 | 2 | **Not implemented** |  |
 | Attached Unit | 1 | 1 | **Not implemented** |  |
 | CASSIUS | 1 | 1 | **Not implemented** |  |
 | COMMAND SQUAD BODYGUARD | 1 | 1 | **Not implemented** |  |
 | COMPANY HEROES | 1 | 1 | **Not implemented** |  |
-| FORCE OF UNTAMED DESTRUCTION | 1 | 1 | **Not implemented** |  |
 | LAST SURVIVOR | 1 | 1 | **Not implemented** |  |
+| LOGAN GRIMNAR | 1 | 1 | **Not implemented** |  |
 | MASTER OF MISCHIEF | 1 | 1 | **Not implemented** |  |
 | SERVITOR RETINUE | 1 | 1 | **Not implemented** |  |
 | TANK COMMANDER | 1 | 1 | **Not implemented** |  |
@@ -4264,11 +4279,16 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 |---|---:|---:|---|---|
 | Flip Belt | 5 | 5 | **Not implemented** |  |
 | Phantasm Grenade Launcher | 3 | 3 | **Not implemented** |  |
+| Kabalite Icon | 2 | 2 | **Not implemented** |  |
 | Mistshield | 2 | 2 | **Not implemented** |  |
 | Channeller Stones | 1 | 1 | **Not implemented** |  |
 | Cluster Caltrops | 1 | 1 | **Not implemented** |  |
 | Faolchú | 1 | 1 | **Not implemented** |  |
 | Grav-talon | 1 | 1 | **Not implemented** |  |
+| Incubi Shrine Token | 1 | 1 | **Not implemented** |  |
+| Shadowfield | 1 | 1 | **Not implemented** |  |
+| Soul Trap | 1 | 1 | **Not implemented** |  |
+| Stimm-needler | 1 | 1 | **Not implemented** |  |
 
 #### Emperor’s Children (`EC`)
 
@@ -4305,15 +4325,16 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---|---|
 | Ancient’s Banner | 2 | 2 | **Not implemented** |  |
-| Narthecium | 1 | 1 | **Not implemented** |  |
+| Apothecary's Narthecium | 1 | 1 | **Not implemented** |  |
+| Apothecary’s Narthecium | 1 | 1 | **Not implemented** |  |
 | Thunderhawk Cluster Bombs | 1 | 1 | **Not implemented** |  |
 
 #### Imperial Agents (`AoI`)
 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---|---|
+| Astartes Shield | 4 | 4 | **Not implemented** |  |
 | Jump Pack | 4 | 4 | **Not implemented** |  |
-| Astartes Shield | 3 | 3 | **Not implemented** |  |
 | Blessed Wardings | 2 | 2 | **Not implemented** |  |
 | Nuncio Aquila | 2 | 2 | **Not implemented** |  |
 | Psychic Gifts | 2 | 2 | **Not implemented** |  |
@@ -4336,6 +4357,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Simulacrum Imperials | 1 | 1 | **Not implemented** |  |
 | Soulguilt Scanner | 1 | 1 | **Not implemented** |  |
 | Tome-skull | 1 | 1 | **Not implemented** |  |
+| Vox-skull | 1 | 1 | **Not implemented** |  |
 
 #### Imperial Knights (`QI`)
 
@@ -4350,12 +4372,12 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 |---|---:|---:|---|---|
 | Teleport Crest | 3 | 3 | **Supported** | Deep Strike |
 | Weavefield Crest | 3 | 3 | **Not implemented** |  |
-| Comms Array | 2 | 2 | **Not implemented** |  |
-| Pan Spectral Scanner | 2 | 2 | **Not implemented** |  |
+| Panspectral Scanner | 2 | 2 | **Not implemented** |  |
+| Preymark Crest | 2 | 2 | **Not implemented** |  |
 | Rampart Crest | 2 | 2 | **Not implemented** |  |
-| Medipack | 1 | 1 | **Supported** | Feel No Pain |
-| Pan spectral scanner | 1 | 1 | **Not implemented** |  |
-| Rollbar Searchlight | 1 | 1 | **Supported** | Stealth |
+| Smoke Launcher | 2 | 2 | **Not implemented** |  |
+| Multiwave Comms Array | 1 | 1 | **Not implemented** |  |
+| Rollbar Searchlight | 1 | 1 | **Not implemented** |  |
 
 #### Necrons (`NEC`)
 
@@ -4364,9 +4386,11 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Resurrection Orb | 5 | 5 | **Not implemented** |  |
 | Gloom Prism (Aura) | 3 | 3 | **Supported** | Feel No Pain |
 | Plasmacyte | 2 | 2 | **Not implemented** |  |
+| Accelerator Mandible | 1 | 1 | **Not implemented** |  |
 | Dispersion Shield | 1 | 1 | **Not implemented** |  |
 | Fabricator Claw Array (Aura) | 1 | 1 | **Supported** | Feel No Pain |
 | Nanoscarab Amulet | 1 | 1 | **Supported** | Feel No Pain |
+| Nanoscarab Projector | 1 | 1 | **Not implemented** |  |
 | Nebuloscope | 1 | 1 | **Not implemented** |  |
 | Shadowloom | 1 | 1 | **Supported** | Stealth |
 | Shieldvanes | 1 | 1 | **Not implemented** |  |
@@ -4393,23 +4417,24 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---|---|
-| Storm Shield | 16 | 16 | **Not implemented** |  |
+| Storm Shield | 17 | 17 | **Not implemented** |  |
 | Relic Shield | 6 | 6 | **Not implemented** |  |
-| Astartes Shield | 4 | 4 | **Not implemented** |  |
+| Astartes Shield | 5 | 5 | **Not implemented** |  |
 | Blizzard Shield | 2 | 2 | **Not implemented** |  |
+| Death Totem | 2 | 2 | **Not implemented** |  |
+| Haywire Mine | 2 | 2 | **Not implemented** |  |
 | Helix Gauntlet | 2 | 2 | **Supported** | Feel No Pain |
 | Infiltrator Comms Array | 2 | 2 | **Supported** | Infiltrators |
 | Orbital Comms Array (Aura) | 2 | 2 | **Not implemented** |  |
 | Shield Dome | 2 | 2 | **Not implemented** |  |
 | Watcher in the Dark | 2 | 2 | **Supported** | Feel No Pain |
 | Auspex Array | 1 | 1 | **Not implemented** |  |
+| Banner of Macragge | 1 | 1 | **Not implemented** |  |
 | Book of Salvation | 1 | 1 | **Not implemented** |  |
 | Centurion Assault Launcher | 1 | 1 | **Not implemented** |  |
 | Explorator Augury Web | 1 | 1 | **Not implemented** |  |
 | Grapnel Launcher | 1 | 1 | **Not implemented** |  |
 | Grenade Harness | 1 | 1 | **Not implemented** |  |
-| Guardian of Faith | 1 | 1 | **Not implemented** |  |
-| Haywire Mine | 1 | 1 | **Not implemented** |  |
 | Infernum Halo-launcher | 1 | 1 | **Not implemented** |  |
 | Instigator Bolt Carbine | 1 | 1 | **Not implemented** |  |
 | Ironclad Assault Launchers | 1 | 1 | **Not implemented** |  |
@@ -4439,7 +4464,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---|---|
-| Battlesuit Support System | 7 | 7 | **Supported** | Fall Back+Shoot (exact wording) |
+| Battlesuit Support System | 6 | 6 | **Supported** | Fall Back+Shoot (exact wording) |
 | Weapon Support System | 6 | 6 | **Not implemented** |  |
 | Shield Generator | 5 | 5 | **Not implemented** |  |
 | Advanced Guardian Drone | 1 | 1 | **Not implemented** |  |
@@ -4546,7 +4571,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---|---|
-| One Shot | 7 | 7 | **Not implemented** |  |
+| One Shot | 6 | 6 | **Not implemented** |  |
 
 #### Imperial Agents (`AoI`)
 
@@ -4559,7 +4584,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---|---|
-| Conversion | 2 | 2 | **Not implemented** |  |
+| Conversion | 3 | 3 | **Not implemented** |  |
 
 #### Leagues of Votann (`LoV`)
 
@@ -4567,6 +4592,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 |---|---:|---:|---|---|
 | Conversion | 2 | 2 | **Not implemented** |  |
 | One Shot | 1 | 1 | **Not implemented** |  |
+| Overcharge | 1 | 1 | **Not implemented** |  |
 
 #### Necrons (`NEC`)
 
@@ -4587,7 +4613,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---|---|
-| One Shot | 35 | 35 | **Not implemented** |  |
+| One Shot | 36 | 36 | **Not implemented** |  |
 | Conversion | 3 | 3 | **Not implemented** |  |
 
 #### Thousand Sons (`TS`)
@@ -4617,3 +4643,11 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | One Shot | 8 | 8 | **Not implemented** |  |
 | Conversion | 1 | 1 | **Not implemented** |  |
 | Impaled | 1 | 1 | **Not implemented** |  |
+
+### Без заголовка
+
+#### Space Marines (`SM`)
+
+| Ability | Occurrences (rows) | Datasheets | Status | Notes |
+|---|---:|---:|---|---|
+| Designer’s Note | 1 | 1 | **Not implemented** |  |

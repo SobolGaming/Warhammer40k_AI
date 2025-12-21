@@ -2,6 +2,8 @@
 
 Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 
+> Note: Boarding Actions detachment filtering is not applicable here (wargear keywords are not detachment-scoped in Wahapedia data).
+
 ## Legend
 
 - **Green**: Supported
@@ -24,21 +26,21 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <tr>
 <td bgcolor="#d4edda"><code>anti</code></td>
 <td bgcolor="#d4edda"><b>🟩 Supported</b></td>
-<td bgcolor="#d4edda">562</td>
+<td bgcolor="#d4edda">703</td>
 <td bgcolor="#d4edda">ANTI-FLY 2+<br/>ANTI-FLY 4+<br/>ANTI-INFANTRY 2+</td>
 <td bgcolor="#d4edda">Critical wound threshold vs matching target keyword (e.g. Anti-Infantry 4+).</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>assault</code></td>
 <td bgcolor="#d4edda"><b>🟩 Supported</b></td>
-<td bgcolor="#d4edda">300</td>
+<td bgcolor="#d4edda">360</td>
 <td bgcolor="#d4edda">ASSAULT<br/>assault</td>
 <td bgcolor="#d4edda">Shooting after Advance is allowed for Assault profiles.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>blast</code></td>
 <td bgcolor="#d4edda"><b>🟩 Supported</b></td>
-<td bgcolor="#d4edda">634</td>
+<td bgcolor="#d4edda">838</td>
 <td bgcolor="#d4edda">BLAST<br/>Blast<br/>blast</td>
 <td bgcolor="#d4edda">Adds attacks based on target unit size.</td>
 </tr>
@@ -59,7 +61,7 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <tr>
 <td bgcolor="#f8d7da"><code>conversion</code></td>
 <td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
-<td bgcolor="#f8d7da">11</td>
+<td bgcolor="#f8d7da">16</td>
 <td bgcolor="#f8d7da">conversion</td>
 <td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
 </tr>
@@ -73,14 +75,14 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <tr>
 <td bgcolor="#d4edda"><code>devastating wounds</code></td>
 <td bgcolor="#d4edda"><b>🟩 Supported</b></td>
-<td bgcolor="#d4edda">537</td>
+<td bgcolor="#d4edda">670</td>
 <td bgcolor="#d4edda">DEVASTATING WOUNDS<br/>devastating wounds</td>
 <td bgcolor="#d4edda">Critical wounds become mortal wounds.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>extra attacks</code></td>
 <td bgcolor="#d4edda"><b>🟩 Supported</b></td>
-<td bgcolor="#d4edda">134</td>
+<td bgcolor="#d4edda">147</td>
 <td bgcolor="#d4edda">EXTRA ATTACKS<br/>extra attacks</td>
 <td bgcolor="#d4edda">Melee selection supports 1 primary weapon plus all [EXTRA ATTACKS] weapons.</td>
 </tr>
@@ -94,14 +96,14 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <tr>
 <td bgcolor="#d4edda"><code>hazardous</code></td>
 <td bgcolor="#d4edda"><b>🟩 Supported</b></td>
-<td bgcolor="#d4edda">318</td>
+<td bgcolor="#d4edda">400</td>
 <td bgcolor="#d4edda">HAZARDOUS<br/>HAzARDOUS<br/>hazardous</td>
 <td bgcolor="#d4edda">Hazardous test after attacking; on 1 suffer mortal wounds.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>heavy</code></td>
 <td bgcolor="#d4edda"><b>🟩 Supported</b></td>
-<td bgcolor="#d4edda">314</td>
+<td bgcolor="#d4edda">449</td>
 <td bgcolor="#d4edda">HEAVY<br/>heavy</td>
 <td bgcolor="#d4edda">+1 to hit if the firing unit Remained Stationary.</td>
 </tr>
@@ -115,35 +117,35 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <tr>
 <td bgcolor="#d4edda"><code>ignores cover</code></td>
 <td bgcolor="#d4edda"><b>🟩 Supported</b></td>
-<td bgcolor="#d4edda">463</td>
+<td bgcolor="#d4edda">622</td>
 <td bgcolor="#d4edda">IGNORES COVER<br/>IGNORES COvER<br/>Ignores Cover</td>
 <td bgcolor="#d4edda">Cancels Benefit of Cover from terrain and Indirect Fire.</td>
 </tr>
 <tr>
 <td bgcolor="#f8d7da"><code>impaled</code></td>
 <td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
-<td bgcolor="#f8d7da">1</td>
+<td bgcolor="#f8d7da">2</td>
 <td bgcolor="#f8d7da">impaled</td>
 <td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>indirect fire</code></td>
 <td bgcolor="#d4edda"><b>🟩 Supported</b></td>
-<td bgcolor="#d4edda">101</td>
+<td bgcolor="#d4edda">139</td>
 <td bgcolor="#d4edda">indirect fire</td>
 <td bgcolor="#d4edda">No-LOS penalties and grants target Benefit of Cover (unless Ignores Cover).</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>lance</code></td>
 <td bgcolor="#d4edda"><b>🟩 Supported</b></td>
-<td bgcolor="#d4edda">40</td>
+<td bgcolor="#d4edda">51</td>
 <td bgcolor="#d4edda">Lance<br/>lance</td>
 <td bgcolor="#d4edda">If the bearer charged this turn, +1 to wound rolls for this weapon.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>lethal hits</code></td>
 <td bgcolor="#d4edda"><b>🟩 Supported</b></td>
-<td bgcolor="#d4edda">193</td>
+<td bgcolor="#d4edda">256</td>
 <td bgcolor="#d4edda">LETHAL HITS<br/>lethal Hits<br/>lethal hits</td>
 <td bgcolor="#d4edda">Critical hits auto-wound.</td>
 </tr>
@@ -157,42 +159,49 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <tr>
 <td bgcolor="#d4edda"><code>melta</code></td>
 <td bgcolor="#d4edda"><b>🟩 Supported</b></td>
-<td bgcolor="#d4edda">261</td>
+<td bgcolor="#d4edda">356</td>
 <td bgcolor="#d4edda">MELTA 2<br/>MElTA 2<br/>melta 1</td>
 <td bgcolor="#d4edda">Adds damage at half range (supports dice values like D3/D6+X).</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>one shot</code></td>
 <td bgcolor="#d4edda"><b>🟩 Supported</b></td>
-<td bgcolor="#d4edda">123</td>
+<td bgcolor="#d4edda">200</td>
 <td bgcolor="#d4edda">one shot</td>
 <td bgcolor="#d4edda">Enforced: each model can use a ONE SHOT weapon once per battle.</td>
 </tr>
 <tr>
+<td bgcolor="#f8d7da"><code>overcharge</code></td>
+<td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
+<td bgcolor="#f8d7da">1</td>
+<td bgcolor="#f8d7da">overcharge</td>
+<td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
+</tr>
+<tr>
 <td bgcolor="#d4edda"><code>pistol</code></td>
 <td bgcolor="#d4edda"><b>🟩 Supported</b></td>
-<td bgcolor="#d4edda">862</td>
+<td bgcolor="#d4edda">1037</td>
 <td bgcolor="#d4edda">PISTOL<br/>PISTOl<br/>Pistol</td>
 <td bgcolor="#d4edda">Engaged shooting + pistol-vs-other-ranged choice enforced (10e).</td>
 </tr>
 <tr>
 <td bgcolor="#f8d7da"><code>plasma warhead</code></td>
 <td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
-<td bgcolor="#f8d7da">1</td>
+<td bgcolor="#f8d7da">2</td>
 <td bgcolor="#f8d7da">plasma warhead</td>
 <td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
 </tr>
 <tr>
-<td bgcolor="#d4edda"><code>precision</code></td>
-<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
-<td bgcolor="#d4edda">156</td>
-<td bgcolor="#d4edda">PRECISION<br/>Precision<br/>precision</td>
-<td bgcolor="#d4edda">10e Attached Units: after a successful wound, if a visible CHARACTER model exists in the Attached Unit, the attacker may allocate the wound to that CHARACTER instead of normal bodyguard allocation. UI prompts once per weapon profile attack and caches the choice for remaining attacks.</td>
+<td bgcolor="#f8d7da"><code>precision</code></td>
+<td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
+<td bgcolor="#f8d7da">194</td>
+<td bgcolor="#f8d7da">PRECISION<br/>Precision<br/>precision</td>
+<td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
 </tr>
 <tr>
 <td bgcolor="#fff3cd"><code>psychic</code></td>
 <td bgcolor="#fff3cd"><b>🟨 Partial</b></td>
-<td bgcolor="#fff3cd">281</td>
+<td bgcolor="#fff3cd">335</td>
 <td bgcolor="#fff3cd">PSYCHIC<br/>psychic</td>
 <td bgcolor="#fff3cd">Used for conditional FNP parsing (e.g. 'against psychic attacks'); no other special handling.</td>
 </tr>
@@ -206,7 +215,7 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <tr>
 <td bgcolor="#d4edda"><code>rapid fire</code></td>
 <td bgcolor="#d4edda"><b>🟩 Supported</b></td>
-<td bgcolor="#d4edda">695</td>
+<td bgcolor="#d4edda">944</td>
 <td bgcolor="#d4edda">RAPID FIRE 1<br/>RAPID FIRE 2<br/>RAPID FIRE 3</td>
 <td bgcolor="#d4edda">Adds attacks at half range (supports dice values like D3/D6+X).</td>
 </tr>
@@ -227,21 +236,21 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <tr>
 <td bgcolor="#d4edda"><code>sustained hits</code></td>
 <td bgcolor="#d4edda"><b>🟩 Supported</b></td>
-<td bgcolor="#d4edda">479</td>
+<td bgcolor="#d4edda">663</td>
 <td bgcolor="#d4edda">SUSTAINED HITS 1<br/>SUSTAINED HITS 2<br/>SUSTAINED HITS 3</td>
 <td bgcolor="#d4edda">Critical hits generate extra hits (supports dice values like D3/D6+X; rolled per critical hit).</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>torrent</code></td>
 <td bgcolor="#d4edda"><b>🟩 Supported</b></td>
-<td bgcolor="#d4edda">438</td>
+<td bgcolor="#d4edda">592</td>
 <td bgcolor="#d4edda">TORRENT<br/>torrent</td>
 <td bgcolor="#d4edda">Auto-hits (also works under Overwatch restriction).</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>twin-linked</code></td>
 <td bgcolor="#d4edda"><b>🟩 Supported</b></td>
-<td bgcolor="#d4edda">595</td>
+<td bgcolor="#d4edda">843</td>
 <td bgcolor="#d4edda">TWIN-LINKED<br/>TwIN-lINkED<br/>twin-linked</td>
 <td bgcolor="#d4edda">Re-roll failed wound rolls for attacks made with this weapon.</td>
 </tr>

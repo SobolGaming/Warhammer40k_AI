@@ -9,6 +9,10 @@ This mirrors the high-level structure of STRATAGEM_SUPPORT_MATRIX.md:
   grouped by Datasheets_abilities.type ("Datasheet", "Wargear", "Wargear profile", etc.)
 
 Support status is inferred from currently-implemented engine mechanics (pattern-based).
+
+Exclusions:
+- Detachments with `type == "Boarding Actions"` (from `wahapedia_data/Detachments.json`) are excluded from reporting
+  for Detachment abilities.
 """
 
 from __future__ import annotations
@@ -70,6 +74,7 @@ class DetachmentAbilityEntry:
     id: str
     faction_id: str
     detachment: str
+    detachment_id: str
     name: str
     description: str
     legend: str
@@ -139,12 +144,31 @@ def _load_detachment_abilities() -> List[DetachmentAbilityEntry]:
                 id=a.get("id", "") or "",
                 faction_id=a.get("faction_id", "") or "",
                 detachment=a.get("detachment", "") or "",
+                detachment_id=a.get("detachment_id", "") or "",
                 name=a.get("name", "") or "",
                 description=a.get("description", "") or "",
                 legend=a.get("legend", "") or "",
             )
         )
     return out
+
+
+def _load_boarding_actions_detachment_ids() -> set[str]:
+    path = os.path.join(WAHA_DIR, "Detachments.json")
+    if not os.path.exists(path):
+        return set()
+    raw = _read_json(path)
+    ids: set[str] = set()
+    for d in raw:
+        try:
+            if (d.get("type") or "").strip().lower() != "boarding actions":
+                continue
+            did = (d.get("id") or "").strip()
+            if did:
+                ids.add(did)
+        except Exception:
+            continue
+    return ids
 
 
 def _load_datasheets_abilities_rows() -> List[dict]:
@@ -462,6 +486,13 @@ def main() -> None:
     detachment_abilities = _load_detachment_abilities()
     ds_abilities_rows = _load_datasheets_abilities_rows()
     ds_detachment_rows = _load_datasheets_detachment_abilities_rows()
+
+    # Exclude Boarding Actions detachments entirely from detachment-ability reporting.
+    ba_ids = _load_boarding_actions_detachment_ids()
+    if ba_ids:
+        detachment_abilities = [a for a in detachment_abilities if (a.detachment_id or "").strip() not in ba_ids]
+        allowed_det_ability_ids = {a.id for a in detachment_abilities}
+        ds_detachment_rows = [r for r in ds_detachment_rows if (r.get("detachment_ability_id") or "").strip() in allowed_det_ability_ids]
 
     _write_md(
         abilities=abilities,

@@ -3,7 +3,7 @@ Generate docs/STRATAGEM_SUPPORT_MATRIX.md from Wahapedia JSON.
 
 Grouping:
 - Core Stratagems (global faction_id == "")
-  - Sub-grouped by leading "mode" derived from stratagem 'type' (e.g. "Core", "Boarding Actions")
+  - Sub-grouped by leading "mode" derived from stratagem 'type' (e.g. "Core")
 - Faction Stratagems
   - One section per faction
   - Within faction: "General" (no detachment) then one subsection per detachment
@@ -12,7 +12,9 @@ Support status is inferred from current rules engine implementation:
 - Implemented: explicit gameplay logic exists (beyond CP spend + logging)
 - Partial: implemented but known mismatch vs official wording/restrictions
 - Not implemented: available in data but no effect logic wired in engine
-- Not supported: filtered/mode not supported (e.g. Boarding Actions are excluded from standard games)
+
+Exclusions:
+- Detachments with `type == "Boarding Actions"` (from `wahapedia_data/Detachments.json`) are excluded from reporting.
 """
 
 from __future__ import annotations
@@ -39,6 +41,7 @@ class StratagemRow:
     turn: str
     phase: str
     detachment: str
+    detachment_id: str
     description: str
 
 
@@ -87,6 +90,7 @@ def _load_stratagems() -> List[StratagemRow]:
                 turn=item.get("turn", "") or "",
                 phase=item.get("phase", "") or "",
                 detachment=item.get("detachment", "") or "",
+                detachment_id=item.get("detachment_id", "") or "",
                 description=item.get("description", "") or "",
             )
         )
@@ -114,20 +118,36 @@ def _load_factions() -> Dict[str, Dict[str, str]]:
     return out
 
 
+def _load_boarding_actions_detachments() -> tuple[set[str], set[str]]:
+    """
+    Returns (detachment_ids, detachment_names) where detachment type is 'Boarding Actions'.
+    """
+    path = os.path.join(WAHA_DIR, "Detachments.json")
+    if not os.path.exists(path):
+        return set(), set()
+    raw = _read_json(path)
+    ids: set[str] = set()
+    names: set[str] = set()
+    for d in raw:
+        try:
+            if (d.get("type") or "").strip().lower() != "boarding actions":
+                continue
+            did = (d.get("id") or "").strip()
+            if did:
+                ids.add(did)
+            nm = (d.get("name") or "").strip()
+            if nm:
+                names.add(nm)
+        except Exception:
+            continue
+    return ids, names
+
+
 def _support_classification(row: StratagemRow) -> Tuple[str, str]:
     """
     Returns (status, notes).
     """
     name_u = (row.name or "").strip().upper()
-    type_l = (row.type or "").strip().lower()
-
-    # The engine currently filters out Boarding Actions stratagems for standard games.
-    if "boarding actions" in type_l or "boarding action" in type_l:
-        return (
-            "Not supported",
-            "Boarding Actions are filtered out by `StratagemManager._build_available()`.",
-        )
-
     # Implemented/partial set based on current `classes/stratagems.py`.
     implemented = {
         "COMMAND RE-ROLL": "Queued on `roll_made`; executes a reroll callback; once-per-turn guard.",
@@ -155,8 +175,24 @@ def _sort_key(row: StratagemRow) -> Tuple[str, str, str]:
 def _write_md(rows: List[StratagemRow], factions: Dict[str, Dict[str, str]]) -> None:
     os.makedirs(DOCS_DIR, exist_ok=True)
 
-    core = [r for r in rows if not (r.faction_id or "").strip()]
-    faction_rows = [r for r in rows if (r.faction_id or "").strip()]
+    ba_detachment_ids, ba_detachment_names = _load_boarding_actions_detachments()
+    excluded = 0
+    filtered_rows: List[StratagemRow] = []
+    for r in rows:
+        mode = _mode_from_type(r.type).strip().lower()
+        if mode == "boarding actions" or "boarding action" in (r.type or "").lower():
+            excluded += 1
+            continue
+        if (r.detachment_id or "").strip() in ba_detachment_ids:
+            excluded += 1
+            continue
+        if (r.detachment or "").strip() in ba_detachment_names:
+            excluded += 1
+            continue
+        filtered_rows.append(r)
+
+    core = [r for r in filtered_rows if not (r.faction_id or "").strip()]
+    faction_rows = [r for r in filtered_rows if (r.faction_id or "").strip()]
 
     # Core sub-group by mode
     core_by_mode: Dict[str, List[StratagemRow]] = {}
@@ -182,7 +218,7 @@ def _write_md(rows: List[StratagemRow], factions: Dict[str, Dict[str, str]]) -> 
             f"{_escape_md(r.turn)} | {_escape_md(r.phase)} | **{status}** | {_escape_md(notes)} |"
         )
 
-    total = len(rows)
+    total = len(filtered_rows)
     total_core = len(core)
     total_faction = len(faction_rows)
     total_detachment = sum(1 for r in faction_rows if (r.detachment or "").strip())
@@ -197,17 +233,15 @@ def _write_md(rows: List[StratagemRow], factions: Dict[str, Dict[str, str]]) -> 
     lines.append("- **Implemented**: the stratagem has explicit gameplay logic in the engine (beyond CP spend + logging).")
     lines.append("- **Partial**: some gameplay logic exists, but key restrictions/timing/text are not fully matched.")
     lines.append("- **Not implemented**: no gameplay effect logic wired yet.")
-    lines.append("- **Not supported**: currently excluded by game-mode filtering (e.g. Boarding Actions).")
     lines.append("")
     lines.append("## Summary")
     lines.append("")
     lines.append(f"- Total stratagem rows: {total}")
     lines.append(f"- Core (global) stratagem rows (`faction_id == \"\"`): {total_core}")
     lines.append(f"- Faction stratagem rows: {total_faction} (detachment-specific: {total_detachment})")
+    lines.append(f"- Excluded (Boarding Actions detachments / mode): {excluded}")
     lines.append("")
     lines.append("## Core Stratagems")
-    lines.append("")
-    lines.append("> Note: Boarding Actions (and similar mode-specific) stratagems are present in Wahapedia data, but are not used in standard games by this engine today.")
     lines.append("")
 
     for mode in sorted(core_by_mode.keys(), key=lambda s: s.lower()):
@@ -273,7 +307,7 @@ def main() -> None:
     rows = _load_stratagems()
     factions = _load_factions()
     _write_md(rows, factions)
-    print(f"Wrote {OUT_PATH} ({len(rows)} stratagem rows).")
+    print(f"Wrote {OUT_PATH}.")
 
 
 if __name__ == "__main__":

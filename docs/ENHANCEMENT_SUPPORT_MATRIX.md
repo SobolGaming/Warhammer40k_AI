@@ -9,8 +9,9 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 
 ## Summary
 
-- Total enhancements: 821
+- Total enhancements: 710
 - Factions: 23
+- Excluded (Boarding Actions detachments): 111
 
 ## Faction Enhancements
 
@@ -61,20 +62,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Refrain of Enduring Faith | `000009029004` | 25 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Verse of Holy Piety | `000009029003` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
-#### Penitents and Pilgrims
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Fervent Ferocity | `000009316002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Sanctification Rituals | `000009316003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
-#### Pious Protectors
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Limitless Resolve | `000009308003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Martial Discipline | `000009308002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
 ### Adeptus Custodes (`AC`) — `https://wahapedia.ru/wh40k10ed/factions/adeptus-custodes`
 
 #### Auric Champions
@@ -85,13 +72,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Inspirational Exemplar | `000008930003` | 10 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Martial Philosopher | `000008930004` | 30 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Veiled Blade | `000008930005` | 25 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
-#### Black Ship Guardians
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Sinister Presence (Aura) | `000009273003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| The Vratine Aquila (Aura) | `000009273002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
 #### Lions of the Emperor
 
@@ -138,13 +118,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Gift of Terran Artifice | `000008921004` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Radiant Mantle | `000008921005` | 30 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
-#### Voyagers in Darkness
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Mantle of the Emissary | `000009264003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Voidstrider | `000009264002` | 0 | **Supported** | Add 2" to bearer Move. |
-
 ### Adeptus Mechanicus (`AdM`) — `https://wahapedia.ru/wh40k10ed/factions/adeptus-mechanicus`
 
 #### Cohort Cybernetica
@@ -165,13 +138,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Mechanicus Locum | `000008564002` | 10 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Temporcopia | `000008564005` | 25 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
-#### Electromartyrs
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Multi-dimensional Auspex | `000009281003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Remote Lockdown | `000009281002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
 #### Explorator Maniple
 
 | Enhancement | ID | Cost | Status | Notes |
@@ -190,13 +156,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Sanctified Ordnance | `000009745004` | 10 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Transoracular Dyad Wafers | `000009745002` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
-#### Machine Cult
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Beseech the Machine Spirits | `000009298002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Harmonic Discordator | `000009298003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
 #### Rad-Zone Corps
 
 | Enhancement | ID | Cost | Status | Notes |
@@ -205,13 +164,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Malphonic Susurrus | `000008385003` | 20 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Peerless Eradicator | `000008385004` | 20 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Radial Suffusion | `000008385002` | 25 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
-#### Response Clade
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Admonissor Shunt | `000009290002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Optimised Cogitators | `000009290003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
 #### Skitarii Hunter Cohort
 
@@ -269,20 +221,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Ethereal Pathway | `000009911003` | 30 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Protector of the Paths | `000009911004` | 20 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
-#### Khaine’s Arrow
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Runes of Sanctuary (Psychic) | `000009325002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Shieldmaster | `000009325003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
-#### Protector Host
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Grace of Khaine | `000009334002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Rallying Cry | `000009334003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
 #### Seer Council
 
 | Enhancement | ID | Cost | Status | Notes |
@@ -310,13 +248,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Rune of Mists | `000009907004` | 10 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Stave of Kurnous | `000009907003` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
-#### Star-dancer Masque
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Path of Eldanesh | `000009351003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Prismatic Garb | `000009351002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
 #### Warhost
 
 | Enhancement | ID | Cost | Status | Notes |
@@ -334,13 +265,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Firstdrawn Blade | `000009903002` | 10 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Mirage Field | `000009903003` | 25 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Seersight Strike | `000009903004` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
-#### Wraiths of the Void
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Direct Guidance | `000009342002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Song of Renewal | `000009342003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
 ### Astra Militarum (`AM`) — `https://wahapedia.ru/wh40k10ed/factions/astra-militarum`
 
@@ -361,13 +285,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Drill Commander | `000008380003` | 20 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Grand Strategist | `000008380004` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Reactive Command | `000008380005` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
-#### Embarked Regiment
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Rigged Blind Grenades | `000009380002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Shipboard Veteran | `000009380003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
 #### Grizzled Company
 
@@ -414,13 +331,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Legacy Sidearm | `000009857004` | 10 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Stalwart’s Honours | `000009857005` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
-#### Tempestus Boarding Regiment
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Covert Breach | `000009389002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Elimination Force | `000009389003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
 ### Chaos Daemons (`CD`) — `https://wahapedia.ru/wh40k10ed/factions/chaos-daemons`
 
 #### Blood Legion
@@ -437,25 +347,9 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Enhancement | ID | Cost | Status | Notes |
 |---|---:|---:|---|---|
 | A’rgath, the King of Blades | `000008438002` | 20 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Geller Breach | `000009547003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Soulstealer | `000008438003` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Spite Made Manifest | `000009547002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | The Endless Gift | `000008438004` | 30 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | The Everstave | `000008438005` | 25 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
-#### Dread Carnival
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Fatal Caress | `000009572002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Horrifying Visage | `000009572003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
-#### Infernal Onslaught
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Unholy Fury | `000009555003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Worthier Skulls | `000009555002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
 #### Legion of Excess
 
@@ -466,13 +360,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | False Majesty (Aura) | `000009806002` | 30 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Soul Glutton | `000009806005` | 10 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
-#### Pandaemoniac Inferno
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Fulgurating Presence | `000009580002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Mutagenic Flames | `000009580003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
 #### Plague Legion
 
 | Enhancement | ID | Cost | Status | Notes |
@@ -481,13 +368,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Droning Shroud (Aura) | `000009819004` | 35 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Font of Spores (Aura) | `000009819005` | 20 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Maggot Maws | `000009819003` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
-#### Rotten and Rusted
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Endless Gift | `000009564003` | 0 | **Supported** | Add 2 to bearer Wounds. |
-| Virulent Corruption | `000009564002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
 #### Scintillating Legion
 
@@ -558,13 +438,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Mind Blade | `000010151004` | 25 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Touched by the Warp | `000010151002` | 10 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
-#### Champions of Chaos
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Dark Majesty | `000009520003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Manifest Vengeance | `000009520002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
 #### Chaos Cult
 
 | Enhancement | ID | Cost | Status | Notes |
@@ -610,13 +483,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Ironbound Enmity | `000008976004` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Warp Tracer | `000008976005` | 20 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
-#### Infernal Reavers
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Swollen with Power | `000009503003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Voice of the Octed | `000009503002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
 #### Nightmare Hunt
 
 | Enhancement | ID | Cost | Status | Notes |
@@ -653,13 +519,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Soul Harvester | `000008985005` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Tempting Addendum | `000008985004` | 25 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
-#### Underdeck Uprising
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Rabble Rouser | `000009512002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Vox Malevolus | `000009512003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
 #### Veterans of the Long War
 
 | Enhancement | ID | Cost | Status | Notes |
@@ -670,13 +529,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Warmaster’s Gift | `000008960005` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
 ### Death Guard (`DG`) — `https://wahapedia.ru/wh40k10ed/factions/death-guard`
-
-#### Arch-Contaminators
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Disgusting Reinvigoration | `000009416003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Miasmic Odour | `000009416002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
 #### Champions of Contagion
 
@@ -732,20 +584,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Fell Harvester | `000010135003` | 10 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Tome of Bounteous Blessings | `000010135005` | 20 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
-#### Unclean Uprising
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Hand of Nurgle | `000009408003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Pox-Bearer | `000009408002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
-#### Vectors of Decay
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Foul Constitution | `000009398002` | 0 | **Supported** | Reduce damage allocated to bearer by 1 (min 1). |
-| Fountaining Filth | `000009398003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
 #### Virulent Vectorium
 
 | Enhancement | ID | Cost | Status | Notes |
@@ -775,20 +613,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Towering Arrogance | `000010588005` | 20 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Webway Awl | `000010588003` | 25 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
-#### Kabalite Corsairs
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Dark Charisma | `000009433002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Malevolent Cunning | `000009433003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
-#### Painbringers
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Rending Chain-Flails | `000009450002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Vile Surgeon | `000009450003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
 #### Realspace Raiders
 
 | Enhancement | ID | Cost | Status | Notes |
@@ -807,13 +631,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Reaper’s Cowl | `000009781004` | 25 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Webway Walker | `000009781003` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
-#### Ship-killer Cult
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Blood-Drenched Champion | `000009441003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Stimm-Fervour | `000009441002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
 #### Skysplinter Assault
 
 | Enhancement | ID | Cost | Status | Notes |
@@ -822,13 +639,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Phantasmal Smoke | `000010576002` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Sadistic Fulcrum | `000010576003` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Spiteful Raider | `000010576004` | 10 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
-#### Space Lane Raiders
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Power and Greed | `000009425002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Spiteful Demise | `000009425003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
 #### Spectacle of Spite
 
@@ -924,13 +734,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Martial Espionage | `000009084002` | 25 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | The Hero Returned | `000009084004` | 20 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
-#### Cult Unveiled
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Master Saboteur | `000009460002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Primary Detonator | `000009460003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
 #### Final Day
 
 | Enhancement | ID | Cost | Status | Notes |
@@ -940,13 +743,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Synaptic Auger | `000009827002` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Vanguard Tyrant | `000009827004` | 25 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
-#### Genespawn Onslaught
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Miasmic Fumes | `000009468003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Spiteful Imp | `000009468002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
 #### Host of Ascension
 
 | Enhancement | ID | Cost | Status | Notes |
@@ -955,13 +751,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Assassination Edict | `000009067005` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Our Time Is Nigh | `000009067004` | 20 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Prowling Agitant | `000009067002` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
-#### Infestation Swarm
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Psi-spoor Sensitivity | `000009476003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Stalking Menace | `000009476002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
 #### Outlander Claw
 
@@ -991,13 +780,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Doomseer’s Amulet | `000010364005` | 25 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Grimoire of Conjunctions | `000010364002` | 10 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Shield of Prophecy | `000010364003` | 20 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
-#### Baneslayer Strike
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Close and Sanction | `000009493003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Shield of Admonishment | `000009493002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
 #### Banishers
 
@@ -1035,13 +817,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Sigil of Exigence | `000010360004` | 30 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Spiritus Machina | `000010360005` | 25 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
-#### Void Purge Force
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Sigil of Warding | `000009485002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Tactical Haruspexy | `000009485003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
 #### Warpbane Task Force
 
 | Enhancement | ID | Cost | Status | Notes |
@@ -1061,13 +836,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Combat Landers | `000009138003` | 10 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Digital Weapons | `000009138004` | 10 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Fleetmaster | `000009138005` | 20 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
-#### Interdiction Team
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Manhunter’s Helm | `000009369002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Vasov’s Auto-Oppressor | `000009369003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
 #### Ordo Hereticus Purgation Force
 
@@ -1104,13 +872,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Esoteric Explosives | `000009757003` | +40 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Intraneural Biotech | `000009757004` | +35 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Micromelta Rounds | `000009757005` | +45 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
-#### Voidship’s Company
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Heirloom Blade | `000009360003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Lathimon’s Flock | `000009360002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
 ### Imperial Knights (`QI`) — `https://wahapedia.ru/wh40k10ed/factions/imperial-knights`
 
@@ -1188,13 +949,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Ironskein | `000009823004` | 10 | **Supported** | Add 2 to bearer Wounds. |
 | Quake Multigenerator | `000009823003` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
-#### Hearthfire Strike
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Celebrated Folk Hero | `000009537002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Gûlyk’s Stars | `000009537003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
 #### Hearthfyre Arsenal
 
 | Enhancement | ID | Cost | Status | Notes |
@@ -1221,13 +975,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Nomad Strategist | `000010439005` | 20 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Surgical Saboteur | `000010439004` | 10 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Writ of Acquisition | `000010439003` | 10 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
-#### Void Salvagers
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Masterful Construction | `000009529002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Obsessive Drive | `000009529003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
 ### Necrons (`NEC`) — `https://wahapedia.ru/wh40k10ed/factions/necrons`
 
@@ -1258,20 +1005,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Hyperphasic Fulcrum | `000008546003` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Metalodermal Tesla Weave | `000008546005` | 10 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
-#### Canoptek Harvesters
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Impromptu Translocation | `000009604003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Nanoscarab Reconstitution | `000009604002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
-#### Deranged Outcasts
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Domineering Presence | `000009596003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Inured to Damage | `000009596002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
 #### Hypercrypt Legion
 
 | Enhancement | ID | Cost | Status | Notes |
@@ -1298,13 +1031,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Demanding Leader | `000009749004` | 10 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Dread Majesty (Aura) | `000009749002` | 30 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Miniaturised Nebuloscope | `000009749003` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
-#### Tomb Ship Complement
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Mindshackle Scarabs | `000009588003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Resurrection Protocols | `000009588002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
 ### Orks (`ORK`) — `https://wahapedia.ru/wh40k10ed/factions/orks`
 
@@ -1344,13 +1070,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Ferocious Show Off | `000008881004` | 10 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Raucous Warcaller | `000008881005` | 20 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
-#### Kaptin Killers
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Gnasher Squig Crates | `000009623003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Tellyporta | `000009623002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
 #### Kult of Speed
 
 | Enhancement | ID | Cost | Status | Notes |
@@ -1368,13 +1087,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Dead Shiny Shootas | `000009991003` | 35 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Targetin’ Squigs | `000009991004` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Zog Off and Eat Dakka! | `000009991005` | 10 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
-#### Ramship Raiders
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Living Battering Ram | `000009615002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Scarred Brute | `000009615003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
 #### Taktikal Brigade
 
@@ -1440,13 +1152,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Oath of Macragge | `000010633003` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Student of the Codex | `000010633004` | 20 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Veteran of Behemoth | `000010633005` | 25 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
-#### Boarding Strike
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Adamantine Mantle | `000009240002` | 0 | **Supported** | Reduce damage allocated to bearer by 1 (min 1). |
-| Clavitine Reliquary | `000009240003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
 #### Champions of Fenris
 
@@ -1574,13 +1279,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Lord of the Hunt | `000009733003` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Stalwart Champion | `000009733004` | 25 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
-#### Pilum Strike Team
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Omni-Structural Auspex | `000009248002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Void Warrior | `000009248003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
 #### Rage-cursed Onslaught
 
 | Enhancement | ID | Cost | Status | Notes |
@@ -1652,13 +1350,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Fury of the Storm | `000008486002` | 25 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Hunter’s Instincts | `000008486005` | 25 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Portents of Wisdom | `000008486003` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
-#### Terminator Assault
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Resolute | `000009255003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Seal of Indomitability | `000009255002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
 #### The Angelic Host
 
@@ -1734,27 +1425,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Nethershriek Mind-eater | `000010197002` | 10 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Tome of True Names | `000010197005` | 20 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
-#### Chosen Cabal
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Fires of Change | `000009654003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Warp Mastery | `000009654002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
-#### Devoted Thralls
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Prescient Authority | `000009663003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Thrallmaster | `000009663002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
-#### Fateseekers
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Astral Predation | `000009672003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Predestined Champion | `000009672002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
 #### Grand Coven
 
 | Enhancement | ID | Cost | Status | Notes |
@@ -1811,19 +1481,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Parasitic Biomorphology | `000008412005` | 25 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Regenerating Monstrosity | `000008412002` | 20 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
-#### Biotide
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Hypersurge Gland | `000009699003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Synaptic Beacon | `000009699002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
-#### Boarding Swarm
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Monoform Predators | `000009690002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
 #### Crusher Stampede
 
 | Enhancement | ID | Cost | Status | Notes |
@@ -1832,13 +1489,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Monstrous Nemesis | `000008404005` | 25 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Null Nodules | `000008404004` | 10 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Ominous Presence | `000008404002` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
-#### Infestation Swarm
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Psi-spoor Sensitivity | `000009724003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Stalking Menace | `000009724002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
 #### Invasion Fleet
 
@@ -1866,13 +1516,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Psychostatic Disruption | `000008421003` | 30 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Synaptic Control | `000008421004` | 20 | **Supported** | Reduce damage allocated to bearer by 1 (min 1). |
 | The Dirgeheart of Kharis (Aura) | `000008421005` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
-#### Tyranid Attack
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Reinforced Carapace | `000009681003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Synaptic Goad | `000009681002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
 #### Unending Swarm
 
@@ -1939,13 +1582,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Nomadic Hunter | `000008821004` | 20 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Root-carved Weapons | `000008821005` | 10 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
-#### Kroot Raiding Party
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Experienced Leader | `000009645002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Quill Marker | `000009645003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
 #### Mont’ka
 
 | Enhancement | ID | Cost | Status | Notes |
@@ -1964,13 +1600,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Puretide Engram Neurochip | `000008815004` | 25 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Starflare Ignition System | `000008815005` | 20 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
-#### Starfire Cadre
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Duty’s Echo | `000009636003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Target Optimisation Microdrones | `000009636002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
 ### World Eaters (`WE`) — `https://wahapedia.ru/wh40k10ed/factions/world-eaters`
 
 #### Berzerker Warband
@@ -1981,13 +1610,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Berzerker Glaive | `000008432002` | 35 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Favoured of Khorne | `000008432004` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Helm of Brazen Ire | `000008432003` | 30 | **Supported** | Reduce damage allocated to bearer by 1 (min 1). |
-
-#### Boarding Butchers
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Battle Lust | `000009708003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Chosen of Khorne | `000009708002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
 #### Cult of Blood
 
@@ -2024,13 +1646,6 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Killing Clarity | `000010082003` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Malicious Vigour | `000010082002` | 30 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Violent Demise | `000010082005` | 10 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-
-#### Skullsworn
-
-| Enhancement | ID | Cost | Status | Notes |
-|---|---:|---:|---|---|
-| Carmine Corona | `000009716003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Frenzied | `000009716002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
 #### Vessels of Wrath
 
