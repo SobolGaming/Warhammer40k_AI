@@ -413,7 +413,16 @@ class Unit:
         return models
 
     def _parse_loadout(self, loadout: str, model_name: str = "") -> List[Wargear]:
-        entries = loadout.replace('’', '').lower().split('.')
+        def _norm_item(s: str) -> str:
+            s = (s or "").replace("’", "'").lower().strip()
+            s = re.sub(r"<[^>]+>", " ", s)
+            # remove punctuation but keep hyphens (for items like "grav-gun")
+            s = re.sub(r"[^\w\s\-']", " ", s)
+            s = s.replace("'", "")  # ignore apostrophes for matching
+            s = re.sub(r"\s+", " ", s).strip()
+            return s
+
+        entries = (loadout or "").replace('’', "'").lower().split('.')
 
         def _parse_loadout_quantity(item_name: str) -> Tuple[int, str]:
             if quantity_match := re.match(r"^(\d+) (.*)s$", item_name.strip()):
@@ -430,14 +439,14 @@ class Unit:
                 for item_name in match.group(1).split(";"):
                     quantity, item_name = _parse_loadout_quantity(item_name)
                     for wargear in self.possible_wargear:
-                        if item_name.strip() == wargear.name.lower():
+                        if _norm_item(item_name) == _norm_item(wargear.name):
                             for _ in range(quantity):
                                 starting_wargear.append(wargear)
             elif match := re.match(r"^every model is equipped with: (.*)$", entry):
                 for item_name in match.group(1).split(";"):
                     quantity, item_name = _parse_loadout_quantity(item_name)
                     for wargear in self.possible_wargear:
-                        if item_name.strip() == wargear.name.lower():
+                        if _norm_item(item_name) == _norm_item(wargear.name):
                             for _ in range(quantity):
                                 starting_wargear.append(wargear)
             elif match := re.match(r"^(?:the|every) (.*) model is equipped with: (.*)$", entry):
@@ -445,7 +454,7 @@ class Unit:
                     for item_name in match.group(2).split(";"):
                         quantity, item_name = _parse_loadout_quantity(item_name)
                         for wargear in self.possible_wargear:
-                            if item_name.strip() == wargear.name.lower():
+                            if _norm_item(item_name) == _norm_item(wargear.name):
                                 for _ in range(quantity):
                                     starting_wargear.append(wargear)
                 else:
@@ -459,7 +468,7 @@ class Unit:
                         for item_name in match.group(2).split(";"):
                             quantity, item_name = _parse_loadout_quantity(item_name)
                             for wargear in self.possible_wargear:
-                                if item_name.strip() == wargear.name.lower():
+                                if _norm_item(item_name) == _norm_item(wargear.name):
                                     for _ in range(quantity):
                                         starting_wargear.append(wargear)
                     else:
@@ -473,7 +482,7 @@ class Unit:
                         for item_name in match.group(2).split(";"):
                             quantity, item_name = _parse_loadout_quantity(item_name)
                             for wargear in self.possible_wargear:
-                                if item_name.strip() == wargear.name.lower():
+                                if _norm_item(item_name) == _norm_item(wargear.name):
                                     for _ in range(quantity):
                                         starting_wargear.append(wargear)
                     else:

@@ -67,23 +67,27 @@ class WargearProfile:
         return Count.from_string(attacks_string)
 
     def _parse_attribute(self, attribute_value: str) -> Union[int, DiceCollection]:
-        # Remove " and + from the attribute value
-        attribute_value = attribute_value.replace("\"", "")
+        # Remove " and normalize common placeholders.
+        attribute_value = (attribute_value or "").replace("\"", "").replace("’", "'").strip()
         
         # Remove trailing + if it exists
         if attribute_value.endswith("+"):
             attribute_value = attribute_value[:-1]
             
+        # Common placeholders in Wahapedia exports.
+        if attribute_value in ("", "-", "–", "N/A"):
+            return 0
+
         if "D" in attribute_value:
             return DiceCollection.from_string(attribute_value)
-        elif 'N/A' == attribute_value:
-            return 0
         else:
             return int(attribute_value)
 
     def _parse_keywords(self, keywords_string):
         if keywords_string:
-            return [keyword.strip() for keyword in keywords_string.split(',')]
+            # Wahapedia weapon ability strings are comma-separated. Be defensive and also split on semicolons.
+            parts = re.split(r"\s*,\s*|\s*;\s*", str(keywords_string))
+            return [p.strip() for p in parts if p and p.strip()]
         return []
 
     def get_keywords(self) -> List[str]:
@@ -1499,7 +1503,7 @@ class WargearProfile:
 
 class Wargear:
     def __init__(self, wargear_data: Dict):
-        self.name = wargear_data.get('name', '').replace("'", "'")
+        self.name = (wargear_data.get('name', '') or '').replace("’", "'")
         if ' – ' in self.name:
             self.name, profile_name = self.name.split(' – ')
         else:
@@ -1512,11 +1516,11 @@ class Wargear:
 
     def __str__(self):
         str = f"{self.name} ({self.type}): "
-        for profile in self.profiles:
-            str += f"[{profile.name}: "
-            str += f"Range {self.get_range(profile.name)}, A {self.get_attacks(profile.name)}, "
-            str += f"BS/WS {self.get_skill(profile.name)}, S {self.get_strength(profile.name)}, "
-            str += f"AP {self.get_ap(profile.name)}, D {self.get_damage(profile.name)}]"
+        for profile_name, profile in self.profiles.items():
+            str += f"[{profile_name}: "
+            str += f"Range {self.get_range(profile_name)}, A {self.get_attacks(profile_name)}, "
+            str += f"BS/WS {self.get_skill(profile_name)}, S {self.get_strength(profile_name)}, "
+            str += f"AP {self.get_ap(profile_name)}, D {self.get_damage(profile_name)}]"
         return str
 
     def __repr__(self):
