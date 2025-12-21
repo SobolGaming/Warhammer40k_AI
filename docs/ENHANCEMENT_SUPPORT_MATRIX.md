@@ -106,7 +106,7 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 
 | Enhancement | ID | Cost | Status | Notes |
 |---|---:|---:|---|---|
-| Enhanced Voidsheen Cloak | `000008926002` | 10 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
+| Enhanced Voidsheen Cloak | `000008926002` | 10 | **Partial** | Conditional damage reduction (unconditional portion supported). |
 | Huntress’ Eye | `000008926003` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Oblivion Knight | `000008926004` | 25 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Raptor Blade | `000008926005` | 5 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
@@ -115,7 +115,7 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 
 | Enhancement | ID | Cost | Status | Notes |
 |---|---:|---:|---|---|
-| Auric Mantle | `000008395002` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
+| Auric Mantle | `000008395002` | 15 | **Supported** | Add 2 to bearer Wounds. |
 | Castellan’s Mark | `000008395003` | 20 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | From the Hall of Armouries | `000008395004` | 25 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Panoptispex | `000008395005` | 5 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
@@ -124,7 +124,7 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 
 | Enhancement | ID | Cost | Status | Notes |
 |---|---:|---:|---|---|
-| Adamantine Talisman | `000009753002` | 25 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
+| Adamantine Talisman | `000009753002` | 25 | **Supported** | Improve melee weapons' A/S/D by 1. |
 | Augury Uplink | `000009753003` | 35 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Honoured Fallen (Aura) | `000009753004` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Veteran of the Kataphraktoi | `000009753005` | 10 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
@@ -143,7 +143,7 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Enhancement | ID | Cost | Status | Notes |
 |---|---:|---:|---|---|
 | Mantle of the Emissary | `000009264003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Voidstrider | `000009264002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
+| Voidstrider | `000009264002` | 0 | **Supported** | Add 2" to bearer Move. |
 
 ### Adeptus Mechanicus (`AdM`) — `https://wahapedia.ru/wh40k10ed/factions/adeptus-mechanicus`
 
@@ -486,7 +486,7 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 
 | Enhancement | ID | Cost | Status | Notes |
 |---|---:|---:|---|---|
-| Endless Gift | `000009564003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
+| Endless Gift | `000009564003` | 0 | **Supported** | Add 2 to bearer Wounds. |
 | Virulent Corruption | `000009564002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
 #### Scintillating Legion
@@ -523,7 +523,7 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Enhancement | ID | Cost | Status | Notes |
 |---|---:|---:|---|---|
 | Bestial Aspect | `000010304005` | 20 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Blasphemous Engine | `000010304003` | 35 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
+| Blasphemous Engine | `000010304003` | 35 | **Supported** | Add 2 to bearer Wounds. |
 | Fleshmetal Fusion | `000010304004` | 35 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Knight Diabolus | `000010304002` | 25 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
@@ -649,7 +649,7 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Enhancement | ID | Cost | Status | Notes |
 |---|---:|---:|---|---|
 | Forge’s Blessing | `000008985002` | 20 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Invigorated Mechatendrils | `000008985003` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
+| Invigorated Mechatendrils | `000008985003` | 15 | **Supported** | Add 4" to bearer Move. |
 | Soul Harvester | `000008985005` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Tempting Addendum | `000008985004` | 25 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
@@ -743,7 +743,7 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 
 | Enhancement | ID | Cost | Status | Notes |
 |---|---:|---:|---|---|
-| Foul Constitution | `000009398002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
+| Foul Constitution | `000009398002` | 0 | **Supported** | Reduce damage allocated to bearer by 1 (min 1). |
 | Fountaining Filth | `000009398003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
 #### Virulent Vectorium
@@ -1129,7 +1129,7 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 |---|---:|---:|---|---|
 | Knight of the Opus Machina | `000009761003` | 20 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Magos Questoris | `000009761004` | 35 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Omnissian Champion | `000009761002` | 30 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
+| Omnissian Champion | `000009761002` | 30 | **Supported** | Add 4 to bearer Wounds. |
 | Vocifer Magnificat (Aura) | `000009761005` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
 #### Questoris Companions
@@ -1185,7 +1185,7 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 |---|---:|---:|---|---|
 | Bastion Shield | `000009823002` | 25 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | High Kâhl | `000009823005` | 30 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Ironskein | `000009823004` | 10 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
+| Ironskein | `000009823004` | 10 | **Supported** | Add 2 to bearer Wounds. |
 | Quake Multigenerator | `000009823003` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
 #### Hearthfire Strike
@@ -1313,7 +1313,7 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Enhancement | ID | Cost | Status | Notes |
 |---|---:|---:|---|---|
 | Big Gob | `000008885002` | 20 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Da Biggest Boss | `000008885003` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
+| Da Biggest Boss | `000008885003` | 15 | **Supported** | Add 2 to bearer Wounds. |
 | Tellyporta | `000008885005` | 25 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | ’Eadstompa | `000008885004` | 10 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
@@ -1445,7 +1445,7 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 
 | Enhancement | ID | Cost | Status | Notes |
 |---|---:|---:|---|---|
-| Adamantine Mantle | `000009240002` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
+| Adamantine Mantle | `000009240002` | 0 | **Supported** | Reduce damage allocated to bearer by 1 (min 1). |
 | Clavitine Reliquary | `000009240003` | 0 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
 #### Champions of Fenris
@@ -1488,7 +1488,7 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 
 | Enhancement | ID | Cost | Status | Notes |
 |---|---:|---:|---|---|
-| Adamantine Mantle | `000008482005` | 20 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
+| Adamantine Mantle | `000008482005` | 20 | **Partial** | Conditional damage reduction (unconditional portion supported). |
 | Champion of Humanity | `000008482002` | 10 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Forged in Battle | `000008482004` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | War-tempered Artifice | `000008482003` | 25 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
@@ -1497,7 +1497,7 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 
 | Enhancement | ID | Cost | Status | Notes |
 |---|---:|---:|---|---|
-| Adamantine Mantle | `000010368005` | 20 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
+| Adamantine Mantle | `000010368005` | 20 | **Partial** | Conditional damage reduction (unconditional portion supported). |
 | Forged in Battle | `000010368004` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Immolator | `000010368002` | 10 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | War-tempered Artifice | `000010368003` | 25 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
@@ -1864,7 +1864,7 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 |---|---:|---:|---|---|
 | Power of the Hive Mind | `000008421002` | 10 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Psychostatic Disruption | `000008421003` | 30 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Synaptic Control | `000008421004` | 20 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
+| Synaptic Control | `000008421004` | 20 | **Supported** | Reduce damage allocated to bearer by 1 (min 1). |
 | The Dirgeheart of Kharis (Aura) | `000008421005` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 
 #### Tyranid Attack
@@ -1980,7 +1980,7 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 | Battle-lust | `000008432005` | 10 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Berzerker Glaive | `000008432002` | 35 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
 | Favoured of Khorne | `000008432004` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Helm of Brazen Ire | `000008432003` | 30 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
+| Helm of Brazen Ire | `000008432003` | 30 | **Supported** | Reduce damage allocated to bearer by 1 (min 1). |
 
 #### Boarding Butchers
 

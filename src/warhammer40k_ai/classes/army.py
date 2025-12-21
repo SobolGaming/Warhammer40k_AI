@@ -259,6 +259,11 @@ class Army:
         # We intentionally do NOT strictly enforce model eligibility text from Wahapedia, because it is
         # unstructured and would cause false rejections without a robust parser.
         character_unit.enhancement = enhancement
+        try:
+            if hasattr(enhancement, "apply_to_unit"):
+                enhancement.apply_to_unit(character_unit)
+        except Exception:
+            pass
         self.enhancements.append(enhancement)
 
     def select_warlord(self, unit: Unit):

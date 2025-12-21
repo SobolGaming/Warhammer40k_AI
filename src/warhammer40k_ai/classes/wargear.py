@@ -375,6 +375,16 @@ class WargearProfile:
         else:
             num_attacks = self.attacks or 0
             attack_result.attacks_rolled = num_attacks
+
+        # Enhancement: improve melee weapons' Attacks by X (bearer enhancement).
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                bonus = int(getattr(attacker.parent_unit, "special_rules", {}).get("enhancement_melee_attacks_bonus", 0) or 0)
+                if bonus:
+                    num_attacks += bonus
+                    attack_result.attacks_special_modifiers.append(f"Enhancement +{bonus}A (melee)")
+        except Exception:
+            pass
             attack_result.attacks_dice_rolls = []
 
         closest_target, closest_dist = attacker.return_closest_model_in_unit(target)
@@ -777,6 +787,15 @@ class WargearProfile:
         target_toughness = target.toughness
         wound_result['target_toughness'] = target_toughness
         strength = self.strength
+        # Enhancement: improve melee weapons' Strength by X (bearer enhancement).
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                s_bonus = int(getattr(attacker.parent_unit, "special_rules", {}).get("enhancement_melee_strength_bonus", 0) or 0)
+                if s_bonus and isinstance(strength, int):
+                    strength = strength + s_bonus
+                    wound_result.setdefault("modifiers", []).append(f"+{s_bonus}S from Enhancement (melee)")
+        except Exception:
+            pass
         # Provide reroll callback for wound
         def _reroll_wound():
             new_roll = get_roll("D6")
@@ -1076,6 +1095,28 @@ class WargearProfile:
                 # Conservative fallback
                 damage_value += 1
                 damage_result['special_effects'].append("Melta +1")
+
+        # Enhancement: improve melee weapons' Damage by X (bearer enhancement).
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                d_bonus = int(getattr(attacker.parent_unit, "special_rules", {}).get("enhancement_melee_damage_bonus", 0) or 0)
+                if d_bonus:
+                    damage_value += d_bonus
+                    damage_result['special_effects'].append(f"Enhancement +{d_bonus}D (melee)")
+        except Exception:
+            pass
+
+        # Enhancement: reduce damage allocated to bearer by X (min 1).
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            red = int(getattr(t_unit, "special_rules", {}).get("enhancement_reduce_damage_taken", 0) or 0)
+            if red:
+                before = int(damage_value)
+                damage_value = max(1, before - red)
+                if before != damage_value:
+                    damage_result['special_effects'].append(f"Enhancement -{red}D taken (min 1)")
+        except Exception:
+            pass
         
         # Apply damage with detailed tracking
         was_alive = target_model.is_alive

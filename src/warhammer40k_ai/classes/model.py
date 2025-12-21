@@ -318,11 +318,14 @@ class Model:
     ################
     @property
     def movement(self) -> int:
-        if hasattr(self.parent_unit.stats, 'movement'):
-            if self.parent_unit.stats['movement'][0] == UnitStatsModifier.OVERRIDE:
-                return self.parent_unit.stats['movement'][1]
-            elif self.parent_unit.stats['movement'][0] == UnitStatsModifier.ADDITIVE:
-                return self._movement + self.parent_unit.stats['movement'][1]
+        try:
+            if self.parent_unit and isinstance(getattr(self.parent_unit, "stats", None), dict) and "movement" in self.parent_unit.stats:
+                if self.parent_unit.stats['movement'][0] == UnitStatsModifier.OVERRIDE:
+                    return self.parent_unit.stats['movement'][1]
+                elif self.parent_unit.stats['movement'][0] == UnitStatsModifier.ADDITIVE:
+                    return self._movement + self.parent_unit.stats['movement'][1]
+        except Exception:
+            pass
         return self._movement
 
     @movement.setter
@@ -331,11 +334,14 @@ class Model:
 
     @property
     def toughness(self) -> int:
-        if hasattr(self.parent_unit.stats, 'toughness'):
-            if self.parent_unit.stats['toughness'][0] == UnitStatsModifier.OVERRIDE:
-                return self.parent_unit.stats['toughness'][1]
-            elif self.parent_unit.stats['toughness'][0] == UnitStatsModifier.ADDITIVE:
-                return self._toughness + self.parent_unit.stats['toughness'][1]
+        try:
+            if self.parent_unit and isinstance(getattr(self.parent_unit, "stats", None), dict) and "toughness" in self.parent_unit.stats:
+                if self.parent_unit.stats['toughness'][0] == UnitStatsModifier.OVERRIDE:
+                    return self.parent_unit.stats['toughness'][1]
+                elif self.parent_unit.stats['toughness'][0] == UnitStatsModifier.ADDITIVE:
+                    return self._toughness + self.parent_unit.stats['toughness'][1]
+        except Exception:
+            pass
         return self._toughness
 
     @toughness.setter
@@ -344,11 +350,14 @@ class Model:
 
     @property
     def save(self) -> int:
-        if hasattr(self.parent_unit.stats, 'save'):
-            if self.parent_unit.stats['save'][0] == UnitStatsModifier.OVERRIDE:
-                return self.parent_unit.stats['save'][1]
-            elif self.parent_unit.stats['save'][0] == UnitStatsModifier.ADDITIVE:
-                return self._save + self.parent_unit.stats['save'][1]
+        try:
+            if self.parent_unit and isinstance(getattr(self.parent_unit, "stats", None), dict) and "save" in self.parent_unit.stats:
+                if self.parent_unit.stats['save'][0] == UnitStatsModifier.OVERRIDE:
+                    return self.parent_unit.stats['save'][1]
+                elif self.parent_unit.stats['save'][0] == UnitStatsModifier.ADDITIVE:
+                    return self._save + self.parent_unit.stats['save'][1]
+        except Exception:
+            pass
         return self._save
 
     @save.setter
@@ -369,11 +378,14 @@ class Model:
 
     @property
     def leadership(self) -> int:
-        if hasattr(self.parent_unit.stats, 'leadership'):
-            if self.parent_unit.stats['leadership'][0] == UnitStatsModifier.OVERRIDE:
-                return self.parent_unit.stats['leadership'][1]
-            elif self.parent_unit.stats['leadership'][0] == UnitStatsModifier.ADDITIVE:
-                return self._leadership + self.parent_unit.stats['leadership'][1]
+        try:
+            if self.parent_unit and isinstance(getattr(self.parent_unit, "stats", None), dict) and "leadership" in self.parent_unit.stats:
+                if self.parent_unit.stats['leadership'][0] == UnitStatsModifier.OVERRIDE:
+                    return self.parent_unit.stats['leadership'][1]
+                elif self.parent_unit.stats['leadership'][0] == UnitStatsModifier.ADDITIVE:
+                    return self._leadership + self.parent_unit.stats['leadership'][1]
+        except Exception:
+            pass
         return self._leadership
 
     @leadership.setter
@@ -382,11 +394,14 @@ class Model:
 
     @property
     def objective_control(self) -> int:
-        if hasattr(self.parent_unit.stats, 'objective_control'):
-            if self.parent_unit.stats['objective_control'][0] == UnitStatsModifier.OVERRIDE:
-                return self.parent_unit.stats['objective_control'][1]
-            elif self.parent_unit.stats['objective_control'][0] == UnitStatsModifier.ADDITIVE:
-                return self._objective_control + self.parent_unit.stats['objective_control'][1]
+        try:
+            if self.parent_unit and isinstance(getattr(self.parent_unit, "stats", None), dict) and "objective_control" in self.parent_unit.stats:
+                if self.parent_unit.stats['objective_control'][0] == UnitStatsModifier.OVERRIDE:
+                    return self.parent_unit.stats['objective_control'][1]
+                elif self.parent_unit.stats['objective_control'][0] == UnitStatsModifier.ADDITIVE:
+                    return self._objective_control + self.parent_unit.stats['objective_control'][1]
+        except Exception:
+            pass
         return self._objective_control
 
     @objective_control.setter

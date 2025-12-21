@@ -18,6 +18,8 @@ import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
 
+import re
+
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 WAHA_DIR = os.path.join(ROOT, "wahapedia_data")
@@ -80,17 +82,56 @@ def _load_enhancements() -> List[EnhRow]:
     return out
 
 
+def _normalize(text: str) -> str:
+    t = (text or "").replace("’", "'").replace("“", '"').replace("”", '"')
+    t = re.sub(r"\s+", " ", t).strip()
+    return t
+
+
+def _strip_eligibility_prefix(text: str) -> str:
+    t = _normalize(text)
+    lower = t.lower()
+    for marker in (" model only.", " models only."):
+        idx = lower.find(marker)
+        if idx != -1:
+            return t[idx + len(marker) :].strip()
+    return t
+
+
 def _support_status(row: EnhRow) -> Tuple[str, str]:
     """
-    Current engine state:
-    - Enhancements can be loaded via WahaHelper and assigned via Army parsing,
-      and contribute to points + UI display.
-    - Enhancement rules effects are not executed by the rules engine yet.
+    Mirror the engine-side small pattern-based enhancement system.
     """
-    return (
-        "Partial",
-        "Loadable/assignable + points counted + UI display; rules effects not executed yet.",
+    rules = _strip_eligibility_prefix(row.description)
+
+    # Supported patterns:
+    m = re.search(r"add\s+(\d+)\s*\"\s+to\s+the\s+bearer'?s\s+move\s+characteristic\.", rules, flags=re.IGNORECASE)
+    if m:
+        return ("Supported", f'Add {m.group(1)}" to bearer Move.')
+
+    m = re.search(r"add\s+(\d+)\s+to\s+the\s+bearer'?s\s+wounds\s+characteristic\.", rules, flags=re.IGNORECASE)
+    if m:
+        return ("Supported", f"Add {m.group(1)} to bearer Wounds.")
+
+    m = re.search(
+        r"improve\s+the\s+attacks,\s*strength\s+and\s+damage\s+characteristics\s+of\s+melee\s+weapons\s+equipped\s+by\s+the\s+bearer\s+by\s+(\d+)\.",
+        rules,
+        flags=re.IGNORECASE,
     )
+    if m:
+        return ("Supported", f"Improve melee weapons' A/S/D by {m.group(1)}.")
+
+    m = re.search(
+        r"each\s+time\s+an\s+attack\s+is\s+allocated\s+to\s+the\s+bearer,\s+subtract\s+(\d+)\s+from\s+the\s+damage\s+characteristic\s+of\s+that\s+attack\.",
+        rules,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        if re.search(r"\bif\s+that\s+attack\b", rules, flags=re.IGNORECASE):
+            return ("Partial", "Conditional damage reduction (unconditional portion supported).")
+        return ("Supported", f"Reduce damage allocated to bearer by {m.group(1)} (min 1).")
+
+    return ("Partial", "Loadable/assignable + points counted + UI display; rules effects not executed yet.")
 
 
 def _write_md(rows: List[EnhRow], factions: Dict[str, Dict[str, str]]) -> None:
