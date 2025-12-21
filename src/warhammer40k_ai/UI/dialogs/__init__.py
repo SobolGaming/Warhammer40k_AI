@@ -12,6 +12,7 @@ from .shooting_declaration_dialog import ShootingDeclarationDialog
 from .weapon_choice_dialog import WeaponChoiceDialog
 from .transport_embark_dialog import TransportEmbarkDialog
 from .transport_disembark_dialog import TransportDisembarkDialog
+from .leader_attachment_dialog import LeaderAttachmentDialog
 
 __all__ = [
     'BaseDialog',
@@ -28,4 +29,5 @@ __all__ = [
     'WeaponChoiceDialog',
     'TransportEmbarkDialog',
     'TransportDisembarkDialog',
+    'LeaderAttachmentDialog',
 ] 

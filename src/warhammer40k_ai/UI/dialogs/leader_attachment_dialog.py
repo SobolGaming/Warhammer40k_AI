@@ -1,0 +1,291 @@
+import pygame
+from typing import Callable, List, Optional, Tuple
+
+from .base_dialog import BaseDialog, PANEL_BORDER, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_WARNING, BUTTON_SELECTED
+
+
+class LeaderAttachmentDialog(BaseDialog):
+    """
+    Declare Battle Formations dialog: attach/detach Leaders to eligible Bodyguard units.
+
+    UX:
+    - Left column: Leaders (select one)
+    - Right column: Eligible targets for selected leader (including "Unattached")
+    - Bottom: Done / Cancel
+    """
+
+    def __init__(self, screen_width: int, screen_height: int):
+        super().__init__(screen_width, screen_height, width=820, height=520, draggable=True, center=True)
+        self.title = "Attach Leaders (Declare Battle Formations)"
+
+        self.army_units: List = []
+        self.leaders: List = []
+        self.bodyguards: List = []
+
+        self.selected_leader_idx: Optional[int] = None
+        self.target_rows: List[Tuple[str, Optional[object]]] = []  # (label, unit or None)
+        self.selected_target_idx: Optional[int] = None
+
+        self.on_confirm: Optional[Callable[[], None]] = None
+        self.on_cancel: Optional[Callable[[], None]] = None
+
+        # Scrolling
+        self.leader_scroll = 0
+        self.target_scroll = 0
+        self._leader_max_scroll = 0
+        self._target_max_scroll = 0
+
+        # Cached message line
+        self._message: str = ""
+        self._message_color = TEXT_SECONDARY
+
+    def show(self, army_units: List, on_confirm: Callable[[], None], on_cancel: Optional[Callable[[], None]] = None) -> None:
+        self.army_units = list(army_units or [])
+        self.leaders = [u for u in self.army_units if bool(getattr(u, "is_leader", False))]
+        self.bodyguards = [u for u in self.army_units if not bool(getattr(u, "is_leader", False))]
+        self.selected_leader_idx = 0 if self.leaders else None
+        self.leader_scroll = 0
+        self.target_scroll = 0
+        self.on_confirm = on_confirm
+        self.on_cancel = on_cancel
+        self._message = ""
+        self._message_color = TEXT_SECONDARY
+        super().show()
+        self._rebuild_targets()
+        self._create_buttons()
+
+    def hide(self) -> None:
+        super().hide()
+        self.army_units = []
+        self.leaders = []
+        self.bodyguards = []
+        self.selected_leader_idx = None
+        self.target_rows = []
+        self.selected_target_idx = None
+        self.on_confirm = None
+        self.on_cancel = None
+        self._message = ""
+        self._message_color = TEXT_SECONDARY
+
+    def handle_event(self, event: pygame.event.Event) -> bool:
+        if not self.visible:
+            return False
+
+        # Scroll
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 4:
+                # wheel up: scroll whichever list the cursor is over
+                mx, my = event.pos
+                if self._leader_list_rect().collidepoint((mx, my)):
+                    self.leader_scroll = max(0, self.leader_scroll - 20)
+                    return True
+                if self._target_list_rect().collidepoint((mx, my)):
+                    self.target_scroll = max(0, self.target_scroll - 20)
+                    return True
+            if event.button == 5:
+                mx, my = event.pos
+                if self._leader_list_rect().collidepoint((mx, my)):
+                    self.leader_scroll = min(self._leader_max_scroll, self.leader_scroll + 20)
+                    return True
+                if self._target_list_rect().collidepoint((mx, my)):
+                    self.target_scroll = min(self._target_max_scroll, self.target_scroll + 20)
+                    return True
+
+        if super().handle_event(event):
+            return True
+        return False
+
+    def _handle_dialog_click(self, mouse_pos) -> bool:
+        # Clicks within dialog: leaders list or targets list
+        if self._leader_list_rect().collidepoint(mouse_pos):
+            idx = self._row_index_from_click(mouse_pos, self._leader_list_rect(), row_h=44, scroll=self.leader_scroll)
+            if idx is not None and 0 <= idx < len(self.leaders):
+                self.selected_leader_idx = idx
+                self._rebuild_targets()
+                self._create_buttons()
+                return True
+            return True
+
+        if self._target_list_rect().collidepoint(mouse_pos):
+            idx = self._row_index_from_click(mouse_pos, self._target_list_rect(), row_h=44, scroll=self.target_scroll)
+            if idx is not None and 0 <= idx < len(self.target_rows):
+                self.selected_target_idx = idx
+                label, target_unit = self.target_rows[idx]
+                self._apply_selection(target_unit)
+                self._rebuild_targets()
+                self._create_buttons()
+                return True
+            return True
+
+        return False
+
+    def _handle_button_click(self, button_name: str) -> bool:
+        if button_name == "cancel":
+            if self.on_cancel:
+                self.on_cancel()
+            self.hide()
+            return True
+        if button_name == "done":
+            if self.on_confirm:
+                self.on_confirm()
+            self.hide()
+            return True
+        return False
+
+    def _leader_list_rect(self) -> pygame.Rect:
+        return pygame.Rect(self.x + 20, self.y + self.title_bar_height + 60, 360, 320)
+
+    def _target_list_rect(self) -> pygame.Rect:
+        return pygame.Rect(self.x + 400, self.y + self.title_bar_height + 60, 400, 320)
+
+    def _row_index_from_click(self, mouse_pos, list_rect: pygame.Rect, row_h: int, scroll: int) -> Optional[int]:
+        mx, my = mouse_pos
+        rel_y = my - list_rect.y + scroll
+        if rel_y < 0:
+            return None
+        return int(rel_y // row_h)
+
+    def _rebuild_targets(self) -> None:
+        self.target_rows = []
+        self.selected_target_idx = None
+
+        if self.selected_leader_idx is None or not (0 <= self.selected_leader_idx < len(self.leaders)):
+            return
+        leader = self.leaders[self.selected_leader_idx]
+
+        # Always include Unattached option
+        self.target_rows.append(("Unattached", None))
+
+        # Eligible bodyguards
+        eligible = []
+        for bg in self.bodyguards:
+            try:
+                if leader.can_attach_to(bg):
+                    eligible.append(bg)
+            except Exception:
+                continue
+
+        # Sort by name for stability
+        eligible.sort(key=lambda u: str(getattr(u, "name", "")))
+        for bg in eligible:
+            attached = getattr(leader, "attached_to", None)
+            prefix = "✓ " if attached is bg else ""
+            self.target_rows.append((f"{prefix}{getattr(bg, 'name', 'Unit')}", bg))
+
+        # Default selected row reflects current attachment
+        current = getattr(leader, "attached_to", None)
+        if current is None:
+            self.selected_target_idx = 0
+        else:
+            for i, (_, u) in enumerate(self.target_rows):
+                if u is current:
+                    self.selected_target_idx = i
+                    break
+
+        # Update scroll bounds
+        self._recompute_scroll_bounds()
+
+    def _recompute_scroll_bounds(self) -> None:
+        # Leader list
+        leader_visible_h = self._leader_list_rect().height
+        leader_total_h = len(self.leaders) * 44
+        self._leader_max_scroll = max(0, leader_total_h - leader_visible_h)
+        self.leader_scroll = max(0, min(self._leader_max_scroll, self.leader_scroll))
+        # Target list
+        target_visible_h = self._target_list_rect().height
+        target_total_h = len(self.target_rows) * 44
+        self._target_max_scroll = max(0, target_total_h - target_visible_h)
+        self.target_scroll = max(0, min(self._target_max_scroll, self.target_scroll))
+
+    def _apply_selection(self, target_unit) -> None:
+        if self.selected_leader_idx is None or not (0 <= self.selected_leader_idx < len(self.leaders)):
+            return
+        leader = self.leaders[self.selected_leader_idx]
+        try:
+            if target_unit is None:
+                leader.detach_from_unit()
+                self._message = f"{leader.name}: set to Unattached"
+                self._message_color = TEXT_SECONDARY
+            else:
+                leader.attach_to_unit(target_unit)
+                self._message = f"{leader.name}: attached to {target_unit.name}"
+                self._message_color = TEXT_SECONDARY
+        except Exception as e:
+            self._message = str(e)
+            self._message_color = TEXT_WARNING
+
+    def _create_buttons(self) -> None:
+        self.buttons.clear()
+        self.button_states.clear()
+
+        # Bottom buttons
+        self.add_button("done", self.width - 260, self.height - 55, 110, 38, enabled=True)
+        self.add_button("cancel", self.width - 140, self.height - 55, 110, 38, enabled=True)
+
+    def draw(self, screen: pygame.Surface) -> None:
+        if not self.visible:
+            return
+
+        self.draw_dialog_background(screen)
+        subtitle = "Select a Leader, then choose an eligible unit to attach (or Unattached)."
+        self.draw_title_bar(screen, self.title, subtitle=subtitle)
+
+        # Sections
+        header = self.font_medium.render("Leaders", True, TEXT_PRIMARY)
+        screen.blit(header, (self.x + 20, self.y + self.title_bar_height + 30))
+        header2 = self.font_medium.render("Eligible Bodyguard Units", True, TEXT_PRIMARY)
+        screen.blit(header2, (self.x + 400, self.y + self.title_bar_height + 30))
+
+        leader_rect = self._leader_list_rect()
+        target_rect = self._target_list_rect()
+        pygame.draw.rect(screen, (30, 30, 34), leader_rect)
+        pygame.draw.rect(screen, PANEL_BORDER, leader_rect, 1)
+        pygame.draw.rect(screen, (30, 30, 34), target_rect)
+        pygame.draw.rect(screen, PANEL_BORDER, target_rect, 1)
+
+        # Draw leader rows
+        row_h = 44
+        start_i = int(self.leader_scroll // row_h)
+        y0 = leader_rect.y - (self.leader_scroll % row_h)
+        for i in range(start_i, len(self.leaders)):
+            y = y0 + (i - start_i) * row_h
+            if y > leader_rect.bottom:
+                break
+            rect = pygame.Rect(leader_rect.x + 6, y + 4, leader_rect.width - 12, row_h - 8)
+            if i == self.selected_leader_idx:
+                pygame.draw.rect(screen, BUTTON_SELECTED, rect, 2)
+            else:
+                pygame.draw.rect(screen, PANEL_BORDER, rect, 1)
+            leader = self.leaders[i]
+            attached_to = getattr(leader, "attached_to", None)
+            status = f" → {getattr(attached_to, 'name', '')}" if attached_to is not None else ""
+            txt = self.font_small.render(f"{leader.name}{status}", True, TEXT_SECONDARY)
+            screen.blit(txt, (rect.x + 10, rect.y + 12))
+
+        # Draw target rows
+        start_i = int(self.target_scroll // row_h)
+        y0 = target_rect.y - (self.target_scroll % row_h)
+        for i in range(start_i, len(self.target_rows)):
+            y = y0 + (i - start_i) * row_h
+            if y > target_rect.bottom:
+                break
+            rect = pygame.Rect(target_rect.x + 6, y + 4, target_rect.width - 12, row_h - 8)
+            if i == self.selected_target_idx:
+                pygame.draw.rect(screen, BUTTON_SELECTED, rect, 2)
+            else:
+                pygame.draw.rect(screen, PANEL_BORDER, rect, 1)
+            label, _unit = self.target_rows[i]
+            txt = self.font_small.render(label, True, TEXT_SECONDARY)
+            screen.blit(txt, (rect.x + 10, rect.y + 12))
+
+        # Message line
+        if self._message:
+            msg = self.font_tiny.render(self._message, True, self._message_color)
+            screen.blit(msg, (self.x + 20, self.y + self.height - 58))
+
+        # Buttons
+        self._update_buttons()
+        self.draw_button(screen, "done", "Done")
+        self.draw_button(screen, "cancel", "Cancel")
+
+

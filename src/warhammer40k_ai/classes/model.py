@@ -288,7 +288,11 @@ class Model:
     def return_closest_model_in_unit(self, unit: 'Unit') -> 'Model':
         closest_model = None
         closest_dist = float('inf')
-        for model in unit.models:
+        try:
+            models = unit.get_models_for_collision()
+        except Exception:
+            models = unit.models
+        for model in models:
             dist = self.edge_to_edge_distance(model)
             if dist < closest_dist:
                 closest_dist = dist

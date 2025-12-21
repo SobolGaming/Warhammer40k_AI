@@ -59,7 +59,9 @@ class WahaHelper:
         self.load_json_file('Source.json', self.sources, 'id')
         self.load_json_file('Factions.json', self.factions, 'id')
         self.load_json_file('Detachment_abilities.json', self.detachment_abilities, 'id')
-        self.load_json_file('Datasheets_leader.json', self.datasheets_leaders, 'leader_id')
+        # Datasheets_leader.json is a many-to-one relationship (leader_id -> many attached_id),
+        # so it must be aggregated (not overwritten by key).
+        self.load_datasheets_leaders()
         self.load_datasheets_enhancements()
 
         datasheets_path = os.path.join(self.data_dir, 'Datasheets.json')
@@ -110,6 +112,41 @@ class WahaHelper:
             target_dict.update({item[key]: self.clean_data(item) for item in data})
         else:
             print(f"Warning: {filename} not found in {self.data_dir}")
+
+    def load_datasheets_leaders(self) -> None:
+        """Load leader->bodyguard relationships (many attached_id per leader_id)."""
+        file_path = os.path.join(self.data_dir, 'Datasheets_leader.json')
+        if not os.path.exists(file_path):
+            print(f"Warning: Datasheets_leader.json not found in {self.data_dir}")
+            return
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except Exception as e:
+            print(f"Error loading Datasheets_leader.json: {str(e)}")
+            return
+
+        self.datasheets_leaders = {}
+        for item in data or []:
+            try:
+                leader_id = self.clean_data(item.get('leader_id'))
+                attached_id = self.clean_data(item.get('attached_id'))
+            except Exception:
+                continue
+            if not leader_id or not attached_id:
+                continue
+            self.datasheets_leaders.setdefault(leader_id, []).append(attached_id)
+
+        # Deduplicate while preserving order
+        for leader_id, attached_ids in list(self.datasheets_leaders.items()):
+            seen = set()
+            deduped = []
+            for aid in attached_ids:
+                if aid in seen:
+                    continue
+                seen.add(aid)
+                deduped.append(aid)
+            self.datasheets_leaders[leader_id] = deduped
 
     def load_datasheets_enhancements(self):
         file_path = os.path.join(self.data_dir, 'Datasheets_enhancements.json')

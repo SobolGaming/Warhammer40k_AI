@@ -94,6 +94,9 @@ class Unit:
 
         # Attachments
         self.can_be_attached_to = getattr(datasheet, 'attached_to', [])
+        # For Bodyguard units: track Leaders attached to this unit (in 10e, this forms an Attached Unit).
+        # We keep the Leader units as real units for combat/abilities, but UI + movement can treat the group as one.
+        self.attached_leaders: List['Unit'] = []
 
         if hasattr(datasheet, 'damaged_w') and datasheet.damaged_w:
             self.damaged_profile = self._parse_range(datasheet.damaged_w)
@@ -481,6 +484,14 @@ class Unit:
     def remove_model(self, model: Model, fleed: bool = False, game_map: Optional['Map'] = None) -> None:
         assert model in self.models
 
+        # If this is the last bodyguard model in an Attached unit, snapshot its toughness so wound rolls
+        # continue to use the bodyguard toughness until the attacking unit finishes resolving attacks.
+        try:
+            if len(self.models) == 1 and (not bool(getattr(self, "is_leader", False))) and list(getattr(self, "attached_leaders", []) or []):
+                self._last_bodyguard_toughness = int(getattr(model, "toughness", getattr(model, "_toughness", 0)))
+        except Exception:
+            pass
+
         # Check for Deadly Demise ability before removing the model
         if not fleed and game_map is not None:
             self._trigger_deadly_demise(model, game_map)
@@ -503,6 +514,25 @@ class Unit:
         # Publish unit destroyed event (best-effort). Note: "destroyed" should not
         # trigger for fleeing/removal-type effects.
         if (not fleed) and len(self.models) < 1:
+            # If a Leader is destroyed while attached, immediately detach it so the bodyguard
+            # no longer counts it for keyword/strength/collision purposes.
+            try:
+                if bool(getattr(self, "is_leader", False)) and getattr(self, "attached_to", None) is not None:
+                    self.detach_from_unit()
+            except Exception:
+                pass
+
+            # If a BODYGUARD in an Attached unit is destroyed but Leaders remain, do NOT separate immediately.
+            # Mark pending separation; it will be resolved after the attacking unit finishes resolving attacks.
+            try:
+                if (not bool(getattr(self, "is_leader", False))) and list(getattr(self, "attached_leaders", []) or []):
+                    any_leader_alive = any(len(getattr(l, "models", []) or []) > 0 for l in (getattr(self, "attached_leaders", []) or []))
+                    if any_leader_alive:
+                        setattr(self, "_pending_leader_separation", True)
+                        return
+            except Exception:
+                pass
+
             try:
                 game = self.get_parent_army().player.game
                 game.event_system.publish(
@@ -901,17 +931,60 @@ class Unit:
         Returns:
             bool: True if unit is below half strength and should take Battle-Shock tests
         """
-        if self.starting_model_count > 1:
+        # Attached Leaders are not evaluated separately; the Attached unit is treated as one unit.
+        try:
+            if bool(getattr(self, "is_leader", False)) and getattr(self, "attached_to", None) is not None:
+                return False
+        except Exception:
+            pass
+
+        # Compute effective starting/current strength across attached members (bodyguard + leaders).
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            members = root.get_attached_unit_members()
+        except Exception:
+            members = [self]
+
+        starting_models = 0
+        current_models = 0
+        starting_wounds = 0
+        current_wounds = 0
+
+        for u in members:
+            try:
+                starting_models += int(getattr(u, "starting_model_count", len(getattr(u, "models", []) or [])))
+            except Exception:
+                starting_models += 0
+            try:
+                current_models += int(len(getattr(u, "models", []) or []))
+            except Exception:
+                current_models += 0
+            try:
+                starting_wounds += int(getattr(u, "starting_total_wounds", 0))
+            except Exception:
+                pass
+            try:
+                for m in (getattr(u, "models", []) or []):
+                    if getattr(m, "is_alive", True):
+                        current_wounds += int(getattr(m, "wounds", 0))
+            except Exception:
+                pass
+
+        # If destroyed, definitely below half strength
+        if current_models <= 0:
+            return True
+
+        if starting_models > 1:
             # Multi-model unit: check model count
-            current_model_count = len(self.models)
-            return current_model_count < (self.starting_model_count / 2.0)
-        else:
-            # Single-model unit: check wounds
-            if not self.models:
-                return True  # Unit is destroyed, definitely below half strength
-            current_wounds = self.models[0].wounds
-            starting_wounds = self.starting_total_wounds
-            return current_wounds < (starting_wounds / 2.0)
+            return current_models < (starting_models / 2.0)
+
+        # Single-model unit: check wounds
+        if starting_wounds <= 0:
+            return False
+        return current_wounds < (starting_wounds / 2.0)
 
     def is_battle_shocked(self) -> bool:
         """
@@ -930,7 +1003,8 @@ class Unit:
         """
         roll_result = get_roll("2D6")
         leadership_value = self.leadership
-        passed = roll_result >= leadership_value
+        # 10e: lower Leadership is better; you pass if roll <= Ld.
+        passed = roll_result <= leadership_value
         
         # Provide detailed feedback
         if passed:
@@ -1179,7 +1253,250 @@ class Unit:
 
     @property
     def is_leader(self) -> bool:
-        return len(self.can_be_attached_to) > 0
+        try:
+            return len(self.can_be_attached_to) > 0
+        except Exception:
+            return False
+
+    @property
+    def is_attached_leader(self) -> bool:
+        """True if this Leader is currently attached to a Bodyguard unit."""
+        return bool(self.is_leader and getattr(self, "attached_to", None) is not None)
+
+    def get_datasheet_id(self) -> Optional[str]:
+        try:
+            return getattr(self._datasheet, "id", None)
+        except Exception:
+            return None
+
+    def get_attached_unit_root(self) -> 'Unit':
+        """Return the 'root' unit for this attached unit group (Bodyguard if attached, else self)."""
+        if self.is_leader and getattr(self, "attached_to", None) is not None:
+            return self.attached_to
+        return self
+
+    def get_attached_unit_members(self) -> List['Unit']:
+        """Return all Unit objects that move/deploy/embark together as one Attached unit."""
+        root = self.get_attached_unit_root()
+        try:
+            leaders = list(getattr(root, "attached_leaders", []) or [])
+        except Exception:
+            leaders = []
+        # Root first, then leaders
+        return [root] + [u for u in leaders if u is not None]
+
+    def get_attached_unit_models(self) -> List['Model']:
+        """Flatten models across the attached unit members (bodyguard + leaders)."""
+        models: List['Model'] = []
+        for u in self.get_attached_unit_members():
+            try:
+                models.extend(list(getattr(u, "models", []) or []))
+            except Exception:
+                continue
+        return models
+
+    def get_models_for_rendering(self) -> List['Model']:
+        """Models used for battlefield rendering/hover detection (include attached Leaders)."""
+        root = self.get_attached_unit_root()
+        # If called on a Leader that's attached, render is handled by the bodyguard root.
+        if root is not self:
+            try:
+                return root.get_models_for_rendering()
+            except Exception:
+                return list(getattr(root, "models", []) or [])
+        return self.get_attached_unit_models()
+
+    def get_models_for_collision(self) -> List['Model']:
+        """Models used for collision/pathfinding/LOS checks (include attached Leaders)."""
+        root = self.get_attached_unit_root()
+        if root is not self:
+            try:
+                return root.get_models_for_collision()
+            except Exception:
+                return list(getattr(root, "models", []) or [])
+        return self.get_attached_unit_models()
+
+    def get_models_for_wound_allocation(self) -> List['Model']:
+        """
+        Models eligible to be allocated wounds for this unit right now.
+
+        For Attached units:
+        - While any bodyguard models remain, allocate to bodyguards only.
+        - Once bodyguards are gone (but separation is pending until the end of an attack sequence),
+          allocate to the attached leaders' models.
+        """
+        # If this is an attached Leader, allocation is handled by the bodyguard unit.
+        try:
+            if bool(getattr(self, "is_leader", False)) and getattr(self, "attached_to", None) is not None:
+                return []
+        except Exception:
+            pass
+
+        # Bodyguard models first
+        bodyguards = list(getattr(self, "models", []) or [])
+        bodyguards_alive = [m for m in bodyguards if getattr(m, "is_alive", True)]
+        if bodyguards_alive:
+            return bodyguards_alive
+
+        # If no bodyguards remain, allocate to leader models (if any)
+        leaders_models: list['Model'] = []
+        try:
+            for l in list(getattr(self, "attached_leaders", []) or []):
+                for m in (getattr(l, "models", []) or []):
+                    if getattr(m, "is_alive", True):
+                        leaders_models.append(m)
+        except Exception:
+            pass
+        return leaders_models
+
+    def get_effective_keywords(self) -> List[str]:
+        """Effective keywords for rules checks while attached (union of all members)."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            members = root.get_attached_unit_members()
+        except Exception:
+            members = [self]
+        kws: list[str] = []
+        seen: set[str] = set()
+        for u in members:
+            try:
+                for k in (getattr(u, "keywords", []) or []):
+                    ks = str(k)
+                    lk = ks.lower()
+                    if lk in seen:
+                        continue
+                    seen.add(lk)
+                    kws.append(ks)
+            except Exception:
+                continue
+        return kws
+
+    def get_effective_faction_keywords(self) -> List[str]:
+        """Effective faction keywords while attached (union of all members)."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            members = root.get_attached_unit_members()
+        except Exception:
+            members = [self]
+        kws: list[str] = []
+        seen: set[str] = set()
+        for u in members:
+            try:
+                for k in (getattr(u, "faction_keywords", []) or []):
+                    ks = str(k)
+                    lk = ks.lower()
+                    if lk in seen:
+                        continue
+                    seen.add(lk)
+                    kws.append(ks)
+            except Exception:
+                continue
+        return kws
+
+    def max_attached_leaders(self) -> int:
+        """
+        Default 10e: one Leader per Bodyguard unit.
+        Some datasheets allow two Leaders; we detect common phrasing in abilities as a best-effort.
+        """
+        # Leaders can't have leaders attached "to" them in core rules; treat as 0/1 only on bodyguard.
+        try:
+            if self.is_leader:
+                return 0
+        except Exception:
+            pass
+        max_leaders = 1
+        try:
+            for ab in getattr(self, "possible_abilities", []) or []:
+                text = (getattr(ab, "description", "") or "").lower()
+                if ("up to 2 leaders" in text) or ("up to two leaders" in text):
+                    max_leaders = 2
+                    break
+                if ("can be attached to this unit even if another leader is already attached" in text):
+                    max_leaders = 2
+                    break
+        except Exception:
+            pass
+        return max_leaders
+
+    def can_attach_to(self, bodyguard: 'Unit') -> bool:
+        """Validate basic 10e attachment eligibility using Wahapedia leader linkage data."""
+        if not self.is_leader:
+            return False
+        if bodyguard is None or bodyguard is self:
+            return False
+        # Same army
+        try:
+            if self.get_parent_army() is None or bodyguard.get_parent_army() is None:
+                return False
+            if self.get_parent_army() != bodyguard.get_parent_army():
+                return False
+        except Exception:
+            return False
+        # Can't attach to another leader unit
+        try:
+            if bodyguard.is_leader:
+                return False
+        except Exception:
+            pass
+        # Bodyguard datasheet id must be in leader's allowed attached_to list (IDs)
+        allowed = getattr(self, "can_be_attached_to", []) or []
+        try:
+            bodyguard_id = bodyguard.get_datasheet_id()
+        except Exception:
+            bodyguard_id = None
+        if not bodyguard_id:
+            return False
+        return bodyguard_id in allowed
+
+    def attach_to_unit(self, bodyguard: 'Unit') -> None:
+        """Attach this Leader to a Bodyguard unit (Declare Battle Formations)."""
+        if not self.is_leader:
+            raise ValueError(f"Unit '{self.name}' is not a Leader and cannot be attached.")
+        if not self.can_attach_to(bodyguard):
+            raise ValueError(f"Leader '{self.name}' cannot be attached to '{getattr(bodyguard, 'name', 'Unknown')}'.")
+        # Enforce per-bodyguard leader limit
+        max_leaders = bodyguard.max_attached_leaders()
+        if max_leaders <= 0:
+            raise ValueError(f"Unit '{bodyguard.name}' cannot have Leaders attached.")
+        try:
+            current = list(getattr(bodyguard, "attached_leaders", []) or [])
+        except Exception:
+            current = []
+        # If already attached to this unit, no-op
+        if self in current and getattr(self, "attached_to", None) is bodyguard:
+            return
+        if len(current) >= max_leaders:
+            raise ValueError(f"Unit '{bodyguard.name}' already has the maximum number of Leaders attached ({max_leaders}).")
+        # Detach from any prior bodyguard first
+        if getattr(self, "attached_to", None) is not None and getattr(self, "attached_to", None) is not bodyguard:
+            self.detach_from_unit()
+        # Attach
+        self.attached_to = bodyguard
+        if self not in current:
+            current.append(self)
+        bodyguard.attached_leaders = current
+
+    def detach_from_unit(self) -> None:
+        """Detach this Leader from its Bodyguard unit."""
+        if not self.is_leader:
+            return
+        bodyguard = getattr(self, "attached_to", None)
+        if bodyguard is None:
+            return
+        try:
+            leaders = list(getattr(bodyguard, "attached_leaders", []) or [])
+            if self in leaders:
+                leaders.remove(self)
+            bodyguard.attached_leaders = leaders
+        except Exception:
+            pass
+        self.attached_to = None
 
     @property
     def is_supreme_commander(self) -> bool:
@@ -1258,7 +1575,13 @@ class Unit:
         return self.is_flying
 
     def has_keyword(self, keyword: str) -> bool:
-        return keyword.lower() in [keyword.lower() for keyword in self.keywords]
+        kw = (keyword or "").lower().strip()
+        if not kw:
+            return False
+        try:
+            return kw in [k.lower() for k in (self.get_effective_keywords() or [])]
+        except Exception:
+            return kw in [k.lower() for k in (self.keywords or [])]
 
     def has_any_keyword(self, keyword: str) -> bool:
         """Case-insensitive keyword check across keywords + faction_keywords."""
@@ -1266,12 +1589,12 @@ class Unit:
         if not kw:
             return False
         try:
-            if kw in [k.lower() for k in (self.keywords or [])]:
+            if kw in [k.lower() for k in (self.get_effective_keywords() or [])]:
                 return True
         except Exception:
             pass
         try:
-            if kw in [k.lower() for k in (self.faction_keywords or [])]:
+            if kw in [k.lower() for k in (self.get_effective_faction_keywords() or [])]:
                 return True
         except Exception:
             pass
@@ -1283,6 +1606,22 @@ class Unit:
 
     @property
     def toughness(self) -> int:
+        # 10e Attached Units: To Wound uses the Bodyguard's Toughness while the Leader is attached.
+        try:
+            if bool(getattr(self, "is_leader", False)) and getattr(self, "attached_to", None) is not None:
+                return int(self.attached_to.toughness)
+        except Exception:
+            pass
+
+        # If bodyguard models are gone but separation is pending, preserve the last known bodyguard Toughness
+        try:
+            if len(self.models) == 0 and bool(getattr(self, "_pending_leader_separation", False)):
+                t = getattr(self, "_last_bodyguard_toughness", None)
+                if t is not None:
+                    return int(t)
+        except Exception:
+            pass
+
         return self.models[0].toughness
 
     @property
@@ -1295,6 +1634,37 @@ class Unit:
 
     @property
     def leadership(self) -> int:
+        # Best Leadership in the unit (lowest value). For Attached units, consider leaders + bodyguards.
+        try:
+            if bool(getattr(self, "is_leader", False)) and getattr(self, "attached_to", None) is not None:
+                # Avoid double-resolution; attached leaders delegate to their bodyguard unit.
+                return int(self.attached_to.leadership)
+        except Exception:
+            pass
+
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+
+        try:
+            models = root.get_models_for_collision()
+        except Exception:
+            models = root.models
+
+        best = None
+        for m in (models or []):
+            try:
+                if not getattr(m, "is_alive", True):
+                    continue
+                ld = int(getattr(m, "leadership"))
+                best = ld if best is None else min(best, ld)
+            except Exception:
+                continue
+
+        if best is not None:
+            return best
+        # Fallback to first model if something is off
         return self.models[0].leadership
 
     @property
@@ -2973,6 +3343,19 @@ class Unit:
         
         successful_attacks = 0
         
+        # Begin attack resolution window(s) for targets (so attached leaders don't separate mid-sequence)
+        touched_targets = set()
+        try:
+            for decl in weapon_declarations:
+                t = decl.get("target_unit")
+                if t is not None:
+                    touched_targets.add(t)
+            for t in touched_targets:
+                if hasattr(t, "begin_attack_resolution"):
+                    t.begin_attack_resolution()
+        except Exception:
+            touched_targets = set()
+
         # Execute each weapon declaration
         for declaration in weapon_declarations:
             weapon_profile = declaration['weapon_profile']
@@ -3008,6 +3391,14 @@ class Unit:
         else:
             print(f"❌ {self.name} failed to execute any attacks")
             
+        # End attack resolution window(s) and resolve pending separations (now that this unit is done attacking).
+        try:
+            for t in touched_targets:
+                if hasattr(t, "end_attack_resolution"):
+                    t.end_attack_resolution(game_map=game_map)
+        except Exception:
+            pass
+
         return successful_attacks > 0
     
     def _validate_shooting_declaration(self, weapon_profile, target_unit, models_with_weapon, game_map) -> dict:
@@ -3071,7 +3462,11 @@ class Unit:
         """Check if a specific model can shoot a weapon at a target"""
         # Check range using edge-to-edge distance (not centroid-to-centroid)
         min_distance = float('inf')
-        for target_model in target_unit.models:
+        try:
+            target_models = target_unit.get_models_for_collision()
+        except Exception:
+            target_models = target_unit.models
+        for target_model in target_models:
             if not target_model.is_alive:
                 continue
             # Calculate edge-to-edge distance between model bases
@@ -4277,7 +4672,93 @@ class Unit:
     ### Position and Coherency
     ###########################################################################
     def is_alive(self) -> bool:
-        return len(self.models) > 0
+        # Attached unit is alive if either bodyguards or attached leaders have alive models.
+        if len(self.models) > 0:
+            return True
+        try:
+            for l in list(getattr(self, "attached_leaders", []) or []):
+                if len(getattr(l, "models", []) or []) > 0:
+                    return True
+        except Exception:
+            pass
+        return False
+
+    def resolve_pending_leader_separation(self, game_map: Optional['Map'] = None) -> None:
+        """If this bodyguard has pending separation, detach leaders into solo units now."""
+        if not bool(getattr(self, "_pending_leader_separation", False)):
+            return
+        try:
+            attached = list(getattr(self, "attached_leaders", []) or [])
+        except Exception:
+            attached = []
+        if not attached:
+            self._pending_leader_separation = False
+            return
+
+        for leader in attached:
+            try:
+                leader.detach_from_unit()
+                leader.deployed = True
+                leader.reserve_status = 'deployed'
+                leader.reserve_turn_deployed = getattr(self, "reserve_turn_deployed", None)
+                if game_map is not None and hasattr(game_map, "units"):
+                    if leader not in game_map.units:
+                        game_map.units.append(leader)
+            except Exception:
+                continue
+
+        # Remove the bodyguard unit from the map if it has no models left.
+        try:
+            if game_map is not None and hasattr(game_map, "units") and self in game_map.units and len(self.models) == 0:
+                game_map.units.remove(self)
+        except Exception:
+            pass
+
+        self._pending_leader_separation = False
+
+    def _attack_resolution_root(self) -> 'Unit':
+        """Resolve attack-window bookkeeping to the attached-unit root (bodyguard)."""
+        try:
+            return self.get_attached_unit_root()
+        except Exception:
+            return self
+
+    def begin_attack_resolution(self) -> None:
+        """Mark that an attacking unit has started resolving attacks against this unit."""
+        root = self._attack_resolution_root()
+        try:
+            depth = int(getattr(root, "_attack_resolution_depth", 0))
+        except Exception:
+            depth = 0
+        root._attack_resolution_depth = depth + 1
+
+    def end_attack_resolution(self, game_map: Optional['Map'] = None) -> None:
+        """Mark that an attacking unit finished resolving attacks; resolve pending separation if safe."""
+        root = self._attack_resolution_root()
+        try:
+            depth = int(getattr(root, "_attack_resolution_depth", 0))
+        except Exception:
+            depth = 0
+        depth = max(0, depth - 1)
+        root._attack_resolution_depth = depth
+        if depth == 0:
+            try:
+                root.resolve_pending_leader_separation(game_map=game_map)
+            except Exception:
+                pass
+
+    def maybe_resolve_pending_separation(self, game_map: Optional['Map'] = None) -> None:
+        """Resolve pending separation only if no attack resolution window is active."""
+        root = self._attack_resolution_root()
+        try:
+            depth = int(getattr(root, "_attack_resolution_depth", 0))
+        except Exception:
+            depth = 0
+        if depth == 0:
+            try:
+                root.resolve_pending_leader_separation(game_map=game_map)
+            except Exception:
+                pass
 
 
 
@@ -5868,6 +6349,16 @@ class Unit:
         self.reserve_status = status
         # Note: deployed flag is managed separately by deployment logic
         # deployed=True means deployment decision made, deployed=False means needs decision
+
+        # Attached unit behavior: Leaders follow the Bodyguard's reserve decision.
+        try:
+            for leader in list(getattr(self, "attached_leaders", []) or []):
+                try:
+                    leader.reserve_status = status
+                except Exception:
+                    continue
+        except Exception:
+            pass
         
     def is_in_reserves(self) -> bool:
         """Check if the unit is currently in reserves (any type)."""

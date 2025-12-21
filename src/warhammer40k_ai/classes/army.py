@@ -302,19 +302,37 @@ class Army:
 
     def validate_leaders(self):
         # Map of units to their attached Leaders
-        unit_leader_map = {}
-        leader_units = [unit for unit in self.units if unit.is_leader]
+        unit_leader_map: dict = {}
+        leader_units = [unit for unit in self.units if getattr(unit, "is_leader", False)]
 
         for leader in leader_units:
-            #if not leader.attached_to:
-            #    raise ArmyValidationError(f"Leader '{leader.name}' is not attached to any unit.")
-            if leader.attached_to not in self.units:
+            attached_to = getattr(leader, "attached_to", None)
+            # Leaders may be left unattached in 10e (optional), so only validate if set.
+            if attached_to is None:
+                continue
+            if attached_to not in self.units:
                 raise ArmyValidationError(f"Leader '{leader.name}' is attached to an invalid unit.")
-            if leader.attached_to in unit_leader_map:
+            try:
+                if hasattr(leader, "can_attach_to") and not leader.can_attach_to(attached_to):
+                    raise ArmyValidationError(f"Leader '{leader.name}' cannot be attached to '{attached_to.name}'.")
+            except ArmyValidationError:
+                raise
+            except Exception:
+                # If validation can't be performed, fail fast with a clear error.
+                raise ArmyValidationError(f"Failed validating leader attachment for '{leader.name}'.")
+
+            unit_leader_map.setdefault(attached_to, []).append(leader)
+
+        # Enforce per-bodyguard leader limits
+        for bodyguard, leaders in unit_leader_map.items():
+            try:
+                max_leaders = bodyguard.max_attached_leaders()
+            except Exception:
+                max_leaders = 1
+            if len(leaders) > max_leaders:
                 raise ArmyValidationError(
-                    f"Unit '{leader.attached_to.name}' has more than one Leader attached."
+                    f"Unit '{bodyguard.name}' has {len(leaders)} Leaders attached (max {max_leaders})."
                 )
-            unit_leader_map[leader.attached_to] = leader
 
     def validate_enhancements(self):
         # Rule 1: Maximum of 3 Enhancements

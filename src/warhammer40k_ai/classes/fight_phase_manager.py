@@ -359,6 +359,13 @@ class FightPhaseManager:
         """Resolve melee attacks with detailed output like shooting."""
         print(f"⚔️ Resolving melee attacks: {attacking_unit.name} vs {target_unit.name}")
 
+        # Begin attack resolution window so attached leaders don't separate mid-melee sequence.
+        try:
+            if hasattr(target_unit, "begin_attack_resolution"):
+                target_unit.begin_attack_resolution()
+        except Exception:
+            pass
+
         for declaration in weapon_declarations:
             model = declaration.get('model')
             weapon_profile = declaration.get('weapon_profile')
@@ -423,6 +430,14 @@ class FightPhaseManager:
             # Apply damage to target unit
             target_unit.take_damage(total_damage)
             print(f"🎯 {target_unit.name} takes {total_damage} damage")
+
+        # End attack resolution window for this target after this unit has finished its melee attacks.
+        try:
+            game_map = getattr(self.game, "map", None)
+            if hasattr(target_unit, "end_attack_resolution"):
+                target_unit.end_attack_resolution(game_map=game_map)
+        except Exception:
+            pass
 
     def _auto_select_melee_weapons(self, unit: Unit) -> List:
         """Auto-select melee weapons for a unit (fallback).

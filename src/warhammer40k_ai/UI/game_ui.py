@@ -570,6 +570,22 @@ class GameView:
         if self.player1 and self.player2:
             player1_units = self.player1.get_army().units if self.player1.get_army() else []
             player2_units = self.player2.get_army().units if self.player2.get_army() else []
+
+            # Collapse attached Leaders into their bodyguard unit in roster panes:
+            # hide leader units that have `attached_to` set.
+            def _visible_roster(units):
+                visible = []
+                for u in list(units or []):
+                    try:
+                        if bool(getattr(u, "is_leader", False)) and getattr(u, "attached_to", None) is not None:
+                            continue
+                    except Exception:
+                        pass
+                    visible.append(u)
+                return visible
+
+            player1_units = _visible_roster(player1_units)
+            player2_units = _visible_roster(player2_units)
             
             print(f"🔄 Refreshing roster panes: Player1 has {len(player1_units)} units, Player2 has {len(player2_units)} units")
             
@@ -1295,7 +1311,11 @@ class GameView:
             
             # Check all models in all units
             for unit in self.game_map.units:
-                for model in unit.models:
+                try:
+                    models = unit.get_models_for_rendering()
+                except Exception:
+                    models = unit.models
+                for model in models:
                     if not model.is_alive:
                         continue
                     # Get the model's base shape and check if mouse point is inside
@@ -1303,6 +1323,12 @@ class GameView:
                     if model_shape.contains(mouse_point):
                         # Use the model's parent_unit to get the unit reference
                         parent_unit = model.parent_unit
+                        # If hovering a model from an attached Leader, redirect to the bodyguard unit
+                        try:
+                            if bool(getattr(parent_unit, "is_leader", False)) and getattr(parent_unit, "attached_to", None) is not None:
+                                parent_unit = parent_unit.attached_to
+                        except Exception:
+                            pass
                         # Determine which roster the unit belongs to (only if armies are loaded)
                         if (self.player1.get_army() and self.player1.get_army().units and 
                             parent_unit in self.player1.get_army().units):
@@ -1333,16 +1359,26 @@ class GameView:
         from shapely.geometry import Point
         game_point = Point(game_x, game_y)
 
-        for player in [self.player1, self.player2]:
-            if player.get_army() and player.get_army().units:
-                for unit in [unit for unit in player.get_army().units if unit.deployed]:
-                    for model in unit.models:
-                        if not model.is_alive:
-                            continue
-                        # Get the model's base shape and check if game point is inside
-                        model_shape = model.model_base.get_base_shape()
-                        if model_shape.contains(game_point):
-                            return model.parent_unit
+        # Prefer map units (single source of truth for battlefield presence)
+        for unit in list(getattr(self.game_map, "units", []) or []):
+            if not getattr(unit, "deployed", False):
+                continue
+            try:
+                models = unit.get_models_for_rendering()
+            except Exception:
+                models = unit.models
+            for model in models:
+                if not model.is_alive:
+                    continue
+                model_shape = model.model_base.get_base_shape()
+                if model_shape.contains(game_point):
+                    u = model.parent_unit
+                    try:
+                        if bool(getattr(u, "is_leader", False)) and getattr(u, "attached_to", None) is not None:
+                            return u.attached_to
+                    except Exception:
+                        pass
+                    return u
         
         return None
     
@@ -1357,17 +1393,20 @@ class GameView:
         from shapely.geometry import Point
         game_point = Point(game_x, game_y)
 
-        for player in [self.player1, self.player2]:
-            if player.get_army() and player.get_army().units:
-                for unit in [unit for unit in player.get_army().units if unit.deployed]:
-                    for model in unit.models:
-                        if not model.is_alive:
-                            continue
-                        # Get the model's base shape and check if game point is inside
-                        model_shape = model.model_base.get_base_shape()
-                        if model_shape.contains(game_point):
-                            print(f"Found model {model.name} from unit {model.parent_unit.name}")
-                            return model
+        for unit in list(getattr(self.game_map, "units", []) or []):
+            if not getattr(unit, "deployed", False):
+                continue
+            try:
+                models = unit.get_models_for_rendering()
+            except Exception:
+                models = unit.models
+            for model in models:
+                if not model.is_alive:
+                    continue
+                model_shape = model.model_base.get_base_shape()
+                if model_shape.contains(game_point):
+                    print(f"Found model {model.name} from unit {model.parent_unit.name}")
+                    return model
         
         print("No model found at position")
         return None
@@ -2192,7 +2231,16 @@ def draw_units(
     if player2.get_army() and player2.get_army().units:
         all_units.extend(player2.get_army().units)
 
-    for model_index, model in enumerate(unit.models):
+    # For "deploy" previews, the dialog passes a unit-like object where indices must match the dialog's models list.
+    if model_indices_to_draw is not None:
+        models = unit.models
+    else:
+        try:
+            models = unit.get_models_for_rendering()
+        except Exception:
+            models = unit.models
+
+    for model_index, model in enumerate(models):
         if model_indices_to_draw is not None and model_index not in model_indices_to_draw:
             continue
         x, y = model.get_location()[:2]
@@ -2234,7 +2282,7 @@ def draw_prominent_unit_icon(screen: pygame.Surface, center_x: int, center_y: in
     draw_rotated_tinted_unit_icon(screen, center_x, center_y, icon_size, unit, icon_tint, base.facing)
     
     # For multi-model units, draw individual model identifier
-    if len(unit.models) > 1:
+    if len(models) > 1:
         draw_model_identifier(screen, center_x, center_y, icon_size, model_index, unit, is_highlighted)
     
     # Draw wound indicator if model is damaged
@@ -2658,6 +2706,12 @@ class SetupPhaseHandler(BasePhaseHandler):
     """Handles events during setup phases"""
     
     def handle_event(self, event: pygame.event.Event) -> bool:
+        # Handle leader attachment dialog first (if active)
+        if (hasattr(self.game_view, 'leader_attachment_dialog') and
+            self.game_view.leader_attachment_dialog and
+            self.game_view.leader_attachment_dialog.visible):
+            return self.game_view.leader_attachment_dialog.handle_event(event)
+
         # Handle mission selection dialog first (if active)
         if (hasattr(self.game_view, 'mission_selection_dialog') and 
             self.game_view.mission_selection_dialog.visible):
@@ -2773,6 +2827,11 @@ class SetupPhaseHandler(BasePhaseHandler):
                     # Show mission selection dialog
                     self._show_mission_selection_dialog()
                     return True  # Don't advance phase yet, wait for dialog
+
+                if current_phase_before.name == 'DECLARE_BATTLE_FORMATIONS':
+                    # Show leader attachment dialog (and allow doing reserves later)
+                    self._show_leader_attachment_dialog()
+                    return True  # Don't advance phase yet, wait for dialog
                 
                 self.game.execute_current_setup_phase(**setup_kwargs)
                 setup_complete = self.game.advance_setup_phase()
@@ -2819,6 +2878,63 @@ class SetupPhaseHandler(BasePhaseHandler):
         dialog.visible = True
         
         print("📋 Mission Selection Dialog opened - choose from approved combinations A-T")
+
+    def _show_leader_attachment_dialog(self):
+        """Show the leader attachment dialog for DECLARE_BATTLE_FORMATIONS phase."""
+        from .dialogs import LeaderAttachmentDialog
+
+        dialog = LeaderAttachmentDialog(
+            self.game_view.screen.get_width(),
+            self.game_view.screen.get_height()
+        )
+
+        # Store dialog in game view for event handling
+        self.game_view.leader_attachment_dialog = dialog
+
+        def _on_done():
+            # Apply/validate leader attachments, then execute phase and advance
+            try:
+                for p in self.game.players:
+                    army = p.get_army()
+                    if army:
+                        army.validate_leaders()
+            except Exception as e:
+                print(f"⚠️ Leader attachment validation failed: {e}")
+                return
+
+            # Refresh roster panes so attached leaders collapse (once implemented)
+            try:
+                self.game_view.refresh_roster_panes()
+            except Exception:
+                pass
+
+            # Execute the phase and advance
+            self.game.execute_current_setup_phase()
+            self.game.advance_setup_phase()
+
+        def _on_cancel():
+            # Stay in this phase; do nothing else
+            return
+
+        # Use player1's and player2's combined units for attachments (each leader can only attach within its army)
+        all_units = []
+        try:
+            if self.game_view.player1 and self.game_view.player1.get_army():
+                all_units.extend(self.game_view.player1.get_army().units)
+            if self.game_view.player2 and self.game_view.player2.get_army():
+                all_units.extend(self.game_view.player2.get_army().units)
+        except Exception:
+            pass
+
+        dialog.show(all_units, on_confirm=_on_done, on_cancel=_on_cancel)
+        dialog.visible = True
+        try:
+            dialog.draw(self.game_view.screen)
+        except Exception:
+            pass
+
+        print("📋 Leader Attachment Dialog opened - select leaders and attach to eligible units")
+
     
     def get_allowed_actions(self) -> List[str]:
         return ["advance_setup_phase", "view_unit_details"]

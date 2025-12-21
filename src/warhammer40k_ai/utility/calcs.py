@@ -508,8 +508,17 @@ def unified_pathfinding(model: 'Model', target: Tuple[float, float, float], move
                     'reason': f'Distance limit exceeded: {straight_line_distance:.1f}" > {max_distance}"'
                 }
 
+        # Attached units: treat the moving unit as the Bodyguard root so collision/keywords/coherency
+        # operate on the full attached group regardless of which model (leader/bodyguard) is moved.
+        moving_unit = model.parent_unit
+        try:
+            if hasattr(moving_unit, "get_attached_unit_root"):
+                moving_unit = moving_unit.get_attached_unit_root()
+        except Exception:
+            moving_unit = model.parent_unit
+
         # Build collision trees based on movement type and unit capabilities
-        collision_trees = build_collision_trees(model.parent_unit, movement_type, game_map,
+        collision_trees = build_collision_trees(moving_unit, movement_type, game_map,
                                                model, moved_models_in_unit, max_distance)
         print(f"🔍 DEBUG: Built collision trees: {list(collision_trees.keys())}")
 
@@ -521,7 +530,7 @@ def unified_pathfinding(model: 'Model', target: Tuple[float, float, float], move
         # then relax the 'must_end_in_engagement_range' requirement for subsequent models while
         # preserving 'allow_engagement_range_movement'.
         if movement_type == MovementType.CHARGE and target_unit is not None:
-            unit_already_engaged = game_map.is_within_engagement_range(model.parent_unit, target_unit)
+            unit_already_engaged = game_map.is_within_engagement_range(moving_unit, target_unit)
             if unit_already_engaged:
                 # Disable strict end-in-engagement requirement for this model's move
                 validation_rules['must_end_in_engagement_range'] = False
@@ -575,13 +584,33 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
     if moved_models_in_unit is None:
         moved_models_in_unit = set()
 
+    def _unit_models_for_collision(u):
+        try:
+            return u.get_models_for_collision()
+        except Exception:
+            return u.models
+
+    def _is_moved(model_index: int, model_obj: 'Model') -> bool:
+        """Support both old (indices) and new (model objects) moved_models_in_unit inputs."""
+        try:
+            if model_obj in moved_models_in_unit:
+                return True
+        except Exception:
+            pass
+        try:
+            if model_index in moved_models_in_unit:
+                return True
+        except Exception:
+            pass
+        return False
+
     # Get the moving model's position for spatial filtering
     if moving_model:
         center_pos = (moving_model.model_base.x, moving_model.model_base.y)
         model_radius = moving_model.model_base.get_radius()
     else:
         # Use first alive model as reference
-        alive_models = [m for m in moving_unit.models if m.is_alive]
+        alive_models = [m for m in _unit_models_for_collision(moving_unit) if m.is_alive]
         if alive_models:
             center_pos = (alive_models[0].model_base.x, alive_models[0].model_base.y)
             model_radius = alive_models[0].model_base.get_radius()
@@ -678,7 +707,7 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
                 continue
             if unit.faction != moving_unit.faction:  # Enemy unit
                 print(f"🔍 DEBUG: Found enemy unit: {unit.name} (faction: {unit.faction})")
-                for model in unit.models:
+                for model in _unit_models_for_collision(unit):
                     if model.is_alive:
                         model_pos = (model.model_base.x, model.model_base.y)
                         print(f"🔍 DEBUG: Enemy model {model.name} at {model_pos}")
@@ -704,7 +733,7 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
         if not unit.is_alive() or not unit.deployed:
             continue
         if unit.faction == moving_unit.faction:  # Friendly unit
-            for model_index, model in enumerate(unit.models):
+            for model_index, model in enumerate(_unit_models_for_collision(unit)):
                 if not model.is_alive:
                     continue
 
@@ -723,7 +752,7 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
 
                 if unit == moving_unit:
                     # For the moving unit, only include models that have already been moved
-                    if model_index in moved_models_in_unit:
+                    if _is_moved(model_index, model):
                         friendly_models.append(model_shape)
                         print(f"🔍 DEBUG: Including already-moved model {model.name} (index {model_index}) as blocking obstacle")
                     # Skip models that haven't been moved yet (they shouldn't block)

@@ -47,7 +47,25 @@ class IndividualModelMovementDialog(BaseDialog):
         super().show(callback)
 
         # Dialog-specific initialization
-        self.unit = unit
+        # If this unit is an Attached unit (bodyguard + leader(s)), use a proxy with combined models.
+        try:
+            from ...classes.attached_unit import AttachedUnitView
+        except Exception:
+            AttachedUnitView = None
+
+        self._attached_members = None
+        if AttachedUnitView is not None:
+            try:
+                members = unit.get_attached_unit_members()
+                if members and len(members) > 1:
+                    self.unit = AttachedUnitView(unit.get_attached_unit_root())
+                    self._attached_members = list(getattr(self.unit, "members", []) or [])
+                else:
+                    self.unit = unit
+            except Exception:
+                self.unit = unit
+        else:
+            self.unit = unit
         self.movement_type = movement_type
         self.game_map = game_map
         self.max_distance = max_distance or unit.movement
@@ -123,6 +141,7 @@ class IndividualModelMovementDialog(BaseDialog):
         
         # Clean up dialog-specific state
         self.unit = None
+        self._attached_members = None
         self.movement_type = None
         self.game_map = None
         self.max_distance = 0.0
@@ -904,11 +923,17 @@ class IndividualModelMovementDialog(BaseDialog):
         print(f"🔍 DEBUG: Using unified pathfinding for {model.name} with movement type {self.movement_type}")
         from ...utility.calcs import unified_pathfinding, MovementType
 
-        # Get set of already-moved model indices
+        # Get set of already-moved models (by object identity).
+        # This works for both normal units and Attached units (where dialog uses a combined models list).
         moved_models_in_unit = set()
-        for moved_index, movement_data in self.model_movements.items():
-            if movement_data.get('completed', False):
-                moved_models_in_unit.add(moved_index)
+        for moved_index, movement_data in (self.model_movements or {}).items():
+            try:
+                if not movement_data.get('completed', False):
+                    continue
+                if 0 <= int(moved_index) < len(self.unit.models):
+                    moved_models_in_unit.add(self.unit.models[int(moved_index)])
+            except Exception:
+                continue
 
         # Convert 2D target to 3D if needed
         if len(destination) == 2:
@@ -1101,13 +1126,25 @@ class IndividualModelMovementDialog(BaseDialog):
 
         # Set unit round state based on movement type
         # NOTE: Scout movement happens before battle rounds, so it should NOT set round state flags
-        if self.movement_type == 'advance':
-            self.unit.round_state.advanced_this_round = True
-        elif self.movement_type == 'fall_back':
-            self.unit.round_state.fell_back_this_round = True
-        elif self.movement_type in ['move', 'pile_in', 'consolidate', 'charge']:
-            self.unit.round_state.moved_this_round = True
-            self.unit.round_state.remained_stationary_this_round = False
+        # For Attached units, apply to all member units (bodyguard + leaders), not just the proxy/root.
+        try:
+            units_to_update = list(self._attached_members or [])
+        except Exception:
+            units_to_update = []
+        if not units_to_update:
+            units_to_update = [self.unit]
+
+        for u in units_to_update:
+            try:
+                if self.movement_type == 'advance':
+                    u.round_state.advanced_this_round = True
+                elif self.movement_type == 'fall_back':
+                    u.round_state.fell_back_this_round = True
+                elif self.movement_type in ['move', 'pile_in', 'consolidate', 'charge']:
+                    u.round_state.moved_this_round = True
+                    u.round_state.remained_stationary_this_round = False
+            except Exception:
+                continue
         # Scout movement does not set round state flags since it happens pre-battle
 
         # Call callback with completion status

@@ -196,6 +196,13 @@ class RosterPane(pygame.sprite.Sprite):
                                     if completed:
                                         # Mark unit deployed and record action
                                         unit.deployed = True
+                                        # Attached leaders deploy together
+                                        try:
+                                            for l in list(getattr(unit, "attached_leaders", []) or []):
+                                                l.deployed = True
+                                                l.reserve_status = getattr(unit, "reserve_status", "deployed")
+                                        except Exception:
+                                            pass
                                         if not hasattr(self.game_view, 'game_map') or self.game_view.game_map is None:
                                             print("❌ Deployment failed: game map unavailable to register unit")
                                             return
@@ -233,6 +240,12 @@ class RosterPane(pygame.sprite.Sprite):
                             elif choice == 'reserves':
                                 unit.set_reserve_status('reserves')
                                 unit.deployed = True  # Deployment decision made (but not on battlefield)
+                                try:
+                                    for l in list(getattr(unit, "attached_leaders", []) or []):
+                                        l.set_reserve_status('reserves')
+                                        l.deployed = True
+                                except Exception:
+                                    pass
                                 self.selected_unit = None
                                 self.game_view.selected_unit = None  # Clear GameView's selection
                                 # Record reserves action
@@ -244,6 +257,12 @@ class RosterPane(pygame.sprite.Sprite):
                             elif choice == 'strategic_reserves':
                                 unit.set_reserve_status('strategic_reserves')
                                 unit.deployed = True  # Deployment decision made (but not on battlefield)
+                                try:
+                                    for l in list(getattr(unit, "attached_leaders", []) or []):
+                                        l.set_reserve_status('strategic_reserves')
+                                        l.deployed = True
+                                except Exception:
+                                    pass
                                 self.selected_unit = None
                                 self.game_view.selected_unit = None  # Clear GameView's selection
                                 # Record strategic reserves action
@@ -283,9 +302,21 @@ class RosterPane(pygame.sprite.Sprite):
         player_text = self.font_medium.render(player_display_name, True, TEXT_PRIMARY)
         surface.blit(player_text, (self.rect.left + 10, self.rect.top + 5))
         
-        # Army points total
+        # Army points total (include attached leaders with their bodyguard for display)
         if self.roster:
-            total_points = sum(unit.get_unit_cost() for unit in self.roster)
+            def _unit_group_cost(u: Unit) -> int:
+                try:
+                    cost = int(u.get_unit_cost())
+                except Exception:
+                    cost = 0
+                try:
+                    for l in list(getattr(u, "attached_leaders", []) or []):
+                        cost += int(l.get_unit_cost())
+                except Exception:
+                    pass
+                return cost
+
+            total_points = sum(_unit_group_cost(unit) for unit in self.roster)
             points_text = self.font_small.render(f"{total_points} pts", True, TEXT_SECONDARY)
             surface.blit(points_text, (self.rect.right - 80, self.rect.top + 8))
         
@@ -346,14 +377,34 @@ class RosterPane(pygame.sprite.Sprite):
         name_text = self.font_medium.render(unit_name, True, TEXT_PRIMARY)
         surface.blit(name_text, (x_left + icon_size + 8, y_offset))
         
-        # Unit cost
-        cost_text = self.font_small.render(f"{unit.get_unit_cost()}pts", True, TEXT_ACCENT)
+        # Unit cost (include attached leaders with their bodyguard for display)
+        cost_val = 0
+        try:
+            cost_val += int(unit.get_unit_cost())
+        except Exception:
+            cost_val += 0
+        try:
+            for l in list(getattr(unit, "attached_leaders", []) or []):
+                cost_val += int(l.get_unit_cost())
+        except Exception:
+            pass
+        cost_text = self.font_small.render(f"{cost_val}pts", True, TEXT_ACCENT)
         surface.blit(cost_text, (x_right - cost_text.get_width(), y_offset))
 
         # Extra roster details (composition + status), like the legacy pane
         def _composition_text(u: Unit) -> str:
             try:
-                alive_models = [m for m in (u.models or []) if getattr(m, 'is_alive', True)]
+                all_models = []
+                try:
+                    all_models.extend(list(u.models or []))
+                except Exception:
+                    pass
+                try:
+                    for l in list(getattr(u, "attached_leaders", []) or []):
+                        all_models.extend(list(getattr(l, "models", []) or []))
+                except Exception:
+                    pass
+                alive_models = [m for m in (all_models or []) if getattr(m, 'is_alive', True)]
                 if not alive_models:
                     return "0 models"
                 # Count by model name for mixed units
@@ -449,8 +500,18 @@ class RosterPane(pygame.sprite.Sprite):
         except Exception:
             lead = ""
         try:
-            total_wounds = sum(getattr(m, '_base_wounds', getattr(m, 'wounds', 0)) for m in (unit.models or []))
-            current_wounds = sum(getattr(m, 'wounds', 0) for m in (unit.models or []))
+            all_models = []
+            try:
+                all_models.extend(list(unit.models or []))
+            except Exception:
+                pass
+            try:
+                for l in list(getattr(unit, "attached_leaders", []) or []):
+                    all_models.extend(list(getattr(l, "models", []) or []))
+            except Exception:
+                pass
+            total_wounds = sum(getattr(m, '_base_wounds', getattr(m, 'wounds', 0)) for m in (all_models or []))
+            current_wounds = sum(getattr(m, 'wounds', 0) for m in (all_models or []))
             hp = f"HP {current_wounds}/{total_wounds}" if total_wounds else ""
         except Exception:
             hp = ""

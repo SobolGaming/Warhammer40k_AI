@@ -66,7 +66,11 @@ class Map:
         return [objective for objective in self.objectives if objective.category == ObjectiveCategory.SECRET]
 
     def place_unit(self, unit: Unit) -> bool:
-        for model in unit.models:
+        try:
+            models = unit.get_models_for_collision()
+        except Exception:
+            models = unit.models
+        for model in models:
             if not self.is_within_boundary(model):
                 return False
             if self.check_collision_with_obstacles(model):
@@ -83,7 +87,10 @@ class Map:
             units = self.units
         all_models = []
         for unit in units:
-            all_models.extend(unit.models)
+            try:
+                all_models.extend(unit.get_models_for_collision())
+            except Exception:
+                all_models.extend(unit.models)
         return all_models
 
     def get_enemy_units(self, unit: Unit) -> List[Unit]:
@@ -96,7 +103,10 @@ class Map:
     def get_enemy_models(self, unit: Unit) -> List[Model]:
         enemy_models = []
         for test_unit in self.get_enemy_units(unit):
-            enemy_models.extend(test_unit.models)
+            try:
+                enemy_models.extend(test_unit.get_models_for_collision())
+            except Exception:
+                enemy_models.extend(test_unit.models)
         return enemy_models
 
     def get_friendly_units(self, unit: Unit) -> List[Unit]:
@@ -109,7 +119,10 @@ class Map:
     def get_friendly_models(self, unit: Unit) -> List[Model]:
         friendly_models = []
         for test_unit in self.get_friendly_units(unit):
-            friendly_models.extend(test_unit.models)
+            try:
+                friendly_models.extend(test_unit.get_models_for_collision())
+            except Exception:
+                friendly_models.extend(test_unit.models)
         return friendly_models
 
     def is_within_boundary(self, model: Model, destination: Tuple[float, float] = None) -> bool:
@@ -137,10 +150,19 @@ class Map:
             bool: True if any model in source unit is within engagement range of any model in target unit
         """
         # Check if any model in source unit is within engagement range of any model in target unit
-        for source_model in source_unit.models:
+        try:
+            source_models = source_unit.get_models_for_collision()
+        except Exception:
+            source_models = source_unit.models
+        try:
+            target_models = target_unit.get_models_for_collision()
+        except Exception:
+            target_models = target_unit.models
+
+        for source_model in source_models:
             if not source_model.is_alive:
                 continue
-            for target_model in target_unit.models:
+            for target_model in target_models:
                 if not target_model.is_alive:
                     continue
                 # Calculate horizontal distance (base-to-base)
@@ -521,9 +543,18 @@ class Map:
         """
         shortest_distance = float('inf')
         
-        # Check distance between each model pair
-        for model1 in unit1.models:
-            for model2 in unit2.models:
+        # Check distance between each model pair (include attached leaders as part of unit for collision/measurement)
+        try:
+            models1 = unit1.get_models_for_collision()
+        except Exception:
+            models1 = unit1.models
+        try:
+            models2 = unit2.get_models_for_collision()
+        except Exception:
+            models2 = unit2.models
+
+        for model1 in models1:
+            for model2 in models2:
                 distance = model1.edge_to_edge_distance(model2)
                 shortest_distance = min(shortest_distance, distance)
                 
@@ -541,13 +572,21 @@ class Map:
         """
         # Get the positions from first alive model in each unit
         unit_pos = None
-        for model in unit.models:
+        try:
+            unit_models = unit.get_models_for_collision()
+        except Exception:
+            unit_models = unit.models
+        for model in unit_models:
             if model.is_alive:
                 unit_pos = model.get_location()
                 break
 
         target_pos = None
-        for model in target.models:
+        try:
+            target_models = target.get_models_for_collision()
+        except Exception:
+            target_models = target.models
+        for model in target_models:
             if model.is_alive:
                 target_pos = model.get_location()
                 break
@@ -2147,8 +2186,13 @@ def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float],
                                 'floor_level': floor_level
                             }
             else:
-                # Validate all models in the unit at their current positions (deployment-time)
-                for model in unit.models:
+                # Validate all models in the unit at their current positions (deployment-time).
+                # Use collision models so attached leaders are validated as part of the unit.
+                try:
+                    models = unit.get_models_for_collision()
+                except Exception:
+                    models = unit.models
+                for model in models:
                     model_pos = model.get_location()
                     if not model_pos:
                         continue
@@ -2225,7 +2269,11 @@ def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float],
                     }
             else:
                 # Deployment-time check for all models (positions assumed to be already set on models)
-                for model in unit.models:
+                try:
+                    models = unit.get_models_for_collision()
+                except Exception:
+                    models = unit.models
+                for model in models:
                     model_pos = model.get_location()
                     if model_pos:
                         mx, my = model_pos[0], model_pos[1]
@@ -2252,7 +2300,11 @@ def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float],
                 if wall_reason:
                     return {'valid': False, 'reason': wall_reason, 'floor_level': floor_level}
             else:
-                for model in unit.models:
+                try:
+                    models = unit.get_models_for_collision()
+                except Exception:
+                    models = unit.models
+                for model in models:
                     model_pos = model.get_location()
                     if not model_pos:
                         continue
@@ -2295,9 +2347,19 @@ class ObjectivePoint:
             if not player.army:
                 continue
             for unit in player.army.units:
+                # Avoid double-counting: attached leaders are counted as part of their bodyguard unit.
+                try:
+                    if bool(getattr(unit, "is_leader", False)) and getattr(unit, "attached_to", None) is not None:
+                        continue
+                except Exception:
+                    pass
                 if not unit.deployed or not unit.is_alive():
                     continue
-                for model in unit.models:
+                try:
+                    models = unit.get_models_for_collision()
+                except Exception:
+                    models = unit.models
+                for model in models:
                     if not model.is_alive:
                         continue
                     

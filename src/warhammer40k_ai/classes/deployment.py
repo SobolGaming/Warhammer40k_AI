@@ -234,11 +234,23 @@ class DeploymentManager:
         defender_zone = deployment_results['deployment_zones'][self.defender.name]
         attacker_zone = deployment_results['deployment_zones'][self.attacker.name]
         
-        # Get units to deploy (not in reserves)
-        defender_units = [unit for unit in self.defender.get_army().units 
-                         if deployment_results['reserves'][self.defender.name].get(unit.name, 'deploy') == 'deploy']
-        attacker_units = [unit for unit in self.attacker.get_army().units 
-                         if deployment_results['reserves'][self.attacker.name].get(unit.name, 'deploy') == 'deploy']
+        def _is_attached_leader(u) -> bool:
+            try:
+                return bool(getattr(u, "is_leader", False)) and getattr(u, "attached_to", None) is not None
+            except Exception:
+                return False
+
+        # Get units to deploy (not in reserves). Attached Leaders deploy as part of their Bodyguard.
+        defender_units = [
+            unit for unit in self.defender.get_army().units
+            if (not _is_attached_leader(unit))
+            and deployment_results['reserves'][self.defender.name].get(unit.name, 'deploy') == 'deploy'
+        ]
+        attacker_units = [
+            unit for unit in self.attacker.get_army().units
+            if (not _is_attached_leader(unit))
+            and deployment_results['reserves'][self.attacker.name].get(unit.name, 'deploy') == 'deploy'
+        ]
         
         logger.info(f"📍 Alternating deployment: {len(defender_units)} vs {len(attacker_units)} units")
         
@@ -308,6 +320,14 @@ class DeploymentManager:
                 model.set_location(model_x, model_y, model_z, 0.0)
         
         unit.deployed = True
+        # Attached Leaders deploy together with the Bodyguard.
+        try:
+            for l in list(getattr(unit, "attached_leaders", []) or []):
+                l.deployed = True
+                l.reserve_status = getattr(unit, "reserve_status", "deployed")
+                l.reserve_turn_deployed = getattr(unit, "reserve_turn_deployed", None)
+        except Exception:
+            pass
         self.game.map.units.append(unit)
     
     def determine_first_turn(self) -> Player:
@@ -330,6 +350,12 @@ class DeploymentManager:
             reserves_decisions = deployment_results['reserves'].get(player_name, {})
             
             for unit in player.get_army().units:
+                # Attached Leaders follow their Bodyguard's reserve decision.
+                try:
+                    if bool(getattr(unit, "is_leader", False)) and getattr(unit, "attached_to", None) is not None:
+                        continue
+                except Exception:
+                    pass
                 reserve_decision = reserves_decisions.get(unit.name, 'deploy')
                 
                 if reserve_decision == 'deploy':

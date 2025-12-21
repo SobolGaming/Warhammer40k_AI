@@ -533,6 +533,14 @@ class WargearProfile:
         # Print comprehensive attack summary
         self._print_attack_summary(attack_result)
 
+        # Resolve pending Leader separations only if no attack-resolution window is active.
+        # (Sequences like shooting/melee for a whole unit will bracket begin/end around many profiles.)
+        try:
+            if hasattr(target, "maybe_resolve_pending_separation"):
+                target.maybe_resolve_pending_separation(game_map=game_map)
+        except Exception:
+            pass
+
         # ONE SHOT: mark expended after resolving (hit or miss).
         try:
             if self.is_one_shot():
@@ -687,8 +695,12 @@ class WargearProfile:
             wound_result['special_effects'].append("Lethal Hit (auto-wound)")
             return wound_result
 
-        # Check if target unit still has models before accessing properties
-        if not target.models:
+        # Attached units can still be valid targets even if bodyguard models are gone (leaders remain)
+        try:
+            alloc = target.get_models_for_wound_allocation()
+        except Exception:
+            alloc = list(getattr(target, "models", []) or [])
+        if not alloc:
             wound_result['special_effects'].append("No valid targets")
             return wound_result
 
@@ -1231,16 +1243,24 @@ class WargearProfile:
 
     def opponent_wound_allocation(self, target: 'Unit') -> Optional['Model']:
         """Allocate wounds to target models"""
-        # Check if the unit has any models left
-        if not target.models:
+        # Attached units: allocate to bodyguards while any exist; otherwise allocate to leader models.
+        try:
+            candidates = target.get_models_for_wound_allocation()
+        except Exception:
+            candidates = list(getattr(target, "models", []) or [])
+
+        if not candidates:
             return None
-            
-        _, damaged_model = target.is_max_health()
-        if damaged_model:
-            return damaged_model
-        else:
-            # TODO - implement AI selection of target model
-            return target.models[0]
+
+        # Prefer already-damaged model
+        try:
+            for m in candidates:
+                if getattr(m, "is_alive", True) and (not getattr(m, "is_max_health", True)):
+                    return m
+        except Exception:
+            pass
+
+        return candidates[0]
 
     def damage_target(self, target_model: 'Model', attacker: 'Model', attack_instance: Dict) -> int:
         """Legacy damage target method for backwards compatibility"""
