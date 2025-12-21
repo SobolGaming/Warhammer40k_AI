@@ -110,15 +110,9 @@ def _support_for_desc(desc: str) -> Tuple[str, str]:
         return "Not implemented", "Parser could not interpret this option text."
 
     # Heuristic: if any option has non-trivial constraints, mark Partial.
+    # Constraints we still consider "Partial" (not fully enforced / needs richer selection UI).
     hard_conditional_markers = (
-        "cannot select",
-        "more than once per unit",
-        "more than twice per unit",
-        "same model cannot be equipped",
-        "you cannot select both",
         "item_limit is equal to number of equipped",
-        "equipped with ",
-        "contains ",
         "excluding ",
         "maximum of",
     )
@@ -126,13 +120,26 @@ def _support_for_desc(desc: str) -> Tuple[str, str]:
     for opt in parsed:
         conds = " | ".join(getattr(opt, "conditionals", []) or []).lower()
         if any(m in conds for m in hard_conditional_markers):
-            return "Partial", "Parsed, but has constraints we don’t fully enforce yet (unit-wide uniqueness, prerequisite equipment, etc.)."
+            return "Partial", "Parsed, but has constraints we don’t fully enforce yet (dynamic per-equipped-item limits, exclusions, etc.)."
 
         item_max = getattr(getattr(opt, "item_quantity", None), "max", 1)
         if item_max and int(item_max) > 1:
             return "Partial", "Parsed, but option allows selecting multiple items (needs UI/selection + enforcement)."
 
-    return "Supported", "Parsed and can be applied as a simple add/replace choice (best-effort)."
+        # If there are multiple choices, ensure each choice is uniquely selectable by at least one item name.
+        # This matters for our current selection mechanism (apply_wargear_options(name)).
+        choices = list(getattr(opt, "wargear_to", []) or [])
+        if len(choices) > 1:
+            sets = []
+            for c in choices:
+                sets.append({(str(nm or "").lower().strip()) for qty, nm in (c or []) if nm})
+            # If every choice has at least one item not present in every other choice, selection-by-name is unambiguous.
+            for i, s in enumerate(sets):
+                others = set().union(*[sets[j] for j in range(len(sets)) if j != i]) if len(sets) > 1 else set()
+                if not (s - others):
+                    return "Partial", "Parsed, but choices share items (selection-by-wargear-name can be ambiguous without extra UI context)."
+
+    return "Supported", "Parsed and choices are selectable/applicable with current mechanisms (best-effort)."
 
 
 @dataclass(frozen=True)

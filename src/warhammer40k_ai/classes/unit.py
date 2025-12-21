@@ -750,7 +750,7 @@ class Unit:
             return max_models
 
         def _conditions_met(model) -> bool:
-            # Best-effort: currently only supports "not equipped with X".
+            # Best-effort: supports common constraint phrases produced by the parser.
             for cond in list(getattr(wargear_option, "conditionals", []) or []):
                 cl = (cond or "").lower().strip()
                 if cl.startswith("not equipped with "):
@@ -768,7 +768,69 @@ class Unit:
                                 return False
                     except Exception:
                         pass
+                elif cl.startswith("equipped with "):
+                    required = _norm(cl.replace("equipped with ", ""))
+                    has_req = False
+                    for wg in list(getattr(model, "wargear", []) or []):
+                        if wg and _norm(getattr(wg, "name", "")) == required:
+                            has_req = True
+                            break
+                    if not has_req:
+                        return False
+                elif cl.startswith("contains ") and " models" in cl:
+                    # "contains 10 models" (unit-level conditional)
+                    m = re.match(r"contains\s+(\d+)\s+models", cl)
+                    if m:
+                        if len(self.models) != int(m.group(1)):
+                            return False
+                elif cl.startswith("cannot replace "):
+                    # This is handled by replacement lock checks, not eligibility.
+                    continue
             return True
+
+        def _get_replacement_locks(model) -> set[str]:
+            locks = getattr(model, "_wargear_replacement_locks", None)
+            if locks is None:
+                locks = set()
+                setattr(model, "_wargear_replacement_locks", locks)
+            return locks
+
+        def _apply_post_locks(model) -> None:
+            # Conditionals like "cannot replace lasgun" apply to the model that receives this option.
+            locks = _get_replacement_locks(model)
+            for cond in list(getattr(wargear_option, "conditionals", []) or []):
+                cl = (cond or "").lower().strip()
+                if cl.startswith("cannot replace "):
+                    locks.add(_norm(cl.replace("cannot replace ", "")))
+
+        def _per_model_mutex_blocked(model) -> bool:
+            # If the same model can't take more than one of these options, block if it already has any
+            # item from this option's choices.
+            conds = " | ".join(list(getattr(wargear_option, "conditionals", []) or [])).lower()
+            if ("same model cannot be equipped with more than one of these wargear options" not in conds
+                and "you cannot select both of these options for the same model" not in conds):
+                return False
+            option_items = {_norm(nm) for choice in (getattr(wargear_option, "wargear_to", []) or []) for qty, nm in (choice or []) if nm}
+            for wg in list(getattr(model, "wargear", []) or []):
+                if wg and _norm(getattr(wg, "name", "")) in option_items:
+                    return True
+            return False
+
+        def _unit_unique_cap(item_norm: str) -> int | None:
+            conds = " | ".join(list(getattr(wargear_option, "conditionals", []) or [])).lower()
+            if "you cannot select the same weapon from this list more than once per unit" in conds:
+                return 1
+            if "you cannot select the same weapon from this list more than twice per unit" in conds:
+                return 2
+            return None
+
+        def _unit_count_item(item_norm: str) -> int:
+            n = 0
+            for m in (self.models or []):
+                for wg in list(getattr(m, "wargear", []) or []):
+                    if wg and _norm(getattr(wg, "name", "")) == item_norm:
+                        n += 1
+            return n
 
         def _find_wargear(item_name: str):
             wanted = _norm(item_name)
@@ -814,10 +876,12 @@ class Unit:
         if not eligible_models:
             return
 
-        # "All ..." semantics: if model_quantity is exact (min==max), treat as all-or-none.
+        # "All ..." semantics: boolean toggle (everyone or no one).
+        # Do NOT treat "exactly 1 model" as all-or-none; that's just a single-model pick.
         req_min = int(getattr(getattr(wargear_option, "model_quantity", None), "min", 0) or 0)
         req_max = int(getattr(getattr(wargear_option, "model_quantity", None), "max", 0) or 0)
-        all_or_none = req_min > 0 and req_min == req_max
+        cond_blob = " | ".join(list(getattr(wargear_option, "conditionals", []) or [])).lower()
+        all_or_none = ("all_or_none" in cond_blob) or (req_min == req_max and req_min > 1 and len(eligible_models) == req_min)
 
         if all_or_none:
             # Must apply to exactly the required number of models, otherwise none.
@@ -841,11 +905,17 @@ class Unit:
 
         # Apply to models
         for model in eligible_models:
+            if _per_model_mutex_blocked(model):
+                continue
             # Replacement: remove wargear_from then add choice items.
             if getattr(wargear_option, "wargear_type", None) == WargearOptionType.REPLACEMENT:
                 bundle = _pick_matching_from_bundle(model)
                 if bundle is None:
                     # For non-all-or-none options, just skip models that don't match the "from" clause.
+                    continue
+                # Respect replacement locks (e.g. "that model's lasgun cannot be replaced")
+                locks = _get_replacement_locks(model)
+                if any(_norm(nm) in locks for qty, nm in bundle):
                     continue
                 for qty, nm in bundle:
                     tgt = _norm(nm)
@@ -860,6 +930,10 @@ class Unit:
 
             # Add items from the selected choice
             for qty, nm in choice:
+                cap = _unit_unique_cap(_norm(nm))
+                if cap is not None:
+                    if _unit_count_item(_norm(nm)) >= cap:
+                        continue
                 wg = _find_wargear(nm)
                 if wg is None:
                     # Keep as optional note (so UI/printouts can still show it)
@@ -870,6 +944,9 @@ class Unit:
                     continue
                 for _ in range(int(qty) if qty else 1):
                     model.wargear.append(wg)
+
+            # Apply any post-locks to the model after successfully taking this option
+            _apply_post_locks(model)
 
     def apply_wargear_options(self, wargear_name: Optional[str] = None) -> None:
         """

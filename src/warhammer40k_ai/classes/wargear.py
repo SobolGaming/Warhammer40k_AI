@@ -1678,10 +1678,16 @@ class WargearOption:
 
     def __str__(self):
         from_str = ', '.join(str(x) for x in self.wargear_from) if self.wargear_from else 'none'
-        to_items = []
-        for sublist in self.wargear_to:
-            to_items.extend(str(item) for item in sublist)
-        to_str = ', '.join(to_items) if to_items else 'none'
+        # wargear_to is a list of "choices", each choice is a list[(qty, name)].
+        # Present them as distinct choices (avoid flattening, which is misleading).
+        if self.wargear_to:
+            choice_strs = []
+            for choice in self.wargear_to:
+                items = ", ".join(f"{qty}x {name}" for qty, name in (choice or []))
+                choice_strs.append(f"[{items}]")
+            to_str = " OR ".join(choice_strs) if choice_strs else "none"
+        else:
+            to_str = 'none'
         conditionals = f"{self.conditionals}"
         quantity_str = (f"{self.model_quantity.min}-{self.model_quantity.max}" 
                        if self.model_quantity.min != self.model_quantity.max 
@@ -2057,6 +2063,19 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
         description = description.replace(".", "").replace('model"s', "model's").replace("for every four ", "for every 4 ")
         description = description.replace(" one of the following ", " one of the following: ").replace(" 1 of the following: ", " one of the following: ").replace(" 2 of the following: ", " two of the following: ")
         description = description.replace("up to two ", "up to 2 ").replace("up to three ", "up to 3 ").replace("up to four ", "up to 4 ")
+
+        # Extract "cannot be replaced" lock clauses (keep as conditionals).
+        # Common forms:
+        # - "that model's lasgun cannot be replaced"
+        # - "its lasgun cannot be replaced"
+        lock_items = []
+        for m in re.finditer(r"(?:that model's|its)\s+([\w\s'-]+?)\s+cannot\s+be\s+replaced", description):
+            lock_items.append(m.group(1).strip())
+        if lock_items:
+            for li in lock_items:
+                conditions.append(f"cannot replace {li}")
+            # Remove the clause so it doesn't interfere with wargear parsing
+            description = re.sub(r"(?:that model's|its)\s+[\w\s'-]+?\s+cannot\s+be\s+replaced", "", description).strip()
         # Debug spam is very noisy during army parsing. Enable manually while developing.
         DEBUG = False
         if DEBUG:

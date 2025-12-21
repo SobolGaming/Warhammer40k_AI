@@ -11,8 +11,8 @@ Generated from `wahapedia_data/Datasheets_options.json` (optional wargear allowa
 ## Summary
 
 - Option lines: 2758
-- Supported (parser + simple apply): 2604
-- Partial (parsed, but constraints not fully enforced): 95
+- Supported (parser + simple apply): 2685
+- Partial (parsed, but constraints not fully enforced): 14
 - Not implemented (unparsed): 59
 
 ## Matrix
@@ -50,11 +50,11 @@ Generated from `wahapedia_data/Datasheets_options.json` (optional wargear allowa
 <td bgcolor="#d4edda">All sampled rows in this pattern are parsed and simple to apply.</td>
 </tr>
 <tr>
-<td bgcolor="#d4edda"><code>HTML list + One-of list + Additional</code></td>
-<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
-<td bgcolor="#d4edda">284</td>
-<td bgcolor="#d4edda">Arkurian Stormhammer (`000000764`): This model can be equipped with one of the following:&lt;ul style="list-style-type:circle"&gt;&lt;li&gt;1 heavy stubber&lt;/li&gt;&lt;li&gt;1 storm bolter&lt;/li&gt;&lt;/ul&gt;<br/>Arkurian Stormhammer (`000003994`): This model can be equipped with one of the following:&lt;ul style="list-style-type:circle"&gt;&lt;li&gt;1 heavy stubber&lt;/li&gt;&lt;li&gt;1 storm bolter&lt;/li&gt;&lt;/ul&gt;<br/>Armageddon-pattern Medusa (`000000739`): This model can be equipped with one of the following:&lt;ul style="list-style-type:circle"&gt;&lt;li&gt;1 storm bolter&lt;/li&gt;&lt;li&gt;1 heavy stubber&lt;/li&gt;&lt;/ul&gt;</td>
-<td bgcolor="#d4edda">All sampled rows in this pattern are parsed and simple to apply.</td>
+<td bgcolor="#fff3cd"><code>HTML list + One-of list + Additional</code></td>
+<td bgcolor="#fff3cd"><b>🟨 Partial</b></td>
+<td bgcolor="#fff3cd">284</td>
+<td bgcolor="#fff3cd">Arkurian Stormhammer (`000000764`): This model can be equipped with one of the following:&lt;ul style="list-style-type:circle"&gt;&lt;li&gt;1 heavy stubber&lt;/li&gt;&lt;li&gt;1 storm bolter&lt;/li&gt;&lt;/ul&gt;<br/>Arkurian Stormhammer (`000003994`): This model can be equipped with one of the following:&lt;ul style="list-style-type:circle"&gt;&lt;li&gt;1 heavy stubber&lt;/li&gt;&lt;li&gt;1 storm bolter&lt;/li&gt;&lt;/ul&gt;<br/>Armageddon-pattern Medusa (`000000739`): This model can be equipped with one of the following:&lt;ul style="list-style-type:circle"&gt;&lt;li&gt;1 storm bolter&lt;/li&gt;&lt;li&gt;1 heavy stubber&lt;/li&gt;&lt;/ul&gt;</td>
+<td bgcolor="#fff3cd">This pattern is parsed in many cases, but includes constraints/variants we don’t fully enforce yet.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>None</code></td>
@@ -78,11 +78,11 @@ Generated from `wahapedia_data/Datasheets_options.json` (optional wargear allowa
 <td bgcolor="#d4edda">All sampled rows in this pattern are parsed and simple to apply.</td>
 </tr>
 <tr>
-<td bgcolor="#d4edda"><code>HTML list + One-of list + Any number + Replacement + Per-model</code></td>
-<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
-<td bgcolor="#d4edda">70</td>
-<td bgcolor="#d4edda">Achilles Ridgerunners (`000001573`): Any number of models can each have their heavy mining laser replaced with one of the following:&lt;ul style="list-style-type:circle"&gt;&lt;li&gt;1 achi…<br/>Achilles Ridgerunners (`000001573`): Any number of models can each have their flare launcher replaced with one of the following:&lt;ul style="list-style-type:circle"&gt;&lt;li&gt;1 spotter&lt;…<br/>Agamatus Custodians (`000001560`): Any number of models can each have their lastrum bolt cannon replaced with one of the following:&lt;ul style="list-style-type:circle"&gt;&lt;li&gt;1 adr…</td>
-<td bgcolor="#d4edda">All sampled rows in this pattern are parsed and simple to apply.</td>
+<td bgcolor="#fff3cd"><code>HTML list + One-of list + Any number + Replacement + Per-model</code></td>
+<td bgcolor="#fff3cd"><b>🟨 Partial</b></td>
+<td bgcolor="#fff3cd">70</td>
+<td bgcolor="#fff3cd">Achilles Ridgerunners (`000001573`): Any number of models can each have their heavy mining laser replaced with one of the following:&lt;ul style="list-style-type:circle"&gt;&lt;li&gt;1 achi…<br/>Achilles Ridgerunners (`000001573`): Any number of models can each have their flare launcher replaced with one of the following:&lt;ul style="list-style-type:circle"&gt;&lt;li&gt;1 spotter&lt;…<br/>Agamatus Custodians (`000001560`): Any number of models can each have their lastrum bolt cannon replaced with one of the following:&lt;ul style="list-style-type:circle"&gt;&lt;li&gt;1 adr…</td>
+<td bgcolor="#fff3cd">This pattern is parsed in many cases, but includes constraints/variants we don’t fully enforce yet.</td>
 </tr>
 <tr>
 <td bgcolor="#f8d7da"><code>Other / unclassified</code></td>
@@ -92,11 +92,11 @@ Generated from `wahapedia_data/Datasheets_options.json` (optional wargear allowa
 <td bgcolor="#f8d7da">No sampled rows in this pattern could be parsed.</td>
 </tr>
 <tr>
-<td bgcolor="#d4edda"><code>HTML list + One-of list + For every N models + Replacement + Unit-wide / scaling</code></td>
-<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
-<td bgcolor="#d4edda">30</td>
-<td bgcolor="#d4edda">Boyz (`000000016`): For every 10 models in this unit, 1 Boy's choppa and slugga can be replaced with one of the following:&lt;ul style="list-style-type:circle"&gt;&lt;li…<br/>Brotherhood Terminator Squad (`000000382`): For every 5 models in this unit, 1 Terminator's storm bolter can be replaced with one of the following:&lt;ul style="list-style-type:circle"&gt;&lt;l…<br/>Chaos Terminator Squad (`000000947`): For every 5 models in this unit, 1 Terminator's combi-bolter can be replaced with one of the following:&lt;ul style="list-style-type:circle"&gt;&lt;l…</td>
-<td bgcolor="#d4edda">All sampled rows in this pattern are parsed and simple to apply.</td>
+<td bgcolor="#fff3cd"><code>HTML list + One-of list + For every N models + Replacement + Unit-wide / scaling</code></td>
+<td bgcolor="#fff3cd"><b>🟨 Partial</b></td>
+<td bgcolor="#fff3cd">30</td>
+<td bgcolor="#fff3cd">Boyz (`000000016`): For every 10 models in this unit, 1 Boy's choppa and slugga can be replaced with one of the following:&lt;ul style="list-style-type:circle"&gt;&lt;li…<br/>Brotherhood Terminator Squad (`000000382`): For every 5 models in this unit, 1 Terminator's storm bolter can be replaced with one of the following:&lt;ul style="list-style-type:circle"&gt;&lt;l…<br/>Chaos Terminator Squad (`000000947`): For every 5 models in this unit, 1 Terminator's combi-bolter can be replaced with one of the following:&lt;ul style="list-style-type:circle"&gt;&lt;l…</td>
+<td bgcolor="#fff3cd">This pattern is parsed in many cases, but includes constraints/variants we don’t fully enforce yet.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>HTML list + One-of list + Up to N + Replacement + Per-model</code></td>
@@ -113,11 +113,11 @@ Generated from `wahapedia_data/Datasheets_options.json` (optional wargear allowa
 <td bgcolor="#d4edda">All sampled rows in this pattern are parsed and simple to apply.</td>
 </tr>
 <tr>
-<td bgcolor="#fff3cd"><code>For every N models + Additional + Unit-wide / scaling</code></td>
-<td bgcolor="#fff3cd"><b>🟨 Partial</b></td>
-<td bgcolor="#fff3cd">22</td>
-<td bgcolor="#fff3cd">Cadian Shock Troops (`000002612`): For every 10 models in this unit, 1 Shock Trooper equipped with a lasgun can be equipped with 1 vox-caster (that model's lasgun cannot be re…<br/>Cadian Shock Troops (`000003948`): For every 10 models in this unit, 1 Shock Trooper equipped with a lasgun can be equipped with 1 vox-caster (that model's lasgun cannot be re…<br/>Catachan Jungle Fighters (`000002614`): For every 10 models in this unit, 1 Jungle Fighter equipped with a lasgun can be equipped with 1 vox-caster (that model's lasgun cannot be r…</td>
-<td bgcolor="#fff3cd">This pattern is parsed in many cases, but includes constraints/variants we don’t fully enforce yet.</td>
+<td bgcolor="#d4edda"><code>For every N models + Additional + Unit-wide / scaling</code></td>
+<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
+<td bgcolor="#d4edda">22</td>
+<td bgcolor="#d4edda">Cadian Shock Troops (`000002612`): For every 10 models in this unit, 1 Shock Trooper equipped with a lasgun can be equipped with 1 vox-caster (that model's lasgun cannot be re…<br/>Cadian Shock Troops (`000003948`): For every 10 models in this unit, 1 Shock Trooper equipped with a lasgun can be equipped with 1 vox-caster (that model's lasgun cannot be re…<br/>Catachan Jungle Fighters (`000002614`): For every 10 models in this unit, 1 Jungle Fighter equipped with a lasgun can be equipped with 1 vox-caster (that model's lasgun cannot be r…</td>
+<td bgcolor="#d4edda">All sampled rows in this pattern are parsed and simple to apply.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>HTML list + Replacement</code></td>
@@ -197,25 +197,25 @@ Generated from `wahapedia_data/Datasheets_options.json` (optional wargear allowa
 <td bgcolor="#d4edda">All sampled rows in this pattern are parsed and simple to apply.</td>
 </tr>
 <tr>
-<td bgcolor="#fff3cd"><code>Additional + Unit-wide / scaling</code></td>
-<td bgcolor="#fff3cd"><b>🟨 Partial</b></td>
-<td bgcolor="#fff3cd">7</td>
-<td bgcolor="#fff3cd">Deathwing Command Squad (`000002302`): This unit can be equipped with 1 Watcher in the Dark.*<br/>Deathwing Knights (`000000231`): This unit can be equipped with 1 Watcher in the Dark.<br/>Deathwing Terminator Squad (`000000230`): This unit can be equipped with 1 Watcher in the Dark.</td>
-<td bgcolor="#fff3cd">This pattern is parsed in many cases, but includes constraints/variants we don’t fully enforce yet.</td>
+<td bgcolor="#d4edda"><code>Additional + Unit-wide / scaling</code></td>
+<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
+<td bgcolor="#d4edda">7</td>
+<td bgcolor="#d4edda">Deathwing Command Squad (`000002302`): This unit can be equipped with 1 Watcher in the Dark.*<br/>Deathwing Knights (`000000231`): This unit can be equipped with 1 Watcher in the Dark.<br/>Deathwing Terminator Squad (`000000230`): This unit can be equipped with 1 Watcher in the Dark.</td>
+<td bgcolor="#d4edda">All sampled rows in this pattern are parsed and simple to apply.</td>
 </tr>
 <tr>
-<td bgcolor="#fff3cd"><code>If unit contains N models + Replacement</code></td>
-<td bgcolor="#fff3cd"><b>🟨 Partial</b></td>
-<td bgcolor="#fff3cd">7</td>
-<td bgcolor="#fff3cd">Blightlord Terminators (`000001372`): If this unit contains only 3 models, 1 Blightlord Terminator's combi-bolter and bubotic blade can be replaced with 1 plague spewer and 1 clo…<br/>Corsair Voidscarred (`000002532`): If this unit contains 10 models, 1 Corsair Voidscarred's shuriken rifle can be replaced with 1 long rifle.<br/>Corsair Voidscarred (`000002532`): If this unit contains 10 models, 1 Corsair Voidscarred's power sword can be replaced with 1 fusion pistol.</td>
-<td bgcolor="#fff3cd">This pattern is parsed in many cases, but includes constraints/variants we don’t fully enforce yet.</td>
+<td bgcolor="#d4edda"><code>If unit contains N models + Replacement</code></td>
+<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
+<td bgcolor="#d4edda">7</td>
+<td bgcolor="#d4edda">Blightlord Terminators (`000001372`): If this unit contains only 3 models, 1 Blightlord Terminator's combi-bolter and bubotic blade can be replaced with 1 plague spewer and 1 clo…<br/>Corsair Voidscarred (`000002532`): If this unit contains 10 models, 1 Corsair Voidscarred's shuriken rifle can be replaced with 1 long rifle.<br/>Corsair Voidscarred (`000002532`): If this unit contains 10 models, 1 Corsair Voidscarred's power sword can be replaced with 1 fusion pistol.</td>
+<td bgcolor="#d4edda">All sampled rows in this pattern are parsed and simple to apply.</td>
 </tr>
 <tr>
-<td bgcolor="#fff3cd"><code>HTML list + Additional</code></td>
-<td bgcolor="#fff3cd"><b>🟨 Partial</b></td>
-<td bgcolor="#fff3cd">6</td>
-<td bgcolor="#fff3cd">Battlewagon (`000000039`): This model can be equipped with:&lt;ul style="list-style-type:circle"&gt;&lt;li&gt;1 lobba&lt;/li&gt;&lt;/ul&gt;<br/>Battlewagon (`000000039`): This model can be equipped with any of the following:&lt;ul style="list-style-type:circle"&gt;&lt;li&gt;1 'ard case&lt;/li&gt;&lt;li&gt;1 grabbin' klaw&lt;/li&gt;&lt;li&gt;1 wr…<br/>Canoness (`000000899`): If this model is equipped with a plasma pistol and a power weapon, it can be equipped with:&lt;ul style="list-style-type:circle"&gt;&lt;li&gt;1 rod of o…</td>
-<td bgcolor="#fff3cd">This pattern is parsed in many cases, but includes constraints/variants we don’t fully enforce yet.</td>
+<td bgcolor="#d4edda"><code>HTML list + Additional</code></td>
+<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
+<td bgcolor="#d4edda">6</td>
+<td bgcolor="#d4edda">Battlewagon (`000000039`): This model can be equipped with:&lt;ul style="list-style-type:circle"&gt;&lt;li&gt;1 lobba&lt;/li&gt;&lt;/ul&gt;<br/>Battlewagon (`000000039`): This model can be equipped with any of the following:&lt;ul style="list-style-type:circle"&gt;&lt;li&gt;1 'ard case&lt;/li&gt;&lt;li&gt;1 grabbin' klaw&lt;/li&gt;&lt;li&gt;1 wr…<br/>Canoness (`000000899`): If this model is equipped with a plasma pistol and a power weapon, it can be equipped with:&lt;ul style="list-style-type:circle"&gt;&lt;li&gt;1 rod of o…</td>
+<td bgcolor="#d4edda">All sampled rows in this pattern are parsed and simple to apply.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>HTML list + One-of list + Replacement + Per-model</code></td>
@@ -232,11 +232,11 @@ Generated from `wahapedia_data/Datasheets_options.json` (optional wargear allowa
 <td bgcolor="#d4edda">All sampled rows in this pattern are parsed and simple to apply.</td>
 </tr>
 <tr>
-<td bgcolor="#fff3cd"><code>HTML list + One-of list + If unit contains N models + Replacement</code></td>
-<td bgcolor="#fff3cd"><b>🟨 Partial</b></td>
-<td bgcolor="#fff3cd">5</td>
-<td bgcolor="#fff3cd">Corsair Voidreavers (`000002531`): If this unit contains 10 models, 1 Corsair Voidreaver's shuriken rifle can be replaced with one of the following:&lt;ul style="list-style-type:…<br/>Corsair Voidreavers (`000004168`): If this unit contains 10 models, 1 Corsair Voidreaver's shuriken rifle can be replaced with one of the following:&lt;ul style="list-style-type:…<br/>Corsair Voidscarred (`000002532`): If this unit contains 10 models, 1 Corsair Voidscarred's shuriken rifle can be replaced with one of the following:&lt;ul style="list-style-type…</td>
-<td bgcolor="#fff3cd">This pattern is parsed in many cases, but includes constraints/variants we don’t fully enforce yet.</td>
+<td bgcolor="#d4edda"><code>HTML list + One-of list + If unit contains N models + Replacement</code></td>
+<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
+<td bgcolor="#d4edda">5</td>
+<td bgcolor="#d4edda">Corsair Voidreavers (`000002531`): If this unit contains 10 models, 1 Corsair Voidreaver's shuriken rifle can be replaced with one of the following:&lt;ul style="list-style-type:…<br/>Corsair Voidreavers (`000004168`): If this unit contains 10 models, 1 Corsair Voidreaver's shuriken rifle can be replaced with one of the following:&lt;ul style="list-style-type:…<br/>Corsair Voidscarred (`000002532`): If this unit contains 10 models, 1 Corsair Voidscarred's shuriken rifle can be replaced with one of the following:&lt;ul style="list-style-type…</td>
+<td bgcolor="#d4edda">All sampled rows in this pattern are parsed and simple to apply.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>HTML list + One-of list + For every N models + Additional + Unit-wide / scaling</code></td>
@@ -260,11 +260,11 @@ Generated from `wahapedia_data/Datasheets_options.json` (optional wargear allowa
 <td bgcolor="#d4edda">All sampled rows in this pattern are parsed and simple to apply.</td>
 </tr>
 <tr>
-<td bgcolor="#fff3cd"><code>HTML list + Up to N + If unit contains N models + Replacement + Per-model</code></td>
-<td bgcolor="#fff3cd"><b>🟨 Partial</b></td>
-<td bgcolor="#fff3cd">4</td>
-<td bgcolor="#fff3cd">Troupe (`000002536`): If this unit contains 9 or fewer models:&lt;ul style="list-style-type:circle"&gt;&lt;li&gt;Up to 2 models can each have their shuriken pistol replaced w…<br/>Troupe (`000002536`): If this unit contains 10 or more models:&lt;ul style="list-style-type:circle"&gt;&lt;li&gt;Up to 4 models can each have their shuriken pistol replaced w…<br/>Troupe (`000004164`): If this unit contains 9 or fewer models:&lt;ul style="list-style-type:circle"&gt;&lt;li&gt;Up to 2 models can each have their shuriken pistol replaced w…</td>
-<td bgcolor="#fff3cd">This pattern is parsed in many cases, but includes constraints/variants we don’t fully enforce yet.</td>
+<td bgcolor="#d4edda"><code>HTML list + Up to N + If unit contains N models + Replacement + Per-model</code></td>
+<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
+<td bgcolor="#d4edda">4</td>
+<td bgcolor="#d4edda">Troupe (`000002536`): If this unit contains 9 or fewer models:&lt;ul style="list-style-type:circle"&gt;&lt;li&gt;Up to 2 models can each have their shuriken pistol replaced w…<br/>Troupe (`000002536`): If this unit contains 10 or more models:&lt;ul style="list-style-type:circle"&gt;&lt;li&gt;Up to 4 models can each have their shuriken pistol replaced w…<br/>Troupe (`000004164`): If this unit contains 9 or fewer models:&lt;ul style="list-style-type:circle"&gt;&lt;li&gt;Up to 2 models can each have their shuriken pistol replaced w…</td>
+<td bgcolor="#d4edda">All sampled rows in this pattern are parsed and simple to apply.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>Additional + Per-model</code></td>
@@ -309,11 +309,11 @@ Generated from `wahapedia_data/Datasheets_options.json` (optional wargear allowa
 <td bgcolor="#d4edda">All sampled rows in this pattern are parsed and simple to apply.</td>
 </tr>
 <tr>
-<td bgcolor="#fff3cd"><code>If unit contains N models + Additional</code></td>
-<td bgcolor="#fff3cd"><b>🟨 Partial</b></td>
-<td bgcolor="#fff3cd">2</td>
-<td bgcolor="#fff3cd">Ratlings (`000000724`): If this unit contains 10 models, one model can be equipped with demolition gear.<br/>Ratlings (`000000724`): If this unit contains 10 models, it can be equipped with one Ratling Battlemutt.</td>
-<td bgcolor="#fff3cd">This pattern is parsed in many cases, but includes constraints/variants we don’t fully enforce yet.</td>
+<td bgcolor="#d4edda"><code>If unit contains N models + Additional</code></td>
+<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
+<td bgcolor="#d4edda">2</td>
+<td bgcolor="#d4edda">Ratlings (`000000724`): If this unit contains 10 models, one model can be equipped with demolition gear.<br/>Ratlings (`000000724`): If this unit contains 10 models, it can be equipped with one Ratling Battlemutt.</td>
+<td bgcolor="#d4edda">All sampled rows in this pattern are parsed and simple to apply.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>Up to N + For every N models + Other / unclassified + Unit-wide / scaling</code></td>
