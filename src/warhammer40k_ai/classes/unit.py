@@ -893,17 +893,49 @@ class Unit:
         wanted = _norm(wargear_name)
         for opt in list(getattr(self, "wargear_options", []) or []):
             try:
-                for choice in (getattr(opt, "wargear_to", []) or []):
+                all_choices = list(getattr(opt, "wargear_to", []) or [])
+                if not all_choices:
+                    continue
+
+                # Find all choices that contain the wanted item.
+                matching_choices = []
+                for choice in all_choices:
                     for qty, nm in (choice or []):
                         if _norm(nm) == wanted:
-                            # Reorder choice list to put the matching choice first, then apply.
-                            choices = list(opt.wargear_to)
-                            idx = choices.index(choice)
-                            if idx != 0:
-                                choices[0], choices[idx] = choices[idx], choices[0]
-                                opt.wargear_to = choices
-                            self.apply_wargear_option(opt)
+                            matching_choices.append(choice)
+                            break
+
+                if not matching_choices:
+                    continue
+
+                # If the wanted item is present in multiple choices, it may be non-disambiguating
+                # (e.g. "Axe of Khorne" is present in BOTH Bloodthirster choices).
+                # In that case: do not apply (wait for a more specific item like "lash of khorne").
+                if len(matching_choices) > 1:
+                    try:
+                        choice_sets = [
+                            {_norm(nm) for qty, nm in (c or []) if nm}
+                            for c in all_choices
+                        ]
+                        common = set.intersection(*choice_sets) if choice_sets else set()
+                        if wanted in common:
                             return
+                    except Exception:
+                        # If we can't reason about it, avoid making a wrong choice.
+                        return
+
+                    # Still ambiguous even if not common -> avoid guessing.
+                    return
+
+                # Exactly one match -> apply that choice.
+                choice = matching_choices[0]
+                choices = list(all_choices)
+                idx = choices.index(choice)
+                if idx != 0:
+                    choices[0], choices[idx] = choices[idx], choices[0]
+                    opt.wargear_to = choices
+                self.apply_wargear_option(opt)
+                return
             except Exception:
                 continue
 
