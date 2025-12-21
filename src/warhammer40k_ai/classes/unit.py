@@ -310,6 +310,63 @@ class Unit:
         models = []
         total_models = 0
 
+        def _normalize_name(s: str) -> str:
+            s = (s or "").replace("’", "'").strip().lower()
+            s = re.sub(r"<[^>]+>", " ", s)
+            s = re.sub(r"[^a-z0-9\s]", " ", s)
+            s = re.sub(r"\s+", " ", s).strip()
+            return s
+
+        def _pick_profile_for_model(model_name: str) -> dict:
+            """
+            Datasheets often have multiple model profiles (e.g. Attack Bike vs Space Marine Bike,
+            Exarch vs regular). Unit composition names don't always match profile names 1:1
+            (e.g. "Biker Sergeant" uses the "SPACE MARINE BIKE" profile).
+
+            Heuristic: exact/substring match on normalized names; otherwise token overlap with
+            light fuzzy matching (biker~bike). Falls back to first profile.
+            """
+            try:
+                profiles = list(getattr(datasheet, "datasheets_models", []) or [])
+            except Exception:
+                profiles = []
+            if not profiles:
+                return {}
+
+            want = _normalize_name(model_name)
+            want_tokens = set(want.split())
+
+            best = profiles[0]
+            best_score = -1
+
+            for prof in profiles:
+                pname = _normalize_name(str(prof.get("name", "") or ""))
+                if not pname:
+                    continue
+                if pname == want:
+                    return prof
+                if pname and (pname in want or want in pname):
+                    # Strong match, but keep searching for exact
+                    score = 100
+                else:
+                    p_tokens = set(pname.split())
+                    overlap = len(want_tokens & p_tokens)
+                    # Fuzzy: treat biker/bikes as matching bike
+                    fuzzy = 0
+                    if "biker" in want_tokens and "bike" in p_tokens:
+                        fuzzy += 1
+                    if "bikes" in want_tokens and "bike" in p_tokens:
+                        fuzzy += 1
+                    if "bike" in want_tokens and "biker" in p_tokens:
+                        fuzzy += 1
+                    score = overlap + fuzzy
+
+                if score > best_score:
+                    best = prof
+                    best_score = score
+
+            return best
+
         if quantity is None:
             # If no quantity is specified, use the minimum number of models
             quantity = sum(min_size for _, (min_size, _) in self.unit_composition.items())
@@ -330,18 +387,23 @@ class Unit:
             # Remove 's' from the end of model_name if it's plural
             if model_name.endswith('s'):
                 model_name = model_name[:-1]
+
+            profile = _pick_profile_for_model(model_name)
+            # Default to first profile if anything is missing
+            if not profile:
+                profile = datasheet.datasheets_models[0]
             for _ in range(model_count):
                 model = Model(
                     name=model_name,
-                    movement=self._parse_attribute(datasheet.datasheets_models[0]["M"]),
-                    toughness=self._parse_attribute(datasheet.datasheets_models[0]["T"]),
-                    save=self._parse_attribute(datasheet.datasheets_models[0]["Sv"]),
-                    wounds=self._parse_attribute(datasheet.datasheets_models[0]["W"]),
-                    leadership=self._parse_attribute(datasheet.datasheets_models[0]["Ld"]),
-                    objective_control=self._parse_attribute(datasheet.datasheets_models[0]["OC"]),
-                    model_base=self._parse_base_size(datasheet.datasheets_models[0]["base_size"]),
-                    inv_save=self._parse_attribute(datasheet.datasheets_models[0]["inv_sv"]),
-                    inv_save_condition=datasheet.datasheets_models[0]["inv_sv_descr"].lower()
+                    movement=self._parse_attribute(profile.get("M", datasheet.datasheets_models[0]["M"])),
+                    toughness=self._parse_attribute(profile.get("T", datasheet.datasheets_models[0]["T"])),
+                    save=self._parse_attribute(profile.get("Sv", datasheet.datasheets_models[0]["Sv"])),
+                    wounds=self._parse_attribute(profile.get("W", datasheet.datasheets_models[0]["W"])),
+                    leadership=self._parse_attribute(profile.get("Ld", datasheet.datasheets_models[0]["Ld"])),
+                    objective_control=self._parse_attribute(profile.get("OC", datasheet.datasheets_models[0]["OC"])),
+                    model_base=self._parse_base_size(profile.get("base_size", datasheet.datasheets_models[0]["base_size"])),
+                    inv_save=self._parse_attribute(profile.get("inv_sv", datasheet.datasheets_models[0]["inv_sv"])),
+                    inv_save_condition=str(profile.get("inv_sv_descr", datasheet.datasheets_models[0].get("inv_sv_descr", "")) or "").lower()
                 )
                 model.set_parent_unit(self)
                 models.append(model)
