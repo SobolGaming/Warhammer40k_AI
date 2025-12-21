@@ -1732,29 +1732,62 @@ class Unit:
         return list(set(model.name for model in self.models))
 
     def _parse_models_cost(self, models_cost):
-        result = {}
-        for cost_entry in models_cost:
-            try:
-                num_models = int(cost_entry['description'].split()[0])
-                cost = int(cost_entry['cost'])
-                result[num_models] = cost
-            except ValueError:
-                num_models = 1
-                cost = int(cost_entry['cost'].replace("+", ""))
-                result['extra'] = cost
-        return result
+        """
+        Parse `datasheets_models_cost` rows from Wahapedia.
+
+        Common forms:
+        - "3 models" -> "80" (base cost by model-count bucket)
+        - "Attack Bike" -> "+55" (add-on model/upgrade cost)
+
+        We store:
+        - `self.models_cost`: dict[int, int] mapping model-count bucket -> points
+        - `self.models_cost_addons`: dict[str, int] mapping addon label -> points (lower-cased)
+        """
+        import re
+
+        base: dict[int, int] = {}
+        self.models_cost_addons = {}
+
+        for cost_entry in (models_cost or []):
+            desc = str(cost_entry.get("description", "") or "").strip()
+            cost_raw = str(cost_entry.get("cost", "") or "").strip()
+
+            # Base bucket:
+            # - "10 models" -> 10
+            # - "1 Spanner and 4 Lootas" -> 5 (sum of all counts)
+            nums = re.findall(r"\b\d+\b", desc)
+            if nums:
+                try:
+                    if len(nums) == 1:
+                        n = int(nums[0])
+                    else:
+                        n = sum(int(x) for x in nums)
+                    base[n] = int(cost_raw.replace("+", "").strip())
+                    continue
+                except Exception:
+                    pass
+
+            # Add-on row: typically "+55" or "55"
+            m = re.match(r"^\+?\s*(\d+)\s*$", cost_raw)
+            if m and desc:
+                self.models_cost_addons[desc.lower()] = int(m.group(1))
+
+        return base
 
     def calculate_points(self, num_models):
-        for threshold, cost in sorted(self.models_cost.items(), reverse=True):
+        # Only consider numeric thresholds (some datasheets may have parsing fallbacks).
+        numeric = [(k, v) for k, v in (self.models_cost or {}).items() if isinstance(k, int)]
+        for threshold, cost in sorted(numeric, reverse=True):
             if num_models >= threshold:
-                return cost
+                return int(cost)
         return 0
 
     def max_models_for_points(self, max_points):
         max_models = 0
-        for num_models, cost in sorted(self.models_cost.items()):
-            if cost <= max_points:
-                max_models = num_models
+        numeric = [(k, v) for k, v in (self.models_cost or {}).items() if isinstance(k, int)]
+        for num_models, cost in sorted(numeric):
+            if int(cost) <= max_points:
+                max_models = int(num_models)
             else:
                 break
         return max_models
@@ -1768,7 +1801,30 @@ class Unit:
             int: The cost of the unit in points (including enhancement cost if applicable)
         """
         num_models = len(self.models)
-        return self.calculate_points(num_models) + (self.enhancement.points if self.enhancement else 0)
+        total = self.calculate_points(num_models) + (self.enhancement.points if self.enhancement else 0)
+
+        # Add-on model/upgrade costs (e.g. "Attack Bike" +55) when present.
+        try:
+            addons = getattr(self, "models_cost_addons", None) or {}
+            if addons:
+                # Count by model name, case-insensitive exact match.
+                counts = {}
+                for m in (self.models or []):
+                    try:
+                        name = str(getattr(m, "name", "") or "").strip().lower()
+                        if not name:
+                            continue
+                        counts[name] = counts.get(name, 0) + 1
+                    except Exception:
+                        continue
+                for addon_name, addon_cost in addons.items():
+                    c = counts.get(str(addon_name).strip().lower(), 0)
+                    if c:
+                        total += int(addon_cost) * int(c)
+        except Exception:
+            pass
+
+        return int(total)
 
     def configure_models(self, count, wargear):
         # Recreate the models with the specified count
