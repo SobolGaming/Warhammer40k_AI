@@ -187,6 +187,47 @@ class TestDatasheetsOptionsConstraints(unittest.TestCase):
         u.apply_wargear_options("meltagun")
         self.assertEqual(sorted([wg.name for wg in u.models[0].wargear]), sorted(["plasma gun", "meltagun"]))
 
+    def test_item_limit_equals_number_of_equipped_applies_multiple_times(self):
+        """
+        e.g. "For each Helbrute fist this model is equipped with, it can be equipped with..."
+        should add the chosen item once per equipped fist.
+        """
+        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.classes.wargear import WargearOption, WargearOptionType, Quantity
+
+        fist = self._make_wargear("helbrute fist", wtype="Melee")
+        combi = self._make_wargear("combi-bolter")
+
+        u = Unit.__new__(Unit)
+        u.models = [SimpleNamespace(name="Model", wargear=[fist, fist], optional_wargear=[])]
+        u.possible_wargear = [fist, combi]
+        u.wargear_options = [
+            WargearOption(
+                WargearOptionType.ADDITIONAL,
+                wargear_from=[],
+                wargear_to=[[(1, "combi-bolter")]],
+                model_name="model",
+                model_quantity=Quantity(min=1, max=1),
+                item_quantity=Quantity(min=1, max=1),
+                conditionals=["item_limit is equal to number of equipped helbrute fist"],
+            )
+        ]
+
+        # First selection consumes 1 slot
+        u.apply_wargear_options("combi-bolter")
+        total = sum(1 for wg in u.models[0].wargear if wg.name.lower() == "combi-bolter")
+        self.assertEqual(total, 1)
+
+        # Second selection consumes the second slot
+        u.apply_wargear_options("combi-bolter")
+        total = sum(1 for wg in u.models[0].wargear if wg.name.lower() == "combi-bolter")
+        self.assertEqual(total, 2)
+
+        # Third selection should no-op (no slots left)
+        u.apply_wargear_options("combi-bolter")
+        total = sum(1 for wg in u.models[0].wargear if wg.name.lower() == "combi-bolter")
+        self.assertEqual(total, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

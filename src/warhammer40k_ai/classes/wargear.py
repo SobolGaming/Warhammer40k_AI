@@ -1977,10 +1977,14 @@ def parse_wargear_itemlist(item_str: str) -> list[tuple[int, str]]:
 def parse_wargear_item(item_str: str) -> list[tuple[int, str]]:
     full_result = []
     for specific_option in item_str:
+        if not specific_option or not specific_option.strip():
+            continue
         #print(f"SPECIFIC OPTION: {specific_option}")
         opt_lines = [item.strip() for item in specific_option.split(" and ")]
         results = []
         for opt in opt_lines:
+            if not opt or not opt.strip():
+                continue
             # Extract count if present, default to 1
             count_match = re.match(r'^(\d+)\s+(.+)$', opt)
             if count_match:
@@ -1989,8 +1993,12 @@ def parse_wargear_item(item_str: str) -> list[tuple[int, str]]:
             else:
                 item_count = 1
                 item_name = opt
-            results.append((item_count, item_name.strip().lower()))
-        full_result.append(results)
+            item_name = (item_name or "").strip().lower()
+            if not item_name:
+                continue
+            results.append((item_count, item_name))
+        if results:
+            full_result.append(results)
     return full_result
 
 def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[WargearOption]:

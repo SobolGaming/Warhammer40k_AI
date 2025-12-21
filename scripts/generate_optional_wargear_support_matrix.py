@@ -112,7 +112,6 @@ def _support_for_desc(desc: str) -> Tuple[str, str]:
     # Heuristic: if any option has non-trivial constraints, mark Partial.
     # Constraints we still consider "Partial" (not fully enforced / needs richer selection UI).
     hard_conditional_markers = (
-        "item_limit is equal to number of equipped",
         "excluding ",
         "maximum of",
     )
@@ -124,20 +123,22 @@ def _support_for_desc(desc: str) -> Tuple[str, str]:
 
         item_max = getattr(getattr(opt, "item_quantity", None), "max", 1)
         if item_max and int(item_max) > 1:
-            return "Partial", "Parsed, but option allows selecting multiple items (needs UI/selection + enforcement)."
+            # If this is "for each equipped X" style, we treat it as Supported (engine enforces slots now).
+            if "item_limit is equal to number of equipped" in conds:
+                pass
+            else:
+                return "Partial", "Parsed, but option allows selecting multiple items (needs UI/selection + enforcement)."
 
-        # If there are multiple choices, ensure each choice is uniquely selectable by at least one item name.
-        # This matters for our current selection mechanism (apply_wargear_options(name)).
+        # If there are multiple choices, ensure there are no duplicate identical choices.
+        # (We can disambiguate by exact bundle selection.)
         choices = list(getattr(opt, "wargear_to", []) or [])
         if len(choices) > 1:
-            sets = []
+            seen = set()
             for c in choices:
-                sets.append({(str(nm or "").lower().strip()) for qty, nm in (c or []) if nm})
-            # If every choice has at least one item not present in every other choice, selection-by-name is unambiguous.
-            for i, s in enumerate(sets):
-                others = set().union(*[sets[j] for j in range(len(sets)) if j != i]) if len(sets) > 1 else set()
-                if not (s - others):
-                    return "Partial", "Parsed, but choices share items (selection-by-wargear-name can be ambiguous without extra UI context)."
+                key = tuple(sorted((int(qty), (str(nm or "").lower().strip())) for qty, nm in (c or []) if nm))
+                if key in seen:
+                    return "Partial", "Parsed, but contains duplicate identical choices (cannot disambiguate)."
+                seen.add(key)
 
     return "Supported", "Parsed and choices are selectable/applicable with current mechanisms (best-effort)."
 
@@ -207,7 +208,14 @@ def main() -> None:
         else:
             status = "Not implemented"
 
-        notes = f"Breakdown: Supported={supported_c}, Partial={partial_c}, Not implemented={not_impl_c}."
+        breakdown_parts: List[str] = []
+        if supported_c > 0:
+            breakdown_parts.append(f"Supported={supported_c}")
+        if partial_c > 0:
+            breakdown_parts.append(f"Partial={partial_c}")
+        if not_impl_c > 0:
+            breakdown_parts.append(f"Not implemented={not_impl_c}")
+        notes = f"Breakdown: {', '.join(breakdown_parts)}."
 
         examples = tuple(
             f"{it.datasheet_name} (`{it.datasheet_id}`): {_canonicalize(it.description)[:140]}{'…' if len(_canonicalize(it.description)) > 140 else ''}"
@@ -259,9 +267,6 @@ def main() -> None:
     lines.append("<th>Canonical pattern</th>")
     lines.append("<th>Status</th>")
     lines.append("<th>Count</th>")
-    lines.append("<th>Supported</th>")
-    lines.append("<th>Partial</th>")
-    lines.append("<th>Not implemented</th>")
     lines.append("<th>Examples</th>")
     lines.append("<th>Notes</th>")
     lines.append("</tr>")
@@ -276,9 +281,6 @@ def main() -> None:
         lines.append(f"<td bgcolor=\"{bg}\"><code>{_escape_html(pg.key)}</code></td>")
         lines.append(f"<td bgcolor=\"{bg}\"><b>{_escape_html(icon)} {_escape_html(pg.status)}</b></td>")
         lines.append(f"<td bgcolor=\"{bg}\">{pg.count}</td>")
-        lines.append(f"<td bgcolor=\"{bg}\">{pg.supported_count}</td>")
-        lines.append(f"<td bgcolor=\"{bg}\">{pg.partial_count}</td>")
-        lines.append(f"<td bgcolor=\"{bg}\">{pg.not_impl_count}</td>")
         lines.append(f"<td bgcolor=\"{bg}\">{ex}</td>")
         lines.append(f"<td bgcolor=\"{bg}\">{_escape_html(pg.notes)}</td>")
         lines.append("</tr>")

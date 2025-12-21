@@ -929,6 +929,38 @@ class Unit:
                     model.wargear = kept
 
             # Add items from the selected choice
+            # Support: "item_limit is equal to number of equipped X"
+            # Interpreted as "you have N slots equal to count(equipped X); each selection consumes 1 slot".
+            remaining_slots = None
+            for cond in list(getattr(wargear_option, "conditionals", []) or []):
+                cl = (cond or "").lower().strip()
+                if cl.startswith("item_limit is equal to number of equipped "):
+                    what = _norm(cl.replace("item_limit is equal to number of equipped ", ""))
+                    if not what:
+                        remaining_slots = 0
+                        break
+                    cap = sum(
+                        1
+                        for wg in list(getattr(model, "wargear", []) or [])
+                        if wg and _norm(getattr(wg, "name", "")) == what
+                    )
+                    allowed_items = {
+                        _norm(nm)
+                        for ch in (getattr(wargear_option, "wargear_to", []) or [])
+                        for q, nm in (ch or [])
+                        if nm
+                    }
+                    already_taken = sum(
+                        1
+                        for wg in list(getattr(model, "wargear", []) or [])
+                        if wg and _norm(getattr(wg, "name", "")) in allowed_items
+                    )
+                    remaining_slots = max(0, int(cap) - int(already_taken))
+                    break
+            if remaining_slots is not None and remaining_slots <= 0:
+                _apply_post_locks(model)
+                continue
+
             for qty, nm in choice:
                 cap = _unit_unique_cap(_norm(nm))
                 if cap is not None:
@@ -942,8 +974,15 @@ class Unit:
                     except Exception:
                         pass
                     continue
-                for _ in range(int(qty) if qty else 1):
+                to_add = int(qty) if qty else 1
+                if remaining_slots is not None:
+                    to_add = min(to_add, remaining_slots)
+                for _ in range(to_add):
                     model.wargear.append(wg)
+                if remaining_slots is not None:
+                    remaining_slots -= to_add
+                    if remaining_slots <= 0:
+                        break
 
             # Apply any post-locks to the model after successfully taking this option
             _apply_post_locks(model)
@@ -967,7 +1006,37 @@ class Unit:
         if not wargear_name:
             return
 
-        wanted = _norm(wargear_name)
+        def _norm_variants(s: str) -> set[str]:
+            n = _norm(s)
+            out = {n}
+            if n.endswith("s") and not n.endswith("ss") and len(n) > 3:
+                out.add(n[:-1])
+            return out
+
+        # Allow disambiguation by exact bundle:
+        # - "2 big shootas"
+        # - "1 big shoota and 1 rokkit launcha"
+        # If user provides qty or multiple items, we require an exact match against a choice.
+        spec = (wargear_name or "").strip().lower()
+        spec = spec.replace(", ", " and ")
+        parts = [p.strip() for p in spec.split(" and ") if p.strip()]
+        wanted_tuples = []
+        explicit = False
+        for p in parts:
+            m = re.match(r"^\s*(\d+)\s+(.+?)\s*$", p)
+            if m:
+                explicit = True
+                q = int(m.group(1))
+                nm = m.group(2)
+            else:
+                q = 1
+                nm = p
+            wanted_tuples.append((q, nm))
+        if len(wanted_tuples) > 1:
+            explicit = True
+
+        wanted_single = _norm(spec)
+        wanted_vars = _norm_variants(spec)
 
         # STRICT SELECTION RULE:
         # `wargear_name` must uniquely identify exactly one (option, choice) in this unit.
@@ -980,10 +1049,19 @@ class Unit:
             for choice in all_choices:
                 if not choice:
                     continue
-                for qty, nm in (choice or []):
-                    if _norm(nm) == wanted:
+                if explicit:
+                    # exact bundle match (order-insensitive)
+                    wanted_norm = sorted([(int(q), next(iter(_norm_variants(nm)))) for q, nm in wanted_tuples])
+                    choice_norm = sorted([(int(q), next(iter(_norm_variants(nm)))) for q, nm in (choice or []) if nm])
+                    if wanted_norm == choice_norm:
                         matches.append((opt, choice))
-                        break
+                else:
+                    for qty, nm in (choice or []):
+                        nm_vars = _norm_variants(nm)
+                        name_match = bool(nm_vars & wanted_vars) or (_norm(nm) == wanted_single)
+                        if name_match:
+                            matches.append((opt, choice))
+                            break
 
         if not matches:
             return
