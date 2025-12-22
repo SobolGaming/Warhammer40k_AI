@@ -690,11 +690,80 @@ class Unit:
         if len(options) == 1 and options[0].lower() == "none":
             self.wargear_options = {}
             return
-        wargear_options = []
-        #for option in options:
-        wargear_options = parse_alternate_3(options, self) #self.parse_wargear_option(option)
-        #    wargear_options.append(wargear_option)
-        #print(f"WARGEAR OPTIONS: {wargear_options}")
+        import re
+
+        def _norm(s: str) -> str:
+            s = (s or "").replace("’", "'").lower().strip()
+            s = re.sub(r"<[^>]+>", " ", s)
+            s = re.sub(r"[^\w\s\-']", " ", s)
+            s = s.replace("'", "")
+            s = re.sub(r"\s+", " ", s).strip()
+            return s
+
+        # Parse and store constraint-only lines (they are not selectable options, but affect validity).
+        # These are the "Additional / Not implemented" lines like pistol pairing and max ranged weapon limits.
+        self._wargear_constraints = getattr(self, "_wargear_constraints", {}) or {}
+        self._wargear_constraints.setdefault("max_ranged_weapons", None)
+        self._wargear_constraints.setdefault("two_ranged_requires_pistol", False)
+        self._wargear_constraints.setdefault("two_ranged_requires_cyclone_pair", False)
+        self._wargear_constraints.setdefault("mutex_sets", [])  # list[set[str]]
+        self._wargear_constraints.setdefault("max_counts", {})  # dict[str,int]
+        self._wargear_constraints.setdefault("model_option_mutex", False)
+        self._wargear_constraints.setdefault("forbidden_if_any_option", set())
+
+        cleaned: List[str] = []
+        for raw in options:
+            text = (raw or "").strip()
+            t = _norm(text)
+            # Max ranged weapons
+            m = re.match(r"each model cannot be equipped with more than (\d+) ranged weapons", t)
+            if m:
+                self._wargear_constraints["max_ranged_weapons"] = int(m.group(1))
+                continue
+            # Pistol pairing when 2 ranged
+            if "can only be equipped with two ranged weapons if one of them is a pistol" in t:
+                self._wargear_constraints["two_ranged_requires_pistol"] = True
+                # Also: only have one pistol (already implied by that text)
+                continue
+            # Cyclone pairing (Wolf Guard Pack Leader in Terminator Armour)
+            if "can only be equipped with two ranged weapons if one of them is a cyclone missile launcher" in t:
+                self._wargear_constraints["two_ranged_requires_cyclone_pair"] = True
+                continue
+            # Mutual exclusion: "cannot be equipped with both X and Y"
+            m = re.match(r"(?:no model|this model) can(?:not)? be equipped with both (.+?) and (.+?)(?: at the same time)?$", t)
+            if m:
+                a = _norm(m.group(1))
+                b = _norm(m.group(2))
+                if a and b:
+                    self._wargear_constraints["mutex_sets"].append({a, b})
+                continue
+            # Max counts: "cannot be equipped with more than 1 X"
+            # Hive Tyrant line has multiple clauses; parse all occurrences.
+            maxes = list(re.finditer(r"cannot be equipped with more than (\d+) ([\w\s\-']+)", t))
+            if maxes:
+                for mm in maxes:
+                    n = int(mm.group(1))
+                    nm = _norm(mm.group(2))
+                    if nm:
+                        self._wargear_constraints["max_counts"][nm] = min(self._wargear_constraints["max_counts"].get(nm, n), n)
+                continue
+            # Model option mutex / forbidden weapons for that group
+            if "a model can only take one of these options" in t:
+                self._wargear_constraints["model_option_mutex"] = True
+                # "cannot be equipped with a X or an Y"
+                forbid = re.findall(r"cannot be equipped with an? ([\w\s\-']+)", t)
+                for f in forbid:
+                    ff = _norm(f)
+                    if ff:
+                        self._wargear_constraints["forbidden_if_any_option"].add(ff)
+                continue
+            if "cannot be equipped with more than one of these wargear options" in t:
+                self._wargear_constraints["model_option_mutex"] = True
+                continue
+
+            cleaned.append(text)
+
+        wargear_options = parse_alternate_3(cleaned, self)
         self.wargear_options = wargear_options
 
     def apply_wargear_option(self, wargear_option: WargearOption):
@@ -839,6 +908,90 @@ class Unit:
                     return wg
             return None
 
+        def _is_ranged_wargear(wg) -> bool:
+            try:
+                for prof in getattr(wg, "profiles", {}).values():
+                    if prof and hasattr(prof, "is_ranged") and prof.is_ranged():
+                        return True
+            except Exception:
+                pass
+            return False
+
+        def _is_pistol_wargear(wg) -> bool:
+            try:
+                for prof in getattr(wg, "profiles", {}).values():
+                    if prof and hasattr(prof, "is_pistol") and prof.is_pistol():
+                        return True
+            except Exception:
+                pass
+            return False
+
+        def _validate_constraints(model) -> bool:
+            c = getattr(self, "_wargear_constraints", {}) or {}
+            wargear = list(getattr(model, "wargear", []) or [])
+
+            # Max counts for named items
+            max_counts = c.get("max_counts", {}) or {}
+            if max_counts:
+                counts = {}
+                for wg in wargear:
+                    if wg:
+                        nm = _norm(getattr(wg, "name", ""))
+                        counts[nm] = counts.get(nm, 0) + 1
+                for nm, mx in max_counts.items():
+                    if counts.get(nm, 0) > int(mx):
+                        return False
+
+            # Mutual exclusions
+            for s in c.get("mutex_sets", []) or []:
+                present = 0
+                for wg in wargear:
+                    if wg and _norm(getattr(wg, "name", "")) in s:
+                        present += 1
+                        if present > 1:
+                            return False
+
+            # Max ranged weapons
+            max_r = c.get("max_ranged_weapons")
+            if max_r is not None:
+                ranged = [wg for wg in wargear if wg and _is_ranged_wargear(wg)]
+                if len(ranged) > int(max_r):
+                    return False
+
+            # Two ranged requires pistol
+            if c.get("two_ranged_requires_pistol"):
+                ranged = [wg for wg in wargear if wg and _is_ranged_wargear(wg)]
+                if len(ranged) == 2:
+                    pistols = [wg for wg in ranged if _is_pistol_wargear(wg)]
+                    if len(pistols) != 1:
+                        return False
+                if len(ranged) > 2:
+                    return False
+
+            # Cyclone pairing constraint
+            if c.get("two_ranged_requires_cyclone_pair"):
+                ranged = [wg for wg in wargear if wg and _is_ranged_wargear(wg)]
+                if len(ranged) == 2:
+                    names = {_norm(getattr(wg, "name", "")) for wg in ranged if wg}
+                    if "cyclone missile launcher" not in names:
+                        return False
+                    other = (names - {"cyclone missile launcher"})
+                    if not other:
+                        return False
+                    # Allowed partners: storm bolter OR combi-weapon
+                    if not (("storm bolter" in other) or ("combi-weapon" in other)):
+                        return False
+                if len(ranged) > 2:
+                    return False
+
+            return True
+
+        def _mark_model_took_any_option(model) -> None:
+            try:
+                setattr(model, "_took_any_wargear_option", True)
+            except Exception:
+                pass
+
         def _model_has_bundle(model, bundle) -> bool:
             """
             bundle: list[(qty, item_name)] describing the items that must exist on the model.
@@ -905,6 +1058,15 @@ class Unit:
 
         # Apply to models
         for model in eligible_models:
+            # Global option mutex / forbidden weapons
+            c = getattr(self, "_wargear_constraints", {}) or {}
+            if c.get("model_option_mutex") and getattr(model, "_took_any_wargear_option", False):
+                continue
+            forbidden = c.get("forbidden_if_any_option", set()) or set()
+            if forbidden:
+                if any(_norm(getattr(wg, "name", "")) in forbidden for wg in list(getattr(model, "wargear", []) or []) if wg):
+                    continue
+
             if _per_model_mutex_blocked(model):
                 continue
             # Replacement: remove wargear_from then add choice items.
@@ -979,6 +1141,13 @@ class Unit:
                     to_add = min(to_add, remaining_slots)
                 for _ in range(to_add):
                     model.wargear.append(wg)
+                    if not _validate_constraints(model):
+                        # rollback the last add and stop
+                        try:
+                            model.wargear.pop()
+                        except Exception:
+                            pass
+                        break
                 if remaining_slots is not None:
                     remaining_slots -= to_add
                     if remaining_slots <= 0:
@@ -986,6 +1155,7 @@ class Unit:
 
             # Apply any post-locks to the model after successfully taking this option
             _apply_post_locks(model)
+            _mark_model_took_any_option(model)
 
     def apply_wargear_options(self, wargear_name: Optional[str] = None) -> None:
         """
@@ -1068,7 +1238,18 @@ class Unit:
 
         if len(matches) != 1:
             # Ambiguous (common filler items like "close combat weapon", or shared bundle items like "axe of khorne").
-            return
+            # Special-case: if there is exactly one ADDITIONAL match and the rest are REPLACEMENT,
+            # default to the ADDITIONAL (common "equip X OR replace Y with X" phrasing).
+            try:
+                from warhammer40k_ai.classes.wargear import WargearOptionType
+                additional = [(o, c) for (o, c) in matches if getattr(o, "wargear_type", None) == WargearOptionType.ADDITIONAL]
+                replacement = [(o, c) for (o, c) in matches if getattr(o, "wargear_type", None) == WargearOptionType.REPLACEMENT]
+                if len(additional) == 1 and len(additional) + len(replacement) == len(matches):
+                    matches = additional
+                else:
+                    return
+            except Exception:
+                return
 
         opt, choice = matches[0]
         # Reorder choices to put selected choice first, then apply.

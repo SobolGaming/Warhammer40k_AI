@@ -11,9 +11,9 @@ Generated from `wahapedia_data/Datasheets_options.json` (optional wargear allowa
 ## Summary
 
 - Option lines: 2758
-- Supported (parser + simple apply): 2699
+- Supported (parser + simple apply): 2720
 - Partial (parsed, but constraints not fully enforced): 0
-- Not implemented (unparsed): 59
+- Not implemented (unparsed): 38
 
 ## Matrix
 
@@ -47,7 +47,7 @@ Generated from `wahapedia_data/Datasheets_options.json` (optional wargear allowa
 <td bgcolor="#d4edda"><b>🟩 Supported</b></td>
 <td bgcolor="#d4edda">454</td>
 <td bgcolor="#d4edda">Anathema Psykana Rhino (`000002524`): This model can be equipped with 1 hunter-killer missile.<br/>Arkurian Stormhammer (`000000764`): This model can be equipped with 1 hunter-killer missile.<br/>Arkurian Stormhammer (`000003994`): This model can be equipped with 1 hunter-killer missile.</td>
-<td bgcolor="#d4edda">Breakdown: Supported=437, Not implemented=17.</td>
+<td bgcolor="#d4edda">Breakdown: Supported=454.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>HTML list + One-of list + Additional</code></td>
@@ -89,7 +89,7 @@ Generated from `wahapedia_data/Datasheets_options.json` (optional wargear allowa
 <td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
 <td bgcolor="#f8d7da">70</td>
 <td bgcolor="#f8d7da">Brotherhood Terminator Squad (`000000382`): * That model's storm bolter cannot be replaced.<br/>Cadian Shock Troops (`000002612`): * You cannot select the same weapon more than once per unit unless it contains 20 models, in which case you cannot select the same weapon mo…<br/>Cadian Shock Troops (`000003948`): * You cannot select the same weapon more than once per unit unless it contains 20 models, in which case you cannot select the same weapon mo…</td>
-<td bgcolor="#f8d7da">Breakdown: Supported=29, Not implemented=41.</td>
+<td bgcolor="#f8d7da">Breakdown: Supported=33, Not implemented=37.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>HTML list + One-of list + For every N models + Replacement + Unit-wide / scaling</code></td>

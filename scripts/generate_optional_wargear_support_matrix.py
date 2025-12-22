@@ -102,6 +102,21 @@ def _support_for_desc(desc: str) -> Tuple[str, str]:
     # Create a dummy unit with models list so "any number ... max=len(models)" can work.
     dummy_unit = type("DummyUnit", (), {"models": [object() for _ in range(10)]})()
 
+    # Recognize constraint-only lines (not selectable options), which we still support by enforcing validity.
+    dl = _canonicalize(desc).lower()
+    if "can only be equipped with two ranged weapons if one of them is a pistol" in dl:
+        return "Supported", "Constraint-only line: enforced (2 ranged requires exactly 1 Pistol)."
+    if "can only be equipped with two ranged weapons if one of them is a cyclone missile launcher" in dl:
+        return "Supported", "Constraint-only line: enforced (2 ranged requires Cyclone + Storm bolter/Combi-weapon)."
+    if re.search(r"each model cannot be equipped with more than \d+ ranged weapons", dl):
+        return "Supported", "Constraint-only line: enforced (max ranged weapons)."
+    if re.search(r"(?:no model|this model) can(?:not)? be equipped with both .+ and .+", dl):
+        return "Supported", "Constraint-only line: enforced (mutual exclusion)."
+    if re.search(r"cannot be equipped with more than \d+ [\w\s\-']+", dl):
+        return "Supported", "Constraint-only line: enforced (max weapon counts)."
+    if "a model can only take one of these options" in dl or "cannot be equipped with more than one of these wargear options" in dl:
+        return "Supported", "Constraint-only line: enforced (model option mutex / forbidden weapons)."
+
     try:
         parsed = parse_alternate_3([desc], dummy_unit)
     except Exception:

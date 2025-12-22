@@ -2072,6 +2072,22 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
         description = description.replace(" one of the following ", " one of the following: ").replace(" 1 of the following: ", " one of the following: ").replace(" 2 of the following: ", " two of the following: ")
         description = description.replace("up to two ", "up to 2 ").replace("up to three ", "up to 3 ").replace("up to four ", "up to 4 ")
 
+        # Split combined statements like:
+        # "This model can be equipped with 1 havoc launcher or can replace 1 combi-bolter with 1 havoc launcher."
+        if (" can be equipped with " in description) and (" or can replace " in description) and (" with " in description):
+            m = re.match(
+                r"^(this model) can be equipped with (.+?) or can replace (.+?) with (.+?)$",
+                description,
+            )
+            if m:
+                part_a = f"{m.group(1)} can be equipped with {m.group(2)}"
+                # Normalize to a replacement form our parser already supports.
+                part_b = f"{m.group(1)}'s {m.group(3)} can be replaced with {m.group(4)}"
+                wargear_options.extend(parse_alternate_3([part_a], unit_ptr))
+                wargear_options.extend(parse_alternate_3([part_b], unit_ptr))
+                called_recursively = True
+                continue
+
         # Extract "cannot be replaced" lock clauses (keep as conditionals).
         # Common forms:
         # - "that model's lasgun cannot be replaced"
