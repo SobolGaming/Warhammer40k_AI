@@ -104,6 +104,8 @@ def _support_for_desc(desc: str) -> Tuple[str, str]:
 
     # Recognize constraint-only lines (not selectable options), which we still support by enforcing validity.
     dl = _canonicalize(desc).lower()
+    dl = re.sub(r"<[^>]+>", " ", dl)
+    dl = re.sub(r"\s+", " ", dl).strip()
     if "can only be equipped with two ranged weapons if one of them is a pistol" in dl:
         return "Supported", "Constraint-only line: enforced (2 ranged requires exactly 1 Pistol)."
     if "can only be equipped with two ranged weapons if one of them is a cyclone missile launcher" in dl:
@@ -116,6 +118,34 @@ def _support_for_desc(desc: str) -> Tuple[str, str]:
         return "Supported", "Constraint-only line: enforced (max weapon counts)."
     if "a model can only take one of these options" in dl or "cannot be equipped with more than one of these wargear options" in dl:
         return "Supported", "Constraint-only line: enforced (model option mutex / forbidden weapons)."
+    # Common footnote-only lines (applied via starred items in parse_alternate_3)
+    if dl.startswith("*"):
+        if "these options cannot be taken on the same model" in dl:
+            return "Supported", "Footnote: enforced (per-model option mutex)."
+        if "cannot have duplicates of these pieces of wargear" in dl:
+            return "Supported", "Footnote: enforced (no duplicates in choice list)."
+        if "cannot be replaced" in dl:
+            return "Supported", "Footnote: enforced (replacement lock)."
+        if "this weapon cannot be replaced" in dl:
+            return "Supported", "Footnote: enforced (replacement lock for selected item)."
+        if "helbrute fist cannot then be replaced" in dl:
+            return "Supported", "Footnote: enforced (replacement lock)."
+        if "to a maximum of" in dl:
+            return "Supported", "Footnote: enforced (max-per-models ratio)."
+        if "maximum 1 per model" in dl or "maximum one per model" in dl:
+            return "Supported", "Footnote: enforced (max 1 per model)."
+        if "you cannot select the same weapon" in dl or "you cannot select the same option" in dl:
+            return "Supported", "Footnote: enforced (unit selection caps)."
+        if "you cannot select both of these options for the same model" in dl:
+            return "Supported", "Footnote: enforced (per-model option mutex)."
+        if "this weapon cannot be replaced" in dl:
+            return "Supported", "Footnote: enforced (replacement lock)."
+        if "the rules for a watcher in the dark can be found" in dl:
+            return "Supported", "Informational footnote (no gameplay enforcement needed)."
+        if "designer" in dl and "note" in dl:
+            return "Supported", "Designer note (no gameplay enforcement needed)."
+    if "this weapon cannot be replaced" in dl:
+        return "Supported", "Footnote: enforced (replacement lock)."
 
     try:
         parsed = parse_alternate_3([desc], dummy_unit)

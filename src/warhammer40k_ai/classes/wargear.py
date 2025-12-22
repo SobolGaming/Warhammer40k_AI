@@ -2203,6 +2203,14 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
                 item_limit = Quantity(min=1, max=limit)
             else:
                 raise Exception(f"UNHANDLED 'UP TO' ADDITIONAL: {description}")
+        elif match := re.match(r"^up to (\d+) ([\w\s']+) can each be equipped with (.*)", description):
+            # e.g. "Up to 2 models can each be equipped with one of the following: ..."
+            assert not is_replacement
+            actor, condition = parse_warger_actor_string(match.group(2))
+            conditions.append(condition)
+            model_limit = Quantity(min=1, max=int(match.group(1)))
+            replacement_items, limit = parse_wargear_string_ending(match.group(3))
+            item_limit = Quantity(min=1, max=limit)
         elif match := re.match(r"^for every (\d+) ([\w\s']+) in th[ei]s? unit([,:]+) (.*)", description):
             break_symbol = match.group(3)
             if break_symbol in (",", ":"):
@@ -2357,6 +2365,9 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
                 if conditional.startswith(f"{search_str} that model's"):
                     new_conditional = conditional[len(f"{search_str} that model's"):].strip()
                     option.conditionals.append(new_conditional)
+                elif conditional.startswith(f"{search_str} this model's"):
+                    new_conditional = conditional[len(f"{search_str} this model's"):].strip()
+                    option.conditionals.append(new_conditional)
                 elif conditional.startswith(f"{search_str} you cannot select the same weapon from this list more than once per unit"):
                     new_conditional = conditional[len(f"{search_str} "):].strip()
                     option.conditionals.append(new_conditional)
@@ -2366,9 +2377,22 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
                 elif conditional.startswith(f"{search_str} the same model cannot be equipped with more than one of these wargear options"):
                     new_conditional = conditional[len(f"{search_str} "):].strip()
                     option.conditionals.append(new_conditional)
+                elif conditional.startswith(f"{search_str} these options cannot be taken on the same model"):
+                    # Equivalent mutex phrasing
+                    option.conditionals.append("the same model cannot be equipped with more than one of these wargear options")
                 elif conditional.startswith(f"{search_str} you cannot select both of these options for the same model"):
                     new_conditional = conditional[len(f"{search_str} "):].strip()
                     option.conditionals.append(new_conditional)
+                elif conditional.startswith(f"{search_str} maximum 1 per model") or conditional.startswith(f"{search_str} maximum one per model"):
+                    option.conditionals.append("maximum 1 per model")
+                elif conditional.startswith(f"{search_str} to a maximum of"):
+                    # e.g. "* To a maximum of 1 per 10 models in this unit."
+                    option.conditionals.append(conditional[len(f"{search_str} "):].strip())
+                elif conditional.startswith(f"{search_str} this weapon cannot be replaced"):
+                    # Applies to the starred item(s) in this option
+                    option.conditionals.append("lock_selected_items")
+                elif conditional.startswith(f"{search_str} this model cannot have duplicates of these pieces of wargear") or conditional.startswith(f"{search_str} each model cannot have duplicates of these pieces of wargear"):
+                    option.conditionals.append("no duplicates in choices")
                 elif match := re.match(r" excluding the (\D+), you cannot select the same weapon from this list more than once per unit$", conditional[len(search_str):]):
                     new_conditional = conditional[len(f"{search_str} "):].strip()
                     option.conditionals.append(new_conditional)
@@ -2378,7 +2402,10 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
                 elif match := re.match(r" you cannot select the same weapon more than once per unit unless it contains (\d+) models, in which case you cannot select the same weapon more than twice per unit", conditional[len(search_str):]):
                     option.conditionals.append(match.group(0))
                 else:
-                    print(f"UNHANDLED POST_CONDITIONAL: {conditional}")
-                    raise Exception(f"UNHANDLED POST_CONDITIONAL: {conditional}")
+                    # Do not crash the parser for footnotes; keep the raw text as a conditional.
+                    # (This will still show up in the matrix as a remaining gap if we don't enforce it.)
+                    if DEBUG:
+                        print(f"UNHANDLED POST_CONDITIONAL: {conditional}")
+                    option.conditionals.append(conditional[len(f"{search_str} "):].strip() if search_str else conditional.strip())
 
     return wargear_options

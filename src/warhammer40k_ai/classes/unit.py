@@ -885,6 +885,50 @@ class Unit:
                     return True
             return False
 
+        def _no_duplicates_in_choices_blocked(model) -> bool:
+            conds = " | ".join(list(getattr(wargear_option, "conditionals", []) or [])).lower()
+            if "no duplicates in choices" not in conds:
+                return False
+            allowed = {_norm(nm) for choice in (getattr(wargear_option, "wargear_to", []) or []) for qty, nm in (choice or []) if nm}
+            counts = {}
+            for wg in list(getattr(model, "wargear", []) or []):
+                if wg:
+                    n = _norm(getattr(wg, "name", ""))
+                    if n in allowed:
+                        counts[n] = counts.get(n, 0) + 1
+                        if counts[n] > 1:
+                            return True
+            return False
+
+        def _lock_selected_items(model, selected_names_norm: set[str]) -> None:
+            conds = " | ".join(list(getattr(wargear_option, "conditionals", []) or [])).lower()
+            if "lock_selected_items" not in conds:
+                return
+            locks = _get_replacement_locks(model)
+            for n in selected_names_norm:
+                locks.add(n)
+
+        def _max_per_models_limit() -> tuple[int, int] | None:
+            # Parse "to a maximum of X per Y models in this unit"
+            for cond in list(getattr(wargear_option, "conditionals", []) or []):
+                cl = (cond or "").lower().strip().replace("’", "'")
+                m = re.match(r"to a maximum of (\d+) per (\d+) models in this unit", cl)
+                if m:
+                    return int(m.group(1)), int(m.group(2))
+            return None
+
+        def _max_one_per_model() -> bool:
+            return any((c or "").lower().strip() == "maximum 1 per model" for c in (getattr(wargear_option, "conditionals", []) or []))
+
+        def _unit_dynamic_cap_for_item(item_norm: str) -> int | None:
+            # Handle: "you cannot select the same weapon more than once per unit unless it contains 20 models, ..."
+            conds = " | ".join(list(getattr(wargear_option, "conditionals", []) or [])).lower()
+            m = re.search(r"you cannot select the same (?:weapon|option) more than once per unit unless it contains (\d+) models, in which case you cannot select the same (?:weapon|option) more than twice per unit", conds)
+            if m:
+                n = int(m.group(1))
+                return 2 if len(self.models) >= n else 1
+            return None
+
         def _unit_unique_cap(item_norm: str) -> int | None:
             conds = " | ".join(list(getattr(wargear_option, "conditionals", []) or [])).lower()
             if "you cannot select the same weapon from this list more than once per unit" in conds:
@@ -1069,6 +1113,13 @@ class Unit:
 
             if _per_model_mutex_blocked(model):
                 continue
+            if _max_one_per_model():
+                # If model already has any of the option's choice items, block further selections
+                allowed = {_norm(nm) for choice in (getattr(wargear_option, "wargear_to", []) or []) for qty, nm in (choice or []) if nm}
+                if any(_norm(getattr(wg, "name", "")) in allowed for wg in list(getattr(model, "wargear", []) or []) if wg):
+                    continue
+            if _no_duplicates_in_choices_blocked(model):
+                continue
             # Replacement: remove wargear_from then add choice items.
             if getattr(wargear_option, "wargear_type", None) == WargearOptionType.REPLACEMENT:
                 bundle = _pick_matching_from_bundle(model)
@@ -1128,6 +1179,18 @@ class Unit:
                 if cap is not None:
                     if _unit_count_item(_norm(nm)) >= cap:
                         continue
+                dyn = _unit_dynamic_cap_for_item(_norm(nm))
+                if dyn is not None and _unit_count_item(_norm(nm)) >= dyn:
+                    continue
+                ratio = _max_per_models_limit()
+                if ratio is not None:
+                    x, y = ratio
+                    limit = max(0, (len(self.models) // y) * x)
+                    # Cap applies across the unit for any items in this option's choice list
+                    allowed = {_norm(nn) for ch in (getattr(wargear_option, "wargear_to", []) or []) for qq, nn in (ch or []) if nn}
+                    already = sum(1 for mm in (self.models or []) for wg in list(getattr(mm, "wargear", []) or []) if wg and _norm(getattr(wg, "name", "")) in allowed)
+                    if already >= limit:
+                        continue
                 wg = _find_wargear(nm)
                 if wg is None:
                     # Keep as optional note (so UI/printouts can still show it)
@@ -1148,6 +1211,8 @@ class Unit:
                         except Exception:
                             pass
                         break
+                # Lock selected items if required
+                _lock_selected_items(model, {_norm(getattr(wg, "name", ""))} if wg else set())
                 if remaining_slots is not None:
                     remaining_slots -= to_add
                     if remaining_slots <= 0:
@@ -1221,8 +1286,8 @@ class Unit:
                     continue
                 if explicit:
                     # exact bundle match (order-insensitive)
-                    wanted_norm = sorted([(int(q), next(iter(_norm_variants(nm)))) for q, nm in wanted_tuples])
-                    choice_norm = sorted([(int(q), next(iter(_norm_variants(nm)))) for q, nm in (choice or []) if nm])
+                    wanted_norm = sorted([(int(q), _norm(nm)) for q, nm in wanted_tuples])
+                    choice_norm = sorted([(int(q), _norm(nm)) for q, nm in (choice or []) if nm])
                     if wanted_norm == choice_norm:
                         matches.append((opt, choice))
                 else:
