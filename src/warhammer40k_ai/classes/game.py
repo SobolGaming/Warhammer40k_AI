@@ -53,28 +53,28 @@ class Battlefield:
             "width": 44,
             "height": 30,
             "points": 500,
-            "command_points": 3,
+            "command_points": 0,
             "detachments": 1
         },
         BattlefieldSize.INCURSION: {
             "width": 44,
             "height": 30,
             "points": 1000,
-            "command_points": 6,
+            "command_points": 0,
             "detachments": 2
         },
         BattlefieldSize.STRIKE_FORCE: {
             "width": 60,
             "height": 44,
             "points": 2000,
-            "command_points": 6,
+            "command_points": 0,
             "detachments": 3
         },
         BattlefieldSize.ONSLAUGHT: {
             "width": 90,
             "height": 44,
             "points": 3000,
-            "command_points": 8,
+            "command_points": 0,
             "detachments": 4
         }
     }

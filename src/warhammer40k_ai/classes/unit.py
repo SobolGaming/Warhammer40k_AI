@@ -1227,7 +1227,8 @@ class Unit:
         Apply wargear options.
 
         - If `wargear_name` is provided: apply the first option that can yield that wargear item (best-effort).
-        - If not provided: do nothing (options are *available choices*, not auto-applied upgrades).
+        - If not provided: apply a conservative default set of non-weapon options (those that only add
+          "optional wargear" notes because the items do not exist in `possible_wargear`).
         """
         import re
 
@@ -1238,7 +1239,26 @@ class Unit:
             s = re.sub(r"\s+", " ", s).strip()
             return s
 
+        def _find_wargear(item_name: str):
+            wanted = _norm(item_name)
+            for wg in (getattr(self, "possible_wargear", []) or []):
+                if wg and _norm(getattr(wg, "name", "")) == wanted:
+                    return wg
+            return None
+
         if not wargear_name:
+            # Default behavior used by some unit construction tests:
+            # apply only "non-weapon" options that would otherwise be represented as optional_wargear notes.
+            for opt in list(getattr(self, "wargear_options", []) or []):
+                choices = list(getattr(opt, "wargear_to", []) or [])
+                if not choices:
+                    continue
+                first = choices[0] or []
+                if not first:
+                    continue
+                # Only auto-apply if *all* items are unknown wargear (i.e. they will land in optional_wargear)
+                if all(_find_wargear(nm) is None for qty, nm in first if nm):
+                    self.apply_wargear_option(opt)
             return
 
         def _norm_variants(s: str) -> set[str]:
@@ -1299,6 +1319,14 @@ class Unit:
                             break
 
         if not matches:
+            # Silent by default (used by UI/other callers), but army-list parsing can request strict behavior.
+            strict = False
+            try:
+                strict = bool(getattr(self, "_strict_wargear_option_resolution", False))
+            except Exception:
+                strict = False
+            if strict:
+                raise ValueError(f"Could not resolve wargear option for '{wargear_name}' on unit '{getattr(self, 'name', '<unknown>')}'")
             return
 
         if len(matches) != 1:
@@ -1312,8 +1340,28 @@ class Unit:
                 if len(additional) == 1 and len(additional) + len(replacement) == len(matches):
                     matches = additional
                 else:
+                    strict = False
+                    try:
+                        strict = bool(getattr(self, "_strict_wargear_option_resolution", False))
+                    except Exception:
+                        strict = False
+                    if strict:
+                        raise ValueError(
+                            f"Ambiguous wargear option '{wargear_name}' for unit '{getattr(self, 'name', '<unknown>')}' "
+                            f"(matched {len(matches)} choices)"
+                        )
                     return
             except Exception:
+                strict = False
+                try:
+                    strict = bool(getattr(self, "_strict_wargear_option_resolution", False))
+                except Exception:
+                    strict = False
+                if strict:
+                    raise ValueError(
+                        f"Ambiguous wargear option '{wargear_name}' for unit '{getattr(self, 'name', '<unknown>')}' "
+                        f"(matched {len(matches)} choices)"
+                    )
                 return
 
         opt, choice = matches[0]
@@ -1327,6 +1375,129 @@ class Unit:
             self.apply_wargear_option(opt)
         except Exception:
             return
+
+    def apply_wargear_options_strict(self, wargear_name: str) -> None:
+        """
+        Strict variant used by army list parsing: failure to resolve a requested option is an error.
+        """
+        setattr(self, "_strict_wargear_option_resolution", True)
+        try:
+            self.apply_wargear_options(wargear_name)
+        finally:
+            # Always restore default behavior
+            try:
+                delattr(self, "_strict_wargear_option_resolution")
+            except Exception:
+                setattr(self, "_strict_wargear_option_resolution", False)
+
+    @staticmethod
+    def _norm_wargear_name(s: str) -> str:
+        import re
+        s = (s or "").replace("’", "'").lower().strip()
+        s = re.sub(r"<[^>]+>", " ", s)
+        s = re.sub(r"[^\w\s\-']", " ", s)
+        s = s.replace("'", "")
+        s = re.sub(r"\s+", " ", s).strip()
+        return s
+
+    def validate_wargear_selection(self) -> None:
+        """
+        Validate that currently equipped wargear respects parsed wargear constraints.
+        This is especially important for army-list parsing, which may directly assign wargear.
+        """
+        c = getattr(self, "_wargear_constraints", {}) or {}
+        if not c:
+            return
+
+        def _is_ranged(wg) -> bool:
+            return bool(wg) and hasattr(wg, "is_ranged") and wg.is_ranged()
+
+        def _is_pistol(wg) -> bool:
+            if not wg:
+                return False
+            for prof in (getattr(wg, "profiles", {}) or {}).values():
+                if prof.is_pistol():
+                    return True
+            return False
+
+        max_counts = c.get("max_counts", {}) or {}
+        mutex_sets = c.get("mutex_sets", []) or []
+        max_r = c.get("max_ranged_weapons", None)
+        two_ranged_requires_pistol = bool(c.get("two_ranged_requires_pistol", False))
+        two_ranged_requires_cyclone_pair = bool(c.get("two_ranged_requires_cyclone_pair", False))
+
+        for model in list(getattr(self, "models", []) or []):
+            wargear = [wg for wg in list(getattr(model, "wargear", []) or []) if wg]
+            names_norm = [self._norm_wargear_name(getattr(wg, "name", "")) for wg in wargear]
+
+            # Max counts for named items
+            if max_counts:
+                counts = {}
+                for nm in names_norm:
+                    counts[nm] = counts.get(nm, 0) + 1
+                for nm, mx in max_counts.items():
+                    if counts.get(nm, 0) > int(mx):
+                        raise ValueError(
+                            f"Invalid wargear for unit '{getattr(self, 'name', '<unknown>')}', model '{getattr(model, 'name', '<unknown>')}'. "
+                            f"'{nm}' exceeds max {mx}. Equipped: {[getattr(wg, 'name', '') for wg in wargear]}"
+                        )
+
+            # Mutual exclusions
+            for s in mutex_sets:
+                present = [nm for nm in names_norm if nm in (s or set())]
+                if len(set(present)) > 1:
+                    raise ValueError(
+                        f"Invalid wargear for unit '{getattr(self, 'name', '<unknown>')}', model '{getattr(model, 'name', '<unknown>')}'. "
+                        f"Mutually exclusive items equipped: {sorted(set(present))}. Equipped: {[getattr(wg, 'name', '') for wg in wargear]}"
+                    )
+
+            # Max ranged weapons
+            if max_r is not None:
+                ranged = [wg for wg in wargear if _is_ranged(wg)]
+                if len(ranged) > int(max_r):
+                    raise ValueError(
+                        f"Invalid wargear for unit '{getattr(self, 'name', '<unknown>')}', model '{getattr(model, 'name', '<unknown>')}'. "
+                        f"Has {len(ranged)} ranged weapons (max {max_r}). Equipped: {[getattr(wg, 'name', '') for wg in wargear]}"
+                    )
+
+            # Two ranged requires pistol
+            if two_ranged_requires_pistol:
+                ranged = [wg for wg in wargear if _is_ranged(wg)]
+                if len(ranged) == 2:
+                    pistols = [wg for wg in ranged if _is_pistol(wg)]
+                    if len(pistols) != 1:
+                        raise ValueError(
+                            f"Invalid wargear for unit '{getattr(self, 'name', '<unknown>')}', model '{getattr(model, 'name', '<unknown>')}'. "
+                            f"Two ranged weapons require exactly one pistol. Equipped: {[getattr(wg, 'name', '') for wg in wargear]}"
+                        )
+                if len(ranged) > 2:
+                    raise ValueError(
+                        f"Invalid wargear for unit '{getattr(self, 'name', '<unknown>')}', model '{getattr(model, 'name', '<unknown>')}'. "
+                        f"Has {len(ranged)} ranged weapons (max 2 under pistol pairing rule). Equipped: {[getattr(wg, 'name', '') for wg in wargear]}"
+                    )
+
+            # Cyclone pairing constraint
+            if two_ranged_requires_cyclone_pair:
+                ranged = [wg for wg in wargear if _is_ranged(wg)]
+                if len(ranged) == 2:
+                    names = {self._norm_wargear_name(getattr(wg, "name", "")) for wg in ranged}
+                    if "cyclone missile launcher" not in names:
+                        raise ValueError(
+                            f"Invalid wargear for unit '{getattr(self, 'name', '<unknown>')}', model '{getattr(model, 'name', '<unknown>')}'. "
+                            f"Two ranged weapons require 'cyclone missile launcher'. Equipped: {[getattr(wg, 'name', '') for wg in wargear]}"
+                        )
+                    other = (names - {"cyclone missile launcher"})
+                    if not other or not (("storm bolter" in other) or ("combi-weapon" in other)):
+                        raise ValueError(
+                            f"Invalid wargear for unit '{getattr(self, 'name', '<unknown>')}', model '{getattr(model, 'name', '<unknown>')}'. "
+                            f"'cyclone missile launcher' must be paired with 'storm bolter' or 'combi-weapon'. "
+                            f"Equipped: {[getattr(wg, 'name', '') for wg in wargear]}"
+                        )
+                if len(ranged) > 2:
+                    raise ValueError(
+                        f"Invalid wargear for unit '{getattr(self, 'name', '<unknown>')}', model '{getattr(model, 'name', '<unknown>')}'. "
+                        f"Has {len(ranged)} ranged weapons (max 2 under cyclone pairing rule). Equipped: {[getattr(wg, 'name', '') for wg in wargear]}"
+                    )
 
     def add_wargear(self, wargear: List[Wargear]=[], model_name: str=None) -> None:
         for model_instance in self.models:

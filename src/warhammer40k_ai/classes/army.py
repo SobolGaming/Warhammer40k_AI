@@ -594,7 +594,8 @@ def add_unit_to_army(army: Army, unit: Unit, model_count: int, wargear_dict: Dic
             else:
                 matching_gear = next((gear for gear in unit.wargear_options if gear_name in gear.wargear_to), None)
                 if matching_gear:
-                    unit.apply_wargear_options(gear_name)
+                    # Army lists must be deterministic: if an option can't be resolved uniquely, that's an error.
+                    unit.apply_wargear_options_strict(gear_name)
                 else:
                     matching_ability = next((ability for ability in unit.possible_abilities if ability.name.lower().replace("’","'") == gear_name and ability.type == 'Wargear'), None)
                     if matching_ability:
@@ -605,6 +606,9 @@ def add_unit_to_army(army: Army, unit: Unit, model_count: int, wargear_dict: Dic
                             print(f"  - {gear.name}")
                         for ability in unit.possible_abilities:
                             print(f"  - {ability.name} (Ability Wargear)")
+
+    # Validate final wargear loadout for models in this unit (critical for army-list parsing correctness)
+    unit.validate_wargear_selection()
 
     # Add enhancement to the unit if it exists
     if enhancement:
