@@ -3365,12 +3365,87 @@ class BattlePhaseHandler(BasePhaseHandler):
                 print(f"❌ {unit.name} is engaged and has no weapons that can shoot in engagement range")
                 return
         
-        # Show shooting declaration dialog
-        def on_shooting_complete(declarations):
-            # Handle shooting declarations
-            self._clear_shooting_selection()
-        
-        self.game_view.shooting_declaration_dialog.show(unit, on_shooting_complete, self.game.map, self.game_view)
+        def _show_shooting_dialog():
+            # Show shooting declaration dialog
+            def on_shooting_complete(_declarations):
+                self._clear_shooting_selection()
+            self.game_view.shooting_declaration_dialog.show(unit, on_shooting_complete, self.game.map, self.game_view)
+
+        # Firing Deck X (Transport): allow selecting embarked weapons to be treated as the transport's weapons.
+        try:
+            has_fd, fd_x = unit.has_firing_deck()
+        except Exception:
+            has_fd, fd_x = (False, 0)
+
+        if has_fd and int(fd_x or 0) > 0 and list(getattr(unit, "transport_passengers", []) or []):
+            entries = []
+            per_weapon_count = {}
+
+            try:
+                passengers = list(getattr(unit, "transport_passengers", []) or [])
+            except Exception:
+                passengers = []
+
+            for punit in passengers:
+                # Include attached leaders' models as well
+                try:
+                    models = punit.get_attached_unit_models()
+                except Exception:
+                    models = list(getattr(punit, "models", []) or [])
+
+                for m in models:
+                    if not getattr(m, "is_alive", False):
+                        continue
+                    for w in list(getattr(m, "wargear", []) or []):
+                        try:
+                            if not w.is_ranged():
+                                continue
+                        except Exception:
+                            continue
+
+                        for profile_name, profile in (getattr(w, "profiles", {}) or {}).items():
+                            # Explicit requirement: do not list ONE SHOT weapons for firing deck selection
+                            if profile.is_one_shot():
+                                continue
+                            key = (str(getattr(w, "name", "Weapon")), str(profile_name))
+                            c = int(per_weapon_count.get(key, 0))
+                            if c >= int(fd_x or 0):
+                                continue
+                            per_weapon_count[key] = c + 1
+                            entries.append({
+                                "model": m,
+                                "wargear": w,
+                                "profile": profile,
+                                "profile_name": profile_name,
+                                "passenger_unit": punit,
+                            })
+
+            if entries:
+                if not hasattr(self.game_view, "firing_deck_dialog") or self.game_view.firing_deck_dialog is None:
+                    from .dialogs import FiringDeckDialog
+                    self.game_view.firing_deck_dialog = FiringDeckDialog(
+                        self.game_view.screen.get_width(),
+                        self.game_view.screen.get_height(),
+                    )
+
+                def _on_confirm(chosen_entries):
+                    try:
+                        unit.apply_firing_deck_virtual_wargear(chosen_entries)
+                    except Exception:
+                        pass
+                    _show_shooting_dialog()
+
+                def _on_cancel():
+                    try:
+                        unit.clear_firing_deck_virtual_wargear()
+                    except Exception:
+                        pass
+                    _show_shooting_dialog()
+
+                self.game_view.firing_deck_dialog.show(unit, fd_x, entries, _on_confirm, _on_cancel)
+                return
+
+        _show_shooting_dialog()
     
     def _handle_charge_phase_selection(self, unit) -> None:
         """Handle unit selection during charge phase"""

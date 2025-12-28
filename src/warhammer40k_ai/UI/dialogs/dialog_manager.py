@@ -72,6 +72,7 @@ class DialogManager:
             _get(gv, "melee_weapon_declaration_dialog"),
             _get(gv, "fight_target_selection_dialog"),
             _get(gv, "target_model_selection_dialog"),
+            _get(gv, "firing_deck_dialog"),
             _get(gv, "transport_embark_dialog"),
             _get(gv, "transport_disembark_dialog"),
             _get(gv, "transport_assignment_dialog"),

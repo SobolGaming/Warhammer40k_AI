@@ -1972,6 +1972,21 @@ class Unit:
         # Reset reserves arrival flag
         self.arrived_from_reserves_this_turn = False
 
+        # Reset per-model "counts as having shot via Firing Deck" flags.
+        # This is model-scoped (not unit-scoped) to support the core rule that only the selected embarked
+        # models count as having shot when their weapons are used via a transport's Firing Deck.
+        for m in list(getattr(self, "models", []) or []):
+            try:
+                setattr(m, "_shot_via_firing_deck_this_round", False)
+            except Exception:
+                pass
+
+        # Clear any stale firing-deck virtual wargear bookkeeping.
+        try:
+            self.clear_firing_deck_virtual_wargear()
+        except Exception:
+            pass
+
     def is_max_health(self) -> Tuple[bool, Optional[Model]]:
         """
         Check if the unit is at full health.
@@ -4502,6 +4517,36 @@ class Unit:
         
         # Mark unit as having shot this round (regardless of success)
         self.round_state.shot_this_round = True
+
+        # Firing Deck: models whose weapons are used via a transport count as having shot.
+        # We mark them here (once) so even if some declarations fail validation, they still
+        # count as having been selected to shoot via the transport.
+        try:
+            fd_models = []
+            for decl in weapon_declarations:
+                for m in (decl.get("firing_deck_source_models") or []):
+                    if m is not None:
+                        fd_models.append(m)
+            # De-dupe
+            seen = set()
+            for m in fd_models:
+                if id(m) in seen:
+                    continue
+                seen.add(id(m))
+                try:
+                    setattr(m, "_shot_via_firing_deck_this_round", True)
+                except Exception:
+                    pass
+                # Also mark the source unit as having shot this round (best-effort) to prevent
+                # shoot-again effects from re-selecting that unit in this round.
+                try:
+                    pu = getattr(m, "parent_unit", None)
+                    if pu is not None and hasattr(pu, "round_state"):
+                        pu.round_state.shot_this_round = True
+                except Exception:
+                    pass
+        except Exception:
+            pass
         
         successful_attacks = 0
         
@@ -6953,6 +6998,103 @@ class Unit:
         if found:
             return True, int(number_str)
         return False, 0
+
+    ###########################################################################
+    ### Firing Deck (Transport) support
+    ###########################################################################
+    def clear_firing_deck_virtual_wargear(self) -> None:
+        """
+        Remove temporary "virtual" wargear added to the transport model to represent embarked weapons.
+
+        This is used by the UI: the transport is treated as being equipped with those weapons
+        for the duration of its shooting selection / resolution.
+        """
+        # Remove injected wargear from transport models
+        vw = list(getattr(self, "_firing_deck_virtual_wargear", []) or [])
+        if not vw:
+            self._firing_deck_virtual_wargear = []
+            self._firing_deck_virtual_sources = {}
+            return
+        for model in list(getattr(self, "models", []) or []):
+            try:
+                if not getattr(model, "is_alive", False):
+                    continue
+                if not hasattr(model, "wargear"):
+                    continue
+                model.wargear = [w for w in (model.wargear or []) if w not in vw]
+            except Exception:
+                continue
+        self._firing_deck_virtual_wargear = []
+        self._firing_deck_virtual_sources = {}
+
+    def apply_firing_deck_virtual_wargear(self, selections: List[dict]) -> None:
+        """
+        Add temporary wargear/profile objects onto the transport model(s) so the existing
+        shooting engine can validate and resolve attacks from the transport's position.
+
+        `selections` entries are expected to include:
+        - model: embarked Model providing the weapon
+        - wargear: Wargear instance on the embarked model
+        - profile: WargearProfile selected
+        - profile_name: profile name string (optional)
+
+        After this, `_firing_deck_virtual_sources[id(profile_clone)] = [source_model]` is populated
+        so shooting resolution can mark those embarked models as having shot.
+        """
+        import copy
+
+        # Clear any previous injection first (safe even if none)
+        self.clear_firing_deck_virtual_wargear()
+
+        # Find at least one alive transport model to host these virtual weapons
+        host_models = [m for m in (getattr(self, "models", []) or []) if getattr(m, "is_alive", False)]
+        if not host_models:
+            return
+        host = host_models[0]
+
+        class _VirtualWargear:
+            def __init__(self, name: str, profile_obj):
+                self.name = (name or "Firing Deck").replace("’", "'")
+                self.type = "ranged"
+                self.profiles = {"default": profile_obj}
+
+            def is_ranged(self) -> bool:
+                return True
+
+            def is_melee(self) -> bool:
+                return False
+
+        self._firing_deck_virtual_wargear = []
+        self._firing_deck_virtual_sources = {}
+
+        # Build one virtual wargear per selected embarked weapon (keeps them as individual entries)
+        for s in list(selections or []):
+            src_model = s.get("model")
+            src_wargear = s.get("wargear")
+            src_profile = s.get("profile")
+            if src_model is None or src_wargear is None or src_profile is None:
+                continue
+
+            # Exclude ONE SHOT entirely for firing deck selection (explicit requirement)
+            if src_profile.is_one_shot():
+                continue
+
+            # Clone the profile so we can safely re-parent it without mutating the source model's weapon.
+            pclone = copy.copy(src_profile)
+            vname = f"{getattr(src_wargear, 'name', 'Weapon')} (Firing Deck)"
+            vwg = _VirtualWargear(vname, pclone)
+            pclone.parent_wargear = vwg
+
+            try:
+                host.wargear.append(vwg)
+            except Exception:
+                try:
+                    host.wargear = list(getattr(host, "wargear", []) or []) + [vwg]
+                except Exception:
+                    continue
+
+            self._firing_deck_virtual_wargear.append(vwg)
+            self._firing_deck_virtual_sources[id(pclone)] = [src_model]
     
     def has_fight_first(self) -> bool:
         """Check if the unit has Fight First ability.

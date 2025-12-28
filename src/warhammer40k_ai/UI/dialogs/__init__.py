@@ -17,6 +17,7 @@ from .dialog_manager import DialogManager
 from .mission_selection_modal import MissionSelectionModal
 from .transport_assignment_dialog import TransportAssignmentDialog
 from .precision_allocation_dialog import PrecisionAllocationDialog
+from .firing_deck_dialog import FiringDeckDialog
 
 __all__ = [
     'BaseDialog',
@@ -38,4 +39,5 @@ __all__ = [
     'MissionSelectionModal',
     'TransportAssignmentDialog',
     'PrecisionAllocationDialog',
+    'FiringDeckDialog',
 ] 

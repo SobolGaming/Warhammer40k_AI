@@ -159,6 +159,13 @@ class ShootingDeclarationDialog(BaseDialog):
     
     def hide(self):
         """Hide the shooting declaration dialog."""
+        # If the unit injected temporary Firing Deck virtual weapons, clear them on close (execute or cancel).
+        try:
+            if self.unit is not None and hasattr(self.unit, "clear_firing_deck_virtual_wargear"):
+                self.unit.clear_firing_deck_virtual_wargear()
+        except Exception:
+            pass
+
         self.visible = False
         self.unit = None
         self.callback = None
@@ -193,14 +200,11 @@ class ShootingDeclarationDialog(BaseDialog):
                         # Check if weapon can be used
                         if self._can_use_weapon(profile):
                             # ONE SHOT: if this model already used this weapon, don't list it as available.
-                            try:
-                                if getattr(profile, "is_one_shot", lambda: False)():
-                                    key = getattr(profile, "one_shot_key", lambda: "")()
-                                    used = getattr(model, "_one_shot_used", set())
-                                    if key and key in used:
-                                        continue
-                            except Exception:
-                                pass
+                            if profile.is_one_shot():
+                                key = profile.one_shot_key()
+                                used = getattr(model, "_one_shot_used", set())
+                                if key and key in used:
+                                    continue
                             individual_weapons.append({
                                 'profile': profile,
                                 'wargear': wargear,
@@ -487,14 +491,11 @@ class ShootingDeclarationDialog(BaseDialog):
         for model in self.unit.models:
             if model.is_alive:
                 # ONE SHOT: exclude models that already used this weapon.
-                try:
-                    if getattr(weapon_profile, "is_one_shot", lambda: False)():
-                        key = getattr(weapon_profile, "one_shot_key", lambda: "")()
-                        used = getattr(model, "_one_shot_used", set())
-                        if key and key in used:
-                            continue
-                except Exception:
-                    pass
+                if weapon_profile.is_one_shot():
+                    key = weapon_profile.one_shot_key()
+                    used = getattr(model, "_one_shot_used", set())
+                    if key and key in used:
+                        continue
                 for wargear in model.wargear:
                     for profile_name, profile in wargear.profiles.items():
                         if profile == weapon_profile:
@@ -1020,12 +1021,20 @@ class ShootingDeclarationDialog(BaseDialog):
         if self.selected_weapon_group:
             # Create individual declarations for each weapon instance in the group
             for weapon_info in self.selected_weapon_group['individual_weapons']:
-                self.weapon_declarations.append({
+                decl = {
                     'weapon_profile': self.selected_weapon,
                     'target_unit': clicked_unit,
                     'models': [weapon_info['model']],  # Single model per declaration
                     'weapon_instance': weapon_info['weapon_instance']
-                })
+                }
+                # Firing Deck: preserve source embarked model(s) for marking as shot during resolution.
+                try:
+                    sources = getattr(self.unit, "_firing_deck_virtual_sources", {}) or {}
+                    if id(self.selected_weapon) in sources:
+                        decl["firing_deck_source_models"] = list(sources[id(self.selected_weapon)] or [])
+                except Exception:
+                    pass
+                self.weapon_declarations.append(decl)
             print(f"✅ {self.unit.name} targeting {clicked_unit.name} with {self.selected_weapon.parent_wargear.name} group (x{self.selected_weapon_group['count']})")
             try:
                 from ...utility.event_bus import append_action
@@ -1041,12 +1050,20 @@ class ShootingDeclarationDialog(BaseDialog):
             # This ensures each weapon instance fires once, not once per model
             assigned_model = self._get_model_for_weapon_instance(self.selected_weapon, weapon_instance)
 
-            self.weapon_declarations.append({
+            decl = {
                 'weapon_profile': self.selected_weapon,
                 'target_unit': clicked_unit,
                 'models': assigned_model,
                 'weapon_instance': weapon_instance
-            })
+            }
+            # Firing Deck: preserve source embarked model(s) for marking as shot during resolution.
+            try:
+                sources = getattr(self.unit, "_firing_deck_virtual_sources", {}) or {}
+                if id(self.selected_weapon) in sources:
+                    decl["firing_deck_source_models"] = list(sources[id(self.selected_weapon)] or [])
+            except Exception:
+                pass
+            self.weapon_declarations.append(decl)
             print(f"✅ {self.unit.name} targeting {clicked_unit.name} with {self.selected_weapon.parent_wargear.name} #{weapon_instance} (assigned to {assigned_model[0].name if assigned_model else 'no model'})")
             try:
                 from ...utility.event_bus import append_action
