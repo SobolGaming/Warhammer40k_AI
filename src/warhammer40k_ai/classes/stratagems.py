@@ -207,6 +207,12 @@ class StratagemManager:
         es.subscribe("unit_move_ended", self._on_unit_move_ended)
         # Dice events for Command Re-roll
         es.subscribe("roll_made", self._on_roll_made)
+        # Kill events for faction stratagem triggers (subscribe only if this army can actually use them)
+        try:
+            if self.get_by_name("SKULLS FOR THE SKULL THRONE!"):
+                es.subscribe("model_destroyed", self._on_model_destroyed)
+        except Exception:
+            pass
         self._event_subscribed = True
 
     # -------- Event handlers --------
@@ -451,6 +457,78 @@ class StratagemManager:
             'cp_cost': s.cp_cost,
             'reroll': reroll,
         })
+
+    def _on_model_destroyed(
+        self,
+        attacker_model=None,
+        attacker_unit=None,
+        target_model=None,
+        target_unit=None,
+        weapon_profile=None,
+        **kwargs,
+    ) -> None:
+        """
+        Faction stratagem reactions that trigger "just after" a model is destroyed.
+        """
+        # WORLD EATERS: SKULLS FOR THE SKULL THRONE!
+        try:
+            s = self.get_by_name("SKULLS FOR THE SKULL THRONE!")
+        except Exception:
+            s = None
+        if not s:
+            return
+        # Must be your stratagem manager's player army, in Fight phase (per stratagem text).
+        if attacker_unit is None or target_unit is None:
+            return
+        try:
+            if attacker_unit.get_parent_army().player is not self.player:
+                return
+        except Exception:
+            return
+        # Ensure current phase is Fight phase
+        phase_name = self._current_phase_name
+        if not (phase_name and phase_name.strip().lower() == "fight phase"):
+            return
+        # Must be a melee kill (Fight phase should imply, but be explicit).
+        try:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            if parent is None or not parent.is_melee():
+                return
+        except Exception:
+            return
+        # Target must be CHARACTER or MONSTER model (approximate via unit keywords)
+        try:
+            is_char = bool(target_unit.has_keyword("Character"))
+            is_mon = bool(target_unit.has_keyword("Monster"))
+            if not (is_char or is_mon):
+                return
+        except Exception:
+            return
+        # Check CP / turn / phase gating
+        if not s.can_use(self.player, self.game, phase_name=phase_name):
+            return
+        # Deduplicate same reaction for same attacker+target model in this phase
+        for r in self._pending_reactions:
+            try:
+                if r.get("event") == "model_destroyed" and r.get("stratagem") == s.name and r.get("attacker_unit") is attacker_unit and r.get("target_model") is target_model:
+                    return
+            except Exception:
+                continue
+        self._pending_reactions.append({
+            "event": "model_destroyed",
+            "phase_name": phase_name,
+            "stratagem": s.name,
+            "cp_cost": s.cp_cost,
+            "attacker_unit": attacker_unit,
+            "target_model": target_model,
+            "target_unit": target_unit,
+        })
+        # Offer reaction window
+        try:
+            if hasattr(self.game, "event_system"):
+                self.game.event_system.publish("stratagem_window", player=self.player, duration=3.0)
+        except Exception:
+            pass
 
     # -------- Public API --------
     def list_available(self) -> List[Stratagem]:

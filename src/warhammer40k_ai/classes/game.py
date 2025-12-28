@@ -1324,6 +1324,11 @@ class Game:
                 for player in self.players:
                     for unit in player.get_army().units:
                         unit.initialize_round()
+                    # Army-level battle round start hook (faction rules/buffs)
+                    player.get_army().on_battle_round_start(self.turn)
+
+                # Publish start-of-battle-round hook for UI/faction rules (best-effort)
+                self.event_system.publish("battle_round_started", game=self, battle_round=self.turn)
             # Start of COMMAND_PHASE for the new current player
             try:
                 self.start_command_phase()

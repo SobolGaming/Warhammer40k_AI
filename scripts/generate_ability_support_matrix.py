@@ -187,6 +187,10 @@ def _ability_patterns() -> List[Tuple[str, str, str]]:
     These are intentionally conservative, matching existing engine behavior.
     """
     return [
+        ("Blessings of Khorne (World Eaters)", "Supported", r"\bblessings of khorne\b"),
+        ("Favoured of Khorne (Blessings rerolls)", "Supported", r"\bfavoured of khorne\b|\bfavored of khorne\b"),
+        ("Idol of the Blessed Blood (Blessings +1D6)", "Supported", r"\bidol of (?:the )?blessed blood\b"),
+        ("Reborn in Blood (Angron)", "Supported", r"\breborn in blood\b"),
         ("Deep Strike", "Supported", r"\bdeep strike\b"),
         ("Infiltrators", "Supported", r"\binfiltrator"),
         ("Scouts", "Supported", r"\bscouts?\b"),

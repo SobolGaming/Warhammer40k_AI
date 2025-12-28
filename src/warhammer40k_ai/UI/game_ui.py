@@ -437,6 +437,8 @@ class GameView:
         self.stratagem_dialog = StratagemDialog(screen_width, screen_height)
         self.secondary_discard_dialog = SecondaryDiscardDialog(screen_width, screen_height)
         self.overwatch_shooter_dialog = OverwatchShooterDialog(screen_width, screen_height)
+        # WORLD EATERS: Blessings of Khorne dialog (lazy-create only if needed)
+        self.blessings_of_khorne_dialog = None
         # Wire UI hook so StratagemDialog can request discard selection
         def _request_secondary_discard(player, game, on_chosen):
             cards = list(getattr(player, 'active_secondaries', []) or [])
@@ -512,9 +514,215 @@ class GameView:
             # Ensure dialog is visible and receives events immediately
             self.shooting_declaration_dialog.visible = True
         setattr(self.stratagem_dialog, 'on_request_overwatch_shooting', _request_overwatch_shooting)
+
+        # WORLD EATERS: SKULLS FOR THE SKULL THRONE! -> interactive Blessings roll (extra global Blessing)
+        def _request_blessings_roll(player, game, context, on_done):
+            try:
+                army = player.get_army()
+            except Exception:
+                on_done(False)
+                return
+            mgr = getattr(army, "blessings_of_khorne", None)
+            if mgr is None:
+                on_done(False)
+                return
+            if self.blessings_of_khorne_dialog is None:
+                try:
+                    from .dialogs import BlessingsOfKhorneDialog
+                    sw, sh = self.screen.get_size()
+                    self.blessings_of_khorne_dialog = BlessingsOfKhorneDialog(sw, sh)
+                except Exception:
+                    self.blessings_of_khorne_dialog = None
+            if self.blessings_of_khorne_dialog is None:
+                on_done(False)
+                return
+
+            # Determine if Favoured of Khorne reroll is available (bearer on battlefield)
+            rerolls_allowed = 0
+            try:
+                for u in list(getattr(army, "units", []) or []):
+                    enh = getattr(u, "enhancement", None)
+                    if enh is not None and str(getattr(enh, "name", "")).strip().lower() == "favoured of khorne":
+                        if getattr(u, "deployed", False) and u.is_alive() and getattr(u, "reserve_status", "deployed") == "deployed":
+                            rerolls_allowed = 2
+                            break
+            except Exception:
+                rerolls_allowed = 0
+
+            from ..classes.blessings_of_khorne import BlessingsTiming
+            ctx = mgr.create_roll_context(
+                battle_round=int(getattr(game, "turn", 0) or 0),
+                timing=BlessingsTiming.OTHER,
+                extra_dice_from_idols=0,
+                rerolls_allowed=rerolls_allowed,
+                max_activations=1,
+                counts_toward_baseline_limit=False,
+                already_active_keys=set(getattr(mgr, "active_blessing_keys", set()) or set()),
+                reborn_in_blood_available=False,
+            )
+
+            # Hide stratagem dialog while Blessings dialog runs (modal)
+            try:
+                self.stratagem_dialog.visible = False
+            except Exception:
+                pass
+
+            def _on_confirm(payload):
+                # Spend CP for stratagem AFTER successful blessing selection/apply
+                ok = False
+                try:
+                    cp_cost = int(context.get("cp_cost", 1) or 1)
+                    if not player.spend_command_points(cp_cost):
+                        on_done(False)
+                        return
+                    # Dequeue reaction if present
+                    try:
+                        if getattr(player, "stratagems", None) is not None and hasattr(player.stratagems, "_dequeue_reaction_by_name"):
+                            player.stratagems._dequeue_reaction_by_name("SKULLS FOR THE SKULL THRONE!")
+                    except Exception:
+                        pass
+                    ok = True
+                finally:
+                    on_done(ok)
+
+            self.blessings_of_khorne_dialog.show(player=player, game=game, army=army, ctx=ctx, on_confirm=_on_confirm)
+            try:
+                self.dialog_manager.open(self.blessings_of_khorne_dialog, modal=True)
+            except Exception:
+                pass
+        setattr(self.stratagem_dialog, "on_request_blessings_roll", _request_blessings_roll)
         # Initialize shared UI state
         self._ui_hitboxes = {}
         self._mission_popup = None
+
+        # WORLD EATERS: start-of-battle-round Blessings hook
+        self._pending_blessings_queue = []
+        try:
+            if self.game and getattr(self.game, "event_system", None) is not None:
+                self.game.event_system.subscribe("battle_round_started", self._on_battle_round_started)
+        except Exception:
+            pass
+
+    def _on_battle_round_started(self, game=None, battle_round: int = 0, **_kwargs):
+        """Event hook: at start of battle round, prompt WE human players for Blessings of Khorne selection."""
+        try:
+            game = game or self.game
+            br = int(battle_round or getattr(game, "turn", 0) or 0)
+        except Exception:
+            return
+        if br <= 0:
+            return
+
+        # Build queue of players to prompt (human WE only), starting with the current player.
+        try:
+            current = game.get_current_player()
+            others = [p for p in list(getattr(game, "players", []) or []) if p is not current]
+            order = [current] + others
+        except Exception:
+            order = list(getattr(game, "players", []) or [])
+
+        queue = []
+        for p in order:
+            try:
+                if p is None or p.type.name != "HUMAN":
+                    continue
+                army = p.get_army()
+                if getattr(army, "faction_id", None) != "WE":
+                    continue
+                if getattr(army, "blessings_of_khorne", None) is None:
+                    continue
+                queue.append(p)
+            except Exception:
+                continue
+
+        if not queue:
+            return
+
+        self._pending_blessings_queue = list(queue)
+        self._open_next_blessings_prompt(br)
+
+    def _open_next_blessings_prompt(self, battle_round: int) -> None:
+        if not self._pending_blessings_queue:
+            return
+        player = self._pending_blessings_queue.pop(0)
+        army = player.get_army()
+        mgr = getattr(army, "blessings_of_khorne", None)
+        if mgr is None:
+            self._open_next_blessings_prompt(battle_round)
+            return
+        if self.blessings_of_khorne_dialog is None:
+            try:
+                from .dialogs import BlessingsOfKhorneDialog
+                sw, sh = self.screen.get_size()
+                self.blessings_of_khorne_dialog = BlessingsOfKhorneDialog(sw, sh)
+            except Exception:
+                self.blessings_of_khorne_dialog = None
+        if self.blessings_of_khorne_dialog is None:
+            self._open_next_blessings_prompt(battle_round)
+            return
+
+        # Favoured of Khorne rerolls (unique enhancement; bearer must be on battlefield)
+        rerolls_allowed = 0
+        try:
+            for u in list(getattr(army, "units", []) or []):
+                enh = getattr(u, "enhancement", None)
+                if enh is not None and str(getattr(enh, "name", "")).strip().lower() == "favoured of khorne":
+                    if getattr(u, "deployed", False) and u.is_alive() and getattr(u, "reserve_status", "deployed") == "deployed":
+                        rerolls_allowed = 2
+                        break
+        except Exception:
+            rerolls_allowed = 0
+
+        # Idol of the Blessed Blood (+1D6 per such model on battlefield) - start-of-battle-round only.
+        idol_bonus = 0
+        try:
+            for u in list(getattr(army, "units", []) or []):
+                if not (getattr(u, "deployed", False) and u.is_alive() and getattr(u, "reserve_status", "deployed") == "deployed"):
+                    continue
+                found, _ = u._find_ability_with_patterns(["idol of the blessed blood"])
+                if found:
+                    idol_bonus += 1
+        except Exception:
+            idol_bonus = 0
+
+        # Reborn in Blood availability (Angron destroyed at start of battle round)
+        reborn_available = False
+        try:
+            for u in list(getattr(army, "units", []) or []):
+                found, _ = u._find_ability_with_patterns(["reborn in blood"])
+                if found and (not u.is_alive()):
+                    reborn_available = True
+                    break
+        except Exception:
+            reborn_available = False
+
+        from ..classes.blessings_of_khorne import BlessingsTiming
+        ctx = mgr.create_roll_context(
+            battle_round=int(battle_round),
+            timing=BlessingsTiming.START_OF_BATTLE_ROUND,
+            extra_dice_from_idols=idol_bonus,
+            rerolls_allowed=rerolls_allowed,
+            max_activations=2,
+            counts_toward_baseline_limit=True,
+            already_active_keys=set(),
+            reborn_in_blood_available=reborn_available,
+        )
+
+        def _on_confirm(payload):
+            try:
+                res = payload.get("result") or {}
+                if res.get("reborn_used", False):
+                    army.schedule_reborn_in_blood(game=self.game)
+            except Exception:
+                pass
+            # Continue prompting any other human WE player
+            self._open_next_blessings_prompt(battle_round)
+
+        self.blessings_of_khorne_dialog.show(player=player, game=self.game, army=army, ctx=ctx, on_confirm=_on_confirm)
+        try:
+            self.dialog_manager.open(self.blessings_of_khorne_dialog, modal=True)
+        except Exception:
+            pass
 
     def _precision_allocation_provider(self, attacker_model, target_unit, character_models, weapon_profile):
         """
@@ -3608,7 +3816,13 @@ class BattlePhaseHandler(BasePhaseHandler):
             print(f"📍 {unit.name} needs to perform {movement_type} movement")
 
             # Determine max distance based on movement type
-            max_distance = 3.0  # Both pile-in and consolidate are 3 inches
+            max_distance = 3.0  # Default is 3"
+            try:
+                override = unit.get_fight_phase_move_distance_override(movement_type)
+                if override is not None:
+                    max_distance = float(override)
+            except Exception:
+                max_distance = 3.0
 
             self.game_view.individual_model_movement_dialog.show(
                 unit, movement_type, callback, self.game.map, max_distance
@@ -3650,8 +3864,15 @@ class BattlePhaseHandler(BasePhaseHandler):
         
         # Start pile-in movement
         print(f"📍 {fighting_unit.name} needs to perform pile_in movement")
+        max_distance = 3.0
+        try:
+            override = fighting_unit.get_fight_phase_move_distance_override("pile_in")
+            if override is not None:
+                max_distance = float(override)
+        except Exception:
+            max_distance = 3.0
         self.game_view.individual_model_movement_dialog.show(
-            fighting_unit, 'pile_in', on_pile_in_complete, self.game.map, 3.0
+            fighting_unit, 'pile_in', on_pile_in_complete, self.game.map, max_distance
         )
     
     def _start_weapon_allocation_phase(self, fighting_unit: Unit, target_unit: Unit, current_player: Player, opponent_player: Player):
@@ -3751,14 +3972,25 @@ class BattlePhaseHandler(BasePhaseHandler):
             
             # Mark unit as having fought
             self.fight_phase_manager.fought_units.add(fighting_unit)
+            try:
+                fighting_unit.round_state.fought_this_phase = True
+            except Exception:
+                pass
             
             # Switch to other player for next selection
             self.fight_phase_manager._switch_active_player(current_player, opponent_player)
         
         # Start consolidate movement
         print(f"🏃 {fighting_unit.name} needs to perform consolidate movement")
+        max_distance = 3.0
+        try:
+            override = fighting_unit.get_fight_phase_move_distance_override("consolidate")
+            if override is not None:
+                max_distance = float(override)
+        except Exception:
+            max_distance = 3.0
         self.game_view.individual_model_movement_dialog.show(
-            fighting_unit, 'consolidate', on_consolidate_complete, self.game.map, 3.0
+            fighting_unit, 'consolidate', on_consolidate_complete, self.game.map, max_distance
         )
     
     def _resolve_sequential_attacks(self, fighting_unit: Unit, target_unit: Unit, weapon_declarations: List):

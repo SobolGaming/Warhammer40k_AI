@@ -214,6 +214,10 @@ class FightPhaseManager:
 
                     # Mark unit as having fought
                     self.fought_units.add(fighting_unit)
+                    try:
+                        fighting_unit.round_state.fought_this_phase = True
+                    except Exception:
+                        pass
 
                     # Switch to other player for next selection
                     self._switch_active_player(current_player, opponent_player)
@@ -248,6 +252,10 @@ class FightPhaseManager:
 
         # Mark unit as having fought
         self.fought_units.add(fighting_unit)
+        try:
+            fighting_unit.round_state.fought_this_phase = True
+        except Exception:
+            pass
 
         # Switch to other player for next selection
         self._switch_active_player(current_player, opponent_player)
@@ -283,6 +291,10 @@ class FightPhaseManager:
 
                 # Mark unit as having fought
                 self.fought_units.add(fighting_unit)
+                try:
+                    fighting_unit.round_state.fought_this_phase = True
+                except Exception:
+                    pass
 
                 # Switch to other player for next selection
                 self._switch_active_player(current_player, opponent_player)
@@ -311,6 +323,10 @@ class FightPhaseManager:
         
         # Mark unit as having fought
         self.fought_units.add(fighting_unit)
+        try:
+            fighting_unit.round_state.fought_this_phase = True
+        except Exception:
+            pass
         
         # Switch to other player for next selection
         self._switch_active_player(current_player, opponent_player)

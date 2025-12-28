@@ -60,6 +60,13 @@ class Army:
         self.enhancements = []  # List of Enhancements used in the army
         self.detachment_rules = {}  # Placeholder for detachment-specific rules
         self.player = None  # Reference to the owning player
+
+        # World Eaters: Blessings of Khorne (only used when faction_id == "WE", but safe to always attach).
+        try:
+            from .blessings_of_khorne import BlessingsOfKhorneManager
+            self.blessings_of_khorne = BlessingsOfKhorneManager()
+        except Exception:
+            self.blessings_of_khorne = None
     
     def add_unit(self, unit: Unit) -> bool:
         if not self.faction_keyword:
@@ -457,6 +464,87 @@ class Army:
     def set_player(self, player) -> None:
         """Set the player that owns this army."""
         self.player = player
+
+    def on_battle_round_start(self, battle_round: int) -> None:
+        """Army-level start-of-battle-round hook for faction rules/state resets."""
+        mgr = getattr(self, "blessings_of_khorne", None)
+        if mgr is not None:
+            mgr.on_battle_round_start(int(battle_round))
+
+    def schedule_reborn_in_blood(self, *, game) -> bool:
+        """
+        WORLD EATERS: Angron - Reborn in Blood.
+
+        Engine model:
+        - Immediately 'revive' Angron (restore model with 8 wounds) but set him up as being in Reserves.
+        - The human player can then place him using the existing Reserves arrival UI flow (Deep Strike).
+
+        Returns True if Angron was found and scheduled, else False.
+        """
+        # Find the Angron unit (by ability text presence)
+        target = None
+        for u in list(getattr(self, "units", []) or []):
+            try:
+                found, _ = u._find_ability_with_patterns(["reborn in blood"])
+            except Exception:
+                found = False
+            if found:
+                target = u
+                break
+        if target is None:
+            return False
+
+        # If already alive/on battlefield, do nothing.
+        try:
+            if target.is_alive():
+                return False
+        except Exception:
+            pass
+
+        # Re-add the last removed model if needed (single-model unit likely has models_lost populated).
+        if len(getattr(target, "models", []) or []) == 0:
+            try:
+                lost = list(getattr(target, "models_lost", []) or [])
+            except Exception:
+                lost = []
+            if not lost:
+                return False
+            m = lost[-1]
+            try:
+                target.models.append(m)
+                m.set_parent_unit(target)
+            except Exception:
+                return False
+
+        # Restore to 8 wounds remaining
+        try:
+            m = target.models[0]
+            setattr(m, "_wounds", 8)
+        except Exception:
+            try:
+                target.models[0].wounds = 8
+            except Exception:
+                return False
+
+        # Put into standard reserves so it can arrive via Deep Strike rules.
+        try:
+            target.reserve_status = "reserves"
+            target.deployed = True
+            target.reserve_turn_deployed = None
+            target.arrived_from_reserves_this_turn = False
+            setattr(target, "_reborn_in_blood_pending", True)
+        except Exception:
+            pass
+
+        # Ensure not on the map until placed
+        try:
+            if game is not None and hasattr(game, "map") and hasattr(game.map, "units"):
+                if target in game.map.units:
+                    game.map.units.remove(target)
+        except Exception:
+            pass
+
+        return True
 
 # Helper function to parse an army list from a text file
 def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:

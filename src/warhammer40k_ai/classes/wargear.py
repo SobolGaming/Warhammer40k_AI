@@ -809,18 +809,51 @@ class WargearProfile:
             hit_result['special_effects'].append("Natural 6 (auto-hit)")
             attack_instance['crit_hit'] = True
             
-            if self.is_lethal_hits():
+            # WORLD EATERS: Blessings of Khorne keyword injection (melee-only).
+            # - Warp Blades => Lethal Hits
+            # - Martial Excellence => Sustained Hits 1
+            blessings_lethal = False
+            blessings_sustained = False
+            try:
+                # Only for melee weapons
+                is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+                if is_melee:
+                    unit = getattr(attacker, "parent_unit", None)
+                    army = unit.get_parent_army() if unit is not None else None
+                    mgr = getattr(army, "blessings_of_khorne", None) if army is not None else None
+                    game = army.player.game if (army is not None and getattr(army, "player", None) is not None) else None
+                    br = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                    if mgr is not None and br > 0:
+                        # Eligibility: attached unit group qualifies if any member has Blessings of Khorne ability
+                        try:
+                            qualifies = bool(unit.get_attached_unit_root().attached_unit_has_blessings_of_khorne())
+                        except Exception:
+                            qualifies = False
+                        if qualifies:
+                            blessings_lethal = bool(mgr.is_blessing_active("WARP_BLADES", battle_round=br))
+                            blessings_sustained = bool(mgr.is_blessing_active("MARTIAL_EXCELLENCE", battle_round=br))
+            except Exception:
+                blessings_lethal = False
+                blessings_sustained = False
+
+            if self.is_lethal_hits() or blessings_lethal:
                 hit_result['special_effects'].append("Lethal Hits")
                 attack_instance['lethal_hit'] = True
-            if self.is_sustained_hits():
+            # For Sustained Hits, do not override an existing Sustained Hits X on the weapon.
+            if self.is_sustained_hits() or blessings_sustained:
                 # Support Sustained Hits X / Sustained Hits D3 / etc. Roll per critical hit.
-                try:
-                    sh = self.get_sustained_hits_bonus()
-                    sh_val = int(sh.resolve())
-                    hit_result['special_effects'].append(f"Sustained Hits {sh} (+{sh_val})")
-                    attack_instance['sustained_hit'] = sh_val
-                except Exception:
-                    hit_result['special_effects'].append("Sustained Hits (+1)")
+                if self.is_sustained_hits():
+                    try:
+                        sh = self.get_sustained_hits_bonus()
+                        sh_val = int(sh.resolve())
+                        hit_result['special_effects'].append(f"Sustained Hits {sh} (+{sh_val})")
+                        attack_instance['sustained_hit'] = sh_val
+                    except Exception:
+                        hit_result['special_effects'].append("Sustained Hits (+1)")
+                        attack_instance['sustained_hit'] = 1
+                else:
+                    # Blessings provide Sustained Hits 1
+                    hit_result['special_effects'].append("Sustained Hits (+1) [Blessings of Khorne]")
                     attack_instance['sustained_hit'] = 1
             return hit_result
 
@@ -914,6 +947,38 @@ class WargearProfile:
 
         def _apply_wound_roll(roll: int) -> bool:
             """Apply wound logic for a given (unmodified) roll; respects dice_modifier."""
+            def _devastating_from_blessings() -> bool:
+                """Decapitating Strikes: melee vs INFANTRY gains Devastating Wounds."""
+                try:
+                    is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+                except Exception:
+                    is_melee = False
+                if not is_melee:
+                    return False
+                try:
+                    if not target.has_keyword("Infantry"):
+                        return False
+                except Exception:
+                    return False
+                try:
+                    unit = getattr(attacker, "parent_unit", None)
+                    army = unit.get_parent_army() if unit is not None else None
+                    mgr = getattr(army, "blessings_of_khorne", None) if army is not None else None
+                    game = army.player.game if (army is not None and getattr(army, "player", None) is not None) else None
+                    br = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                    if mgr is None or br <= 0:
+                        return False
+                    # Eligibility: attached unit group qualifies if any member has Blessings of Khorne ability
+                    try:
+                        qualifies = bool(unit.get_attached_unit_root().attached_unit_has_blessings_of_khorne())
+                    except Exception:
+                        qualifies = False
+                    if not qualifies:
+                        return False
+                    return bool(mgr.is_blessing_active("DECAPITATING_STRIKES", battle_round=br))
+                except Exception:
+                    return False
+
             # Natural 1 always fails
             if roll == 1:
                 return False
@@ -921,7 +986,7 @@ class WargearProfile:
             if roll == 6:
                 wound_result['special_effects'].append("Natural 6 (auto-wound)")
                 attack_instance['crit_wound'] = True
-                if self.is_devastating_wounds():
+                if self.is_devastating_wounds() or _devastating_from_blessings():
                     wound_result['special_effects'].append("Devastating Wounds")
                     attack_instance['mortal_wound'] = True
                 return True
@@ -932,7 +997,7 @@ class WargearProfile:
                 if roll >= anti_value:
                     wound_result['special_effects'].append(f"Anti-{anti_keyword} {anti_value}+")
                     attack_instance['crit_wound'] = True
-                    if self.is_devastating_wounds():
+                    if self.is_devastating_wounds() or _devastating_from_blessings():
                         wound_result['special_effects'].append("Devastating Wounds")
                         attack_instance['mortal_wound'] = True
                     return True

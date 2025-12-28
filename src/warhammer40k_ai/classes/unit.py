@@ -49,6 +49,7 @@ class UnitRoundState:
     action_started_turn: Optional[int] = None
     action_completes_turn: Optional[int] = None
     action_locked_until_turn_end: bool = False  # Cannot shoot or declare charge while true (except titanic character rule handled at call site)
+    fought_this_phase: bool = False  # Used by timing-sensitive rules (e.g., Total Carnage)
 
 
 class MovementAction(Enum):
@@ -1630,6 +1631,40 @@ class Unit:
             game = self.get_parent_army().player.game
             game.event_system.publish("model_destroyed_before_removal", unit=self, model=model)
         except Exception:
+            pass
+
+        # WORLD EATERS: Total Carnage (Blessings of Khorne) - deferred "fight on death" after attacker finishes attacks.
+        # Trigger: a model is destroyed by a MELEE attack, model's unit benefits from Total Carnage, and unit has not fought this phase.
+        try:
+            # Only if we have map context (needed for fight-on-death targeting)
+            if game_map is not None:
+                army = self.get_parent_army()
+                mgr = getattr(army, "blessings_of_khorne", None) if army is not None else None
+                game = army.player.game if (army is not None and getattr(army, "player", None) is not None) else None
+                br = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+
+                if mgr is not None and br > 0:
+                    # Eligibility: attached unit group qualifies if ANY member has Blessings of Khorne ability
+                    qualifies = False
+                    try:
+                        qualifies = bool(self.get_attached_unit_root().attached_unit_has_blessings_of_khorne())
+                    except Exception:
+                        qualifies = False
+
+                    if qualifies and mgr.is_blessing_active("TOTAL_CARNAGE", battle_round=br):
+                        # Must not have fought this phase
+                        if not bool(getattr(self.round_state, "fought_this_phase", False)):
+                            wp = getattr(self, "_last_destroyed_by_weapon_profile", None)
+                            is_melee = False
+                            try:
+                                parent = getattr(wp, "parent_wargear", None)
+                                is_melee = bool(parent is not None and parent.is_melee())
+                            except Exception:
+                                is_melee = False
+                            if is_melee:
+                                mgr.queue_total_carnage_model(model_obj=model)
+        except Exception:
+            # Fail-safe: don't break death processing
             pass
 
         # Temporarily treat the model as "alive" so existing targeting/engagement checks work.
@@ -5149,7 +5184,14 @@ class Unit:
         """
         from ..utility.constants import PILE_IN_DISTANCE
         from ..utility.calcs import MovementType
-        return self._auto_fight_phase_move(game_map, MovementType.PILE_IN, PILE_IN_DISTANCE)
+        dist = PILE_IN_DISTANCE
+        try:
+            override = self.get_fight_phase_move_distance_override("pile_in")
+            if override is not None:
+                dist = float(override)
+        except Exception:
+            dist = PILE_IN_DISTANCE
+        return self._auto_fight_phase_move(game_map, MovementType.PILE_IN, dist)
     
     def _is_model_in_base_to_base_contact(self, model: 'Model', enemy_models: List['Model'], game_map: 'Map') -> bool:
         """Check if a model is in base-to-base (edge-to-edge) contact with any enemy model."""
@@ -5187,7 +5229,14 @@ class Unit:
         """
         from ..utility.constants import CONSOLIDATE_DISTANCE
         from ..utility.calcs import MovementType
-        return self._auto_fight_phase_move(game_map, MovementType.CONSOLIDATE, CONSOLIDATE_DISTANCE)
+        dist = CONSOLIDATE_DISTANCE
+        try:
+            override = self.get_fight_phase_move_distance_override("consolidate")
+            if override is not None:
+                dist = float(override)
+        except Exception:
+            dist = CONSOLIDATE_DISTANCE
+        return self._auto_fight_phase_move(game_map, MovementType.CONSOLIDATE, dist)
 
     def _auto_fight_phase_move(self, game_map: 'Map', movement_type, max_distance: float) -> bool:
         """Automate pile-in / consolidate for non-UI flows using unified pathfinding + validation.
@@ -6039,6 +6088,52 @@ class Unit:
                 root.resolve_pending_leader_separation(game_map=game_map)
             except Exception:
                 pass
+
+            # WORLD EATERS: Resolve any deferred Total Carnage fights now that the attacker finished its attacks.
+            try:
+                army = root.get_parent_army()
+                mgr = getattr(army, "blessings_of_khorne", None) if army is not None else None
+                game = army.player.game if (army is not None and getattr(army, "player", None) is not None) else None
+                br = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                if mgr is not None and br > 0 and mgr.is_blessing_active("TOTAL_CARNAGE", battle_round=br):
+                    # Only if this attached unit group actually qualifies for Blessings
+                    if root.attached_unit_has_blessings_of_khorne():
+                        mgr.resolve_total_carnage_queue(owning_unit=root, game_map=game_map)
+            except Exception:
+                pass
+
+    def attached_unit_has_blessings_of_khorne(self) -> bool:
+        """Attached unit eligibility: true if any attached member (bodyguard or leader) has Blessings of Khorne ability."""
+        for u in self.get_attached_unit_members():
+            try:
+                found, _ = u._find_ability_with_patterns(["blessings of khorne"])
+            except Exception:
+                found = False
+            if found:
+                return True
+        return False
+
+    def get_fight_phase_move_distance_override(self, movement_kind: str) -> Optional[float]:
+        """
+        Return a fight-phase move distance override (pile-in / consolidate) if a Blessing modifies it.
+        movement_kind: 'pile_in' or 'consolidate'
+        """
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "blessings_of_khorne", None) if army is not None else None
+            game = army.player.game if (army is not None and getattr(army, "player", None) is not None) else None
+            br = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+            if mgr is None or br <= 0:
+                return None
+            # Only units that qualify for Blessings benefit
+            if not self.get_attached_unit_root().attached_unit_has_blessings_of_khorne():
+                return None
+            if mgr.is_blessing_active("RAGE_FUELLED_INVIGORATION", battle_round=br):
+                if str(movement_kind).strip().lower() in ("pile_in", "consolidate"):
+                    return 6.0
+        except Exception:
+            return None
+        return None
 
     def maybe_resolve_pending_separation(self, game_map: Optional['Map'] = None) -> None:
         """Resolve pending separation only if no attack resolution window is active."""

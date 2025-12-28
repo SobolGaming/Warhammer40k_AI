@@ -112,6 +112,28 @@ class StratagemDialog(BaseDialog):
                 candidates = context.get('candidates') or []
                 self.on_request_rapid_ingress_unit(self.player, self.game, candidates, lambda unit: self._finalize_rapid_ingress(unit, context))
                 return
+
+        # WORLD EATERS: SKULLS FOR THE SKULL THRONE! requires an interactive Blessings roll + selection.
+        if name and str(name).strip().upper() == 'SKULLS FOR THE SKULL THRONE!' and 'attacker_unit' in context:
+            if hasattr(self, 'on_request_blessings_roll') and callable(self.on_request_blessings_roll):
+                # Prevent duplicate invocations and hide this dialog while Blessings UI runs
+                if getattr(self, "_blessings_flow_active", False):
+                    return
+                self._blessings_flow_active = True
+                self.visible = False
+
+                def _done(executed: bool):
+                    self._blessings_flow_active = False
+                    if executed:
+                        print(f"✅ Used stratagem: {name}")
+                        self.hide()
+                    else:
+                        print("❌ Skulls for the Skull Throne cancelled or failed")
+                        # Re-show this dialog so the user can pick something else
+                        self.visible = True
+
+                self.on_request_blessings_roll(self.player, self.game, context, _done)
+                return
         ok = self.manager.use(name, **context)
         if ok:
             print(f"✅ Used stratagem: {name}")

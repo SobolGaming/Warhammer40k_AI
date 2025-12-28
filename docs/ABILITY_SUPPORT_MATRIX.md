@@ -31,6 +31,10 @@ Generated from `wahapedia_data/Abilities.json`, `wahapedia_data/Datasheets_abili
 
 These mechanics are currently recognized by searching ability names/descriptions for text patterns:
 
+- Blessings of Khorne (World Eaters) (Supported)
+- Favoured of Khorne (Blessings rerolls) (Supported)
+- Idol of the Blessed Blood (Blessings +1D6) (Supported)
+- Reborn in Blood (Angron) (Supported)
 - Deep Strike (Supported)
 - Infiltrators (Supported)
 - Scouts (Supported)
@@ -132,7 +136,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Blessings of Khorne | `000008428` | 1 | 1 | **Not implemented** |  |
+| Blessings of Khorne | `000008428` | 1 | 1 | **Supported** | Blessings of Khorne (World Eaters) |
 | Cabal of Sorcerers | `000008424` | 1 | 1 | **Supported** | Lone Operative |
 | Cult of the Dark Gods | `000008360` | 0 | 0 | **Not implemented** |  |
 | Dark Pacts | `000008359` | 103 | 103 | **Not implemented** |  |
@@ -267,7 +271,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Blessings of Khorne | `000008428` | 53 | 53 | **Not implemented** |  |
+| Blessings of Khorne | `000008428` | 53 | 53 | **Supported** | Blessings of Khorne (World Eaters) |
 | Dark Pacts | `000008359` | 0 | 0 | **Not implemented** |  |
 | Oath of Moment | `000008350` | 0 | 0 | **Not implemented** |  |
 | Pact of Blood | `000010071` | 5 | 5 | **Not implemented** |  |
@@ -1381,7 +1385,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Idols of Khorne | `000010073` | 11 | 11 | **Not implemented** |  |
+| Idols of Khorne | `000010073` | 11 | 11 | **Supported** | Idol of the Blessed Blood (Blessings +1D6) |
 
 #### Goretrack Onslaught
 
@@ -1393,7 +1397,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Blood Tithe | `000010077` | 58 | 58 | **Supported** | Feel No Pain |
+| Blood Tithe | `000010077` | 58 | 58 | **Supported** | Blessings of Khorne (World Eaters), Feel No Pain |
 
 #### Possessed Slaughterband
 
@@ -1405,7 +1409,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Wrath of Khorne | `000009846` | 9 | 9 | **Not implemented** |  |
+| Wrath of Khorne | `000009846` | 9 | 9 | **Supported** | Blessings of Khorne (World Eaters) |
 
 ## Datasheet-sourced Abilities (no `ability_id`)
 
@@ -3671,7 +3675,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Frenzy | 1 | 1 | **Not implemented** |  |
 | Furious Onslaught | 1 | 1 | **Not implemented** |  |
 | Hunters from the Warp | 1 | 1 | **Not implemented** |  |
-| Idol of Blessed Blood | 1 | 1 | **Not implemented** |  |
+| Idol of Blessed Blood | 1 | 1 | **Supported** | Blessings of Khorne (World Eaters), Idol of the Blessed Blood (Blessings +1D6) |
 | Inviolable Transport | 1 | 1 | **Not implemented** |  |
 | Legendary Killer | 1 | 1 | **Not implemented** |  |
 | Line-breaker | 1 | 1 | **Not implemented** |  |
@@ -3686,7 +3690,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Punishing Suppression | 1 | 1 | **Not implemented** |  |
 | Rage Embodied (Aura) | 1 | 1 | **Not implemented** |  |
 | Rage Eternal | 1 | 1 | **Not implemented** |  |
-| Reborn in Blood | 1 | 1 | **Supported** | Deep Strike |
+| Reborn in Blood | 1 | 1 | **Supported** | Blessings of Khorne (World Eaters), Deep Strike, Reborn in Blood (Angron) |
 | Relentless Carnage | 1 | 1 | **Not implemented** |  |
 | Rend and Tear | 1 | 1 | **Not implemented** |  |
 | Rolling Fortress | 1 | 1 | **Not implemented** |  |
@@ -3961,7 +3965,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 |---|---:|---:|---|---|
 | Driven by Ultimate Rage (Aura) | 1 | 1 | **Not implemented** |  |
 | Overwhelming Wrath (Aura) | 1 | 1 | **Not implemented** |  |
-| The Blood God’s Favour | 1 | 1 | **Not implemented** |  |
+| The Blood God’s Favour | 1 | 1 | **Supported** | Blessings of Khorne (World Eaters) |
 
 ### Special (правая колонка)
 
@@ -4258,7 +4262,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Explorator Augury Web | 1 | 1 | **Not implemented** |  |
 | Icon of Despair (Aura) | 1 | 1 | **Not implemented** |  |
 | Icon of Flame | 1 | 1 | **Not implemented** |  |
-| Icon of Khorne | 1 | 1 | **Not implemented** |  |
+| Icon of Khorne | 1 | 1 | **Supported** | Blessings of Khorne (World Eaters) |
 | Thunderhawk Cluster Bombs | 1 | 1 | **Not implemented** |  |
 | Voice Eater | 1 | 1 | **Not implemented** |  |
 
@@ -4493,7 +4497,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---|---|
 | Daemonic Icon | 2 | 2 | **Not implemented** |  |
-| Icon of Khorne | 2 | 2 | **Not implemented** |  |
+| Icon of Khorne | 2 | 2 | **Supported** | Blessings of Khorne (World Eaters) |
 | Instrument of Chaos | 2 | 2 | **Not implemented** |  |
 | Collar of Khorne | 1 | 1 | **Supported** | Feel No Pain |
 | Explorator Augury Web | 1 | 1 | **Not implemented** |  |
