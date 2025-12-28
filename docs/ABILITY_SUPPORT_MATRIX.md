@@ -45,7 +45,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 - Advance+Shoot (exact wording) (Supported)
 - Fall Back+Shoot (exact wording) (Supported)
 - Advance+Charge (exact wording) (Supported)
-- Firing Deck (Partial)
+- Firing Deck (Supported)
 - Gain CP on destroy (partial) (Partial)
 - Heal on destroy (partial) (Partial)
 - Plunging Fire (Supported)
@@ -58,7 +58,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Deep Strike | `000008343` | 343 | 343 | **Supported** | Deep Strike |
 | Feel No Pain | `000008338` | 113 | 113 | **Supported** | Feel No Pain |
 | Fights First | `000008340` | 25 | 25 | **Supported** | Fights First |
-| Firing Deck | `000008334` | 59 | 59 | **Partial** | Firing Deck |
+| Firing Deck | `000008334` | 59 | 59 | **Supported** | Firing Deck |
 | Hover | `000008342` | 57 | 57 | **Not implemented** |  |
 | Infiltrators | `000008345` | 69 | 69 | **Supported** | Infiltrators |
 | Leader | `000008346` | 406 | 406 | **Partial** | Leader data exists, but full Attached allocation/rules enforcement is incomplete. |
@@ -4005,7 +4005,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---|---|
 | ORDERS | 14 | 14 | **Not implemented** |  |
-| EMBARKING | 3 | 3 | **Partial** | Firing Deck |
+| EMBARKING | 3 | 3 | **Supported** | Firing Deck |
 | ARTILLERY TEAM | 2 | 2 | **Not implemented** |  |
 | ATTACHÉS | 1 | 1 | **Not implemented** |  |
 | COMPACT | 1 | 1 | **Not implemented** |  |
@@ -4066,7 +4066,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---|---|
 | ORDERS | 7 | 7 | **Not implemented** |  |
-| EMBARKING | 3 | 3 | **Partial** | Firing Deck |
+| EMBARKING | 3 | 3 | **Supported** | Firing Deck |
 | ARTILLERY TEAM | 2 | 2 | **Not implemented** |  |
 | ATTACHÉS | 1 | 1 | **Not implemented** |  |
 | COMPACT | 1 | 1 | **Not implemented** |  |
@@ -4411,7 +4411,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Grot Helper | 1 | 1 | **Not implemented** |  |
 | Grot Oiler | 1 | 1 | **Not implemented** |  |
 | Pulsa Rokkit | 1 | 1 | **Not implemented** |  |
-| ’Ard Case | 1 | 1 | **Partial** | Firing Deck |
+| ’Ard Case | 1 | 1 | **Supported** | Firing Deck |
 
 #### Space Marines (`SM`)
 

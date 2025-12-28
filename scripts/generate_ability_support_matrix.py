@@ -201,7 +201,7 @@ def _ability_patterns() -> List[Tuple[str, str, str]]:
         ("Advance+Shoot (exact wording)", "Supported", r"\beligible to shoot\b.*\badvance(d)?\b"),
         ("Fall Back+Shoot (exact wording)", "Supported", r"\beligible to shoot\b.*\bfell back\b"),
         ("Advance+Charge (exact wording)", "Supported", r"\beligible to declare a charge\b.*\badvance(d)?\b"),
-        ("Firing Deck", "Partial", r"\bfiring deck\b"),
+        ("Firing Deck", "Supported", r"\bfiring deck\b"),
         ("Gain CP on destroy (partial)", "Partial", r"\bgain (?:\d+|one)\s*command point|\bgain\s*cp\b"),
         ("Heal on destroy (partial)", "Partial", r"\bregain\b.*\bwounds?\b"),
         ("Plunging Fire", "Supported", r"\bplunging fire\b"),
