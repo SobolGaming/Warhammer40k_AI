@@ -723,6 +723,17 @@ class WargearProfile:
         if attack_instance.get("indirect_fire_no_visible", False):
             dice_modifier -= 1
             hit_result['modifiers'].append("-1 from Indirect Fire (no target models visible)")
+
+        # BIG GUNS NEVER TIRE (BGNT):
+        # When a VEHICLE/MONSTER makes ranged attacks and it was Locked in Combat when it selected targets,
+        # apply -1 to Hit unless the attack is made with a Pistol.
+        try:
+            pu = attacker.parent_unit
+            if getattr(pu, "_bgnt_locked_at_target_selection", False) and (pu.is_vehicle or pu.is_monster) and (not self.is_pistol()):
+                dice_modifier -= 1
+                hit_result['modifiers'].append("-1 from Big Guns Never Tire (locked when selecting targets)")
+        except Exception:
+            pass
         
         # Check for target modifiers (like Stealth)
         if hasattr(target, 'has_stealth') and target.has_stealth():

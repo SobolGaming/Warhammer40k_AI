@@ -4347,9 +4347,12 @@ class Unit:
 
     def can_shoot_in_engagement_range(self, game_map: 'Map', profile=None) -> bool:
         """Check if this unit can shoot while in engagement range with the given weapon profile."""
-        # Check if unit is in engagement range
-        is_engaged = any(game_map.is_within_engagement_range(self, enemy)
-                        for enemy in game_map.get_enemy_units(self) if enemy.is_alive())
+        # Check if unit is in engagement range ("Locked in Combat")
+        is_engaged = any(
+            game_map.is_within_engagement_range(self, enemy)
+            for enemy in game_map.get_enemy_units(self)
+            if enemy.is_alive()
+        )
         
         if not is_engaged:
             return True
@@ -4358,18 +4361,15 @@ class Unit:
         if profile is None:
             return False
             
-        # Check for Pistol weapons
+        # PISTOLS: can be used while within Engagement Range (target restriction enforced elsewhere)
         if profile.is_pistol():
             return True
-        # Check for Indirect Fire weapons
-        if profile.is_indirect_fire():
+
+        # BIG GUNS NEVER TIRE (BGNT):
+        # In the controlling player's Shooting phase, VEHICLE/MONSTER units remain eligible to shoot while Locked in Combat.
+        if (self.is_vehicle or self.is_monster) and self._is_controlling_players_shooting_phase():
             return True
-        # Vehicles can shoot while engaged
-        if self.is_vehicle:
-            return True
-        # TODO: Add checks for unit abilities that allow shooting in engagement
-        # Example: if self.has_ability("shoot_in_engagement"):
-        #     return True
+
         return False
 
     def can_shoot_at_target_while_engaged(self, target, profile, game_map) -> bool:
@@ -4378,14 +4378,45 @@ class Unit:
         if not any(game_map.is_within_engagement_range(self, enemy)
                   for enemy in game_map.get_enemy_units(self) if enemy.is_alive()):
             return True
-        # If target is the unit we're engaged with, only Pistols can shoot
-        if any(game_map.is_within_engagement_range(self, enemy)
-              for enemy in [target] if enemy.is_alive()):
-            return profile.is_pistol()
-        # If target is not the unit we're engaged with:
-        # - Vehicles can shoot at other targets
-        # - Other units cannot shoot at other targets while engaged
-        return self.is_vehicle
+
+        # If target is the unit we're engaged with, Pistols can shoot; Vehicles/Monsters can shoot in-phase via BGNT.
+        if target.is_alive() and game_map.is_within_engagement_range(self, target):
+            if profile.is_pistol():
+                return True
+            return (self.is_vehicle or self.is_monster) and self._is_controlling_players_shooting_phase()
+
+        # If target is not the unit we're engaged with, only Vehicles/Monsters can shoot in-phase via BGNT.
+        return (self.is_vehicle or self.is_monster) and self._is_controlling_players_shooting_phase()
+
+    def _is_controlling_players_shooting_phase(self) -> bool:
+        """
+        Return True only during this unit's controlling player's Shooting phase.
+
+        Used for rules that explicitly apply only "in your Shooting phase" (e.g., Big Guns Never Tire).
+        """
+        army = self.get_parent_army()
+        player = getattr(army, "player", None) if army is not None else None
+        game = getattr(player, "game", None) if player is not None else None
+        if game is None or player is None:
+            return False
+        return bool(getattr(game, "is_shooting_phase", lambda: False)() and getattr(game, "get_current_player", lambda: None)() is player)
+
+    def _is_locked_in_combat(self, game_map: 'Map') -> bool:
+        """Return True if this unit is within Engagement Range of any enemy unit."""
+        return any(
+            game_map.is_within_engagement_range(self, enemy)
+            for enemy in game_map.get_enemy_units(self)
+            if enemy.is_alive()
+        )
+
+    @staticmethod
+    def _is_unit_locked_in_combat(unit: 'Unit', game_map: 'Map') -> bool:
+        """Return True if `unit` is within Engagement Range of any of its enemy units."""
+        return any(
+            game_map.is_within_engagement_range(unit, enemy)
+            for enemy in game_map.get_enemy_units(unit)
+            if enemy.is_alive()
+        )
 
     ###########################################################################
     ### Shooting Phase Actions
@@ -4429,6 +4460,16 @@ class Unit:
                 print(f"❌ {self.name} cannot shoot after falling back")
                 return False
             
+        # BGNT hit modifier snapshot:
+        # When a VEHICLE/MONSTER makes ranged attacks and it was Locked in Combat when it selected targets,
+        # apply -1 to Hit (unless Pistols). Snapshot this now so casualties later don't change it mid-activation.
+        try:
+            bgnt_locked_at_selection = bool((self.is_vehicle or self.is_monster) and self._is_controlling_players_shooting_phase() and self._is_locked_in_combat(game_map))
+            setattr(self, "_bgnt_locked_at_target_selection", bgnt_locked_at_selection)
+        except Exception:
+            # Best-effort only; do not fail shooting if we can't snapshot.
+            pass
+
         # Enforce PISTOL selection rules (10e):
         # - For non-VEHICLE/non-MONSTER models: if any non-pistol ranged weapons are selected, pistols cannot also be used.
         # - While within Engagement Range: only Pistols can be used by non-VEHICLE/non-MONSTER models.
@@ -4436,15 +4477,7 @@ class Unit:
         try:
             is_vehicle_or_monster = bool(self.is_vehicle or self.is_monster)
             # Determine if this unit is engaged with any enemy
-            engaged = False
-            try:
-                engaged = any(
-                    game_map.is_within_engagement_range(self, enemy)
-                    for enemy in game_map.get_enemy_units(self)
-                    if enemy.is_alive()
-                )
-            except Exception:
-                engaged = False
+            engaged = self._is_locked_in_combat(game_map)
 
             # Build per-model "has pistol decl" and "has other decl"
             by_model: dict[int, dict[str, bool]] = {}
@@ -4452,11 +4485,7 @@ class Unit:
                 wp = decl.get("weapon_profile")
                 if wp is None:
                     continue
-                is_pistol = False
-                try:
-                    is_pistol = bool(wp.is_pistol())
-                except Exception:
-                    is_pistol = False
+                is_pistol = bool(wp.is_pistol())
                 for m in decl.get("models") or []:
                     if not getattr(m, "is_alive", False):
                         continue
@@ -4474,10 +4503,7 @@ class Unit:
                 if wp is None:
                     filtered_decls.append(decl)
                     continue
-                try:
-                    wp_is_pistol = bool(wp.is_pistol())
-                except Exception:
-                    wp_is_pistol = False
+                wp_is_pistol = bool(wp.is_pistol())
                 keep_models = []
                 removed = 0
                 for m in decl.get("models") or []:
@@ -4606,6 +4632,12 @@ class Unit:
         except Exception:
             pass
 
+        # Clear BGNT snapshot to avoid leaking state into future activations.
+        try:
+            delattr(self, "_bgnt_locked_at_target_selection")
+        except Exception:
+            pass
+
         return successful_attacks > 0
     
     def _validate_shooting_declaration(self, weapon_profile, target_unit, models_with_weapon, game_map) -> dict:
@@ -4667,6 +4699,38 @@ class Unit:
     
     def _can_model_shoot_weapon_at_target(self, model, weapon_profile, target_unit, game_map) -> bool:
         """Check if a specific model can shoot a weapon at a target"""
+        # TARGET LEGALITY: Locked in Combat targeting restrictions (10e).
+        # - Units that are Locked in Combat normally cannot be selected as targets of ranged attacks.
+        # - Exception: in the controlling player's Shooting phase, VEHICLE/MONSTER units can be targeted even while Locked.
+        # - Pistols can target units within Engagement Range of the shooter (own combat), enforced here.
+        # - BGNT also allows a VEHICLE/MONSTER (in its controlling player's Shooting phase) to target enemy units
+        #   it is within Engagement Range of (i.e., shoot into its own combat), subject to BLAST restriction.
+        target_locked = Unit._is_unit_locked_in_combat(target_unit, game_map)
+        if target_locked:
+            shooter_in_er_of_target = game_map.is_within_engagement_range(self, target_unit)
+            if weapon_profile.is_pistol():
+                if not shooter_in_er_of_target:
+                    return False
+            else:
+                in_phase = self._is_controlling_players_shooting_phase()
+                # BGNT: shoot into own combat (target is in ER of this unit) in-phase.
+                if shooter_in_er_of_target and (self.is_vehicle or self.is_monster) and in_phase:
+                    pass
+                # BGNT target exception: target is a VEHICLE/MONSTER and shooter is in its shooting phase.
+                elif (target_unit.is_vehicle or target_unit.is_monster) and in_phase:
+                    pass
+                else:
+                    return False
+
+        # BLAST restriction supersedes BGNT targeting:
+        # Blast weapons cannot target a unit that is within Engagement Range of any friendly unit (relative to the shooter).
+        if weapon_profile.is_blast():
+            for friendly in game_map.get_friendly_units(self):
+                if not friendly.is_alive() or not getattr(friendly, "deployed", True):
+                    continue
+                if game_map.is_within_engagement_range(friendly, target_unit):
+                    return False
+
         # Check range using edge-to-edge distance (not centroid-to-centroid)
         min_distance = float('inf')
         try:
@@ -4958,21 +5022,23 @@ class Unit:
         # PISTOL (10e):
         # - A unit can shoot with Pistols while within Engagement Range.
         # - When it does so, it must target an enemy unit it is within Engagement Range of.
-        try:
-            if weapon_profile.is_pistol():
-                return game_map.is_within_engagement_range(self, target_unit)
-        except Exception:
-            pass
+        if weapon_profile.is_pistol():
+            return game_map.is_within_engagement_range(self, target_unit)
 
         # VEHICLE / MONSTER (Big Guns Never Tire style behavior):
-        # Allow shooting while engaged (subject to other restrictions elsewhere).
+        # Only applies in the controlling player's Shooting phase.
         if self.is_vehicle or self.is_monster:
-            # Best-effort: BLAST weapons cannot be used to target units within Engagement Range of the shooter.
-            try:
-                if game_map.is_within_engagement_range(self, target_unit) and weapon_profile.is_blast():
-                    return False
-            except Exception:
-                pass
+            if not self._is_controlling_players_shooting_phase():
+                return False
+
+            # BLAST restriction (friendly engagement) is enforced in _can_model_shoot_weapon_at_target.
+            # Keep a small safety-net here too for direct callers.
+            if weapon_profile.is_blast():
+                for friendly in game_map.get_friendly_units(self):
+                    if not friendly.is_alive() or not getattr(friendly, "deployed", True):
+                        continue
+                    if game_map.is_within_engagement_range(friendly, target_unit):
+                        return False
             return True
             
         # Check if target is the unit we're engaged with

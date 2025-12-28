@@ -31,6 +31,10 @@ class _DummyMap:
     def get_enemy_units(self, unit):
         return [self._enemy] if self._enemies_engaged else []
 
+    def get_friendly_units(self, unit):
+        # For BGNT BLAST restriction checks, treat the shooter as a friendly unit to itself.
+        return [unit]
+
     def is_within_engagement_range(self, unit, other_unit) -> bool:
         # Called both for (self, enemy) and (self, target_unit)
         if other_unit is self._enemy:
@@ -83,6 +87,14 @@ class TestPistolRules(unittest.TestCase):
         u = Unit.__new__(Unit)
         # Vehicle yes, Monster no
         u.has_keyword = lambda k: True if k.lower() == "vehicle" else False
+        # Minimal alive/deployed surface for dummy-map BGNT blast checks
+        u.is_alive = lambda: True
+        u.deployed = True
+        # BGNT only applies in the controlling player's Shooting phase
+        player = SimpleNamespace()
+        game = SimpleNamespace(is_shooting_phase=lambda: True, get_current_player=lambda: player)
+        player.game = game
+        u.get_parent_army = lambda: SimpleNamespace(player=player)
 
         blast = _DummyProfile(pistol=False, blast=True)
         non_blast = _DummyProfile(pistol=False, blast=False)
