@@ -358,6 +358,13 @@ class WargearProfile:
         except Exception:
             indirect_fire_no_visible = False
 
+        # TORRENT cannot be used "via Indirect Fire" when no target models are visible at selection time.
+        # This should normally be prevented at target selection; keep a safety-net here too.
+        if indirect_fire_no_visible and self.is_torrent():
+            attack_result.attacks_special_modifiers.append("Torrent cannot be used via Indirect Fire (no target models visible)")
+            attack_result.attacks_rolled = 0
+            return attack_result
+
         # Roll attacks for this specific weapon instance
         if isinstance(self.attacks, Count):
             # Provide reroll callback for attacks count

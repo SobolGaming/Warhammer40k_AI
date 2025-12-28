@@ -37,6 +37,12 @@ class Player:
         # Set the player reference on the army
         if self.army:
             self.army.set_player(self)
+
+        # Core rules: CP gain guardrail (Warhammer Community).
+        # Per battle round, a player cannot gain more than 1 CP from sources other than the normal +1CP
+        # at the start of their own Command phase, unless an ability explicitly exempts it.
+        self.cp_gained_this_battle_round_excluding_normal_command_cp: int = 0
+        self._cp_gain_guardrail_battle_round: int | None = None
         #print(f"Player {self.name} created with army: {self.army}")
     
     def set_army(self, army: Army) -> None:
@@ -54,6 +60,18 @@ class Player:
             # Do not fail hard if wiring is incomplete
             self.stratagems = None
 
+    def _sync_cp_gain_guardrail_battle_round(self) -> None:
+        """Reset per-battle-round CP gain guardrail counter when battle round advances."""
+        try:
+            br = int(getattr(self.game, "turn", 0) or 0)
+        except Exception:
+            br = None
+        if br is None or br <= 0:
+            return
+        if self._cp_gain_guardrail_battle_round != br:
+            self._cp_gain_guardrail_battle_round = br
+            self.cp_gained_this_battle_round_excluding_normal_command_cp = 0
+
     def get_army(self) -> Army | None:
         return self.army
 
@@ -69,9 +87,75 @@ class Player:
     def add_score(self, points: int) -> None:
         self.score += points
     
+    def gain_command_points(self, amount: int = 1, *, is_normal_command_phase_gain: bool = False,
+                            exempt_from_guardrail: bool = False, reason: str | None = None) -> int:
+        """
+        Gain command points, enforcing the core CP gain guardrail:
+        - The normal +1CP at the start of your own Command phase is always allowed and does not count.
+        - All other CP gains are limited to a maximum of +1 CP per battle round unless exempt.
+
+        Returns the number of CP actually gained (may be less than requested).
+        """
+        try:
+            amount = int(amount or 0)
+        except Exception:
+            amount = 0
+        if amount <= 0:
+            return 0
+
+        # Keep battle-round counter fresh
+        try:
+            self._sync_cp_gain_guardrail_battle_round()
+        except Exception:
+            pass
+
+        if is_normal_command_phase_gain:
+            self.command_points += amount
+            return amount
+
+        if exempt_from_guardrail:
+            self.command_points += amount
+            return amount
+
+        # Guardrail: max +1 CP per battle round from non-normal sources.
+        if int(self.cp_gained_this_battle_round_excluding_normal_command_cp or 0) >= 1:
+            return 0
+
+        gained = min(amount, 1)
+        self.command_points += gained
+        self.cp_gained_this_battle_round_excluding_normal_command_cp += 1
+        return gained
+
+    def get_normal_command_phase_cp_gain(self) -> int:
+        """
+        Return the normal CP gained at the start of this player's Command phase.
+
+        Core rules are typically +1CP, but we keep this as an overridable lookup to support
+        mission/faction-level variations without hard-coding in Game flow.
+        """
+        return 1
+
+    def get_command_phase_bonus_cp_gain(self) -> int:
+        """
+        Return bonus CP gained during *this player's own* Command phase due to abilities while alive.
+
+        This bonus is NOT the normal Command phase CP and is therefore subject to the per-battle-round guardrail.
+        """
+        army = self.get_army()
+        if army is None:
+            return 0
+        fn = getattr(army, "get_command_phase_bonus_cp_gain", None)
+        if callable(fn):
+            return int(fn() or 0)
+        return 0
+
+    def gain_normal_command_phase_cp(self) -> int:
+        """Grant the normal CP at the start of this player's Command phase (does not count toward guardrail)."""
+        return self.gain_command_points(self.get_normal_command_phase_cp_gain(), is_normal_command_phase_gain=True, reason="Normal Command phase CP")
+
     def gain_command_point(self) -> None:
-        """Gain a command point (typically done at the start of each turn)"""
-        self.command_points += 1
+        """Legacy wrapper: gain 1 CP subject to the guardrail (non-normal source)."""
+        self.gain_command_points(1)
     
     def spend_command_points(self, amount: int) -> bool:
         """Spend command points if available"""
@@ -163,7 +247,8 @@ class Player:
             self.active_secondaries.remove(card)
             self.discarded_secondaries.append(card)
             if gain_cp:
-                self.gain_command_point()
+                # Voluntary discard CP gain is subject to the core CP gain guardrail.
+                self.gain_command_points(1, reason="Discard Secondary (gain 1CP)")
 
     def discard_achieved_secondaries(self, achieved_cards: list[SecondaryMissionCard]) -> None:
         for card in list(achieved_cards):

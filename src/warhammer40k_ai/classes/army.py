@@ -70,6 +70,35 @@ class Army:
         unit.set_parent_army(self)
         self.units.append(unit)
         return True
+
+    # ---------- Command phase CP gain hooks ----------
+    def get_command_phase_bonus_cp_gain(self) -> int:
+        """
+        Return bonus CP gained during the owning player's own Command phase due to abilities.
+
+        This represents CP gained in addition to the normal Command phase CP and should be subject
+        to the per-battle-round guardrail.
+
+        Implementation note: this is intentionally conservative and data-driven via `unit.special_rules`
+        so armies/characters can set it without hard-coding faction logic here.
+        """
+        bonus = 0
+        for u in list(getattr(self, "units", []) or []):
+            try:
+                if not getattr(u, "deployed", False):
+                    continue
+                if not u.is_alive():
+                    continue
+                if getattr(u, "reserve_status", "deployed") != "deployed":
+                    continue
+                sr = getattr(u, "special_rules", {}) or {}
+                # Accept either key spelling; keep it simple.
+                b = int(sr.get("command_phase_bonus_cp", sr.get("command_phase_cp_bonus", 0)) or 0)
+                if b > 0:
+                    bonus += b
+            except Exception:
+                continue
+        return int(bonus)
     
     def get_total_points(self) -> int:
         return sum(unit.get_unit_cost() for unit in self.units)

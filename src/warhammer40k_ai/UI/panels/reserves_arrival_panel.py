@@ -165,7 +165,12 @@ class ReservesArrivalPanel:
             
         # Check reserves arrival rules
         if self.selected_unit.is_in_strategic_reserves():
-            # Strategic reserves rules for board edge placement
+            # Strategic Reserves units that also have Deep Strike may arrive using either ruleset.
+            try:
+                if self.selected_unit.has_deep_strike():
+                    return self.is_valid_strategic_reserves_position(position) or self.is_valid_deep_strike_position(position)
+            except Exception:
+                pass
             return self.is_valid_strategic_reserves_position(position)
         else:
             # Standard reserves (Deep Strike) rules
@@ -268,6 +273,12 @@ class ReservesArrivalPanel:
         screen.blit(name_text, (x + 10, y + 10))
         
         # Draw unit type and arrival type
-        type_text = "Strategic Reserves" if unit.is_in_strategic_reserves() else "Deep Strike"
+        try:
+            if unit.is_in_strategic_reserves() and unit.has_deep_strike():
+                type_text = "Strategic Reserves (or Deep Strike)"
+            else:
+                type_text = "Strategic Reserves" if unit.is_in_strategic_reserves() else "Deep Strike"
+        except Exception:
+            type_text = "Strategic Reserves" if unit.is_in_strategic_reserves() else "Deep Strike"
         type_surface = self.font_small.render(type_text, True, TEXT_SECONDARY)
         screen.blit(type_surface, (x + 10, y + 35)) 

@@ -100,9 +100,10 @@ class Battlefield:
 
 
 class Game:
-    def __init__(self, battlefield: Battlefield, players: List[Player] = []):
+    def __init__(self, battlefield: Battlefield, players: List[Player] | None = None):
         self.battlefield = battlefield
-        self.players = players
+        # Avoid mutable default arg: always create a fresh list per Game instance.
+        self.players = list(players) if players else []
         self.turn = 1
         self.current_player_index = 0
         self.map = Map(battlefield.width, battlefield.height)
@@ -207,13 +208,21 @@ class Game:
                     player = attacker_unit.get_parent_army().player
                     if player is None:
                         continue
-                    before = player.command_points
-                    player.gain_command_point() if cp == 1 else setattr(player, "command_points", before + cp)
+                    gained = 0
+                    try:
+                        if hasattr(player, "gain_command_points"):
+                            gained = int(player.gain_command_points(cp, reason=spec.get("source_ability", "")) or 0)
+                        else:
+                            before = player.command_points
+                            player.gain_command_point() if cp == 1 else setattr(player, "command_points", before + cp)
+                            gained = cp
+                    except Exception:
+                        gained = 0
                     try:
                         self.event_system.publish(
                             "command_points_gained",
                             player=player,
-                            amount=cp,
+                            amount=gained,
                             reason=spec.get("source_ability", ""),
                             attacker_unit=attacker_unit,
                             target_unit=target_unit,
@@ -305,13 +314,21 @@ class Game:
                     player = destroyed_by_unit.get_parent_army().player
                     if player is None:
                         continue
-                    before = player.command_points
-                    player.gain_command_point() if cp == 1 else setattr(player, "command_points", before + cp)
+                    gained = 0
+                    try:
+                        if hasattr(player, "gain_command_points"):
+                            gained = int(player.gain_command_points(cp, reason=spec.get("source_ability", "")) or 0)
+                        else:
+                            before = player.command_points
+                            player.gain_command_point() if cp == 1 else setattr(player, "command_points", before + cp)
+                            gained = cp
+                    except Exception:
+                        gained = 0
                     try:
                         self.event_system.publish(
                             "command_points_gained",
                             player=player,
-                            amount=cp,
+                            amount=gained,
                             reason=spec.get("source_ability", ""),
                             attacker_unit=destroyed_by_unit,
                             target_unit=unit,
@@ -417,12 +434,14 @@ class Game:
 
     def get_enemy_units(self, player: Player) -> List['Unit']:
         """Get all units belonging to the opponent of the given player."""
-        # Get their opponent
-        opponent = next((p for p in self.players if p != player), None)
-        if not opponent:
-            return []
-        
-        return opponent.get_army().units
+        # Get their opponent (skip players without armies to avoid crashes in partial test setups).
+        for p in self.players:
+            if p is player:
+                continue
+            army = getattr(p, "get_army", lambda: None)()
+            if army is not None:
+                return list(getattr(army, "units", []) or [])
+        return []
 
     def get_battlefield_size(self) -> tuple[int, int]:
         return self.battlefield.width, self.battlefield.height
@@ -1315,9 +1334,37 @@ class Game:
         return self.phase == BattleRoundPhases.COMMAND_PHASE
     
     def start_command_phase(self) -> None:
-        """Start the command phase - all players gain 1 Command Point and evaluate objectives"""
-        for player in self.players:
-            player.gain_command_point()
+        """Start the command phase: active player gains normal CP, then resolves any bonus CP sources."""
+        # Core (per official app wording): at the start of your Command phase, before doing anything else,
+        # BOTH players gain the normal Command phase CP. This normal CP does not count toward the
+        # per-battle-round "bonus CP" guardrail.
+        try:
+            for p in list(self.players):
+                if p is None:
+                    continue
+                if hasattr(p, "gain_normal_command_phase_cp"):
+                    p.gain_normal_command_phase_cp()
+                elif hasattr(p, "gain_command_points") and hasattr(p, "get_normal_command_phase_cp_gain"):
+                    p.gain_command_points(p.get_normal_command_phase_cp_gain(), is_normal_command_phase_gain=True, reason="Normal Command phase CP")
+                else:
+                    # Best-effort fallback for legacy Player implementations.
+                    try:
+                        p.command_points += 1
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        # Bonus CP sources that trigger in *your* Command phase (e.g., character alive -> gain 1CP).
+        # This is NOT the normal command phase CP, so it is subject to the per-battle-round guardrail.
+        try:
+            cp_player = self.get_current_player()
+            if cp_player is not None and hasattr(cp_player, "get_command_phase_bonus_cp_gain") and hasattr(cp_player, "gain_command_points"):
+                bonus = int(cp_player.get_command_phase_bonus_cp_gain() or 0)
+                if bonus > 0:
+                    cp_player.gain_command_points(bonus, reason="Command phase bonus CP")
+        except Exception:
+            pass
         # Explicit phase start publish for command phase entry
         try:
             self.event_system.publish("phase_start", player=self.get_current_player(), phase=self.phase)
@@ -2145,15 +2192,33 @@ class Game:
             position[1] < 0 or position[1] >= self.battlefield.height):
             return False
         
-        # For strategic reserves, check edge restrictions
-        if unit.is_in_strategic_reserves() and battlefield_edge:
-            if not self.is_valid_strategic_reserves_edge(battlefield_edge):
-                return False
-            
-            # Check if unit is within 6" of the specified edge
-            edge_distance = self.get_distance_to_battlefield_edge(position, battlefield_edge)
-            if edge_distance > 6.0:
-                return False
+        # Strategic Reserves vs Deep Strike choice:
+        # If a unit with Deep Strike arrives from Strategic Reserves, it may be set up using either:
+        # - Strategic Reserves rules (edge within 6", plus turn-based allowed edges), OR
+        # - Deep Strike rules (anywhere, still respecting the 9" from enemies restriction).
+        strategic_ok = True
+        if unit.is_in_strategic_reserves():
+            strategic_ok = False
+            # Determine which edge(s) to validate
+            candidate_edges = []
+            if battlefield_edge:
+                candidate_edges = [battlefield_edge]
+            else:
+                candidate_edges = ["own", "left", "right", "enemy"]
+
+            for edge in candidate_edges:
+                try:
+                    if not self.is_valid_strategic_reserves_edge(edge):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    edge_distance = self.get_distance_to_battlefield_edge(position, edge)
+                except Exception:
+                    continue
+                if edge_distance <= 6.0:
+                    strategic_ok = True
+                    break
         
         # Check 9" restriction from enemy units
         enemy_units = self.get_enemy_units(unit.get_parent_army().player)
@@ -2172,7 +2237,15 @@ class Game:
 
                 if distance < 9.0:
                     return False
-        
+
+        if unit.is_in_strategic_reserves():
+            deep_strike_ok = False
+            try:
+                deep_strike_ok = bool(unit.has_deep_strike())
+            except Exception:
+                deep_strike_ok = False
+            return bool(strategic_ok or deep_strike_ok)
+
         return True
     
     def is_valid_strategic_reserves_edge(self, battlefield_edge: str) -> bool:
@@ -2296,6 +2369,19 @@ class Game:
         
         for _ in range(attempts):
             if unit.is_in_strategic_reserves():
+                # If the unit also has Deep Strike, it may choose to arrive using Deep Strike rules instead.
+                try:
+                    if unit.has_deep_strike():
+                        import random
+                        x = random.uniform(9.0, self.battlefield.width - 9.0)
+                        y = random.uniform(9.0, self.battlefield.height - 9.0)
+                        z = self.map.get_height_at_point(x, y)
+                        position = (x, y, z)
+                        if self.can_place_unit_arriving_from_reserves(unit, position):
+                            return position
+                except Exception:
+                    pass
+
                 # For strategic reserves, try positions near valid edges
                 edge = 'own' if self.turn == 2 else 'own'  # Could be expanded to try different edges
                 if edge == 'own':

@@ -4699,6 +4699,21 @@ class Unit:
     
     def _can_model_shoot_weapon_at_target(self, model, weapon_profile, target_unit, game_map) -> bool:
         """Check if a specific model can shoot a weapon at a target"""
+        # INDIRECT FIRE + TORRENT: Torrent weapons cannot be used "via Indirect Fire" when no target models are visible.
+        # Practical enforcement: if a weapon has both keywords, require visibility to at least one target model.
+        try:
+            if weapon_profile.is_indirect_fire() and weapon_profile.is_torrent():
+                if not self._attacking_unit_has_any_los_to_target_unit(target_unit, game_map):
+                    return False
+        except Exception:
+            # If anything goes wrong, be conservative and require LOS for Torrent+Indirect weapons.
+            try:
+                if weapon_profile.is_indirect_fire() and weapon_profile.is_torrent():
+                    if not self._attacking_unit_has_any_los_to_target_unit(target_unit, game_map):
+                        return False
+            except Exception:
+                pass
+
         # TARGET LEGALITY: Locked in Combat targeting restrictions (10e).
         # - Units that are Locked in Combat normally cannot be selected as targets of ranged attacks.
         # - Exception: in the controlling player's Shooting phase, VEHICLE/MONSTER units can be targeted even while Locked.
@@ -7912,6 +7927,17 @@ class Unit:
 
     def has_lone_operative(self) -> bool:
         """Check if the unit has Lone Operative ability."""
+        # Lone Operative does NOT "leak" into an Attached unit via a Leader.
+        # If a Leader with Lone Operative is attached to a Bodyguard unit that does not have Lone Operative,
+        # the Attached unit does not benefit from Lone Operative while attached.
+        try:
+            if bool(getattr(self, "is_leader", False)) and getattr(self, "attached_to", None) is not None:
+                root = self.get_attached_unit_root()
+                if root is not None and root is not self:
+                    return bool(root.has_lone_operative())
+        except Exception:
+            pass
+
         # Use cached result if available
         if 'lone_operative' in getattr(self, '_ability_cache', {}):
             return self._ability_cache['lone_operative']
