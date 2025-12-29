@@ -1897,6 +1897,36 @@ class GameView:
                 else:
                     print(f"🔍 DEBUG: No preview target set for individual model movement")
 
+        # Deployment placement: draw hover silhouette (base + facing arrow) while mouse moves over battlefield
+        if (hasattr(self, 'individual_model_movement_dialog') and
+            self.individual_model_movement_dialog and
+            self.individual_model_movement_dialog.visible and
+            getattr(self.individual_model_movement_dialog, 'movement_type', '') == 'deploy' and
+            self.individual_model_movement_dialog.unit and
+            self.individual_model_movement_dialog.selected_model_index is not None and
+            hasattr(self, 'individual_model_preview_target') and self.individual_model_preview_target):
+            try:
+                unit = self.individual_model_movement_dialog.unit
+                mi = self.individual_model_movement_dialog.selected_model_index
+                if mi < len(unit.models):
+                    m = unit.models[mi]
+                    fx, fy = self.individual_model_preview_target
+                    try:
+                        facing = float(self.individual_model_movement_dialog.get_deploy_facing_radians())
+                    except Exception:
+                        facing = float(getattr(m.model_base, 'facing', 0.0))
+                    ghost_color = (0, 255, 255)  # cyan
+                    self._draw_model_base_preview(
+                        battlefield_surface,
+                        m,
+                        float(fx),
+                        float(fy),
+                        ghost_color,
+                        facing_override=facing,
+                    )
+            except Exception:
+                pass
+
         # Draw weapon range indicator if a unit is selected for shooting
         if (hasattr(self, 'selected_unit') and self.selected_unit and
             hasattr(self, 'selected_weapon_profile') and self.selected_weapon_profile):
@@ -2030,7 +2060,7 @@ class GameView:
             # No path available, just draw target position
             self._draw_model_base_preview(surface, model, target_pos[0], target_pos[1], color)
 
-    def _draw_model_base_preview(self, surface: pygame.Surface, model, game_x: float, game_y: float, color: tuple):
+    def _draw_model_base_preview(self, surface: pygame.Surface, model, game_x: float, game_y: float, color: tuple, facing_override: Optional[float] = None):
         """Draw the actual model base footprint at the specified game coordinates"""
         try:
             if not model or not hasattr(model, 'model_base'):
@@ -2041,7 +2071,8 @@ class GameView:
                 return
 
             # Get the model's base shape at the target position
-            base_shape = model.model_base.get_base_shape_at(game_x, game_y, model.model_base.facing)
+            facing = float(facing_override) if facing_override is not None else float(getattr(model.model_base, 'facing', 0.0))
+            base_shape = model.model_base.get_base_shape_at(game_x, game_y, facing)
 
             # Convert the base shape to screen coordinates
             screen_points = []
@@ -2065,6 +2096,36 @@ class GameView:
 
                 # Draw outline
                 pygame.draw.polygon(surface, color[:3], screen_points, 2)
+
+                # Draw a facing arrow from the base center (matches silhouette rotation)
+                try:
+                    cx = int(game_x * TILE_SIZE * self.zoom_level + self.offset_x)
+                    cy = int(game_y * TILE_SIZE * self.zoom_level + self.offset_y)
+
+                    # Arrow length based on base radius (inches) scaled to pixels
+                    try:
+                        r = getattr(model.model_base, 'radius', (1.0, 1.0))
+                        r_in = float(max(r)) if isinstance(r, (tuple, list)) else float(r)
+                    except Exception:
+                        r_in = 1.0
+                    arrow_len = max(10.0, (r_in * 1.25) * TILE_SIZE * self.zoom_level)
+
+                    ex = int(cx + math.cos(facing) * arrow_len)
+                    ey = int(cy + math.sin(facing) * arrow_len)
+                    pygame.draw.line(surface, color[:3], (cx, cy), (ex, ey), 3)
+
+                    # Arrow head
+                    head_len = max(6.0, arrow_len * 0.25)
+                    left_ang = facing + math.radians(150.0)
+                    right_ang = facing - math.radians(150.0)
+                    lx = int(ex + math.cos(left_ang) * head_len)
+                    ly = int(ey + math.sin(left_ang) * head_len)
+                    rx = int(ex + math.cos(right_ang) * head_len)
+                    ry = int(ey + math.sin(right_ang) * head_len)
+                    pygame.draw.line(surface, color[:3], (ex, ey), (lx, ly), 3)
+                    pygame.draw.line(surface, color[:3], (ex, ey), (rx, ry), 3)
+                except Exception:
+                    pass
         except Exception as e:
             # Ultimate fallback - draw simple circle and don't break the rendering
             try:
@@ -3149,6 +3210,38 @@ class DeploymentPhaseHandler(BasePhaseHandler):
         # Handle deployment-specific mouse events
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             return self._handle_deployment_click(event.pos)
+
+        # Per-model deployment: track hover position for silhouette preview
+        if event.type == pygame.MOUSEMOTION:
+            x, y = event.pos
+            if (hasattr(self.game_view, 'individual_model_movement_dialog') and
+                self.game_view.individual_model_movement_dialog and
+                self.game_view.individual_model_movement_dialog.visible and
+                getattr(self.game_view.individual_model_movement_dialog, 'movement_type', '') == 'deploy' and
+                self.game_view.individual_model_movement_dialog.selected_model_index is not None):
+
+                if self.game_view.scaled_roster_width < x < self.game_view.scaled_battlefield_width + self.game_view.scaled_roster_width:
+                    battlefield_x, battlefield_y = self.game_view.screen_to_game_coords(x, y)
+                    self.game_view.individual_model_preview_target = (battlefield_x, battlefield_y)
+                    return True
+                else:
+                    self.game_view.individual_model_preview_target = None
+
+        # Per-model deployment: mouse wheel rotates facing in 5° increments (consume to prevent zoom)
+        if event.type == pygame.MOUSEWHEEL:
+            if (hasattr(self.game_view, 'individual_model_movement_dialog') and
+                self.game_view.individual_model_movement_dialog and
+                self.game_view.individual_model_movement_dialog.visible and
+                getattr(self.game_view.individual_model_movement_dialog, 'movement_type', '') == 'deploy' and
+                self.game_view.individual_model_movement_dialog.selected_model_index is not None):
+
+                mx, my = pygame.mouse.get_pos()
+                if self.game_view.scaled_roster_width < mx < self.game_view.scaled_battlefield_width + self.game_view.scaled_roster_width:
+                    try:
+                        self.game_view.individual_model_movement_dialog.rotate_deploy_facing_degrees(float(event.y) * 5.0)
+                    except Exception:
+                        pass
+                    return True
         
         # Handle deployment-specific keyboard events
         if event.type == pygame.KEYDOWN:

@@ -1,8 +1,10 @@
 import pygame
 import re
+import math
 from typing import List, Optional, Callable, Dict, Any
 from .base_dialog import BaseDialog, TEXT_SUCCESS, TEXT_WARNING, BUTTON_SELECTED
 from ...utility.constants import RUINS_FLOOR_HEIGHT
+from ...utility.placement_validation import bases_overlap_3d
 
 # Additional colors specific to this dialog
 HIGHLIGHT_COLOR = (255, 255, 0)  # Yellow for model highlighting
@@ -29,6 +31,9 @@ class IndividualModelMovementDialog(BaseDialog):
         self.floor_selection_dialog = None
         self._pending_click_position = None  # (x,y) waiting for floor selection
         self._pending_floor_z_by_level = None  # {level: z} for the pending click
+
+        # Deployment placement facing (radians). Used for hover silhouette + final placement.
+        self._deploy_facing_radians: Optional[float] = None
         
         # UI elements
         self.model_buttons = []
@@ -75,6 +80,8 @@ class IndividualModelMovementDialog(BaseDialog):
         self.model_movements = {}
         self.selected_model_index = None
         self.awaiting_battlefield_click = False
+        if movement_type != 'deploy':
+            self._deploy_facing_radians = None
 
         # Publish unit move started (for Stratagem reactions like Overwatch)
         # NOTE: Do NOT publish for deployment placement.
@@ -149,6 +156,7 @@ class IndividualModelMovementDialog(BaseDialog):
         self.model_movements = {}
         self.selected_model_index = None
         self.awaiting_battlefield_click = False
+        self._deploy_facing_radians = None
         # Hide nested dialogs as well
         if hasattr(self, 'floor_selection_dialog') and self.floor_selection_dialog:
             self.floor_selection_dialog.hide()
@@ -332,10 +340,48 @@ class IndividualModelMovementDialog(BaseDialog):
             
         self.selected_model_index = model_index
         self.awaiting_battlefield_click = True
+
+        # In deploy mode, keep a persistent facing for the whole unit placement sequence.
+        if self.movement_type == 'deploy':
+            try:
+                if self._deploy_facing_radians is None:
+                    self._deploy_facing_radians = float(getattr(model.model_base, 'facing', 0.0))
+            except Exception:
+                if self._deploy_facing_radians is None:
+                    self._deploy_facing_radians = 0.0
         
         print(f"🎯 Selected {model.name} (Model #{model_index + 1}) for {self.movement_type} movement")
         print(f"📍 Click on the battlefield to move this model")
         
+    def get_deploy_facing_radians(self) -> float:
+        """Facing used for deployment hover silhouette + final placement (radians)."""
+        try:
+            if self._deploy_facing_radians is None:
+                return 0.0
+            return float(self._deploy_facing_radians)
+        except Exception:
+            return 0.0
+
+    def rotate_deploy_facing_degrees(self, delta_degrees: float) -> None:
+        """Adjust deployment facing (in 5° increments typically). No-op outside deploy mode."""
+        if self.movement_type != 'deploy':
+            return
+        try:
+            if self._deploy_facing_radians is None:
+                # initialize from selected model if possible
+                if self.selected_model_index is not None and self.unit and self.selected_model_index < len(self.unit.models):
+                    m = self.unit.models[self.selected_model_index]
+                    self._deploy_facing_radians = float(getattr(m.model_base, 'facing', 0.0))
+                else:
+                    self._deploy_facing_radians = 0.0
+            self._deploy_facing_radians = (float(self._deploy_facing_radians) + math.radians(float(delta_degrees))) % (2.0 * math.pi)
+        except Exception:
+            # fail-safe: don't crash input handling
+            try:
+                self._deploy_facing_radians = float(self._deploy_facing_radians or 0.0)
+            except Exception:
+                self._deploy_facing_radians = 0.0
+
     def get_highlighted_model_index(self) -> Optional[int]:
         """Get the index of the currently highlighted model for battlefield rendering"""
         return self.selected_model_index
@@ -613,7 +659,15 @@ class IndividualModelMovementDialog(BaseDialog):
                 player_name = ''
             validation = game.is_valid_single_model_deployment(model, battlefield_x, battlefield_y, battlefield_z, player_name)
             if not validation['valid']:
-                print(f"❌ Deployment invalid for {model.name}: {validation['reason']}")
+                try:
+                    facing_deg = math.degrees(self.get_deploy_facing_radians())
+                except Exception:
+                    facing_deg = 0.0
+                print(
+                    f"❌ Deployment invalid for {model.name} at "
+                    f"({battlefield_x:.1f}, {battlefield_y:.1f}, {battlefield_z:.1f}) facing={facing_deg:.1f}°: "
+                    f"{validation['reason']}"
+                )
                 return False
 
             # Prevent illegal base overlaps during deployment.
@@ -623,14 +677,23 @@ class IndividualModelMovementDialog(BaseDialog):
                 x=battlefield_x,
                 y=battlefield_y,
                 z=battlefield_z,
+                facing=self.get_deploy_facing_radians(),
             )
             if not overlap_validation['valid']:
-                print(f"❌ Deployment invalid for {model.name}: {overlap_validation['reason']}")
+                try:
+                    facing_deg = math.degrees(self.get_deploy_facing_radians())
+                except Exception:
+                    facing_deg = 0.0
+                print(
+                    f"❌ Deployment invalid for {model.name} at "
+                    f"({battlefield_x:.1f}, {battlefield_y:.1f}, {battlefield_z:.1f}) facing={facing_deg:.1f}°: "
+                    f"{overlap_validation['reason']}"
+                )
                 return False
 
             # Place the model at destination (preserve facing)
-            current_facing = model.model_base.facing if hasattr(model.model_base, 'facing') else 0.0
-            model.set_location(destination[0], destination[1], destination[2], current_facing)
+            current_facing = self.get_deploy_facing_radians()
+            model.set_location(destination[0], destination[1], destination[2], float(current_facing))
             print(f"✅ {model.name} deployed to ({destination[0]:.1f}, {destination[1]:.1f}{'' if abs(destination[2]) < 1e-6 else f', {destination[2]:.1f}'})")
             success = True
         else:
@@ -701,7 +764,15 @@ class IndividualModelMovementDialog(BaseDialog):
 
         validation = game.is_valid_single_model_deployment(model, x, y, z, player_name)
         if not validation['valid']:
-            print(f"❌ Deployment invalid for {model.name}: {validation['reason']}")
+            try:
+                facing_deg = math.degrees(self.get_deploy_facing_radians())
+            except Exception:
+                facing_deg = 0.0
+            print(
+                f"❌ Deployment invalid for {model.name} at "
+                f"({float(x):.1f}, {float(y):.1f}, {float(z):.1f}) facing={facing_deg:.1f}°: "
+                f"{validation['reason']}"
+            )
             return
 
         # Prevent illegal base overlaps during deployment.
@@ -710,14 +781,23 @@ class IndividualModelMovementDialog(BaseDialog):
             x=x,
             y=y,
             z=z,
+            facing=self.get_deploy_facing_radians(),
         )
         if not overlap_validation['valid']:
-            print(f"❌ Deployment invalid for {model.name}: {overlap_validation['reason']}")
+            try:
+                facing_deg = math.degrees(self.get_deploy_facing_radians())
+            except Exception:
+                facing_deg = 0.0
+            print(
+                f"❌ Deployment invalid for {model.name} at "
+                f"({float(x):.1f}, {float(y):.1f}, {float(z):.1f}) facing={facing_deg:.1f}°: "
+                f"{overlap_validation['reason']}"
+            )
             return
 
         # Place the model at destination (preserve facing)
-        current_facing = model.model_base.facing if hasattr(model.model_base, 'facing') else 0.0
-        model.set_location(float(x), float(y), float(z), current_facing)
+        current_facing = self.get_deploy_facing_radians()
+        model.set_location(float(x), float(y), float(z), float(current_facing))
         print(f"✅ {model.name} deployed to ({float(x):.1f}, {float(y):.1f}{'' if abs(float(z)) < 1e-6 else f', {float(z):.1f}'})")
 
         # Mark model as deployed
@@ -742,7 +822,7 @@ class IndividualModelMovementDialog(BaseDialog):
             self.selected_model_index = None
             self.awaiting_battlefield_click = False
 
-    def _validate_deployment_no_base_overlap(self, model, x: float, y: float, z: float) -> dict:
+    def _validate_deployment_no_base_overlap(self, model, x: float, y: float, z: float, facing: Optional[float] = None) -> dict:
         """Ensure deployment placement doesn't overlap any model bases.
 
         Allows base-to-base contact (touching). Disallows overlap area > 0 on the same Z band.
@@ -761,18 +841,18 @@ class IndividualModelMovementDialog(BaseDialog):
             src_base = model.model_base
             cand = _Base(src_base.base_type, src_base.radius)
             cand.set_position(float(x), float(y), float(z))
-            cand.set_facing(getattr(src_base, 'facing', 0.0))
+            cand.set_facing(float(facing) if facing is not None else float(getattr(src_base, 'facing', 0.0)))
+            # Preserve model height (important for 3D stacking edge-cases)
+            try:
+                cand.set_model_height(float(getattr(src_base, 'model_height', cand.model_height)))
+            except Exception:
+                pass
         except Exception:
             return {'valid': True, 'reason': 'No overlap checker available'}
 
         def _overlaps_3d(a, b, eps_area: float = 1e-6) -> bool:
             try:
-                inter = a.get_base_shape().intersection(b.get_base_shape())
-                if inter.is_empty or inter.area <= eps_area:
-                    return False  # touching is OK, no area overlap
-                z_diff = abs(float(getattr(a, 'z', 0.0)) - float(getattr(b, 'z', 0.0)))
-                min_z_sep = max(float(getattr(a, 'model_height', 0.0)), float(getattr(b, 'model_height', 0.0)))
-                return z_diff < min_z_sep
+                return bases_overlap_3d(a, b, eps_area=eps_area)
             except Exception:
                 return False
 
