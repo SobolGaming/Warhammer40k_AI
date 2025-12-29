@@ -345,13 +345,86 @@ class IndividualModelMovementDialog(BaseDialog):
         if self.movement_type == 'deploy':
             try:
                 if self._deploy_facing_radians is None:
-                    self._deploy_facing_radians = float(getattr(model.model_base, 'facing', 0.0))
+                    inferred = None
+                    try:
+                        inferred = self._infer_default_deploy_facing_radians(model)
+                    except Exception:
+                        inferred = None
+                    if inferred is not None:
+                        self._deploy_facing_radians = float(inferred)
+                    else:
+                        self._deploy_facing_radians = float(getattr(model.model_base, 'facing', 0.0))
             except Exception:
                 if self._deploy_facing_radians is None:
                     self._deploy_facing_radians = 0.0
         
         print(f"🎯 Selected {model.name} (Model #{model_index + 1}) for {self.movement_type} movement")
         print(f"📍 Click on the battlefield to move this model")
+
+    def _infer_default_deploy_facing_radians(self, model) -> Optional[float]:
+        """Infer default deploy facing from the active player's deployment zone geometry.
+
+        Left/right zones:
+        - left zone faces right (+X)
+        - right zone faces left (-X)
+
+        Top/bottom zones:
+        - top zone faces down (+Y)
+        - bottom zone faces up (-Y)
+        """
+        try:
+            game = model.parent_unit.get_parent_army().player.game
+        except Exception:
+            game = None
+        if game is None:
+            return None
+
+        try:
+            player_name = model.parent_unit.get_parent_army().player.name
+        except Exception:
+            player_name = None
+        if not player_name:
+            return None
+
+        zone_info = getattr(game, "deployment_zones", {}) or {}
+        z = zone_info.get(player_name) if isinstance(zone_info, dict) else None
+        mission_zones = (z or {}).get("mission_zones") if isinstance(z, dict) else None
+        if not mission_zones:
+            return None
+
+        # Gather bounds from all mission zone vertices
+        min_x = min_y = float("inf")
+        max_x = max_y = float("-inf")
+        found = False
+        for mz in mission_zones:
+            verts = getattr(mz, "vertices", None) or []
+            for vx, vy in verts:
+                found = True
+                min_x = min(min_x, float(vx))
+                max_x = max(max_x, float(vx))
+                min_y = min(min_y, float(vy))
+                max_y = max(max_y, float(vy))
+        if not found:
+            return None
+
+        try:
+            bf_w, bf_h = game.get_battlefield_size()
+            bf_w = float(bf_w)
+            bf_h = float(bf_h)
+        except Exception:
+            # Fallback to Strike Force (inches)
+            bf_w, bf_h = 60.0, 44.0
+
+        cx = (min_x + max_x) / 2.0
+        cy = (min_y + max_y) / 2.0
+        extent_x = max_x - min_x
+        extent_y = max_y - min_y
+
+        # If the zone is a tall strip, it’s likely left/right; if wide strip, likely top/bottom.
+        if extent_x <= extent_y:
+            return 0.0 if cx < (bf_w / 2.0) else math.pi
+        else:
+            return (math.pi / 2.0) if cy < (bf_h / 2.0) else (3.0 * math.pi / 2.0)
         
     def get_deploy_facing_radians(self) -> float:
         """Facing used for deployment hover silhouette + final placement (radians)."""
@@ -393,6 +466,20 @@ class IndividualModelMovementDialog(BaseDialog):
         """
         if not self.visible:
             return False
+
+        # DEPLOY: rotate facing via mouse wheel (5° increments). We handle this directly in the dialog so it
+        # works even when the dialog is modal (DialogManager blocks wheel events by default).
+        try:
+            if getattr(self, "movement_type", "") == "deploy" and self.selected_model_index is not None:
+                if getattr(event, "type", None) == pygame.MOUSEWHEEL:
+                    self.rotate_deploy_facing_degrees(float(getattr(event, "y", 0.0)) * 5.0)
+                    return True
+                if getattr(event, "type", None) == pygame.MOUSEBUTTONDOWN and getattr(event, "button", None) in (4, 5):
+                    delta = 5.0 if int(getattr(event, "button", 0)) == 4 else -5.0
+                    self.rotate_deploy_facing_degrees(delta)
+                    return True
+        except Exception:
+            pass
 
         # Debug: Log all events handled by this dialog
         # TODO: Uncomment for event debugging
@@ -453,7 +540,7 @@ class IndividualModelMovementDialog(BaseDialog):
             # print(f"🔍 DEBUG: {dialog_name} - ESC key pressed, hiding dialog")
             self.hide()
             return True
-        
+
         # Handle mouse events
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:  # Left click
             mouse_pos = event.pos
@@ -1352,6 +1439,8 @@ class IndividualModelMovementDialog(BaseDialog):
         # Draw instructions
         if self.awaiting_battlefield_click:
             instruction_text = f"Click on battlefield to move #{self.selected_model_index + 1}: {self.unit.models[self.selected_model_index].name}"
+            if getattr(self, "movement_type", "") == "deploy":
+                instruction_text += " | Mouse wheel: rotate facing (5°)"
             instruction_color = TEXT_WARNING
         else:
             instruction_text = "Select a model, then click on battlefield to move it. ESC to close."

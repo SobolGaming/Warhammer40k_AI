@@ -3203,23 +3203,16 @@ class DeploymentPhaseHandler(BasePhaseHandler):
     """Handles events during deployment phase"""
     
     def handle_event(self, event: pygame.event.Event) -> bool:
-        # Handle UI interface events
-        if self.game_view.ui_interface and self.game_view.ui_interface.handle_event(event):
-            return True
-        
-        # Handle deployment-specific mouse events
-        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            return self._handle_deployment_click(event.pos)
+        # Per-model deployment: handle hover + facing rotation BEFORE any UI-interface consumes the event.
+        if (hasattr(self.game_view, 'individual_model_movement_dialog') and
+            self.game_view.individual_model_movement_dialog and
+            self.game_view.individual_model_movement_dialog.visible and
+            getattr(self.game_view.individual_model_movement_dialog, 'movement_type', '') == 'deploy' and
+            self.game_view.individual_model_movement_dialog.selected_model_index is not None):
 
-        # Per-model deployment: track hover position for silhouette preview
-        if event.type == pygame.MOUSEMOTION:
-            x, y = event.pos
-            if (hasattr(self.game_view, 'individual_model_movement_dialog') and
-                self.game_view.individual_model_movement_dialog and
-                self.game_view.individual_model_movement_dialog.visible and
-                getattr(self.game_view.individual_model_movement_dialog, 'movement_type', '') == 'deploy' and
-                self.game_view.individual_model_movement_dialog.selected_model_index is not None):
-
+            # Track hover position for silhouette preview
+            if event.type == pygame.MOUSEMOTION:
+                x, y = event.pos
                 if self.game_view.scaled_roster_width < x < self.game_view.scaled_battlefield_width + self.game_view.scaled_roster_width:
                     battlefield_x, battlefield_y = self.game_view.screen_to_game_coords(x, y)
                     self.game_view.individual_model_preview_target = (battlefield_x, battlefield_y)
@@ -3227,14 +3220,8 @@ class DeploymentPhaseHandler(BasePhaseHandler):
                 else:
                     self.game_view.individual_model_preview_target = None
 
-        # Per-model deployment: mouse wheel rotates facing in 5° increments (consume to prevent zoom)
-        if event.type == pygame.MOUSEWHEEL:
-            if (hasattr(self.game_view, 'individual_model_movement_dialog') and
-                self.game_view.individual_model_movement_dialog and
-                self.game_view.individual_model_movement_dialog.visible and
-                getattr(self.game_view.individual_model_movement_dialog, 'movement_type', '') == 'deploy' and
-                self.game_view.individual_model_movement_dialog.selected_model_index is not None):
-
+            # Mouse wheel rotates facing in 5° increments (consume to prevent zoom)
+            if event.type == pygame.MOUSEWHEEL:
                 mx, my = pygame.mouse.get_pos()
                 if self.game_view.scaled_roster_width < mx < self.game_view.scaled_battlefield_width + self.game_view.scaled_roster_width:
                     try:
@@ -3242,6 +3229,25 @@ class DeploymentPhaseHandler(BasePhaseHandler):
                     except Exception:
                         pass
                     return True
+
+            # Some environments emit wheel as MOUSEBUTTONDOWN with button 4/5.
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button in (4, 5):
+                mx, my = pygame.mouse.get_pos()
+                if self.game_view.scaled_roster_width < mx < self.game_view.scaled_battlefield_width + self.game_view.scaled_roster_width:
+                    try:
+                        delta = 5.0 if event.button == 4 else -5.0
+                        self.game_view.individual_model_movement_dialog.rotate_deploy_facing_degrees(delta)
+                    except Exception:
+                        pass
+                    return True
+
+        # Handle UI interface events
+        if self.game_view.ui_interface and self.game_view.ui_interface.handle_event(event):
+            return True
+        
+        # Handle deployment-specific mouse events
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            return self._handle_deployment_click(event.pos)
         
         # Handle deployment-specific keyboard events
         if event.type == pygame.KEYDOWN:
