@@ -1988,8 +1988,9 @@ class TacticalAgent:
                     if not enemy_model.is_alive:
                         continue
                     # Calculate edge-to-edge distance between model bases
-                    horizontal_distance = model.model_base.edge_to_edge_distance(enemy_model.model_base)
-                    vertical_distance = model.model_base.vertical_distance(enemy_model.model_base)
+                    from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
+                    horizontal_distance = float(horizontal_distance_between_bases_2d(model.model_base, enemy_model.model_base))
+                    vertical_distance = float(vertical_distance_between_bases(model.model_base, enemy_model.model_base))
                     
                     # Check if within engagement range (1" horizontally, 5" vertically)
                     from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VERTICAL
@@ -2017,8 +2018,9 @@ class TacticalAgent:
                         if not enemy_model.is_alive:
                             continue
                         # Calculate edge-to-edge distance between model bases
-                        horizontal_distance = other_model.model_base.edge_to_edge_distance(enemy_model.model_base)
-                        vertical_distance = other_model.model_base.vertical_distance(enemy_model.model_base)
+                        from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
+                        horizontal_distance = float(horizontal_distance_between_bases_2d(other_model.model_base, enemy_model.model_base))
+                        vertical_distance = float(vertical_distance_between_bases(other_model.model_base, enemy_model.model_base))
                         
                         # Check if within engagement range (1" horizontally, 5" vertically)
                         from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VERTICAL
@@ -2157,8 +2159,9 @@ class TacticalAgent:
             if not enemy_model.is_alive:
                 continue
             # Calculate edge-to-edge distance between model bases
-            horizontal_distance = model.model_base.edge_to_edge_distance(enemy_model.model_base)
-            vertical_distance = model.model_base.vertical_distance(enemy_model.model_base)
+            from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
+            horizontal_distance = float(horizontal_distance_between_bases_2d(model.model_base, enemy_model.model_base))
+            vertical_distance = float(vertical_distance_between_bases(model.model_base, enemy_model.model_base))
             
             # Check if within engagement range (1" horizontally, 5" vertically)
             from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VERTICAL
@@ -2177,8 +2180,9 @@ class TacticalAgent:
                     if not enemy_model.is_alive:
                         continue
                     # Calculate edge-to-edge distance between model bases
-                    horizontal_distance = model.model_base.edge_to_edge_distance(enemy_model.model_base)
-                    vertical_distance = model.model_base.vertical_distance(enemy_model.model_base)
+                    from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
+                    horizontal_distance = float(horizontal_distance_between_bases_2d(model.model_base, enemy_model.model_base))
+                    vertical_distance = float(vertical_distance_between_bases(model.model_base, enemy_model.model_base))
                     
                     # Check if within engagement range (1" horizontally, 5" vertically)
                     if (horizontal_distance <= ENGAGEMENT_RANGE_HORIZONTAL and

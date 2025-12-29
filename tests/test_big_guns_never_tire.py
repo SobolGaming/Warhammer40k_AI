@@ -3,8 +3,14 @@ from types import SimpleNamespace
 
 
 class _DummyBase:
-    def edge_to_edge_distance(self, other_base) -> float:
-        return 0.0
+    def __init__(self):
+        self.x = 0.0
+        self.y = 0.0
+        self.z = 0.0
+
+    def get_base_shape(self):
+        from shapely.geometry import Point
+        return Point(self.x, self.y)
 
 
 class _DummyProfile:
@@ -60,6 +66,8 @@ def _make_stub_unit(name: str, army, *, keywords=()):
     u.is_alive = lambda: True
     u.has_lone_operative = lambda: False
     u.has_stealth = lambda: False
+    u.get_models_for_collision = lambda: u.models
+    u.get_attached_unit_models = lambda: u.models
     u.models = [SimpleNamespace(is_alive=True, model_base=_DummyBase(), parent_unit=u)]
     return u
 

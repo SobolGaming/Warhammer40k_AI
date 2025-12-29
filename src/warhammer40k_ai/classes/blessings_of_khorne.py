@@ -106,7 +106,9 @@ class BlessingsOfKhorneManager:
         self.active_blessing_keys: set[str] = set()
         self._active_battle_round: Optional[int] = None
 
-        # Global resource from Codex errata: Bloodshed points (spent to add extra dice on any Blessings roll)
+        # Global resource: Bloodshed points (Icon of Khorne wargear ability; spent to add extra dice on any Blessings roll).
+        #
+        # NOTE: This is NOT "Blood Tithe" (which is a separate mechanic tied to the Khorne Daemonkin detachment).
         self.bloodshed_points: int = 0
 
         # Track how many baseline activations were used from the start-of-round roll (max 2)

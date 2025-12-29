@@ -1323,8 +1323,9 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
                                         temp_base = Base(model.model_base.base_type, model.model_base.radius)
                                         temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
                                         
-                                        horizontal_distance = temp_base.edge_to_edge_distance(enemy_model.model_base)
-                                        vertical_distance = temp_base.vertical_distance(enemy_model.model_base)
+                                        from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
+                                        horizontal_distance = float(horizontal_distance_between_bases_2d(temp_base, enemy_model.model_base))
+                                        vertical_distance = float(vertical_distance_between_bases(temp_base, enemy_model.model_base))
                                         
                                         # For base-to-base contact, we want edge-to-edge distance to be very close to 0
                                         # but not negative (which would indicate overlap)
@@ -1382,8 +1383,9 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
         for enemy_model in target_unit.models:
             if not enemy_model.is_alive:
                 continue
-            horizontal_distance = temp_base.edge_to_edge_distance(enemy_model.model_base)
-            vertical_distance = temp_base.vertical_distance(enemy_model.model_base)
+            from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
+            horizontal_distance = float(horizontal_distance_between_bases_2d(temp_base, enemy_model.model_base))
+            vertical_distance = float(vertical_distance_between_bases(temp_base, enemy_model.model_base))
             if (horizontal_distance < ENGAGEMENT_RANGE_HORIZONTAL and
                 vertical_distance <= ENGAGEMENT_RANGE_VERTICAL):
                 in_engagement_range = True
@@ -1405,8 +1407,9 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
             for enemy_model in unit.models:
                 if not enemy_model.is_alive:
                     continue
-                horizontal_distance = temp_base.edge_to_edge_distance(enemy_model.model_base)
-                vertical_distance = temp_base.vertical_distance(enemy_model.model_base)
+                from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
+                horizontal_distance = float(horizontal_distance_between_bases_2d(temp_base, enemy_model.model_base))
+                vertical_distance = float(vertical_distance_between_bases(temp_base, enemy_model.model_base))
                 if (horizontal_distance < ENGAGEMENT_RANGE_HORIZONTAL and
                     vertical_distance <= ENGAGEMENT_RANGE_VERTICAL):
                     print(f"🔍 DEBUG: Fall back validation - {model.name} would end within engagement range of {enemy_model.name}")
@@ -1553,8 +1556,9 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
                 continue
 
             # Calculate edge-to-edge distance (same as engagement detection)
-            horizontal_distance = temp_base.edge_to_edge_distance(enemy_model.model_base)
-            vertical_distance = temp_base.vertical_distance(enemy_model.model_base)
+            from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
+            horizontal_distance = float(horizontal_distance_between_bases_2d(temp_base, enemy_model.model_base))
+            vertical_distance = float(vertical_distance_between_bases(temp_base, enemy_model.model_base))
 
             # Check if within engagement range using same method as engagement detection
             if (horizontal_distance < ENGAGEMENT_RANGE_HORIZONTAL and
@@ -1584,8 +1588,9 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
                     continue
 
                 # Calculate edge-to-edge distance (same as engagement detection)
-                horizontal_distance = temp_base.edge_to_edge_distance(enemy_model.model_base)
-                vertical_distance = temp_base.vertical_distance(enemy_model.model_base)
+                from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
+                horizontal_distance = float(horizontal_distance_between_bases_2d(temp_base, enemy_model.model_base))
+                vertical_distance = float(vertical_distance_between_bases(temp_base, enemy_model.model_base))
 
                 # Check if within engagement range using same method as engagement detection
                 if (horizontal_distance < ENGAGEMENT_RANGE_HORIZONTAL and
@@ -1621,7 +1626,8 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
             for enemy_model in unit.models:
                 if enemy_model.is_alive:
                     # Optimization: exclude enemies too far away to matter for pile-in
-                    current_distance = current_base.edge_to_edge_distance(enemy_model.model_base)
+                    from ..utility.aura_utils import distance_between_bases_3d
+                    current_distance = float(distance_between_bases_3d(current_base, enemy_model.model_base))
                     if current_distance <= max_relevant_distance:
                         enemy_models.append(enemy_model)
                     # Debug: show excluded enemies
@@ -1637,7 +1643,8 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
         closest_enemy = None
         closest_distance = float('inf')
         for enemy_model in enemy_models:
-            current_distance = current_base.edge_to_edge_distance(enemy_model.model_base)
+            from ..utility.aura_utils import distance_between_bases_3d
+            current_distance = float(distance_between_bases_3d(current_base, enemy_model.model_base))
             if current_distance < closest_distance:
                 closest_distance = current_distance
                 closest_enemy = enemy_model
@@ -1648,7 +1655,8 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
         print(f"🔍 DEBUG: Closest enemy to {model.name} is {closest_enemy.name} at {closest_distance:.2f}\"")
         
         # Check if new position is closer to the CLOSEST enemy model
-        new_distance_to_closest = new_base.edge_to_edge_distance(closest_enemy.model_base)
+        from ..utility.aura_utils import distance_between_bases_3d
+        new_distance_to_closest = float(distance_between_bases_3d(new_base, closest_enemy.model_base))
         
         if new_distance_to_closest >= closest_distance:
             return {'valid': False, 'reason': f'Pile-in must end closer to closest enemy ({closest_enemy.name}): {new_distance_to_closest:.2f}" ≥ {closest_distance:.2f}"'}
@@ -1696,13 +1704,11 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
         # Helper: determine if new position is within engagement range of ANY enemy model
         def _is_in_engagement_range_of_any_enemy(enemy_models: list) -> bool:
             for em in enemy_models:
-                try:
-                    horiz = new_base.edge_to_edge_distance(em.model_base)
-                    vert = new_base.vertical_distance(em.model_base)
-                    if horiz <= ENGAGEMENT_RANGE_HORIZONTAL and vert <= ENGAGEMENT_RANGE_VERTICAL:
-                        return True
-                except Exception:
-                    continue
+                from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
+                horiz = float(horizontal_distance_between_bases_2d(new_base, em.model_base))
+                vert = float(vertical_distance_between_bases(new_base, em.model_base))
+                if horiz <= ENGAGEMENT_RANGE_HORIZONTAL and vert <= ENGAGEMENT_RANGE_VERTICAL:
+                    return True
             return False
 
         # Find relevant enemy models (optimize to those that could be reached into engagement)
@@ -1715,10 +1721,8 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
                 if not getattr(enemy_model, 'is_alive', False):
                     continue
                 # Filter to models that matter for "engagement possible" check
-                try:
-                    dist = current_base.edge_to_edge_distance(enemy_model.model_base)
-                except Exception:
-                    continue
+                from ..utility.aura_utils import distance_between_bases_3d
+                dist = float(distance_between_bases_3d(current_base, enemy_model.model_base))
                 if dist <= max_relevant_distance:
                     enemy_models.append(enemy_model)
 
@@ -1727,10 +1731,8 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
             closest_enemy = None
             closest_distance = float('inf')
             for em in enemy_models:
-                try:
-                    d = current_base.edge_to_edge_distance(em.model_base)
-                except Exception:
-                    continue
+                from ..utility.aura_utils import distance_between_bases_3d
+                d = float(distance_between_bases_3d(current_base, em.model_base))
                 if d < closest_distance:
                     closest_distance = d
                     closest_enemy = em
@@ -1746,10 +1748,8 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
                     }
 
                 # Must end closer to the closest enemy model (even if not reaching engagement)
-                try:
-                    new_distance_to_closest = new_base.edge_to_edge_distance(closest_enemy.model_base)
-                except Exception:
-                    new_distance_to_closest = float('inf')
+                from ..utility.aura_utils import distance_between_bases_3d
+                new_distance_to_closest = float(distance_between_bases_3d(new_base, closest_enemy.model_base))
 
                 if new_distance_to_closest >= closest_distance:
                     return {
@@ -1851,7 +1851,8 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
                 if not enemy_model.is_alive:
                     continue
                 # Use edge-to-edge distance for accurate measurement
-                distance = temp_base.edge_to_edge_distance(enemy_model.model_base)
+                from ..utility.aura_utils import distance_between_bases_3d
+                distance = float(distance_between_bases_3d(temp_base, enemy_model.model_base))
                 if distance < min_distance:
                     print(f"🔍 DEBUG: Scout validation - {model.name} too close to {enemy_model.name}")
                     print(f"🔍 DEBUG: Distance: {distance:.2f}\" (minimum required: {min_distance}\")")

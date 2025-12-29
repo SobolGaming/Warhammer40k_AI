@@ -220,6 +220,10 @@ def _classify_support(name: str, description: str) -> Tuple[str, str]:
     name_u = (name or "").strip().upper()
     if name_u == "LEADER":
         return ("Partial", "Leader data exists, but full Attached allocation/rules enforcement is incomplete.")
+    # World Eaters: Blood Tithe is a Khorne Daemonkin detachment mechanic. We have not implemented it yet,
+    # and we do not want it to be falsely marked as Supported due to shared phrasing with Blessings/other mechanics.
+    if name_u == "BLOOD TITHE":
+        return ("Not implemented", "World Eaters – Khorne Daemonkin detachment mechanic; not implemented yet.")
 
     text = _norm(_strip_html_fast(f"{name} {description}"))
     matches: List[Tuple[str, str]] = []

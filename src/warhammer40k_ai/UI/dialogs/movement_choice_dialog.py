@@ -122,35 +122,33 @@ class MovementChoiceDialog(BaseDialog):
 
         candidates = []
         for u in list(getattr(self.game_map, "units", []) or []):
-            try:
-                if u is None or u == transport:
-                    continue
-                if not u.is_alive():
-                    continue
-                # Must be friendly
-                if u.get_parent_army() != transport.get_parent_army():
-                    continue
-                # Must be able to transport (capacity + keyword restrictions)
-                if not transport.can_transport(u):
-                    continue
-                # Must have moved (not remain stationary) and not have disembarked this turn
-                if getattr(u.round_state, "remained_stationary_this_round", False):
-                    continue
-                if getattr(u.round_state, "disembarked_this_round", False):
-                    continue
-                # Must be within 3" with all models
-                ok = True
-                for m in u.models:
-                    if not m.is_alive:
-                        continue
-                    if m.model_base.edge_to_edge_distance(t_model.model_base) > 3.0 + 1e-6:
-                        ok = False
-                        break
-                if not ok:
-                    continue
-                candidates.append(u)
-            except Exception:
+            if u is None or u == transport:
                 continue
+            if not u.is_alive():
+                continue
+            # Must be friendly
+            if u.get_parent_army() != transport.get_parent_army():
+                continue
+            # Must be able to transport (capacity + keyword restrictions)
+            if not transport.can_transport(u):
+                continue
+            # Must have moved (not remain stationary) and not have disembarked this turn
+            if getattr(u.round_state, "remained_stationary_this_round", False):
+                continue
+            if getattr(u.round_state, "disembarked_this_round", False):
+                continue
+            # Must be within 3" with all models
+            ok = True
+            from ...utility.aura_utils import distance_between_models_bases_3d
+            for m in u.models:
+                if not m.is_alive:
+                    continue
+                if float(distance_between_models_bases_3d(m, t_model)) > 3.0 + 1e-6:
+                    ok = False
+                    break
+            if not ok:
+                continue
+            candidates.append(u)
         return candidates
 
     def _create_buttons(self):

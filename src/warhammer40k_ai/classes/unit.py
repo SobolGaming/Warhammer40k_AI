@@ -1697,13 +1697,11 @@ class Unit:
         # Choose the closest engaged unit (edge-to-edge)
         def _closest_dist(enemy_unit: 'Unit') -> float:
             best = float("inf")
+            from ..utility.aura_utils import distance_between_models_bases_3d
             for em in enemy_unit.models:
                 if not em.is_alive:
                     continue
-                try:
-                    best = min(best, model.model_base.edge_to_edge_distance(em.model_base))
-                except Exception:
-                    continue
+                best = min(best, float(distance_between_models_bases_3d(model, em)))
             return best
 
         target_unit = min(engaged, key=_closest_dist)
@@ -1779,10 +1777,8 @@ class Unit:
                 for em in enemy_unit.models:
                     if not em.is_alive:
                         continue
-                    try:
-                        d = min(d, model.model_base.edge_to_edge_distance(em.model_base))
-                    except Exception:
-                        continue
+                    from ..utility.aura_utils import distance_between_models_bases_3d
+                    d = min(d, float(distance_between_models_bases_3d(model, em)))
                 if d < best_dist:
                     best_dist = d
                     best_target = enemy_unit
@@ -4177,32 +4173,6 @@ class Unit:
             print(f"❌ {self.name} cannot reach scout destination {distance_to_destination:.1f}\" away (max scout: {scout_distance}\")")
             return False
         
-        # Check if destination would end within 9" of enemy units
-        enemy_units = game_map.get_enemy_units(self)
-        for enemy_unit in enemy_units:
-            if not enemy_unit.is_alive() or not enemy_unit.deployed:
-                continue
-            
-            # Check distance to closest model in enemy unit
-            closest_distance = float('inf')
-            for enemy_model in enemy_unit.models:
-                if enemy_model.is_alive:
-                    enemy_pos = enemy_model.get_location()
-                    if enemy_pos:
-                        distance = get_dist(
-                            destination[0] - enemy_pos[0],
-                            destination[1] - enemy_pos[1],
-                            destination[2] - enemy_pos[2] if len(enemy_pos) > 2 else 0
-                        )
-                        closest_distance = min(closest_distance, distance)
-
-            if closest_distance != float('inf'):
-                distance_to_enemy = closest_distance
-                
-                if distance_to_enemy < 9.0:
-                    print(f"❌ {self.name} cannot scout move to destination - would end within 9\" of {enemy_unit.name}")
-                    return False
-        
         # Generate potential positions for models with reduced boundary repulsors for better formation finding
         boundary_repulsors = self._get_reduced_boundary_repulsors(game_map)
         potential_positions = self.calculate_model_positions(destination[0], destination[1], game_map, boundary_repulsors=boundary_repulsors)
@@ -4211,6 +4181,18 @@ class Unit:
         if potential_positions is None:
             print(f"❌ {self.name} cannot scout move - no valid formation found at destination")
             return False
+
+        # Check scout restriction: cannot end within 9" of enemy models (base-to-base closest-point distance).
+        from ..utility.aura_utils import distance_between_bases_3d
+        enemy_models = [em for eu in game_map.get_enemy_units(self) if eu.is_alive() and eu.deployed for em in eu.models if em.is_alive]
+        for idx, (x, y, z, facing) in enumerate(potential_positions):
+            if idx >= len(self.models):
+                break
+            mb = self._create_potential_base(x, y, z, facing, model=self.models[idx])
+            for em in enemy_models:
+                if float(distance_between_bases_3d(mb, em.model_base)) < 9.0:
+                    print(f"❌ {self.name} cannot scout move to destination - would end within 9\" of {em.parent_unit.name}")
+                    return False
             
         successful_moves = 0
         
@@ -4781,17 +4763,14 @@ class Unit:
                 if game_map.is_within_engagement_range(friendly, target_unit):
                     return False
 
-        # Check range using edge-to-edge distance (not centroid-to-centroid)
+        # Check range using base-to-base closest-point distance (not centroid-to-centroid, not model height)
         min_distance = float('inf')
-        try:
-            target_models = target_unit.get_models_for_collision()
-        except Exception:
-            target_models = target_unit.models
+        target_models = target_unit.get_models_for_collision()
+        from ..utility.aura_utils import distance_between_models_bases_3d
         for target_model in target_models:
             if not target_model.is_alive:
                 continue
-            # Calculate edge-to-edge distance between model bases
-            distance = model.model_base.edge_to_edge_distance(target_model.model_base)
+            distance = float(distance_between_models_bases_3d(model, target_model))
             min_distance = min(min_distance, distance)
         
         if min_distance > weapon_profile.range.max:
@@ -5199,11 +5178,9 @@ class Unit:
         # Base-to-base contact is defined as bases touching (edge-to-edge ~= 0). We treat
         # anything within BASE_CONTACT_EPSILON as base contact to account for discretization.
         for enemy_model in enemy_models:
-            try:
-                edge = model.model_base.edge_to_edge_distance(enemy_model.model_base)
-                vert = model.model_base.vertical_distance(enemy_model.model_base)
-            except Exception:
-                continue
+            from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
+            edge = float(horizontal_distance_between_bases_2d(model.model_base, enemy_model.model_base))
+            vert = float(vertical_distance_between_bases(model.model_base, enemy_model.model_base))
             if edge <= BASE_CONTACT_EPSILON and vert <= ENGAGEMENT_RANGE_VERTICAL:
                 return True
         return False
@@ -5278,12 +5255,10 @@ class Unit:
         # Move order: closest to enemy first (helps reduce blocking)
         def _closest_enemy_edge_distance(mm: 'Model') -> float:
             best = float('inf')
+            from ..utility.aura_utils import distance_between_models_bases_3d
             for em in enemy_models:
-                try:
-                    d = mm.model_base.edge_to_edge_distance(em.model_base)
-                    best = min(best, d)
-                except Exception:
-                    continue
+                d = float(distance_between_models_bases_3d(mm, em))
+                best = min(best, d)
             return best
 
         movable.sort(key=_closest_enemy_edge_distance)
@@ -5320,10 +5295,8 @@ class Unit:
             target_enemy = None
             target_enemy_edge = float('inf')
             for em in enemy_models:
-                try:
-                    d = model.model_base.edge_to_edge_distance(em.model_base)
-                except Exception:
-                    continue
+                from ..utility.aura_utils import distance_between_models_bases_3d
+                d = float(distance_between_models_bases_3d(model, em))
                 if d < target_enemy_edge:
                     target_enemy_edge = d
                     target_enemy = em
@@ -5536,7 +5509,8 @@ class Unit:
                 for m in self.models:
                     if not m.is_alive:
                         continue
-                    d = m.model_base.edge_to_edge_distance(t_model.model_base)
+                    from ..utility.aura_utils import distance_between_models_bases_3d
+                    d = distance_between_models_bases_3d(m, t_model)
                     if d > 3.0 + 1e-6:
                         print(f"❌ {self.name} cannot embark: not all models are within 3\" of {transport_unit.name}")
                         return
@@ -5617,8 +5591,13 @@ class Unit:
                     # Base-to-base "within max_distance" check
                     try:
                         candidate_base = self._create_potential_base(x, y, z, facing, model=model)
-                        edge = candidate_base.edge_to_edge_distance(transport_base)
-                        if edge > max_distance + 1e-6:
+                        # Wholly within X of a unit is stronger than just edge-distance; but for our placement search
+                        # we enforce a conservative necessary condition: base-to-base distance <= X.
+                        # (The final placement validator for disembark handles the full constraints.)
+                        # Use base-plane 3D distance (closest points on bases/hulls), not model height.
+                        from ..utility.aura_utils import distance_between_bases_3d
+                        edge = float(distance_between_bases_3d(candidate_base, transport_base))
+                        if edge > float(max_distance) + 1e-6:
                             continue
                     except Exception:
                         pass
@@ -5648,21 +5627,20 @@ class Unit:
 
                     # Disembark requirement: not within engagement range of any enemy models
                     if require_not_in_engagement and enemy_models:
-                        try:
-                            candidate_base = self._create_potential_base(x, y, z, facing, model=model)
-                            too_close = False
-                            for em in enemy_models:
-                                if not getattr(em, "is_alive", False):
-                                    continue
-                                horizontal = candidate_base.edge_to_edge_distance(em.model_base)
-                                vertical = abs(float(getattr(candidate_base, "z", 0.0)) - float(getattr(em.model_base, "z", 0.0)))
-                                if horizontal <= 1.0 + 1e-6 and vertical <= 5.0 + 1e-6:
-                                    too_close = True
-                                    break
-                            if too_close:
+                        from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
+                        candidate_base = self._create_potential_base(x, y, z, facing, model=model)
+                        too_close = False
+                        for em in enemy_models:
+                            if not getattr(em, "is_alive", False):
                                 continue
-                        except Exception:
-                            pass
+                            horizontal = float(horizontal_distance_between_bases_2d(candidate_base, em.model_base))
+                            vertical = float(vertical_distance_between_bases(candidate_base, em.model_base))
+                            if horizontal <= 1.0 + 1e-6 and vertical <= 5.0 + 1e-6:
+                                # Too close to an enemy model for disembark
+                                too_close = True
+                                break
+                        if too_close:
+                            continue
 
                     found = (x, y, z, facing)
                     break
@@ -5727,13 +5705,11 @@ class Unit:
                 z = tz
 
                 # Base-to-base "within max_distance" check
-                try:
-                    candidate_base = self._create_potential_base(x, y, z, facing, model=model)
-                    edge = candidate_base.edge_to_edge_distance(transport_base)
-                    if edge > max_distance + 1e-6:
-                        continue
-                except Exception:
-                    pass
+                from ..utility.aura_utils import distance_between_bases_3d
+                candidate_base = self._create_potential_base(x, y, z, facing, model=model)
+                edge = float(distance_between_bases_3d(candidate_base, transport_base))
+                if edge > max_distance + 1e-6:
+                    continue
 
                 # Collision checks vs battlefield
                 try:
@@ -5758,16 +5734,18 @@ class Unit:
                     pass
 
                 if require_not_in_engagement and enemy_models:
-                    try:
-                        candidate_base = self._create_potential_base(x, y, z, facing, model=model)
-                        for em in enemy_models:
-                            if not getattr(em, "is_alive", False):
-                                continue
-                            horizontal = candidate_base.edge_to_edge_distance(em.model_base)
-                            vertical = abs(float(getattr(candidate_base, "z", 0.0)) - float(getattr(em.model_base, "z", 0.0)))
-                            if horizontal <= 1.0 + 1e-6 and vertical <= 5.0 + 1e-6:
-                                raise ValueError("engagement")
-                    except Exception:
+                    from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
+                    candidate_base = self._create_potential_base(x, y, z, facing, model=model)
+                    blocked = False
+                    for em in enemy_models:
+                        if not getattr(em, "is_alive", False):
+                            continue
+                        horizontal = float(horizontal_distance_between_bases_2d(candidate_base, em.model_base))
+                        vertical = float(vertical_distance_between_bases(candidate_base, em.model_base))
+                        if horizontal <= 1.0 + 1e-6 and vertical <= 5.0 + 1e-6:
+                            blocked = True
+                            break
+                    if blocked:
                         continue
 
                 return (x, y, z, facing)

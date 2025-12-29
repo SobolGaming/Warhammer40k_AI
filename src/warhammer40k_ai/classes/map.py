@@ -151,15 +151,9 @@ class Map:
         Returns:
             bool: True if any model in source unit is within engagement range of any model in target unit
         """
-        # Check if any model in source unit is within engagement range of any model in target unit
-        try:
-            source_models = source_unit.get_models_for_collision()
-        except Exception:
-            source_models = source_unit.models
-        try:
-            target_models = target_unit.get_models_for_collision()
-        except Exception:
-            target_models = target_unit.models
+        # Attached units are treated as aggregates for rules purposes.
+        source_models = source_unit.get_models_for_collision()
+        target_models = target_unit.get_models_for_collision()
 
         for source_model in source_models:
             if not source_model.is_alive:
@@ -167,11 +161,12 @@ class Map:
             for target_model in target_models:
                 if not target_model.is_alive:
                     continue
-                # Calculate horizontal distance (base-to-base)
-                horizontal_distance = source_model.model_base.edge_to_edge_distance(target_model.model_base)
-
-                # Calculate vertical distance
-                vertical_distance = source_model.model_base.vertical_distance(target_model.model_base)
+                from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
+                # Engagement Range is special-case:
+                # - horizontal base-to-base in 2D
+                # - vertical base-to-base separation (no model height)
+                horizontal_distance = float(horizontal_distance_between_bases_2d(source_model.model_base, target_model.model_base))
+                vertical_distance = float(vertical_distance_between_bases(source_model.model_base, target_model.model_base))
 
                 # Check if within engagement range with debug output
                 if (horizontal_distance <= ENGAGEMENT_RANGE_HORIZONTAL and
@@ -571,24 +566,8 @@ class Map:
         Returns:
             float: The shortest distance between any models in the two units
         """
-        shortest_distance = float('inf')
-        
-        # Check distance between each model pair (include attached leaders as part of unit for collision/measurement)
-        try:
-            models1 = unit1.get_models_for_collision()
-        except Exception:
-            models1 = unit1.models
-        try:
-            models2 = unit2.get_models_for_collision()
-        except Exception:
-            models2 = unit2.models
-
-        for model1 in models1:
-            for model2 in models2:
-                distance = model1.edge_to_edge_distance(model2)
-                shortest_distance = min(shortest_distance, distance)
-                
-        return shortest_distance
+        from ..utility.aura_utils import min_distance_between_units_3d
+        return float(min_distance_between_units_3d(unit1, unit2, use_attached_aggregate=True))
 
     def is_path_blocked(self, unit: Unit, target: Unit) -> bool:
         """Check if there's a clear path between two units considering terrain and obstacles.

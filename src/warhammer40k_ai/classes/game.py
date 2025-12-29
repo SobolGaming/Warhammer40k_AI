@@ -1919,12 +1919,13 @@ class Game:
                 if not target_model.is_alive:
                     continue
 
-                c_pos = charging_model.get_location()
-                t_pos = target_model.get_location()
-                distance = get_dist(c_pos[0] - t_pos[0], c_pos[1] - t_pos[1], c_pos[2] - t_pos[2])
+                from ..utility.aura_utils import distance_between_models_bases_3d
+                distance = float(distance_between_models_bases_3d(charging_model, target_model))
 
                 if distance < closest_distance:
                     closest_distance = distance
+                    c_pos = charging_model.get_location()
+                    t_pos = target_model.get_location()
                     charging_pos = c_pos
                     target_pos = t_pos
 
@@ -2212,43 +2213,40 @@ class Game:
                 candidate_edges = ["own", "left", "right", "enemy"]
 
             for edge in candidate_edges:
-                try:
-                    if not self.is_valid_strategic_reserves_edge(edge):
-                        continue
-                except Exception:
+                if not self.is_valid_strategic_reserves_edge(edge):
                     continue
-                try:
-                    edge_distance = self.get_distance_to_battlefield_edge(position, edge)
-                except Exception:
-                    continue
+                edge_distance = self.get_distance_to_battlefield_edge(position, edge)
                 if edge_distance <= 6.0:
                     strategic_ok = True
                     break
         
-        # Check 9" restriction from enemy units
-        enemy_units = self.get_enemy_units(unit.get_parent_army().player)
-        for enemy_unit in enemy_units:
-            if not enemy_unit.is_alive() or not enemy_unit.deployed:
-                continue
-                
-            # Get position from closest model to the arrival position
-            enemy_pos = enemy_unit.get_closest_model_position_to_target(position)
-            if enemy_pos:
-                distance = get_dist(
-                    position[0] - enemy_pos[0],
-                    position[1] - enemy_pos[1],
-                    position[2] - enemy_pos[2]
-                )
+        # Check 9" restriction from enemy models using base-to-base closest-point distance.
+        # We validate against the unit's *actual* prospective formation at this position.
+        snapshot = [m.get_location() for m in unit.models]
+        try:
+            prospective = unit.calculate_model_positions(position[0], position[1], self.map, avoid_friendly_units=True)
+        finally:
+            for m, loc in zip(unit.models, snapshot):
+                if loc:
+                    m.set_location(*loc)
 
-                if distance < 9.0:
+        if not prospective:
+            return False
+
+        from ..utility.aura_utils import distance_between_bases_3d
+        enemy_units = self.get_enemy_units(unit.get_parent_army().player)
+        enemy_models = [em for eu in enemy_units if eu.is_alive() and eu.deployed for em in eu.models if em.is_alive]
+
+        for idx, (x, y, z, facing) in enumerate(prospective):
+            if idx >= len(unit.models):
+                break
+            mb = unit._create_potential_base(x, y, z, facing, model=unit.models[idx])
+            for em in enemy_models:
+                if float(distance_between_bases_3d(mb, em.model_base)) < 9.0:
                     return False
 
         if unit.is_in_strategic_reserves():
-            deep_strike_ok = False
-            try:
-                deep_strike_ok = bool(unit.has_deep_strike())
-            except Exception:
-                deep_strike_ok = False
+            deep_strike_ok = bool(unit.has_deep_strike())
             return bool(strategic_ok or deep_strike_ok)
 
         return True

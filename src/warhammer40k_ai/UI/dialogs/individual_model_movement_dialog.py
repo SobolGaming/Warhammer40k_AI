@@ -1046,8 +1046,9 @@ class IndividualModelMovementDialog(BaseDialog):
                 if not enemy_model.is_alive:
                     continue
                     
-                # Check edge-to-edge distance
-                distance = model.model_base.edge_to_edge_distance(enemy_model.model_base)
+                # Check 2D base contact (engagement uses its own special-case; base contact here is purely edge-to-edge in XY)
+                from ...utility.aura_utils import horizontal_distance_between_bases_2d
+                distance = float(horizontal_distance_between_bases_2d(model.model_base, enemy_model.model_base))
                 if distance <= BASE_CONTACT_EPSILON:
                     print(f"🔍 DEBUG: {model.name} already in base contact with {enemy_model.name} (distance: {distance:.3f}\")")
                     return True

@@ -1397,7 +1397,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Blood Tithe | `000010077` | 58 | 58 | **Supported** | Blessings of Khorne (World Eaters), Feel No Pain |
+| Blood Tithe | `000010077` | 58 | 58 | **Not implemented** | World Eaters – Khorne Daemonkin detachment mechanic; not implemented yet. |
 
 #### Possessed Slaughterband
 

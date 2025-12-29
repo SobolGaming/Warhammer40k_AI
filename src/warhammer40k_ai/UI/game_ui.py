@@ -4280,37 +4280,32 @@ class BattlePhaseHandler(BasePhaseHandler):
 
         # Compute candidates using the same checks as the dialog (but here so it stays correct even if dialog not refreshed)
         candidates = []
-        try:
-            if transport_unit.models and transport_unit.models[0].is_alive:
-                t_model = transport_unit.models[0]
-                for u in list(getattr(self.game.map, "units", []) or []):
-                    if u is None or u == transport_unit:
+        if transport_unit.models and transport_unit.models[0].is_alive:
+            from ..utility.aura_utils import distance_between_models_bases_3d
+            t_model = transport_unit.models[0]
+            for u in list(getattr(self.game.map, "units", []) or []):
+                if u is None or u == transport_unit:
+                    continue
+                if not u.is_alive():
+                    continue
+                if u.get_parent_army() != transport_unit.get_parent_army():
+                    continue
+                if not transport_unit.can_transport(u):
+                    continue
+                if getattr(u.round_state, "remained_stationary_this_round", False):
+                    continue
+                if getattr(u.round_state, "disembarked_this_round", False):
+                    continue
+                ok = True
+                for m in u.models:
+                    if not m.is_alive:
                         continue
-                    try:
-                        if not u.is_alive():
-                            continue
-                        if u.get_parent_army() != transport_unit.get_parent_army():
-                            continue
-                        if not transport_unit.can_transport(u):
-                            continue
-                        if getattr(u.round_state, "remained_stationary_this_round", False):
-                            continue
-                        if getattr(u.round_state, "disembarked_this_round", False):
-                            continue
-                        ok = True
-                        for m in u.models:
-                            if not m.is_alive:
-                                continue
-                            if m.model_base.edge_to_edge_distance(t_model.model_base) > 3.0 + 1e-6:
-                                ok = False
-                                break
-                        if not ok:
-                            continue
-                        candidates.append(u)
-                    except Exception:
-                        continue
-        except Exception:
-            candidates = []
+                    if float(distance_between_models_bases_3d(m, t_model)) > 3.0 + 1e-6:
+                        ok = False
+                        break
+                if not ok:
+                    continue
+                candidates.append(u)
 
         if not hasattr(self.game_view, "transport_embark_dialog"):
             self.game_view.transport_embark_dialog = TransportEmbarkDialog(
@@ -4931,8 +4926,8 @@ def draw_pile_in_range(screen: pygame.Surface, model, current_position: tuple, m
             if not enemy_model.is_alive:
                 continue
                 
-            # Calculate edge-to-edge distance
-            distance = model.model_base.edge_to_edge_distance(enemy_model.model_base)
+            from ..utility.aura_utils import distance_between_models_bases_3d
+            distance = float(distance_between_models_bases_3d(model, enemy_model))
             if distance < closest_distance:
                 closest_distance = distance
                 closest_enemy = enemy_model
@@ -5323,15 +5318,29 @@ class PreBattlePhaseHandler(BasePhaseHandler):
             return path_result
 
         # Additional SCOUT-specific validation: 9" restriction from enemy units
+        # Use the unit's prospective formation at this destination and measure base-to-base closest-point distance.
+        snapshot = [m.get_location() for m in unit.models]
+        try:
+            prospective = unit.calculate_model_positions(game_x, game_y, self.game_view.game.map, avoid_friendly_units=True)
+        finally:
+            for m, loc in zip(unit.models, snapshot):
+                if loc:
+                    m.set_location(*loc)
+
+        if not prospective:
+            return {'valid': False, 'reason': 'No valid formation at destination'}
+
+        from ..utility.aura_utils import distance_between_bases_3d
         enemy_units = self.game_view.game.get_enemy_units(unit.get_parent_army().player)
-        for enemy_unit in enemy_units:
-            if enemy_unit.is_alive() and enemy_unit.deployed:
-                # Get position from closest model to the scout position
-                enemy_pos = enemy_unit.get_closest_model_position_to_target((game_x, game_y, 0.0))
-                if enemy_pos:
-                    enemy_distance = ((game_x - enemy_pos[0]) ** 2 + (game_y - enemy_pos[1]) ** 2) ** 0.5
-                    if enemy_distance < 9.0:
-                        return {'valid': False, 'reason': f'Too close to {enemy_unit.name} ({enemy_distance:.1f}\")'}
+        enemy_models = [em for eu in enemy_units if eu.is_alive() and eu.deployed for em in eu.models if em.is_alive]
+        for idx, (x, y, z, facing) in enumerate(prospective):
+            if idx >= len(unit.models):
+                break
+            mb = unit._create_potential_base(x, y, z, facing, model=unit.models[idx])
+            for em in enemy_models:
+                d = float(distance_between_bases_3d(mb, em.model_base))
+                if d < 9.0:
+                    return {'valid': False, 'reason': f'Too close to {em.parent_unit.name} ({d:.1f}\")'}
 
         return path_result
 

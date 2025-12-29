@@ -369,116 +369,113 @@ class ShootingDeclarationDialog(BaseDialog):
         - Short-circuit per unit: as soon as any shooter model is eligible, accept
         Returns (is_valid: bool, reason: str)
         """
-        try:
-            # Determine max range
-            weapon_range_max = 0
-            if hasattr(weapon_profile, 'range') and hasattr(weapon_profile.range, 'max'):
-                weapon_range_max = weapon_profile.range.max or 0
+        # Determine max range
+        weapon_range_max = 0
+        if hasattr(weapon_profile, 'range') and hasattr(weapon_profile.range, 'max'):
+            weapon_range_max = weapon_profile.range.max or 0
 
-            # Only consider models that actually have this weapon
-            shooter_models = self._get_models_with_weapon(weapon_profile)
-            if not shooter_models:
-                return (False, "No models with this weapon")
+        # Only consider models that actually have this weapon
+        shooter_models = self._get_models_with_weapon(weapon_profile)
+        if not shooter_models:
+            return (False, "No models with this weapon")
 
-            # Quick global range prefilter: find closest edge-to-edge distance
-            closest_distance = float('inf')
-            any_in_range = False
-            for shooting_model in shooter_models:
-                if not shooting_model.is_alive:
+        # Quick global range prefilter: find closest base distance
+        closest_distance = float('inf')
+        any_in_range = False
+        for shooting_model in shooter_models:
+            if not shooting_model.is_alive:
+                continue
+            for target_model in target_unit.models:
+                if not target_model.is_alive:
                     continue
-                for target_model in target_unit.models:
-                    if not target_model.is_alive:
-                        continue
-                    distance = shooting_model.model_base.edge_to_edge_distance(target_model.model_base)
-                    if distance <= weapon_range_max:
-                        any_in_range = True
-                        # As soon as we detect in-range for this shooter, we can attempt LoS via unit validator
-                        break
-                    if distance < closest_distance:
-                        closest_distance = distance
-                if any_in_range:
-                    # Only now call the heavy validator (includes LoS) once per in-range shooter
-                    if hasattr(self.unit, '_can_model_shoot_weapon_at_target') and self.game_map is not None:
-                        if self.unit._can_model_shoot_weapon_at_target(shooting_model, weapon_profile, target_unit, self.game_map):
-                            return (True, "")
-                    else:
-                        # If no validator available, treat in-range as valid
+                from ...utility.aura_utils import distance_between_models_bases_3d
+                distance = float(distance_between_models_bases_3d(shooting_model, target_model))
+                if distance <= weapon_range_max:
+                    any_in_range = True
+                    # As soon as we detect in-range for this shooter, we can attempt LoS via unit validator
+                    break
+                if distance < closest_distance:
+                    closest_distance = distance
+            if any_in_range:
+                # Only now call the heavy validator (includes LoS) once per in-range shooter
+                if hasattr(self.unit, '_can_model_shoot_weapon_at_target') and self.game_map is not None:
+                    if self.unit._can_model_shoot_weapon_at_target(shooting_model, weapon_profile, target_unit, self.game_map):
                         return (True, "")
-                    # Reset for next shooter: they may have different LoS
-                    any_in_range = False
+                else:
+                    # If no validator available, treat in-range as valid
+                    return (True, "")
+                # Reset for next shooter: they may have different LoS
+                any_in_range = False
 
-            if closest_distance == float('inf'):
-                return (False, "No valid target models found")
+        if closest_distance == float('inf'):
+            return (False, "No valid target models found")
 
-            if not any_in_range:
-                return (False, f"Out of range: closest is {closest_distance:.1f}\" > {weapon_range_max}\"")
+        if not any_in_range:
+            return (False, f"Out of range: closest is {closest_distance:.1f}\" > {weapon_range_max}\"")
 
-            # Reaching here means at least one shooter was in range but failed LoS/other constraints
-            return (False, "No line of sight from any model or shooting restricted")
-        except Exception:
-            return (False, "Targeting validation error")
+        # Reaching here means at least one shooter was in range but failed LoS/other constraints
+        return (False, "No line of sight from any model or shooting restricted")
 
     def _validate_click_target_with_reason(self, weapon_profile, target_unit, clicked_model):
         """Validate target using specific clicked target model when available.
         Uses true minimum edge-to-edge distance across all shooter/target model pairs.
         """
-        try:
-            # Shooter models that have this weapon
-            shooter_models = self._get_models_with_weapon(weapon_profile)
-            if not shooter_models:
-                return (False, "No models with this weapon")
+        # Shooter models that have this weapon
+        shooter_models = self._get_models_with_weapon(weapon_profile)
+        if not shooter_models:
+            return (False, "No models with this weapon")
 
-            # Range check first
-            weapon_range_max = 0
-            if hasattr(weapon_profile, 'range') and hasattr(weapon_profile.range, 'max'):
-                weapon_range_max = weapon_profile.range.max or 0
+        # Range check first
+        weapon_range_max = 0
+        if hasattr(weapon_profile, 'range') and hasattr(weapon_profile.range, 'max'):
+            weapon_range_max = weapon_profile.range.max or 0
 
-            in_range_any = False
-            closest_edge = float('inf')
-            best_pair = (None, None)
-            # If a clicked target model was found and alive, prefer distances to it; otherwise consider all target models
-            target_models_iter = [clicked_model] if (clicked_model and clicked_model.is_alive and clicked_model in target_unit.models) else [tm for tm in target_unit.models if tm.is_alive]
-            for sm in shooter_models:
-                if not sm.is_alive:
-                    continue
-                for tm in target_models_iter:
-                    edge = sm.model_base.edge_to_edge_distance(tm.model_base)
-                    if edge <= weapon_range_max:
-                        in_range_any = True
-                        shooting_model = sm
-                        target_model = tm
-                        break
-                    if edge < closest_edge:
-                        closest_edge = edge
-                        best_pair = (sm, tm)
-                if in_range_any:
+        in_range_any = False
+        closest_edge = float('inf')
+        best_pair = (None, None)
+        # If a clicked target model was found and alive, prefer distances to it; otherwise consider all target models
+        target_models_iter = [clicked_model] if (clicked_model and clicked_model.is_alive and clicked_model in target_unit.models) else [tm for tm in target_unit.models if tm.is_alive]
+        for sm in shooter_models:
+            if not sm.is_alive:
+                continue
+            for tm in target_models_iter:
+                from ...utility.aura_utils import distance_between_models_bases_3d
+                edge = float(distance_between_models_bases_3d(sm, tm))
+                if edge <= weapon_range_max:
+                    in_range_any = True
+                    shooting_model = sm
+                    target_model = tm
                     break
-            if not in_range_any:
-                # Avoid misleading rounding when barely out of range
-                display_edge = math.ceil(closest_edge * 10.0) / 10.0
-                return (False, f"Out of range: {display_edge:.1f}\" > {weapon_range_max}\"")
+                if edge < closest_edge:
+                    closest_edge = edge
+                    best_pair = (sm, tm)
+            if in_range_any:
+                break
+        if not in_range_any:
+            # Avoid misleading rounding when barely out of range
+            display_edge = math.ceil(closest_edge * 10.0) / 10.0
+            return (False, f"Out of range: {display_edge:.1f}\" > {weapon_range_max}\"")
 
-            # Use the unit's validator to get true legality (includes LoS and special rules)
-            if hasattr(self.unit, '_can_model_shoot_weapon_at_target') and self.game_map is not None:
-                # If validator returns False, try to infer common reasons
-                if not self.unit._can_model_shoot_weapon_at_target(shooting_model, weapon_profile, target_unit, self.game_map):
-                    # Lone Operative common reason
-                    if target_unit.has_lone_operative():
-                        # Measure to nearest target model again for 12" check
-                        # Ensure we have a specific target model reference for distance display
-                        tm_ref = target_model if 'target_model' in locals() and target_model is not None else best_pair[1]
-                        dist12 = shooting_model.model_base.edge_to_edge_distance(tm_ref.model_base)
-                        if dist12 > 12.0:
-                            return (False, "Lone Operative beyond 12\"")
-                    # Engagement restrictions
-                    if not self.unit._can_shoot_while_engaged(shooting_model, weapon_profile, target_unit, self.game_map):
-                        return (False, "Engaged: weapon cannot fire or target invalid")
-                    # Otherwise attribute to LoS
-                    return (False, "No line of sight")
-            # If no validator, treat as valid if in range
-            return (True, "")
-        except Exception:
-            return (False, "Targeting validation error")
+        # Use the unit's validator to get true legality (includes LoS and special rules)
+        if hasattr(self.unit, '_can_model_shoot_weapon_at_target') and self.game_map is not None:
+            # If validator returns False, try to infer common reasons
+            if not self.unit._can_model_shoot_weapon_at_target(shooting_model, weapon_profile, target_unit, self.game_map):
+                # Lone Operative common reason
+                if target_unit.has_lone_operative():
+                    # Measure to nearest target model again for 12" check
+                    # Ensure we have a specific target model reference for distance display
+                    tm_ref = target_model if 'target_model' in locals() and target_model is not None else best_pair[1]
+                    from ...utility.aura_utils import distance_between_models_bases_3d
+                    dist12 = float(distance_between_models_bases_3d(shooting_model, tm_ref))
+                    if dist12 > 12.0:
+                        return (False, "Lone Operative beyond 12\"")
+                # Engagement restrictions
+                if not self.unit._can_shoot_while_engaged(shooting_model, weapon_profile, target_unit, self.game_map):
+                    return (False, "Engaged: weapon cannot fire or target invalid")
+                # Otherwise attribute to LoS
+                return (False, "No line of sight")
+        # If no validator, treat as valid if in range
+        return (True, "")
     
     def _has_line_of_sight(self, shooting_model, target_model):
         """Check if shooting model has line of sight to target model."""
