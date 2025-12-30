@@ -53,7 +53,6 @@ class DialogManager:
         # UI-interface dialogs
         if ui is not None:
             discovered.extend([
-                _get(ui, "deployment_choice_dialog"),
                 _get(ui, "scout_choice_dialog"),
                 _get(ui, "fight_unit_selection_dialog"),
             ])
@@ -77,6 +76,7 @@ class DialogManager:
             _get(gv, "transport_embark_dialog"),
             _get(gv, "transport_disembark_dialog"),
             _get(gv, "transport_assignment_dialog"),
+            _get(gv, "reserves_allocation_dialog"),
             _get(gv, "precision_allocation_dialog"),
             _get(gv, "mission_selection_dialog"),
             _get(gv, "leader_attachment_dialog"),

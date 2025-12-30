@@ -182,106 +182,76 @@ class RosterPane(pygame.sprite.Sprite):
                             print(f"❌ Not {self.player_name}'s turn to deploy")
                             return
                         
-                        # Show deployment choice dialog
-                        print(f"🔍 DEBUG: About to show deployment choice dialog for {unit.name}")
+                        # Deployment: only units not in reserves can be placed.
+                        try:
+                            if getattr(unit, "reserve_status", "deployed") in ("reserves", "strategic_reserves"):
+                                print(f"🚫 {self.get_unit_display_name(unit)} is in reserves and cannot be deployed during Deployment.")
+                                return
+                        except Exception:
+                            pass
+                        # Attached leaders deploy with their bodyguard
+                        try:
+                            if bool(getattr(unit, "is_attached_leader", False)):
+                                print(f"🚫 {self.get_unit_display_name(unit)} is an attached Leader and deploys with its Bodyguard.")
+                                return
+                        except Exception:
+                            pass
 
-                        def on_deployment_choice(choice):
-                            if choice == 'deploy':
-                                print(f"🟢 DEPLOY chosen for {unit.name} - enabling per-model deployment mode")
-                                unit.set_reserve_status('deployed')
-                                unit.deployed = False  # Ready for deployment but not yet placed
-                                self.selected_unit = unit
-                                self.game_view.selected_unit = unit
-                                # Mark per-model deployment mode for this selection
+                        # Directly open per-model deployment dialog (no deploy/reserves choice here)
+                        print(f"🟢 Deploying {unit.name} - enabling per-model deployment mode")
+                        unit.set_reserve_status('deployed')
+                        unit.deployed = False  # Ready for deployment but not yet placed
+                        self.selected_unit = unit
+                        self.game_view.selected_unit = unit
+                        try:
+                            self.game_view.deployment_mode_for_selected_unit = 'per_model'
+                        except Exception:
+                            pass
+
+                        if not hasattr(self.game_view, 'individual_model_movement_dialog') or not self.game_view.individual_model_movement_dialog:
+                            from ..dialogs.individual_model_movement_dialog import IndividualModelMovementDialog
+                            self.game_view.individual_model_movement_dialog = IndividualModelMovementDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+
+                        def on_deploy_complete(completed: bool):
+                            if completed:
+                                unit.deployed = True
+                                # Attached leaders deploy together
                                 try:
-                                    self.game_view.deployment_mode_for_selected_unit = 'per_model'
+                                    for l in list(getattr(unit, "attached_leaders", []) or []):
+                                        l.deployed = True
+                                        l.reserve_status = getattr(unit, "reserve_status", "deployed")
                                 except Exception:
                                     pass
-                                # Open per-model deployment dialog (reuse movement dialog with 'deploy' mode)
-                                if not hasattr(self.game_view, 'individual_model_movement_dialog') or not self.game_view.individual_model_movement_dialog:
-                                    from ..dialogs.individual_model_movement_dialog import IndividualModelMovementDialog
-                                    self.game_view.individual_model_movement_dialog = IndividualModelMovementDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
-                                def on_deploy_complete(completed: bool):
-                                    if completed:
-                                        # Mark unit deployed and record action
-                                        unit.deployed = True
-                                        # Attached leaders deploy together
-                                        try:
-                                            for l in list(getattr(unit, "attached_leaders", []) or []):
-                                                l.deployed = True
-                                                l.reserve_status = getattr(unit, "reserve_status", "deployed")
-                                        except Exception:
-                                            pass
-                                        if not hasattr(self.game_view, 'game_map') or self.game_view.game_map is None:
-                                            print("❌ Deployment failed: game map unavailable to register unit")
-                                            return
-                                        if unit not in self.game_view.game_map.units:
-                                            self.game_view.game_map.units.append(unit)
-                                        current_deployment_player = self.game_view.game.get_current_deployment_player()
-                                        if current_deployment_player:
-                                            # Save unit centroid as position for record
-                                            try:
-                                                locs = [m.get_location() for m in unit.models]
-                                                ux = sum(loc[0] for loc in locs) / len(locs)
-                                                uy = sum(loc[1] for loc in locs) / len(locs)
-                                                uz = sum(loc[2] for loc in locs) / len(locs)
-                                                unit.position = (ux, uy, uz)
-                                            except Exception:
-                                                pass
-                                            self.game_view.game.record_deployment_action(current_deployment_player, unit, 'deployed', getattr(unit, 'position', None))
-                                        # Advance to next player's deployment turn
-                                        self.game_view.game.advance_deployment_turn()
-                                        # Clear selection
-                                        self.selected_unit = None
-                                        self.game_view.selected_unit = None
-                                    else:
-                                        print(f"⏭️  {unit.name} deployment cancelled")
-
-                                    # Clear deployment mode flag regardless
+                                if not hasattr(self.game_view, 'game_map') or self.game_view.game_map is None:
+                                    print("❌ Deployment failed: game map unavailable to register unit")
+                                    return
+                                if unit not in self.game_view.game_map.units:
+                                    self.game_view.game_map.units.append(unit)
+                                current_deployment_player = self.game_view.game.get_current_deployment_player()
+                                if current_deployment_player:
                                     try:
-                                        if hasattr(self.game_view, 'deployment_mode_for_selected_unit'):
-                                            self.game_view.deployment_mode_for_selected_unit = None
+                                        locs = [m.get_location() for m in unit.models]
+                                        ux = sum(loc[0] for loc in locs) / len(locs)
+                                        uy = sum(loc[1] for loc in locs) / len(locs)
+                                        uz = sum(loc[2] for loc in locs) / len(locs)
+                                        unit.position = (ux, uy, uz)
                                     except Exception:
                                         pass
-                                # Show dialog in deploy mode; max_distance irrelevant for placement
-                                print(f"📣 Opening per-model deployment dialog for {unit.name}")
-                                self.game_view.individual_model_movement_dialog.show(unit, 'deploy', on_deploy_complete, self.game_view.game_map, max_distance=0.0)
-                            elif choice == 'reserves':
-                                unit.set_reserve_status('reserves')
-                                unit.deployed = True  # Deployment decision made (but not on battlefield)
-                                try:
-                                    for l in list(getattr(unit, "attached_leaders", []) or []):
-                                        l.set_reserve_status('reserves')
-                                        l.deployed = True
-                                except Exception:
-                                    pass
-                                self.selected_unit = None
-                                self.game_view.selected_unit = None  # Clear GameView's selection
-                                # Record reserves action
-                                current_deployment_player = self.game_view.game.get_current_deployment_player()
-                                if current_deployment_player:
-                                    self.game_view.game.record_deployment_action(current_deployment_player, unit, 'reserves')
-                                # Advance to next player's deployment turn
+                                    self.game_view.game.record_deployment_action(current_deployment_player, unit, 'deployed', getattr(unit, 'position', None))
                                 self.game_view.game.advance_deployment_turn()
-                            elif choice == 'strategic_reserves':
-                                unit.set_reserve_status('strategic_reserves')
-                                unit.deployed = True  # Deployment decision made (but not on battlefield)
-                                try:
-                                    for l in list(getattr(unit, "attached_leaders", []) or []):
-                                        l.set_reserve_status('strategic_reserves')
-                                        l.deployed = True
-                                except Exception:
-                                    pass
                                 self.selected_unit = None
-                                self.game_view.selected_unit = None  # Clear GameView's selection
-                                # Record strategic reserves action
-                                current_deployment_player = self.game_view.game.get_current_deployment_player()
-                                if current_deployment_player:
-                                    self.game_view.game.record_deployment_action(current_deployment_player, unit, 'strategic_reserves')
-                                # Advance to next player's deployment turn
-                                self.game_view.game.advance_deployment_turn()
-                        
-                        self.game_view.ui_interface.deployment_choice_dialog.show(unit, on_deployment_choice, self.game_view)
+                                self.game_view.selected_unit = None
+                            else:
+                                print(f"⏭️  {unit.name} deployment cancelled")
+
+                            try:
+                                if hasattr(self.game_view, 'deployment_mode_for_selected_unit'):
+                                    self.game_view.deployment_mode_for_selected_unit = None
+                            except Exception:
+                                pass
+
+                        print(f"📣 Opening per-model deployment dialog for {unit.name}")
+                        self.game_view.individual_model_movement_dialog.show(unit, 'deploy', on_deploy_complete, self.game_view.game_map, max_distance=0.0)
                         return
                     else:
                         # Normal unit selection (for deployed units or non-deployment phases)

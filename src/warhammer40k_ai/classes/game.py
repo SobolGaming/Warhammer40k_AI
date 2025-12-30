@@ -496,9 +496,39 @@ class Game:
         """Get units that the player can deploy during the deployment phase."""
         if not player.get_army():
             return []
-        # Units with deployed=False still need deployment decisions made
-        # Units with deployed=True have been assigned (battlefield, reserves, or strategic reserves)
-        return [u for u in player.get_army().units if not u.deployed]
+        # Units with deployed=False still need to be placed on the battlefield.
+        # Units with deployed=True have been handled (battlefield placement already done OR start in reserves OR start embarked/attached).
+        deployable: List['Unit'] = []
+        for u in list(player.get_army().units or []):
+            if u is None:
+                continue
+            if getattr(u, "deployed", False):
+                continue
+
+            # Attached leaders deploy with their bodyguard
+            try:
+                if bool(getattr(u, "is_attached_leader", False)):
+                    continue
+            except Exception:
+                pass
+
+            # Embarked units deploy with their transport
+            try:
+                if bool(getattr(u, "is_embarked", False)) or getattr(u, "embarked_in", None) is not None:
+                    continue
+            except Exception:
+                pass
+
+            # Units allocated to any reserves are not deployed now
+            try:
+                if getattr(u, "reserve_status", "deployed") in ("reserves", "strategic_reserves"):
+                    continue
+            except Exception:
+                pass
+
+            deployable.append(u)
+
+        return deployable
     
     def record_deployment_action(self, player: Player, unit: 'Unit', action: str, location: tuple = None) -> None:
         """Record a deployment action for display in the InfoPane."""
@@ -1517,6 +1547,33 @@ class Game:
                         player.add_score(added)
                         print(f"🎯 {player.name} scored {added} VP (end of battle round) from Primary: {player.primary_mission.name}")
 
+        # Chapter Approved: any units still in reserves at the end of battle round 3 are destroyed.
+        # `self.turn` is the current battle round number when this hook is invoked.
+        try:
+            if int(getattr(self, "turn", 0) or 0) == 3:
+                for p in list(getattr(self, "players", []) or []):
+                    army = getattr(p, "get_army", lambda: None)()
+                    if army is None:
+                        continue
+                    to_remove = []
+                    for u in list(getattr(army, "units", []) or []):
+                        try:
+                            if getattr(u, "is_in_reserves", lambda: False)() and bool(getattr(u, "_started_in_reserves", False)):
+                                to_remove.append(u)
+                        except Exception:
+                            continue
+                    for u in to_remove:
+                        try:
+                            logger.warning(f"💀 {u.name} destroyed - still in reserves at end of battle round 3")
+                        except Exception:
+                            pass
+                        try:
+                            army.units.remove(u)
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+
     def record_unit_destroyed(self, unit: 'Unit') -> None:
         """Record a unit destroyed event and incrementally score relevant secondaries."""
         try:
@@ -2170,7 +2227,14 @@ class Game:
         units_to_destroy = []
         
         for unit in self.get_units_in_reserves(player):
-            if self.turn > 3:  # After turn 3, units in reserves are destroyed
+            # NOTE: Chapter Approved: units still in reserves at the end of battle round 3 are destroyed.
+            # This method is kept for backwards compatibility with older call sites, but should not be
+            # the primary enforcement point anymore.
+            try:
+                started_in_reserves = bool(getattr(unit, "_started_in_reserves", False))
+            except Exception:
+                started_in_reserves = False
+            if started_in_reserves and self.turn > 3:  # Legacy behavior (round 4+)
                 units_to_destroy.append(unit)
                 logger.warning(f"💀 {unit.name} destroyed - failed to arrive from reserves by turn 3")
         
@@ -2202,7 +2266,15 @@ class Game:
         # If a unit with Deep Strike arrives from Strategic Reserves, it may be set up using either:
         # - Strategic Reserves rules (edge within 6", plus turn-based allowed edges), OR
         # - Deep Strike rules (anywhere, still respecting the 9" from enemies restriction).
+        # Clear any prior pending edge-touch marker for this unit (best-effort).
+        try:
+            if hasattr(unit, "_pending_reserves_edge_touch"):
+                delattr(unit, "_pending_reserves_edge_touch")
+        except Exception:
+            pass
+
         strategic_ok = True
+        strategic_used_edge_touch = False
         if unit.is_in_strategic_reserves():
             strategic_ok = False
             # Determine which edge(s) to validate
@@ -2212,19 +2284,120 @@ class Game:
             else:
                 candidate_edges = ["own", "left", "right", "enemy"]
 
+            def _model_radius(m) -> float:
+                try:
+                    mb = getattr(m, "model_base", None)
+                    if mb is None:
+                        return 1.0
+                    if hasattr(mb, "get_longest_radius"):
+                        return float(mb.get_longest_radius())
+                    if hasattr(mb, "get_radius"):
+                        return float(mb.get_radius())
+                    r = getattr(mb, "radius", None)
+                    if isinstance(r, (list, tuple)) and r:
+                        return float(r[0])
+                    return float(r) if r is not None else 1.0
+                except Exception:
+                    return 1.0
+
+            def _center_dist_to_edge(x: float, y: float, edge: str) -> float:
+                # Uses existing coordinate conventions: own=y0, enemy=yH, left=x0, right=xW
+                if edge == "own":
+                    return float(y)
+                if edge == "enemy":
+                    return float(self.battlefield.height - y)
+                if edge == "left":
+                    return float(x)
+                if edge == "right":
+                    return float(self.battlefield.width - x)
+                return float("inf")
+
+            # We validate against the unit's *actual* prospective formation at this position.
+            snapshot = [m.get_location() for m in unit.models]
+            try:
+                boundary_repulsors = self.map.get_battlefield_edge_repulsors() if self.map else []
+                prospective = unit.calculate_model_positions(
+                    position[0],
+                    position[1],
+                    self.map,
+                    boundary_repulsors=boundary_repulsors,
+                    avoid_friendly_units=True,
+                )
+            finally:
+                for m, loc in zip(unit.models, snapshot):
+                    if loc:
+                        m.set_location(*loc)
+
+            if not prospective:
+                return False
+
+            # Round 2 Strategic Reserves restriction: cannot be set up within the enemy deployment zone
+            # (applies only when using Strategic Reserves edge placement, not Deep Strike alternative).
+            player_name = None
+            try:
+                player_name = unit.get_parent_army().player.name
+            except Exception:
+                player_name = None
+
             for edge in candidate_edges:
                 if not self.is_valid_strategic_reserves_edge(edge):
                     continue
-                edge_distance = self.get_distance_to_battlefield_edge(position, edge)
-                if edge_distance <= 6.0:
+
+                # Turn-based enemy deployment zone restriction (turn 2 only)
+                if self.turn == 2 and player_name:
+                    try:
+                        any_in_enemy_dz = False
+                        for (mx, my, _mz, _f) in prospective:
+                            if self.is_position_in_enemy_deployment_zone(float(mx), float(my), player_name):
+                                any_in_enemy_dz = True
+                                break
+                        if any_in_enemy_dz:
+                            continue
+                    except Exception:
+                        # If we can't check, be conservative and reject strategic placement
+                        continue
+
+                # Strategic Reserves must be set up wholly within 6" of a single battlefield edge.
+                # If a model is too large to fit wholly within 6", allow the base to touch the edge instead.
+                used_touch = False
+                ok_all = True
+                for idx, (mx, my, mz, mf) in enumerate(prospective):
+                    if idx >= len(unit.models):
+                        break
+                    r = _model_radius(unit.models[idx])
+                    d = _center_dist_to_edge(float(mx), float(my), edge)
+
+                    # "Wholly within 6" from that edge" means (center distance) <= 6 - radius.
+                    max_center = 6.0 - float(r)
+                    if max_center >= 0.0:
+                        if d > max_center + 1e-6:
+                            ok_all = False
+                            break
+                    else:
+                        # Too big to fit wholly within 6": require base touches the edge.
+                        # For circular approximation: center distance ~= radius.
+                        if abs(d - float(r)) > 0.25:  # 1/4" tolerance
+                            ok_all = False
+                            break
+                        used_touch = True
+
+                if ok_all:
                     strategic_ok = True
+                    strategic_used_edge_touch = bool(used_touch)
                     break
         
         # Check 9" restriction from enemy models using base-to-base closest-point distance.
         # We validate against the unit's *actual* prospective formation at this position.
         snapshot = [m.get_location() for m in unit.models]
         try:
-            prospective = unit.calculate_model_positions(position[0], position[1], self.map, avoid_friendly_units=True)
+            boundary_repulsors = self.map.get_battlefield_edge_repulsors() if self.map else []
+            prospective = unit.calculate_model_positions(
+                position[0],
+                position[1],
+                self.map,
+                boundary_repulsors=boundary_repulsors,
+                avoid_friendly_units=True,
+            )
         finally:
             for m, loc in zip(unit.models, snapshot):
                 if loc:
@@ -2247,7 +2420,15 @@ class Game:
 
         if unit.is_in_strategic_reserves():
             deep_strike_ok = bool(unit.has_deep_strike())
-            return bool(strategic_ok or deep_strike_ok)
+            ok = bool(strategic_ok or deep_strike_ok)
+            # If we are validating Strategic edge placement and it required the edge-touch exception,
+            # mark it on the unit so `arrive_from_reserves` can apply additional restrictions this turn.
+            if ok and strategic_ok and strategic_used_edge_touch:
+                try:
+                    setattr(unit, "_pending_reserves_edge_touch", True)
+                except Exception:
+                    pass
+            return ok
 
         return True
     
@@ -2260,15 +2441,10 @@ class Game:
         Returns:
             bool: True if the edge is valid for the current turn
         """
-        if self.turn == 2:
-            # Turn 2: Can only arrive from own battlefield edge
-            return battlefield_edge == 'own'
-        elif self.turn >= 3:
-            # Turn 3+: Can arrive from any edge except enemy's
-            return battlefield_edge in ['own', 'left', 'right']
-        else:
-            # Turn 1: No strategic reserves arrivals allowed
+        # Chapter Approved: Strategic Reserves can arrive from ANY battlefield edge starting in battle round 2.
+        if self.turn < 2:
             return False
+        return battlefield_edge in ['own', 'left', 'right', 'enemy']
     
     def get_distance_to_battlefield_edge(self, position: Tuple[float, float, float], 
                                        battlefield_edge: str) -> float:
@@ -2313,10 +2489,7 @@ class Game:
         units_arrived = self.process_player_reserves_arrivals(current_player)
         arrival_results[current_player.name] = units_arrived
         
-        # Destroy units that must arrive but didn't
-        destroyed_units = self.destroy_units_not_arrived_from_reserves(current_player)
-        if destroyed_units:
-            logger.warning(f"💀 {len(destroyed_units)} units destroyed for {current_player.name} - failed to arrive from reserves")
+        # Chapter Approved "destroy after battle round 3" is enforced at end-of-battle-round.
         
         return arrival_results
     
@@ -2385,17 +2558,22 @@ class Game:
                 except Exception:
                     pass
 
-                # For strategic reserves, try positions near valid edges
-                edge = 'own' if self.turn == 2 else 'own'  # Could be expanded to try different edges
-                if edge == 'own':
-                    x = self.battlefield.width * 0.5  # Center of battlefield
-                    y = 5.0  # 5" from own edge
-                elif edge == 'left':
-                    x = 5.0  # 5" from left edge
-                    y = self.battlefield.height * 0.5
-                elif edge == 'right':
-                    x = self.battlefield.width - 5.0  # 5" from right edge
-                    y = self.battlefield.height * 0.5
+                # For strategic reserves, try positions near random edges (any edge is allowed from battle round 2+).
+                import random
+                edge = random.choice(["own", "enemy", "left", "right"])
+                # Sample a point in the 0-6" strip from that edge (will be validated precisely per-model).
+                if edge == "own":
+                    y = random.uniform(0.5, 5.5)
+                    x = random.uniform(1.0, self.battlefield.width - 1.0)
+                elif edge == "enemy":
+                    y = self.battlefield.height - random.uniform(0.5, 5.5)
+                    x = random.uniform(1.0, self.battlefield.width - 1.0)
+                elif edge == "left":
+                    x = random.uniform(0.5, 5.5)
+                    y = random.uniform(1.0, self.battlefield.height - 1.0)
+                elif edge == "right":
+                    x = self.battlefield.width - random.uniform(0.5, 5.5)
+                    y = random.uniform(1.0, self.battlefield.height - 1.0)
                 else:
                     continue
                     
@@ -2647,9 +2825,19 @@ class Game:
         self.deployment_turn_index = self.defender_index
     
     def execute_declare_battle_formations_phase(self) -> None:
-        """Phase 5: Declare Battle Formations - Attach leaders, declare reserves, etc."""
-        print("📋 DECLARE BATTLE FORMATIONS: Configuring formations...")
-        # For now, this is empty - battle formations will be implemented later
+        """Phase 5: Declare Battle Formations - Attach leaders, embark in transports, allocate reserves."""
+        print("📋 DECLARE BATTLE FORMATIONS: Validating formations...")
+
+        # Validate leader attachment limits per army
+        for p in list(getattr(self, "players", []) or []):
+            army = getattr(p, "get_army", lambda: None)()
+            if army is None:
+                continue
+            try:
+                army.validate_leaders()
+            except Exception as e:
+                raise RuntimeError(f"Leader attachment validation failed for {p.name}: {e}")
+
         print("✅ Battle formations declared")
     
     def execute_deploy_armies_phase(self, manual_phases: bool = False, decision_makers: dict = None) -> None:

@@ -2002,6 +2002,11 @@ class Unit:
         
         # Reset reserves arrival flag
         self.arrived_from_reserves_this_turn = False
+        # Reset edge-touch Strategic Reserves restriction (only applies on the turn the unit arrives).
+        try:
+            setattr(self, "_reserves_edge_touch_this_turn", False)
+        except Exception:
+            pass
 
         # Reset per-model "counts as having shot via Firing Deck" flags.
         # This is model-scoped (not unit-scoped) to support the core rule that only the selected embarked
@@ -4464,6 +4469,15 @@ class Unit:
         if self.round_state.shot_this_round:
             print(f"❌ {self.name} has already shot this round")
             return False
+
+        # Chapter Approved exception: if this unit arrived from reserves via the "base touches edge"
+        # Strategic Reserves placement, it cannot shoot this turn.
+        try:
+            if bool(getattr(self, "_reserves_edge_touch_this_turn", False)) and bool(getattr(self, "arrived_from_reserves_this_turn", False)):
+                print(f"❌ {self.name} cannot shoot this turn (edge-touch Strategic Reserves placement)")
+                return False
+        except Exception:
+            pass
             
         if self.round_state.fell_back_this_round:
             # Check if any weapons in the declarations can shoot after falling back
@@ -7851,8 +7865,13 @@ class Unit:
         if current_turn < 2:
             return False
         
-        # Units must arrive by end of Turn 3 or be destroyed
-        if current_turn > 3:
+        # Chapter Approved: the "must arrive by end of battle round 3" restriction applies only to
+        # units that STARTED the game in reserves, not units placed into reserves mid-game.
+        try:
+            started_in_reserves = bool(getattr(self, "_started_in_reserves", False))
+        except Exception:
+            started_in_reserves = False
+        if started_in_reserves and current_turn > 3:
             return False
         
         return True
@@ -7866,7 +7885,11 @@ class Unit:
         Returns:
             bool: True if the unit must arrive this turn or be destroyed
         """
-        return self.is_in_reserves() and current_turn >= 3
+        try:
+            started_in_reserves = bool(getattr(self, "_started_in_reserves", False))
+        except Exception:
+            started_in_reserves = False
+        return self.is_in_reserves() and started_in_reserves and current_turn >= 3
     
     def arrive_from_reserves(self, position: Tuple[float, float, float], turn: int, game_map: Optional['Map'] = None) -> bool:
         """Deploy the unit from reserves at the specified position.
@@ -7910,6 +7933,29 @@ class Unit:
         self.reserve_status = 'deployed'
         self.reserve_turn_deployed = turn
         self.arrived_from_reserves_this_turn = True
+
+        # Reserves arrivals count as having made a Normal move this turn (reinforced).
+        try:
+            self.round_state.reinforced_this_round = True
+            self.round_state.remained_stationary_this_round = False
+        except Exception:
+            pass
+
+        # Chapter Approved exception: if the unit was too large to be set up wholly within 6" of an edge
+        # and instead used the "base touches edge" placement, it cannot move, charge, or shoot this turn.
+        try:
+            edge_touch = bool(getattr(self, "_pending_reserves_edge_touch", False))
+        except Exception:
+            edge_touch = False
+        try:
+            if hasattr(self, "_pending_reserves_edge_touch"):
+                delattr(self, "_pending_reserves_edge_touch")
+        except Exception:
+            pass
+        try:
+            setattr(self, "_reserves_edge_touch_this_turn", bool(edge_touch))
+        except Exception:
+            pass
         
         logger.info(f"🪂 {self.name} arrived from reserves at turn {turn}")
         return True
@@ -7952,6 +7998,13 @@ class Unit:
         """Check if the unit can charge after arriving from reserves this turn."""
         if not self.arrived_from_reserves_this_turn:
             return True
+
+        # Edge-touch exception: cannot charge this turn.
+        try:
+            if bool(getattr(self, "_reserves_edge_touch_this_turn", False)):
+                return False
+        except Exception:
+            pass
         
         # Units arriving from reserves CAN charge by default (this is the normal rule)
         # Only special restrictions would prevent charging

@@ -335,6 +335,7 @@ class DeploymentManager:
                 except Exception:
                     pass
                 reserve_decision = reserves_decisions.get(unit.name, 'deploy')
+                started = reserve_decision in ('reserves', 'strategic_reserves')
                 
                 if reserve_decision == 'deploy':
                     unit.set_reserve_status('deployed')
@@ -347,6 +348,33 @@ class DeploymentManager:
                 else:
                     # Default to deployed for any unknown status
                     unit.set_reserve_status('deployed')
+                    started = False
+
+                # Chapter Approved: round-3 destruction only applies to units that STARTED in reserves.
+                try:
+                    setattr(unit, "_started_in_reserves", bool(started))
+                except Exception:
+                    pass
+                # Propagate to attached leaders and embarked passengers (best-effort group semantics).
+                try:
+                    for l in list(getattr(unit, "attached_leaders", []) or []):
+                        setattr(l, "_started_in_reserves", bool(started))
+                except Exception:
+                    pass
+                try:
+                    if bool(getattr(unit, "is_transport", False)):
+                        for p in list(getattr(unit, "transport_passengers", []) or []):
+                            try:
+                                setattr(p, "_started_in_reserves", bool(started))
+                            except Exception:
+                                pass
+                            try:
+                                for l in list(getattr(p, "attached_leaders", []) or []):
+                                    setattr(l, "_started_in_reserves", bool(started))
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
 
 
 class HumanDeploymentDecisionMaker(DeploymentDecisionMaker):

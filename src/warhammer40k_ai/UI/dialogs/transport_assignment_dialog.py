@@ -326,6 +326,6 @@ class TransportAssignmentDialog(BaseDialog):
 
         # Action buttons
         self.draw_button(screen, "confirm", "Done")
-        self.draw_button(screen, "cancel", "Skip")
+        self.draw_button(screen, "cancel", "Cancel")
 
 

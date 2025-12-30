@@ -127,8 +127,6 @@ class HumanUIInterface:
         self.screen_height = screen_height
         
         # UI components
-        from .dialogs import DeploymentChoiceDialog
-        self.deployment_choice_dialog = DeploymentChoiceDialog(screen_width, screen_height)
         
 
         from .dialogs import ScoutChoiceDialog
@@ -2960,8 +2958,11 @@ class SetupPhaseHandler(BasePhaseHandler):
                     return True  # Don't advance phase yet, wait for dialog
 
                 if current_phase_before.name == 'DECLARE_BATTLE_FORMATIONS':
-                    # Show leader attachment dialog (and allow doing reserves later)
-                    self._show_leader_attachment_dialog()
+                    # Declare Battle Formations is a 3-step interactive flow:
+                    # 1) Attach Leaders (both players confirm)
+                    # 2) Embark in Transports (both players confirm)
+                    # 3) Allocate Reserves (both players confirm)
+                    self._start_declare_battle_formations_flow()
                     return True  # Don't advance phase yet, wait for dialog
                 
                 self.game.execute_current_setup_phase(**setup_kwargs)
@@ -3194,6 +3195,292 @@ class SetupPhaseHandler(BasePhaseHandler):
             pass
 
         print("📋 Transport Assignment Dialog opened - select transports and units to start embarked")
+
+    def _start_declare_battle_formations_flow(self) -> None:
+        """
+        Run Declare Battle Formations as simultaneous per-player dialogs:
+        - Leaders (P1 + P2 at once) -> Transports (P1 + P2 at once) -> Reserves (P1 + P2 at once)
+        Only after BOTH players click Done do we proceed to the next step.
+        """
+        players = list(getattr(self.game, "players", []) or [])
+        if not players:
+            # Fallback: execute and advance (no UI)
+            self.game.execute_current_setup_phase()
+            self.game.advance_setup_phase()
+            return
+
+        def _army_units(p):
+            try:
+                a = p.get_army()
+                return list(getattr(a, "units", []) or [])
+            except Exception:
+                return []
+
+        if len(players) != 2:
+            print("⚠️ Side-by-side formations UI currently supports exactly 2 players; falling back to sequential flow.")
+            # Keep existing behavior by running as two sequential dialogs (old implementation).
+            # (We intentionally do not duplicate the old nested functions here.)
+            try:
+                self._show_leader_attachment_dialog()
+                return
+            except Exception:
+                self.game.execute_current_setup_phase()
+                self.game.advance_setup_phase()
+                return
+
+        p_left, p_right = players[0], players[1]
+        a_left, a_right = p_left.get_army(), p_right.get_army()
+        if a_left is None or a_right is None:
+            self.game.execute_current_setup_phase()
+            self.game.advance_setup_phase()
+            return
+
+        from .dialogs.side_by_side_modal import SideBySideModal
+
+        def _position_two(left_dlg, right_dlg) -> None:
+            # Place near left/right edges; allow overlap if screen is narrow (dialogs are draggable)
+            margin = 12
+            left_dlg.x = margin
+            left_dlg.y = 60
+            try:
+                left_dlg._update_title_bar()
+                left_dlg._update_buttons()
+            except Exception:
+                pass
+            right_dlg.x = max(margin, self.game_view.screen.get_width() - right_dlg.width - margin)
+            right_dlg.y = 60
+            try:
+                right_dlg._update_title_bar()
+                right_dlg._update_buttons()
+            except Exception:
+                pass
+
+        # Shared helpers
+        def _mark_attached_leaders_handled(army) -> None:
+            try:
+                for u in list(getattr(army, "units", []) or []):
+                    if bool(getattr(u, "is_attached_leader", False)):
+                        u.deployed = True
+            except Exception:
+                pass
+
+        def _apply_transport_assignments(army, units, assignments) -> bool:
+            try:
+                # Clear any previous start-embarked assignments for this army
+                for u in list(units):
+                    if getattr(u, "is_transport", False):
+                        continue
+                    if getattr(u, "embarked_in", None) is not None and (not getattr(u, "deployed", False)):
+                        try:
+                            t = u.embarked_in
+                            if t is not None:
+                                t.remove_passenger(u)
+                        except Exception:
+                            pass
+
+                for transport, passengers in (assignments or {}).items():
+                    for pu in list(passengers or []):
+                        try:
+                            pu.embark(transport)
+                            pu.deployed = True
+                            for l in list(getattr(pu, "attached_leaders", []) or []):
+                                try:
+                                    l.deployed = True
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
+            except Exception:
+                return False
+            return True
+
+        def _apply_reserves(army, decisions: Dict[str, str]) -> bool:
+            try:
+                roots = []
+                try:
+                    roots = list(getattr(army, "_reserve_group_roots")() or [])
+                except Exception:
+                    roots = [u for u in getattr(army, "units", []) or [] if not getattr(u, "is_attached_leader", False)]
+
+                for root in roots:
+                    rid = str(getattr(root, "_id", None) or "")
+                    decision = decisions.get(rid, "deploy")
+                    started = decision in ("reserves", "strategic_reserves")
+                    if decision == "deploy":
+                        root.set_reserve_status("deployed")
+                        root.deployed = False
+                    elif decision == "reserves":
+                        root.set_reserve_status("reserves")
+                        root.deployed = True
+                    elif decision == "strategic_reserves":
+                        root.set_reserve_status("strategic_reserves")
+                        root.deployed = True
+                    else:
+                        root.set_reserve_status("deployed")
+                        root.deployed = False
+
+                    try:
+                        members = list(getattr(army, "_reserve_group_members")(root) or [])
+                    except Exception:
+                        members = [root]
+                    # Mark which units started the game in reserves (Chapter Approved round-3 destruction applies only to these).
+                    for m in members:
+                        try:
+                            setattr(m, "_started_in_reserves", bool(started))
+                        except Exception:
+                            pass
+                    for m in members:
+                        if m is root:
+                            continue
+                        try:
+                            m.set_reserve_status(getattr(root, "reserve_status", "deployed"))
+                        except Exception:
+                            try:
+                                m.reserve_status = getattr(root, "reserve_status", "deployed")
+                            except Exception:
+                                pass
+                        try:
+                            m.deployed = True
+                        except Exception:
+                            pass
+            except Exception:
+                return False
+            return True
+
+        # Step 1: Leaders (both at once)
+        from .dialogs import LeaderAttachmentDialog
+        left_leaders = LeaderAttachmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+        right_leaders = LeaderAttachmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+        left_leaders.title = f"Attach Leaders - {p_left.name}"
+        right_leaders.title = f"Attach Leaders - {p_right.name}"
+
+        modal = SideBySideModal(self.game_view.screen.get_width(), self.game_view.screen.get_height(), left_leaders, right_leaders)
+        _position_two(left_leaders, right_leaders)
+
+        def _maybe_advance_from_leaders():
+            if modal.left_done and modal.right_done:
+                try:
+                    self.game_view.refresh_roster_panes()
+                except Exception:
+                    pass
+                modal.hide()
+                _show_transports()
+
+        def _left_done():
+            try:
+                a_left.validate_leaders()
+            except Exception as e:
+                print(f"⚠️ {p_left.name} leader attachment validation failed: {e}")
+                return
+            _mark_attached_leaders_handled(a_left)
+            modal.left_done = True
+            _maybe_advance_from_leaders()
+
+        def _right_done():
+            try:
+                a_right.validate_leaders()
+            except Exception as e:
+                print(f"⚠️ {p_right.name} leader attachment validation failed: {e}")
+                return
+            _mark_attached_leaders_handled(a_right)
+            modal.right_done = True
+            _maybe_advance_from_leaders()
+
+        left_leaders.show(_army_units(p_left), on_confirm=_left_done, on_cancel=lambda: None)
+        right_leaders.show(_army_units(p_right), on_confirm=_right_done, on_cancel=lambda: None)
+
+        modal.show()
+        try:
+            self.game_view.dialog_manager.open(modal, modal=True)
+        except Exception:
+            pass
+
+        def _show_transports():
+            from .dialogs import TransportAssignmentDialog
+            ldlg = TransportAssignmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+            rdlg = TransportAssignmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+            ldlg.title = f"Transports - {p_left.name}"
+            rdlg.title = f"Transports - {p_right.name}"
+
+            m = SideBySideModal(self.game_view.screen.get_width(), self.game_view.screen.get_height(), ldlg, rdlg)
+            _position_two(ldlg, rdlg)
+
+            units_l = _army_units(p_left)
+            units_r = _army_units(p_right)
+
+            def _maybe_advance():
+                if m.left_done and m.right_done:
+                    try:
+                        self.game_view.refresh_roster_panes()
+                    except Exception:
+                        pass
+                    m.hide()
+                    _show_reserves()
+
+            def _l_done(assignments):
+                if not _apply_transport_assignments(a_left, units_l, assignments):
+                    print(f"⚠️ {p_left.name} transport assignment failed")
+                    return
+                m.left_done = True
+                _maybe_advance()
+
+            def _r_done(assignments):
+                if not _apply_transport_assignments(a_right, units_r, assignments):
+                    print(f"⚠️ {p_right.name} transport assignment failed")
+                    return
+                m.right_done = True
+                _maybe_advance()
+
+            ldlg.show(units_l, on_confirm=_l_done, on_cancel=lambda: None)
+            rdlg.show(units_r, on_confirm=_r_done, on_cancel=lambda: None)
+            m.show()
+            try:
+                self.game_view.dialog_manager.open(m, modal=True)
+            except Exception:
+                pass
+
+        def _show_reserves():
+            from .dialogs import ReservesAllocationDialog
+            ldlg = ReservesAllocationDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+            rdlg = ReservesAllocationDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+            ldlg.title = f"Allocate Reserves - {p_left.name}"
+            rdlg.title = f"Allocate Reserves - {p_right.name}"
+
+            m = SideBySideModal(self.game_view.screen.get_width(), self.game_view.screen.get_height(), ldlg, rdlg)
+            _position_two(ldlg, rdlg)
+
+            def _maybe_advance():
+                if m.left_done and m.right_done:
+                    m.hide()
+                    # Execute phase logic (validations) and advance setup phase.
+                    self.game.execute_current_setup_phase()
+                    self.game.advance_setup_phase()
+                    try:
+                        self.game_view.refresh_roster_panes()
+                    except Exception:
+                        pass
+
+            def _l_done(decisions):
+                if not _apply_reserves(a_left, decisions):
+                    print(f"⚠️ {p_left.name} reserves allocation failed")
+                    return
+                m.left_done = True
+                _maybe_advance()
+
+            def _r_done(decisions):
+                if not _apply_reserves(a_right, decisions):
+                    print(f"⚠️ {p_right.name} reserves allocation failed")
+                    return
+                m.right_done = True
+                _maybe_advance()
+
+            ldlg.show(a_left, on_confirm=_l_done, on_cancel=lambda: None)
+            rdlg.show(a_right, on_confirm=_r_done, on_cancel=lambda: None)
+            m.show()
+            try:
+                self.game_view.dialog_manager.open(m, modal=True)
+            except Exception:
+                pass
 
     
     def get_allowed_actions(self) -> List[str]:
@@ -3457,7 +3744,7 @@ class DeploymentPhaseHandler(BasePhaseHandler):
         return True
     
     def get_allowed_actions(self) -> List[str]:
-        return ["select_unit", "deploy_unit", "choose_reserves", "view_unit_details", "complete_deployment"]
+        return ["select_unit", "deploy_unit", "view_unit_details", "complete_deployment"]
 
 class BattlePhaseHandler(BasePhaseHandler):
     """Handles events during battle phases (movement, shooting, etc.)"""

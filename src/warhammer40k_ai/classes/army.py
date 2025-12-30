@@ -110,25 +110,125 @@ class Army:
     def get_total_points(self) -> int:
         return sum(unit.get_unit_cost() for unit in self.units)
 
+    # ----------------------------------------------------------------------
+    # Reserves limits (Matched Play / Chapter Approved defaults)
+    # ----------------------------------------------------------------------
+    def _reserve_group_roots(self) -> List[Unit]:
+        """
+        Return the list of "deployment groups" for this army for reserves counting.
+
+        Per 10e setup conventions:
+        - Attached Leaders do NOT count as separate units (they are part of the Attached Unit).
+        - Units that start embarked do NOT count as separate units (they are part of the Transport group).
+
+        This means the unit-count denominator for reserves is smaller after attachments/embarkments.
+        """
+        roots: List[Unit] = []
+        for u in list(getattr(self, "units", []) or []):
+            if u is None:
+                continue
+            try:
+                if bool(getattr(u, "is_attached_leader", False)):
+                    continue
+            except Exception:
+                pass
+            try:
+                if bool(getattr(u, "is_embarked", False)) or getattr(u, "embarked_in", None) is not None:
+                    continue
+            except Exception:
+                pass
+            roots.append(u)
+        return roots
+
+    def _reserve_group_members(self, root: Unit) -> List[Unit]:
+        """
+        Return all units that should follow `root` for reserves status and points counting.
+
+        Includes:
+        - `root` itself
+        - attached leaders (if any)
+        - if root is a transport: its passengers + each passenger's attached leaders
+        """
+        members: List[Unit] = []
+        seen: set[str] = set()
+
+        def _add(u: Optional[Unit]) -> None:
+            if u is None:
+                return
+            try:
+                uid = str(getattr(u, "_id", None) or id(u))
+            except Exception:
+                uid = str(id(u))
+            if uid in seen:
+                return
+            seen.add(uid)
+            members.append(u)
+
+        _add(root)
+        # attached leaders
+        try:
+            for l in list(getattr(root, "attached_leaders", []) or []):
+                _add(l)
+        except Exception:
+            pass
+
+        # transport passengers + their attached leaders
+        try:
+            if bool(getattr(root, "is_transport", False)):
+                for p in list(getattr(root, "transport_passengers", []) or []):
+                    _add(p)
+                    try:
+                        for l in list(getattr(p, "attached_leaders", []) or []):
+                            _add(l)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        return members
+
+    def _reserve_group_points(self, root: Unit) -> int:
+        total = 0
+        for u in self._reserve_group_members(root):
+            try:
+                total += int(u.get_unit_cost())
+            except Exception:
+                total += 0
+        return int(total)
+
     def get_reserve_limits(self) -> dict:
         """
-        Calculate the reserve limits for this army according to Warhammer 40k 10th Edition rules.
-        
-        Returns:
-            dict: Contains 'max_units' and 'max_points' limits for reserves
+        Calculate the reserve limits for this army.
+
+        Defaults (Chapter Approved / Matched Play style):
+        - **Total Reserves** (Strategic Reserves + other Reserves): <= 50% of points AND <= 50% of unit count
+        - **Strategic Reserves**: <= 25% of battle size point limit (points only)
+
+        Notes:
+        - Points caps are based on the battle size points limit (typically 2000 for Strike Force), not
+          on the army's current total points (which may be lower).
+        - Unit-count caps are based on "deployment groups" after attachments/embarkments.
         """
-        total_units = len(self.units)
-        total_points = self.get_total_points()
-        
-        # 50% limits (rounded down)
+        roots = self._reserve_group_roots()
+        total_units = len(roots)
+
+        battle_size_points = int(getattr(self, "points_limit", 2000) or 2000)
+        total_army_points = int(self.get_total_points())
+
+        # 50% unit cap (rounded down)
         max_reserve_units = total_units // 2
-        max_reserve_points = total_points // 2
-        
+        # 50% points cap (rounded down) from battle size
+        max_reserve_points = battle_size_points // 2
+        # 25% Strategic Reserves points cap (rounded down) from battle size
+        max_strategic_points = battle_size_points // 4
+
         return {
-            'max_units': max_reserve_units,
-            'max_points': max_reserve_points,
-            'total_units': total_units,
-            'total_points': total_points
+            "total_units": total_units,
+            "max_units": max_reserve_units,
+            "battle_size_points": battle_size_points,
+            "total_army_points": total_army_points,
+            "max_points": max_reserve_points,
+            "max_strategic_points": max_strategic_points,
         }
 
     def can_add_unit_to_reserves(self, unit: Unit, current_reserve_units: int, current_reserve_points: int) -> bool:
@@ -144,7 +244,8 @@ class Army:
             bool: True if the unit can be added to reserves
         """
         limits = self.get_reserve_limits()
-        unit_points = unit.get_unit_cost()
+        # Treat `unit` as a reserve-group root for counting purposes.
+        unit_points = self._reserve_group_points(unit)
         
         # Check both unit count and points limits
         can_add_units = current_reserve_units < limits['max_units']
@@ -163,30 +264,44 @@ class Army:
             dict: Validation result with 'valid' boolean and 'errors' list
         """
         limits = self.get_reserve_limits()
+        errors: List[str] = []
+
         reserve_units = 0
         reserve_points = 0
-        errors = []
-        
-        for unit in self.units:
-            decision = reserves_decisions.get(unit.name, 'deploy')
-            if decision in ['reserves', 'strategic_reserves']:
+        strategic_points = 0
+
+        roots = self._reserve_group_roots()
+        for root in roots:
+            rid = str(getattr(root, "_id", None) or "")
+            decision = reserves_decisions.get(rid, reserves_decisions.get(getattr(root, "name", ""), "deploy"))
+            if decision == "strategic_reserves":
+                try:
+                    if bool(getattr(root, "is_fortification", False)):
+                        errors.append(f"FORTIFICATIONS cannot be placed in Strategic Reserves: {getattr(root, 'name', 'Unit')}")
+                        continue
+                except Exception:
+                    pass
+            if decision in ["reserves", "strategic_reserves"]:
                 reserve_units += 1
-                reserve_points += unit.get_unit_cost()
-        
-        # Check unit limit
-        if reserve_units > limits['max_units']:
+                pts = self._reserve_group_points(root)
+                reserve_points += pts
+                if decision == "strategic_reserves":
+                    strategic_points += pts
+
+        if reserve_units > limits["max_units"]:
             errors.append(f"Too many units in reserves: {reserve_units}/{limits['max_units']} allowed")
-        
-        # Check points limit
-        if reserve_points > limits['max_points']:
+        if reserve_points > limits["max_points"]:
             errors.append(f"Too many points in reserves: {reserve_points}/{limits['max_points']} allowed")
-        
+        if strategic_points > limits["max_strategic_points"]:
+            errors.append(f"Too many points in Strategic Reserves: {strategic_points}/{limits['max_strategic_points']} allowed")
+
         return {
-            'valid': len(errors) == 0,
-            'errors': errors,
-            'reserve_units': reserve_units,
-            'reserve_points': reserve_points,
-            'limits': limits
+            "valid": len(errors) == 0,
+            "errors": errors,
+            "reserve_units": reserve_units,
+            "reserve_points": reserve_points,
+            "strategic_points": strategic_points,
+            "limits": limits,
         }
 
     def enforce_reserves_limits(self, reserves_decisions: dict) -> dict:
@@ -201,34 +316,88 @@ class Army:
             dict: Modified reserves decisions that comply with limits
         """
         limits = self.get_reserve_limits()
-        current_reserve_units = 0
-        current_reserve_points = 0
-        modified_decisions = reserves_decisions.copy()
-        
-        # First pass: count current reserves
-        for unit in self.units:
-            decision = modified_decisions.get(unit.name, 'deploy')
-            if decision in ['reserves', 'strategic_reserves']:
-                current_reserve_units += 1
-                current_reserve_points += unit.get_unit_cost()
-        
-        # Second pass: enforce limits by converting excess reserves to deploy
-        for unit in self.units:
-            decision = modified_decisions.get(unit.name, 'deploy')
-            if decision in ['reserves', 'strategic_reserves']:
-                unit_points = unit.get_unit_cost()
-                
-                # Check if this unit would exceed limits
-                would_exceed_units = current_reserve_units > limits['max_units']
-                would_exceed_points = current_reserve_points > limits['max_points']
-                
-                if would_exceed_units or would_exceed_points:
-                    # Convert to deploy
-                    modified_decisions[unit.name] = 'deploy'
-                    current_reserve_units -= 1
-                    current_reserve_points -= unit_points
-        
-        return modified_decisions
+        modified = dict(reserves_decisions or {})
+
+        roots = self._reserve_group_roots()
+
+        def _root_key(u: Unit) -> str:
+            return str(getattr(u, "_id", None) or getattr(u, "name", ""))
+
+        # Normalize: ensure every root has an entry (default deploy)
+        for r in roots:
+            k = _root_key(r)
+            if k not in modified and getattr(r, "name", "") not in modified:
+                modified[k] = "deploy"
+
+        # Hard rule: Fortifications cannot be Strategic Reserves.
+        for r in roots:
+            try:
+                if not bool(getattr(r, "is_fortification", False)):
+                    continue
+            except Exception:
+                continue
+            k = _root_key(r)
+            decision = modified.get(k, modified.get(getattr(r, "name", ""), "deploy"))
+            if decision == "strategic_reserves":
+                modified[k] = "deploy"
+
+        # Enforce Strategic cap first: if strategic exceeds cap, try converting strategic->reserves if eligible, else deploy.
+        # Deterministic order: highest-point strategic groups first.
+        while True:
+            status = self.validate_reserves_decisions(modified)
+            if status["valid"]:
+                break
+            errs = status.get("errors", []) or []
+            if any("Strategic Reserves" in e for e in errs):
+                strategic_roots = []
+                for r in roots:
+                    k = _root_key(r)
+                    decision = modified.get(k, modified.get(getattr(r, "name", ""), "deploy"))
+                    if decision == "strategic_reserves":
+                        strategic_roots.append(r)
+                strategic_roots.sort(key=lambda u: self._reserve_group_points(u), reverse=True)
+                if not strategic_roots:
+                    break
+                r = strategic_roots[0]
+                k = _root_key(r)
+                # Prefer keeping in (standard) reserves if unit can Deep Strike; else deploy it.
+                try:
+                    can_standard = bool(r.has_deep_strike())
+                except Exception:
+                    can_standard = False
+                modified[k] = "reserves" if can_standard else "deploy"
+                continue
+
+            # Enforce overall reserves caps (units/points): convert the highest-point reserve group to deploy until valid.
+            reserve_roots = []
+            for r in roots:
+                k = _root_key(r)
+                decision = modified.get(k, modified.get(getattr(r, "name", ""), "deploy"))
+                if decision in ("reserves", "strategic_reserves"):
+                    reserve_roots.append(r)
+            reserve_roots.sort(key=lambda u: self._reserve_group_points(u), reverse=True)
+            if not reserve_roots:
+                break
+            r = reserve_roots[0]
+            modified[_root_key(r)] = "deploy"
+
+        # Final: ensure we do not exceed unit-count cap if still invalid (safety)
+        while True:
+            status = self.validate_reserves_decisions(modified)
+            if status["valid"]:
+                break
+            reserve_roots = []
+            for r in roots:
+                k = _root_key(r)
+                decision = modified.get(k, modified.get(getattr(r, "name", ""), "deploy"))
+                if decision in ("reserves", "strategic_reserves"):
+                    reserve_roots.append(r)
+            if not reserve_roots:
+                break
+            # Drop arbitrary last
+            modified[_root_key(reserve_roots[-1])] = "deploy"
+
+        return modified
 
     def get_current_reserves_status(self, reserves_decisions: dict) -> dict:
         """
@@ -243,28 +412,36 @@ class Army:
         limits = self.get_reserve_limits()
         reserve_units = 0
         reserve_points = 0
-        reserve_unit_names = []
-        strategic_reserve_unit_names = []
-        
-        for unit in self.units:
-            decision = reserves_decisions.get(unit.name, 'deploy')
-            if decision == 'reserves':
+        strategic_points = 0
+        reserve_unit_names: List[str] = []
+        strategic_reserve_unit_names: List[str] = []
+
+        roots = self._reserve_group_roots()
+        for root in roots:
+            rid = str(getattr(root, "_id", None) or "")
+            decision = reserves_decisions.get(rid, reserves_decisions.get(getattr(root, "name", ""), "deploy"))
+            if decision == "reserves":
                 reserve_units += 1
-                reserve_points += unit.get_unit_cost()
-                reserve_unit_names.append(unit.name)
-            elif decision == 'strategic_reserves':
+                pts = self._reserve_group_points(root)
+                reserve_points += pts
+                reserve_unit_names.append(getattr(root, "name", "Unit"))
+            elif decision == "strategic_reserves":
                 reserve_units += 1
-                reserve_points += unit.get_unit_cost()
-                strategic_reserve_unit_names.append(unit.name)
-        
+                pts = self._reserve_group_points(root)
+                reserve_points += pts
+                strategic_points += pts
+                strategic_reserve_unit_names.append(getattr(root, "name", "Unit"))
+
         return {
-            'reserve_units': reserve_units,
-            'reserve_points': reserve_points,
-            'limits': limits,
-            'reserve_unit_names': reserve_unit_names,
-            'strategic_reserve_unit_names': strategic_reserve_unit_names,
-            'can_add_more_units': reserve_units < limits['max_units'],
-            'can_add_more_points': reserve_points < limits['max_points']
+            "reserve_units": reserve_units,
+            "reserve_points": reserve_points,
+            "strategic_points": strategic_points,
+            "limits": limits,
+            "reserve_unit_names": reserve_unit_names,
+            "strategic_reserve_unit_names": strategic_reserve_unit_names,
+            "can_add_more_units": reserve_units < limits["max_units"],
+            "can_add_more_points": reserve_points < limits["max_points"],
+            "can_add_more_strategic_points": strategic_points < limits["max_strategic_points"],
         }
 
     def add_enhancement(self, enhancement, character_unit):
