@@ -1,5 +1,7 @@
 import pygame
 import math
+import re
+from pathlib import Path
 from typing import Optional, Tuple, Dict, List, Protocol, Callable
 from abc import ABC, abstractmethod
 from warhammer40k_ai.classes.unit import Unit
@@ -592,6 +594,10 @@ class GameView:
         # Initialize shared UI state
         self._ui_hitboxes = {}
         self._mission_popup = None
+        # Cache loaded mission card images (path string -> pygame.Surface)
+        self._mission_image_surface_cache: Dict[str, pygame.Surface] = {}
+        # Cache "does this card have an image?" lookups (cache_key -> Optional[str path])
+        self._mission_image_path_cache: Dict[str, Optional[str]] = {}
 
         # WORLD EATERS: start-of-battle-round Blessings hook
         self._pending_blessings_queue = []
@@ -1166,12 +1172,76 @@ class GameView:
                 break
             self.screen.blit(surf, (content_left, y_cursor))
 
-    def _draw_mission_popup_overlay(self, title: str, body: str) -> None:
+    def _slugify_mission_card_name(self, name: str) -> str:
+        """
+        Convert a mission card name into the expected PNG suffix used under RuleSets mission_cards.
+        Examples:
+          "Take and Hold" -> "take_and_hold"
+          "Purge the Foe" -> "purge_the_foe"
+        """
+        s = (name or "").strip().lower()
+        # Replace common separators with underscores, drop other punctuation.
+        s = re.sub(r"[\s\-]+", "_", s)
+        s = re.sub(r"[^a-z0-9_]+", "", s)
+        s = re.sub(r"_+", "_", s).strip("_")
+        return s
+
+    def _get_mission_cards_dir(self) -> Path:
+        """
+        Locate the repo's Chapter Approved 2025/2026 mission card images directory.
+        Prefer repo-relative to this source file, but fall back to CWD if needed.
+        """
+        # src/warhammer40k_ai/UI/game_ui.py -> repo root is parents[3]
+        try:
+            repo_root = Path(__file__).resolve().parents[3]
+        except Exception:
+            repo_root = Path.cwd()
+        p = repo_root / "RuleSets" / "ChapterApproved_2025_2026" / "mission_cards"
+        if p.exists():
+            return p
+        # Fallback: when running from a different CWD
+        p2 = Path.cwd() / "RuleSets" / "ChapterApproved_2025_2026" / "mission_cards"
+        return p2
+
+    def _find_mission_card_image_path(self, card, is_primary: bool) -> Optional[str]:
+        """
+        Returns a filesystem path to a PNG image for the given card if present, else None.
+        File naming convention:
+          primary_<slug>.png
+          secondary_<slug>.png
+        """
+        if card is None:
+            return None
+        name = getattr(card, "name", None) or "mission"
+        slug = self._slugify_mission_card_name(str(name))
+        prefix = "primary" if is_primary else "secondary"
+        cache_key = f"{prefix}:{slug}"
+        if cache_key in self._mission_image_path_cache:
+            return self._mission_image_path_cache[cache_key]
+
+        cards_dir = self._get_mission_cards_dir()
+        candidate = cards_dir / f"{prefix}_{slug}.png"
+        path_str = str(candidate) if candidate.exists() else None
+        self._mission_image_path_cache[cache_key] = path_str
+        return path_str
+
+    def _load_image_surface_cached(self, image_path: str) -> Optional[pygame.Surface]:
+        if not image_path:
+            return None
+        if image_path in self._mission_image_surface_cache:
+            return self._mission_image_surface_cache[image_path]
+        # pygame.image.load can raise if file is missing/corrupt; let caller handle fallback.
+        surf = pygame.image.load(image_path).convert_alpha()
+        self._mission_image_surface_cache[image_path] = surf
+        return surf
+
+    def _draw_mission_popup_overlay(self, title: str, body: str, image_path: Optional[str] = None) -> None:
         overlay = pygame.Surface(self.screen.get_size(), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 160))
         self.screen.blit(overlay, (0, 0))
-        width = int(self.screen.get_width() * 0.5)
-        height = int(self.screen.get_height() * 0.45)
+        # Slightly larger to fit mission card images comfortably.
+        width = int(self.screen.get_width() * 0.62)
+        height = int(self.screen.get_height() * 0.78)
         rect = pygame.Rect(0, 0, width, height)
         rect.center = (self.screen.get_width() // 2, self.screen.get_height() // 2)
         pygame.draw.rect(self.screen, (35,35,38), rect)
@@ -1179,18 +1249,44 @@ class GameView:
         try:
             title_font = pygame.font.SysFont('Arial', 18, bold=True)
             body_font = pygame.font.SysFont('Arial', 16)
+            hint_font = pygame.font.SysFont('Arial', 14)
         except Exception:
             title_font = pygame.font.Font(None, 18)
             body_font = pygame.font.Font(None, 16)
+            hint_font = pygame.font.Font(None, 14)
         ts = title_font.render(title, True, (255,255,255))
         tr = ts.get_rect(center=(rect.centerx, rect.y + 28))
         self.screen.blit(ts, tr)
-        # simple wrapping
-        x = rect.x + 16
-        y = rect.y + 56
-        max_w = rect.width - 32
+
+        # Content area (below title; above hint)
+        content_rect = pygame.Rect(rect.x + 16, rect.y + 56, rect.width - 32, rect.height - 56 - 36)
+
+        # If an image is available, show it instead of text.
+        if image_path:
+            try:
+                img = self._load_image_surface_cached(image_path)
+                if img is not None:
+                    iw, ih = img.get_width(), img.get_height()
+                    if iw > 0 and ih > 0:
+                        scale = min(content_rect.width / iw, content_rect.height / ih)
+                        new_w = max(1, int(iw * scale))
+                        new_h = max(1, int(ih * scale))
+                        scaled = pygame.transform.smoothscale(img, (new_w, new_h))
+                        dest = scaled.get_rect(center=content_rect.center)
+                        self.screen.blit(scaled, dest)
+                        hint = hint_font.render("Click anywhere to close", True, (180, 180, 180))
+                        self.screen.blit(hint, (rect.x + 16, rect.bottom - 28))
+                        return
+            except Exception:
+                # Fall back to text rendering below.
+                pass
+
+        # Fallback: simple wrapped text
+        x = content_rect.x
+        y = content_rect.y
+        max_w = content_rect.width
         line = ''
-        for word in body.split(' '):
+        for word in (body or '').split(' '):
             test = (line + ' ' + word).strip()
             surf = body_font.render(test, True, (220,220,220))
             if surf.get_width() > max_w and line:
@@ -1203,6 +1299,8 @@ class GameView:
         if line:
             ls = body_font.render(line, True, (220,220,220))
             self.screen.blit(ls, (x, y))
+        hint = hint_font.render("Click anywhere to close", True, (180, 180, 180))
+        self.screen.blit(hint, (rect.x + 16, rect.bottom - 28))
     
     def update_roster_pane_titles(self):
         """Update roster pane titles to show Attacker/Defender after roles are determined."""
@@ -1278,7 +1376,8 @@ class GameView:
                             if rect.collidepoint(event.pos) and card is not None:
                                 title = getattr(card, 'name', 'Mission')
                                 body = getattr(card, 'description', '')
-                                self._mission_popup = {'title': title, 'body': body}
+                                image_path = self._find_mission_card_image_path(card, is_primary=(key == 'primary'))
+                                self._mission_popup = {'title': title, 'body': body, 'image_path': image_path}
                                 return True
                     # Otherwise consume the click within top pane
                     return True
@@ -1973,7 +2072,11 @@ class GameView:
 
         # Finally, draw mission popup overlay above everything if present
         if getattr(self, '_mission_popup', None):
-            self._draw_mission_popup_overlay(self._mission_popup.get('title', 'Mission'), self._mission_popup.get('body', ''))
+            self._draw_mission_popup_overlay(
+                self._mission_popup.get('title', 'Mission'),
+                self._mission_popup.get('body', ''),
+                image_path=self._mission_popup.get('image_path'),
+            )
         pygame.display.update()
 
     # Note: on_key_press is now handled by phase-specific handlers in PhaseManager
