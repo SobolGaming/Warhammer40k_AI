@@ -26,6 +26,7 @@ TEXT_PRIMARY = (255, 255, 255)  # Primary text
 TEXT_SECONDARY = (200, 200, 200)  # Secondary text
 TEXT_ACCENT = (100, 149, 237)  # Accent text
 DARK_GREY = (30, 30, 30)  # Dark grey for headers
+RULE_NOTICE = (255, 200, 80)  # Warm highlight for rule notifications
 
 # Deploy button colors
 DEPLOY_BUTTON_BG = (40, 160, 40)  # Brighter green for deploy
@@ -60,6 +61,29 @@ class InfoPane(pygame.sprite.Sprite):
     def update_hover(self, x: int, y: int):
         """Update hover state for interactive elements."""
         pass  # No interactive elements to hover over
+    
+    def _truncate_to_width(self, text: str, font: pygame.font.Font, max_width: int) -> str:
+        """Truncate text with ellipsis so it fits within max_width pixels."""
+        if not text:
+            return ""
+        try:
+            if font.size(text)[0] <= max_width:
+                return text
+            ell = "…"
+            # Fast path: progressively shrink
+            lo, hi = 0, len(text)
+            best = ell
+            while lo <= hi:
+                mid = (lo + hi) // 2
+                candidate = text[:mid].rstrip() + ell
+                if font.size(candidate)[0] <= max_width:
+                    best = candidate
+                    lo = mid + 1
+                else:
+                    hi = mid - 1
+            return best
+        except Exception:
+            return text
 
     def draw(self, surface: pygame.Surface, game: Game, game_view=None):
         """Draw the info pane and its contents."""
@@ -215,6 +239,16 @@ class InfoPane(pygame.sprite.Sprite):
                     instruction_surface = self.font_tiny.render(instruction_text, True, TEXT_SECONDARY)
                     instruction_rect = instruction_surface.get_rect(center=(x_center, y_offset))
                     surface.blit(instruction_surface, instruction_rect)
+
+                # Rule notification banner (teaches why a player might deploy twice in a row)
+                notice = getattr(game, "deployment_notice", None)
+                if notice:
+                    y_offset += 15
+                    max_w = max(50, self.rect.width - 30)
+                    notice_text = self._truncate_to_width(str(notice), self.font_tiny, max_w)
+                    notice_surface = self.font_tiny.render(notice_text, True, RULE_NOTICE)
+                    notice_rect = notice_surface.get_rect(center=(x_center, y_offset))
+                    surface.blit(notice_surface, notice_rect)
             else:
                 # Show battlefield creation status
                 setup_text = "🗺️ Preparing battlefield for deployment..."

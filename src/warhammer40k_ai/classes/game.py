@@ -138,6 +138,8 @@ class Game:
         # If a player deploys a TITANIC unit, they skip their next deployment turn (opponent deploys twice in a row).
         # Stored as {player_index: skip_count}.
         self.deployment_skip_turns: Dict[int, int] = {}
+        # UI helper: short, human-readable notice explaining special deployment turn swaps.
+        self.deployment_notice: str | None = None
         self.first_turn_player_index = None  # Index of player who goes first (will be set during DETERMINE_FIRST_TURN_ORDER)
         self.battle_round_starting_player_index = None  # Track who started the current battle round
         # Mission actions and event tracking
@@ -565,6 +567,8 @@ class Game:
     def clear_deployment_actions(self) -> None:
         """Clear deployment action history after deployment phase ends."""
         self.deployment_actions = {}
+        self.deployment_notice = None
+        self.deployment_skip_turns = {}
 
     def _has_any_other_deployable_units(self, player_index: int) -> bool:
         """Return True if any other player (besides player_index) has deployable units."""
@@ -591,6 +595,23 @@ class Game:
         if last_deployed_unit is not None and last_deployed_unit.is_titanic:
             cur_idx = int(self.deployment_turn_index)
             self.deployment_skip_turns[cur_idx] = int(self.deployment_skip_turns.get(cur_idx, 0)) + 1
+            try:
+                deploying_player = self.players[cur_idx]
+                opponent_idx = (cur_idx + 1) % n
+                opponent_player = self.players[opponent_idx]
+                if self.get_deployable_units(opponent_player):
+                    self.deployment_notice = (
+                        f"📣 {deploying_player.name} deployed a TITANIC unit — they will skip their next deployment turn. "
+                        f"{opponent_player.name} will deploy again."
+                    )
+                else:
+                    self.deployment_notice = (
+                        f"📣 {deploying_player.name} deployed a TITANIC unit — they would skip their next deployment turn "
+                        f"(no opponent units left to benefit)."
+                    )
+            except Exception:
+                # Non-fatal: UI-only helper
+                pass
 
         # Find the next eligible player:
         # - Skip players with no deployable units
@@ -602,6 +623,15 @@ class Game:
             if skip_cnt > 0 and self._has_any_other_deployable_units(next_idx):
                 # Consume one skip and move to the next player.
                 self.deployment_skip_turns[next_idx] = skip_cnt - 1
+                try:
+                    skipped_player = self.players[next_idx]
+                    other_player = self.players[(next_idx + 1) % n]
+                    self.deployment_notice = (
+                        f"⏭️ {skipped_player.name} skips this deployment turn (TITANIC rule). "
+                        f"{other_player.name} deploys again."
+                    )
+                except Exception:
+                    pass
                 next_idx = (next_idx + 1) % n
                 attempts += 1
                 continue
