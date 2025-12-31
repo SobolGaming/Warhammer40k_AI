@@ -3723,7 +3723,7 @@ class DeploymentPhaseHandler(BasePhaseHandler):
                         except Exception:
                             pass
                         self.game.record_deployment_action(current_deployment_player, unit, 'deployed', getattr(unit, 'position', None))
-                    self.game.advance_deployment_turn()
+                    self.game.advance_deployment_turn(unit)
                     # Clear selection
                     self.game_view.selected_unit = None
                     self.game_view.left_roster_pane.selected_unit = None
@@ -3833,7 +3833,7 @@ class DeploymentPhaseHandler(BasePhaseHandler):
                                                      self.game_view.selected_unit.position)
                 
                 # Advance to next player's deployment turn
-                self.game.advance_deployment_turn()
+                self.game.advance_deployment_turn(self.game_view.selected_unit)
                 
                 # Clear selection
                 self.game_view.selected_unit = None

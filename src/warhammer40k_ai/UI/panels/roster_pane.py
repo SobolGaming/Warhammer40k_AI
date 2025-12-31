@@ -238,7 +238,7 @@ class RosterPane(pygame.sprite.Sprite):
                                     except Exception:
                                         pass
                                     self.game_view.game.record_deployment_action(current_deployment_player, unit, 'deployed', getattr(unit, 'position', None))
-                                self.game_view.game.advance_deployment_turn()
+                                self.game_view.game.advance_deployment_turn(unit)
                                 self.selected_unit = None
                                 self.game_view.selected_unit = None
                             else:

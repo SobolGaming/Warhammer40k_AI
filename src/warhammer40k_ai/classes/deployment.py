@@ -243,6 +243,10 @@ class DeploymentManager:
         current_zone = defender_zone
         current_decision_maker = decision_makers[self.defender.name]
         current_deployed = defender_deployed
+
+        # Special rule: If a player sets up a TITANIC unit when it is their turn to set up a unit,
+        # they skip their next turn to set up a unit (opponent deploys twice in a row).
+        deployment_skip_turns = {self.defender: 0, self.attacker: 0}
         
         turn_count = 0
         while defender_units or attacker_units:
@@ -257,6 +261,9 @@ class DeploymentManager:
                 deployment_order.append((current_player.name, unit.name, position))
                 
                 logger.info(f"🚢 {current_player.name} deploys {unit.name} at ({position[0]:.1f}, {position[1]:.1f})")
+
+                if unit.is_titanic:
+                    deployment_skip_turns[current_player] = int(deployment_skip_turns.get(current_player, 0)) + 1
             
             # Switch to other player
             turn_count += 1
@@ -272,6 +279,25 @@ class DeploymentManager:
                 current_zone = defender_zone
                 current_decision_maker = decision_makers[self.defender.name]
                 current_deployed = defender_deployed
+
+            # Apply skip-turn rule if it would still allow the other player to deploy.
+            # (If the other player has no units left, ignore the skip to avoid stalling deployment.)
+            other_units_remaining = bool(attacker_units) if current_player == self.defender else bool(defender_units)
+            while int(deployment_skip_turns.get(current_player, 0) or 0) > 0 and other_units_remaining:
+                deployment_skip_turns[current_player] = int(deployment_skip_turns[current_player]) - 1
+                if current_player == self.defender:
+                    current_player = self.attacker
+                    current_units = attacker_units
+                    current_zone = attacker_zone  
+                    current_decision_maker = decision_makers[self.attacker.name]
+                    current_deployed = attacker_deployed
+                else:
+                    current_player = self.defender
+                    current_units = defender_units
+                    current_zone = defender_zone
+                    current_decision_maker = decision_makers[self.defender.name]
+                    current_deployed = defender_deployed
+                other_units_remaining = bool(attacker_units) if current_player == self.defender else bool(defender_units)
         
         deployment_results['deployment_order'] = deployment_order
     

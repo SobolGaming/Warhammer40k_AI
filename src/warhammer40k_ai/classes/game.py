@@ -134,6 +134,10 @@ class Game:
         self.deployment_zones = {}  # Store deployment zones for visualization {player_name: zone_dict}
         self.waiting_for_deployment_input = False  # Flag for manual phases during deployment
         self.deployment_actions = {}  # Track last deployment action for each player
+        # Deployment special rule tracking:
+        # If a player deploys a TITANIC unit, they skip their next deployment turn (opponent deploys twice in a row).
+        # Stored as {player_index: skip_count}.
+        self.deployment_skip_turns: Dict[int, int] = {}
         self.first_turn_player_index = None  # Index of player who goes first (will be set during DETERMINE_FIRST_TURN_ORDER)
         self.battle_round_starting_player_index = None  # Track who started the current battle round
         # Mission actions and event tracking
@@ -562,28 +566,56 @@ class Game:
         """Clear deployment action history after deployment phase ends."""
         self.deployment_actions = {}
 
-    def advance_deployment_turn(self) -> None:
-        """Advance to the next player's deployment turn."""
+    def _has_any_other_deployable_units(self, player_index: int) -> bool:
+        """Return True if any other player (besides player_index) has deployable units."""
+        for i, p in enumerate(self.players):
+            if i == player_index:
+                continue
+            if self.get_deployable_units(p):
+                return True
+        return False
+
+    def advance_deployment_turn(self, last_deployed_unit: Optional['Unit'] = None) -> None:
+        """Advance to the next player's deployment turn.
+
+        Special rule: If the current player deploys a TITANIC unit, they skip their next deployment turn.
+        """
         if not self.is_deployment_phase():
             return
-        
-        # Get current and next player's deployable units
-        current_player = self.get_current_deployment_player()
-        current_deployable = self.get_deployable_units(current_player)
-        
-        # Switch to the other player
-        self.deployment_turn_index = (self.deployment_turn_index + 1) % len(self.players)
-        next_player = self.get_current_deployment_player()
-        next_deployable = self.get_deployable_units(next_player)
-        
-        # If the next player has no units to deploy, keep switching until we find someone who does
-        # or until everyone is done
+
+        n = len(self.players)
+        if n <= 0:
+            return
+
+        # If a TITANIC unit was just deployed, the current player skips their next deployment turn.
+        if last_deployed_unit is not None and last_deployed_unit.is_titanic:
+            cur_idx = int(self.deployment_turn_index)
+            self.deployment_skip_turns[cur_idx] = int(self.deployment_skip_turns.get(cur_idx, 0)) + 1
+
+        # Find the next eligible player:
+        # - Skip players with no deployable units
+        # - Apply "skip next deployment turn" unless there are no other deployable units remaining
+        next_idx = (int(self.deployment_turn_index) + 1) % n
         attempts = 0
-        while not next_deployable and attempts < len(self.players):
-            self.deployment_turn_index = (self.deployment_turn_index + 1) % len(self.players)
-            next_player = self.get_current_deployment_player()
-            next_deployable = self.get_deployable_units(next_player)
+        while attempts < n:
+            skip_cnt = int(self.deployment_skip_turns.get(next_idx, 0) or 0)
+            if skip_cnt > 0 and self._has_any_other_deployable_units(next_idx):
+                # Consume one skip and move to the next player.
+                self.deployment_skip_turns[next_idx] = skip_cnt - 1
+                next_idx = (next_idx + 1) % n
+                attempts += 1
+                continue
+
+            candidate_player = self.players[next_idx]
+            if self.get_deployable_units(candidate_player):
+                self.deployment_turn_index = next_idx
+                return
+
+            next_idx = (next_idx + 1) % n
             attempts += 1
+
+        # Fallback: leave turn index unchanged if nobody is deployable (deployment is effectively done).
+        return
     
     def complete_deployment_phase(self, manual_phases: bool = False) -> None:
         """Force complete the deployment phase by auto-deploying remaining units one at a time."""
@@ -621,7 +653,7 @@ class Game:
                     self.record_deployment_action(current_player, unit, 'deployed', unit.position)
                 # Mark unit as deployed and advance to next player's turn
                 unit.deployed = True
-                self.advance_deployment_turn()
+                self.advance_deployment_turn(unit)
             else:
                 print(f"❌ Failed to auto-deploy {unit.name}, advancing anyway")
                 # Force deployment to prevent infinite loop
@@ -2823,6 +2855,8 @@ class Game:
         
         # Set deployment turn to defender (defender deploys first)
         self.deployment_turn_index = self.defender_index
+        # Reset deployment special-rule trackers for a fresh setup sequence
+        self.deployment_skip_turns = {}
     
     def execute_declare_battle_formations_phase(self) -> None:
         """Phase 5: Declare Battle Formations - Attach leaders, embark in transports, allocate reserves."""
@@ -2884,6 +2918,8 @@ class Game:
             # Initialize deployment tracking
             if not hasattr(self, 'deployment_turn_index'):
                 self.deployment_turn_index = getattr(self, 'defender_index', 0)
+            # Reset / initialize TITANIC skip-turn tracker (safe for checkpoint-loaded games)
+            self.deployment_skip_turns = {}
             
             # Mark that we're in deployment phase
             self.waiting_for_deployment_input = False
