@@ -72,7 +72,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Firing Deck | `000008334` | 59 | 59 | **Supported** | Firing Deck |
 | Hover | `000008342` | 57 | 57 | **Not implemented** |  |
 | Infiltrators | `000008345` | 69 | 69 | **Supported** | Infiltrators |
-| Leader | `000008346` | 406 | 406 | **Partial** | Leader data exists, but full Attached allocation/rules enforcement is incomplete. |
+| Leader | `000008346` | 406 | 406 | **Supported** | Attached Units supported: attachment eligibility + limits, bodyguard-first wound allocation, Precision allocation into visible CHARACTERS, characteristic delegation (Toughness/Leadership), separation deferred until end of attack sequence, and attached leaders do not double-count for deployment/objectives/reserves. |
 | Lone Operative | `000008336` | 50 | 50 | **Supported** | Lone Operative |
 | Scouts | `000008344` | 100 | 100 | **Supported** | Scouts |
 | Stealth | `000008337` | 79 | 79 | **Supported** | Stealth |
