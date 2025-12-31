@@ -21,6 +21,7 @@ from .firing_deck_dialog import FiringDeckDialog
 from .blessings_of_khorne_dialog import BlessingsOfKhorneDialog
 from .battlefield_point_pick_dialog import BattlefieldPointPickDialog
 from .hazard_objective_select_dialog import HazardObjectiveSelectDialog
+from .yes_no_dialog import YesNoDialog
 
 __all__ = [
     'BaseDialog',
@@ -46,4 +47,5 @@ __all__ = [
     'BlessingsOfKhorneDialog',
     'BattlefieldPointPickDialog',
     'HazardObjectiveSelectDialog',
+    'YesNoDialog',
 ] 

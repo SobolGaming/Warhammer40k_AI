@@ -378,3 +378,68 @@ def get_aura_objective_control_bonus(unit, *, game_map=None) -> int:
     return int(total)
 
 
+def _parse_melee_attacks_aura(ability) -> Optional[dict]:
+    """
+    Strict parser for:
+      "While a friendly X unit is within N\" of this model, add M to the Attacks characteristic of melee weapons equipped by models in that unit."
+    """
+    if not _is_aura_ability(ability):
+        return None
+    desc = str(getattr(ability, "description", "") or "").strip()
+    if not desc:
+        return None
+    m = re.search(
+        r'While a friendly (?P<faction_kw>.+?) unit is within (?P<rng>\d+)" of this model, add (?P<amt>\d+) to the Attacks characteristic of melee weapons equipped by models in that unit',
+        desc,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+    return {
+        "faction_keyword": str(m.group("faction_kw") or "").strip(),
+        "range": float(m.group("rng")),
+        "amount": int(m.group("amt")),
+    }
+
+
+def get_aura_melee_attacks_bonus(attacker_unit, weapon_profile, *, game_map=None) -> tuple[int, tuple[str, ...]]:
+    """
+    Return (bonus_attacks, reasons) from strict "melee Attacks characteristic" auras affecting attacker_unit.
+    Dedupe by Aura name (same aura never double-applies).
+    """
+    if attacker_unit is None or weapon_profile is None:
+        return 0, ()
+    pw = getattr(weapon_profile, "parent_wargear", None)
+    if pw is None or not bool(pw.is_melee()):
+        return 0, ()
+    if game_map is None:
+        game_map = _get_map_from_attacker_unit(attacker_unit)
+    if game_map is None:
+        return 0, ()
+
+    total = 0
+    reasons: list[str] = []
+    applied_aura_names: set[str] = set()
+
+    for source in list(game_map.get_friendly_units(attacker_unit)):
+        for ab in _iter_possible_abilities(source):
+            spec = _parse_melee_attacks_aura(ab)
+            if not spec:
+                continue
+            ab_name = str(getattr(ab, "name", "") or "")
+            aura_key = _norm_name(ab_name)
+            if aura_key:
+                if aura_key in applied_aura_names:
+                    continue
+                applied_aura_names.add(aura_key)
+            if spec["faction_keyword"] and not attacker_unit.has_any_keyword(spec["faction_keyword"]):
+                continue
+            if not unit_within_range_of_unit(source, attacker_unit, float(spec["range"]), use_attached_aggregate=True):
+                continue
+            amt = int(spec["amount"])
+            total += amt
+            reasons.append(f"Aura: +{amt}A (melee) from {ab_name}")
+
+    return int(total), tuple(reasons)
+
+

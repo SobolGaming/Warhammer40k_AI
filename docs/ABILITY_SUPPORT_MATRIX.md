@@ -58,6 +58,8 @@ These mechanics are currently recognized by searching ability names/descriptions
 - Auras: strict "+N Objective Control while within X"" auras (Supported)
 - Nurgle’s Gift (Aura): baseline Contagion Range debuff (-1 Toughness to enemies within 3/6/9") (Partial)
 - Aura stacking rule (engine): different Aura names can all apply (subject to caps/wording), but the same Aura name from multiple sources applies once.
+- Auras: strict "+N Attacks characteristic to melee weapons while within X"" auras (Supported)
+- Once-per-battle abilities: engine tracks usage + supports temporary phase-scoped buffs via explicit activation APIs (Supported)
 
 ## Core Abilities
 
@@ -3671,7 +3673,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Deredeo Strike | 1 | 1 | **Not implemented** |  |
 | Devastating Assault | 1 | 1 | **Not implemented** |  |
 | Devoted to Destruction | 1 | 1 | **Not implemented** |  |
-| Direct the Slaughter | 1 | 1 | **Not implemented** |  |
+| Direct the Slaughter | 1 | 1 | **Supported** | Stratagem CP cost modifier: -1CP once per battle round if target is WORLD EATERS and within 12" of a holder |
 | Duty Eternal | 1 | 1 | **Not implemented** |  |
 | Even In Death I Serve | 1 | 1 | **Supported** | Deadly Demise |
 | Ferocious Assault | 1 | 1 | **Not implemented** |  |
@@ -3685,12 +3687,12 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Legendary Killer | 1 | 1 | **Not implemented** |  |
 | Line-breaker | 1 | 1 | **Not implemented** |  |
 | Loping Speed | 1 | 1 | **Not implemented** |  |
-| Lord of Murder | 1 | 1 | **Supported** | Lone Operative |
+| Lord of Murder | 1 | 1 | **Supported** | Conditional Lone Operative while within 3" of friendly WORLD EATERS INFANTRY |
 | Meet Any Challenge | 1 | 1 | **Not implemented** |  |
 | Murderlust | 1 | 1 | **Supported** | Advance+Charge (exact wording) |
 | Objective Ravaged | 1 | 1 | **Not implemented** |  |
 | Pinning Bombardment | 1 | 1 | **Not implemented** |  |
-| Possessed Lord | 1 | 1 | **Not implemented** |  |
+| Possessed Lord | 1 | 1 | **Supported** | Once per battle activation API (+3A melee + Devastating Wounds until end of Fight phase) |
 | Powerful Volley | 1 | 1 | **Not implemented** |  |
 | Punishing Suppression | 1 | 1 | **Not implemented** |  |
 | Rage Embodied (Aura) | 1 | 1 | **Not implemented** |  |

@@ -134,6 +134,45 @@ class StratagemDialog(BaseDialog):
 
                 self.on_request_blessings_roll(self.player, self.game, context, _done)
                 return
+
+        # Optional ability prompt: Direct the Slaughter (-1CP, once per battle round) when a friendly
+        # WORLD EATERS unit is targeted with a Stratagem.
+        if name and self.player is not None and hasattr(self, "on_request_yes_no") and callable(getattr(self, "on_request_yes_no")):
+            try:
+                target_unit = context.get("target_unit", None)
+                strat = self.manager.get_by_name(str(name)) if self.manager else None
+                if strat is not None and target_unit is not None:
+                    # Preview available discount regardless of decision hooks; prompt explicitly in UI.
+                    prev = self.player.preview_stratagem_cp_cost(strat, target_unit=target_unit, assume_optional_discounts=True)
+                    if int(prev.get("discount", 0) or 0) >= 1:
+                        if getattr(self, "_optional_flow_active", False):
+                            return
+                        self._optional_flow_active = True
+                        self.visible = False
+
+                        base = int(prev.get("base", getattr(strat, "cp_cost", 0) or 0) or 0)
+                        msg = f"Use Direct the Slaughter to reduce CP cost by 1?\n\n{str(name)}: {base}CP → {max(0, base-1)}CP"
+
+                        def _done(chosen: bool):
+                            self._optional_flow_active = False
+                            try:
+                                # One-shot decision consumed by Player.apply_stratagem_cp_cost during use()
+                                self.player.set_next_optional_decision("DIRECT_THE_SLAUGHTER", bool(chosen))
+                            except Exception:
+                                pass
+                            ok2 = self.manager.use(name, **context)
+                            if ok2:
+                                print(f"✅ Used stratagem: {name}")
+                                self.hide()
+                            else:
+                                print(f"❌ Could not use stratagem: {name}")
+                                self.visible = True
+
+                        self.on_request_yes_no("Direct the Slaughter", msg, "Use", "Skip", _done)
+                        return
+            except Exception:
+                # If anything about the prompt logic fails, fall through to normal behavior.
+                pass
         ok = self.manager.use(name, **context)
         if ok:
             print(f"✅ Used stratagem: {name}")

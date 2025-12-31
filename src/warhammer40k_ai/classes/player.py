@@ -51,6 +51,15 @@ class Player:
         # at the start of their own Command phase, unless an ability explicitly exempts it.
         self.cp_gained_this_battle_round_excluding_normal_command_cp: int = 0
         self._cp_gain_guardrail_battle_round: int | None = None
+        # Generic per-battle-round ability usage (e.g. "Once per battle round..." reactions)
+        self._ability_used_battle_round: dict[str, int] = {}
+        # Optional synchronous decision hook for UI/AI.
+        # Signature: fn(player, key: str, context: dict) -> bool
+        # If None, optional abilities are NOT auto-used (conservative default).
+        self.decision_hook = None
+        # One-shot overrides that dialogs can set to drive immediate decisions without requiring
+        # a persistent decision_hook. Entries are consumed on first read.
+        self._next_optional_decisions: dict[str, bool] = {}
         #print(f"Player {self.name} created with army: {self.army}")
     
     def set_army(self, army: Army) -> None:
@@ -180,6 +189,178 @@ class Player:
             self.command_points -= amount
             return True
         return False
+
+    # ---------------- Stratagem CP modifiers (e.g. Direct the Slaughter) ----------------
+
+    def _battle_round(self) -> int:
+        try:
+            return int(getattr(self.game, "turn", 0) or 0)
+        except Exception:
+            return 0
+
+    def _preview_direct_the_slaughter_discount(self, *, target_unit=None) -> int:
+        """
+        Direct the Slaughter:
+        Once per battle round, one model from your army with this ability can use it when a friendly
+        WORLD EATERS unit within 12" of that model is targeted with a Stratagem. If it does,
+        reduce the CP cost of that Stratagem by 1CP.
+
+        Engine behavior: if eligible and beneficial, we will auto-apply this discount when paying CP.
+        """
+        if target_unit is None:
+            return 0
+        try:
+            if not target_unit.has_any_keyword("WORLD EATERS"):
+                return 0
+        except Exception:
+            return 0
+
+        br = self._battle_round()
+        if br <= 0:
+            return 0
+        if int(self._ability_used_battle_round.get("DIRECT_THE_SLAUGHTER", 0) or 0) == br:
+            return 0
+
+        army = self.get_army()
+        if army is None:
+            return 0
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        if game_map is None:
+            return 0
+
+        try:
+            from warhammer40k_ai.utility.aura_utils import unit_within_range_of_unit
+        except Exception:
+            return 0
+
+        for u in list(getattr(army, "units", []) or []):
+            try:
+                if not u.is_alive():
+                    continue
+            except Exception:
+                continue
+            has_ability = False
+            for ab in (getattr(u, "possible_abilities", []) or []):
+                nm = str(getattr(ab, "name", "") or "").strip().lower()
+                if nm == "direct the slaughter":
+                    has_ability = True
+                    break
+            if not has_ability:
+                continue
+            # Range check to the targeted unit
+            try:
+                if unit_within_range_of_unit(u, target_unit, 12.0, use_attached_aggregate=True):
+                    return 1
+            except Exception:
+                continue
+        return 0
+
+    def _should_use_optional_ability(self, key: str, context: dict) -> bool:
+        """
+        Ask the registered decision hook whether to use an optional ability.
+        Conservative default: False (do not auto-spend limited resources).
+        """
+        k = (key or "").strip().upper()
+        if k:
+            # One-shot override from UI dialog / upstream controller
+            if isinstance(getattr(self, "_next_optional_decisions", None), dict) and k in self._next_optional_decisions:
+                try:
+                    return bool(self._next_optional_decisions.pop(k))
+                except Exception:
+                    # If pop fails, default to False
+                    try:
+                        del self._next_optional_decisions[k]
+                    except Exception:
+                        pass
+                    return False
+        fn = getattr(self, "decision_hook", None)
+        if callable(fn):
+            try:
+                return bool(fn(self, k or (key or ""), dict(context or {})))
+            except Exception:
+                return False
+        return False
+
+    def set_next_optional_decision(self, key: str, value: bool) -> None:
+        """Set a one-shot decision override consumed by the next matching optional ability query."""
+        k = (key or "").strip().upper()
+        if not k:
+            return
+        if not isinstance(getattr(self, "_next_optional_decisions", None), dict):
+            self._next_optional_decisions = {}
+        self._next_optional_decisions[k] = bool(value)
+
+    def preview_stratagem_cp_cost(self, stratagem, *, target_unit=None, assume_optional_discounts: bool | None = None) -> dict:
+        """
+        Preview effective CP cost without consuming any once-per-round ability usage.
+
+        NOTE:
+        - If `assume_optional_discounts` is True, include available optional discounts in the preview.
+        - If False, do not include optional discounts.
+        - If None, include optional discounts only if a decision hook exists (meaning UI/AI can decide).
+        """
+        base = int(getattr(stratagem, "cp_cost", 0) or 0)
+        discount = 0
+        reasons: list[str] = []
+
+        if assume_optional_discounts is None:
+            # Default behavior:
+            # - If a decision hook exists, assume optional discounts may be used (UI/AI can decide).
+            # - Otherwise, assume optional discounts only if a one-shot override explicitly opts in.
+            assume_optional_discounts = bool(callable(getattr(self, "decision_hook", None)))
+            if not assume_optional_discounts:
+                try:
+                    overrides = getattr(self, "_next_optional_decisions", {}) or {}
+                    if isinstance(overrides, dict) and "DIRECT_THE_SLAUGHTER" in overrides:
+                        assume_optional_discounts = bool(overrides.get("DIRECT_THE_SLAUGHTER", False))
+                except Exception:
+                    assume_optional_discounts = False
+
+        if assume_optional_discounts:
+            dts = self._preview_direct_the_slaughter_discount(target_unit=target_unit)
+            if dts:
+                discount += int(dts)
+                reasons.append("Direct the Slaughter: -1CP (once per battle round)")
+
+        cost = max(0, base - discount)
+        return {"base": base, "discount": discount, "cost": cost, "reasons": reasons}
+
+    def apply_stratagem_cp_cost(self, stratagem, *, target_unit=None) -> dict:
+        """
+        Compute effective CP cost and CONSUME any once-per-battle-round discounts that are applied.
+        """
+        base = int(getattr(stratagem, "cp_cost", 0) or 0)
+        # For application, we still compute "available" discounts (even if declined), but affordability uses applied discount.
+        preview = self.preview_stratagem_cp_cost(stratagem, target_unit=target_unit, assume_optional_discounts=True)
+        available_discount = int(preview.get("discount", 0) or 0)
+
+        applied_discount = 0
+        reasons: list[str] = []
+
+        # Decide whether to apply Direct the Slaughter if available.
+        dts_available = bool(self._preview_direct_the_slaughter_discount(target_unit=target_unit))
+        if dts_available:
+            ctx = {
+                "ability_name": "Direct the Slaughter",
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_use_optional_ability("DIRECT_THE_SLAUGHTER", ctx):
+                applied_discount = 1
+                reasons.append("Direct the Slaughter: -1CP (used)")
+                br = self._battle_round()
+                if br > 0:
+                    self._ability_used_battle_round["DIRECT_THE_SLAUGHTER"] = br
+
+        cost = max(0, base - applied_discount)
+        return {
+            "base": base,
+            "discount": applied_discount,
+            "available_discount": available_discount,
+            "cost": cost,
+            "reasons": reasons or list(preview.get("reasons", []) or []),
+        }
 
     def compute_average_distance(self, objective: Objective) -> float:
         """Compute the average distance of the player's alive units to the objective."""

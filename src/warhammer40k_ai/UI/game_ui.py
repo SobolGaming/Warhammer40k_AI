@@ -435,6 +435,9 @@ class GameView:
         # Stratagem dialog instance
         screen_width, screen_height = self.screen.get_size()
         self.stratagem_dialog = StratagemDialog(screen_width, screen_height)
+        # Generic Yes/No prompt dialog (used for optional abilities, confirmations, etc.)
+        from .dialogs import YesNoDialog
+        self.yes_no_dialog = YesNoDialog(screen_width, screen_height)
         self.secondary_discard_dialog = SecondaryDiscardDialog(screen_width, screen_height)
         self.overwatch_shooter_dialog = OverwatchShooterDialog(screen_width, screen_height)
         # WORLD EATERS: Blessings of Khorne dialog (lazy-create only if needed)
@@ -493,6 +496,22 @@ class GameView:
             else:
                 on_chosen(cand[0])
         setattr(self.stratagem_dialog, 'on_request_rapid_ingress_unit', _request_rapid_ingress_unit)
+
+        # Generic yes/no prompt hook for optional ability decisions (e.g., Direct the Slaughter)
+        def _request_yes_no(title: str, message: str, yes_label: str, no_label: str, on_chosen):
+            self.yes_no_dialog.show(
+                title,
+                message,
+                lambda choice: (self.yes_no_dialog.hide(), on_chosen(bool(choice))),
+                yes_label=yes_label,
+                no_label=no_label,
+            )
+            try:
+                # Make it explicitly topmost
+                self.dialog_manager.open(self.yes_no_dialog, modal=True)
+            except Exception:
+                pass
+        setattr(self.stratagem_dialog, 'on_request_yes_no', _request_yes_no)
 
         def _request_overwatch_shooting(shooter_unit, enemy_unit, on_done):
             # Reuse ShootingDeclarationDialog for interactive weapon selection/targeting
@@ -604,6 +623,8 @@ class GameView:
         try:
             if self.game and getattr(self.game, "event_system", None) is not None:
                 self.game.event_system.subscribe("battle_round_started", self._on_battle_round_started)
+                # Optional ability prompts (phase-start timing windows)
+                self.game.event_system.subscribe("phase_start", self._on_phase_start_optional_ability_prompts)
         except Exception:
             pass
 
@@ -616,6 +637,105 @@ class GameView:
             return
         if br <= 0:
             return
+
+    # ---------------- Optional ability prompt windows (UI-driven) ----------------
+
+    def _on_phase_start_optional_ability_prompts(self, player=None, phase=None, **_kwargs):
+        """
+        UI-driven optional ability prompts.
+
+        - Possessed Lord: once per battle, start of Fight phase, prompt to activate.
+        """
+        # Only care about Fight phase
+        try:
+            pname = str(getattr(phase, "name", "") or "").strip().upper()
+        except Exception:
+            pname = ""
+        if pname != "FIGHT_PHASE":
+            return
+        if player is None:
+            return
+        try:
+            # Only prompt the active player (avoid double prompts from opponent publishes)
+            if player is not self.game.get_current_player():
+                return
+        except Exception:
+            pass
+        # Only for human players (AI will decide via decision_hook / agent)
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return
+        except Exception:
+            return
+
+        army = getattr(player, "army", None)
+        if army is None:
+            return
+
+        # Build queue of (unit, model) that can activate Possessed Lord
+        queue = []
+        for unit in list(getattr(army, "units", []) or []):
+            try:
+                if not unit.is_alive():
+                    continue
+            except Exception:
+                continue
+            has_possessed_lord = False
+            for ab in (getattr(unit, "possible_abilities", []) or []):
+                nm = str(getattr(ab, "name", "") or "").strip().lower()
+                if nm == "possessed lord":
+                    has_possessed_lord = True
+                    break
+            if not has_possessed_lord:
+                continue
+            for m in list(getattr(unit, "models", []) or []):
+                try:
+                    if not getattr(m, "is_alive", True):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    if getattr(m, "has_used_once_per_battle", lambda _k: False)("possessed_lord"):
+                        continue
+                except Exception:
+                    pass
+                queue.append((unit, m))
+                break  # typical character: prompt once per unit
+
+        if not queue:
+            return
+
+        # Store and process sequentially so we don't stack multiple modals at once.
+        self._pending_optional_ability_queue = list(queue)
+        self._process_next_optional_ability_prompt(player)
+
+    def _process_next_optional_ability_prompt(self, player):
+        q = list(getattr(self, "_pending_optional_ability_queue", []) or [])
+        if not q:
+            self._pending_optional_ability_queue = []
+            return
+        unit, model = q.pop(0)
+        self._pending_optional_ability_queue = q
+
+        title = "Optional Ability"
+        msg = f"Use Possessed Lord for {getattr(model, 'name', 'Model')} ({getattr(unit, 'name', 'Unit')})?\n\nOnce per battle: +3A (melee) and Devastating Wounds until end of Fight phase."
+
+        def _done(chosen: bool):
+            if chosen:
+                try:
+                    model.activate_possessed_lord()
+                except Exception:
+                    pass
+            # Continue queue
+            self._process_next_optional_ability_prompt(player)
+
+        # Show modal yes/no
+        try:
+            self.yes_no_dialog.show(title, msg, _done, yes_label="Use", no_label="Skip")
+            self.dialog_manager.open(self.yes_no_dialog, modal=True)
+        except Exception:
+            # If UI wiring is missing, just skip
+            _done(False)
 
         # Build queue of players to prompt (human WE only), starting with the current player.
         try:

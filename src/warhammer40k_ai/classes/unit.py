@@ -8073,18 +8073,50 @@ class Unit:
         except Exception:
             pass
 
-        # Use cached result if available
+        # Base Lone Operative (static): use cached result if available
         if 'lone_operative' in getattr(self, '_ability_cache', {}):
-            return self._ability_cache['lone_operative']
-        
-        found, _ = self._find_ability_with_patterns(["lone operative", "loneoperative"])
-        
-        # Cache the result
-        if not hasattr(self, '_ability_cache'):
-            self._ability_cache = {}
-        self._ability_cache['lone_operative'] = found
-        
-        return found
+            base_found = bool(self._ability_cache['lone_operative'])
+        else:
+            base_found, _ = self._find_ability_with_patterns(["lone operative", "loneoperative"])
+            # Cache the base result
+            if not hasattr(self, '_ability_cache'):
+                self._ability_cache = {}
+            self._ability_cache['lone_operative'] = bool(base_found)
+
+        # LORD OF MURDER (datasheet rule, not an Aura keyworded ability):
+        # While this model is within 3" of one or more friendly WORLD EATERS INFANTRY units,
+        # this model has the Lone Operative ability.
+        has_lord_of_murder = False
+        try:
+            for a in getattr(self, "possible_abilities", []) or []:
+                nm = str(getattr(a, "name", "") or "")
+                if nm.strip().lower() == "lord of murder":
+                    has_lord_of_murder = True
+                    break
+        except Exception:
+            has_lord_of_murder = False
+
+        if has_lord_of_murder:
+            game_map = None
+            try:
+                game_map = self.get_parent_army().player.game.map
+            except Exception:
+                game_map = None
+            if game_map is not None:
+                try:
+                    from ..utility.aura_utils import unit_within_range_of_unit
+                    for other in list(game_map.get_friendly_units(self)):
+                        if other is self:
+                            continue
+                        if not getattr(other, "is_alive", lambda: True)():
+                            continue
+                        if (other.has_any_keyword("WORLD EATERS") and other.has_keyword("Infantry")):
+                            if unit_within_range_of_unit(self, other, 3.0, use_attached_aggregate=True):
+                                return True
+                except Exception:
+                    pass
+
+        return bool(base_found)
 
 
 

@@ -57,7 +57,15 @@ class Stratagem:
         return True
 
     def can_use(self, player, game, **kwargs) -> bool:
-        if player.command_points < self.cp_cost:
+        # Allow CP cost modifiers (e.g. Direct the Slaughter) to affect affordability.
+        target_unit = kwargs.get("target_unit", None)
+        eff_cost = self.cp_cost
+        try:
+            if hasattr(player, "preview_stratagem_cp_cost"):
+                eff_cost = int(player.preview_stratagem_cp_cost(self, target_unit=target_unit).get("cost", self.cp_cost))
+        except Exception:
+            eff_cost = self.cp_cost
+        if player.command_points < eff_cost:
             return False
         # Phase awareness
         phase_name = kwargs.get("phase_name")
@@ -75,7 +83,15 @@ class Stratagem:
     def use(self, player, game, **kwargs) -> bool:
         if not self.can_use(player, game, **kwargs):
             return False
-        if not player.spend_command_points(self.cp_cost):
+        # Apply CP cost modifiers now (consumes once-per-battle-round discounts if used)
+        target_unit = kwargs.get("target_unit", None)
+        eff_cost = self.cp_cost
+        try:
+            if hasattr(player, "apply_stratagem_cp_cost"):
+                eff_cost = int(player.apply_stratagem_cp_cost(self, target_unit=target_unit).get("cost", self.cp_cost))
+        except Exception:
+            eff_cost = self.cp_cost
+        if not player.spend_command_points(eff_cost):
             return False
         if self.effect is not None:
             self.effect(player, game, **kwargs)

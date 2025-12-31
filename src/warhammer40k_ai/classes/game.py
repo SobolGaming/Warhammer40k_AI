@@ -155,6 +155,103 @@ class Game:
         self.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_rules)
         # Transport core rules (Destroyed Transport -> Disembark + mortals + battleshock)
         self.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_transport_rules)
+        # Temporary effects cleanup (e.g. once-per-battle abilities that last "until end of phase")
+        self.event_system.subscribe("phase_end", self._on_phase_end_cleanup)
+        # Optional ability timing windows (prompt/decision hooks)
+        self.event_system.subscribe("phase_start", self._on_phase_start_optional_abilities)
+
+    def _on_phase_start_optional_abilities(self, player=None, phase=None, **_kwargs) -> None:
+        """
+        Hook point for optional, player-decided abilities that trigger at specific timing windows.
+
+        Currently supported:
+        - Possessed Lord (Once per battle, start of Fight phase): prompt to activate.
+        """
+        try:
+            pname = str(getattr(phase, "name", "") or "").strip().upper()
+        except Exception:
+            pname = ""
+        if pname != "FIGHT_PHASE":
+            return
+        if player is None:
+            return
+
+        # Only prompt the current player for their own optional activations at the start of this Fight phase.
+        try:
+            if player is not self.get_current_player():
+                return
+        except Exception:
+            pass
+
+        army = getattr(player, "army", None)
+        if army is None:
+            return
+
+        for unit in list(getattr(army, "units", []) or []):
+            try:
+                if not unit.is_alive():
+                    continue
+            except Exception:
+                pass
+            # Check unit has Possessed Lord ability text (datasheet ability list)
+            has_possessed_lord = False
+            try:
+                for ab in (getattr(unit, "possible_abilities", []) or []):
+                    nm = str(getattr(ab, "name", "") or "").strip().lower()
+                    if nm == "possessed lord":
+                        has_possessed_lord = True
+                        break
+            except Exception:
+                has_possessed_lord = False
+            if not has_possessed_lord:
+                continue
+
+            # Apply to the first alive model in the unit (typical for character datasheets).
+            models = list(getattr(unit, "models", []) or [])
+            for m in models:
+                try:
+                    if not getattr(m, "is_alive", True):
+                        continue
+                except Exception:
+                    continue
+                # If already used, skip.
+                try:
+                    if getattr(m, "has_used_once_per_battle", lambda _k: False)("possessed_lord"):
+                        break
+                except Exception:
+                    pass
+
+                # Decision hook
+                try:
+                    ctx = {
+                        "ability_name": "Possessed Lord",
+                        "unit": getattr(unit, "name", "") or "",
+                        "model": getattr(m, "name", "") or "",
+                        "phase": "Fight phase",
+                    }
+                    should = bool(getattr(player, "_should_use_optional_ability", lambda *_a, **_k: False)("POSSESSED_LORD", ctx))
+                except Exception:
+                    should = False
+
+                if should:
+                    try:
+                        getattr(m, "activate_possessed_lord")()
+                    except Exception:
+                        pass
+                break
+
+    def _on_phase_end_cleanup(self, player=None, phase=None, **_kwargs) -> None:
+        """Best-effort cleanup for model-level temporary effects that expire at end of a phase."""
+        try:
+            for p in list(getattr(self, "players", []) or []):
+                army = getattr(p, "army", None)
+                for u in list(getattr(army, "units", []) or []):
+                    for m in list(getattr(u, "models", []) or []):
+                        fn = getattr(m, "on_phase_end", None)
+                        if callable(fn):
+                            fn(phase)
+        except Exception:
+            return
 
     def _on_model_destroyed_rules(self, attacker_model=None, attacker_unit=None, target_model=None, target_unit=None, **_kwargs) -> None:
         # Generic partial support for "gain CP when this model destroys an enemy KEYWORD unit/model".

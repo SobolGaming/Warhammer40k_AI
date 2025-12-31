@@ -398,6 +398,16 @@ class WargearProfile:
             pass
             attack_result.attacks_dice_rolls = []
 
+        # Once-per-battle temporary buffs on the attacking model (e.g. Possessed Lord)
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                bonus = int(getattr(attacker, "get_temporary_melee_attacks_bonus", lambda: 0)() or 0)
+                if bonus:
+                    num_attacks += bonus
+                    attack_result.attacks_special_modifiers.append(f"Ability +{bonus}A (melee) [temporary]")
+        except Exception:
+            pass
+
         # Damaged profile: add attacks to melee weapons (+N).
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():
@@ -405,6 +415,16 @@ class WargearProfile:
                 if bonus:
                     num_attacks += bonus
                     attack_result.attacks_special_modifiers.append(f"Damaged profile +{bonus}A (melee)")
+        except Exception:
+            pass
+
+        # Friendly auras: add to the Attacks characteristic of melee weapons (e.g. Rage Embodied (Aura))
+        try:
+            from ..utility.aura_effects import get_aura_melee_attacks_bonus
+            aura_a, aura_reasons = get_aura_melee_attacks_bonus(attacker.parent_unit, self, game_map=game_map)
+            if aura_a:
+                num_attacks += int(aura_a)
+                attack_result.attacks_special_modifiers.extend(list(aura_reasons or ()))
         except Exception:
             pass
 
@@ -1042,7 +1062,15 @@ class WargearProfile:
             if roll == 6:
                 wound_result['special_effects'].append("Natural 6 (auto-wound)")
                 attack_instance['crit_wound'] = True
-                if self.is_devastating_wounds() or _devastating_from_blessings():
+                has_temp_dev = False
+                try:
+                    has_temp_dev = bool(getattr(attacker, "has_temporary_devastating_wounds_melee", lambda: False)())
+                    if has_temp_dev:
+                        is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+                        has_temp_dev = bool(is_melee)
+                except Exception:
+                    has_temp_dev = False
+                if self.is_devastating_wounds() or _devastating_from_blessings() or has_temp_dev:
                     wound_result['special_effects'].append("Devastating Wounds")
                     attack_instance['mortal_wound'] = True
                 return True
@@ -1053,7 +1081,15 @@ class WargearProfile:
                 if roll >= anti_value:
                     wound_result['special_effects'].append(f"Anti-{anti_keyword} {anti_value}+")
                     attack_instance['crit_wound'] = True
-                    if self.is_devastating_wounds() or _devastating_from_blessings():
+                    has_temp_dev = False
+                    try:
+                        has_temp_dev = bool(getattr(attacker, "has_temporary_devastating_wounds_melee", lambda: False)())
+                        if has_temp_dev:
+                            is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+                            has_temp_dev = bool(is_melee)
+                    except Exception:
+                        has_temp_dev = False
+                    if self.is_devastating_wounds() or _devastating_from_blessings() or has_temp_dev:
                         wound_result['special_effects'].append("Devastating Wounds")
                         attack_instance['mortal_wound'] = True
                     return True

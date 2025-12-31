@@ -50,6 +50,10 @@ class Model:
         self._id = str(uuid.uuid4())  # Generate a unique ID for each model
         self.parent_unit = None
         self.last_move_path = []
+        # Rule usage / temporary buffs
+        self._once_per_battle_used: set[str] = set()
+        # Temporary effects keyed by effect id; each value is a small dict
+        self._temporary_effects: dict[str, dict] = {}
 
     @property
     def id(self) -> str:
@@ -106,6 +110,81 @@ class Model:
     def add_ability(self, ability: Ability) -> None:
         """Add ability to the model."""
         self.abilities[ability.name] = ability
+
+    # ---------------- Once-per-battle / temporary rules helpers ----------------
+
+    def has_used_once_per_battle(self, key: str) -> bool:
+        k = (key or "").strip().lower()
+        if not k:
+            return False
+        return k in (self._once_per_battle_used or set())
+
+    def mark_used_once_per_battle(self, key: str) -> None:
+        k = (key or "").strip().lower()
+        if not k:
+            return
+        if not isinstance(getattr(self, "_once_per_battle_used", None), set):
+            self._once_per_battle_used = set()
+        self._once_per_battle_used.add(k)
+
+    def activate_possessed_lord(self) -> bool:
+        """
+        Possessed Lord (Slaughterbound / similar):
+        Once per battle, at the start of the Fight phase, this model can use this ability.
+        If it does, until the end of the phase:
+        - add 3 to the Attacks characteristic of melee weapons equipped by this model
+        - those weapons have [DEVASTATING WOUNDS]
+
+        Engine note: we expose this as an explicit activation API. A UI/AI can call it at the appropriate timing.
+        """
+        key = "possessed_lord"
+        if self.has_used_once_per_battle(key):
+            return False
+        # Install effect until end of Fight phase
+        self._temporary_effects["possessed_lord"] = {
+            "melee_attacks_bonus": 3,
+            "devastating_wounds_melee": True,
+            "expires_phase": "FIGHT_PHASE",
+        }
+        self.mark_used_once_per_battle(key)
+        return True
+
+    def get_temporary_melee_attacks_bonus(self) -> int:
+        eff = getattr(self, "_temporary_effects", {}) or {}
+        try:
+            v = eff.get("possessed_lord", {})
+            return int(v.get("melee_attacks_bonus", 0) or 0)
+        except Exception:
+            return 0
+
+    def has_temporary_devastating_wounds_melee(self) -> bool:
+        eff = getattr(self, "_temporary_effects", {}) or {}
+        try:
+            v = eff.get("possessed_lord", {})
+            return bool(v.get("devastating_wounds_melee", False))
+        except Exception:
+            return False
+
+    def on_phase_end(self, phase) -> None:
+        """Clear temporary effects that expire at end of the provided phase."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if not pname:
+            return
+        eff = getattr(self, "_temporary_effects", None)
+        if not isinstance(eff, dict) or not eff:
+            return
+        to_del = []
+        for k, v in list(eff.items()):
+            try:
+                if str(v.get("expires_phase", "") or "").strip().upper() == pname:
+                    to_del.append(k)
+            except Exception:
+                continue
+        for k in to_del:
+            try:
+                del eff[k]
+            except Exception:
+                pass
 
     def set_parent_unit(self, unit_ptr) -> None:
         """Set the parent unit of the model."""
