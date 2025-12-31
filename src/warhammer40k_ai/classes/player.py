@@ -238,12 +238,27 @@ class Player:
             card = self.secondary_deck.pop(0)
             try:
                 if hasattr(card, 'can_be_drawn') and not card.can_be_drawn(game, self):
-                    # Discard immediately and continue drawing
-                    self.discarded_secondaries.append(card)
-                    try:
-                        print(f"🗑️ {self.name} cannot draw Secondary: {card.name} (ineligible) → discarded")
-                    except Exception:
-                        pass
+                    # Not eligible on draw. Some cards specify: redraw and shuffle this card back into deck.
+                    if bool(getattr(card, "shuffle_back_on_ineligible_draw", False)):
+                        try:
+                            import random
+                            # Shuffle back into the remaining deck at a random position.
+                            idx = random.randint(0, len(self.secondary_deck))
+                            self.secondary_deck.insert(idx, card)
+                        except Exception:
+                            # Fallback: append to the back of the deck
+                            self.secondary_deck.append(card)
+                        try:
+                            print(f"🔄 {self.name} cannot draw Secondary: {card.name} (ineligible) → shuffled back into deck")
+                        except Exception:
+                            pass
+                    else:
+                        # Discard immediately and continue drawing
+                        self.discarded_secondaries.append(card)
+                        try:
+                            print(f"🗑️ {self.name} cannot draw Secondary: {card.name} (ineligible) → discarded")
+                        except Exception:
+                            pass
                     continue
                 # Allow cards to perform on-draw initialization
                 if hasattr(card, 'on_draw'):

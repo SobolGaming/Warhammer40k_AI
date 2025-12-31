@@ -1630,6 +1630,9 @@ class Unit:
         try:
             game = self.get_parent_army().player.game
             game.event_system.publish("model_destroyed_before_removal", unit=self, model=model)
+            # Mission scoring hooks (e.g., Fixed Assassination)
+            if hasattr(game, "record_model_destroyed"):
+                game.record_model_destroyed(model)
         except Exception:
             pass
 

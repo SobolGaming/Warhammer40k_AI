@@ -2337,6 +2337,10 @@ class ObjectivePoint:
         self.controlling_player = None
         # Chapter Approved 2025/26 Terraform tracking
         self.terraformed_by = None
+        # Chapter Approved 2025/26 Cleanse tracking
+        self.cleansed_by = None
+        # Chapter Approved 2025/26 Unexploded Ordnance tracking (Hazard markers)
+        self.is_hazard: bool = False
         # Some primaries can remove objectives (e.g., Scorched Earth, Supply Drop)
         self.removed = False
 

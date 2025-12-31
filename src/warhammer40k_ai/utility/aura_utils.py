@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Iterable, Optional
 
 from shapely.ops import unary_union
+from shapely.geometry import Point as ShapelyPoint
 
 
 @dataclass(frozen=True)
@@ -236,5 +237,53 @@ def unit_wholly_within_range_of_unit(
         if not model_wholly_within_range_of_unit(source_unit, tm, radius, use_attached_aggregate=use_attached_aggregate):
             return False
     return True
+
+
+# ---------------------------------------------------------------------------
+# Point distance helpers (for mission cards like "within X\" of the centre")
+# ---------------------------------------------------------------------------
+
+def horizontal_distance_point_to_base_2d(base, x: float, y: float) -> float:
+    """2D edge distance from a point to a base/hull shape (0 if point is inside)."""
+    if base is None:
+        return float("inf")
+    try:
+        px = float(x)
+        py = float(y)
+    except Exception:
+        return float("inf")
+    try:
+        shape = base.get_base_shape()
+        return float(shape.distance(ShapelyPoint(px, py)))
+    except Exception:
+        return float("inf")
+
+
+def horizontal_distance_point_to_model_base_2d(model, x: float, y: float) -> float:
+    """Convenience wrapper around horizontal_distance_point_to_base_2d for a Model-like object."""
+    if model is None:
+        return float("inf")
+    base = getattr(model, "model_base", None)
+    return horizontal_distance_point_to_base_2d(base, x, y)
+
+
+def unit_within_horizontal_distance_of_point(unit, x: float, y: float, radius: float) -> bool:
+    """
+    A unit is within X\" of a point if ANY alive model's base/hull is within X\" (2D) of that point.
+    Uses base edge distance (i.e., consistent with base-to-point measurements).
+    """
+    try:
+        r = float(radius)
+    except Exception:
+        return False
+    if r < 0:
+        return False
+    models = list(getattr(unit, "models", []) or [])
+    for m in models:
+        if not getattr(m, "is_alive", True):
+            continue
+        if horizontal_distance_point_to_model_base_2d(m, x, y) <= r + 1e-6:
+            return True
+    return False
 
 

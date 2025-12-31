@@ -49,10 +49,17 @@ def make_game():
 
 def new_unit(at=(5, 5), alive=True, aircraft=False, battle_shocked=False, models=1):
     # Builds a minimal unit with models and API used by cards
+    from shapely.geometry import Point as _Pt
     class M:
         def __init__(self, pos):
             self._pos = pos
             self.is_alive = True
+            # Minimal model_base API for aura_utils-based distance checks
+            self.model_base = type(
+                "_TB",
+                (),
+                {"get_base_shape": lambda self_inner, p=pos: _Pt(float(p[0]), float(p[1])).buffer(0.5)},
+            )()
         def get_location(self):
             return (self._pos[0], self._pos[1], 0.0)
     ms = [M(at) for _ in range(models)]
@@ -261,7 +268,11 @@ def test_assassination_character_or_all():
     p1.set_secondary_deck([card])
     p1.active_secondaries = [card]
     # A character destroyed this turn
-    m = types.SimpleNamespace(is_character=True)
+    m = types.SimpleNamespace(
+        is_character=True,
+        _base_wounds=4,
+        parent_unit=types.SimpleNamespace(get_parent_army=lambda: p2.army),
+    )
     game.models_destroyed_this_turn = [m]
     res = card.score_at_end_of_turn(game, p1)
     assert res.vp == 5
@@ -277,7 +288,12 @@ def test_cull_the_horde():
     card = CullTheHordeSecondary()
     p1.set_secondary_deck([card])
     p1.active_secondaries = [card]
-    enemy = types.SimpleNamespace(keywords=["Infantry"], starting_strength=20)
+    enemy = types.SimpleNamespace(
+        is_infantry=True,
+        starting_model_count=20,
+        attached_leaders=[],
+        get_parent_army=lambda: p2.army,
+    )
     game.destroyed_units_this_turn = [enemy]
     res = card.score_at_end_of_turn(game, p1)
     assert res.vp == 5
@@ -285,6 +301,7 @@ def test_cull_the_horde():
 
 def test_display_of_might():
     game, p1, p2 = make_game()
+    game.turn = 2
     card = DisplayOfMightSecondary()
     p1.set_secondary_deck([card])
     p1.active_secondaries = [card]

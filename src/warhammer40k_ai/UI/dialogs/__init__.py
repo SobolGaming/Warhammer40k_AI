@@ -19,6 +19,8 @@ from .reserves_allocation_dialog import ReservesAllocationDialog
 from .precision_allocation_dialog import PrecisionAllocationDialog
 from .firing_deck_dialog import FiringDeckDialog
 from .blessings_of_khorne_dialog import BlessingsOfKhorneDialog
+from .battlefield_point_pick_dialog import BattlefieldPointPickDialog
+from .hazard_objective_select_dialog import HazardObjectiveSelectDialog
 
 __all__ = [
     'BaseDialog',
@@ -42,4 +44,6 @@ __all__ = [
     'PrecisionAllocationDialog',
     'FiringDeckDialog',
     'BlessingsOfKhorneDialog',
+    'BattlefieldPointPickDialog',
+    'HazardObjectiveSelectDialog',
 ] 

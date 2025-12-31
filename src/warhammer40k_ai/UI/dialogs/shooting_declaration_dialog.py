@@ -115,6 +115,10 @@ class ShootingDeclarationDialog(BaseDialog):
         # Add Cancel button
         self.add_button('cancel', self.width - 160, self.height - 50, 140, 35)
 
+        # Add additional Mission Action buttons (The Ritual / Move Hazard)
+        self.add_button('start_the_ritual', 10, self.height - 140, 200, 35)
+        self.add_button('start_move_hazard', 220, self.height - 140, 200, 35)
+
         # Add Mission Action buttons (Terraform / Sabotage / Burn Objective)
         # Place above the bottom row
         self.add_button('start_terraform', 10, self.height - 95, 200, 35)
@@ -136,6 +140,10 @@ class ShootingDeclarationDialog(BaseDialog):
             return self._try_start_sabotage()
         elif button_name == 'start_burn_objective':
             return self._try_start_burn_objective()
+        elif button_name == 'start_the_ritual':
+            return self._try_start_the_ritual()
+        elif button_name == 'start_move_hazard':
+            return self._try_start_move_hazard()
         return False
 
     def _handle_dialog_click(self, mouse_pos) -> bool:
@@ -346,6 +354,124 @@ class ShootingDeclarationDialog(BaseDialog):
         result = game.start_burn_objective_action(self.unit)
         print("🔥 Burn Objective Action started")
         self.hide()
+        return True
+
+    def _try_start_the_ritual(self) -> bool:
+        if not self.game_view or not hasattr(self.game_view, 'game'):
+            return False
+        game = self.game_view.game
+        if not hasattr(game, "can_start_the_ritual") or not hasattr(game, "start_the_ritual_action"):
+            print("❌ The Ritual action is not available")
+            return False
+
+        # Open point picker modal: user clicks battlefield to choose placement.
+        from .battlefield_point_pick_dialog import BattlefieldPointPickDialog
+
+        if not hasattr(self.game_view, "battlefield_point_pick_dialog") or self.game_view.battlefield_point_pick_dialog is None:
+            self.game_view.battlefield_point_pick_dialog = BattlefieldPointPickDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+
+        picker = self.game_view.battlefield_point_pick_dialog
+
+        def _validate(x: float, y: float) -> dict:
+            return game.can_start_the_ritual(self.unit, new_objective_xy=(x, y))
+
+        def _confirm(pt):
+            x, y = pt
+            res = game.start_the_ritual_action(self.unit, new_objective_xy=(x, y))
+            if not res.get("valid", False):
+                print(f"❌ Cannot start The Ritual: {res.get('reason')}")
+                return
+            print("✅ The Ritual Action started")
+            self.hide()
+
+        picker.show(
+            game_view=self.game_view,
+            title="The Ritual",
+            instructions="Click a point in No Man's Land to place the new objective marker.",
+            validate_cb=_validate,
+            on_confirm=_confirm,
+            on_cancel=lambda: None,
+        )
+        try:
+            self.game_view.dialog_manager.open(picker, modal=True)
+        except Exception:
+            pass
+        return True
+
+    def _try_start_move_hazard(self) -> bool:
+        if not self.game_view or not hasattr(self.game_view, 'game'):
+            return False
+        game = self.game_view.game
+        if not hasattr(game, "can_start_move_hazard") or not hasattr(game, "start_move_hazard_action"):
+            print("❌ Move Hazard action is not available")
+            return False
+
+        # Build eligible hazard objectives: controlled by player, marked hazard, and this unit is within range.
+        actor = self.unit.get_parent_army().player
+        eligible = []
+        for obj in getattr(game.map, "objectives", []) or []:
+            loc = getattr(obj, "location", None)
+            if not loc or getattr(loc, "removed", False):
+                continue
+            if not bool(getattr(loc, "is_hazard", False)):
+                continue
+            if hasattr(loc, "update_control"):
+                loc.update_control(game)
+            if getattr(loc, "controlling_player", None) is not actor:
+                continue
+            try:
+                if game._unit_within_range_of_objective(self.unit) is not obj:
+                    continue
+            except Exception:
+                continue
+            eligible.append(obj)
+
+        if not eligible:
+            print("❌ No eligible Hazard objective markers in range that you control")
+            return False
+
+        from .hazard_objective_select_dialog import HazardObjectiveSelectDialog
+        from .battlefield_point_pick_dialog import BattlefieldPointPickDialog
+
+        if not hasattr(self.game_view, "hazard_objective_select_dialog") or self.game_view.hazard_objective_select_dialog is None:
+            self.game_view.hazard_objective_select_dialog = HazardObjectiveSelectDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+        if not hasattr(self.game_view, "battlefield_point_pick_dialog") or self.game_view.battlefield_point_pick_dialog is None:
+            self.game_view.battlefield_point_pick_dialog = BattlefieldPointPickDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+
+        selector = self.game_view.hazard_objective_select_dialog
+        picker = self.game_view.battlefield_point_pick_dialog
+
+        def _after_select(hazard_obj):
+            def _validate(x: float, y: float) -> dict:
+                return game.can_start_move_hazard(self.unit, hazard_objective=hazard_obj, new_xy=(x, y))
+
+            def _confirm(pt):
+                x, y = pt
+                res = game.start_move_hazard_action(self.unit, hazard_objective=hazard_obj, new_xy=(x, y))
+                if not res.get("valid", False):
+                    print(f"❌ Cannot start Move Hazard: {res.get('reason')}")
+                    return
+                print("✅ Move Hazard Action started")
+                self.hide()
+
+            picker.show(
+                game_view=self.game_view,
+                title="Move Hazard",
+                instructions="Click a destination for the Hazard objective marker (up to 6\").",
+                validate_cb=_validate,
+                on_confirm=_confirm,
+                on_cancel=lambda: None,
+            )
+            try:
+                self.game_view.dialog_manager.open(picker, modal=True)
+            except Exception:
+                pass
+
+        selector.show(game_view=self.game_view, choices=eligible, on_confirm=_after_select, on_cancel=lambda: None)
+        try:
+            self.game_view.dialog_manager.open(selector, modal=True)
+        except Exception:
+            pass
         return True
     
     def _can_target_unit(self, weapon_profile, target_unit):

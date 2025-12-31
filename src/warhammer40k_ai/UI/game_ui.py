@@ -3132,6 +3132,9 @@ class SetupPhaseHandler(BasePhaseHandler):
                     ScorchedEarthPrimary,
                     HiddenSuppliesPrimary,
                     SupplyDropPrimary,
+                    BurdenOfTrustPrimary,
+                    TheRitualPrimary,
+                    UnexplodedOrdnancePrimary,
                     PrimaryMissionCard,
                 )
                 primary_name = (combination.get('primary') or '').strip().lower()
@@ -3150,10 +3153,16 @@ class SetupPhaseHandler(BasePhaseHandler):
                     card = HiddenSuppliesPrimary()
                 elif primary_name == 'supply drop':
                     card = SupplyDropPrimary()
+                elif primary_name == 'burden of trust':
+                    card = BurdenOfTrustPrimary()
+                elif primary_name == 'the ritual':
+                    card = TheRitualPrimary()
+                elif primary_name == 'unexploded ordnance':
+                    card = UnexplodedOrdnancePrimary()
                 else:
                     class _StubPrimary(PrimaryMissionCard):
                         def __init__(self, name):
-                            super().__init__(name=name, description=f"Stub for {name}")
+                            super().__init__(name=name, summary=f"Stub for {name}", scoring_text=f"Stub for {name}")
                         def score_at_command_phase(self, game, player) -> int:
                             return 0
                         def score_at_end_of_turn(self, game, player) -> int:

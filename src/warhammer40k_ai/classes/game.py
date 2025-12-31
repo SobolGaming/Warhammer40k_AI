@@ -1470,6 +1470,11 @@ class Game:
 
         # Execute command actions for current player's units (without resetting round state)
         current_player = self.get_current_player()
+        # Burden of Trust: guards last until the start of your next turn
+        try:
+            self._clear_expired_guards_for_player(current_player)
+        except Exception:
+            pass
         # Secondary Missions: draw up to two at the start of your Command phase
         before = [getattr(c, 'name', 'Unknown') for c in getattr(current_player, 'active_secondaries', [])]
         current_player.draw_secondary_until_two(self)
@@ -1477,6 +1482,15 @@ class Game:
         newly_drawn = [name for name in after if name not in before]
         if newly_drawn:
             print(f"🃏 {current_player.name} active Secondaries: {', '.join(after)}")
+
+        # Notify active secondaries about start-of-turn (for cards that snapshot start-of-turn state).
+        for card in list(getattr(current_player, "active_secondaries", []) or []):
+            fn = getattr(card, "on_turn_start", None)
+            if callable(fn):
+                try:
+                    fn(self, current_player)
+                except Exception:
+                    pass
         # If in fifth battle round and going second, primary scoring is at end of turn, not here
         for unit in current_player.get_army().units:
             # Do battle shock tests and other command phase actions without resetting round state
@@ -1496,6 +1510,12 @@ class Game:
             for obj in self.map.objectives:
                 if hasattr(obj, 'location') and hasattr(obj.location, 'update_control'):
                     obj.location.update_control(self)
+
+        # Burden of Trust: assign guards at the end of the Command phase.
+        try:
+            self._assign_burden_of_trust_guards(current_player)
+        except Exception:
+            pass
 
         # Publish end of Command phase for Stratagems like NEW ORDERS
         try:
@@ -1790,7 +1810,7 @@ class Game:
 
     def end_of_turn_scoring(self) -> None:
         """Apply end-of-turn scoring for primaries and secondaries, manage discard rules and CP gain."""
-        current_player = self.get_current_player()
+        turn_ending_player = self.get_current_player()
 
         # Track destroyed units for this turn should already be collected elsewhere; ensure attribute exists
         if not hasattr(self, 'destroyed_units_this_turn'):
@@ -1798,42 +1818,75 @@ class Game:
         if not hasattr(self, 'completed_actions_this_turn'):
             self.completed_actions_this_turn = []
 
+        # Complete mission Actions that trigger at this end of turn FIRST (so scoring can see completions).
+        self._complete_actions_for_turn_end(turn_ending_player)
+
         # Primary: special cases that score at end of turn (e.g., Terraform 1VP per terraformed objective)
-        if hasattr(current_player, 'primary_mission') and isinstance(current_player.primary_mission, PrimaryMissionCard):
-            vp = current_player.primary_mission.score_at_end_of_turn(self, current_player)
+        if hasattr(turn_ending_player, 'primary_mission') and isinstance(turn_ending_player.primary_mission, PrimaryMissionCard):
+            vp = turn_ending_player.primary_mission.score_at_end_of_turn(self, turn_ending_player)
             if vp:
-                added = self.award_vp(current_player, vp, source="primary", card=current_player.primary_mission)
+                added = self.award_vp(turn_ending_player, vp, source="primary", card=turn_ending_player.primary_mission)
                 if added:
-                    print(f"🎯 {current_player.name} scored {added} VP (end of turn) from Primary: {current_player.primary_mission.name}")
+                    print(f"🎯 {turn_ending_player.name} scored {added} VP (end of turn) from Primary: {turn_ending_player.primary_mission.name}")
 
-        # Secondary: evaluate all active cards at end of either player's turn
-        achieved: list[SecondaryMissionCard] = []
-        total_secondary_vp = 0
-        for card in list(getattr(current_player, 'active_secondaries', [])):
-            try:
-                result = card.score_at_end_of_turn(self, current_player)
-            except Exception:
-                result = None
-            if not result:
+        # Primary: end-of-opponent's-turn scoring (only for primaries that explicitly do so, e.g. Burden of Trust).
+        for p in list(getattr(self, "players", []) or []):
+            if p is turn_ending_player:
                 continue
-            if result.vp:
-                added = self.award_vp(current_player, result.vp, source="secondary", card=card)
-                if added:
-                    total_secondary_vp += added
-                    print(f"🎯 {current_player.name} scored {added} VP from Secondary: {card.name}")
-            if getattr(result, 'achieved', False):
-                achieved.append(card)
+            prim = getattr(p, "primary_mission", None)
+            fn = getattr(prim, "score_at_end_of_opponents_turn", None)
+            if callable(fn):
+                try:
+                    vp = int(fn(self, p, turn_ending_player) or 0)
+                except Exception:
+                    vp = 0
+                if vp:
+                    added = self.award_vp(p, vp, source="primary", card=prim)
+                    if added:
+                        print(f"🎯 {p.name} scored {added} VP (opponent turn end) from Primary: {getattr(prim, 'name', 'Primary')}")
 
-        # a) If you scored 1+ VP from a Secondary, discard that card (achieved)
-        if total_secondary_vp > 0:
-            current_player.discard_achieved_secondaries(achieved)
+        # Secondary: evaluate active cards for BOTH players based on the card's scoring window.
+        from .mission_cards import SecondaryScoringWindow
+
+        def _should_score(card: SecondaryMissionCard, scoring_player: Player, ending_player: Player) -> bool:
+            try:
+                window = card.score_window()
+            except Exception:
+                window = getattr(card, "scoring_window", SecondaryScoringWindow.END_OF_YOUR_TURN)
+            if scoring_player is ending_player:
+                return window in (SecondaryScoringWindow.END_OF_YOUR_TURN, SecondaryScoringWindow.END_OF_EITHER_PLAYER_TURN)
+            return window in (SecondaryScoringWindow.END_OF_EITHER_PLAYER_TURN, SecondaryScoringWindow.END_OF_OPPONENT_TURN)
+
+        # Tactical vs Fixed: in Fixed mode, scored cards are NOT discarded on scoring.
+        is_fixed = self._is_fixed_secondaries()
+
+        for scoring_player in list(self.players):
+            achieved: list[SecondaryMissionCard] = []
+            total_secondary_vp = 0
+            for card in list(getattr(scoring_player, 'active_secondaries', [])):
+                if not _should_score(card, scoring_player, turn_ending_player):
+                    continue
+                try:
+                    result = card.score_at_end_of_turn(self, scoring_player)
+                except Exception:
+                    result = None
+                if not result:
+                    continue
+                if result.vp:
+                    added = self.award_vp(scoring_player, result.vp, source="secondary", card=card)
+                    if added:
+                        total_secondary_vp += added
+                        print(f"🎯 {scoring_player.name} scored {added} VP from Secondary: {card.name}")
+                if getattr(result, 'achieved', False):
+                    achieved.append(card)
+
+            # a) Tactical: If you scored 1+ VP from a Secondary, discard that card (achieved).
+            if (not is_fixed) and total_secondary_vp > 0:
+                scoring_player.discard_achieved_secondaries(achieved)
 
         # b) Allow voluntary discard for current player to gain 1CP (UI/AI should call explicitly). Here we do nothing automatically.
 
         # c) If deck runs out, player cannot generate additional secondaries (handled by deck empty check during draws)
-
-        # Complete mission Actions that trigger at this end of turn
-        self._complete_actions_for_turn_end(current_player)
 
         # Clear per-turn event lists
         self.destroyed_units_this_turn = []
@@ -1897,22 +1950,50 @@ class Game:
                 self.destroyed_units_this_battle_round_by_player[owner_player] = self.destroyed_units_this_battle_round_by_player.get(owner_player, 0) + 1
         except Exception:
             pass
-        # Incremental scoring for active secondaries (No Prisoners, Overwhelming Force)
+
+        # Incremental scoring for active secondaries that score on unit destruction
         try:
             owner_player = unit.get_parent_army().player if unit.get_parent_army() else None
             for player in self.players:
                 if player is owner_player:
                     continue
                 for card in getattr(player, 'active_secondaries', []) or []:
-                    if hasattr(card, 'on_unit_destroyed'):
-                        try:
-                            points = card.on_unit_destroyed(self, player, unit)
-                        except Exception:
-                            points = 0
-                        if points:
-                            added = self.award_vp(player, points, source="secondary", card=card)
-                            if added:
-                                print(f"🎯 {player.name} scored {added} VP from Secondary: {card.name} (unit destroyed)")
+                    fn = getattr(card, "on_unit_destroyed", None)
+                    if not callable(fn):
+                        continue
+                    try:
+                        points = int(fn(self, player, unit) or 0)
+                    except Exception:
+                        points = 0
+                    if points:
+                        added = self.award_vp(player, points, source="secondary", card=card)
+                        if added:
+                            print(f"🎯 {player.name} scored {added} VP from Secondary: {getattr(card, 'name', 'Unknown')} (unit destroyed)")
+        except Exception:
+            pass
+
+    def record_model_destroyed(self, model: 'Model') -> None:
+        """Record a model destroyed event and incrementally score relevant secondaries that key off models."""
+        try:
+            self.models_destroyed_this_turn.append(model)
+        except Exception:
+            pass
+
+        # Incremental scoring for active secondaries that score on model destruction (e.g., Fixed Assassination).
+        try:
+            for player in self.players:
+                for card in getattr(player, "active_secondaries", []) or []:
+                    fn = getattr(card, "on_model_destroyed", None)
+                    if not callable(fn):
+                        continue
+                    try:
+                        points = int(fn(self, player, model) or 0)
+                    except Exception:
+                        points = 0
+                    if points:
+                        added = self.award_vp(player, points, source="secondary", card=card)
+                        if added:
+                            print(f"🎯 {player.name} scored {added} VP from Secondary: {getattr(card, 'name', 'Unknown')} (model destroyed)")
         except Exception:
             pass
 
@@ -1925,6 +2006,9 @@ class Game:
         # Not if Battle-shocked
         if unit.is_battle_shocked():
             return {"valid": False, "reason": "Battle-shocked units cannot perform Actions"}
+        # Not if already performing an Action / locked
+        if bool(getattr(unit.round_state, "action_locked_until_turn_end", False)) or getattr(unit.round_state, "performing_action_name", None):
+            return {"valid": False, "reason": "Unit is already performing an Action this turn"}
         # OC 0 cannot perform
         if getattr(unit, 'objective_control', 0) == 0:
             return {"valid": False, "reason": "Units with OC 0 cannot perform Actions"}
@@ -2005,6 +2089,112 @@ class Game:
                             return obj
         return None
 
+    # ---------- Primary Mission helpers (Burden of Trust guarding) ----------
+
+    def _clear_expired_guards_for_player(self, player: Player) -> None:
+        """Clear any 'guarding' assignments for `player` at the start of their turn."""
+        army = getattr(player, "army", None)
+        if army is None:
+            return
+        for u in list(getattr(army, "units", []) or []):
+            if getattr(u, "guarding_objective", None) is not None:
+                u.guarding_objective = None
+
+    def _assign_burden_of_trust_guards(self, player: Player) -> None:
+        """
+        End of Command phase (Burden of Trust): for each objective marker the player controls,
+        select one eligible unit within range to guard it until the start of the player's next turn.
+
+        Current implementation is deterministic/autopick (UI hooks can override later).
+        """
+        if getattr(self, "get_battle_round", lambda: 0)() < 2:
+            return
+
+        prim = getattr(player, "primary_mission", None)
+        try:
+            from .mission_cards import BurdenOfTrustPrimary
+            if not isinstance(prim, BurdenOfTrustPrimary):
+                return
+        except Exception:
+            return
+
+        # Build list of objectives currently controlled by player.
+        controlled = []
+        for obj in getattr(self.map, "objectives", []):
+            loc = getattr(obj, "location", None)
+            if not loc or getattr(loc, "removed", False):
+                continue
+            if hasattr(loc, "update_control"):
+                loc.update_control(self)
+            if getattr(loc, "controlling_player", None) is player:
+                controlled.append(obj)
+
+        # Candidate units: non-aircraft, alive, deployed.
+        candidates = []
+        for u in getattr(player.army, "units", []) or []:
+            if not u.is_alive() or not getattr(u, "deployed", False):
+                continue
+            if getattr(u, "is_aircraft", False):
+                continue
+            candidates.append(u)
+
+        # Assign at most one objective per unit.
+        used_units = set()
+        for obj in controlled:
+            # Find first eligible unit within range of this objective.
+            chosen = None
+            for u in candidates:
+                if id(u) in used_units:
+                    continue
+                if self._unit_within_range_of_objective(u) is obj:
+                    chosen = u
+                    break
+            if chosen is None:
+                continue
+            chosen.guarding_objective = obj
+            used_units.add(id(chosen))
+
+    def _apply_primary_mission_setup_rules(self) -> None:
+        """
+        Apply mission-card setup rules that modify objectives at battle start.
+        This is invoked after mission objectives are initially placed.
+        """
+        if not getattr(self, "players", None):
+            return
+        prim = getattr(self.players[0], "primary_mission", None)
+        if prim is None:
+            return
+
+        # Helper: objective is in No Man's Land if it is not within any player's deployment zone.
+        def _is_nml(loc) -> bool:
+            for p in self.players:
+                zones = self.deployment_zones.get(p.name, {})
+                zone = zones.get('zone') or zones.get('Defender Zone') or zones.get('Attacker Zone')
+                if zone and hasattr(zone, "contains_point") and zone.contains_point(loc.x, loc.y):
+                    return False
+            return True
+
+        # Unexploded Ordnance: NML objectives become Hazard objectives.
+        try:
+            from .mission_cards import UnexplodedOrdnancePrimary
+            if isinstance(prim, UnexplodedOrdnancePrimary):
+                for obj in getattr(self.map, "objectives", []) or []:
+                    loc = getattr(obj, "location", None)
+                    if not loc or getattr(loc, "removed", False):
+                        continue
+                    if _is_nml(loc):
+                        loc.is_hazard = True
+        except Exception:
+            pass
+
+        # Supply Drop: initialize Alpha/Omega selection if primary supports it.
+        try:
+            fn = getattr(prim, "initialize_alpha_omega", None)
+            if callable(fn):
+                fn(self)
+        except Exception:
+            pass
+
     def can_start_terraform(self, unit: 'Unit') -> Dict[str, Any]:
         # Must be Shooting phase
         if not self.is_shooting_phase():
@@ -2035,6 +2225,139 @@ class Game:
             return {"valid": False, "reason": "Unit is within your deployment zone"}
         return {"valid": True, "reason": "Eligible"}
 
+    def can_start_cleanse(self, unit: 'Unit') -> Dict[str, Any]:
+        # Must be Shooting phase
+        if not self.is_shooting_phase():
+            return {"valid": False, "reason": "Cleanse starts in your Shooting phase"}
+        base = self._is_unit_eligible_to_start_action(unit)
+        if not base["valid"]:
+            return base
+        # Must be within range of an objective not within your deployment zone
+        obj = self._unit_within_range_of_objective(unit)
+        if not obj:
+            return {"valid": False, "reason": "Unit not within range of an objective"}
+        if self._objective_in_player_deployment(unit.get_parent_army().player, obj.location):
+            return {"valid": False, "reason": "Objective is within your deployment zone"}
+        return {"valid": True, "reason": "Eligible", "objective": obj}
+
+    def can_start_establish_locus(self, unit: 'Unit') -> Dict[str, Any]:
+        # Must be Shooting phase
+        if not self.is_shooting_phase():
+            return {"valid": False, "reason": "Establish Locus starts in your Shooting phase"}
+        base = self._is_unit_eligible_to_start_action(unit)
+        if not base["valid"]:
+            return base
+        return {"valid": True, "reason": "Eligible"}
+
+    def can_start_the_ritual(self, unit: 'Unit', *, new_objective_xy: Tuple[float, float]) -> Dict[str, Any]:
+        # Must be Shooting phase
+        if not self.is_shooting_phase():
+            return {"valid": False, "reason": "The Ritual starts in your Shooting phase"}
+        # Must have The Ritual as the primary mission
+        try:
+            from .mission_cards import TheRitualPrimary
+            if not isinstance(getattr(unit.get_parent_army().player, "primary_mission", None), TheRitualPrimary):
+                return {"valid": False, "reason": "Primary mission is not The Ritual"}
+        except Exception:
+            return {"valid": False, "reason": "Primary mission is not The Ritual"}
+        base = self._is_unit_eligible_to_start_action(unit)
+        if not base["valid"]:
+            return base
+        try:
+            x, y = float(new_objective_xy[0]), float(new_objective_xy[1])
+        except Exception:
+            return {"valid": False, "reason": "Invalid objective marker position"}
+
+        # Must be within No Man's Land (not in either deployment zone)
+        for p in self.players:
+            zones = self.deployment_zones.get(p.name, {})
+            zone = zones.get('zone') or zones.get('Defender Zone') or zones.get('Attacker Zone')
+            if zone and hasattr(zone, "contains_point") and zone.contains_point(x, y):
+                return {"valid": False, "reason": "Objective marker must be wholly within No Man's Land"}
+
+        # Must be within 1" of the unit
+        from ..utility.aura_utils import horizontal_distance_point_to_model_base_2d
+        in_1 = False
+        for m in getattr(unit, "models", []) or []:
+            if not getattr(m, "is_alive", True):
+                continue
+            if horizontal_distance_point_to_model_base_2d(m, x, y) <= 1.0 + 1e-6:
+                in_1 = True
+                break
+        if not in_1:
+            return {"valid": False, "reason": "Objective marker must be within 1\" of the unit"}
+
+        # Exactly 12" from one other NML objective, and not within 6" of any other objective.
+        nml_objs = []
+        for obj in getattr(self.map, "objectives", []) or []:
+            loc = getattr(obj, "location", None)
+            if not loc or getattr(loc, "removed", False):
+                continue
+            # Only consider NML markers
+            in_any_dz = False
+            for p in self.players:
+                zones = self.deployment_zones.get(p.name, {})
+                zone = zones.get('zone') or zones.get('Defender Zone') or zones.get('Attacker Zone')
+                if zone and hasattr(zone, "contains_point") and zone.contains_point(loc.x, loc.y):
+                    in_any_dz = True
+                    break
+            if not in_any_dz:
+                nml_objs.append(obj)
+
+        def _dist(a, b):
+            dx = float(a[0]) - float(b[0])
+            dy = float(a[1]) - float(b[1])
+            return (dx * dx + dy * dy) ** 0.5
+
+        dists = [(_dist((x, y), (float(o.location.x), float(o.location.y))), o) for o in nml_objs if getattr(o, "location", None)]
+        exact_12 = [o for (d, o) in dists if abs(d - 12.0) <= 0.25]
+        if len(exact_12) != 1:
+            return {"valid": False, "reason": "Objective marker must be set up exactly 12\" from one other No Man's Land objective marker"}
+        for (d, o) in dists:
+            if o is exact_12[0]:
+                continue
+            if d < 6.0 - 1e-6:
+                return {"valid": False, "reason": "Objective marker must not be within 6\" of any other objective marker"}
+
+        return {"valid": True, "reason": "Eligible", "x": x, "y": y}
+
+    def can_start_move_hazard(self, unit: 'Unit', *, hazard_objective: Objective, new_xy: Tuple[float, float]) -> Dict[str, Any]:
+        # Must be Shooting phase
+        if not self.is_shooting_phase():
+            return {"valid": False, "reason": "Move Hazard starts in your Shooting phase"}
+        # Must have Unexploded Ordnance as the primary mission
+        try:
+            from .mission_cards import UnexplodedOrdnancePrimary
+            if not isinstance(getattr(unit.get_parent_army().player, "primary_mission", None), UnexplodedOrdnancePrimary):
+                return {"valid": False, "reason": "Primary mission is not Unexploded Ordnance"}
+        except Exception:
+            return {"valid": False, "reason": "Primary mission is not Unexploded Ordnance"}
+        base = self._is_unit_eligible_to_start_action(unit)
+        if not base["valid"]:
+            return base
+        actor = unit.get_parent_army().player
+        if hazard_objective is None or getattr(hazard_objective, "location", None) is None:
+            return {"valid": False, "reason": "Invalid hazard objective marker"}
+        loc = hazard_objective.location
+        if not bool(getattr(loc, "is_hazard", False)):
+            return {"valid": False, "reason": "Objective marker is not a Hazard objective marker"}
+        if hasattr(loc, "update_control"):
+            loc.update_control(self)
+        if getattr(loc, "controlling_player", None) is not actor:
+            return {"valid": False, "reason": "You do not control that Hazard objective marker"}
+        # Must be within range of this hazard marker
+        if self._unit_within_range_of_objective(unit) is not hazard_objective:
+            return {"valid": False, "reason": "Unit must be within range of that Hazard objective marker"}
+        try:
+            nx, ny = float(new_xy[0]), float(new_xy[1])
+        except Exception:
+            return {"valid": False, "reason": "Invalid destination"}
+        dx = nx - float(loc.x)
+        dy = ny - float(loc.y)
+        if (dx * dx + dy * dy) ** 0.5 > 6.0 + 1e-6:
+            return {"valid": False, "reason": "Hazard objective marker can only be moved up to 6\""}
+        return {"valid": True, "reason": "Eligible", "hazard_objective": hazard_objective, "new_x": nx, "new_y": ny}
+
     def start_terraform_action(self, unit: 'Unit') -> Dict[str, Any]:
         check = self.can_start_terraform(unit)
         if not check["valid"]:
@@ -2043,6 +2366,8 @@ class Game:
         # Mark unit round state and add in-progress
         unit.round_state.performing_action_name = 'TERRAFORM'
         unit.round_state.action_locked_until_turn_end = True
+        # Consumes the unit's shooting action for the turn
+        unit.round_state.shot_this_round = True
         # Complete at end of this player's turn
         self.in_progress_actions.append({
             'player': unit.get_parent_army().player,
@@ -2060,6 +2385,8 @@ class Game:
             return check
         unit.round_state.performing_action_name = 'SABOTAGE'
         unit.round_state.action_locked_until_turn_end = True
+        # Consumes the unit's shooting action for the turn
+        unit.round_state.shot_this_round = True
         # Completes at end of opponent's next turn
         opponent_index = (self.current_player_index + 1) % len(self.players)
         self.in_progress_actions.append({
@@ -2071,6 +2398,77 @@ class Game:
             'metadata': {}
         })
         return {"valid": True, "reason": "Sabotage started"}
+
+    def start_cleanse_action(self, unit: 'Unit') -> Dict[str, Any]:
+        check = self.can_start_cleanse(unit)
+        if not check["valid"]:
+            return check
+        objective = check.get("objective")
+        unit.round_state.performing_action_name = 'CLEANSE'
+        unit.round_state.action_locked_until_turn_end = True
+        unit.round_state.shot_this_round = True
+        # Completes at end of this player's turn
+        self.in_progress_actions.append({
+            'player': unit.get_parent_army().player,
+            'unit': unit,
+            'action_name': 'CLEANSE',
+            'started_turn': self.turn,
+            'completes_on_player_index': self.current_player_index,
+            'metadata': {'objective': objective}
+        })
+        return {"valid": True, "reason": "Cleanse started"}
+
+    def start_establish_locus_action(self, unit: 'Unit') -> Dict[str, Any]:
+        check = self.can_start_establish_locus(unit)
+        if not check["valid"]:
+            return check
+        unit.round_state.performing_action_name = 'ESTABLISH_LOCUS'
+        unit.round_state.action_locked_until_turn_end = True
+        unit.round_state.shot_this_round = True
+        # Completes at end of this player's turn
+        self.in_progress_actions.append({
+            'player': unit.get_parent_army().player,
+            'unit': unit,
+            'action_name': 'ESTABLISH_LOCUS',
+            'started_turn': self.turn,
+            'completes_on_player_index': self.current_player_index,
+            'metadata': {}
+        })
+        return {"valid": True, "reason": "Establish Locus started"}
+
+    def start_the_ritual_action(self, unit: 'Unit', *, new_objective_xy: Tuple[float, float]) -> Dict[str, Any]:
+        check = self.can_start_the_ritual(unit, new_objective_xy=new_objective_xy)
+        if not check["valid"]:
+            return check
+        unit.round_state.performing_action_name = 'THE_RITUAL'
+        unit.round_state.action_locked_until_turn_end = True
+        unit.round_state.shot_this_round = True
+        self.in_progress_actions.append({
+            'player': unit.get_parent_army().player,
+            'unit': unit,
+            'action_name': 'THE_RITUAL',
+            'started_turn': self.turn,
+            'completes_on_player_index': self.current_player_index,
+            'metadata': {'x': check["x"], 'y': check["y"]}
+        })
+        return {"valid": True, "reason": "The Ritual started"}
+
+    def start_move_hazard_action(self, unit: 'Unit', *, hazard_objective: Objective, new_xy: Tuple[float, float]) -> Dict[str, Any]:
+        check = self.can_start_move_hazard(unit, hazard_objective=hazard_objective, new_xy=new_xy)
+        if not check["valid"]:
+            return check
+        unit.round_state.performing_action_name = 'MOVE_HAZARD'
+        unit.round_state.action_locked_until_turn_end = True
+        unit.round_state.shot_this_round = True
+        self.in_progress_actions.append({
+            'player': unit.get_parent_army().player,
+            'unit': unit,
+            'action_name': 'MOVE_HAZARD',
+            'started_turn': self.turn,
+            'completes_on_player_index': self.current_player_index,
+            'metadata': {'hazard_objective': check["hazard_objective"], 'new_x': check["new_x"], 'new_y': check["new_y"]}
+        })
+        return {"valid": True, "reason": "Move Hazard started"}
 
     # Scorched Earth: Burn Objective (BR2+)
     def can_start_burn_objective(self, unit: 'Unit') -> Dict[str, Any]:
@@ -2099,6 +2497,8 @@ class Game:
         objective = check.get("objective")
         unit.round_state.performing_action_name = 'BURN_OBJECTIVE'
         unit.round_state.action_locked_until_turn_end = True
+        # Consumes the unit's shooting action for the turn
+        unit.round_state.shot_this_round = True
         opponent_index = (self.current_player_index + 1) % len(self.players)
         self.in_progress_actions.append({
             'player': unit.get_parent_army().player,
@@ -2159,6 +2559,102 @@ class Game:
                         'action_name': 'SABOTAGE',
                         'unit_location': unit.get_closest_model_position_to_target(unit.models[0].get_location() if unit.models else (0, 0, 0))
                     })
+                    unit.round_state.performing_action_name = None
+                    unit.round_state.action_locked_until_turn_end = False
+                elif action_name == 'CLEANSE':
+                    objective = entry['metadata'].get('objective')
+                    loc = getattr(objective, 'location', None)
+                    if loc and hasattr(loc, 'update_control'):
+                        loc.update_control(self)
+                    in_range = False
+                    if objective:
+                        in_range = (self._unit_within_range_of_objective(unit) == objective)
+                    controls = loc and getattr(loc, 'controlling_player', None) is actor
+                    if in_range and controls:
+                        # Mark cleansed and record completed action
+                        if loc:
+                            setattr(loc, "cleansed_by", actor)
+                        self.completed_actions_this_turn.append({
+                            'player': actor,
+                            'action_name': 'CLEANSE',
+                            'objective': objective,
+                            'unit_location': unit.get_closest_model_position_to_target((loc.x, loc.y, loc.z)) if loc else None
+                        })
+                    unit.round_state.performing_action_name = None
+                    unit.round_state.action_locked_until_turn_end = False
+                elif action_name == 'ESTABLISH_LOCUS':
+                    # Completes if unit is within opponent DZ or within 6" of center
+                    completes = False
+                    try:
+                        opp = [p for p in self.players if p is not actor][0]
+                        zones = self.deployment_zones.get(opp.name, {})
+                        zone = zones.get('zone') or zones.get('Attacker Zone') or zones.get('Defender Zone')
+                        pos = unit.models[0].get_location() if unit.models else (0, 0, 0)
+                        if zone and hasattr(zone, 'contains_point') and zone.contains_point(pos[0], pos[1]):
+                            completes = True
+                        else:
+                            midx = float(self.map.width) / 2.0
+                            midy = float(self.map.height) / 2.0
+                            dx = float(pos[0]) - midx
+                            dy = float(pos[1]) - midy
+                            completes = (dx * dx + dy * dy) ** 0.5 <= 6.0 + 1e-6
+                    except Exception:
+                        completes = False
+                    if completes:
+                        self.completed_actions_this_turn.append({
+                            'player': actor,
+                            'action_name': 'ESTABLISH_LOCUS',
+                            'unit_location': unit.models[0].get_location() if unit.models else (0, 0, 0),
+                        })
+                    unit.round_state.performing_action_name = None
+                    unit.round_state.action_locked_until_turn_end = False
+                elif action_name == 'THE_RITUAL':
+                    # Place a new objective marker if still valid (best-effort: uses pre-validated coordinates).
+                    x = entry['metadata'].get('x')
+                    y = entry['metadata'].get('y')
+                    try:
+                        from .map import Objective, ObjectiveCategory, ObjectivePoint
+                        op = ObjectivePoint(x=float(x), y=float(y), z=0.0, control_radius=3.0)
+                        obj = Objective(
+                            name="Ritual Objective",
+                            category=ObjectiveCategory.PRIMARY,
+                            points=0,
+                            description="Objective marker created by The Ritual.",
+                            conditions=lambda g: False,
+                            location=op,
+                        )
+                        self.map.add_objective(obj)
+                    except Exception:
+                        pass
+                    self.completed_actions_this_turn.append({
+                        'player': actor,
+                        'action_name': 'THE_RITUAL',
+                        'unit_location': unit.models[0].get_location() if unit.models else (0, 0, 0),
+                    })
+                    unit.round_state.performing_action_name = None
+                    unit.round_state.action_locked_until_turn_end = False
+                elif action_name == 'MOVE_HAZARD':
+                    hazard_obj = entry['metadata'].get('hazard_objective')
+                    nx = entry['metadata'].get('new_x')
+                    ny = entry['metadata'].get('new_y')
+                    try:
+                        loc = getattr(hazard_obj, 'location', None)
+                        if loc and hasattr(loc, 'update_control'):
+                            loc.update_control(self)
+                        # Still within range and controlled
+                        in_range = (self._unit_within_range_of_objective(unit) == hazard_obj)
+                        controls = loc and getattr(loc, 'controlling_player', None) is actor
+                        if in_range and controls and loc and not getattr(loc, 'removed', False):
+                            loc.x = float(nx)
+                            loc.y = float(ny)
+                            self.completed_actions_this_turn.append({
+                                'player': actor,
+                                'action_name': 'MOVE_HAZARD',
+                                'objective': hazard_obj,
+                                'unit_location': unit.models[0].get_location() if unit.models else (0, 0, 0),
+                            })
+                    except Exception:
+                        pass
                     unit.round_state.performing_action_name = None
                     unit.round_state.action_locked_until_turn_end = False
                 elif action_name == 'BURN_OBJECTIVE':
@@ -3109,6 +3605,12 @@ class Game:
         deployment_manager.setup_mission_objectives()
         print(f"✅ Mission objectives placed: {len(self.objectives)} objectives")
         print(f"✅ Primary Mission: {primary_mission}")
+
+        # Apply primary-mission setup rules that modify objective markers (Chapter Approved 2025/26).
+        try:
+            self._apply_primary_mission_setup_rules()
+        except Exception as e:
+            print(f"⚠️ Failed to apply primary mission setup rules: {e}")
     
     def execute_determine_attacker_defender_phase(self) -> None:
         """Phase 4: Determine Attacker and Defender - Roll off to determine roles."""
