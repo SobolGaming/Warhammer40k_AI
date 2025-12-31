@@ -93,3 +93,18 @@ def test_get_winner_returns_none_on_draw_after_battle_ready():
     # Battle ready should have been applied to both players, keeping it a draw.
     assert p1.get_score() == p2.get_score()
 
+
+def test_vp_capped_event_published_when_award_is_reduced():
+    game, p1, _ = make_game()
+    calls = []
+
+    def _publish(event_name, **kwargs):
+        calls.append((event_name, kwargs))
+
+    game.event_system.publish = _publish
+
+    # Requesting 60 primary should cap to 50 and publish a notification event.
+    added = game.award_vp(p1, 60, source="primary")
+    assert added == 50
+    assert any(name == "vp_capped" for name, _ in calls)
+

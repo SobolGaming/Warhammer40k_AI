@@ -1600,6 +1600,48 @@ class Game:
 
         return max(0, int(vp))
 
+    def _notify_vp_capped(
+        self,
+        *,
+        player: Player,
+        source: str,
+        requested_vp: int,
+        awarded_vp: int,
+        lost_vp: int,
+        reasons: list[str],
+        card: object | None = None,
+    ) -> None:
+        """Notify that VP were lost due to caps (via event + console fallback)."""
+        if lost_vp <= 0:
+            return
+        card_name = None
+        if card is not None:
+            card_name = getattr(card, "name", None)
+        payload = {
+            "player": player,
+            "source": source,
+            "requested_vp": int(requested_vp),
+            "awarded_vp": int(awarded_vp),
+            "lost_vp": int(lost_vp),
+            "reasons": list(reasons or []),
+            "card_name": card_name,
+        }
+        # Primary channel: event system (UI/loggers can subscribe)
+        try:
+            if hasattr(self, "event_system") and hasattr(self.event_system, "publish"):
+                self.event_system.publish("vp_capped", **payload)
+        except Exception:
+            pass
+        # Fallback: always print (ensures humans see it in console logs even if no subscriber)
+        try:
+            label = source
+            if card_name:
+                label = f"{source} ({card_name})"
+            reason_txt = ", ".join(reasons) if reasons else "cap reached"
+            print(f"⚠️ {player.name} lost {lost_vp} VP from {label} due to {reason_txt} (attempted {requested_vp}, awarded {awarded_vp}).")
+        except Exception:
+            pass
+
     def award_vp(self, player: Player, requested_vp: int, *, source: str, card: object | None = None) -> int:
         """
         Award VP to a player, enforcing caps:
@@ -1621,13 +1663,35 @@ class Game:
         source_key = str(source).lower().strip()
 
         # Apply per-card caps first (per-turn/per-card totals).
-        vp = self._cap_card_vp(card=card, requested_vp=vp, player=player, source=source_key)
+        vp_after_card = self._cap_card_vp(card=card, requested_vp=vp, player=player, source=source_key)
+        card_capped = vp_after_card < vp
+        vp = vp_after_card
         if vp <= 0:
+            # Card caps consumed all requested VP (edge case, but still a "capped" scenario).
+            if requested_vp and int(requested_vp or 0) > 0 and card_capped:
+                self._notify_vp_capped(
+                    player=player,
+                    source=source_key,
+                    requested_vp=int(requested_vp or 0),
+                    awarded_vp=0,
+                    lost_vp=int(requested_vp or 0),
+                    reasons=["per-card cap"],
+                    card=card,
+                )
             return 0
 
         total_scored = int(getattr(player, "score", 0) or 0)
         remaining_total = max(0, self.VP_MAX_TOTAL - total_scored)
         if remaining_total <= 0:
+            self._notify_vp_capped(
+                player=player,
+                source=source_key,
+                requested_vp=int(requested_vp or 0),
+                awarded_vp=0,
+                lost_vp=int(requested_vp or 0),
+                reasons=["total cap (100VP)"],
+                card=card,
+            )
             return 0
 
         primary_scored = int(getattr(player, "vp_primary", 0) or 0)
@@ -1635,20 +1699,46 @@ class Game:
         battle_ready_scored = int(getattr(player, "vp_battle_ready", 0) or 0)
 
         max_add = remaining_total
+        reasons: list[str] = []
         if source_key == "primary":
             remaining_primary = max(0, self.VP_MAX_PRIMARY - primary_scored)
             remaining_combined = max(0, self.VP_MAX_PRIMARY_PLUS_SECONDARY - (primary_scored + secondary_scored))
             max_add = min(max_add, remaining_primary, remaining_combined)
+            if remaining_primary <= 0:
+                reasons.append("primary cap (50VP)")
+            if remaining_combined <= 0:
+                reasons.append("primary+secondary cap (90VP)")
         elif source_key == "secondary":
             remaining_secondary = max(0, self.VP_MAX_SECONDARY - secondary_scored)
             remaining_combined = max(0, self.VP_MAX_PRIMARY_PLUS_SECONDARY - (primary_scored + secondary_scored))
             max_add = min(max_add, remaining_secondary, remaining_combined)
+            if remaining_secondary <= 0:
+                reasons.append("secondary cap (40VP)")
+            if remaining_combined <= 0:
+                reasons.append("primary+secondary cap (90VP)")
         elif source_key in ("battle_ready", "battleready", "battle-ready"):
             remaining_br = max(0, self.VP_MAX_BATTLE_READY - battle_ready_scored)
             max_add = min(max_add, remaining_br)
+            if remaining_br <= 0:
+                reasons.append("battle ready cap (10VP)")
 
         to_add = min(vp, max_add)
         if to_add <= 0:
+            # We were blocked by one or more caps.
+            lost = int(requested_vp or 0)
+            if card_capped:
+                reasons = (reasons or []) + ["per-card cap"]
+            if remaining_total <= 0 and "total cap (100VP)" not in reasons:
+                reasons = (reasons or []) + ["total cap (100VP)"]
+            self._notify_vp_capped(
+                player=player,
+                source=source_key,
+                requested_vp=int(requested_vp or 0),
+                awarded_vp=0,
+                lost_vp=lost,
+                reasons=reasons or ["cap reached"],
+                card=card,
+            )
             return 0
 
         # Commit to player totals.
@@ -1666,6 +1756,24 @@ class Game:
                 card.total_scored = int(getattr(card, "total_scored", 0) or 0) + int(to_add)
             except Exception:
                 pass
+
+        # Notify if the player didn't receive the full VP they would have otherwise gained.
+        if int(requested_vp or 0) > int(to_add):
+            notify_reasons = list(reasons or [])
+            if card_capped:
+                notify_reasons.append("per-card cap")
+            if remaining_total < vp:
+                # total cap was a limiting factor for this award
+                notify_reasons.append("total cap (100VP)")
+            self._notify_vp_capped(
+                player=player,
+                source=source_key,
+                requested_vp=int(requested_vp or 0),
+                awarded_vp=int(to_add),
+                lost_vp=int(requested_vp or 0) - int(to_add),
+                reasons=notify_reasons or ["cap reached"],
+                card=card,
+            )
 
         return int(to_add)
 
