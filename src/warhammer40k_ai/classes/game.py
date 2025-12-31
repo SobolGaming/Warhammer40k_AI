@@ -1488,10 +1488,9 @@ class Game:
         if hasattr(current_player, 'primary_mission') and isinstance(current_player.primary_mission, PrimaryMissionCard):
             vp = current_player.primary_mission.score_at_command_phase(self, current_player)
             if vp:
-                vp_added = current_player.primary_mission.add_score(vp)
-                if vp_added:
-                    current_player.add_score(vp_added)
-                    print(f"🎯 {current_player.name} scored {vp_added} VP from Primary: {current_player.primary_mission.name}")
+                added = self.award_vp(current_player, vp, source="primary", card=current_player.primary_mission)
+                if added:
+                    print(f"🎯 {current_player.name} scored {added} VP from Primary: {current_player.primary_mission.name}")
         else:
             # Maintain legacy objective control updates for other systems
             for obj in self.map.objectives:
@@ -1537,6 +1536,150 @@ class Game:
 
     # ---------- Scoring windows and tracking ----------
 
+    # Mission pack VP caps (as specified by project rules).
+    VP_MAX_TOTAL = 100
+    VP_MAX_PRIMARY = 50
+    VP_MAX_SECONDARY = 40
+    VP_MAX_BATTLE_READY = 10
+    VP_MAX_PRIMARY_PLUS_SECONDARY = 90
+    VP_MAX_PER_FIXED_SECONDARY_CARD = 20
+
+    def _is_fixed_secondaries(self, player: Player | None = None) -> bool:
+        """
+        True if the game is using Fixed Secondaries.
+
+        Scoring caps depend on this (20VP max per fixed card). The rest of the fixed-vs-tactical
+        flow (draw/discard differences) may be implemented elsewhere.
+        """
+        mode = getattr(self, "secondary_mission_mode", None)
+        return str(mode).lower() == "fixed"
+
+    def _cap_card_vp(self, *, card: object | None, requested_vp: int, player: Player, source: str) -> int:
+        """Apply per-card per-turn/total caps (including the Fixed-mission 20VP per-card cap)."""
+        if not card:
+            try:
+                return max(0, int(requested_vp or 0))
+            except Exception:
+                return 0
+
+        try:
+            vp = int(requested_vp or 0)
+        except Exception:
+            vp = 0
+        if vp <= 0:
+            return 0
+
+        # Per-turn cap (applies whenever the card scores this window).
+        per_turn_cap = getattr(card, "score_cap_per_turn", None)
+        if per_turn_cap is not None:
+            try:
+                vp = min(vp, int(per_turn_cap))
+            except Exception:
+                pass
+
+        # Total cap across the battle for this specific card instance.
+        total_scored = int(getattr(card, "total_scored", 0) or 0)
+        total_cap = getattr(card, "score_cap_total", None)
+        effective_total_cap: int | None = None
+        if total_cap is not None:
+            try:
+                effective_total_cap = int(total_cap)
+            except Exception:
+                effective_total_cap = None
+
+        # Fixed missions: 20VP maximum per Fixed Mission card.
+        if source == "secondary" and self._is_fixed_secondaries(player):
+            if effective_total_cap is None:
+                effective_total_cap = self.VP_MAX_PER_FIXED_SECONDARY_CARD
+            else:
+                effective_total_cap = min(effective_total_cap, self.VP_MAX_PER_FIXED_SECONDARY_CARD)
+
+        if effective_total_cap is not None:
+            remaining = max(0, effective_total_cap - total_scored)
+            vp = min(vp, remaining)
+
+        return max(0, int(vp))
+
+    def award_vp(self, player: Player, requested_vp: int, *, source: str, card: object | None = None) -> int:
+        """
+        Award VP to a player, enforcing caps:
+        - Primary Mission: 50VP max
+        - Secondary Missions: 40VP max (and 20VP max per Fixed card, if using Fixed)
+        - Battle Ready Army: 10VP max (default TRUE)
+        - Primary + Secondary combined: 90VP max
+        - Total: 100VP max
+
+        Returns the amount actually awarded (excess is lost).
+        """
+        try:
+            vp = int(requested_vp or 0)
+        except Exception:
+            vp = 0
+        if vp <= 0:
+            return 0
+
+        source_key = str(source).lower().strip()
+
+        # Apply per-card caps first (per-turn/per-card totals).
+        vp = self._cap_card_vp(card=card, requested_vp=vp, player=player, source=source_key)
+        if vp <= 0:
+            return 0
+
+        total_scored = int(getattr(player, "score", 0) or 0)
+        remaining_total = max(0, self.VP_MAX_TOTAL - total_scored)
+        if remaining_total <= 0:
+            return 0
+
+        primary_scored = int(getattr(player, "vp_primary", 0) or 0)
+        secondary_scored = int(getattr(player, "vp_secondary", 0) or 0)
+        battle_ready_scored = int(getattr(player, "vp_battle_ready", 0) or 0)
+
+        max_add = remaining_total
+        if source_key == "primary":
+            remaining_primary = max(0, self.VP_MAX_PRIMARY - primary_scored)
+            remaining_combined = max(0, self.VP_MAX_PRIMARY_PLUS_SECONDARY - (primary_scored + secondary_scored))
+            max_add = min(max_add, remaining_primary, remaining_combined)
+        elif source_key == "secondary":
+            remaining_secondary = max(0, self.VP_MAX_SECONDARY - secondary_scored)
+            remaining_combined = max(0, self.VP_MAX_PRIMARY_PLUS_SECONDARY - (primary_scored + secondary_scored))
+            max_add = min(max_add, remaining_secondary, remaining_combined)
+        elif source_key in ("battle_ready", "battleready", "battle-ready"):
+            remaining_br = max(0, self.VP_MAX_BATTLE_READY - battle_ready_scored)
+            max_add = min(max_add, remaining_br)
+
+        to_add = min(vp, max_add)
+        if to_add <= 0:
+            return 0
+
+        # Commit to player totals.
+        player.add_score(to_add)
+        if source_key == "primary":
+            player.vp_primary = primary_scored + to_add
+        elif source_key == "secondary":
+            player.vp_secondary = secondary_scored + to_add
+        elif source_key in ("battle_ready", "battleready", "battle-ready"):
+            player.vp_battle_ready = battle_ready_scored + to_add
+
+        # Commit to card totals (only increment by the VP actually awarded).
+        if card is not None and hasattr(card, "total_scored"):
+            try:
+                card.total_scored = int(getattr(card, "total_scored", 0) or 0) + int(to_add)
+            except Exception:
+                pass
+
+        return int(to_add)
+
+    def finalize_battle_scoring(self) -> None:
+        """Apply once-per-battle scoring that should only happen at the end of the battle."""
+        if getattr(self, "_final_scoring_applied", False):
+            return
+        if not self.is_game_over():
+            return
+        for p in list(getattr(self, "players", []) or []):
+            if getattr(p, "is_battle_ready", True):
+                self.award_vp(p, self.VP_MAX_BATTLE_READY, source="battle_ready")
+        self._final_scoring_applied = True
+
     def end_of_turn_scoring(self) -> None:
         """Apply end-of-turn scoring for primaries and secondaries, manage discard rules and CP gain."""
         current_player = self.get_current_player()
@@ -1551,10 +1694,9 @@ class Game:
         if hasattr(current_player, 'primary_mission') and isinstance(current_player.primary_mission, PrimaryMissionCard):
             vp = current_player.primary_mission.score_at_end_of_turn(self, current_player)
             if vp:
-                vp_added = current_player.primary_mission.add_score(vp)
-                if vp_added:
-                    current_player.add_score(vp_added)
-                    print(f"🎯 {current_player.name} scored {vp_added} VP (end of turn) from Primary: {current_player.primary_mission.name}")
+                added = self.award_vp(current_player, vp, source="primary", card=current_player.primary_mission)
+                if added:
+                    print(f"🎯 {current_player.name} scored {added} VP (end of turn) from Primary: {current_player.primary_mission.name}")
 
         # Secondary: evaluate all active cards at end of either player's turn
         achieved: list[SecondaryMissionCard] = []
@@ -1567,9 +1709,8 @@ class Game:
             if not result:
                 continue
             if result.vp:
-                added = card.add_score(result.vp)
+                added = self.award_vp(current_player, result.vp, source="secondary", card=card)
                 if added:
-                    current_player.add_score(added)
                     total_secondary_vp += added
                     print(f"🎯 {current_player.name} scored {added} VP from Secondary: {card.name}")
             if getattr(result, 'achieved', False):
@@ -1604,9 +1745,8 @@ class Game:
                 except Exception:
                     vp = 0
                 if vp:
-                    added = player.primary_mission.add_score(vp)
+                    added = self.award_vp(player, vp, source="primary", card=player.primary_mission)
                     if added:
-                        player.add_score(added)
                         print(f"🎯 {player.name} scored {added} VP (end of battle round) from Primary: {player.primary_mission.name}")
 
         # Chapter Approved: any units still in reserves at the end of battle round 3 are destroyed.
@@ -1662,9 +1802,8 @@ class Game:
                         except Exception:
                             points = 0
                         if points:
-                            added = card.add_score(points)
+                            added = self.award_vp(player, points, source="secondary", card=card)
                             if added:
-                                player.add_score(added)
                                 print(f"🎯 {player.name} scored {added} VP from Secondary: {card.name} (unit destroyed)")
         except Exception:
             pass
@@ -1939,9 +2078,9 @@ class Game:
                         loc.removed = True
                         print("🔥 Scorched Earth burned objective at ({:.1f}, {:.1f})".format(loc.x, loc.y))
                         # Immediate scoring per mission rules (Any time when burned)
-                        added = actor.primary_mission.add_score(vp) if hasattr(actor, 'primary_mission') else vp
-                        actor.add_score(added)
-                        print(f"🎯 {actor.name} scored {added} VP for burning objective")
+                        added = self.award_vp(actor, vp, source="primary", card=getattr(actor, "primary_mission", None))
+                        if added:
+                            print(f"🎯 {actor.name} scored {added} VP for burning objective")
                     unit.round_state.performing_action_name = None
                     unit.round_state.action_locked_until_turn_end = False
                 else:
@@ -1959,12 +2098,26 @@ class Game:
     def get_winner(self) -> Player | None:
         # Return the winning player or None if the game is not over
         if self.is_game_over():
-            return max(self.players, key=lambda player: player.get_score(), default=None)
+            self.finalize_battle_scoring()
+            if not self.players:
+                return None
+            max_vp = max((p.get_score() for p in self.players), default=0)
+            winners = [p for p in self.players if p.get_score() == max_vp]
+            if len(winners) != 1:
+                return None  # Draw
+            return winners[0]
         return None
 
     def get_loser(self) -> Player | None:
         if self.is_game_over():
-            return min(self.players, key=lambda player: player.get_score(), default=None)
+            self.finalize_battle_scoring()
+            if not self.players:
+                return None
+            min_vp = min((p.get_score() for p in self.players), default=0)
+            losers = [p for p in self.players if p.get_score() == min_vp]
+            if len(losers) != 1:
+                return None  # Draw
+            return losers[0]
         return None
 
     def get_state(self) -> Dict[str, Any]:

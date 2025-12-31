@@ -85,21 +85,25 @@ class WarhammerEnv(gym.Env):
     def step(self, action):
         # Execute the action
         valid_action = self.parse_action(action)
-        previous_score = self.game.get_player_score(self.current_player)
+        previous_score = self.current_player.get_score()
         self.game.step(valid_action)
-        new_score = self.game.get_player_score(self.current_player)
+        new_score = self.current_player.get_score()
         
         # Calculate reward
         reward = new_score - previous_score
         
         # Additional reward shaping
-        if self.game.is_over():
-            if self.game.get_winner() == self.current_player:
+        if self.game.is_game_over():
+            winner = self.game.get_winner()
+            if winner is self.current_player:
                 reward += 100  # Winning bonus
+            elif winner is None:
+                # Draw
+                reward += 0
             else:
                 reward -= 100  # Losing penalty
         
-        self.done = self.game.is_over()
+        self.done = self.game.is_game_over()
         observation = self.get_observation()
         info = self.get_info()
         return observation, reward, self.done, info

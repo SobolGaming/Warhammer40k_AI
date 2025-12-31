@@ -28,7 +28,15 @@ class Player:
         self.round: int = 0
         self.command_points: int = 0  # Players start with 0 Command Points in 10th edition
         self.army: Army = army
+        # ---- Victory Points (VP) ----
+        # Total VP scored across the battle (capped by mission pack rules in Game awarding logic).
         self.score: int = 0
+        # Breakdown by source (kept in-sync by Game awarding logic).
+        self.vp_primary: int = 0
+        self.vp_secondary: int = 0
+        self.vp_battle_ready: int = 0
+        # Battle Ready (painted) bonus: assume TRUE by default per project rules.
+        self.is_battle_ready: bool = True
         # Mission cards
         self.primary_mission: PrimaryMissionCard | None = None
         self.secondary_deck: list[SecondaryMissionCard] = []
@@ -86,6 +94,15 @@ class Player:
 
     def add_score(self, points: int) -> None:
         self.score += points
+
+    def get_vp_breakdown(self) -> dict:
+        """Return a simple VP breakdown dict. Game logic is the authoritative scorer."""
+        return {
+            "total": int(self.score or 0),
+            "primary": int(self.vp_primary or 0),
+            "secondary": int(self.vp_secondary or 0),
+            "battle_ready": int(self.vp_battle_ready or 0),
+        }
     
     def gain_command_points(self, amount: int = 1, *, is_normal_command_phase_gain: bool = False,
                             exempt_from_guardrail: bool = False, reason: str | None = None) -> int:
