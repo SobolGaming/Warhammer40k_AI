@@ -53,6 +53,11 @@ These mechanics are currently recognized by searching ability names/descriptions
 - Gain CP on destroy (partial) (Partial)
 - Heal on destroy (partial) (Partial)
 - Plunging Fire (Supported)
+- Auras: strict "+1 to hit" auras within X" (with optional keyword exclusions and optional Below Half-strength +1 to wound rider) (Supported)
+- Auras: strict "re-roll Hit/Wound rolls of 1" auras within X" (Supported)
+- Auras: strict "+N Objective Control while within X"" auras (Supported)
+- Nurgle’s Gift (Aura): baseline Contagion Range debuff (-1 Toughness to enemies within 3/6/9") (Partial)
+- Aura stacking rule (engine): different Aura names can all apply (subject to caps/wording), but the same Aura name from multiple sources applies once.
 
 ## Core Abilities
 
@@ -140,7 +145,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Cabal of Sorcerers | `000008424` | 1 | 1 | **Supported** | Lone Operative |
 | Cult of the Dark Gods | `000008360` | 0 | 0 | **Not implemented** |  |
 | Dark Pacts | `000008359` | 103 | 103 | **Not implemented** |  |
-| Nurgle’s Gift (Aura) | `000008396` | 1 | 1 | **Not implemented** |  |
+| Nurgle’s Gift (Aura) | `000008396` | 1 | 1 | **Partial** | Baseline debuff: enemy within Contagion Range (3/6/9 by battle round) is -1T |
 | Oath of Moment | `000008350` | 0 | 0 | **Not implemented** |  |
 | Thrill Seekers | `000009994` | 1 | 1 | **Supported** | Advance+Shoot (exact wording), Fall Back+Shoot (exact wording) |
 
@@ -149,7 +154,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Dark Pacts | `000008359` | 0 | 0 | **Not implemented** |  |
-| Nurgle’s Gift (Aura) | `000008396` | 65 | 65 | **Not implemented** |  |
+| Nurgle’s Gift (Aura) | `000008396` | 65 | 65 | **Partial** | Baseline debuff: enemy within Contagion Range (3/6/9 by battle round) is -1T |
 | Oath of Moment | `000008350` | 0 | 0 | **Not implemented** |  |
 | Pact of Decay | `000010120` | 6 | 6 | **Not implemented** |  |
 
@@ -3651,7 +3656,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Armoured Spearhead | 1 | 1 | **Not implemented** |  |
 | Atomantic Arc-reactor | 1 | 1 | **Not implemented** |  |
 | Bane of Cowards | 1 | 1 | **Not implemented** |  |
-| Beacons of Rage (Aura) | 1 | 1 | **Not implemented** |  |
+| Beacons of Rage (Aura) | 1 | 1 | **Supported** | Aura: +1 to hit (melee vs non MONSTER/VEHICLE); +1 to wound vs Below Half-strength |
 | Berzerker Frenzy | 1 | 1 | **Not implemented** |  |
 | Blood Surge | 1 | 1 | **Not implemented** |  |
 | Blood-hungry Annihilator | 1 | 1 | **Not implemented** |  |

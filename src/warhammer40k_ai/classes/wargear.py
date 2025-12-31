@@ -761,6 +761,16 @@ class WargearProfile:
         
         # Add other potential modifiers here
         # TODO: Add more hit modifiers (cover, moving, etc.)
+
+        # Friendly aura modifiers (e.g. "Beacons of Rage (Aura)")
+        aura_mods = attack_instance.get("_aura_attack_mods")
+        if aura_mods is None:
+            from ..utility.aura_effects import get_aura_attack_modifiers
+            aura_mods = get_aura_attack_modifiers(attacker.parent_unit, target, self)
+            attack_instance["_aura_attack_mods"] = aura_mods
+        if getattr(aura_mods, "hit", 0):
+            dice_modifier += int(aura_mods.hit)
+            hit_result['modifiers'].extend(list(getattr(aura_mods, "hit_reasons", ()) or ()))
         
         dice_modifier = min(max(dice_modifier, -1), 1)  # modifications are capped between -1 and 1
         final_needed = self.skill - dice_modifier  # Note: negative dice_modifier makes it harder (higher final_needed)
@@ -782,6 +792,18 @@ class WargearProfile:
             # weapon_display_name available in attack(); provide fallback here
             weapon_name_for_log = getattr(self, 'parent_wargear', None).name if getattr(self, 'parent_wargear', None) else getattr(self, 'name', 'Weapon')
             append_dice(attacker.parent_unit.get_parent_army().player.name, f"Hit roll: {dice_roll} for {attacker.name} with {weapon_name_for_log}")
+        except Exception:
+            pass
+
+        # Strict aura support: re-roll Hit rolls of 1 (applied before resolving auto-miss/constraints)
+        try:
+            if dice_roll == 1 and bool(getattr(aura_mods, "reroll_hit_ones", False)):
+                rr = _reroll_hit()
+                hit_result.setdefault("special_effects", []).append("Aura: re-roll Hit rolls of 1")
+                hit_result.setdefault("special_effects", []).extend(list(getattr(aura_mods, "reroll_hit_reasons", ()) or ()))
+                hit_result["reroll_of_one"] = 1
+                hit_result["reroll"] = rr
+                dice_roll = rr
         except Exception:
             pass
         hit_result['roll'] = dice_roll
@@ -890,6 +912,23 @@ class WargearProfile:
             return wound_result
 
         target_toughness = target.toughness
+
+        # Aura cache (shared with hit resolution for the same attack_instance)
+        aura_mods = attack_instance.get("_aura_attack_mods")
+        if aura_mods is None:
+            from ..utility.aura_effects import get_aura_attack_modifiers
+            aura_mods = get_aura_attack_modifiers(attacker.parent_unit, target, self)
+            attack_instance["_aura_attack_mods"] = aura_mods
+
+        # Enemy-targeted aura debuffs affecting target characteristics (e.g. Nurgle’s Gift (Aura): -1T)
+        try:
+            dt = int(getattr(aura_mods, "target_toughness_delta", 0) or 0)
+            if dt:
+                target_toughness = int(target_toughness) + dt
+                wound_result['modifiers'].extend(list(getattr(aura_mods, "target_toughness_reasons", ()) or ()))
+        except Exception:
+            pass
+
         wound_result['target_toughness'] = target_toughness
         strength = self.strength
         # Enhancement: improve melee weapons' Strength by X (bearer enhancement).
@@ -928,12 +967,29 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Friendly aura roll modifiers (e.g. "Beacons of Rage (Aura)")
+        if getattr(aura_mods, "wound", 0):
+            dice_modifier += int(aura_mods.wound)
+            wound_result['modifiers'].extend(list(getattr(aura_mods, "wound_reasons", ()) or ()))
+
         dice_modifier = min(max(dice_modifier, -1), 1)
 
         dice_roll = get_roll("D6")
         try:
             weapon_name_for_log = getattr(self, 'parent_wargear', None).name if getattr(self, 'parent_wargear', None) else getattr(self, 'name', 'Weapon')
             append_dice(attacker.parent_unit.get_parent_army().player.name, f"Wound roll: {dice_roll} vs T{target_toughness} by {attacker.name} with {weapon_name_for_log}")
+        except Exception:
+            pass
+
+        # Strict aura support: re-roll Wound rolls of 1
+        try:
+            if dice_roll == 1 and bool(getattr(aura_mods, "reroll_wound_ones", False)):
+                rr = _reroll_wound()
+                wound_result.setdefault("special_effects", []).append("Aura: re-roll Wound rolls of 1")
+                wound_result.setdefault("special_effects", []).extend(list(getattr(aura_mods, "reroll_wound_reasons", ()) or ()))
+                wound_result["reroll_of_one"] = 1
+                wound_result["reroll"] = rr
+                dice_roll = rr
         except Exception:
             pass
         wound_result['roll'] = dice_roll

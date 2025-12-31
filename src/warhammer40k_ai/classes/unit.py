@@ -2829,7 +2829,13 @@ class Unit:
 
     @property
     def objective_control(self) -> int:
-        return self.models[0].objective_control
+        base = self.models[0].objective_control
+        try:
+            from ..utility.aura_effects import get_aura_objective_control_bonus
+            bonus = int(get_aura_objective_control_bonus(self) or 0)
+            return int(base) + bonus
+        except Exception:
+            return base
 
     @property
     def has_circular_base(self) -> bool:
