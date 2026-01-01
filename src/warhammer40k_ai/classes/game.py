@@ -1616,6 +1616,15 @@ class Game:
                     continue
             except Exception:
                 pass
+            # If forced to test for being Below Starting Strength, do not also test for being Below Half-strength
+            # unless explicitly stated.
+            try:
+                if hasattr(unit, "is_below_starting_strength") and callable(getattr(unit, "is_below_starting_strength")) and unit.is_below_starting_strength():
+                    print(f"⚠️  {unit.name} is below starting strength - taking Battle-Shock test")
+                    unit.take_battle_shock_test(self.turn)
+                    continue
+            except Exception:
+                pass
             if unit.is_below_half_strength():
                 print(f"⚠️  {unit.name} is below half strength - taking Battle-Shock test")
                 unit.take_battle_shock_test(self.turn)

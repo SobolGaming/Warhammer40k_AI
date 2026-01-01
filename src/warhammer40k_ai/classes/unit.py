@@ -2105,6 +2105,71 @@ class Unit:
             return False
         return current_wounds < (starting_wounds / 2.0)
 
+    def is_below_starting_strength(self) -> bool:
+        """
+        Check if the unit is Below Starting Strength (distinct from Below Half-strength).
+
+        Rules intent:
+        - Multi-model unit: below starting strength if remaining model count < starting model count.
+        - Starting Strength of 1 (single-model): below starting strength if the model has fewer wounds remaining
+          than its starting wounds.
+
+        Attached Leaders are treated as part of the unit for this check, consistent with other Battle-shock checks.
+
+        Returns:
+            bool: True if below starting strength.
+        """
+        # Attached Leaders are not evaluated separately; the Attached unit is treated as one unit.
+        try:
+            if bool(getattr(self, "is_leader", False)) and getattr(self, "attached_to", None) is not None:
+                return False
+        except Exception:
+            pass
+
+        # Compute effective starting/current strength across attached members (bodyguard + leaders).
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            members = root.get_attached_unit_members()
+        except Exception:
+            members = [self]
+
+        starting_models = 0
+        current_models = 0
+        starting_wounds = 0
+        current_wounds = 0
+
+        for u in members:
+            try:
+                starting_models += int(getattr(u, "starting_model_count", len(getattr(u, "models", []) or [])))
+            except Exception:
+                starting_models += 0
+            try:
+                current_models += int(len(getattr(u, "models", []) or []))
+            except Exception:
+                current_models += 0
+            try:
+                starting_wounds += int(getattr(u, "starting_total_wounds", 0) or 0)
+            except Exception:
+                pass
+            try:
+                for m in (getattr(u, "models", []) or []):
+                    if getattr(m, "is_alive", True):
+                        current_wounds += int(getattr(m, "wounds", 0) or 0)
+            except Exception:
+                pass
+
+        # Multi-model unit: model-count based
+        if starting_models > 1:
+            return current_models < starting_models
+
+        # Starting Strength of 1: wounds-based
+        if starting_wounds <= 0:
+            return False
+        return current_wounds < starting_wounds
+
     def is_battle_shocked(self) -> bool:
         """
         Check if the unit is currently battle-shocked.
@@ -3067,7 +3132,12 @@ class Unit:
         # Do Battle Shock Test for appropriate units
         if (not self.is_alive()):
             return True
-        if self.is_below_half_strength():
+        # If forced to test for being Below Starting Strength, do not also test for being Below Half-strength
+        # unless explicitly stated.
+        if self.is_below_starting_strength():
+            print(f"⚠️  {self.name} is below starting strength - taking Battle-Shock test")
+            self.take_battle_shock_test(current_turn)
+        elif self.is_below_half_strength():
             print(f"⚠️  {self.name} is below half strength - taking Battle-Shock test")
             self.take_battle_shock_test(current_turn)
 
