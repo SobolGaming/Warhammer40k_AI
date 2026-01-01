@@ -594,22 +594,37 @@ class Army:
         if len(warlord_units) != 1:
             raise ArmyValidationError(f"Army must have exactly one Warlord. Found: {len(warlord_units)}.")
 
-        # If there are any Supreme Commanders, they must be the Warlord
+        # SUPREME COMMANDER (keyword): if your army includes any SUPREME COMMANDER units,
+        # one of them must be your Warlord.
         supreme_commanders = [unit for unit in self.units if unit.is_supreme_commander]
         if supreme_commanders:
             supreme_warlords = [unit for unit in supreme_commanders if unit.is_warlord]
             if not supreme_warlords:
                 raise ArmyValidationError(
-                    "An army that includes any Supreme Commanders must have one of them as the Warlord."
-                )
-            if len(supreme_warlords) > 1:
-                raise ArmyValidationError(
-                    "Only one Supreme Commander can be the Warlord."
+                    "An army that includes any SUPREME COMMANDER units must have one of them as the Warlord."
                 )
 
     def validate_detachment_rules(self):
-        # Placeholder for detachment-specific validation
-        pass
+        # Army-rule / detachment-specific validation
+        #
+        # NOTE: "Pact of Blood" (WE) is an army-mustering restriction:
+        # "When mustering your army, unless specifically stated otherwise,
+        #  you cannot select BLOOD LEGIONS as your Army Faction."
+        #
+        # In engine terms: if the player's army faction is WORLD EATERS, they cannot
+        # choose the "Blood Legion(s)" detachment/faction framing.
+        try:
+            if (getattr(self, "faction_id", "") or "").strip().upper() == "WE":
+                det = (getattr(self, "detachment_type", "") or "").strip().lower()
+                if det in {"blood legion", "blood legions"}:
+                    raise ArmyValidationError(
+                        "Pact of Blood: World Eaters armies cannot select 'Blood Legion(s)' as their Army Faction."
+                    )
+        except ArmyValidationError:
+            raise
+        except Exception:
+            # Fail fast with a clear error if detachment validation can't be evaluated.
+            raise ArmyValidationError("Failed validating detachment/army rule restrictions.")
 
     def validate_allies(self):
         # Placeholder for ally validation based on specific rules

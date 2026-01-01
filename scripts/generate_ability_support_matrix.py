@@ -187,6 +187,7 @@ def _ability_patterns() -> List[Tuple[str, str, str]]:
     These are intentionally conservative, matching existing engine behavior.
     """
     return [
+        ("Supreme Commander (must be Warlord)", "Supported", r"\bsupreme commander\b"),
         ("Blessings of Khorne (World Eaters)", "Supported", r"\bblessings of khorne\b"),
         ("Favoured of Khorne (Blessings rerolls)", "Supported", r"\bfavoured of khorne\b|\bfavored of khorne\b"),
         ("Idol of the Blessed Blood (Blessings +1D6)", "Supported", r"\bidol of (?:the )?blessed blood\b"),
@@ -386,6 +387,9 @@ def _write_md(
         status, notes = _classify_support(a.name, a.description)
         ref_rows = ability_refs_rows.get((a.id, "Core"), 0)
         ref_ds = len(ability_refs_datasheets.get((a.id, "Core"), set()))
+        # Keep the matrix focused on abilities that are actually referenced by datasheets.
+        if ref_rows == 0 and ref_ds == 0:
+            continue
         lines.append(
             f"| {_escape_md(a.name)} | `{_escape_md(a.id)}` | {ref_rows} | {ref_ds} | **{status}** | {_escape_md(notes)} |"
         )
@@ -417,6 +421,9 @@ def _write_md(
             status, notes = _classify_support(a.name, a.description)
             ref_rows = ability_refs_rows_by_faction.get((a.id, "Faction", fid), 0)
             ref_ds = len(ability_refs_datasheets_by_faction.get((a.id, "Faction", fid), set()))
+            # Keep the matrix focused on abilities that are actually referenced by datasheets.
+            if ref_rows == 0 and ref_ds == 0:
+                continue
             lines.append(
                 f"| {_escape_md(a.name)} | `{_escape_md(a.id)}` | {ref_rows} | {ref_ds} | **{status}** | {_escape_md(notes)} |"
             )
@@ -442,6 +449,10 @@ def _write_md(
                 status, notes = _classify_support(da.name, da.description)
                 ref_rows = det_refs_rows.get(da.id, 0)
                 ref_ds = len(det_refs_datasheets.get(da.id, set()))
+                # Keep the matrix focused on detachment abilities that are actually referenced by datasheets.
+                # (This also drops Wahapedia artefacts like "KEYWORDS" rows that are not linked to datasheets.)
+                if ref_rows == 0 and ref_ds == 0:
+                    continue
                 lines.append(
                     f"| {_escape_md(da.name)} | `{_escape_md(da.id)}` | {ref_rows} | {ref_ds} | **{status}** | {_escape_md(notes)} |"
                 )

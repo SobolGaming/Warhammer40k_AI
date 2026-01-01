@@ -2906,7 +2906,17 @@ class Unit:
 
     @property
     def is_supreme_commander(self) -> bool:
-        return "Supreme Commander" in [ability.name for ability in self.possible_abilities]
+        # Wahapedia encodes this as a datasheet-sourced ability row (ability_id == ""),
+        # e.g. name == "SUPREME COMMANDER".
+        for ab in getattr(self, "possible_abilities", []) or []:
+            if isinstance(ab, str):
+                if ab.strip().upper() == "SUPREME COMMANDER":
+                    return True
+                continue
+            name = str(getattr(ab, "name", "") or "")
+            if name.strip().upper() == "SUPREME COMMANDER":
+                return True
+        return False
 
     @property
     def is_monster(self) -> bool:

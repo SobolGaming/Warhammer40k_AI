@@ -31,6 +31,7 @@ Generated from `wahapedia_data/Abilities.json`, `wahapedia_data/Datasheets_abili
 
 These mechanics are currently recognized by searching ability names/descriptions for text patterns:
 
+- Supreme Commander (must be Warlord) (Supported)
 - Blessings of Khorne (World Eaters) (Supported)
 - Favoured of Khorne (Blessings rerolls) (Supported)
 - Idol of the Blessed Blood (Blessings +1D6) (Supported)
@@ -53,15 +54,6 @@ These mechanics are currently recognized by searching ability names/descriptions
 - Gain CP on destroy (partial) (Partial)
 - Heal on destroy (partial) (Partial)
 - Plunging Fire (Supported)
-- Auras: strict "+1 to hit" auras within X" (with optional keyword exclusions and optional Below Half-strength +1 to wound rider) (Supported)
-- Auras: strict "re-roll Hit/Wound rolls of 1" auras within X" (Supported)
-- Auras: strict "+N Objective Control while within X"" auras (Supported)
-- Nurgle’s Gift (Aura): baseline Contagion Range debuff (-1 Toughness to enemies within 3/6/9") (Partial)
-- Aura stacking rule (engine): different Aura names can all apply (subject to caps/wording), but the same Aura name from multiple sources applies once.
-- Auras: strict "+N Attacks characteristic to melee weapons while within X"" auras (Supported)
-- Once-per-battle abilities: engine tracks usage + supports temporary phase-scoped buffs via explicit activation APIs (Supported)
-- Re-roll Advance rolls (pattern: "re-roll"/"reroll" + "Advance") (Supported) — UI prompts the player and allows a re-roll even if the first roll is sufficient.
-- Re-roll Charge rolls (pattern: "re-roll"/"reroll" + "Charge") (Supported) — UI prompts the player and allows a re-roll even if the first roll is sufficient.
 
 ## Core Abilities
 
@@ -74,7 +66,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Firing Deck | `000008334` | 59 | 59 | **Supported** | Firing Deck |
 | Hover | `000008342` | 57 | 57 | **Not implemented** |  |
 | Infiltrators | `000008345` | 69 | 69 | **Supported** | Infiltrators |
-| Leader | `000008346` | 406 | 406 | **Supported** | Attached Units supported: attachment eligibility + limits, bodyguard-first wound allocation, Precision allocation into visible CHARACTERS, characteristic delegation (Toughness/Leadership), separation deferred until end of attack sequence, and attached leaders do not double-count for deployment/objectives/reserves. |
+| Leader | `000008346` | 406 | 406 | **Partial** | Leader data exists, but full Attached allocation/rules enforcement is incomplete. |
 | Lone Operative | `000008336` | 50 | 50 | **Supported** | Lone Operative |
 | Scouts | `000008344` | 100 | 100 | **Supported** | Scouts |
 | Stealth | `000008337` | 79 | 79 | **Supported** | Stealth |
@@ -103,20 +95,14 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Designer’s Note | `000008536` | 0 | 0 | **Not implemented** |  |
 | Super-heavy Walker | `000008538` | 4 | 4 | **Not implemented** |  |
-| Titanic Support | `000008534` | 0 | 0 | **Not implemented** |  |
-| Titanicus Traitoris | `000008535` | 0 | 0 | **Not implemented** |  |
-| Towering Example | `000008533` | 0 | 0 | **Not implemented** |  |
 
 ### Aeldari (`AE`) — `https://wahapedia.ru/wh40k10ed/factions/aeldari`
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Agile Manoeuvres | `000009895` | 0 | 0 | **Not implemented** |  |
 | Battle Focus | `000009894` | 81 | 81 | **Not implemented** |  |
 | Disparate Paths | `000009896` | 19 | 19 | **Not implemented** |  |
-| Strands of Fate | `000008445` | 0 | 0 | **Not implemented** |  |
 
 ### Astra Militarum (`AM`) — `https://wahapedia.ru/wh40k10ed/factions/astra-militarum`
 
@@ -128,7 +114,6 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Daemonic Pact | `000008434` | 0 | 0 | **Not implemented** |  |
 | Dark Pacts | `000008359` | 38 | 38 | **Not implemented** |  |
 | The Shadow of Chaos | `000008433` | 68 | 68 | **Not implemented** |  |
 
@@ -137,7 +122,6 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Dark Pacts | `000008359` | 17 | 17 | **Not implemented** |  |
-| Dreadblades | `000008514` | 0 | 0 | **Not implemented** |  |
 | Harbingers of Dread | `000008512` | 20 | 20 | **Not implemented** |  |
 | Super-heavy Walker | `000008513` | 14 | 14 | **Not implemented** |  |
 
@@ -147,19 +131,15 @@ These mechanics are currently recognized by searching ability names/descriptions
 |---|---:|---:|---:|---|---|
 | Blessings of Khorne | `000008428` | 1 | 1 | **Supported** | Blessings of Khorne (World Eaters) |
 | Cabal of Sorcerers | `000008424` | 1 | 1 | **Supported** | Lone Operative |
-| Cult of the Dark Gods | `000008360` | 0 | 0 | **Not implemented** |  |
 | Dark Pacts | `000008359` | 103 | 103 | **Not implemented** |  |
-| Nurgle’s Gift (Aura) | `000008396` | 1 | 1 | **Partial** | Baseline debuff: enemy within Contagion Range (3/6/9 by battle round) is -1T |
-| Oath of Moment | `000008350` | 0 | 0 | **Not implemented** |  |
+| Nurgle’s Gift (Aura) | `000008396` | 1 | 1 | **Not implemented** |  |
 | Thrill Seekers | `000009994` | 1 | 1 | **Supported** | Advance+Shoot (exact wording), Fall Back+Shoot (exact wording) |
 
 ### Death Guard (`DG`) — `https://wahapedia.ru/wh40k10ed/factions/death-guard`
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Dark Pacts | `000008359` | 0 | 0 | **Not implemented** |  |
-| Nurgle’s Gift (Aura) | `000008396` | 65 | 65 | **Partial** | Baseline debuff: enemy within Contagion Range (3/6/9 by battle round) is -1T |
-| Oath of Moment | `000008350` | 0 | 0 | **Not implemented** |  |
+| Nurgle’s Gift (Aura) | `000008396` | 65 | 65 | **Not implemented** |  |
 | Pact of Decay | `000010120` | 6 | 6 | **Not implemented** |  |
 
 ### Drukhari (`DRU`) — `https://wahapedia.ru/wh40k10ed/factions/drukhari`
@@ -167,7 +147,6 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Battle Focus | `000009894` | 10 | 10 | **Not implemented** |  |
-| Corsairs and Travelling Players | `000009974` | 0 | 0 | **Not implemented** |  |
 | Disparate Paths | `000009896` | 8 | 8 | **Not implemented** |  |
 | Power from Pain | `000008507` | 30 | 30 | **Not implemented** |  |
 
@@ -203,10 +182,8 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Bondsman | `000008459` | 0 | 0 | **Not implemented** |  |
 | Code Chivalric | `000008458` | 21 | 21 | **Not implemented** |  |
 | Doctrina Imperatives | `000008382` | 5 | 5 | **Not implemented** |  |
-| Freeblades | `000008461` | 0 | 0 | **Not implemented** |  |
 | Super-heavy Walker | `000008460` | 18 | 18 | **Not implemented** |  |
 
 ### Leagues of Votann (`LoV`) — `https://wahapedia.ru/wh40k10ed/factions/leagues-of-votann`
@@ -233,28 +210,16 @@ These mechanics are currently recognized by searching ability names/descriptions
 |---|---:|---:|---:|---|---|
 | Assigned Agents | `000008452` | 1 | 1 | **Not implemented** |  |
 | Curse of the Wulfen | `000010256` | 4 | 4 | **Not implemented** |  |
-| Deathwatch | `000009853` | 0 | 0 | **Supported** | Scouts |
-| Heirs of Sigismund | `000010389` | 0 | 0 | **Not implemented** |  |
 | Kill Team | `000008519` | 1 | 1 | **Not implemented** |  |
-| Kill Teams | `000009792` | 0 | 0 | **Not implemented** |  |
 | Mission Tactics | `000008521` | 10 | 10 | **Not implemented** |  |
 | Oath of Moment | `000008350` | 275 | 275 | **Not implemented** |  |
-| Sagas | `000010257` | 0 | 0 | **Not implemented** |  |
-| Sons of Russ | `000010258` | 0 | 0 | **Not implemented** |  |
-| Space Marine Chapters | `000008351` | 0 | 0 | **Supported** | Scouts |
 | Templar Vows | `000008526` | 19 | 19 | **Supported** | Advance+Charge (exact wording) |
-| The Deathwing | `000008808` | 0 | 0 | **Not implemented** |  |
-| The Ravenwing | `000008768` | 0 | 0 | **Not implemented** |  |
-| The Sons of Sanguinius | `000009183` | 0 | 0 | **Not implemented** |  |
-| The Unforgiven | `000008767` | 0 | 0 | **Not implemented** |  |
 
 ### Thousand Sons (`TS`) — `https://wahapedia.ru/wh40k10ed/factions/thousand-sons`
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Cabal of Sorcerers | `000008424` | 13 | 13 | **Supported** | Lone Operative |
-| Dark Pacts | `000008359` | 0 | 0 | **Not implemented** |  |
-| Oath of Moment | `000008350` | 0 | 0 | **Not implemented** |  |
 | Pact of Sorcery | `000010190` | 6 | 6 | **Not implemented** |  |
 
 ### Tyranids (`TYR`) — `https://wahapedia.ru/wh40k10ed/factions/tyranids`
@@ -281,8 +246,6 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Blessings of Khorne | `000008428` | 53 | 53 | **Supported** | Blessings of Khorne (World Eaters) |
-| Dark Pacts | `000008359` | 0 | 0 | **Not implemented** |  |
-| Oath of Moment | `000008350` | 0 | 0 | **Not implemented** |  |
 | Pact of Blood | `000010071` | 5 | 5 | **Not implemented** |  |
 
 ## Detachment Abilities
@@ -588,7 +551,6 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Desperate Devotion | `000008979` | 17 | 17 | **Not implemented** |  |
-| KEYWORDS | `000008980` | 0 | 0 | **Not implemented** |  |
 
 #### Creations of Bile
 
@@ -783,7 +745,6 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| BROOD BROTHERS | `000009083` | 0 | 0 | **Not implemented** |  |
 | Integrated Tactics | `000009082` | 123 | 123 | **Not implemented** |  |
 
 #### Final Day
@@ -1007,7 +968,6 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| KEYWORDS | `000008876` | 0 | 0 | **Not implemented** |  |
 | Try Dat Button! | `000008875` | 17 | 17 | **Not implemented** |  |
 
 #### Green Tide
@@ -1126,7 +1086,6 @@ These mechanics are currently recognized by searching ability names/descriptions
 |---|---:|---:|---:|---|---|
 | Calculated Annihilation | `000010620` | 296 | 296 | **Not implemented** |  |
 | Recalculating | `000010621` | 296 | 296 | **Not implemented** |  |
-| Restrictions | `000010622` | 0 | 0 | **Not implemented** |  |
 
 #### Inner Circle Task Force
 
@@ -1182,7 +1141,6 @@ These mechanics are currently recognized by searching ability names/descriptions
 |---|---:|---:|---:|---|---|
 | Howling Onslaught | `000010658` | 296 | 296 | **Not implemented** |  |
 | Master of Wolves | `000010657` | 296 | 296 | **Not implemented** |  |
-| Restrictions | `000010659` | 0 | 0 | **Not implemented** |  |
 
 #### Saga of the Hunter
 
@@ -1195,14 +1153,12 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Masters of Shadow | `000010463` | 296 | 296 | **Not implemented** |  |
-| Restrictions | `000010465` | 0 | 0 | **Not implemented** |  |
 | Unparalleled Tactician | `000010464` | 1 | 1 | **Not implemented** |  |
 
 #### Spearpoint Task Force
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Restrictions | `000010628` | 0 | 0 | **Not implemented** |  |
 | Storm-swift Onslaught | `000010626` | 296 | 296 | **Supported** | Advance+Charge (exact wording) |
 | Wrath of the First Khan | `000010627` | 296 | 296 | **Not implemented** |  |
 
@@ -1367,7 +1323,6 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Hunter’s Instincts | `000008818` | 11 | 11 | **Not implemented** |  |
-| KEYWORDS | `000008820` | 0 | 0 | **Not implemented** |  |
 | Skirmish Fighters | `000008819` | 11 | 11 | **Not implemented** |  |
 
 #### Mont’ka
@@ -3660,7 +3615,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Armoured Spearhead | 1 | 1 | **Not implemented** |  |
 | Atomantic Arc-reactor | 1 | 1 | **Not implemented** |  |
 | Bane of Cowards | 1 | 1 | **Not implemented** |  |
-| Beacons of Rage (Aura) | 1 | 1 | **Supported** | Aura: +1 to hit (melee vs non MONSTER/VEHICLE); +1 to wound vs Below Half-strength |
+| Beacons of Rage (Aura) | 1 | 1 | **Not implemented** |  |
 | Berzerker Frenzy | 1 | 1 | **Not implemented** |  |
 | Blood Surge | 1 | 1 | **Not implemented** |  |
 | Blood-hungry Annihilator | 1 | 1 | **Not implemented** |  |
@@ -3675,7 +3630,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Deredeo Strike | 1 | 1 | **Not implemented** |  |
 | Devastating Assault | 1 | 1 | **Not implemented** |  |
 | Devoted to Destruction | 1 | 1 | **Not implemented** |  |
-| Direct the Slaughter | 1 | 1 | **Supported** | Stratagem CP cost modifier: -1CP once per battle round if target is WORLD EATERS and within 12" of a holder |
+| Direct the Slaughter | 1 | 1 | **Not implemented** |  |
 | Duty Eternal | 1 | 1 | **Not implemented** |  |
 | Even In Death I Serve | 1 | 1 | **Supported** | Deadly Demise |
 | Ferocious Assault | 1 | 1 | **Not implemented** |  |
@@ -3689,12 +3644,12 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Legendary Killer | 1 | 1 | **Not implemented** |  |
 | Line-breaker | 1 | 1 | **Not implemented** |  |
 | Loping Speed | 1 | 1 | **Not implemented** |  |
-| Lord of Murder | 1 | 1 | **Supported** | Conditional Lone Operative while within 3" of friendly WORLD EATERS INFANTRY |
+| Lord of Murder | 1 | 1 | **Supported** | Lone Operative |
 | Meet Any Challenge | 1 | 1 | **Not implemented** |  |
 | Murderlust | 1 | 1 | **Supported** | Advance+Charge (exact wording) |
 | Objective Ravaged | 1 | 1 | **Not implemented** |  |
 | Pinning Bombardment | 1 | 1 | **Not implemented** |  |
-| Possessed Lord | 1 | 1 | **Supported** | Once per battle activation API (+3A melee + Devastating Wounds until end of Fight phase) |
+| Possessed Lord | 1 | 1 | **Not implemented** |  |
 | Powerful Volley | 1 | 1 | **Not implemented** |  |
 | Punishing Suppression | 1 | 1 | **Not implemented** |  |
 | Rage Embodied (Aura) | 1 | 1 | **Not implemented** |  |
@@ -3765,7 +3720,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---|---|
 | DEPLOYMENT | 1 | 1 | **Not implemented** |  |
-| SUPREME COMMANDER | 1 | 1 | **Not implemented** |  |
+| SUPREME COMMANDER | 1 | 1 | **Supported** | Supreme Commander (must be Warlord) |
 
 #### Drukhari (`DRU`)
 
@@ -3781,7 +3736,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---|---|
 | LORD OF THE HOST | 1 | 1 | **Supported** | Infiltrators, Scouts |
-| SUPREME COMMANDER | 1 | 1 | **Not implemented** |  |
+| SUPREME COMMANDER | 1 | 1 | **Supported** | Supreme Commander (must be Warlord) |
 
 #### Genestealer Cults (`GC`)
 
@@ -3840,7 +3795,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---|---|
-| SUPREME COMMANDER | 1 | 1 | **Not implemented** |  |
+| SUPREME COMMANDER | 1 | 1 | **Supported** | Supreme Commander (must be Warlord) |
 
 #### Unaligned Forces (`UN`)
 
@@ -3854,7 +3809,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---|---|
 | LORD OF THE EIGHTBOUND | 1 | 1 | **Supported** | Deep Strike, Scouts |
-| SUPREME COMMANDER | 1 | 1 | **Not implemented** |  |
+| SUPREME COMMANDER | 1 | 1 | **Supported** | Supreme Commander (must be Warlord) |
 
 ### Primarch
 
@@ -3984,7 +3939,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 |---|---:|---:|---|---|
 | Holy Mission | 1 | 1 | **Supported** | Infiltrators, Scouts |
 | Holy Vanguard | 1 | 1 | **Supported** | Scouts |
-| SUPREME COMMANDER | 1 | 1 | **Not implemented** |  |
+| SUPREME COMMANDER | 1 | 1 | **Supported** | Supreme Commander (must be Warlord) |
 
 #### Adeptus Custodes (`AC`)
 
@@ -3994,7 +3949,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | JETBIKE OUTRIDERS | 1 | 1 | **Not implemented** |  |
 | JUMP PACKS | 1 | 1 | **Not implemented** |  |
 | LIONS OF THE EMPEROR | 1 | 1 | **Not implemented** |  |
-| SUPREME COMMANDER | 1 | 1 | **Not implemented** |  |
+| SUPREME COMMANDER | 1 | 1 | **Supported** | Supreme Commander (must be Warlord) |
 
 #### Adeptus Mechanicus (`AdM`)
 
@@ -4003,7 +3958,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | SECUTARII | 2 | 2 | **Not implemented** |  |
 | SERVITOR BODYGUARD | 1 | 1 | **Not implemented** |  |
 | SERVITOR RETINUE | 1 | 1 | **Not implemented** |  |
-| SUPREME COMMANDER | 1 | 1 | **Not implemented** |  |
+| SUPREME COMMANDER | 1 | 1 | **Supported** | Supreme Commander (must be Warlord) |
 | SYDONIAN SENTINEL | 1 | 1 | **Not implemented** |  |
 
 #### Aeldari (`AE`)
@@ -4027,7 +3982,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | LONER | 1 | 1 | **Not implemented** |  |
 | SERVITOR RETINUE | 1 | 1 | **Not implemented** |  |
 | SNIPER TEAMS | 1 | 1 | **Not implemented** |  |
-| SUPREME COMMANDER | 1 | 1 | **Not implemented** |  |
+| SUPREME COMMANDER | 1 | 1 | **Supported** | Supreme Commander (must be Warlord) |
 
 #### Chaos Daemons (`CD`)
 
@@ -4040,7 +3995,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | HORRORS ARE PINK. HORRORS ARE BLUE. WHEREONCE THERE WAS ONE, NOW THERE ARE TWO. | 1 | 1 | **Not implemented** |  |
 | MANIFESTATION OF DESTRUCTION | 1 | 1 | **Not implemented** |  |
 | SERVANTS OF THE ABYSS | 1 | 1 | **Not implemented** |  |
-| SUPREME COMMANDER | 1 | 1 | **Not implemented** |  |
+| SUPREME COMMANDER | 1 | 1 | **Supported** | Supreme Commander (must be Warlord) |
 
 #### Chaos Knights (`QT`)
 
@@ -4059,7 +4014,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | CULT OF DESTRUCTION | 1 | 1 | **Not implemented** |  |
 | HEAVY WEAPONS TEAM | 1 | 1 | **Not implemented** |  |
 | SERVANTS OF THE ABYSS | 1 | 1 | **Not implemented** |  |
-| SUPREME COMMANDER | 1 | 1 | **Not implemented** |  |
+| SUPREME COMMANDER | 1 | 1 | **Supported** | Supreme Commander (must be Warlord) |
 
 #### Death Guard (`DG`)
 
@@ -4088,14 +4043,14 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | HUNTER ORGANISM | 1 | 1 | **Not implemented** |  |
 | SERVITOR RETINUE | 1 | 1 | **Not implemented** |  |
 | SNIPER TEAMS | 1 | 1 | **Not implemented** |  |
-| SUPREME COMMANDER | 1 | 1 | **Not implemented** |  |
+| SUPREME COMMANDER | 1 | 1 | **Supported** | Supreme Commander (must be Warlord) |
 
 #### Grey Knights (`GK`)
 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---|---|
 | SERVITOR RETINUE | 1 | 1 | **Not implemented** |  |
-| SUPREME COMMANDER | 1 | 1 | **Not implemented** |  |
+| SUPREME COMMANDER | 1 | 1 | **Supported** | Supreme Commander (must be Warlord) |
 
 #### Imperial Agents (`AoI`)
 
@@ -4116,7 +4071,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | CRYPTEK RETINUE | 1 | 1 | **Not implemented** |  |
 | C’TAN SHARD | 1 | 1 | **Not implemented** |  |
 | DEPLOYMENT | 1 | 1 | **Not implemented** |  |
-| SUPREME COMMANDER | 1 | 1 | **Not implemented** |  |
+| SUPREME COMMANDER | 1 | 1 | **Supported** | Supreme Commander (must be Warlord) |
 | TRIARCHAL MENHIRS | 1 | 1 | **Not implemented** |  |
 
 #### Orks (`ORK`)
@@ -4128,7 +4083,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | BIG GUNZ | 1 | 1 | **Not implemented** |  |
 | BODYGUARD | 1 | 1 | **Not implemented** |  |
 | SPEED FREEKS MOB | 1 | 1 | **Not implemented** |  |
-| SUPREME COMMANDER | 1 | 1 | **Not implemented** |  |
+| SUPREME COMMANDER | 1 | 1 | **Supported** | Supreme Commander (must be Warlord) |
 
 #### Space Marines (`SM`)
 
@@ -4137,7 +4092,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | ATTACHED UNIT | 20 | 20 | **Not implemented** |  |
 | ATTACHED UNITS | 6 | 6 | **Not implemented** |  |
 | DEATH COMPANY | 2 | 2 | **Not implemented** |  |
-| SUPREME COMMANDER | 2 | 2 | **Not implemented** |  |
+| SUPREME COMMANDER | 2 | 2 | **Supported** | Supreme Commander (must be Warlord) |
 | TYCHO | 2 | 2 | **Not implemented** |  |
 | Attached Unit | 1 | 1 | **Not implemented** |  |
 | CASSIUS | 1 | 1 | **Not implemented** |  |
@@ -4168,7 +4123,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 |---|---:|---:|---|---|
 | BODYGUARD | 1 | 1 | **Not implemented** |  |
 | INDEPENDENT POWER | 1 | 1 | **Not implemented** |  |
-| SUPREME COMMANDER | 1 | 1 | **Not implemented** |  |
+| SUPREME COMMANDER | 1 | 1 | **Supported** | Supreme Commander (must be Warlord) |
 
 ### Wargear
 
