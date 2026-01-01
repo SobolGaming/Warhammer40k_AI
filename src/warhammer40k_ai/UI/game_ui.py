@@ -839,11 +839,19 @@ class GameView:
             choice_holder["choice"] = bool(chosen)
             choice_holder["done"] = True
 
+        allow_reroll = True
+        try:
+            if "allow_reroll" in _kwargs:
+                allow_reroll = bool(_kwargs.get("allow_reroll", True))
+        except Exception:
+            allow_reroll = True
+
         dlg.show(
             title=title,
             message=msg,
             roll_text=roll_text,
             roll_border=roll_border,
+            allow_reroll=allow_reroll,
             callback=_on_choice,
             keep_label="Keep",
             reroll_label="Re-roll",
@@ -4782,13 +4790,16 @@ class BattlePhaseHandler(BasePhaseHandler):
         
         # Show charge declaration dialog
         def on_charge_declaration(charging_unit, target_unit):
-            # Roll 2D6 for charge distance
-            charge_roll = get_roll("2D6")
-            max_charge_distance = charge_roll
-            print(f"🎲 {charging_unit.name} rolled {charge_roll}\" for charge distance")
+            # Single code path: delegate all charge declaration bookkeeping + rolling to Game.
+            declared = None
+            try:
+                declared = self.game.declare_charge(charging_unit, target_unit)
+            except Exception:
+                declared = None
+            if not declared:
+                return False
 
-            # Mark charge as attempted immediately (prevents multiple charge attempts)
-            charging_unit.round_state.attempted_charge_this_round = True
+            max_charge_distance = int(declared.get("base_roll", 0) or 0)
             
             # Open individual model movement dialog for charge movement
             def on_charge_movement_complete(completed: bool):
@@ -5005,38 +5016,15 @@ class BattlePhaseHandler(BasePhaseHandler):
         """Handle target model selection phase."""
         print(f"🎯 Starting target model selection phase")
         
-        # Check if any weapons have PRECISION or if target unit has mixed attributes
-        has_precision_weapons = any(
-            decl.get('weapon_profile').is_precision()
-            for decl in weapon_declarations
-            if decl.get('weapon_profile')
-        )
-        
+        # NOTE: PRECISION (10e) is *not* "pick a target model up-front".
+        # It is an allocation override that happens after a successful wound is allocated.
+        # We handle this during attack resolution (see _resolve_single_attack) via the
+        # engine-level precision_allocation_provider + PrecisionAllocationDialog.
+
+        # Check if target unit has mixed attributes (legacy UI-only flow)
         has_mixed_attributes = self._unit_has_mixed_attributes(target_unit)
         
-        if has_precision_weapons:
-            print(f"🎯 PRECISION weapons detected - showing target model selection")
-            
-            def on_precision_model_selected(selected_model):
-                print(f"🎯 PRECISION targeting: {selected_model.name} selected")
-                # Store the precision target for attack resolution
-                for decl in weapon_declarations:
-                    weapon_profile = decl.get('weapon_profile')
-                    if weapon_profile and weapon_profile.is_precision():
-                        decl['precision_target'] = selected_model
-                self._start_attack_resolution_phase(fighting_unit, target_unit, weapon_declarations, current_player, opponent_player)
-            
-            def on_precision_cancelled():
-                print("🎯 PRECISION targeting cancelled")
-                # Proceed without precision targeting
-                self._start_attack_resolution_phase(fighting_unit, target_unit, weapon_declarations, current_player, opponent_player)
-            
-            self.game_view.target_model_selection_dialog.show(
-                fighting_unit, target_unit, weapon_declarations, "precision",
-                on_precision_model_selected, on_precision_cancelled
-            )
-            
-        elif has_mixed_attributes:
+        if has_mixed_attributes:
             print(f"🎯 Mixed attributes detected - defender selects wound allocation")
             
             def on_wound_model_selected(selected_model):
@@ -5113,7 +5101,6 @@ class BattlePhaseHandler(BasePhaseHandler):
         for i, weapon_decl in enumerate(weapon_declarations):
             model = weapon_decl.get('model')
             weapon_profile = weapon_decl.get('weapon_profile')
-            precision_target = weapon_decl.get('precision_target')
             wound_target = weapon_decl.get('wound_target')
             
             if not model or not weapon_profile:
@@ -5124,6 +5111,18 @@ class BattlePhaseHandler(BasePhaseHandler):
             # Get number of attacks for this weapon
             attacks = self._get_weapon_attacks(weapon_profile)
             print(f"🎲 Rolling {attacks} attacks")
+
+            # Cache PRECISION allocation choice once per weapon profile for this sequence
+            precision_choice_model = None
+            try:
+                if callable(getattr(weapon_profile, "is_precision", None)) and weapon_profile.is_precision():
+                    precision_choice_model = self._choose_precision_allocation_target(
+                        attacking_model=model,
+                        target_unit=target_unit,
+                        weapon_profile=weapon_profile,
+                    )
+            except Exception:
+                precision_choice_model = None
             
             # Resolve each attack individually
             for attack_num in range(attacks):
@@ -5135,10 +5134,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                 
                 # Determine target model for this attack
                 target_model = None
-                if precision_target and precision_target.is_alive:
-                    target_model = precision_target
-                    print(f"  🎯 PRECISION targeting: {target_model.name}")
-                elif wound_target and wound_target.is_alive:
+                if wound_target and wound_target.is_alive:
                     target_model = wound_target
                     print(f"  🎯 Wound allocation: {target_model.name}")
                 else:
@@ -5153,7 +5149,13 @@ class BattlePhaseHandler(BasePhaseHandler):
                 
                 # Resolve single attack
                 # Note: take_damage() method automatically handles model death, FNP saves, etc.
-                success = self._resolve_single_attack(model, weapon_profile, target_model, target_unit)
+                success = self._resolve_single_attack(
+                    model,
+                    weapon_profile,
+                    target_model,
+                    target_unit,
+                    precision_choice_model=precision_choice_model,
+                )
                 
                 # The take_damage() method has already handled model death if applicable
                 # No need for manual death checking since take_damage() calls die() automatically
@@ -5202,7 +5204,71 @@ class BattlePhaseHandler(BasePhaseHandler):
             ctx=DamageAllocationCtx(reason="Allocate wound", damage_source="melee"),
         )
     
-    def _resolve_single_attack(self, attacking_model, weapon_profile, target_model, target_unit) -> bool:
+    def _choose_precision_allocation_target(self, attacking_model, target_unit: Unit, weapon_profile):
+        """
+        If this is a PRECISION weapon attacking an Attached Unit with visible CHARACTER models,
+        prompt the attacker (human) once to choose allocation target for the rest of this weapon profile.
+        Returns: chosen CHARACTER model, or None to allocate normally (bodyguards).
+        """
+        # Attached unit root
+        try:
+            root = target_unit.get_attached_unit_root()
+        except Exception:
+            root = target_unit
+
+        try:
+            has_attached_leaders = bool(getattr(root, "attached_leaders", []) or [])
+        except Exception:
+            has_attached_leaders = False
+        if not has_attached_leaders:
+            return None
+
+        # Collect visible CHARACTER models in the attached unit group
+        try:
+            all_models = root.get_models_for_collision()
+        except Exception:
+            all_models = list(getattr(root, "models", []) or [])
+
+        char_models = []
+        for m in all_models:
+            if not getattr(m, "is_alive", True):
+                continue
+            pu = getattr(m, "parent_unit", None)
+            if pu is None:
+                continue
+            if not bool(getattr(pu, "is_character", False)):
+                continue
+            # Visibility requirement (only if map supports it)
+            gm = getattr(self, "game", None)
+            game_map = getattr(gm, "map", None) if gm is not None else None
+            can_see = getattr(game_map, "can_model_see_model", None) if game_map is not None else None
+            if callable(can_see):
+                if not can_see(attacking_model, m):
+                    continue
+            char_models.append(m)
+
+        if not char_models:
+            return None
+
+        gm = getattr(self, "game", None)
+        game_map = getattr(gm, "map", None) if gm is not None else None
+        provider = getattr(game_map, "precision_allocation_provider", None) if game_map is not None else None
+
+        # Human-only modal prompt; AI/headless defaults to first available CHARACTER
+        try:
+            attacker_player = attacking_model.parent_unit.get_parent_army().player
+            is_human = bool(getattr(getattr(attacker_player, "type", None), "name", "") == "HUMAN")
+        except Exception:
+            is_human = False
+
+        if callable(provider) and is_human:
+            try:
+                return provider(attacking_model, root, char_models, weapon_profile)
+            except Exception:
+                return None
+        return char_models[0]
+
+    def _resolve_single_attack(self, attacking_model, weapon_profile, target_model, target_unit, *, precision_choice_model=None) -> bool:
         """Resolve a single attack and return True if it caused damage."""
         try:
             # Get attack stats
@@ -5229,6 +5295,19 @@ class BattlePhaseHandler(BasePhaseHandler):
             
             if wound_roll < wound_needed:
                 return False
+
+            # PRECISION allocation override: after a successful wound, the attacker may allocate
+            # that wound to a visible CHARACTER model in the Attached unit.
+            if precision_choice_model is not None:
+                try:
+                    gm = getattr(self, "game", None)
+                    game_map = getattr(gm, "map", None) if gm is not None else None
+                    can_see = getattr(game_map, "can_model_see_model", None) if game_map is not None else None
+                    if getattr(precision_choice_model, "is_alive", True) and (not callable(can_see) or can_see(attacking_model, precision_choice_model)):
+                        target_model = precision_choice_model
+                        print(f"    🎯 PRECISION allocation: {getattr(target_model, 'name', 'CHARACTER')}")
+                except Exception:
+                    pass
             
             # Roll save with proper AP and invulnerable consideration
             save_roll = get_roll("1D6")

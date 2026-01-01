@@ -151,8 +151,18 @@ def is_terrain_impassable(unit: 'Unit', terrain_feature: 'TerrainFeature') -> bo
                              unit.is_belisarius_cawl or unit.is_imperium_primarch)
 
         if not can_traverse_walls:
-            # Check if there are any walls that would block movement
-            return len(terrain_feature.walls) > 0
+            # Core movement rule: terrain features ≤ 2" tall can be moved over "as if not there".
+            # Apply this to RUINS wall segments as well (e.g., rubble/low walls).
+            for wall in list(getattr(terrain_feature, "walls", []) or []):
+                try:
+                    z0 = float(wall.get("z_bottom", 0.0) or 0.0)
+                    z1 = float(wall.get("z_top", 0.0) or 0.0)
+                    if (z1 - z0) > FREELY_CLIMBABLE_RANGE:
+                        return True
+                except Exception:
+                    # If wall metadata is missing, err on the side of blocking (legacy behavior)
+                    return True
+            return False
 
     # Check terrain-specific traversal rules
     traversal_rules = getattr(terrain_feature, 'traversal_rules', {})
@@ -191,9 +201,22 @@ def get_terrain_blocking_polygons(unit: 'Unit', terrain_feature: 'TerrainFeature
                              unit.is_belisarius_cawl or unit.is_imperium_primarch)
 
         if not can_traverse_walls:
-            # Add wall polygons as blocking
-            for wall in terrain_feature.walls:
-                blocking_polygons.append(wall["polygon"])
+            # Add wall polygons as blocking ONLY if wall segment height > 2".
+            for wall in list(getattr(terrain_feature, "walls", []) or []):
+                try:
+                    z0 = float(wall.get("z_bottom", 0.0) or 0.0)
+                    z1 = float(wall.get("z_top", 0.0) or 0.0)
+                    if (z1 - z0) <= FREELY_CLIMBABLE_RANGE:
+                        continue
+                    poly = wall.get("polygon", None)
+                    if poly is not None:
+                        blocking_polygons.append(poly)
+                except Exception:
+                    # If metadata missing, keep legacy behavior and block
+                    try:
+                        blocking_polygons.append(wall["polygon"])
+                    except Exception:
+                        continue
 
     # For other terrain types, check if they're impassable
     elif is_terrain_impassable(unit, terrain_feature):
@@ -1378,6 +1401,16 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
         from ..utility.model_base import Base
         temp_base = Base(model.model_base.base_type, model.model_base.radius)
         temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
+        # Preserve facing for non-circular bases (elliptical/hull) so edge distance is correct.
+        try:
+            temp_base.set_facing(float(getattr(model.model_base, "facing", 0.0) or 0.0))
+        except Exception:
+            pass
+        # Preserve model height for any 3D separation helpers that may consult it
+        try:
+            temp_base.set_model_height(float(getattr(model.model_base, "model_height", None)))
+        except Exception:
+            pass
 
         in_engagement_range = False
         for enemy_model in target_unit.models:
@@ -1386,7 +1419,7 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
             from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
             horizontal_distance = float(horizontal_distance_between_bases_2d(temp_base, enemy_model.model_base))
             vertical_distance = float(vertical_distance_between_bases(temp_base, enemy_model.model_base))
-            if (horizontal_distance < ENGAGEMENT_RANGE_HORIZONTAL and
+            if (horizontal_distance <= ENGAGEMENT_RANGE_HORIZONTAL and
                 vertical_distance <= ENGAGEMENT_RANGE_VERTICAL):
                 in_engagement_range = True
                 break
@@ -1399,6 +1432,14 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
         from ..utility.model_base import Base
         temp_base = Base(model.model_base.base_type, model.model_base.radius)
         temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
+        try:
+            temp_base.set_facing(float(getattr(model.model_base, "facing", 0.0) or 0.0))
+        except Exception:
+            pass
+        try:
+            temp_base.set_model_height(float(getattr(model.model_base, "model_height", None)))
+        except Exception:
+            pass
 
         # Check against all enemy models using proper edge-to-edge distance
         for unit in game_map.units:
@@ -1410,7 +1451,7 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
                 from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
                 horizontal_distance = float(horizontal_distance_between_bases_2d(temp_base, enemy_model.model_base))
                 vertical_distance = float(vertical_distance_between_bases(temp_base, enemy_model.model_base))
-                if (horizontal_distance < ENGAGEMENT_RANGE_HORIZONTAL and
+                if (horizontal_distance <= ENGAGEMENT_RANGE_HORIZONTAL and
                     vertical_distance <= ENGAGEMENT_RANGE_VERTICAL):
                     print(f"🔍 DEBUG: Fall back validation - {model.name} would end within engagement range of {enemy_model.name}")
                     return {'valid': False, 'reason': 'Fall back cannot end within engagement range'}

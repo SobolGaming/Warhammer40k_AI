@@ -88,28 +88,56 @@ class TargetModelSelectionDialog(BaseDialog):
         if not self.target_unit:
             return []
 
+        def _attached_group_models(u: Unit) -> List[Model]:
+            # Include attached leaders (Attached Unit rules: treated as one unit)
+            try:
+                root = u.get_attached_unit_root()
+            except Exception:
+                root = u
+            try:
+                if hasattr(root, "get_attached_unit_models") and callable(getattr(root, "get_attached_unit_models")):
+                    return list(root.get_attached_unit_models() or [])
+            except Exception:
+                pass
+            return list(getattr(root, "models", []) or [])
+
+        def _is_character_model(m: Model) -> bool:
+            pu = getattr(m, "parent_unit", None)
+            if pu is None:
+                return False
+            # Prefer unit-level flag; models do not carry keywords in this project.
+            if bool(getattr(pu, "is_character", False)):
+                return True
+            # Fallback to keyword list if present on the unit
+            kws = getattr(pu, "keywords", []) or []
+            return "CHARACTER" in [str(kw).upper() for kw in kws]
+
         if self.selection_type == "precision":
             # PRECISION weapons can target CHARACTER models
             character_models = []
-            for model in self.target_unit.models:
-                if not model.is_alive:
+            for model in _attached_group_models(self.target_unit):
+                if not getattr(model, "is_alive", False):
                     continue
-                # Check if model has CHARACTER keyword
-                keywords = getattr(model, 'keywords', []) or []
-                if 'CHARACTER' in [kw.upper() for kw in keywords]:
+                if _is_character_model(model):
                     character_models.append(model)
             return character_models
         elif self.selection_type == "wound_allocation":
             # For wound allocation, prioritize wounded models, then any alive model
-            wounded_models = [model for model in self.target_unit.models 
-                            if model.is_alive and model.wounds < model._base_wounds]
+            try:
+                candidates = list(self.target_unit.get_models_for_wound_allocation() or [])
+            except Exception:
+                candidates = [m for m in _attached_group_models(self.target_unit) if getattr(m, "is_alive", False)]
+            wounded_models = [
+                model for model in candidates
+                if getattr(model, "is_alive", False) and getattr(model, "wounds", 0) < getattr(model, "_base_wounds", getattr(model, "wounds", 0))
+            ]
             if wounded_models:
                 return wounded_models
             else:
-                return [model for model in self.target_unit.models if model.is_alive]
+                return [model for model in candidates if getattr(model, "is_alive", False)]
         else:
             # Default: all alive models
-            return [model for model in self.target_unit.models if model.is_alive]
+            return [model for model in _attached_group_models(self.target_unit) if getattr(model, "is_alive", False)]
 
     def _handle_button_click(self, button_name: str) -> bool:
         if button_name == 'cancel':

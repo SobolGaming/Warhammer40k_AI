@@ -24,6 +24,7 @@ class RollRerollDialog(BaseDialog):
         self._roll_border_color: Optional[Tuple[int, int, int]] = None
         self.keep_label = "Keep"
         self.reroll_label = "Re-roll"
+        self._allow_reroll = True
 
     def show(
         self,
@@ -32,6 +33,7 @@ class RollRerollDialog(BaseDialog):
         message: str,
         roll_text: str = "",
         roll_border: Optional[str] = None,  # "fail" | "success" | None
+        allow_reroll: bool = True,
         callback: Callable[[bool], None],
         keep_label: str = "Keep",
         reroll_label: str = "Re-roll",
@@ -46,6 +48,7 @@ class RollRerollDialog(BaseDialog):
             self._roll_border_color = TEXT_SUCCESS  # green-ish
         else:
             self._roll_border_color = None
+        self._allow_reroll = bool(allow_reroll)
         self.keep_label = keep_label or "Keep"
         self.reroll_label = reroll_label or "Re-roll"
         super().show(callback=callback)
@@ -59,7 +62,7 @@ class RollRerollDialog(BaseDialog):
         start_x = (self.width - (2 * bw + gap)) // 2
         y = self.height - 75
         self.add_button("keep", start_x, y, bw, bh, enabled=True)
-        self.add_button("reroll", start_x + bw + gap, y, bw, bh, enabled=True)
+        self.add_button("reroll", start_x + bw + gap, y, bw, bh, enabled=bool(self._allow_reroll))
 
     def _handle_button_click(self, button_name: str) -> bool:
         cb = self.callback
@@ -69,6 +72,8 @@ class RollRerollDialog(BaseDialog):
                 cb(False)
             return True
         if button_name == "reroll":
+            if not bool(self._allow_reroll):
+                return True
             self.hide()
             if cb:
                 cb(True)

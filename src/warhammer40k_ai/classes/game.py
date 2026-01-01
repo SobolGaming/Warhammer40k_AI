@@ -2867,6 +2867,105 @@ class Game:
             "phase": self.phase,
         }
 
+    def declare_charge(self, charging_unit: 'Unit', target_unit: 'Unit') -> dict | None:
+        """
+        Single source of truth for charge declaration bookkeeping + rolling:
+
+        - Validates eligibility (`Unit.can_declare_charge_against`)
+        - Marks `attempted_charge_this_round` immediately (a declared charge is an attempt)
+        - Rolls 2D6 (with detailed dice)
+        - Offers a rule-based re-roll prompt (e.g. "re-roll Charge rolls") via map.roll_reroll_provider (UI hook)
+        - Publishes `roll_made` for stratagem/telemetry consumers
+
+        Returns a dict:
+          { "base_roll": int, "dice": list[int], "reroll_used": bool }
+        or None if the charge cannot be declared.
+        """
+        if not charging_unit.can_declare_charge_against(target_unit, self):
+            return None
+
+        # Mark as attempted immediately (prevents multiple declarations).
+        try:
+            charging_unit.round_state.attempted_charge_this_round = True
+        except Exception:
+            pass
+
+        dice_collection = DiceCollection.from_string("2D6")
+        base_roll, dice = dice_collection.roll_detailed()
+
+        player = None
+        try:
+            player = charging_unit.get_parent_army().player
+        except Exception:
+            player = None
+
+        # Optional rule-based reroll (e.g. "No Prey Can Evade").
+        reroll_used = False
+        can_rule_reroll = False
+        try:
+            can_rule_reroll = bool(charging_unit.can_reroll_charge_roll())
+        except Exception:
+            can_rule_reroll = False
+
+        # Always prompt humans via provider if available; provider will disable the reroll button if not allowed.
+        try:
+            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+            provider = getattr(getattr(self, "map", None), "roll_reroll_provider", None)
+            if is_human and callable(provider):
+                want = bool(provider(
+                    player=player,
+                    unit=charging_unit,
+                    roll_type="charge",
+                    value=base_roll,
+                    dice=list(dice),
+                    allow_reroll=bool(can_rule_reroll),
+                ))
+                if want and can_rule_reroll:
+                    base_roll, dice = dice_collection.roll_detailed()
+                    reroll_used = True
+        except Exception:
+            pass
+
+        # Store roll for UI/telemetry
+        try:
+            charging_unit.round_state.charge_roll = int(base_roll or 0)
+        except Exception:
+            pass
+
+        # Publish roll event (best-effort); reroll_locked means "already rerolled".
+        try:
+            def _reroll():
+                new_total, new_dice = DiceCollection.from_string("2D6").roll_detailed()
+                # If a consumer uses this (e.g. Command Re-roll), keep unit state consistent.
+                try:
+                    charging_unit.round_state.charge_roll = int(new_total or 0)
+                except Exception:
+                    pass
+                return new_total, new_dice
+
+            self.event_system.publish(
+                "roll_made",
+                player=player,
+                unit=charging_unit,
+                roll_type="charge",
+                value=int(base_roll or 0),
+                dice=list(dice),
+                reroll=_reroll,
+                reroll_locked=bool(reroll_used),
+            )
+        except Exception:
+            pass
+
+        # Dice log (best-effort)
+        try:
+            from ..utility.event_bus import append_dice
+            if player is not None:
+                append_dice(player.name, f"Charge roll: {int(base_roll or 0)} (dice {list(dice)}) for {charging_unit.name}")
+        except Exception:
+            pass
+
+        return {"base_roll": int(base_roll or 0), "dice": list(dice), "reroll_used": bool(reroll_used)}
+
     def attempt_charge(self, charging_unit: 'Unit', target_unit: 'Unit') -> bool:
         """Attempt a charge move with the given unit against the target.
         
@@ -2877,7 +2976,8 @@ class Game:
         CRITICAL: If the charge roll is insufficient to reach within 1" of the enemy,
         the charge fails completely and NO MODELS MOVE AT ALL.
         """
-        if not charging_unit.can_declare_charge_against(target_unit, self):
+        declared = self.declare_charge(charging_unit, target_unit)
+        if not declared:
             return False
 
         # Calculate current edge-to-edge distance between units
@@ -2887,44 +2987,8 @@ class Game:
         # So we need to move: current_distance - 1.0 inches
         distance_needed = max(0, current_distance - 1.0)
 
-        # Roll 2D6 for charge distance with modifiers - show individual dice
-        dice_collection = DiceCollection.from_string("2D6")
-        base_charge_roll, individual_dice = dice_collection.roll_detailed()
-        # Provide reroll callback for rules/stratagems
-        def _reroll():
-            new_total, new_individual = DiceCollection.from_string("2D6").roll_detailed()
-            nonlocal base_charge_roll, individual_dice
-            base_charge_roll = new_total
-            individual_dice = new_individual
-            return new_total, new_individual
-
-        # Rule-based reroll prompt (e.g., "re-roll Charge rolls") must happen BEFORE we evaluate success.
-        reroll_used = False
-        try:
-            player = charging_unit.get_parent_army().player
-            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
-            provider = getattr(getattr(self, "map", None), "roll_reroll_provider", None)
-            if is_human and callable(provider) and charging_unit.can_reroll_charge_roll():
-                if bool(provider(player=player, unit=charging_unit, roll_type="charge", value=base_charge_roll, dice=list(individual_dice))):
-                    _reroll()
-                    reroll_used = True
-        except Exception:
-            reroll_used = False
-
-        # Publish roll event for Command Re-roll (reroll_locked if a free reroll was already used)
-        try:
-            self.event_system.publish(
-                "roll_made",
-                player=charging_unit.get_parent_army().player,
-                unit=charging_unit,
-                roll_type="charge",
-                value=base_charge_roll,
-                dice=individual_dice,
-                reroll=_reroll,
-                reroll_locked=bool(reroll_used),
-            )
-        except Exception:
-            pass
+        base_charge_roll = int(declared.get("base_roll", 0) or 0)
+        individual_dice = list(declared.get("dice", []) or [])
         charge_roll = self._apply_charge_modifiers(charging_unit, base_charge_roll)
         
         print(f"⚔️ {charging_unit.name} charging {target_unit.name}")

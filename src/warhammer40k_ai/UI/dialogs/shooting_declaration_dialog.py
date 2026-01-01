@@ -693,6 +693,19 @@ class ShootingDeclarationDialog(BaseDialog):
             return True
         
         return result
+
+    def should_passthrough_event(self, event) -> bool:
+        """
+        While in battlefield targeting mode, we want battlefield clicks to be handled by the
+        phase handler (which converts screen->game coords and calls handle_battlefield_targeting()).
+        Without this, DialogManager will consume clicks because is_targeting_mode marks us "active".
+        """
+        if not bool(getattr(self, "is_targeting_mode", False)):
+            return False
+        try:
+            return getattr(event, "type", None) in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP)
+        except Exception:
+            return False
     
 
     

@@ -30,6 +30,39 @@ class FightPhaseManager:
         self.active_player = None  # Player who needs to select next
         self.fought_units = set()  # Units that have already fought this phase
         self.stage_complete = False
+    def _canonical_unit_for_fight(self, unit: Unit) -> Unit:
+        """
+        Attached Units are treated as one unit in 10e.
+
+        Internally, this project keeps Leaders as separate Unit objects while attached, so we must
+        canonicalize any attached Leader selection to the bodyguard/root unit for fight sequencing.
+        """
+        try:
+            return unit.get_attached_unit_root()
+        except Exception:
+            return unit
+
+    def _as_attached_view(self, unit: Unit) -> Unit:
+        """
+        Return a proxy unit whose `.models` includes all attached members (bodyguard + leaders),
+        so weapon selection and melee resolution include leader models without treating them as
+        separate selectable units.
+        """
+        try:
+            from .attached_unit import AttachedUnitView
+        except Exception:
+            AttachedUnitView = None
+        root = self._canonical_unit_for_fight(unit)
+        if AttachedUnitView is None:
+            return root
+        try:
+            members = list(root.get_attached_unit_members())
+            if members and len(members) > 1:
+                return AttachedUnitView(root)
+        except Exception:
+            pass
+        return root
+
         
         # Callbacks for human player interaction
         self.on_unit_selection_required = None  # Callback when human needs to select unit
@@ -141,12 +174,37 @@ class FightPhaseManager:
             all_units = self.game.get_remaining_combatant_units(player)
         else:
             return []
-        
-        # Filter out units that have already fought
-        return [unit for unit in all_units if unit not in self.fought_units and unit.is_alive()]
+
+        # Attached units: collapse Leaders into their bodyguard/root unit and deduplicate.
+        roots: list[Unit] = []
+        seen = set()
+        for u in list(all_units or []):
+            try:
+                root = self._canonical_unit_for_fight(u)
+            except Exception:
+                root = u
+            if root is None:
+                continue
+            rid = id(root)
+            if rid in seen:
+                continue
+            seen.add(rid)
+            try:
+                if root in self.fought_units:
+                    continue
+            except Exception:
+                pass
+            try:
+                if not root.is_alive():
+                    continue
+            except Exception:
+                continue
+            roots.append(root)
+        return roots
     
     def unit_selected(self, selected_unit: Unit, current_player: Player, opponent_player: Player) -> None:
         """Handle unit selection from the active player."""
+        selected_unit = self._canonical_unit_for_fight(selected_unit)
         print(f"⚔️ {self.active_player.name} selected {selected_unit.name} to fight")
         
         # Find eligible targets for this unit
@@ -176,9 +234,24 @@ class FightPhaseManager:
         eligible_targets = []
         
         enemy_units = self.game.map.get_enemy_units(fighting_unit)
-        for enemy_unit in enemy_units:
-            if enemy_unit.is_alive() and self.game.map.is_within_engagement_range(fighting_unit, enemy_unit):
-                eligible_targets.append(enemy_unit)
+        seen = set()
+        for enemy_unit in list(enemy_units or []):
+            # Treat enemy attached units as one target (root unit)
+            try:
+                enemy_root = enemy_unit.get_attached_unit_root()
+            except Exception:
+                enemy_root = enemy_unit
+            if enemy_root is None:
+                continue
+            rid = id(enemy_root)
+            if rid in seen:
+                continue
+            seen.add(rid)
+            try:
+                if enemy_root.is_alive() and self.game.map.is_within_engagement_range(fighting_unit, enemy_root):
+                    eligible_targets.append(enemy_root)
+            except Exception:
+                continue
         
         return eligible_targets
     
@@ -195,6 +268,8 @@ class FightPhaseManager:
 
     def _execute_fight_sequence_with_ui(self, fighting_unit: Unit, target_unit: Unit, current_player: Player, opponent_player: Player, ui_callback) -> None:
         """Execute fight sequence using individual model movement UI."""
+        fighting_unit = self._canonical_unit_for_fight(fighting_unit)
+        target_unit = self._canonical_unit_for_fight(target_unit)
         print(f"⚔️ Starting UI-based fight sequence: {fighting_unit.name} vs {target_unit.name}")
 
         # Step 1: Pile-in using Individual Model Movement Dialog
@@ -206,7 +281,8 @@ class FightPhaseManager:
                 print(f"⚔️ {fighting_unit.name} weapon selection completed: {len(weapon_declarations)} weapons")
 
                 # Step 3: Resolve melee attacks
-                self._resolve_melee_attacks(fighting_unit, target_unit, weapon_declarations)
+                # Use attached view so leader models fight as part of the attached unit
+                self._resolve_melee_attacks(self._as_attached_view(fighting_unit), target_unit, weapon_declarations)
 
                 # Step 4: Consolidate using Individual Model Movement Dialog
                 def on_consolidate_complete(completed: bool):
@@ -227,11 +303,11 @@ class FightPhaseManager:
 
             # Show melee weapon selection dialog
             if hasattr(self, 'on_weapon_selection_required') and self.on_weapon_selection_required:
-                self.on_weapon_selection_required(fighting_unit, target_unit, on_weapon_selection_complete)
+                self.on_weapon_selection_required(self._as_attached_view(fighting_unit), target_unit, on_weapon_selection_complete)
             else:
                 # Fallback: auto-select all melee weapons
                 print("⚠️ No weapon selection callback - auto-selecting all melee weapons")
-                weapon_declarations = self._auto_select_melee_weapons(fighting_unit)
+                weapon_declarations = self._auto_select_melee_weapons(self._as_attached_view(fighting_unit))
                 on_weapon_selection_complete(weapon_declarations)
 
         # Show pile-in dialog

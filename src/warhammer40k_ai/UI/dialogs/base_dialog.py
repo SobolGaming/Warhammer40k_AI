@@ -75,15 +75,90 @@ class BaseDialog(ABC):
     def _init_fonts(self):
         """Initialize fonts with fallbacks"""
         try:
-            self.font_large = pygame.font.SysFont('Arial', FONT_LARGE, bold=True)
-            self.font_medium = pygame.font.SysFont('Arial', FONT_MEDIUM, bold=True)
-            self.font_small = pygame.font.SysFont('Arial', FONT_SMALL, bold=False)
-            self.font_tiny = pygame.font.SysFont('Arial', FONT_TINY, bold=False)
+            # Prefer a modern, clean UI font stack (best-effort across OSes).
+            # On Windows, Segoe UI Variable / Segoe UI is typically available.
+            candidates = [
+                "Segoe UI Variable",
+                "Segoe UI",
+                "Inter",
+                "Roboto",
+                "Helvetica Neue",
+                "Helvetica",
+                "Arial",
+            ]
+
+            def _font(size: int, bold: bool) -> pygame.font.Font:
+                try:
+                    path = pygame.font.match_font(candidates, bold=bold)
+                    if path:
+                        return pygame.font.Font(path, size)
+                except Exception:
+                    pass
+                # Fallback to SysFont lookup
+                try:
+                    return pygame.font.SysFont(candidates, size, bold=bold)
+                except Exception:
+                    return pygame.font.Font(None, size)
+
+            self.font_large = _font(FONT_LARGE, bold=True)
+            self.font_medium = _font(FONT_MEDIUM, bold=True)
+            self.font_small = _font(FONT_SMALL, bold=False)
+            self.font_tiny = _font(FONT_TINY, bold=False)
         except:
             self.font_large = pygame.font.Font(None, FONT_LARGE)
             self.font_medium = pygame.font.Font(None, FONT_MEDIUM)
             self.font_small = pygame.font.Font(None, FONT_SMALL)
             self.font_tiny = pygame.font.Font(None, FONT_TINY)
+
+    def draw_text_wrapped(
+        self,
+        screen: pygame.Surface,
+        text: str,
+        x: int,
+        y: int,
+        max_width: int,
+        font: pygame.font.Font,
+        color: tuple,
+        line_height: int = 18,
+    ) -> int:
+        """
+        Draw word-wrapped text within max_width.
+
+        - Respects explicit newlines in `text` (each paragraph is wrapped independently).
+        - Returns the y position just after the final rendered line.
+        """
+        if not text:
+            return y
+        font = font or self.font_small
+        color = color or TEXT_SECONDARY
+
+        cur_y = y
+        # Respect explicit newlines
+        for para in str(text).split("\n"):
+            words = para.split(" ")
+            line = ""
+            for w in words:
+                trial = (line + " " + w).strip() if line else w
+                try:
+                    if font.size(trial)[0] <= max_width:
+                        line = trial
+                    else:
+                        if line:
+                            surf = font.render(line, True, color)
+                            screen.blit(surf, (x, cur_y))
+                            cur_y += line_height
+                        line = w
+                except Exception:
+                    # If size() fails, fall back to naive single-line
+                    line = trial
+            if line:
+                surf = font.render(line, True, color)
+                screen.blit(surf, (x, cur_y))
+                cur_y += line_height
+            # Blank line between explicit paragraphs
+            if para == "" and words == [""]:
+                cur_y += max(0, line_height // 2)
+        return cur_y
     
     def _update_title_bar(self):
         """Update title bar rectangle for dragging"""
