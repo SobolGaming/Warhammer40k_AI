@@ -6024,25 +6024,9 @@ class PhaseManager:
         is_coherent, non_coherent_models = validate_unit_coherency_after_movement(unit, final_positions)
 
         if not is_coherent:
-            print(f"⚠️  {unit.name} coherency violation after movement!")
-            print(f"⚠️  Models {non_coherent_models} are not coherent and must be removed from play")
-
-            # Show coherency violation dialog
-            # Collect existing visible dialogs to avoid overlap
-            existing_dialogs = []
-            if hasattr(self.game_view, 'movement_choice_dialog') and self.game_view.movement_choice_dialog.visible:
-                existing_dialogs.append(self.game_view.movement_choice_dialog)
-            if hasattr(self.game_view, 'individual_model_movement_dialog') and self.game_view.individual_model_movement_dialog.visible:
-                existing_dialogs.append(self.game_view.individual_model_movement_dialog)
-            if hasattr(self, 'scout_choice_dialog') and self.scout_choice_dialog.visible:
-                existing_dialogs.append(self.scout_choice_dialog)
-
-            self.game_view.coherency_violation_dialog.show(
-                unit,
-                non_coherent_models,
-                self._on_coherency_resolution,
-                existing_dialogs
-            )
+            # Movement must END in coherency. Do not remove models for movement-caused incoherency.
+            print(f"❌ {unit.name} is not in coherency after movement (non-coherent models: {non_coherent_models}). "
+                  f"Movement ending out of coherency is not allowed.")
         else:
             print(f"✅ {unit.name} maintains coherency after movement")
 

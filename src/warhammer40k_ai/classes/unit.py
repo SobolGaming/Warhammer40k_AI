@@ -3555,9 +3555,8 @@ class Unit:
         
         This method now uses the new pathfinding system that:
         1. Moves models individually using optimized pathfinding
-        2. Ignores coherency during movement (human player responsibility)
-        3. Validates coherency after all models have moved
-        4. Removes non-coherent models from play if coherency fails
+        2. Validates coherency after all models have moved
+        3. If coherency would be broken at the end of the move, the move is NOT allowed and is rolled back
         """
         if not self.models:
             logger.error(f"Cannot move unit {self.name}: no models in unit")
@@ -3760,25 +3759,12 @@ class Unit:
         is_coherent, non_coherent_models = process_unit_movement_with_coherency_check(self, model_movements)
         
         if not is_coherent:
-            print(f"⚠️  {self.name} coherency violation after movement!")
-            print(f"⚠️  Models {non_coherent_models} are not coherent and must be removed from play")
-            
-            # Remove non-coherent models from play
-            for model_index in sorted(non_coherent_models, reverse=True):
-                if model_index < len(self.models):
-                    model = self.models[model_index]
-                    print(f"💀 Removing {model.name} from play due to coherency violation")
-                    # Set wounds to 0 to make the model dead (is_alive property checks wounds > 0)
-                    model.wounds = 0
-                    # Call die() method to properly remove the model from the unit
-                    model.die()
-                    
-            # Unit position is now determined by model positions
-            
-            # Check if unit is still viable
-            if not self.is_alive():
-                print(f"💀 {self.name} has been destroyed due to coherency violations")
-                return False
+            print(f"❌ {self.name} move rejected: unit coherency would be broken (non-coherent models: {non_coherent_models})")
+            # ROLLBACK: Restore original positions (movement ending out of coherency is not allowed)
+            for i, original_pos in enumerate(original_model_positions):
+                if i < len(self.models):
+                    self.models[i].set_location(*original_pos)
+            return False
         
         # CRITICAL VALIDATION: Check for illegal overlaps after movement
         # This catches cases where models might be overlapping with enemies after movement
@@ -4107,6 +4093,21 @@ class Unit:
                             if i < len(self.models):
                                 self.models[i].set_location(*original_pos)
                         return False
+
+        # Coherency validation: charge moves must end in coherency (movement ending out of coherency is not allowed)
+        try:
+            from ..utility.calcs import validate_unit_coherency_after_movement
+            final_positions = [m.get_location() for m in self.models]
+            is_coherent, non_coherent_models = validate_unit_coherency_after_movement(self, final_positions)
+            if not is_coherent:
+                print(f"❌ {self.name} charge move rejected: unit coherency would be broken (non-coherent models: {non_coherent_models})")
+                for i, original_pos in enumerate(original_model_positions):
+                    if i < len(self.models):
+                        self.models[i].set_location(*original_pos)
+                return False
+        except Exception as e:
+            # If coherency validation itself fails, fail-fast rather than silently allowing illegal states.
+            raise
         
         # Get final position for feedback from first model
         if self.models and self.models[0].is_alive:
@@ -4587,6 +4588,11 @@ class Unit:
                     print(f"❌ {self.name} cannot scout move to destination - would end within 9\" of {em.parent_unit.name}")
                     return False
             
+        # BACKUP ORIGINAL POSITIONS - Critical for proper rollback on failure
+        original_model_positions = []
+        for model in self.models:
+            original_model_positions.append(model.get_location())
+
         successful_moves = 0
         
         for model, model_destination in zip(self.models, potential_positions):
@@ -4694,25 +4700,12 @@ class Unit:
         is_coherent, non_coherent_models = validate_unit_coherency_after_movement(self, final_positions)
         
         if not is_coherent:
-            print(f"⚠️  {self.name} coherency violation after scout move!")
-            print(f"⚠️  Models {non_coherent_models} are not coherent and must be removed from play")
-            
-            # Remove non-coherent models from play
-            for model_index in sorted(non_coherent_models, reverse=True):
-                if model_index < len(self.models):
-                    model = self.models[model_index]
-                    print(f"💀 Removing {model.name} from play due to coherency violation")
-                    # Set wounds to 0 to make the model dead (is_alive property checks wounds > 0)
-                    model.wounds = 0
-                    # Call die() method to properly remove the model from the unit
-                    model.die()
-                    
-            # Unit position is now determined by model positions
-            
-            # Check if unit is still viable
-            if not self.is_alive():
-                print(f"💀 {self.name} has been destroyed due to coherency violations")
-                return False
+            print(f"❌ {self.name} scout move rejected: unit coherency would be broken (non-coherent models: {non_coherent_models})")
+            # ROLLBACK: Restore original positions (movement ending out of coherency is not allowed)
+            for i, original_pos in enumerate(original_model_positions):
+                if i < len(self.models):
+                    self.models[i].set_location(*original_pos)
+            return False
         
         # CRITICAL VALIDATION: Check for illegal overlaps after scout move
         # Scout moves cannot end overlapping with enemy models
@@ -4729,8 +4722,10 @@ class Unit:
                     # Check if this model's base overlaps with the enemy model's base
                     if model.model_base.collides_with(enemy_model.model_base):
                         print(f"❌ {self.name} cannot scout move - {model.name} cannot end overlapping with {enemy_model.name} from {enemy_unit.name}")
-                        # For scout move, we don't have original positions stored, so this is a critical error
-                        # The scout move should have been validated during pathfinding
+                        # ROLLBACK: Restore original positions
+                        for i, original_pos in enumerate(original_model_positions):
+                            if i < len(self.models):
+                                self.models[i].set_location(*original_pos)
                         return False
         
         # Get final position for feedback from first model
@@ -5802,6 +5797,21 @@ class Unit:
                 current_facing = model.model_base.facing if hasattr(model.model_base, 'facing') else 0.0
                 model.set_location(final[0], final[1], float(cz), current_facing)
                 model.last_move_path = [(p[0], p[1], float(cz)) for p in res['path']]
+
+                # Fight-phase moves must still end in unit coherency. If this individual move breaks coherency,
+                # reject it and try the next candidate endpoint.
+                try:
+                    from ..utility.calcs import validate_unit_coherency_after_movement
+                    positions = [m.get_location() for m in self.models]
+                    coherency_ok, _non = validate_unit_coherency_after_movement(self, positions)
+                    if not coherency_ok:
+                        # rollback this model and try another candidate
+                        model.set_location(*start)
+                        continue
+                except Exception:
+                    # Fail-fast if coherency validation errors
+                    raise
+
                 moved = True
                 moved_any = True
                 if model_index is not None:

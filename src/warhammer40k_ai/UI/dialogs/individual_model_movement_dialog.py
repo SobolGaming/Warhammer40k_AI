@@ -1260,11 +1260,10 @@ class IndividualModelMovementDialog(BaseDialog):
         is_coherent, non_coherent_models = validate_unit_coherency_after_movement(self.unit, final_positions)
 
         if not is_coherent:
-            print(f"⚠️  {self.unit.name} coherency violation!")
-            print(f"⚠️  Models {non_coherent_models} are not coherent and must be removed from play")
-
-            # Show coherency violation dialog for user to choose which models to remove
-            self._show_coherency_violation_dialog(non_coherent_models)
+            # Movement/deployment must END in coherency. If coherency would be broken, the move is not allowed.
+            print(f"❌ Cannot complete {self.movement_type}: {self.unit.name} would not be in coherency "
+                  f"(non-coherent models: {non_coherent_models}). Reposition models and try again.")
+            return
         else:
             # No coherency violations, complete normally
             self._finalize_movement_completion()
