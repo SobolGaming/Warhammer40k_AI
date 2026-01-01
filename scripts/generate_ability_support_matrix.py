@@ -188,6 +188,8 @@ def _ability_patterns() -> List[Tuple[str, str, str]]:
     """
     return [
         ("Supreme Commander (must be Warlord)", "Supported", r"\bsupreme commander\b"),
+        ("Pact of Blood (WE): disallow Blood Legions Army Faction", "Supported", r"\bpact of blood\b"),
+        ("Nurgle’s Gift (Aura): baseline Contagion Range debuff (-1 Toughness to enemies within 3/6/9\")", "Partial", r"\bnurgle\u2019s gift\b|\bnurgle's gift\b"),
         ("Blessings of Khorne (World Eaters)", "Supported", r"\bblessings of khorne\b"),
         ("Favoured of Khorne (Blessings rerolls)", "Supported", r"\bfavoured of khorne\b|\bfavored of khorne\b"),
         ("Idol of the Blessed Blood (Blessings +1D6)", "Supported", r"\bidol of (?:the )?blessed blood\b"),
@@ -220,7 +222,10 @@ def _classify_support(name: str, description: str) -> Tuple[str, str]:
     # Hard-coded known partials (core ability)
     name_u = (name or "").strip().upper()
     if name_u == "LEADER":
-        return ("Partial", "Leader data exists, but full Attached allocation/rules enforcement is incomplete.")
+        return (
+            "Supported",
+            "Attached Units supported: attachment eligibility + limits, bodyguard-first wound allocation, Precision allocation into visible CHARACTERS, characteristic delegation (Toughness/Leadership), separation deferred until end of attack sequence, and attached leaders do not double-count for deployment/objectives/reserves.",
+        )
     # World Eaters: Blood Tithe is a Khorne Daemonkin detachment mechanic. We have not implemented it yet,
     # and we do not want it to be falsely marked as Supported due to shared phrasing with Blessings/other mechanics.
     if name_u == "BLOOD TITHE":

@@ -32,6 +32,8 @@ Generated from `wahapedia_data/Abilities.json`, `wahapedia_data/Datasheets_abili
 These mechanics are currently recognized by searching ability names/descriptions for text patterns:
 
 - Supreme Commander (must be Warlord) (Supported)
+- Pact of Blood (WE): disallow Blood Legions Army Faction (Supported)
+- Nurgle’s Gift (Aura): baseline Contagion Range debuff (-1 Toughness to enemies within 3/6/9") (Partial)
 - Blessings of Khorne (World Eaters) (Supported)
 - Favoured of Khorne (Blessings rerolls) (Supported)
 - Idol of the Blessed Blood (Blessings +1D6) (Supported)
@@ -66,7 +68,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Firing Deck | `000008334` | 59 | 59 | **Supported** | Firing Deck |
 | Hover | `000008342` | 57 | 57 | **Not implemented** |  |
 | Infiltrators | `000008345` | 69 | 69 | **Supported** | Infiltrators |
-| Leader | `000008346` | 406 | 406 | **Partial** | Leader data exists, but full Attached allocation/rules enforcement is incomplete. |
+| Leader | `000008346` | 406 | 406 | **Supported** | Attached Units supported: attachment eligibility + limits, bodyguard-first wound allocation, Precision allocation into visible CHARACTERS, characteristic delegation (Toughness/Leadership), separation deferred until end of attack sequence, and attached leaders do not double-count for deployment/objectives/reserves. |
 | Lone Operative | `000008336` | 50 | 50 | **Supported** | Lone Operative |
 | Scouts | `000008344` | 100 | 100 | **Supported** | Scouts |
 | Stealth | `000008337` | 79 | 79 | **Supported** | Stealth |
@@ -132,14 +134,14 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Blessings of Khorne | `000008428` | 1 | 1 | **Supported** | Blessings of Khorne (World Eaters) |
 | Cabal of Sorcerers | `000008424` | 1 | 1 | **Supported** | Lone Operative |
 | Dark Pacts | `000008359` | 103 | 103 | **Not implemented** |  |
-| Nurgle’s Gift (Aura) | `000008396` | 1 | 1 | **Not implemented** |  |
+| Nurgle’s Gift (Aura) | `000008396` | 1 | 1 | **Partial** | Nurgle’s Gift (Aura): baseline Contagion Range debuff (-1 Toughness to enemies within 3/6/9") |
 | Thrill Seekers | `000009994` | 1 | 1 | **Supported** | Advance+Shoot (exact wording), Fall Back+Shoot (exact wording) |
 
 ### Death Guard (`DG`) — `https://wahapedia.ru/wh40k10ed/factions/death-guard`
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Nurgle’s Gift (Aura) | `000008396` | 65 | 65 | **Not implemented** |  |
+| Nurgle’s Gift (Aura) | `000008396` | 65 | 65 | **Partial** | Nurgle’s Gift (Aura): baseline Contagion Range debuff (-1 Toughness to enemies within 3/6/9") |
 | Pact of Decay | `000010120` | 6 | 6 | **Not implemented** |  |
 
 ### Drukhari (`DRU`) — `https://wahapedia.ru/wh40k10ed/factions/drukhari`
@@ -246,7 +248,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Blessings of Khorne | `000008428` | 53 | 53 | **Supported** | Blessings of Khorne (World Eaters) |
-| Pact of Blood | `000010071` | 5 | 5 | **Not implemented** |  |
+| Pact of Blood | `000010071` | 5 | 5 | **Supported** | Pact of Blood (WE): disallow Blood Legions Army Faction |
 
 ## Detachment Abilities
 
@@ -612,7 +614,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Manifold Maladies | `000010130` | 61 | 61 | **Not implemented** |  |
+| Manifold Maladies | `000010130` | 61 | 61 | **Partial** | Nurgle’s Gift (Aura): baseline Contagion Range debuff (-1 Toughness to enemies within 3/6/9") |
 
 #### Death Lord’s Chosen
 
@@ -642,13 +644,13 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Reverberant Rancidity | `000010134` | 67 | 67 | **Not implemented** |  |
+| Reverberant Rancidity | `000010134` | 67 | 67 | **Partial** | Nurgle’s Gift (Aura): baseline Contagion Range debuff (-1 Toughness to enemies within 3/6/9") |
 
 #### Virulent Vectorium
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Worldblight | `000010122` | 61 | 61 | **Not implemented** |  |
+| Worldblight | `000010122` | 61 | 61 | **Partial** | Nurgle’s Gift (Aura): baseline Contagion Range debuff (-1 Toughness to enemies within 3/6/9") |
 
 ### Drukhari (`DRU`) — `https://wahapedia.ru/wh40k10ed/factions/drukhari`
 
