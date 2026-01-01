@@ -41,10 +41,12 @@ class BattleShockEffect(StatusEffect):
         )
 
     def apply_battle_shock(self, unit):
-        unit.stats['objective_control'] = (UnitStatsModifier.OVERRIDE, 0)  # Unit cannot control objectives
+        # Core Rules: Battle-shock changes OC characteristic to 0 (replacement) before other modifiers.
+        from ..utility.modifiers import Modifier, ModifierOp
+        unit.add_characteristic_modifier("objective_control", Modifier(ModifierOp.SET, 0, source="status:Battle-shock"))
         unit.special_rules['cannot_use_stratagems'] = True  # Cannot use Stratagems
 
     def remove_battle_shock(self, unit):
         # Restore objective control and allow Stratagems again
-        unit.stats['objective_control'] = (UnitStatsModifier.NONE, 0)
+        unit.remove_characteristic_modifiers_by_source("status:Battle-shock")
         unit.special_rules['cannot_use_stratagems'] = False

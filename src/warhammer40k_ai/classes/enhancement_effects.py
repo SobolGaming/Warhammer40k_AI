@@ -4,7 +4,6 @@ import re
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
-from warhammer40k_ai.classes.status_effects import UnitStatsModifier
 
 
 def _normalize(text: str) -> str:
@@ -127,9 +126,6 @@ def apply_enhancement_effects(unit, effects: List[EnhancementEffectSpec]) -> Non
     if not effects:
         return
 
-    # Unit.stats is used by Model property getters for M/T/Sv/Ld/OC, etc.
-    if getattr(unit, "stats", None) is None:
-        unit.stats = {}
     if getattr(unit, "special_rules", None) is None:
         unit.special_rules = {}
 
@@ -145,11 +141,8 @@ def apply_enhancement_effects(unit, effects: List[EnhancementEffectSpec]) -> Non
         applied.add(eff.kind)
 
         if eff.kind == "move_add" and eff.supported:
-            cur = unit.stats.get("movement")
-            if cur and cur[0] == UnitStatsModifier.ADDITIVE:
-                unit.stats["movement"] = (UnitStatsModifier.ADDITIVE, int(cur[1]) + eff.value)
-            else:
-                unit.stats["movement"] = (UnitStatsModifier.ADDITIVE, eff.value)
+            from ..utility.modifiers import Modifier, ModifierOp
+            unit.add_characteristic_modifier("movement", Modifier(ModifierOp.ADD, int(eff.value), source="enhancement:move_add"))
             continue
 
         if eff.kind == "wounds_add" and eff.supported:

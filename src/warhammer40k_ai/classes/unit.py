@@ -121,6 +121,10 @@ class Unit:
         self.stats = {}  # Dictionary of stats modifiers
         self.deployed = False
 
+        # Unified Core Rules modifier pipeline (10e)
+        # Map: characteristic_key -> list[Modifier]
+        self._characteristic_modifiers = {}
+
         # Reserves tracking
         self.reserve_status = 'deployed'  # 'deployed', 'reserves', 'strategic_reserves'
         self.reserve_turn_deployed = None  # Turn when unit arrived from reserves
@@ -156,41 +160,18 @@ class Unit:
 
     def _add_stat_additive(self, key: str, delta: int) -> None:
         """Apply an additive stat delta, tracking it for later removal (damaged profiles)."""
-        from .status_effects import UnitStatsModifier
+        from ..utility.modifiers import Modifier, ModifierOp
 
-        if getattr(self, "stats", None) is None:
-            self.stats = {}
-        cur = self.stats.get(key, (UnitStatsModifier.NONE, 0))
-        mode, val = cur[0], cur[1]
-        # If stat is currently OVERRIDE (e.g. Battle-shock OC=0), additive doesn't matter.
-        # Keep OVERRIDE untouched.
-        if mode == UnitStatsModifier.OVERRIDE:
-            return
-        if mode == UnitStatsModifier.ADDITIVE:
-            self.stats[key] = (UnitStatsModifier.ADDITIVE, int(val) + int(delta))
-        else:
-            self.stats[key] = (UnitStatsModifier.ADDITIVE, int(delta))
+        self.add_characteristic_modifier(key, Modifier(ModifierOp.ADD, int(delta), source="damaged_profile"))
         self._damaged_profile_stat_deltas[key] = int(self._damaged_profile_stat_deltas.get(key, 0)) + int(delta)
 
     def _clear_damaged_profile_effects(self) -> None:
         """Remove previously-applied degraded profile modifiers (best-effort)."""
-        from .status_effects import UnitStatsModifier
-
-        # Remove stat deltas
-        for key, delta in list(getattr(self, "_damaged_profile_stat_deltas", {}).items()):
-            try:
-                cur = self.stats.get(key)
-                if not cur:
-                    continue
-                mode, val = cur[0], cur[1]
-                if mode == UnitStatsModifier.ADDITIVE:
-                    new_val = int(val) - int(delta)
-                    if new_val == 0:
-                        self.stats[key] = (UnitStatsModifier.NONE, 0)
-                    else:
-                        self.stats[key] = (UnitStatsModifier.ADDITIVE, new_val)
-            except Exception:
-                continue
+        # Remove stat deltas by source tag.
+        try:
+            self.remove_characteristic_modifiers_by_source("damaged_profile")
+        except Exception:
+            pass
         self._damaged_profile_stat_deltas = {}
 
         # Remove non-stat effects
@@ -210,6 +191,136 @@ class Unit:
         except Exception:
             pass
         self._damaged_profile_active = False
+
+    def add_characteristic_modifier(self, characteristic: str, modifier) -> None:
+        """
+        Register a Core Rules modifier for a characteristic.
+        `characteristic` keys are simple strings (e.g. "movement", "objective_control").
+        """
+        if not characteristic:
+            return
+        if getattr(self, "_characteristic_modifiers", None) is None:
+            self._characteristic_modifiers = {}
+        key = str(characteristic).strip().lower()
+        self._characteristic_modifiers.setdefault(key, []).append(modifier)
+
+    def remove_characteristic_modifiers_by_source(self, source_prefix: str) -> None:
+        if getattr(self, "_characteristic_modifiers", None) is None:
+            return
+        p = str(source_prefix or "")
+        if not p:
+            return
+        for k, mods in list(self._characteristic_modifiers.items()):
+            kept = []
+            for m in (mods or []):
+                try:
+                    if str(getattr(m, "source", "") or "").startswith(p):
+                        continue
+                except Exception:
+                    pass
+                kept.append(m)
+            self._characteristic_modifiers[k] = kept
+
+    def get_effective_model_characteristic(self, model: Model, characteristic: str, *, game_map=None) -> int:
+        """
+        Centralized characteristic resolution that follows Core Rules modifier ordering.
+
+        This is intentionally conservative: it only applies engine-registered modifiers plus a small
+        subset of strict text-based effects (e.g. OC while leading, OC-halving in engagement range).
+        """
+        from ..utility.modifiers import (
+            Modifier,
+            ModifierOp,
+            apply_characteristic_caps,
+            apply_numeric_modifiers,
+        )
+
+        c = str(characteristic or "").strip().lower()
+        base_val = None
+        base_raw = None
+
+        if c in ("movement", "move", "m"):
+            base_val = int(getattr(model, "_movement", getattr(model, "movement", 0)))
+            base_raw = getattr(model, "_movement_raw", None)
+            ckey = "movement"
+        elif c in ("toughness", "t"):
+            base_val = int(getattr(model, "_toughness", getattr(model, "toughness", 0)))
+            base_raw = getattr(model, "_toughness_raw", None)
+            ckey = "toughness"
+        elif c in ("save", "sv"):
+            base_val = int(getattr(model, "_save", getattr(model, "save", 0)))
+            base_raw = getattr(model, "_save_raw", None)
+            ckey = "save"
+        elif c in ("leadership", "ld"):
+            base_val = int(getattr(model, "_leadership", getattr(model, "leadership", 0)))
+            base_raw = getattr(model, "_leadership_raw", None)
+            ckey = "leadership"
+        elif c in ("objective_control", "oc"):
+            base_val = int(getattr(model, "_objective_control", getattr(model, "objective_control", 0)))
+            base_raw = getattr(model, "_objective_control_raw", None)
+            ckey = "objective_control"
+        else:
+            # Unknown characteristic: best-effort passthrough.
+            try:
+                return int(getattr(model, c))
+            except Exception:
+                return 0
+
+        mods = []
+        # Engine-registered modifiers (from enhancements, damaged profiles, status effects, etc.)
+        try:
+            mods.extend(list((self._characteristic_modifiers or {}).get(ckey, []) or []))
+        except Exception:
+            pass
+
+        # OC: strict "leading" bonus (e.g. Astartes Banner) from attached leaders.
+        if ckey == "objective_control":
+            try:
+                leaders = list(getattr(self, "attached_leaders", []) or [])
+            except Exception:
+                leaders = []
+            for leader in leaders:
+                try:
+                    for ab in (getattr(leader, "possible_abilities", []) or []):
+                        desc = str(getattr(ab, "description", "") or "").replace("’", "'")
+                        if desc and ("leading a unit" in desc.lower()) and ("objective control characteristic" in desc.lower()):
+                            import re
+                            if re.search(r"add\s+1\s+to\s+the\s+objective\s+control\s+characteristic", desc, flags=re.IGNORECASE):
+                                mods.append(Modifier(ModifierOp.ADD, 1, source="ability:leading_oc_add_1"))
+                except Exception:
+                    continue
+
+            # OC: strict enemy engagement-range halving (e.g. Chitinous Horrors).
+            try:
+                if game_map is None:
+                    army = self.get_parent_army()
+                    game = getattr(getattr(army, "player", None), "game", None)
+                    game_map = getattr(game, "map", None) if game is not None else None
+            except Exception:
+                game_map = None
+            if game_map is not None:
+                try:
+                    from ..utility.aura_effects import get_enemy_engagement_oc_divisors
+                    for reason in get_enemy_engagement_oc_divisors(self, game_map=game_map):
+                        mods.append(Modifier(ModifierOp.DIV, 2, source=reason))
+                except Exception:
+                    pass
+
+            # Friendly OC auras (ADD) – applied as an ADD modifier so DIV happens first.
+            try:
+                from ..utility.aura_effects import get_aura_objective_control_bonus
+                bonus = int(get_aura_objective_control_bonus(self, game_map=game_map) or 0)
+                if bonus:
+                    mods.append(Modifier(ModifierOp.ADD, bonus, source="aura:objective_control_add"))
+            except Exception:
+                pass
+
+        # Apply core ordering + rounding.
+        interim, dbg = apply_numeric_modifiers(int(base_val), mods, base_raw=base_raw)
+
+        # Damage 0 exception handled at weapon level, not model level.
+        final = apply_characteristic_caps(ckey, interim, base_raw=base_raw)
+        return int(final)
 
     def _apply_damaged_profile_effects(self, profile_text: str) -> None:
         """
@@ -603,7 +714,14 @@ class Unit:
                     objective_control=self._parse_attribute(profile.get("OC", datasheet.datasheets_models[0]["OC"])),
                     model_base=self._parse_base_size(profile.get("base_size", datasheet.datasheets_models[0]["base_size"])),
                     inv_save=self._parse_attribute(profile.get("inv_sv", datasheet.datasheets_models[0]["inv_sv"])),
-                    inv_save_condition=str(profile.get("inv_sv_descr", datasheet.datasheets_models[0].get("inv_sv_descr", "")) or "").lower()
+                    inv_save_condition=str(profile.get("inv_sv_descr", datasheet.datasheets_models[0].get("inv_sv_descr", "")) or "").lower(),
+                    movement_raw=str(profile.get("M", datasheet.datasheets_models[0].get("M", "")) or ""),
+                    toughness_raw=str(profile.get("T", datasheet.datasheets_models[0].get("T", "")) or ""),
+                    save_raw=str(profile.get("Sv", datasheet.datasheets_models[0].get("Sv", "")) or ""),
+                    wounds_raw=str(profile.get("W", datasheet.datasheets_models[0].get("W", "")) or ""),
+                    leadership_raw=str(profile.get("Ld", datasheet.datasheets_models[0].get("Ld", "")) or ""),
+                    objective_control_raw=str(profile.get("OC", datasheet.datasheets_models[0].get("OC", "")) or ""),
+                    inv_save_raw=str(profile.get("inv_sv", datasheet.datasheets_models[0].get("inv_sv", "")) or ""),
                 )
                 model.set_parent_unit(self)
                 models.append(model)
@@ -2883,7 +3001,7 @@ class Unit:
 
     @property
     def movement(self) -> int:
-        return self.models[0].movement
+        return int(self.models[0].movement)
 
     @property
     def toughness(self) -> int:
@@ -2907,7 +3025,7 @@ class Unit:
 
     @property
     def save(self) -> int:
-        return self.models[0].save
+        return int(self.models[0].save)
 
     @property
     def inv_save(self) -> Optional[int]:
@@ -2950,13 +3068,13 @@ class Unit:
 
     @property
     def objective_control(self) -> int:
-        base = self.models[0].objective_control
+        # Use the unified pipeline so DIV/MUL ordering is correct (e.g. halve then +1).
         try:
-            from ..utility.aura_effects import get_aura_objective_control_bonus
-            bonus = int(get_aura_objective_control_bonus(self) or 0)
-            return int(base) + bonus
+            # Call as an unbound method so this property still works when accessed via
+            # `Unit.objective_control.fget(stub_unit)` in tests that use lightweight stubs.
+            return int(Unit.get_effective_model_characteristic(self, self.models[0], "objective_control"))
         except Exception:
-            return base
+            return int(self.models[0].objective_control)
 
     @property
     def has_circular_base(self) -> bool:

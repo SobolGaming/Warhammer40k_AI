@@ -1,7 +1,6 @@
 from typing import List, Dict, Optional, Tuple
 from .wargear import Wargear, WargearProfile
 from .ability import Ability
-from .status_effects import UnitStatsModifier
 from ..utility.dice import get_roll
 from ..utility.model_base import Base
 import uuid
@@ -20,26 +19,51 @@ logger = logging.getLogger(__name__)
 class Model:
     """Represents a Warhammer 40k model with its attributes and wargear."""
 
-    def __init__(self, name: str, movement: int, toughness: int, save: int, 
-                 wounds: int, leadership: int, objective_control: int, model_base: Base, 
-                 inv_save: Optional[int] = None, inv_save_condition: Optional[str] = None):
+    def __init__(
+        self,
+        name: str,
+        movement: int,
+        toughness: int,
+        save: int,
+        wounds: int,
+        leadership: int,
+        objective_control: int,
+        model_base: Base,
+        inv_save: Optional[int] = None,
+        inv_save_condition: Optional[str] = None,
+        *,
+        movement_raw: Optional[str] = None,
+        toughness_raw: Optional[str] = None,
+        save_raw: Optional[str] = None,
+        wounds_raw: Optional[str] = None,
+        leadership_raw: Optional[str] = None,
+        objective_control_raw: Optional[str] = None,
+        inv_save_raw: Optional[str] = None,
+    ):
         self.name = name.split(' – ')[0]
         # Model attributes have a base value, but can be modified by wargear, strategems, etc
         # We need to track base value and current value separately
         self._base_movement = movement
         self._movement = movement
+        self._movement_raw = movement_raw
         self._base_toughness = toughness
         self._toughness = toughness
+        self._toughness_raw = toughness_raw
         self._base_save = save
         self._save = save
+        self._save_raw = save_raw
         self._inv_save = inv_save # nothing can modify this
         self._inv_save_condition = inv_save_condition
+        self._inv_save_raw = inv_save_raw
         self._base_wounds = wounds
         self._wounds = wounds
+        self._wounds_raw = wounds_raw
         self._base_leadership = leadership
         self._leadership = leadership
+        self._leadership_raw = leadership_raw
         self._base_objective_control = objective_control
         self._objective_control = objective_control
+        self._objective_control_raw = objective_control_raw
 
         self.model_base = model_base
         self.wargear: List[Wargear] = []
@@ -419,15 +443,13 @@ class Model:
     ################
     @property
     def movement(self) -> int:
+        # Core Rules modifier ordering is enforced by the unit modifier pipeline.
         try:
-            if self.parent_unit and isinstance(getattr(self.parent_unit, "stats", None), dict) and "movement" in self.parent_unit.stats:
-                if self.parent_unit.stats['movement'][0] == UnitStatsModifier.OVERRIDE:
-                    return self.parent_unit.stats['movement'][1]
-                elif self.parent_unit.stats['movement'][0] == UnitStatsModifier.ADDITIVE:
-                    return self._movement + self.parent_unit.stats['movement'][1]
+            if self.parent_unit and hasattr(self.parent_unit, "get_effective_model_characteristic"):
+                return int(self.parent_unit.get_effective_model_characteristic(self, "movement"))
         except Exception:
             pass
-        return self._movement
+        return int(self._movement)
 
     @movement.setter
     def movement(self, value: int) -> None:
@@ -436,14 +458,11 @@ class Model:
     @property
     def toughness(self) -> int:
         try:
-            if self.parent_unit and isinstance(getattr(self.parent_unit, "stats", None), dict) and "toughness" in self.parent_unit.stats:
-                if self.parent_unit.stats['toughness'][0] == UnitStatsModifier.OVERRIDE:
-                    return self.parent_unit.stats['toughness'][1]
-                elif self.parent_unit.stats['toughness'][0] == UnitStatsModifier.ADDITIVE:
-                    return self._toughness + self.parent_unit.stats['toughness'][1]
+            if self.parent_unit and hasattr(self.parent_unit, "get_effective_model_characteristic"):
+                return int(self.parent_unit.get_effective_model_characteristic(self, "toughness"))
         except Exception:
             pass
-        return self._toughness
+        return int(self._toughness)
 
     @toughness.setter
     def toughness(self, value: int) -> None:
@@ -452,14 +471,11 @@ class Model:
     @property
     def save(self) -> int:
         try:
-            if self.parent_unit and isinstance(getattr(self.parent_unit, "stats", None), dict) and "save" in self.parent_unit.stats:
-                if self.parent_unit.stats['save'][0] == UnitStatsModifier.OVERRIDE:
-                    return self.parent_unit.stats['save'][1]
-                elif self.parent_unit.stats['save'][0] == UnitStatsModifier.ADDITIVE:
-                    return self._save + self.parent_unit.stats['save'][1]
+            if self.parent_unit and hasattr(self.parent_unit, "get_effective_model_characteristic"):
+                return int(self.parent_unit.get_effective_model_characteristic(self, "save"))
         except Exception:
             pass
-        return self._save
+        return int(self._save)
 
     @save.setter
     def save(self, value: int) -> None:
@@ -480,14 +496,11 @@ class Model:
     @property
     def leadership(self) -> int:
         try:
-            if self.parent_unit and isinstance(getattr(self.parent_unit, "stats", None), dict) and "leadership" in self.parent_unit.stats:
-                if self.parent_unit.stats['leadership'][0] == UnitStatsModifier.OVERRIDE:
-                    return self.parent_unit.stats['leadership'][1]
-                elif self.parent_unit.stats['leadership'][0] == UnitStatsModifier.ADDITIVE:
-                    return self._leadership + self.parent_unit.stats['leadership'][1]
+            if self.parent_unit and hasattr(self.parent_unit, "get_effective_model_characteristic"):
+                return int(self.parent_unit.get_effective_model_characteristic(self, "leadership"))
         except Exception:
             pass
-        return self._leadership
+        return int(self._leadership)
 
     @leadership.setter
     def leadership(self, value: int) -> None:
@@ -496,14 +509,11 @@ class Model:
     @property
     def objective_control(self) -> int:
         try:
-            if self.parent_unit and isinstance(getattr(self.parent_unit, "stats", None), dict) and "objective_control" in self.parent_unit.stats:
-                if self.parent_unit.stats['objective_control'][0] == UnitStatsModifier.OVERRIDE:
-                    return self.parent_unit.stats['objective_control'][1]
-                elif self.parent_unit.stats['objective_control'][0] == UnitStatsModifier.ADDITIVE:
-                    return self._objective_control + self.parent_unit.stats['objective_control'][1]
+            if self.parent_unit and hasattr(self.parent_unit, "get_effective_model_characteristic"):
+                return int(self.parent_unit.get_effective_model_characteristic(self, "objective_control"))
         except Exception:
             pass
-        return self._objective_control
+        return int(self._objective_control)
 
     @objective_control.setter
     def objective_control(self, value: int) -> None:

@@ -50,6 +50,13 @@ class WargearProfile:
     def __init__(self, profile_name: str, wargear_data: Dict, parent_wargear: Optional['Wargear'] = None):
         self.name = profile_name
         self.parent_wargear = parent_wargear
+        # Preserve raw strings for Core Rules "unmodifiable" characteristics (e.g. '-', 'N/A', '20+"').
+        self._raw_range = wargear_data.get('range', '')
+        self._raw_attacks = wargear_data.get('A', '')
+        self._raw_skill = wargear_data.get('BS_WS', '')
+        self._raw_strength = wargear_data.get('S', '')
+        self._raw_ap = wargear_data.get('AP', '')
+        self._raw_damage = wargear_data.get('D', '')
         self.range = self._parse_range(wargear_data.get('range', ''))
         self.attacks = self._parse_attacks(wargear_data.get('A', ''))
         self.skill = self._parse_attribute(wargear_data.get('BS_WS', ''))
@@ -300,6 +307,7 @@ class WargearProfile:
 
     def get_effective_ap(self, attacker: 'Model', target: 'Unit') -> int:
         """Return AP after applying global modifiers like Plunging Fire."""
+        from ..utility.modifiers import apply_characteristic_caps
         try:
             ap_val = int(self.ap)
         except Exception:
@@ -307,7 +315,7 @@ class WargearProfile:
         if self._plunging_fire_applies(attacker, target):
             # Improve AP by 1: AP -1 becomes -2, AP 0 becomes -1, etc.
             ap_val -= 1
-        return ap_val
+        return int(apply_characteristic_caps("ap", int(ap_val), base_raw=getattr(self, "_raw_ap", None)))
 
     def attack(self, target: 'Unit', attacker: 'Model', game_map: Optional['Map'] = None) -> None:
         # ONE SHOT: enforce once per battle per model per weapon.
@@ -401,23 +409,27 @@ class WargearProfile:
             num_attacks = self.attacks or 0
             attack_result.attacks_rolled = num_attacks
 
+        # Core Rules modifier ordering: replacements -> DIV -> MUL -> ADD -> SUB, then round up.
+        # Gather ALL Attacks modifiers first (so e.g. halve happens before +1).
+        from ..utility.modifiers import Modifier, ModifierOp, apply_numeric_modifiers, apply_characteristic_caps
+        atk_mods: list[Modifier] = []
+
         # Enhancement: improve melee weapons' Attacks by X (bearer enhancement).
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():
                 bonus = int(getattr(attacker.parent_unit, "special_rules", {}).get("enhancement_melee_attacks_bonus", 0) or 0)
                 if bonus:
-                    num_attacks += bonus
+                    atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="enhancement:melee_attacks_add"))
                     attack_result.attacks_special_modifiers.append(f"Enhancement +{bonus}A (melee)")
         except Exception:
             pass
-            attack_result.attacks_dice_rolls = []
 
         # Once-per-battle temporary buffs on the attacking model (e.g. Possessed Lord)
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():
                 bonus = int(getattr(attacker, "get_temporary_melee_attacks_bonus", lambda: 0)() or 0)
                 if bonus:
-                    num_attacks += bonus
+                    atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="ability:temporary_melee_attacks_add"))
                     attack_result.attacks_special_modifiers.append(f"Ability +{bonus}A (melee) [temporary]")
         except Exception:
             pass
@@ -427,7 +439,7 @@ class WargearProfile:
             if self.parent_wargear and self.parent_wargear.is_melee():
                 bonus = int(getattr(attacker.parent_unit, "special_rules", {}).get("damaged_melee_attacks_bonus", 0) or 0)
                 if bonus:
-                    num_attacks += bonus
+                    atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="damaged_profile:melee_attacks_add"))
                     attack_result.attacks_special_modifiers.append(f"Damaged profile +{bonus}A (melee)")
         except Exception:
             pass
@@ -437,7 +449,7 @@ class WargearProfile:
             from ..utility.aura_effects import get_aura_melee_attacks_bonus
             aura_a, aura_reasons = get_aura_melee_attacks_bonus(attacker.parent_unit, self, game_map=game_map)
             if aura_a:
-                num_attacks += int(aura_a)
+                atk_mods.append(Modifier(ModifierOp.ADD, int(aura_a), source="aura:melee_attacks_add"))
                 attack_result.attacks_special_modifiers.extend(list(aura_reasons or ()))
         except Exception:
             pass
@@ -450,17 +462,16 @@ class WargearProfile:
                 parent_name = str(getattr(getattr(self, "parent_wargear", None), "name", "") or "").strip().lower()
                 # Match either exact or substring.
                 if parent_name and (parent_name == wname or wname in parent_name or parent_name in wname):
-                    num_attacks += amt
+                    atk_mods.append(Modifier(ModifierOp.ADD, int(amt), source=f"damaged_profile:weapon_attacks_add:{wname}"))
                     attack_result.attacks_special_modifiers.append(f"Damaged profile +{amt}A ({wname})")
         except Exception:
             pass
 
-        # Damaged profile: halve attacks characteristic of the model's weapons (round up).
+        # Damaged profile: halve attacks characteristic of the model's weapons.
         try:
             if bool(getattr(attacker.parent_unit, "special_rules", {}).get("damaged_half_attacks", False)):
-                before = int(num_attacks)
-                num_attacks = (before + 1) // 2
-                attack_result.attacks_special_modifiers.append("Damaged profile: halve Attacks (round up)")
+                atk_mods.append(Modifier(ModifierOp.DIV, 2, source="damaged_profile:halve_attacks"))
+                attack_result.attacks_special_modifiers.append("Damaged profile: halve Attacks")
         except Exception:
             pass
 
@@ -482,17 +493,21 @@ class WargearProfile:
                 rf = self.get_rapid_fire_bonus()
                 rf_bonus = int(rf.resolve())
                 attack_result.attacks_special_modifiers.append(f"Rapid Fire +{rf_bonus} ({rf})")
-                num_attacks += rf_bonus
+                atk_mods.append(Modifier(ModifierOp.ADD, int(rf_bonus), source="weapon:rapid_fire"))
             except Exception:
                 # Conservative fallback
                 attack_result.attacks_special_modifiers.append("Rapid Fire +1")
-                num_attacks += 1
+                atk_mods.append(Modifier(ModifierOp.ADD, 1, source="weapon:rapid_fire"))
 
         if self.is_blast():
             target_model_count = len(target.models)
             num_attacks_modifier = int(target_model_count / 5)
             attack_result.attacks_special_modifiers.append(f"Blast +{num_attacks_modifier}")
-            num_attacks += num_attacks_modifier
+            atk_mods.append(Modifier(ModifierOp.ADD, int(num_attacks_modifier), source="weapon:blast"))
+
+        # Apply all Attacks modifiers at once (Core Rules ordering + round up).
+        num_attacks, _dbg = apply_numeric_modifiers(int(num_attacks), atk_mods, base_raw=getattr(self, "_raw_attacks", None))
+        num_attacks = apply_characteristic_caps("attacks", int(num_attacks), base_raw=getattr(self, "_raw_attacks", None))
 
         # Ensure the reported attacks count matches the final resolved count after all modifiers.
         try:
@@ -1353,7 +1368,7 @@ class WargearProfile:
             'special_effects': []
         }
         
-        # Calculate damage with detailed tracking
+        # Calculate base Damage characteristic with detailed tracking
         if isinstance(self.damage, DiceCollection):
             # Provide reroll callback for damage
             def _reroll_damage():
@@ -1372,17 +1387,26 @@ class WargearProfile:
             damage_value = self.damage
             damage_result['damage_dice_rolls'] = []
         damage_result['damage_rolled'] = damage_value
-        
-        if self.is_melta() and attack_instance['below_half_distance']:
+
+        # Core Rules: Damage characteristic modifiers are cumulative and follow ordering:
+        # replace -> DIV -> MUL -> ADD -> SUB, then round up.
+        #
+        # Also: if a weapon inflicts mortal wounds *in addition* to normal damage, Damage modifiers
+        # do not apply to those mortal wounds. (We model this with a future-proof flag.)
+        from ..utility.modifiers import Modifier, ModifierOp, apply_numeric_modifiers, apply_characteristic_caps
+
+        damage_mods: list[Modifier] = []
+
+        if self.is_melta() and attack_instance.get('below_half_distance', False):
             # Support Melta N / Melta D3 / Melta D6+X, etc.
             try:
                 melta = self.get_melta_bonus()
                 melta_bonus = int(melta.resolve())
-                damage_value += melta_bonus
+                damage_mods.append(Modifier(ModifierOp.ADD, melta_bonus, source="weapon:melta"))
                 damage_result['special_effects'].append(f"Melta +{melta_bonus} ({melta})")
             except Exception:
                 # Conservative fallback
-                damage_value += 1
+                damage_mods.append(Modifier(ModifierOp.ADD, 1, source="weapon:melta"))
                 damage_result['special_effects'].append("Melta +1")
 
         # Enhancement: improve melee weapons' Damage by X (bearer enhancement).
@@ -1390,20 +1414,40 @@ class WargearProfile:
             if self.parent_wargear and self.parent_wargear.is_melee():
                 d_bonus = int(getattr(attacker.parent_unit, "special_rules", {}).get("enhancement_melee_damage_bonus", 0) or 0)
                 if d_bonus:
-                    damage_value += d_bonus
+                    damage_mods.append(Modifier(ModifierOp.ADD, int(d_bonus), source="enhancement:melee_damage_add"))
                     damage_result['special_effects'].append(f"Enhancement +{d_bonus}D (melee)")
         except Exception:
             pass
 
-        # Enhancement: reduce damage allocated to bearer by X (min 1).
+        # Enhancement: reduce damage allocated to bearer by X.
         try:
             t_unit = getattr(target_model, "parent_unit", None)
             red = int(getattr(t_unit, "special_rules", {}).get("enhancement_reduce_damage_taken", 0) or 0)
             if red:
-                before = int(damage_value)
-                damage_value = max(1, before - red)
-                if before != damage_value:
-                    damage_result['special_effects'].append(f"Enhancement -{red}D taken (min 1)")
+                damage_mods.append(Modifier(ModifierOp.SUB, int(red), source="enhancement:reduce_damage_taken"))
+        except Exception:
+            pass
+
+        # Apply modifiers unless these are "mortal wounds in addition" (not currently used, but Core Rules require it).
+        if attack_instance.get("mortal_wound", False) and attack_instance.get("mortal_wound_in_addition", False):
+            final_damage = int(damage_value)
+        else:
+            final_damage, dbg = apply_numeric_modifiers(int(damage_value), damage_mods, base_raw=getattr(self, "_raw_damage", None))
+            final_damage = apply_characteristic_caps(
+                "damage",
+                int(final_damage),
+                allow_damage_zero=bool(dbg.get("had_set_to_zero", False)),
+                base_raw=getattr(self, "_raw_damage", None),
+            )
+
+        # Apply "min 1" / "allow 0 if set to 0" outcome to the actual damage applied.
+        damage_value = int(final_damage)
+
+        # Add a readable effect string for damage reduction when it changed the value.
+        try:
+            red = int(getattr(getattr(target_model, "parent_unit", None), "special_rules", {}).get("enhancement_reduce_damage_taken", 0) or 0)
+            if red and any(m.op == ModifierOp.SUB for m in damage_mods):
+                damage_result['special_effects'].append(f"Enhancement -{red}D taken")
         except Exception:
             pass
         

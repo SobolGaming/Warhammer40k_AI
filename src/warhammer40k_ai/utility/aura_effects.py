@@ -458,3 +458,64 @@ def get_aura_melee_attacks_bonus(attacker_unit, weapon_profile, *, game_map=None
     return int(total), tuple(reasons)
 
 
+def get_enemy_engagement_oc_divisors(unit, *, game_map=None) -> tuple[str, ...]:
+    """
+    Return source-reason strings for each enemy ability that causes:
+      "While an enemy unit is within Engagement Range of this unit, halve the Objective Control
+       characteristic of models in that enemy unit"
+
+    This is used to build DIV 2 modifiers for OC, and is intentionally strict to avoid
+    over-applying unsupported rules text.
+    """
+    if unit is None:
+        return ()
+    if game_map is None:
+        game_map = _get_map_from_attacker_unit(unit)
+    if game_map is None:
+        return ()
+
+    reasons: list[str] = []
+    applied_keys: set[str] = set()
+
+    try:
+        enemies = list(game_map.get_enemy_units(unit))
+    except Exception:
+        enemies = []
+
+    for enemy in enemies:
+        try:
+            if not bool(getattr(enemy, "is_alive", lambda: True)()):
+                continue
+        except Exception:
+            pass
+
+        try:
+            if not game_map.is_within_engagement_range(enemy, unit):
+                continue
+        except Exception:
+            continue
+
+        for ab in (getattr(enemy, "possible_abilities", []) or []):
+            try:
+                name = str(getattr(ab, "name", "") or "")
+                desc = str(getattr(ab, "description", "") or "")
+                if not desc:
+                    continue
+                # Strict match on the canonical phrasing (covers the example "Chitinous Horrors").
+                if re.search(
+                    r"While an enemy unit is within Engagement Range of this unit, halve the Objective Control characteristic of models in that enemy unit",
+                    desc,
+                    flags=re.IGNORECASE,
+                ):
+                    key = _norm_name(name) or _norm_name(desc)
+                    if key and key in applied_keys:
+                        continue
+                    if key:
+                        applied_keys.add(key)
+                    reasons.append(f"enemy_engagement_oc_halve:{name or 'ability'}")
+            except Exception:
+                continue
+
+    return tuple(reasons)
+
+

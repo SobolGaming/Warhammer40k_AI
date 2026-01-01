@@ -3,13 +3,33 @@ from types import SimpleNamespace
 
 
 class TestEnhancementEffects(unittest.TestCase):
-    def test_move_add_uses_unit_stats_modifier(self):
+    def test_move_add_uses_modifier_pipeline(self):
         from warhammer40k_ai.classes.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
         from warhammer40k_ai.classes.enhancement_effects import parse_enhancement_effects, apply_enhancement_effects
-        from warhammer40k_ai.classes.status_effects import UnitStatsModifier
+        from warhammer40k_ai.utility.modifiers import apply_numeric_modifiers, apply_characteristic_caps
 
-        unit = SimpleNamespace(stats={}, special_rules={}, models=[])
+        class UnitStub:
+            def __init__(self):
+                self.special_rules = {}
+                self.models = []
+                self._characteristic_modifiers = {}
+
+            def add_characteristic_modifier(self, characteristic: str, modifier) -> None:
+                key = str(characteristic).strip().lower()
+                self._characteristic_modifiers.setdefault(key, []).append(modifier)
+
+            def get_effective_model_characteristic(self, model, characteristic: str, *, game_map=None) -> int:
+                c = str(characteristic).strip().lower()
+                if c != "movement":
+                    raise AssertionError("UnitStub only supports movement for this test")
+                base = int(getattr(model, "_movement", 0))
+                mods = list(self._characteristic_modifiers.get("movement", []) or [])
+                out, _dbg = apply_numeric_modifiers(base, mods, base_raw=getattr(model, "_movement_raw", None))
+                out = apply_characteristic_caps("movement", out, base_raw=getattr(model, "_movement_raw", None))
+                return int(out)
+
+        unit = UnitStub()
         m = Model(
             name="Bearer",
             movement=6,
@@ -26,9 +46,8 @@ class TestEnhancementEffects(unittest.TestCase):
         effects = parse_enhancement_effects('Add 2" to the bearer\'s Move characteristic.')
         apply_enhancement_effects(unit, effects)
 
-        self.assertIn("movement", unit.stats)
-        self.assertEqual(unit.stats["movement"][0], UnitStatsModifier.ADDITIVE)
-        self.assertEqual(unit.stats["movement"][1], 2)
+        self.assertIn("movement", unit._characteristic_modifiers)
+        self.assertEqual(len(unit._characteristic_modifiers["movement"]), 1)
         self.assertEqual(m.movement, 8)
 
     def test_wounds_add_increases_base_and_current(self):
