@@ -546,7 +546,17 @@ class WargearProfile:
                 attack_result.total_wounds += 1
 
         # Process saves and damage
-        for wound_instance in wound_instances:
+        #
+        # Core rule: If an attacking unit inflicts a mixture of mortal wounds and normal damage,
+        # resolve all normal damage first. (Saves cannot be made against mortal wounds.)
+        try:
+            ordered_wounds = [w for w in wound_instances if not bool(w.get("mortal_wound", False))] + [
+                w for w in wound_instances if bool(w.get("mortal_wound", False))
+            ]
+        except Exception:
+            ordered_wounds = wound_instances
+
+        for wound_instance in ordered_wounds:
             # PRECISION (10e): after a successful wound vs an Attached Unit, attacker may allocate
             # the wound to a visible CHARACTER model in that unit.
             target_model = None
