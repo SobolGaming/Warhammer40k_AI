@@ -31,6 +31,11 @@ class Map:
         self.occupied_positions = set()
         # UI hook (optional): set by GameView to allow combat code to request modals (e.g., PRECISION allocation)
         self.precision_allocation_provider = None
+        # UI hooks (optional): set by GameView to allow core damage code to request allocation choices
+        # Signature: provider(target_unit, eligible_models, ctx_dict) -> chosen_model | None
+        self.damage_allocation_provider = None
+        # Signature: provider(attacker_unit_root, eligible_models, ctx_dict) -> chosen_model | None
+        self.hazardous_allocation_provider = None
 
     def create_boundary_polygon(self) -> Polygon:
         """

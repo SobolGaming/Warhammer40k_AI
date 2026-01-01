@@ -17,6 +17,7 @@ from .mission_selection_modal import MissionSelectionModal
 from .transport_assignment_dialog import TransportAssignmentDialog
 from .reserves_allocation_dialog import ReservesAllocationDialog
 from .precision_allocation_dialog import PrecisionAllocationDialog
+from .damage_allocation_dialog import DamageAllocationDialog
 from .firing_deck_dialog import FiringDeckDialog
 from .blessings_of_khorne_dialog import BlessingsOfKhorneDialog
 from .battlefield_point_pick_dialog import BattlefieldPointPickDialog
@@ -43,6 +44,7 @@ __all__ = [
     'TransportAssignmentDialog',
     'ReservesAllocationDialog',
     'PrecisionAllocationDialog',
+    'DamageAllocationDialog',
     'FiringDeckDialog',
     'BlessingsOfKhorneDialog',
     'BattlefieldPointPickDialog',

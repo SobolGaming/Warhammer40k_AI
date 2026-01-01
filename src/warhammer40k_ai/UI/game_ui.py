@@ -369,11 +369,15 @@ class GameView:
         try:
             if self.game and getattr(self.game, "map", None) is not None:
                 self.game.map.precision_allocation_provider = self._precision_allocation_provider
+                self.game.map.damage_allocation_provider = self._damage_allocation_provider
+                self.game.map.hazardous_allocation_provider = self._hazardous_allocation_provider
         except Exception:
             pass
         try:
             if self.game_map is not None:
                 self.game_map.precision_allocation_provider = self._precision_allocation_provider
+                self.game_map.damage_allocation_provider = self._damage_allocation_provider
+                self.game_map.hazardous_allocation_provider = self._hazardous_allocation_provider
         except Exception:
             pass
         
@@ -889,6 +893,141 @@ class GameView:
                     pygame.quit()
                     return None
                 # Route only through dialog manager (modal)
+                try:
+                    self.dialog_manager.handle_event(event)
+                except Exception:
+                    pass
+            try:
+                self.draw()
+            except Exception:
+                try:
+                    dlg.draw(self.screen)
+                    pygame.display.update()
+                except Exception:
+                    pass
+            clock.tick(60)
+
+        return choice_holder["choice"]
+
+    def _damage_allocation_provider(self, target_unit, eligible_models, ctx):
+        """
+        Blocking modal prompt for defender damage allocation.
+        Returns: selected model, or None to fall back to deterministic engine choice.
+        """
+        try:
+            from .dialogs import DamageAllocationDialog
+        except Exception:
+            return None
+
+        if not hasattr(self, "damage_allocation_dialog") or self.damage_allocation_dialog is None:
+            self.damage_allocation_dialog = DamageAllocationDialog(self.screen.get_width(), self.screen.get_height())
+
+        dlg = self.damage_allocation_dialog
+        choice_holder = {"choice": None, "done": False}
+
+        def _on_choice(chosen):
+            choice_holder["choice"] = chosen
+            choice_holder["done"] = True
+
+        reason = ""
+        try:
+            reason = (ctx or {}).get("reason", "") or "Allocate Damage"
+        except Exception:
+            reason = "Allocate Damage"
+        weapon = ""
+        attacker = ""
+        try:
+            weapon = (ctx or {}).get("weapon_name", "") or ""
+            attacker = (ctx or {}).get("attacker_name", "") or ""
+        except Exception:
+            pass
+        subtitle = getattr(target_unit, "name", "Unit")
+        if weapon and attacker:
+            subtitle = f"{subtitle} (from {attacker} - {weapon})"
+        instruction = "If a model is already wounded, you must continue allocating to a wounded eligible model."
+
+        dlg.show(
+            target_unit,
+            list(eligible_models or []),
+            title=reason,
+            subtitle=subtitle,
+            instruction=instruction,
+            on_choice=_on_choice,
+        )
+        try:
+            self.dialog_manager.open(dlg, modal=True)
+        except Exception:
+            pass
+
+        clock = pygame.time.Clock()
+        while dlg.visible and not choice_holder["done"]:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    return None
+                try:
+                    self.dialog_manager.handle_event(event)
+                except Exception:
+                    pass
+            try:
+                self.draw()
+            except Exception:
+                try:
+                    dlg.draw(self.screen)
+                    pygame.display.update()
+                except Exception:
+                    pass
+            clock.tick(60)
+
+        return choice_holder["choice"]
+
+    def _hazardous_allocation_provider(self, attacker_unit_root, eligible_models, ctx):
+        """
+        Blocking modal prompt for selecting the model that suffers a failed HAZARDOUS test.
+        Returns: selected model, or None to fall back to deterministic engine choice.
+        """
+        try:
+            from .dialogs import DamageAllocationDialog
+        except Exception:
+            return None
+
+        if not hasattr(self, "damage_allocation_dialog") or self.damage_allocation_dialog is None:
+            self.damage_allocation_dialog = DamageAllocationDialog(self.screen.get_width(), self.screen.get_height())
+
+        dlg = self.damage_allocation_dialog
+        choice_holder = {"choice": None, "done": False}
+
+        def _on_choice(chosen):
+            choice_holder["choice"] = chosen
+            choice_holder["done"] = True
+
+        subtitle = getattr(attacker_unit_root, "name", "Unit")
+        instruction = "HAZARDOUS priority: wounded eligible model; otherwise non-Character; otherwise Character."
+        title = "HAZARDOUS - Select Model"
+        try:
+            title = (ctx or {}).get("reason", "") or title
+        except Exception:
+            pass
+
+        dlg.show(
+            attacker_unit_root,
+            list(eligible_models or []),
+            title=title,
+            subtitle=subtitle,
+            instruction=instruction,
+            on_choice=_on_choice,
+        )
+        try:
+            self.dialog_manager.open(dlg, modal=True)
+        except Exception:
+            pass
+
+        clock = pygame.time.Clock()
+        while dlg.visible and not choice_holder["done"]:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    return None
                 try:
                     self.dialog_manager.handle_event(event)
                 except Exception:
@@ -4682,19 +4821,30 @@ class BattlePhaseHandler(BasePhaseHandler):
         """Select the target model for wound allocation following 40k rules."""
         if not target_unit.is_alive():
             return None
-        
-        alive_models = [model for model in target_unit.models if model.is_alive]
-        if not alive_models:
+
+        # Use engine wound-allocation candidates (handles attached units: bodyguard -> leaders)
+        try:
+            candidates = target_unit.get_models_for_wound_allocation()
+        except Exception:
+            candidates = [model for model in getattr(target_unit, "models", []) if getattr(model, "is_alive", True)]
+        if not candidates:
             return None
-        
-        # Priority 1: Wounded models (must allocate to wounded models first)
-        wounded_models = [model for model in alive_models if model.wounds < model._base_wounds]
-        if wounded_models:
-            # Return the most wounded model
-            return min(wounded_models, key=lambda m: m.wounds)
-        
-        # Priority 2: Any alive model (typically the closest or first)
-        return alive_models[0]
+
+        # Human defender may choose only when rules allow; otherwise wounded models are forced.
+        from ..utility.damage_allocation import DamageAllocationCtx, choose_damage_allocation_model
+        try:
+            defender_player = target_unit.get_parent_army().player
+            is_human = bool(getattr(getattr(defender_player, "type", None), "name", "") == "HUMAN")
+        except Exception:
+            is_human = False
+        provider = getattr(self.game.map, "damage_allocation_provider", None) if getattr(self, "game", None) is not None else None
+        return choose_damage_allocation_model(
+            target_unit,
+            candidates,
+            is_human=is_human,
+            provider=provider,
+            ctx=DamageAllocationCtx(reason="Allocate wound", damage_source="melee"),
+        )
     
     def _resolve_single_attack(self, attacking_model, weapon_profile, target_model, target_unit) -> bool:
         """Resolve a single attack and return True if it caused damage."""

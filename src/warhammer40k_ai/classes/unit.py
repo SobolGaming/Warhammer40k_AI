@@ -2115,24 +2115,31 @@ class Unit:
             if not target_unit.is_alive():
                 break  # Unit is destroyed, stop applying wounds
             
-            # Find a model to apply the wound to (prioritize damaged models)
-            target_model = None
-            for model in target_unit.models:
-                if not model.is_alive:
-                    continue
-                if not model.is_max_health:
-                    target_model = model
-                    break
-            
-            # If no damaged models, apply to the first alive model
+            # Use the standard wound allocation candidate list (handles attached units: bodyguard -> leaders)
+            try:
+                candidates = target_unit.get_models_for_wound_allocation()
+            except Exception:
+                candidates = [m for m in (getattr(target_unit, "models", []) or []) if getattr(m, "is_alive", True)]
+            if not candidates:
+                break
+
+            # Human UI may choose among eligible models only when rules allow (i.e., no wounded eligible model)
+            from ..utility.damage_allocation import DamageAllocationCtx, choose_damage_allocation_model
+            try:
+                player = target_unit.get_parent_army().player
+                is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+            except Exception:
+                is_human = False
+            provider = getattr(game_map, "damage_allocation_provider", None) if game_map is not None else None
+            target_model = choose_damage_allocation_model(
+                target_unit,
+                candidates,
+                is_human=is_human,
+                provider=provider,
+                ctx=DamageAllocationCtx(reason="Allocate mortal wound", damage_source="mortal"),
+            )
             if target_model is None:
-                for model in target_unit.models:
-                    if model.is_alive:
-                        target_model = model
-                        break
-            
-            if target_model is None:
-                break  # No models to apply wounds to
+                break
             
             # Apply the mortal wound
             target_model.take_damage(1, is_mortal=True, weapon_profile=None, game_map=game_map)

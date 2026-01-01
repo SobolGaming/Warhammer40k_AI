@@ -367,8 +367,6 @@ class WargearProfile:
         wound_instances = []
         hit_instances = []
         num_attacks = 0
-        precision_choice_set = False
-        precision_choice_model = None  # None means allocate normally to bodyguards
 
         # INDIRECT FIRE (penalty only if no models in target unit are visible to attacking unit at selection time)
         indirect_fire_no_visible = False
@@ -610,24 +608,22 @@ class WargearProfile:
                             continue
 
                     if char_models:
-                        # Ask once per weapon_profile.attack() call and cache choice for remaining wounds.
-                        if not precision_choice_set:
-                            precision_choice_set = True
-                            provider = getattr(game_map, "precision_allocation_provider", None)
-                            try:
-                                attacker_player = attacker.parent_unit.get_parent_army().player
-                                is_human = bool(getattr(getattr(attacker_player, "type", None), "name", "") == "HUMAN")
-                            except Exception:
-                                is_human = False
+                        # In 10e, the attacker may make this choice each time a wound is allocated.
+                        provider = getattr(game_map, "precision_allocation_provider", None)
+                        try:
+                            attacker_player = attacker.parent_unit.get_parent_army().player
+                            is_human = bool(getattr(getattr(attacker_player, "type", None), "name", "") == "HUMAN")
+                        except Exception:
+                            is_human = False
 
-                            if callable(provider) and is_human:
-                                try:
-                                    precision_choice_model = provider(attacker, root, char_models, self)
-                                except Exception:
-                                    precision_choice_model = None
-                            else:
-                                # AI / headless: default to CHARACTER when available
-                                precision_choice_model = char_models[0]
+                        if callable(provider) and is_human:
+                            try:
+                                precision_choice_model = provider(attacker, root, char_models, self)
+                            except Exception:
+                                precision_choice_model = None
+                        else:
+                            # AI / headless: default to CHARACTER when available
+                            precision_choice_model = char_models[0]
 
                         # If player chose a character model, allocate there (only if still alive/visible)
                         if precision_choice_model is not None:
@@ -641,7 +637,7 @@ class WargearProfile:
 
             # Default allocation if precision didn't override it
             if target_model is None:
-                target_model = self.opponent_wound_allocation(target)
+                target_model = self.opponent_wound_allocation(target, attacker=attacker, game_map=game_map)
             if target_model is None:
                 continue
 
@@ -716,7 +712,58 @@ class WargearProfile:
                 pass
             if hazard_roll == 1:
                 attack_result.hazardous_damage = 3
-                attacker.take_damage(3, is_mortal=True, weapon_profile=None, game_map=game_map)
+                # 10e: For each failed test, select an eligible model in that unit equipped with one or more Hazardous weapons.
+                # Priority: wounded eligible; otherwise non-Character eligible; otherwise eligible Character.
+                from ..utility.damage_allocation import DamageAllocationCtx, choose_hazardous_failure_model
+                try:
+                    root_unit = attacker.parent_unit.get_attached_unit_root()
+                except Exception:
+                    root_unit = attacker.parent_unit
+                # Eligible models: alive models in the (attached) unit equipped with >=1 Hazardous weapon
+                eligible = []
+                try:
+                    all_models = root_unit.get_models_for_collision()
+                except Exception:
+                    all_models = list(getattr(root_unit, "models", []) or [])
+                for m in all_models:
+                    try:
+                        if not getattr(m, "is_alive", True):
+                            continue
+                        has_hazardous = False
+                        for wg in (getattr(m, "wargear", []) or []):
+                            for prof in (getattr(wg, "profiles", {}) or {}).values():
+                                if prof is None:
+                                    continue
+                                if prof.is_hazardous():
+                                    has_hazardous = True
+                                    break
+                            if has_hazardous:
+                                break
+                        if has_hazardous:
+                            eligible.append(m)
+                    except Exception:
+                        continue
+
+                # If somehow no eligible model found, fall back to the attacker model.
+                if not eligible:
+                    eligible = [attacker]
+
+                try:
+                    owning_player = root_unit.get_parent_army().player
+                    is_human = bool(getattr(getattr(owning_player, "type", None), "name", "") == "HUMAN")
+                except Exception:
+                    is_human = False
+                provider = getattr(game_map, "hazardous_allocation_provider", None) if game_map is not None else None
+                chosen = choose_hazardous_failure_model(
+                    root_unit,
+                    eligible,
+                    is_human=is_human,
+                    provider=provider,
+                    ctx=DamageAllocationCtx(reason="HAZARDOUS failed test - select model", damage_source="hazardous"),
+                )
+                if chosen is None:
+                    chosen = eligible[0]
+                chosen.take_damage(3, is_mortal=True, weapon_profile=None, game_map=game_map)
         
         # Print comprehensive attack summary
         self._print_attack_summary(attack_result)
@@ -1685,26 +1732,39 @@ class WargearProfile:
         wound_result = self._wound_target_with_tracking(target, attacker, attack_instance)
         return wound_result['wound']
 
-    def opponent_wound_allocation(self, target: 'Unit') -> Optional['Model']:
-        """Allocate wounds to target models"""
+    def opponent_wound_allocation(self, target: 'Unit', *, attacker: Optional['Model'] = None, game_map: Optional['Map'] = None) -> Optional['Model']:
+        """Allocate wounds to target models (defender chooses only when rules allow)."""
         # Attached units: allocate to bodyguards while any exist; otherwise allocate to leader models.
         try:
             candidates = target.get_models_for_wound_allocation()
         except Exception:
-            candidates = list(getattr(target, "models", []) or [])
-
+            candidates = [m for m in (getattr(target, "models", []) or []) if getattr(m, "is_alive", True)]
         if not candidates:
             return None
 
-        # Prefer already-damaged model
+        from ..utility.damage_allocation import DamageAllocationCtx, choose_damage_allocation_model
         try:
-            for m in candidates:
-                if getattr(m, "is_alive", True) and (not getattr(m, "is_max_health", True)):
-                    return m
+            defender_player = target.get_parent_army().player
+            is_human = bool(getattr(getattr(defender_player, "type", None), "name", "") == "HUMAN")
         except Exception:
-            pass
+            is_human = False
+        provider = getattr(game_map, "damage_allocation_provider", None) if game_map is not None else None
+        try:
+            wname = getattr(getattr(self, "parent_wargear", None), "name", None) or getattr(self, "name", "")
+        except Exception:
+            wname = ""
+        try:
+            aname = getattr(attacker, "name", "") if attacker is not None else ""
+        except Exception:
+            aname = ""
 
-        return candidates[0]
+        return choose_damage_allocation_model(
+            target,
+            candidates,
+            is_human=is_human,
+            provider=provider,
+            ctx=DamageAllocationCtx(reason="Allocate wound", damage_source="attack", weapon_name=str(wname or ""), attacker_name=str(aname or "")),
+        )
 
     def damage_target(self, target_model: 'Model', attacker: 'Model', attack_instance: Dict) -> int:
         """Legacy damage target method for backwards compatibility"""
