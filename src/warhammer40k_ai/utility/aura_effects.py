@@ -57,7 +57,22 @@ def _is_aura_ability(ability) -> bool:
 
 
 def _get_map_from_attacker_unit(attacker_unit):
-    army = attacker_unit.get_parent_army()
+    """
+    Best-effort map lookup for aura calculations.
+
+    Aura modifiers require access to the current game map. In unit tests and in some isolated
+    subsystems, we may be operating on lightweight Unit-like stubs that don't have full Army/Game
+    wiring. In those cases, treat "no map" as "no aura modifiers" rather than raising.
+    """
+    if attacker_unit is None:
+        return None
+    try:
+        get_parent_army = getattr(attacker_unit, "get_parent_army", None)
+        if not callable(get_parent_army):
+            return None
+        army = get_parent_army()
+    except Exception:
+        return None
     if army is None or getattr(army, "player", None) is None:
         return None
     game = getattr(army.player, "game", None)

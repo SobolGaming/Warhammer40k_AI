@@ -1,6 +1,49 @@
 from typing import Callable, Optional, Dict, Any, List
 
 
+def _unit_cannot_be_target_of_stratagem(unit: Any) -> bool:
+    """
+    Core rule: Battle-shocked units cannot be the target of a Stratagem.
+
+    We treat a unit as battle-shocked if either:
+    - it implements `is_battle_shocked()` and returns True, or
+    - it has `special_rules['cannot_use_stratagems'] == True` (set by BattleShockEffect)
+
+    This helper is intentionally defensive because some tests use lightweight stubs instead of full Unit objects.
+    """
+    if unit is None:
+        return False
+    try:
+        is_bs = getattr(unit, "is_battle_shocked", None)
+        if callable(is_bs) and bool(is_bs()):
+            return True
+    except Exception:
+        # Fallback to special_rules below.
+        pass
+    try:
+        sr = getattr(unit, "special_rules", None)
+        if isinstance(sr, dict) and sr.get("cannot_use_stratagems") is True:
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _extract_friendly_target_unit_from_kwargs(kwargs: Dict[str, Any]) -> Any:
+    """
+    Best-effort extraction of the *friendly* unit being targeted by a stratagem.
+
+    Notes:
+    - We intentionally do NOT treat `enemy_unit` as a target, since it is typically the trigger context.
+    - Multiple keys exist across special-cases (e.g. Overwatch uses `shooter_unit`).
+    """
+    for key in ("target_unit", "unit", "shooter_unit", "attacker_unit", "defender_unit"):
+        u = kwargs.get(key)
+        if u is not None:
+            return u
+    return None
+
+
 class Stratagem:
     def __init__(
         self,
@@ -57,6 +100,17 @@ class Stratagem:
         return True
 
     def can_use(self, player, game, **kwargs) -> bool:
+        # Battle-shock restriction: a battle-shocked unit cannot be the target of a stratagem.
+        # Exception: INSANE BRAVERY is explicitly used when a unit fails a Battle-shock test.
+        try:
+            if (self.name or "").strip().upper() != "INSANE BRAVERY":
+                tgt = _extract_friendly_target_unit_from_kwargs(kwargs)
+                if _unit_cannot_be_target_of_stratagem(tgt):
+                    return False
+        except Exception:
+            # Defensive: never crash availability checks due to unexpected stub shapes.
+            pass
+
         # Allow CP cost modifiers (e.g. Direct the Slaughter) to affect affordability.
         target_unit = kwargs.get("target_unit", None)
         eff_cost = self.cp_cost
@@ -400,6 +454,9 @@ class StratagemManager:
                     continue
                 if getattr(unit, 'is_titanic', False):
                     continue  # Restriction: cannot select a TITANIC friendly unit
+                # Core rule: Overwatch targets the shooter; battle-shocked units cannot be targeted.
+                if _unit_cannot_be_target_of_stratagem(unit):
+                    continue
                 # Distance check to moving enemy unit (edge-to-edge shortest model pair)
                 dist = None
                 try:
@@ -566,6 +623,18 @@ class StratagemManager:
         s = self.get_by_name(name)
         if not s:
             return False
+
+        # Battle-shock restriction: a battle-shocked unit cannot be the target of a stratagem.
+        # Keep this at the manager layer too, since several special-cases bypass Stratagem.use().
+        try:
+            if (s.name or "").strip().upper() != "INSANE BRAVERY":
+                tgt = _extract_friendly_target_unit_from_kwargs(kwargs)
+                if _unit_cannot_be_target_of_stratagem(tgt):
+                    print("❌ Cannot target a Battle-shocked unit with a Stratagem")
+                    return False
+        except Exception:
+            pass
+
         # Special-case: INSANE BRAVERY (Boarding or Core versions)
         if s.name.upper() == "INSANE BRAVERY":
             target = kwargs.get("unit") or self._last_failed_battle_shock_unit
@@ -606,6 +675,9 @@ class StratagemManager:
                             continue
                         if getattr(unit, 'is_titanic', False):
                             continue
+                        # Core rule: Overwatch targets the shooter; battle-shocked units cannot be targeted.
+                        if _unit_cannot_be_target_of_stratagem(unit):
+                            continue
                         dist = None
                         try:
                             if hasattr(self.game, 'map') and hasattr(self.game.map, 'get_distance_between_units'):
@@ -621,6 +693,10 @@ class StratagemManager:
                     shooter = max(candidates, key=lambda u: sum(1 for m in u.models for w in getattr(m, 'wargear', []) if getattr(w, 'is_ranged', lambda: False)()))
             if not shooter:
                 print("❌ Overwatch: no eligible shooter in 24\"")
+                return False
+            # Even if a shooter was explicitly provided, enforce battle-shock restriction.
+            if _unit_cannot_be_target_of_stratagem(shooter):
+                print("❌ Overwatch: cannot target a Battle-shocked unit")
                 return False
             # Build declarations: group best ranged profile per model for target
             declarations = []

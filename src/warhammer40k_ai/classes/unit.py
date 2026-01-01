@@ -3056,8 +3056,17 @@ class Unit:
             current_turn: The current battle round number
         """
         self.initialize_round()
+        # Battle-shock expires at the start of *your* next Command phase.
+        # If this command action is being used as the command-phase entrypoint (e.g. in gym env),
+        # clear Battle-shock before running the step's Battle-shock tests.
+        try:
+            self.clear_battle_shock()
+        except Exception:
+            pass
 
         # Do Battle Shock Test for appropriate units
+        if (not self.is_alive()):
+            return True
         if self.is_below_half_strength():
             print(f"⚠️  {self.name} is below half strength - taking Battle-Shock test")
             self.take_battle_shock_test(current_turn)
@@ -5442,35 +5451,66 @@ class Unit:
         Args:
             current_turn: The current battle round number (used for status effect duration)
         """
-        # Check if unit is already battle-shocked
-        is_already_battle_shocked = any(
-            isinstance(effect, BattleShockEffect) for effect in self.status_effects
-        )
-        
-        if is_already_battle_shocked:
-            print(f"⚡ {self.name} is already battle-shocked, no test needed")
+        # Destroyed units do not take Battle-shock tests, and abilities cannot force a destroyed unit to test.
+        try:
+            alive_models = any(bool(getattr(m, "is_alive", True)) for m in (getattr(self, "models", []) or []))
+        except Exception:
+            alive_models = False
+        if not alive_models:
+            try:
+                for u in list(getattr(self, "attached_leaders", []) or []):
+                    if any(bool(getattr(m, "is_alive", True)) for m in (getattr(u, "models", []) or [])):
+                        alive_models = True
+                        break
+            except Exception:
+                alive_models = alive_models
+        if not alive_models:
             return
 
-        # Publish event: test started
-        try:
-            game = getattr(self.get_parent_army(), 'player', None)
-            if game and hasattr(game, 'game') and hasattr(game.game, 'event_system'):
-                game.game.event_system.publish("battle_shock_test_started", unit=self)
-        except Exception:
-            pass
+        is_already_battle_shocked = bool(self.is_battle_shocked())
 
-        passed = self.pass_leadership_check()
-        if not passed:
+        # Resolve event system (best-effort; avoid crashing on partial test stubs).
+        event_system = None
+        try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        player = getattr(army, "player", None) if army is not None else None
+        game = getattr(player, "game", None) if player is not None else None
+        event_system = getattr(game, "event_system", None) if game is not None else None
+
+        if event_system is not None:
+            try:
+                event_system.publish("battle_shock_test_started", unit=self)
+            except Exception:
+                pass
+
+        passed = bool(self.pass_leadership_check())
+
+        # Units that are already Battle-shocked can still be forced to take another Battle-shock test,
+        # but the result does not change the unit's Battle-shocked status or duration.
+        if (not passed) and (not is_already_battle_shocked):
             battle_shock_effect = BattleShockEffect(current_turn)
             self.apply_status_effect(battle_shock_effect)
             print(f"💥 {self.name} has failed the battle shock test and is battle-shocked!")
-        # Publish event: test resolved
-        try:
-            game = getattr(self.get_parent_army(), 'player', None)
-            if game and hasattr(game, 'game') and hasattr(game.game, 'event_system'):
-                game.game.event_system.publish("battle_shock_test_resolved", unit=self, passed=passed)
-        except Exception:
-            pass
+
+        if event_system is not None:
+            try:
+                event_system.publish("battle_shock_test_resolved", unit=self, passed=passed)
+            except Exception:
+                pass
+
+    def clear_battle_shock(self) -> bool:
+        """Remove Battle-shock from this unit (used at the start of its owner's next Command phase)."""
+        removed = False
+        for eff in list(getattr(self, "status_effects", []) or []):
+            if isinstance(eff, BattleShockEffect):
+                try:
+                    self.remove_status_effect(eff)
+                    removed = True
+                except Exception:
+                    continue
+        return removed
 
     def use_ability(self, ability: Ability, target: 'Unit', game_map: 'Map'):
         """Uses a special ability."""

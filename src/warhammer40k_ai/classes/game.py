@@ -1529,6 +1529,26 @@ class Game:
     
     def start_command_phase(self) -> None:
         """Start the command phase: active player gains normal CP, then resolves any bonus CP sources."""
+        # Battle-shock expires at the start of *your* next Command phase (even if the unit was later destroyed).
+        # Clear it before doing anything else in the Command phase.
+        try:
+            from .status_effects import BattleShockEffect
+            current_player = self.get_current_player()
+            for unit in list(getattr(current_player.get_army(), "units", []) or []):
+                fn = getattr(unit, "clear_battle_shock", None)
+                if callable(fn):
+                    fn()
+                    continue
+                # Fallback for legacy unit-like stubs
+                try:
+                    for eff in list(getattr(unit, "status_effects", []) or []):
+                        if isinstance(eff, BattleShockEffect):
+                            unit.remove_status_effect(eff)
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
         # Core (per official app wording): at the start of your Command phase, before doing anything else,
         # BOTH players gain the normal Command phase CP. This normal CP does not count toward the
         # per-battle-round "bonus CP" guardrail.
@@ -1591,6 +1611,11 @@ class Game:
         # If in fifth battle round and going second, primary scoring is at end of turn, not here
         for unit in current_player.get_army().units:
             # Do battle shock tests and other command phase actions without resetting round state
+            try:
+                if hasattr(unit, "is_alive") and callable(getattr(unit, "is_alive")) and not unit.is_alive():
+                    continue
+            except Exception:
+                pass
             if unit.is_below_half_strength():
                 print(f"⚠️  {unit.name} is below half strength - taking Battle-Shock test")
                 unit.take_battle_shock_test(self.turn)
