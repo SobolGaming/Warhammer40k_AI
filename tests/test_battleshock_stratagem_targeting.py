@@ -17,6 +17,19 @@ class _NotBattleShockedUnit:
         return False
 
 
+class _EmbarkedUnit:
+    def __init__(self):
+        self.special_rules = {"cannot_use_stratagems": False}
+        self.embarked_in = object()
+
+    @property
+    def is_embarked(self):
+        return True
+
+    def is_battle_shocked(self):
+        return False
+
+
 class _Player:
     def __init__(self, cp: int = 1):
         self.command_points = cp
@@ -91,6 +104,24 @@ class TestBattleShockStratagemTargeting(unittest.TestCase):
         )
         # The unit will be battle-shocked in our engine at reaction time, so we must allow this.
         self.assertTrue(s.can_use(p, g, unit=_BattleShockedUnit()))
+
+    def test_embarked_unit_cannot_be_target_even_for_insane_bravery(self):
+        from warhammer40k_ai.classes.stratagems import Stratagem
+
+        p = _Player(cp=1)
+        g = _Game(current_player=p)
+        s = Stratagem(
+            id="x",
+            name="INSANE BRAVERY",
+            type="Core",
+            description="",
+            cp_cost=1,
+            turn="Either",
+            phase="Any phase",
+            detachment="",
+            faction_id="",
+        )
+        self.assertFalse(s.can_use(p, g, unit=_EmbarkedUnit()))
 
 
 if __name__ == "__main__":

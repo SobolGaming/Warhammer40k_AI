@@ -5,6 +5,9 @@ def _unit_cannot_be_target_of_stratagem(unit: Any) -> bool:
     """
     Core rule: Battle-shocked units cannot be the target of a Stratagem.
 
+    Also: Units embarked within a Transport are not on the battlefield and cannot be targeted by rules,
+    including Stratagems (unless explicitly stated otherwise).
+
     We treat a unit as battle-shocked if either:
     - it implements `is_battle_shocked()` and returns True, or
     - it has `special_rules['cannot_use_stratagems'] == True` (set by BattleShockEffect)
@@ -13,6 +16,19 @@ def _unit_cannot_be_target_of_stratagem(unit: Any) -> bool:
     """
     if unit is None:
         return False
+
+    # Embarked restriction: cannot target embarked units with stratagems (even INSANE BRAVERY).
+    try:
+        is_embarked = getattr(unit, "is_embarked", None)
+        if callable(is_embarked) and bool(is_embarked):
+            return True
+    except Exception:
+        pass
+    try:
+        if getattr(unit, "embarked_in", None) is not None:
+            return True
+    except Exception:
+        pass
     try:
         is_bs = getattr(unit, "is_battle_shocked", None)
         if callable(is_bs) and bool(is_bs()):
@@ -100,12 +116,39 @@ class Stratagem:
         return True
 
     def can_use(self, player, game, **kwargs) -> bool:
-        # Battle-shock restriction: a battle-shocked unit cannot be the target of a stratagem.
-        # Exception: INSANE BRAVERY is explicitly used when a unit fails a Battle-shock test.
+        # Targeting restrictions:
+        # - Embarked units cannot be targeted by stratagems (no exceptions here).
+        # - Battle-shocked units cannot be targeted by stratagems, except INSANE BRAVERY.
         try:
-            if (self.name or "").strip().upper() != "INSANE BRAVERY":
-                tgt = _extract_friendly_target_unit_from_kwargs(kwargs)
-                if _unit_cannot_be_target_of_stratagem(tgt):
+            tgt = _extract_friendly_target_unit_from_kwargs(kwargs)
+            # Embarked is always blocked (rule is broader than Battle-shock).
+            if _unit_cannot_be_target_of_stratagem(tgt):
+                if (self.name or "").strip().upper() == "INSANE BRAVERY":
+                    # Allow INSANE BRAVERY only to bypass Battle-shock restriction, not embarked restriction.
+                    # If target is embarked, still blocked.
+                    try:
+                        is_embarked = getattr(tgt, "is_embarked", None)
+                        if callable(is_embarked) and bool(is_embarked):
+                            return False
+                    except Exception:
+                        pass
+                    try:
+                        if getattr(tgt, "embarked_in", None) is not None:
+                            return False
+                    except Exception:
+                        pass
+                    # Otherwise, if this was blocked only due to battle-shock, allow it.
+                    # (We can't perfectly distinguish reasons here, so do a focused check.)
+                    try:
+                        is_bs = getattr(tgt, "is_battle_shocked", None)
+                        if callable(is_bs) and bool(is_bs()):
+                            pass
+                        else:
+                            # If not battle-shocked but still blocked, keep blocked.
+                            return False
+                    except Exception:
+                        return False
+                else:
                     return False
         except Exception:
             # Defensive: never crash availability checks due to unexpected stub shapes.
@@ -624,13 +667,38 @@ class StratagemManager:
         if not s:
             return False
 
-        # Battle-shock restriction: a battle-shocked unit cannot be the target of a stratagem.
-        # Keep this at the manager layer too, since several special-cases bypass Stratagem.use().
+        # Targeting restrictions (manager layer too, since several special-cases bypass Stratagem.use()).
+        # - Embarked units cannot be targeted by stratagems (no exceptions here).
+        # - Battle-shocked units cannot be targeted by stratagems, except INSANE BRAVERY.
         try:
-            if (s.name or "").strip().upper() != "INSANE BRAVERY":
-                tgt = _extract_friendly_target_unit_from_kwargs(kwargs)
-                if _unit_cannot_be_target_of_stratagem(tgt):
-                    print("❌ Cannot target a Battle-shocked unit with a Stratagem")
+            tgt = _extract_friendly_target_unit_from_kwargs(kwargs)
+            if _unit_cannot_be_target_of_stratagem(tgt):
+                if (s.name or "").strip().upper() == "INSANE BRAVERY":
+                    # Only bypass battle-shock restriction, not embarked restriction.
+                    try:
+                        is_embarked = getattr(tgt, "is_embarked", None)
+                        if callable(is_embarked) and bool(is_embarked):
+                            print("❌ Cannot target an embarked unit with a Stratagem")
+                            return False
+                    except Exception:
+                        pass
+                    try:
+                        if getattr(tgt, "embarked_in", None) is not None:
+                            print("❌ Cannot target an embarked unit with a Stratagem")
+                            return False
+                    except Exception:
+                        pass
+                    # If the unit is battle-shocked, allow INSANE BRAVERY.
+                    try:
+                        is_bs = getattr(tgt, "is_battle_shocked", None)
+                        if callable(is_bs) and bool(is_bs()):
+                            pass
+                        else:
+                            return False
+                    except Exception:
+                        return False
+                else:
+                    print("❌ Cannot target a Battle-shocked or embarked unit with a Stratagem")
                     return False
         except Exception:
             pass
