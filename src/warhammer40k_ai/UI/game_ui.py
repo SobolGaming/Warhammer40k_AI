@@ -1976,12 +1976,18 @@ class GameView:
         
         return None
     
-    def get_model_at_position(self, x: float, y: float) -> Optional['Model']:
-        """Get the specific model at the given position"""
-        # Convert screen coordinates to game coordinates using helper method
-        game_x, game_y = self.screen_to_game_coords(x, y)
-        
-        print(f"Checking for model at game coordinates: ({game_x}, {game_y})")
+    def get_model_at_position(self, x: float, y: float, needs_conversion: bool = True) -> Optional['Model']:
+        """Get the specific model at the given position.
+
+        Args:
+            x: X coordinate (screen or game depending on needs_conversion)
+            y: Y coordinate (screen or game depending on needs_conversion)
+            needs_conversion: If True, (x,y) are screen coords; if False, already game coords.
+        """
+        if needs_conversion:
+            game_x, game_y = self.screen_to_game_coords(x, y)
+        else:
+            game_x, game_y = x, y
 
         # Create a point for the game position
         from shapely.geometry import Point
@@ -2002,7 +2008,6 @@ class GameView:
                     print(f"Found model {model.name} from unit {model.parent_unit.name}")
                     return model
         
-        print("No model found at position")
         return None
     
     def screen_to_game_coords(self, screen_x: int, screen_y: int) -> Tuple[float, float]:
@@ -5169,8 +5174,9 @@ class BattlePhaseHandler(BasePhaseHandler):
         # Check if we're in targeting mode from the shooting declaration dialog
         if (hasattr(self.game_view, 'shooting_declaration_dialog') and 
             self.game_view.shooting_declaration_dialog.is_targeting_mode):
-            # Let the dialog handle the targeting
-            return self.game_view.shooting_declaration_dialog.handle_battlefield_targeting(x, y)
+            # Let the dialog handle the targeting (expects game coords)
+            battlefield_x, battlefield_y = self.game_view.screen_to_game_coords(x, y)
+            return self.game_view.shooting_declaration_dialog.handle_battlefield_targeting(battlefield_x, battlefield_y)
         
         # If not in targeting mode, handle unit selection
         clicked_unit = self.game_view.get_unit_at_position(x, y)

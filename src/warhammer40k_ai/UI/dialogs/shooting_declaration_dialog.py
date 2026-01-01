@@ -546,6 +546,17 @@ class ShootingDeclarationDialog(BaseDialog):
         """Validate target using specific clicked target model when available.
         Uses true minimum edge-to-edge distance across all shooter/target model pairs.
         """
+        # Phase eligibility checks (so the player gets a clear reason on click)
+        try:
+            if hasattr(self.unit, "round_state") and getattr(self.unit.round_state, "advanced_this_round", False):
+                if hasattr(self.unit, "can_shoot_after_advance") and (not self.unit.can_shoot_after_advance(weapon_profile)):
+                    return (False, "Unit advanced and cannot shoot with this weapon")
+            if hasattr(self.unit, "round_state") and getattr(self.unit.round_state, "fell_back_this_round", False):
+                if hasattr(self.unit, "can_shoot_after_fall_back") and (not self.unit.can_shoot_after_fall_back(weapon_profile)):
+                    return (False, "Unit fell back and cannot shoot with this weapon")
+        except Exception:
+            pass
+
         # Shooter models that have this weapon
         shooter_models = self._get_models_with_weapon(weapon_profile)
         if not shooter_models:
@@ -1127,17 +1138,34 @@ class ShootingDeclarationDialog(BaseDialog):
         
         if not clicked_unit:
             print("❌ No unit found at clicked position")
+            try:
+                if self.game_view is not None:
+                    self.game_view._mission_popup = {
+                        "title": "Targeting",
+                        "body": "No unit found at that position.",
+                    }
+            except Exception:
+                pass
             return False
 
         # Validate only on the specific clicked model for clarity and speed
         clicked_model = None
         if self.game_view and hasattr(self.game_view, 'get_model_at_position'):
-            clicked_model = self.game_view.get_model_at_position(x, y)
+            # x,y are game coords in targeting mode (BattlePhaseHandler converts before calling us)
+            clicked_model = self.game_view.get_model_at_position(x, y, needs_conversion=False)
         weapon_name = self._get_weapon_display_name(self.selected_weapon)
         valid, reason = self._validate_click_target_with_reason(self.selected_weapon, clicked_unit, clicked_model)
         if not valid:
             suffix = f" - {reason}" if reason else ""
             print(f"❌ {clicked_unit.name} is not a valid target for {weapon_name}{suffix}")
+            try:
+                if self.game_view is not None:
+                    self.game_view._mission_popup = {
+                        "title": "Invalid target",
+                        "body": f"{clicked_unit.name} is not a valid target for {weapon_name}.\n{reason or ''}".strip(),
+                    }
+            except Exception:
+                pass
             return False
 
         # Handle weapon group targeting

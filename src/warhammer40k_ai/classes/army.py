@@ -732,20 +732,67 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
         if lines and lines[0].startswith('\ufeff'):
             lines[0] = lines[0][1:]
 
-    # Determine the format
-    is_app_format = any("Exported with App Version:" in line for line in lines)
+    import re
 
-    # Extract army information
+    def _find_points_limit(raw_lines: list[str]) -> int:
+        for ln in raw_lines:
+            m = re.search(r"\(([\d,]+)\s*points?\)", ln, flags=re.IGNORECASE)
+            if m:
+                return int(m.group(1).replace(",", ""))
+        raise ValueError(f"Could not find points limit in army list header: {file_path!r}")
+
+    def _is_app_export(raw_lines: list[str]) -> bool:
+        # Be tolerant to minor formatting differences.
+        return any("exported with app version" in (ln or "").lower() for ln in raw_lines)
+
+    def _first_section_index(stripped_lines: list[str]) -> int:
+        headers = {"CHARACTER", "CHARACTERS", "BATTLELINE", "OTHER DATASHEETS"}
+        for i, ln in enumerate(stripped_lines):
+            if (ln or "").strip().upper() in headers:
+                return i
+        # Fallback to 0; the unit-parse loop will skip empty lines and unknown headers,
+        # but without a recognized section header the file likely isn't in a supported format.
+        return 0
+
+    stripped = [ln.strip() for ln in lines]
+    is_app_format = _is_app_export(lines)
+    points_limit = _find_points_limit(lines)
+
+    # Extract faction + detachment more robustly than fixed line numbers because app exports vary.
     if is_app_format:
-        points_limit = int(lines[0].split('(')[1].split()[0])
-        faction_keyword = lines[2].strip()
-        detachment_type = lines[3].strip()
-        start_index = 5
+        # In app exports, the faction is typically the first non-empty line after the title line,
+        # and the detachment is the next non-empty line that is NOT the game size line (e.g., Strike Force...).
+        faction_keyword = ""
+        detachment_type = ""
+        for ln in stripped[1:]:
+            if not ln:
+                continue
+            if ln.lower().startswith("exported with"):
+                break
+            # Skip the game size line if it appears early.
+            if "strike force" in ln.lower():
+                continue
+            if not faction_keyword:
+                faction_keyword = ln
+                continue
+            if not detachment_type:
+                detachment_type = ln
+                break
+        if not faction_keyword:
+            raise ValueError(f"Could not determine faction from app-export header: {file_path!r}")
+        if not detachment_type:
+            # Some files omit detachment; keep a safe placeholder.
+            detachment_type = "Unknown Detachment"
     else:
-        points_limit = int(lines[1].split('(')[1].split()[0])
-        faction_keyword = lines[0].split(' – ')[-1]
-        detachment_type = lines[2].strip()
-        start_index = 4
+        # Legacy/simple text format: "Army Name – Faction" then "Strike Force (...)" then detachment line.
+        try:
+            faction_keyword = (stripped[0].split(' – ')[-1]).strip()
+        except Exception:
+            faction_keyword = (stripped[0] or "").strip()
+        detachment_type = (stripped[2] or "").strip() if len(stripped) > 2 else "Unknown Detachment"
+
+    # Start parsing units at the first section header we recognize (more robust than fixed offsets).
+    start_index = _first_section_index(stripped)
 
     print(f"Parsing army: {faction_keyword} - {detachment_type} ({points_limit} points)")
 
