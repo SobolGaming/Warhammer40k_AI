@@ -146,6 +146,14 @@ class Unit:
         # Ability cache for performance optimization
         self._ability_cache = {}
 
+        # Parse a small subset of defensive "against attacks with X characteristic of Y" rules into special_rules.
+        # (AP/Damage-based ones are applied at Allocate Attack time in the attack sequence.)
+        try:
+            self._parse_against_attack_characteristic_defensive_rules()
+        except Exception:
+            # Defensive: never block unit construction due to unsupported/unknown text patterns.
+            pass
+
     def _add_stat_additive(self, key: str, delta: int) -> None:
         """Apply an additive stat delta, tracking it for later removal (damaged profiles)."""
         from .status_effects import UnitStatsModifier
@@ -285,6 +293,54 @@ class Unit:
             self.special_rules["relics_of_matriarchs_max_choices"] = 1
 
         self._damaged_profile_active = True
+
+    def _parse_against_attack_characteristic_defensive_rules(self) -> None:
+        """
+        Parse a very small subset of defensive rules that key off an incoming attack's characteristics.
+
+        Core timing note (10e): if the characteristic involved is AP or Damage, such rules are applied at
+        the Allocate Attack step. Our attack sequence allocates a target model before resolving saves,
+        so these parsed effects are evaluated during saving throw resolution (per-allocated-model).
+
+        Currently supported patterns (strict):
+        - "Each time an attack with a Damage characteristic of 1 is allocated to a model in this unit,
+           add 1 to any armour saving throw made against that attack"
+
+        Effects are stored in `unit.special_rules` for the save step to consult.
+        """
+        if getattr(self, "special_rules", None) is None:
+            self.special_rules = {}
+
+        # Collect all rules text from unit abilities.
+        entries = []
+        for a in getattr(self, "possible_abilities", []) or []:
+            if isinstance(a, str):
+                entries.append(a)
+            else:
+                entries.append(getattr(a, "description", "") or "")
+
+        for raw in entries:
+            t = self._normalize_rules_text(raw)
+            if not t:
+                continue
+            tl = t.lower()
+
+            # Save bonus vs allocated attacks with Damage characteristic of N.
+            # Example: "Each time an attack with a Damage characteristic of 1 is allocated to a model in this unit,
+            # add 1 to any armour saving throw made against that attack"
+            m = re.search(
+                r"each\s+time\s+an\s+attack\s+with\s+a\s+damage\s+characteristic\s+of\s+(\d+)\s+is\s+allocated\s+to\s+a\s+model\s+in\s+this\s+unit,\s+add\s+(\d+)\s+to\s+any\s+armou?r\s+saving\s+throw\s+made\s+against\s+that\s+attack",
+                tl,
+                flags=re.IGNORECASE,
+            )
+            if m:
+                dmg = int(m.group(1))
+                bonus = int(m.group(2))
+                spec = self.special_rules.get("armor_save_bonus_vs_damage_characteristic")
+                if not isinstance(spec, dict):
+                    spec = {}
+                spec[int(dmg)] = int(spec.get(int(dmg), 0)) + int(bonus)
+                self.special_rules["armor_save_bonus_vs_damage_characteristic"] = spec
 
     def _parse_attribute(self, attribute_value: str) -> int:
         # Remove " and + from the attribute value

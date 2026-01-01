@@ -1223,7 +1223,30 @@ class WargearProfile:
         except Exception:
             pass
 
-        # TODO: Apply other save modifiers (abilities, stratagems, etc.)
+        # Defensive rules keyed off incoming attack characteristics.
+        # Core timing: AP/Damage-based ones are applied at Allocate Attack; we already have the allocated model here.
+        try:
+            if save_result.get("save_type") == "armor":
+                t_unit = getattr(target_model, "parent_unit", None)
+                sr = getattr(t_unit, "special_rules", None) if t_unit is not None else None
+                # Damage characteristic is only meaningful here when it is a fixed integer.
+                dmg_char = attack_instance.get("damage_characteristic", None)
+                if dmg_char is None:
+                    try:
+                        dmg_char = int(self.damage)
+                    except Exception:
+                        dmg_char = None
+                if isinstance(sr, dict) and dmg_char is not None:
+                    spec = sr.get("armor_save_bonus_vs_damage_characteristic")
+                    if isinstance(spec, dict) and int(dmg_char) in spec:
+                        bonus = int(spec.get(int(dmg_char), 0) or 0)
+                        if bonus:
+                            dice_modifier += bonus
+                            save_result["special_effects"].append(f"+{bonus} armor save vs Damage {int(dmg_char)}")
+        except Exception:
+            pass
+
+        # TODO: Apply other save modifiers (stratagems, auras, etc.)
         dice_modifier = min(dice_modifier, 1)  # modifications are capped at +1
         save_result['saved'] = (dice_roll + dice_modifier) >= save_value
         
