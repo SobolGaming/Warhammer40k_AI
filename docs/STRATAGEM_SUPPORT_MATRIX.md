@@ -20,14 +20,14 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
 |---|---:|---|---:|---|---|---|---|
-| COMMAND RE-ROLL | `000008335002` | Core – Battle Tactic Stratagem | 1 | Either player’s turn | Any phase | **Implemented** | Queued on `roll_made`; executes a reroll callback; once-per-turn guard. |
+| COMMAND RE-ROLL | `000008335002` | Core – Battle Tactic Stratagem | 1 | Either player’s turn | Any phase | **Implemented** | Queued on `roll_made`; executes a reroll callback; limited by core once-per-phase stratagem rule (per player). |
 | COUNTER-OFFENSIVE | `000008335003` | Core – Strategic Ploy Stratagem | 2 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | EPIC CHALLENGE | `000008335004` | Core – Epic Deed Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | FIRE OVERWATCH | `000008335009` | Core – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement or Charge phase | **Implemented** | Queued on enemy movement start/end; resolves shooting with hit-on-6s restriction. |
 | GO TO GROUND | `000008335010` | Core – Battle Tactic Stratagem | 1 | Opponent’s turn | Shooting phase | **Implemented** | Opponent Shooting phase: after targets selected; INFANTRY gains Benefit of Cover + 6++ until end of phase. |
 | GRENADE | `000008335006` | Core – Wargear Stratagem | 1 | Your turn | Shooting phase | **Implemented** | Shooting phase: pick a GRENADES unit + eligible enemy within 8"; roll 6D6; 4+ = 1 MW. |
 | HEROIC INTERVENTION | `000008335012` | Core – Strategic Ploy Stratagem | 1 | Opponent’s turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| INSANE BRAVERY | `000008335005` | Core – Epic Deed Stratagem | 1 | Your turn | Command phase | **Partial** | Implemented as a post-fail Battle-shock cancel (removes Battle-shock). Once-per-battle restriction not enforced; differs from datasheet timing. |
+| INSANE BRAVERY | `000008335005` | Core – Epic Deed Stratagem | 1 | Your turn | Command phase | **Implemented** | Command phase Battle-shock step: before a unit tests; that unit auto-passes. Once per battle enforced. |
 | RAPID INGRESS | `000008335008` | Core – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement phase | **Implemented** | Queued at end of opponent Movement phase; places a reserves unit immediately. |
 | SMOKESCREEN | `000008335011` | Core – Wargear Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | TANK SHOCK | `000008335007` | Core – Strategic Ploy Stratagem | 1 | Your turn | Charge phase | **Implemented** | Charge phase: after a VEHICLE ends a Charge move; roll D6 equal to a VEHICLE model’s Toughness; 5+ = 1 MW (max 6). |

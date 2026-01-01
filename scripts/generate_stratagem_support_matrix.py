@@ -150,23 +150,19 @@ def _support_classification(row: StratagemRow) -> Tuple[str, str]:
     name_u = (row.name or "").strip().upper()
     # Implemented/partial set based on current `classes/stratagems.py`.
     implemented = {
-        "COMMAND RE-ROLL": "Queued on `roll_made`; executes a reroll callback; once-per-turn guard.",
+        "COMMAND RE-ROLL": "Queued on `roll_made`; executes a reroll callback; limited by core once-per-phase stratagem rule (per player).",
         "FIRE OVERWATCH": "Queued on enemy movement start/end; resolves shooting with hit-on-6s restriction.",
         "RAPID INGRESS": "Queued at end of opponent Movement phase; places a reserves unit immediately.",
         "NEW ORDERS": "End of your Command phase: discard 1 active Secondary and draw (Leviathan-style).",
         "TANK SHOCK": "Charge phase: after a VEHICLE ends a Charge move; roll D6 equal to a VEHICLE model’s Toughness; 5+ = 1 MW (max 6).",
         "GRENADE": "Shooting phase: pick a GRENADES unit + eligible enemy within 8\"; roll 6D6; 4+ = 1 MW.",
         "GO TO GROUND": "Opponent Shooting phase: after targets selected; INFANTRY gains Benefit of Cover + 6++ until end of phase.",
+        "INSANE BRAVERY": "Command phase Battle-shock step: before a unit tests; that unit auto-passes. Once per battle enforced.",
     }
     if name_u in implemented:
         return ("Implemented", implemented[name_u])
 
     # Partial: implemented but mismatched vs official wording/restrictions.
-    if name_u == "INSANE BRAVERY":
-        return (
-            "Partial",
-            "Implemented as a post-fail Battle-shock cancel (removes Battle-shock). Once-per-battle restriction not enforced; differs from datasheet timing.",
-        )
 
     return ("Not implemented", "No effect logic currently wired (would just spend CP and log a warning).")
 

@@ -5918,8 +5918,18 @@ class Unit:
                 event_system.publish("battle_shock_test_started", unit=self)
             except Exception:
                 pass
-
-        passed = bool(self.pass_leadership_check())
+        # Core Stratagem: INSANE BRAVERY can make this unit automatically pass this test.
+        # It is consumed on use (one-shot for the next Battle-shock test).
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("auto_pass_next_battle_shock_test") is True:
+                sr.pop("auto_pass_next_battle_shock_test", None)
+                self.special_rules = sr
+                passed = True
+            else:
+                passed = bool(self.pass_leadership_check())
+        except Exception:
+            passed = bool(self.pass_leadership_check())
 
         # Units that are already Battle-shocked can still be forced to take another Battle-shock test,
         # but the result does not change the unit's Battle-shocked status or duration.

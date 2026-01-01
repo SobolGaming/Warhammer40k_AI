@@ -266,7 +266,13 @@ class StratagemManager:
         # Per-turn usage limits (e.g., Overwatch once/turn)
         self._used_this_turn: Dict[str, bool] = {
             'OVERWATCH': False,
-            'COMMAND RE-ROLL': False,
+        }
+        # Core rules: a player cannot use the same Stratagem more than once in the same phase.
+        # (Unless an ability explicitly names the Stratagem; we do not implement such bypasses generically.)
+        self._used_stratagems_this_phase: set[str] = set()
+        # Once-per-battle limits (e.g., INSANE BRAVERY once per battle)
+        self._used_once_per_battle: Dict[str, bool] = {
+            'INSANE BRAVERY': False,
         }
 
     def _dequeue_reaction_by_name(self, stratagem_name: str) -> None:
@@ -363,9 +369,12 @@ class StratagemManager:
             is_active_turn = player is self.player
             if is_active_turn and getattr(phase, 'name', None) == 'COMMAND_PHASE':
                 self._used_this_turn['OVERWATCH'] = False
-                self._used_this_turn['COMMAND RE-ROLL'] = False
         except Exception:
             pass
+        try:
+            self._used_stratagems_this_phase.clear()
+        except Exception:
+            self._used_stratagems_this_phase = set()
 
     def _on_phase_end(self, player, phase, **kwargs):
         # Queue NEW ORDERS at end of your Command phase
@@ -455,8 +464,43 @@ class StratagemManager:
         except Exception:
             pass
     def _on_battle_shock_test_started(self, unit, **kwargs):
-        # Opportunity to use pre-test variants if implemented later
-        pass
+        # Core: INSANE BRAVERY is used just before taking a Battle-shock test (auto-pass).
+        try:
+            if unit is None:
+                return
+            # Only offer when the unit belongs to this player
+            try:
+                if unit.get_parent_army().player is not self.player:
+                    return
+            except Exception:
+                return
+            s = self.get_by_name("INSANE BRAVERY")
+            if not s:
+                return
+            # Once per battle restriction
+            if self._used_once_per_battle.get("INSANE BRAVERY", False):
+                return
+            # Timing: Battle-shock step of your Command phase (best-effort via phase tracker)
+            if (self._current_phase_name or "").strip().lower() != "command phase":
+                return
+            if not s.can_use(self.player, self.game, unit=unit, phase_name=self._current_phase_name):
+                return
+            # Queue as a reaction (UI can choose to use it)
+            self._pending_reactions.append({
+                "event": "battle_shock_test_started",
+                "stratagem": s.name,
+                "cp_cost": s.cp_cost,
+                "unit": unit,
+                "phase_name": self._current_phase_name,
+            })
+            # Offer a brief reaction window
+            try:
+                if hasattr(self.game, "event_system"):
+                    self.game.event_system.publish("stratagem_window", player=self.player, duration=3.0)
+            except Exception:
+                pass
+        except Exception:
+            return
 
     def _on_battle_shock_test_resolved(self, unit, passed: bool, **kwargs):
         if not passed and unit and unit.get_parent_army() and unit.get_parent_army().player is self.player:
@@ -690,9 +734,12 @@ class StratagemManager:
         s = self.get_by_name('COMMAND RE-ROLL')
         if not s:
             return
-        # Respect once per phase/turn depending on your preferred rule; we apply once per turn guard
-        if self._used_this_turn.get('COMMAND RE-ROLL', False):
-            return
+        # Core rules: cannot use the same stratagem more than once per phase (per player).
+        try:
+            if (s.name or "").strip().upper() in self._used_stratagems_this_phase:
+                return
+        except Exception:
+            pass
         phase_name = self._current_phase_name
         if not s.is_phase_allowed(phase_name or ''):
             return
@@ -806,6 +853,19 @@ class StratagemManager:
         if not s:
             return False
 
+        # Core restriction: a player cannot use the same Stratagem more than once in the same phase.
+        # Applies to all stratagems (including ones usable in "Any phase"), unless an ability explicitly
+        # names the stratagem (not implemented as a generic bypass).
+        try:
+            phase_name = kwargs.get("phase_name") or self._current_phase_name
+            if phase_name:
+                key = (s.name or "").strip().upper()
+                if key and key in self._used_stratagems_this_phase:
+                    print(f"❌ Cannot use {s.name} more than once in the same phase (core rules)")
+                    return False
+        except Exception:
+            pass
+
         # Targeting restrictions (manager layer too, since several special-cases bypass Stratagem.use()).
         # - Embarked units cannot be targeted by stratagems (no exceptions here).
         # - Battle-shocked units cannot be targeted by stratagems, except INSANE BRAVERY.
@@ -842,22 +902,39 @@ class StratagemManager:
         except Exception:
             pass
 
-        # Special-case: INSANE BRAVERY (Boarding or Core versions)
+        # Core: INSANE BRAVERY (auto-pass a Battle-shock test about to be taken; once per battle)
         if s.name.upper() == "INSANE BRAVERY":
-            target = kwargs.get("unit") or self._last_failed_battle_shock_unit
-            if not target:
+            if self._used_once_per_battle.get("INSANE BRAVERY", False):
+                print("❌ INSANE BRAVERY can only be used once per battle")
                 return False
-            # Remove Battle-shock and mark as passed
+            target = kwargs.get("unit")
+            if not target:
+                print("❌ INSANE BRAVERY: no target unit provided")
+                return False
+            # Spend CP
+            if not self.player.spend_command_points(s.cp_cost):
+                return False
+            # Mark auto-pass flag to be consumed by Unit.take_battle_shock_test()
             try:
-                # If unit already has Battle-shock, remove it; otherwise ensure not applied
-                from .status_effects import BattleShockEffect
-                to_remove = [e for e in target.status_effects if isinstance(e, BattleShockEffect)]
-                for eff in to_remove:
-                    target.remove_status_effect(eff)
-                # No explicit flag needed beyond removing effect; event or logs
-                print(f"🛡️ INSANE BRAVERY used on {target.name}: treat test as passed; not Battle-shocked.")
+                sr = getattr(target, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["auto_pass_next_battle_shock_test"] = True
+                target.special_rules = sr
             except Exception:
                 pass
+            self._used_once_per_battle["INSANE BRAVERY"] = True
+            try:
+                print(f"🛡️ INSANE BRAVERY used on {getattr(target, 'name', 'Unit')}: next Battle-shock test auto-passes (once per battle)")
+            except Exception:
+                pass
+            if kwargs.get('dequeue') is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
+            return True
         # Special-case: FIRE OVERWATCH full resolution
         if s.name.upper() in ("FIRE OVERWATCH", "OVERWATCH"):
             enemy_unit = kwargs.get("enemy_unit")
@@ -954,6 +1031,10 @@ class StratagemManager:
                 # Spend CP and return through normal use path (so CP is deducted consistently)
                 if not self.player.spend_command_points(s.cp_cost):
                     print("⚠️ Overwatch succeeded but CP spend failed; adjusting CP manually")
+                try:
+                    self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+                except Exception:
+                    pass
                 return True
             else:
                 print("❌ Overwatch: shooting failed or invalid")
@@ -1000,13 +1081,15 @@ class StratagemManager:
                         print(f"🔁 Command Re-roll executed ({roll_type})")
                 except Exception:
                     pass
-                # Mark once-per-turn limiter
-                self._used_this_turn['COMMAND RE-ROLL'] = True
                 # Remove the matching pending reaction if present
                 for i in range(len(self._pending_reactions)-1, -1, -1):
                     if self._pending_reactions[i].get('stratagem', '').upper() == 'COMMAND RE-ROLL':
                         self._pending_reactions.pop(i)
                         break
+                try:
+                    self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+                except Exception:
+                    pass
                 return True
             except Exception as e:
                 print(f"❌ Command Re-roll failed: {e}")
@@ -1047,6 +1130,10 @@ class StratagemManager:
             player_obj.draw_secondary_until_two(self.game)
             if kwargs.get('dequeue') is True:
                 self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
             return True
 
         # Special-case: RAPID INGRESS (arrive from reserves at end of opponent's Movement phase)
@@ -1111,6 +1198,10 @@ class StratagemManager:
             print(f"🪂 Rapid Ingress: {target.name} arrived from reserves")
             if kwargs.get('dequeue') is True:
                 self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
             return True
 
         # Core: GO TO GROUND
@@ -1138,6 +1229,10 @@ class StratagemManager:
                 pass
             if kwargs.get("dequeue") is True:
                 self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
             return True
 
         # Core: GRENADE
@@ -1226,6 +1321,10 @@ class StratagemManager:
                     pass
             if kwargs.get("dequeue") is True:
                 self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
             return True
 
         # Core: TANK SHOCK
@@ -1306,6 +1405,10 @@ class StratagemManager:
                     pass
             if kwargs.get("dequeue") is True:
                 self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
             return True
 
         # Provide phase_name for timing checks
@@ -1320,6 +1423,10 @@ class StratagemManager:
             # If this was a queued reaction, drop it
             if 'dequeue' in kwargs and kwargs['dequeue'] is True:
                 self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
         return ok
 
     # -------- UI helpers for non-disruptive prompts --------
