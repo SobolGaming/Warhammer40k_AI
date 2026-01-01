@@ -60,6 +60,8 @@ These mechanics are currently recognized by searching ability names/descriptions
 - Aura stacking rule (engine): different Aura names can all apply (subject to caps/wording), but the same Aura name from multiple sources applies once.
 - Auras: strict "+N Attacks characteristic to melee weapons while within X"" auras (Supported)
 - Once-per-battle abilities: engine tracks usage + supports temporary phase-scoped buffs via explicit activation APIs (Supported)
+- Re-roll Advance rolls (pattern: "re-roll"/"reroll" + "Advance") (Supported) — UI prompts the player and allows a re-roll even if the first roll is sufficient.
+- Re-roll Charge rolls (pattern: "re-roll"/"reroll" + "Charge") (Supported) — UI prompts the player and allows a re-roll even if the first roll is sufficient.
 
 ## Core Abilities
 

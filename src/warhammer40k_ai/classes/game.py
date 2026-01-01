@@ -2890,14 +2890,39 @@ class Game:
         # Roll 2D6 for charge distance with modifiers - show individual dice
         dice_collection = DiceCollection.from_string("2D6")
         base_charge_roll, individual_dice = dice_collection.roll_detailed()
-        # Publish roll event for Command Re-roll
+        # Provide reroll callback for rules/stratagems
+        def _reroll():
+            new_total, new_individual = DiceCollection.from_string("2D6").roll_detailed()
+            nonlocal base_charge_roll, individual_dice
+            base_charge_roll = new_total
+            individual_dice = new_individual
+            return new_total, new_individual
+
+        # Rule-based reroll prompt (e.g., "re-roll Charge rolls") must happen BEFORE we evaluate success.
+        reroll_used = False
         try:
-            def _reroll():
-                new_total, new_individual = DiceCollection.from_string("2D6").roll_detailed()
-                nonlocal base_charge_roll
-                base_charge_roll = new_total
-                return new_total, new_individual
-            self.event_system.publish("roll_made", player=charging_unit.get_parent_army().player, unit=charging_unit, roll_type="charge", value=base_charge_roll, dice=individual_dice, reroll=_reroll)
+            player = charging_unit.get_parent_army().player
+            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+            provider = getattr(getattr(self, "map", None), "roll_reroll_provider", None)
+            if is_human and callable(provider) and charging_unit.can_reroll_charge_roll():
+                if bool(provider(player=player, unit=charging_unit, roll_type="charge", value=base_charge_roll, dice=list(individual_dice))):
+                    _reroll()
+                    reroll_used = True
+        except Exception:
+            reroll_used = False
+
+        # Publish roll event for Command Re-roll (reroll_locked if a free reroll was already used)
+        try:
+            self.event_system.publish(
+                "roll_made",
+                player=charging_unit.get_parent_army().player,
+                unit=charging_unit,
+                roll_type="charge",
+                value=base_charge_roll,
+                dice=individual_dice,
+                reroll=_reroll,
+                reroll_locked=bool(reroll_used),
+            )
         except Exception:
             pass
         charge_roll = self._apply_charge_modifiers(charging_unit, base_charge_roll)

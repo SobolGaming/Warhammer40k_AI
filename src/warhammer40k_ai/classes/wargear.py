@@ -902,6 +902,7 @@ class WargearProfile:
             pass
 
         # Strict aura support: re-roll Hit rolls of 1 (applied before resolving auto-miss/constraints)
+        reroll_used = False
         try:
             if dice_roll == 1 and bool(getattr(aura_mods, "reroll_hit_ones", False)):
                 rr = _reroll_hit()
@@ -910,6 +911,71 @@ class WargearProfile:
                 hit_result["reroll_of_one"] = 1
                 hit_result["reroll"] = rr
                 dice_roll = rr
+                reroll_used = True
+        except Exception:
+            pass
+
+        # MONARCH OF THE HUNT (Shalaxi): melee vs quarry => optional re-roll of the Hit roll (even if successful),
+        # to allow "fishing" for 6s (e.g. Devastating Wounds downstream on critical wounds, etc).
+        # Note: a dice cannot be re-rolled more than once, so skip if a reroll already occurred.
+        try:
+            if "reroll" not in hit_result:
+                is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+                if is_melee:
+                    quarry_ids = getattr(attacker.parent_unit, "_monarch_of_the_hunt_quarry_ids", None)
+                    if quarry_ids:
+                        try:
+                            tid = getattr(target, "_id", None)
+                            rid = getattr(target.get_attached_unit_root(), "_id", None)
+                        except Exception:
+                            tid = getattr(target, "_id", None)
+                            rid = None
+                        is_quarry = (tid in quarry_ids) or (rid in quarry_ids)
+                        if is_quarry:
+                            # Human: prompt. AI/headless: keep prior behavior (reroll failed only).
+                            try:
+                                unit = attacker.parent_unit
+                                game = unit.get_parent_army().player.game
+                                player = unit.get_parent_army().player
+                                is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                                provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                            except Exception:
+                                is_human = False
+                                provider = None
+                                player = None
+                                game = None
+
+                            # Determine "success" at this stage (before auto-hit/miss shortcuts below).
+                            # Natural 1 always fails; otherwise use final_needed.
+                            try:
+                                success = (dice_roll != 1) and (self.skill > 0) and (dice_roll >= final_needed)
+                            except Exception:
+                                success = False
+
+                            do_reroll = False
+                            if is_human and callable(provider):
+                                try:
+                                    do_reroll = bool(provider(
+                                        player=player,
+                                        unit=unit,
+                                        roll_type="hit",
+                                        value=dice_roll,
+                                        dice=None,
+                                        needed=final_needed,
+                                        success=success,
+                                    ))
+                                except Exception:
+                                    do_reroll = False
+                            else:
+                                # AI/headless: only reroll failed hit rolls
+                                do_reroll = (not success)
+
+                            if do_reroll:
+                                rr = _reroll_hit()
+                                hit_result.setdefault("special_effects", []).append("Monarch of the Hunt: re-roll Hit roll (melee vs quarry)")
+                                hit_result["reroll"] = rr
+                                dice_roll = rr
+                                reroll_used = True
         except Exception:
             pass
         hit_result['roll'] = dice_roll
@@ -917,7 +983,15 @@ class WargearProfile:
         try:
             unit = attacker.parent_unit
             game = unit.get_parent_army().player.game
-            game.event_system.publish("roll_made", player=unit.get_parent_army().player, unit=unit, roll_type="hit", value=dice_roll, reroll=_reroll_hit)
+            game.event_system.publish(
+                "roll_made",
+                player=unit.get_parent_army().player,
+                unit=unit,
+                roll_type="hit",
+                value=dice_roll,
+                reroll=_reroll_hit,
+                reroll_locked=bool(reroll_used),
+            )
         except Exception:
             pass
         
@@ -1088,6 +1162,7 @@ class WargearProfile:
             pass
 
         # Strict aura support: re-roll Wound rolls of 1
+        reroll_used = False
         try:
             if dice_roll == 1 and bool(getattr(aura_mods, "reroll_wound_ones", False)):
                 rr = _reroll_wound()
@@ -1096,6 +1171,92 @@ class WargearProfile:
                 wound_result["reroll_of_one"] = 1
                 wound_result["reroll"] = rr
                 dice_roll = rr
+                reroll_used = True
+        except Exception:
+            pass
+
+        # MONARCH OF THE HUNT (Shalaxi): melee vs quarry => optional re-roll of the Wound roll (even if successful),
+        # to allow "fishing" for 6s.
+        # Note: cannot re-roll a dice more than once, so skip if already rerolled.
+        try:
+            if "reroll" not in wound_result:
+                is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+                if is_melee:
+                    quarry_ids = getattr(attacker.parent_unit, "_monarch_of_the_hunt_quarry_ids", None)
+                    if quarry_ids:
+                        try:
+                            tid = getattr(target, "_id", None)
+                            rid = getattr(target.get_attached_unit_root(), "_id", None)
+                        except Exception:
+                            tid = getattr(target, "_id", None)
+                            rid = None
+                        is_quarry = (tid in quarry_ids) or (rid in quarry_ids)
+                        if is_quarry:
+                            # Compute needed (same as in _apply_wound_roll)
+                            needed = 0
+                            try:
+                                s_val = strength
+                                t_val = target_toughness
+                                if isinstance(s_val, int) and isinstance(t_val, int):
+                                    if s_val >= 2 * t_val:
+                                        needed = 2
+                                    elif s_val > t_val:
+                                        needed = 3
+                                    elif s_val == t_val:
+                                        needed = 4
+                                    elif s_val * 2 <= t_val:
+                                        needed = 6
+                                    else:
+                                        needed = 5
+                            except Exception:
+                                needed = 0
+                            final_needed = needed
+                            try:
+                                final_needed = int(min(max(int(final_needed) - int(dice_modifier), 2), 6))
+                            except Exception:
+                                pass
+                            # Determine "success" at this stage (before _apply_wound_roll handles nat 1/6).
+                            try:
+                                success = (dice_roll != 1) and (bool(final_needed) and dice_roll >= int(final_needed))
+                            except Exception:
+                                success = False
+
+                            # Human: prompt. AI/headless: only reroll failed.
+                            do_reroll = False
+                            try:
+                                unit = attacker.parent_unit
+                                game = unit.get_parent_army().player.game
+                                player = unit.get_parent_army().player
+                                is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                                provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                            except Exception:
+                                is_human = False
+                                provider = None
+                                player = None
+                                unit = None
+
+                            if is_human and callable(provider):
+                                try:
+                                    do_reroll = bool(provider(
+                                        player=player,
+                                        unit=unit,
+                                        roll_type="wound",
+                                        value=dice_roll,
+                                        dice=None,
+                                        needed=final_needed,
+                                        success=success,
+                                    ))
+                                except Exception:
+                                    do_reroll = False
+                            else:
+                                do_reroll = (not success)
+
+                            if do_reroll:
+                                rr = _reroll_wound()
+                                wound_result.setdefault("special_effects", []).append("Monarch of the Hunt: re-roll Wound roll (melee vs quarry)")
+                                wound_result["reroll"] = rr
+                                dice_roll = rr
+                                reroll_used = True
         except Exception:
             pass
         wound_result['roll'] = dice_roll
@@ -1103,7 +1264,15 @@ class WargearProfile:
         try:
             unit = attacker.parent_unit
             game = unit.get_parent_army().player.game
-            game.event_system.publish("roll_made", player=unit.get_parent_army().player, unit=unit, roll_type="wound", value=dice_roll, reroll=_reroll_wound)
+            game.event_system.publish(
+                "roll_made",
+                player=unit.get_parent_army().player,
+                unit=unit,
+                roll_type="wound",
+                value=dice_roll,
+                reroll=_reroll_wound,
+                reroll_locked=bool(reroll_used),
+            )
         except Exception:
             pass
 

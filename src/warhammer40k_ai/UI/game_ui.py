@@ -371,6 +371,7 @@ class GameView:
                 self.game.map.precision_allocation_provider = self._precision_allocation_provider
                 self.game.map.damage_allocation_provider = self._damage_allocation_provider
                 self.game.map.hazardous_allocation_provider = self._hazardous_allocation_provider
+                self.game.map.roll_reroll_provider = self._roll_reroll_provider
         except Exception:
             pass
         try:
@@ -378,6 +379,7 @@ class GameView:
                 self.game_map.precision_allocation_provider = self._precision_allocation_provider
                 self.game_map.damage_allocation_provider = self._damage_allocation_provider
                 self.game_map.hazardous_allocation_provider = self._hazardous_allocation_provider
+                self.game_map.roll_reroll_provider = self._roll_reroll_provider
         except Exception:
             pass
         
@@ -624,11 +626,15 @@ class GameView:
 
         # WORLD EATERS: start-of-battle-round Blessings hook
         self._pending_blessings_queue = []
+        # SLAANESH/DAEMONS (Shalaxi): Monarch of the Hunt quarry selection queue
+        self._pending_quarry_queue = []
         try:
             if self.game and getattr(self.game, "event_system", None) is not None:
                 self.game.event_system.subscribe("battle_round_started", self._on_battle_round_started)
                 # Optional ability prompts (phase-start timing windows)
                 self.game.event_system.subscribe("phase_start", self._on_phase_start_optional_ability_prompts)
+                # Quarry re-pick when quarry is destroyed
+                self.game.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_for_monarch_of_the_hunt)
         except Exception:
             pass
 
@@ -641,6 +647,36 @@ class GameView:
             return
         if br <= 0:
             return
+
+        # Build queue of players to prompt (human WE only), starting with the current player.
+        try:
+            current = game.get_current_player()
+            others = [p for p in list(getattr(game, "players", []) or []) if p is not current]
+            order = [current] + others
+        except Exception:
+            order = list(getattr(game, "players", []) or [])
+
+        queue = []
+        for p in order:
+            try:
+                if p is None or p.type.name != "HUMAN":
+                    continue
+                army = p.get_army()
+                if getattr(army, "faction_id", None) != "WE":
+                    continue
+                if getattr(army, "blessings_of_khorne", None) is None:
+                    continue
+                queue.append(p)
+            except Exception:
+                continue
+
+        if queue:
+            self._pending_blessings_queue = list(queue)
+            self._open_next_blessings_prompt(br)
+
+        # SHALAXI: Monarch of the Hunt triggers at the start of the first battle round.
+        if br == 1:
+            self._queue_monarch_of_the_hunt_prompts(game)
 
     # ---------------- Optional ability prompt windows (UI-driven) ----------------
 
@@ -741,7 +777,110 @@ class GameView:
             # If UI wiring is missing, just skip
             _done(False)
 
-        # Build queue of players to prompt (human WE only), starting with the current player.
+    def _roll_reroll_provider(self, player=None, unit=None, roll_type: str = "", value=None, dice=None, **_kwargs):
+        """
+        Blocking modal prompt for rule-based (free) re-rolls.
+        Returns True to reroll, False to keep.
+        """
+        try:
+            if player is None or getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return False
+        except Exception:
+            return False
+
+        try:
+            from .dialogs import RollRerollDialog
+        except Exception:
+            return False
+
+        if not hasattr(self, "roll_reroll_dialog") or self.roll_reroll_dialog is None:
+            self.roll_reroll_dialog = RollRerollDialog(self.screen.get_width(), self.screen.get_height())
+
+        rt = str(roll_type or "").strip().lower()
+        title = "Re-roll?"
+        if rt == "advance":
+            title = "Advance Roll"
+        elif rt == "charge":
+            title = "Charge Roll"
+        elif rt == "hit":
+            title = "Hit Roll"
+        elif rt == "wound":
+            title = "Wound Roll"
+
+        ulabel = getattr(unit, "name", "Unit")
+        msg = f"{ulabel} rolled {value}."
+        try:
+            if rt == "charge" and dice:
+                msg = f"{ulabel} rolled {value} (dice: {list(dice)})."
+        except Exception:
+            pass
+        # For attack rolls, show needed/eligible status with colored border
+        roll_text = ""
+        roll_border = None
+        try:
+            needed = _kwargs.get("needed", None)
+            success = _kwargs.get("success", None)
+            if rt in ("hit", "wound") and needed is not None and success is not None:
+                roll_text = f"Rolled {int(value)} (need {int(needed)}+)"
+                roll_border = "success" if bool(success) else "fail"
+        except Exception:
+            roll_text = ""
+            roll_border = None
+
+        if rt in ("hit", "wound"):
+            msg = f"{msg}\n\nEligible for re-roll (Monarch of the Hunt). You may re-roll even if successful."
+        else:
+            msg = f"{msg}\n\nYou may re-roll this {rt} roll."
+
+        dlg = self.roll_reroll_dialog
+        choice_holder = {"choice": False, "done": False}
+
+        def _on_choice(chosen: bool):
+            choice_holder["choice"] = bool(chosen)
+            choice_holder["done"] = True
+
+        dlg.show(
+            title=title,
+            message=msg,
+            roll_text=roll_text,
+            roll_border=roll_border,
+            callback=_on_choice,
+            keep_label="Keep",
+            reroll_label="Re-roll",
+        )
+        try:
+            self.dialog_manager.open(dlg, modal=True)
+        except Exception:
+            pass
+
+        clock = pygame.time.Clock()
+        while dlg.visible and not choice_holder["done"]:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    return False
+                try:
+                    self.dialog_manager.handle_event(event)
+                except Exception:
+                    pass
+            try:
+                self.draw()
+            except Exception:
+                try:
+                    dlg.draw(self.screen)
+                    pygame.display.update()
+                except Exception:
+                    pass
+            clock.tick(60)
+
+        return bool(choice_holder["choice"])
+
+    # ---------------- Monarch of the Hunt (Shalaxi) ----------------
+
+    def _queue_monarch_of_the_hunt_prompts(self, game):
+        """
+        At BR1 start: prompt each human player who has a unit with 'Monarch of the Hunt' to pick a quarry.
+        """
         try:
             current = game.get_current_player()
             others = [p for p in list(getattr(game, "players", []) or []) if p is not current]
@@ -752,22 +891,234 @@ class GameView:
         queue = []
         for p in order:
             try:
-                if p is None or p.type.name != "HUMAN":
+                if p is None:
                     continue
                 army = p.get_army()
-                if getattr(army, "faction_id", None) != "WE":
+                if army is None:
                     continue
-                if getattr(army, "blessings_of_khorne", None) is None:
-                    continue
-                queue.append(p)
+                for u in list(getattr(army, "units", []) or []):
+                    try:
+                        if not u.is_alive():
+                            continue
+                    except Exception:
+                        continue
+                    # Find Monarch of the Hunt ability by name
+                    try:
+                        found, _ = u._find_ability_with_patterns(["monarch of the hunt"])
+                    except Exception:
+                        found = False
+                    if not found:
+                        continue
+                    # Only prompt if not already set
+                    if getattr(u, "_monarch_of_the_hunt_quarry_ids", None):
+                        continue
+                    queue.append((p, u))
             except Exception:
                 continue
 
         if not queue:
             return
+        self._pending_quarry_queue.extend(queue)
+        # If nothing is currently visible, open immediately.
+        self._open_next_quarry_prompt()
 
-        self._pending_blessings_queue = list(queue)
-        self._open_next_blessings_prompt(br)
+    def _open_next_quarry_prompt(self):
+        if not self._pending_quarry_queue:
+            return
+        p, shalaxi_unit = self._pending_quarry_queue.pop(0)
+
+        # Determine enemy army (2-player game assumed)
+        enemy_player = None
+        try:
+            for op in list(getattr(self.game, "players", []) or []):
+                if op is not p:
+                    enemy_player = op
+                    break
+        except Exception:
+            enemy_player = None
+        if enemy_player is None:
+            self._open_next_quarry_prompt()
+            return
+
+        enemy_army = getattr(enemy_player, "army", None)
+        if enemy_army is None:
+            self._open_next_quarry_prompt()
+            return
+
+        # Build eligible enemy units:
+        # - include reserves
+        # - exclude embarked units
+        # - attached leaders collapsed into bodyguard root
+        eligible = []
+        seen = set()
+        for u in list(getattr(enemy_army, "units", []) or []):
+            try:
+                # Hide attached leaders as separate entries
+                if bool(getattr(u, "is_attached_leader", False)):
+                    continue
+            except Exception:
+                pass
+            try:
+                root = u.get_attached_unit_root()
+            except Exception:
+                root = u
+            try:
+                rid = getattr(root, "_id", None)
+                if not rid or rid in seen:
+                    continue
+                seen.add(rid)
+            except Exception:
+                continue
+            try:
+                if not root.is_alive():
+                    continue
+            except Exception:
+                continue
+            # Cannot select embarked units as quarry (rules commentary)
+            try:
+                if callable(getattr(root, "is_embarked", None)) and bool(root.is_embarked()):
+                    continue
+                if getattr(root, "embarked_in", None) is not None:
+                    continue
+            except Exception:
+                pass
+            eligible.append(root)
+
+        eligible.sort(key=lambda x: str(getattr(x, "name", "")))
+        if not eligible:
+            self._open_next_quarry_prompt()
+            return
+
+        # AI owners: auto-pick first eligible
+        try:
+            if getattr(p, "type", None) is not None and getattr(p.type, "name", "") != "HUMAN":
+                self._set_monarch_quarry(shalaxi_unit, eligible[0])
+                self._open_next_quarry_prompt()
+                return
+        except Exception:
+            pass
+
+        try:
+            from .dialogs import QuarrySelectionDialog
+        except Exception:
+            self._set_monarch_quarry(shalaxi_unit, eligible[0])
+            self._open_next_quarry_prompt()
+            return
+
+        if not hasattr(self, "quarry_selection_dialog") or self.quarry_selection_dialog is None:
+            self.quarry_selection_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+
+        dlg = self.quarry_selection_dialog
+
+        def _on_confirm(chosen_unit):
+            self._set_monarch_quarry(shalaxi_unit, chosen_unit)
+            self._open_next_quarry_prompt()
+
+        def _on_cancel():
+            # Monarch of the Hunt is mandatory; if cancelled, default to first eligible.
+            self._set_monarch_quarry(shalaxi_unit, eligible[0])
+            self._open_next_quarry_prompt()
+
+        subtitle = "Embarked units cannot be selected. Units in Reserves may be selected."
+        dlg.show(
+            title="Monarch of the Hunt",
+            subtitle=subtitle,
+            choices=eligible,
+            on_confirm=_on_confirm,
+            on_cancel=_on_cancel,
+        )
+        try:
+            self.dialog_manager.open(dlg, modal=True)
+        except Exception:
+            pass
+
+    def _set_monarch_quarry(self, shalaxi_unit, enemy_unit_root):
+        # Store all members of the attached unit (reflecting persisting effects on split)
+        ids = set()
+        try:
+            members = list(enemy_unit_root.get_attached_unit_members() or [])
+        except Exception:
+            members = [enemy_unit_root]
+        for m in members:
+            try:
+                mid = getattr(m, "_id", None)
+                if mid:
+                    ids.add(mid)
+            except Exception:
+                continue
+        setattr(shalaxi_unit, "_monarch_of_the_hunt_quarry_ids", ids)
+        try:
+            setattr(shalaxi_unit, "_monarch_of_the_hunt_quarry_name", str(getattr(enemy_unit_root, "name", "")))
+        except Exception:
+            pass
+
+    def _on_unit_destroyed_for_monarch_of_the_hunt(self, unit=None, **_kwargs):
+        """
+        When a quarry is destroyed, immediately prompt Shalaxi to select a new quarry.
+
+        Persisting effects:
+        - If quarry was an attached unit that later splits, the designation persists on the survivor.
+        - We track this by storing IDs of all attached members, then pruning to the alive subset.
+        """
+        if unit is None:
+            return
+
+        try:
+            destroyed_owner = unit.get_parent_army().player
+        except Exception:
+            destroyed_owner = None
+
+        # For each potential Shalaxi unit in the *opponent* armies, prune and repick if needed.
+        for p in list(getattr(self.game, "players", []) or []):
+            try:
+                army = p.get_army()
+            except Exception:
+                army = None
+            if army is None:
+                continue
+            for shalaxi_unit in list(getattr(army, "units", []) or []):
+                quarry_ids = getattr(shalaxi_unit, "_monarch_of_the_hunt_quarry_ids", None)
+                if not quarry_ids:
+                    continue
+                # Only if this destroyed unit is part of the quarry group
+                try:
+                    if getattr(unit, "_id", None) not in quarry_ids:
+                        continue
+                except Exception:
+                    continue
+
+                # Quarry must be an enemy unit, not friendly
+                try:
+                    if destroyed_owner is not None and destroyed_owner is shalaxi_unit.get_parent_army().player:
+                        continue
+                except Exception:
+                    pass
+
+                # Prune quarry ids to the alive subset (supports attached-unit split persistence)
+                alive_ids = set()
+                enemy_army = None
+                try:
+                    enemy_army = destroyed_owner.get_army() if destroyed_owner is not None else None
+                except Exception:
+                    enemy_army = None
+                if enemy_army is not None:
+                    by_id = {getattr(u2, "_id", None): u2 for u2 in list(getattr(enemy_army, "units", []) or [])}
+                    for qid in list(quarry_ids):
+                        u2 = by_id.get(qid)
+                        if u2 is None:
+                            continue
+                        try:
+                            if u2.is_alive():
+                                alive_ids.add(qid)
+                        except Exception:
+                            continue
+                setattr(shalaxi_unit, "_monarch_of_the_hunt_quarry_ids", alive_ids)
+
+                # If none alive, repick
+                if not alive_ids:
+                    # Queue prompt for this Shalaxi
+                    self._pending_quarry_queue.append((shalaxi_unit.get_parent_army().player, shalaxi_unit))
+                    self._open_next_quarry_prompt()
 
     def _open_next_blessings_prompt(self, battle_round: int) -> None:
         if not self._pending_blessings_queue:

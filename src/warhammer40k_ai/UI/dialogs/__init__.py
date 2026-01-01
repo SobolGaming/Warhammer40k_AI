@@ -23,6 +23,8 @@ from .blessings_of_khorne_dialog import BlessingsOfKhorneDialog
 from .battlefield_point_pick_dialog import BattlefieldPointPickDialog
 from .hazard_objective_select_dialog import HazardObjectiveSelectDialog
 from .yes_no_dialog import YesNoDialog
+from .quarry_selection_dialog import QuarrySelectionDialog
+from .roll_reroll_dialog import RollRerollDialog
 
 __all__ = [
     'BaseDialog',
@@ -50,4 +52,6 @@ __all__ = [
     'BattlefieldPointPickDialog',
     'HazardObjectiveSelectDialog',
     'YesNoDialog',
+    'QuarrySelectionDialog',
+    'RollRerollDialog',
 ] 

@@ -546,6 +546,13 @@ class StratagemManager:
 
     # Command Re-roll trigger on roll_made for active player only
     def _on_roll_made(self, player, unit, roll_type: str, value, reroll, dice=None, **kwargs):
+        # If some other rule already rerolled/locks this roll (10e: a dice can't be re-rolled more than once),
+        # do not offer Command Re-roll.
+        try:
+            if bool(kwargs.get("reroll_locked", False)):
+                return
+        except Exception:
+            pass
         if player is not self.player:
             return
         s = self.get_by_name('COMMAND RE-ROLL')

@@ -3419,6 +3419,64 @@ class Unit:
         self.round_state.remained_stationary_this_round = True
         return True
 
+    # ---------------- Ability helpers (best-effort parsing) ----------------
+
+    def can_reroll_advance_roll(self) -> bool:
+        """
+        Best-effort detection for abilities that allow re-rolling Advance rolls for this unit/model.
+
+        This is intentionally text-based so it can support multiple datasheets without hardcoding.
+        """
+        def _texts() -> list[str]:
+            items: list[str] = []
+            for ab in (list(getattr(self, "possible_abilities", []) or []) + list(getattr(self, "abilities", []) or [])):
+                try:
+                    if isinstance(ab, str):
+                        items.append(ab)
+                        continue
+                    nm = str(getattr(ab, "name", "") or "")
+                    ds = str(getattr(ab, "description", "") or "")
+                    if nm:
+                        items.append(nm)
+                    if ds:
+                        items.append(ds)
+                except Exception:
+                    continue
+            return items
+
+        for t in _texts():
+            s = str(t or "").lower()
+            if ("re-roll" in s or "reroll" in s) and "advance" in s:
+                return True
+        return False
+
+    def can_reroll_charge_roll(self) -> bool:
+        """
+        Best-effort detection for abilities that allow re-rolling Charge rolls for this unit/model.
+        """
+        def _texts() -> list[str]:
+            items: list[str] = []
+            for ab in (list(getattr(self, "possible_abilities", []) or []) + list(getattr(self, "abilities", []) or [])):
+                try:
+                    if isinstance(ab, str):
+                        items.append(ab)
+                        continue
+                    nm = str(getattr(ab, "name", "") or "")
+                    ds = str(getattr(ab, "description", "") or "")
+                    if nm:
+                        items.append(nm)
+                    if ds:
+                        items.append(ds)
+                except Exception:
+                    continue
+            return items
+
+        for t in _texts():
+            s = str(t or "").lower()
+            if ("re-roll" in s or "reroll" in s) and "charge" in s:
+                return True
+        return False
+
     def prepare_advance(self) -> int:
         """Pre-roll advance dice for UI display. Returns the advance roll."""
         if not hasattr(self.round_state, 'advance_roll') or self.round_state.advance_roll is None:
@@ -3429,9 +3487,7 @@ class Unit:
                 append_dice(pn, f"Advance roll: {advance_roll} for {self.name}")
             except Exception:
                 pass
-            self.round_state.advance_roll = advance_roll
-            print(f"🎲 {self.name} advance roll: {advance_roll}\" (Move {self.movement}\" + {advance_roll}\" = {self.movement + advance_roll}\")")
-            # Publish roll event with reroll capability
+            # Provide reroll callback (may be used by rules/stratagems)
             try:
                 _player = getattr(self.get_parent_army(), 'player', None)
                 _game = getattr(_player, 'game', None) if _player else None
@@ -3446,9 +3502,39 @@ class Unit:
                             pass
                         print(f"🎲 {self.name} advance re-roll: {new_roll}")
                         return new_roll
-                    _game.event_system.publish("roll_made", player=_player, unit=self, roll_type="advance", value=advance_roll, reroll=_reroll)
+                    # If this unit has a rule-based reroll (e.g., "re-roll Advance rolls"),
+                    # offer it via a blocking provider BEFORE publishing roll_made for Command Re-roll.
+                    reroll_used = False
+                    try:
+                        provider = getattr(getattr(_game, "map", None), "roll_reroll_provider", None)
+                        is_human = bool(getattr(getattr(_player, "type", None), "name", "") == "HUMAN")
+                        if is_human and callable(provider) and self.can_reroll_advance_roll():
+                            want = bool(provider(player=_player, unit=self, roll_type="advance", value=advance_roll, dice=None))
+                            if want:
+                                advance_roll = _reroll()
+                                reroll_used = True
+                    except Exception:
+                        reroll_used = False
+
+                    # Store final value
+                    self.round_state.advance_roll = advance_roll
+                    print(f"🎲 {self.name} advance roll: {advance_roll}\" (Move {self.movement}\" + {advance_roll}\" = {self.movement + advance_roll}\")")
+
+                    # Publish roll event (reroll may be locked if already used)
+                    _game.event_system.publish(
+                        "roll_made",
+                        player=_player,
+                        unit=self,
+                        roll_type="advance",
+                        value=advance_roll,
+                        reroll=_reroll,
+                        reroll_locked=bool(reroll_used),
+                    )
             except Exception:
                 pass
+            # Ensure stored even if no game/event_system
+            self.round_state.advance_roll = advance_roll
+            print(f"🎲 {self.name} advance roll: {advance_roll}\" (Move {self.movement}\" + {advance_roll}\" = {self.movement + advance_roll}\")")
             return advance_roll
         return self.round_state.advance_roll
 
@@ -3513,6 +3599,39 @@ class Unit:
                     from ..utility.event_bus import append_dice
                     pn = self.get_parent_army().player.name
                     append_dice(pn, f"Advance roll: {advance_roll} for {self.name}")
+                except Exception:
+                    pass
+                # Optional rule-based reroll prompt (e.g., "re-roll Advance rolls")
+                try:
+                    _player = getattr(self.get_parent_army(), 'player', None)
+                    _game = getattr(_player, 'game', None) if _player else None
+                    def _reroll():
+                        new_roll = get_roll("D6")
+                        self.round_state.advance_roll = new_roll
+                        try:
+                            from ..utility.event_bus import append_dice as _append
+                            _append(_player.name, f"Advance re-roll: {new_roll} for {self.name}")
+                        except Exception:
+                            pass
+                        return new_roll
+                    reroll_used = False
+                    provider = getattr(getattr(_game, "map", None), "roll_reroll_provider", None)
+                    is_human = bool(getattr(getattr(_player, "type", None), "name", "") == "HUMAN")
+                    if is_human and callable(provider) and self.can_reroll_advance_roll():
+                        if bool(provider(player=_player, unit=self, roll_type="advance", value=advance_roll, dice=None)):
+                            advance_roll = _reroll()
+                            reroll_used = True
+                    # Publish roll event (best-effort)
+                    if _game is not None and hasattr(_game, "event_system"):
+                        _game.event_system.publish(
+                            "roll_made",
+                            player=_player,
+                            unit=self,
+                            roll_type="advance",
+                            value=advance_roll,
+                            reroll=_reroll,
+                            reroll_locked=bool(reroll_used),
+                        )
                 except Exception:
                     pass
                 self.round_state.advance_roll = advance_roll
