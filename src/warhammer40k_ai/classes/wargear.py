@@ -98,23 +98,37 @@ class WargearProfile:
         Parse keyword forms like:
         - "rapid fire" or "rapid fire 1" or "rapid fire D3"
         - "melta" or "melta 2" or "melta D3+2"
+        If multiple instances exist (e.g. "Sustained Hits 1" and "Sustained Hits 2"), they are NOT cumulative.
+        We default to choosing the "best" instance by highest statistical average (player-choice hook could be added later).
+
         Returns a Count (flat or dice). If absent, returns Count(FLAT, 0).
         """
         try:
             p = (prefix or "").strip().lower()
             if not p:
                 return Count.from_string("0")
+
+            candidates: list[Count] = []
             for kw in self.get_keywords():
                 raw = (kw or "").strip()
                 k = raw.lower()
                 if k == p:
-                    return Count.from_string(str(default))
+                    candidates.append(Count.from_string(str(default)))
+                    continue
                 if k.startswith(p + " "):
                     suffix = raw[len(prefix):].strip()
                     if not suffix:
-                        return Count.from_string(str(default))
+                        candidates.append(Count.from_string(str(default)))
+                        continue
                     # Normalize common cases: "d3" -> "D3"
-                    return Count.from_string(suffix.upper())
+                    candidates.append(Count.from_string(suffix.upper()))
+
+            if candidates:
+                # Choose the highest expected value (e.g. Sustained Hits 2 over Sustained Hits 1).
+                try:
+                    return max(candidates, key=lambda c: float(c.stat_average()))
+                except Exception:
+                    return candidates[0]
         except Exception:
             pass
         return Count.from_string("0")
@@ -1075,24 +1089,37 @@ class WargearProfile:
                     attack_instance['mortal_wound'] = True
                 return True
 
-            # Anti-X can make a roll count as a critical wound
-            anti_keyword, anti_value = self.is_anti()
-            if anti_keyword and target.has_keyword(anti_keyword):
-                if roll >= anti_value:
-                    wound_result['special_effects'].append(f"Anti-{anti_keyword} {anti_value}+")
-                    attack_instance['crit_wound'] = True
-                    has_temp_dev = False
+            # Anti-X can make a roll count as a critical wound.
+            # If multiple Anti- instances exist, they are not cumulative; pick the most permissive
+            # one that applies to this target (lowest required value).
+            try:
+                best = None
+                for kw, val in self.get_anti_specs():
                     try:
-                        has_temp_dev = bool(getattr(attacker, "has_temporary_devastating_wounds_melee", lambda: False)())
-                        if has_temp_dev:
-                            is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
-                            has_temp_dev = bool(is_melee)
+                        if kw and target.has_keyword(kw):
+                            if best is None or int(val) < int(best[1]):
+                                best = (kw, int(val))
                     except Exception:
+                        continue
+                if best is not None:
+                    anti_keyword, anti_value = best[0], int(best[1])
+                    if roll >= anti_value:
+                        wound_result['special_effects'].append(f"Anti-{anti_keyword} {anti_value}+")
+                        attack_instance['crit_wound'] = True
                         has_temp_dev = False
-                    if self.is_devastating_wounds() or _devastating_from_blessings() or has_temp_dev:
-                        wound_result['special_effects'].append("Devastating Wounds")
-                        attack_instance['mortal_wound'] = True
-                    return True
+                        try:
+                            has_temp_dev = bool(getattr(attacker, "has_temporary_devastating_wounds_melee", lambda: False)())
+                            if has_temp_dev:
+                                is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+                                has_temp_dev = bool(is_melee)
+                        except Exception:
+                            has_temp_dev = False
+                        if self.is_devastating_wounds() or _devastating_from_blessings() or has_temp_dev:
+                            wound_result['special_effects'].append("Devastating Wounds")
+                            attack_instance['mortal_wound'] = True
+                        return True
+            except Exception:
+                pass
 
             # Determine base wound threshold based on S vs T
             base_needed = None
@@ -1725,13 +1752,24 @@ class WargearProfile:
         # Defaults to Melta 1 when unspecified
         return self._get_keyword_suffix_count("melta", default=1)
 
-    def is_anti(self):
+    def get_anti_specs(self) -> list[tuple[str, int]]:
+        """Return all Anti-<keyword> <value>+ specs present on this profile (best-effort)."""
+        out: list[tuple[str, int]] = []
         for keyword in self.get_keywords():
-            if keyword.lower().startswith('anti-'):
-                parts = keyword[4:].replace('+', '').split(' ')
+            try:
+                raw = str(keyword or "").strip()
+                if not raw:
+                    continue
+                lower = raw.lower()
+                if not lower.startswith("anti-"):
+                    continue
+                # Format like "Anti-Vehicle 4+" or "Anti-Infantry 2+"
+                parts = raw[5:].replace("+", "").split(" ")
                 if len(parts) == 2 and parts[1].isdigit():
-                    return parts[0].lower(), int(parts[1])
-        return "", 0
+                    out.append((parts[0].lower(), int(parts[1])))
+            except Exception:
+                continue
+        return out
 
     def is_split_fire(self) -> bool:
         """Check if this weapon has split fire ability"""
