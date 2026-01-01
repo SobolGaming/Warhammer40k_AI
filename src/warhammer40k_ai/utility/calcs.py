@@ -838,6 +838,10 @@ def get_validation_rules(movement_type: MovementType, target_unit: 'Unit' = None
             'must_end_closer_to_enemies': True,
             'prefer_base_contact': True,  # Prefer ending in base-to-base contact
             'max_distance_override': PILE_IN_DISTANCE,  # Standard pile-in distance
+            # Fight phase moves should not pay pivot cost; this was causing valid 3" moves to be rejected.
+            'apply_pivot_cost': False,
+            # Pathfinding is discretized; allow a tiny epsilon so an intended 3.0" move doesn't get rejected as 3.04".
+            'distance_tolerance': 0.05,
         })
 
     elif movement_type == MovementType.CONSOLIDATE:
@@ -846,6 +850,10 @@ def get_validation_rules(movement_type: MovementType, target_unit: 'Unit' = None
             'must_end_closer_to_enemies_or_objectives': True,
             'prefer_base_contact': True,  # Prefer ending in base-to-base contact
             'max_distance_override': CONSOLIDATE_DISTANCE,  # Standard consolidate distance
+            # Fight phase moves should not pay pivot cost; this was causing valid 3" moves to be rejected.
+            'apply_pivot_cost': False,
+            # Pathfinding is discretized; allow a tiny epsilon so an intended 3.0" move doesn't get rejected as 3.04".
+            'distance_tolerance': 0.05,
         })
 
     elif movement_type == MovementType.FALL_BACK:
@@ -905,11 +913,13 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
     logger.debug("A* params: distance=%.2f, step=%.3f, max_iter=%s", straight_line_distance, step_size, max_iterations)
 
     def _snap(p: Tuple[float, float, float]) -> Tuple[float, float, float]:
-        # Quantize to the step grid to avoid float drift exploding the node count.
+        # Quantize to a step grid anchored at the start position to avoid float drift exploding
+        # the node count, while preserving exact user-supplied coordinates near the origin.
+        # (Global snapping can shift 10.0 -> 9.9 for step=0.3, breaking exact 3.0" tests.)
         return (
-            round(p[0] / step_size) * step_size,
-            round(p[1] / step_size) * step_size,
-            round(p[2] / step_size) * step_size,
+            start[0] + round((p[0] - start[0]) / step_size) * step_size,
+            start[1] + round((p[1] - start[1]) / step_size) * step_size,
+            start[2] + round((p[2] - start[2]) / step_size) * step_size,
         )
 
     start = _snap(start)
@@ -1065,7 +1075,12 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
 
             # Check distance limit
             max_dist = validation_rules.get('max_distance_override', max_distance)
-            if total_distance > max_dist:
+            tol = 0.0
+            try:
+                tol = float(validation_rules.get("distance_tolerance", 0.0) or 0.0)
+            except Exception:
+                tol = 0.0
+            if total_distance > (max_dist + tol):
                 return {
                     'valid': False,
                     'path': None,

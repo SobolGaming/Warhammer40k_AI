@@ -9,26 +9,12 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 
 ## Summary
 
-- Total stratagem rows: 1091
-- Core (global) stratagem rows (`faction_id == ""`): 23
+- Total stratagem rows: 1082
+- Core (global) stratagem rows (`faction_id == ""`): 14
 - Faction stratagem rows: 1068 (detachment-specific: 1068)
-- Excluded (Boarding Actions detachments / mode): 235
+- Excluded (Boarding Actions detachments / mode): 244
 
 ## Core Stratagems
-
-### Challenger
-
-| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
-|---|---:|---|---:|---|---|---|---|
-| ALL IN | `000010254002` | Challenger – Strategic Ploy Stratagem | 0 | Your turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| BURST OF SPEED | `000010247002` | Challenger – Strategic Ploy Stratagem | 0 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| FORCE A BREACH | `000010249002` | Challenger – Strategic Ploy Stratagem | 0 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| GREAT HASTE | `000010250002` | Challenger – Strategic Ploy Stratagem | 0 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| HARBOURED POWER | `000010253002` | Challenger – Wargear Stratagem | 0 | Your turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| OPPORTUNISTIC STRIKE | `000010248002` | Challenger – Strategic Ploy Stratagem | 0 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| PIVOTAL MOMENT | `000010251002` | Challenger – Strategic Ploy Stratagem | 0 | Your turn | Movement phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| RENEWED FOCUS | `000010252002` | Challenger – Battle Tactic Stratagem | 0 | Your turn | Shooting or Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| STRATEGIC RETREAT | `000010255002` | Challenger – Strategic Ploy Stratagem | 0 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 
 ### Core
 
@@ -38,13 +24,13 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | COUNTER-OFFENSIVE | `000008335003` | Core – Strategic Ploy Stratagem | 2 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | EPIC CHALLENGE | `000008335004` | Core – Epic Deed Stratagem | 1 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | FIRE OVERWATCH | `000008335009` | Core – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement or Charge phase | **Implemented** | Queued on enemy movement start/end; resolves shooting with hit-on-6s restriction. |
-| GO TO GROUND | `000008335010` | Core – Battle Tactic Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| GRENADE | `000008335006` | Core – Wargear Stratagem | 1 | Your turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| GO TO GROUND | `000008335010` | Core – Battle Tactic Stratagem | 1 | Opponent’s turn | Shooting phase | **Implemented** | Opponent Shooting phase: after targets selected; INFANTRY gains Benefit of Cover + 6++ until end of phase. |
+| GRENADE | `000008335006` | Core – Wargear Stratagem | 1 | Your turn | Shooting phase | **Implemented** | Shooting phase: pick a GRENADES unit + eligible enemy within 8"; roll 6D6; 4+ = 1 MW. |
 | HEROIC INTERVENTION | `000008335012` | Core – Strategic Ploy Stratagem | 1 | Opponent’s turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
 | INSANE BRAVERY | `000008335005` | Core – Epic Deed Stratagem | 1 | Your turn | Command phase | **Partial** | Implemented as a post-fail Battle-shock cancel (removes Battle-shock). Once-per-battle restriction not enforced; differs from datasheet timing. |
 | RAPID INGRESS | `000008335008` | Core – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement phase | **Implemented** | Queued at end of opponent Movement phase; places a reserves unit immediately. |
 | SMOKESCREEN | `000008335011` | Core – Wargear Stratagem | 1 | Opponent’s turn | Shooting phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
-| TANK SHOCK | `000008335007` | Core – Strategic Ploy Stratagem | 1 | Your turn | Charge phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| TANK SHOCK | `000008335007` | Core – Strategic Ploy Stratagem | 1 | Your turn | Charge phase | **Implemented** | Charge phase: after a VEHICLE ends a Charge move; roll D6 equal to a VEHICLE model’s Toughness; 5+ = 1 MW (max 6). |
 
 ### Core Stratagem
 

@@ -38,7 +38,15 @@ class FightPhaseManager:
         canonicalize any attached Leader selection to the bodyguard/root unit for fight sequencing.
         """
         try:
-            return unit.get_attached_unit_root()
+            root = unit.get_attached_unit_root()
+            # Defensive: tests often use lightweight mocks that may implement the method but
+            # return another Mock (not a real Unit). In that case, keep the original unit.
+            if root is None:
+                return unit
+            models = getattr(root, "models", None)
+            if not isinstance(models, list):
+                return unit
+            return root
         except Exception:
             return unit
 
@@ -238,7 +246,7 @@ class FightPhaseManager:
         for enemy_unit in list(enemy_units or []):
             # Treat enemy attached units as one target (root unit)
             try:
-                enemy_root = enemy_unit.get_attached_unit_root()
+                enemy_root = self._canonical_unit_for_fight(enemy_unit)
             except Exception:
                 enemy_root = enemy_unit
             if enemy_root is None:

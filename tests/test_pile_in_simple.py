@@ -69,11 +69,14 @@ class TestPileInValidationRules(unittest.TestCase):
             expected_rules = {
                 'prevent_friendly_overlap': True,
                 'prevent_enemy_overlap': True,
-                'apply_pivot_cost': True,
+                # Fight phase pile-in/consolidate moves should not pay pivot cost.
+                'apply_pivot_cost': False,
                 'check_terrain_traversal': True,
                 'must_end_closer_to_enemies': True,
                 'prefer_base_contact': True,
-                'max_distance_override': PILE_IN_DISTANCE
+                'max_distance_override': PILE_IN_DISTANCE,
+                # Pathfinding is discretized; allow a tiny epsilon so an intended 3.0" move doesn't get rejected.
+                'distance_tolerance': 0.05,
             }
             
             for rule_name, expected_value in expected_rules.items():

@@ -287,9 +287,14 @@ class StratagemManager:
         faction_id = getattr(army, "faction_id", None)
         detachment = getattr(army, "detachment_type", None)
         raw = self._waha.get_stratagems_for_faction(faction_id=faction_id, detachment=detachment)
-        # Exclude Boarding Actions and similar modes not used in standard games
+        # Exclude modes not used/supported in standard games
         tnorm = lambda t: (t or '').strip().lower()
-        filtered = [s for s in raw if 'boarding actions' not in tnorm(s.get('type')) and 'boarding action' not in tnorm(s.get('type'))]
+        filtered = [
+            s for s in raw
+            if 'boarding actions' not in tnorm(s.get('type'))
+            and 'boarding action' not in tnorm(s.get('type'))
+            and 'challenger' not in tnorm(s.get('type'))
+        ]
         # Prefer Core Stratagem variants and deduplicate by name (case-insensitive)
         def _sort_key(entry: dict) -> int:
             type_text = (entry.get('type', '') or '').strip().lower()
@@ -318,6 +323,8 @@ class StratagemManager:
         # Movement events for Overwatch
         es.subscribe("unit_move_started", self._on_unit_move_started)
         es.subscribe("unit_move_ended", self._on_unit_move_ended)
+        # Shooting targeting events for reaction stratagems (e.g. GO TO GROUND)
+        es.subscribe("shooting_targets_selected", self._on_shooting_targets_selected)
         # Dice events for Command Re-roll
         es.subscribe("roll_made", self._on_roll_made)
         # Kill events for faction stratagem triggers (subscribe only if this army can actually use them)
@@ -383,6 +390,21 @@ class StratagemManager:
                                 'cp_cost': s.cp_cost,
                                 'options': [c for c in self.player.active_secondaries],
                             })
+        except Exception:
+            pass
+
+        # Clear end-of-phase defensive buffs (e.g. GO TO GROUND) to avoid leaking into later phases (e.g. Overwatch).
+        try:
+            phase_name = getattr(phase, 'name', None)
+            if phase_name == 'SHOOTING_PHASE':
+                for u in list(getattr(self.player.get_army(), "units", []) or []):
+                    try:
+                        sr = getattr(u, "special_rules", None)
+                        if isinstance(sr, dict) and sr.get("go_to_ground_active") is True:
+                            sr.pop("go_to_ground_active", None)
+                            u.special_rules = sr
+                    except Exception:
+                        continue
         except Exception:
             pass
 
@@ -458,6 +480,116 @@ class StratagemManager:
 
     def _on_unit_move_ended(self, unit, action: str, **kwargs):
         self._maybe_queue_overwatch(unit, action, when='end')
+        self._maybe_queue_tank_shock(unit, action)
+
+    def _maybe_queue_tank_shock(self, charging_unit, action: str) -> None:
+        # Trigger condition: just after a VEHICLE unit from your army ends a Charge move.
+        try:
+            if str(action or "").strip().lower() != "charge":
+                return
+            if charging_unit is None or not getattr(charging_unit, "is_alive", lambda: True)():
+                return
+            # Must be your unit
+            owner_player = charging_unit.get_parent_army().player
+            if owner_player is not self.player:
+                return
+            # Must be Charge phase and your turn (best-effort; phase gate is also enforced at use-time)
+            if (self._current_phase_name or "").strip().lower() != "charge phase":
+                return
+            if not bool(getattr(charging_unit, "is_vehicle", False)):
+                return
+        except Exception:
+            return
+
+        s = self.get_by_name("TANK SHOCK")
+        if not s:
+            return
+        if self.player.command_points < s.cp_cost:
+            return
+
+        # Must have at least one enemy unit within Engagement Range
+        enemy_units = []
+        try:
+            enemy_units = list(self.game.map.get_enemy_units(charging_unit)) if self.game and getattr(self.game, "map", None) else []
+        except Exception:
+            enemy_units = []
+        eligible = []
+        for e in enemy_units:
+            try:
+                if e is None or not e.is_alive():
+                    continue
+                if self.game and getattr(self.game, "map", None) and self.game.map.is_within_engagement_range(charging_unit, e):
+                    eligible.append(e)
+            except Exception:
+                continue
+        if not eligible:
+            return
+
+        # Queue reaction: UI can choose enemy_unit later; default heuristic will pick the first.
+        self._pending_reactions.append({
+            "event": "charge_move_ended",
+            "phase_name": "Charge phase",
+            "stratagem": s.name,
+            "cp_cost": s.cp_cost,
+            "unit": charging_unit,
+            "target_unit": charging_unit,
+            "eligible_enemy_units": eligible,
+        })
+        try:
+            if hasattr(self.game, "event_system"):
+                self.game.event_system.publish("stratagem_window", player=self.player, duration=3.0)
+        except Exception:
+            pass
+
+    def _on_shooting_targets_selected(self, attacking_unit=None, target_units=None, **kwargs):
+        """
+        Reaction window for GO TO GROUND:
+        Opponent Shooting phase, just after an enemy unit has selected its targets.
+        """
+        try:
+            if not self.game or not getattr(self.game, "map", None):
+                return
+            if (self._current_phase_name or "").strip().lower() != "shooting phase":
+                return
+            # This event is published by the active shooter's execution; we offer to the NON-active player.
+            if attacking_unit is None:
+                return
+            owner_player = attacking_unit.get_parent_army().player
+            if owner_player is self.player:
+                return  # only opponent can react
+            s = self.get_by_name("GO TO GROUND")
+            if not s:
+                return
+            if self.player.command_points < s.cp_cost:
+                return
+            candidates = []
+            for u in list(target_units or []):
+                try:
+                    if u is None or not u.is_alive():
+                        continue
+                    if u.get_parent_army().player is not self.player:
+                        continue
+                    if not bool(getattr(u, "is_infantry", False)):
+                        continue
+                    if _unit_cannot_be_target_of_stratagem(u):
+                        continue
+                    candidates.append(u)
+                except Exception:
+                    continue
+            if not candidates:
+                return
+            # Queue as a reaction with candidates; UI may choose which unit to protect.
+            self._pending_reactions.append({
+                "event": "shooting_targets_selected",
+                "phase_name": "Shooting phase",
+                "stratagem": s.name,
+                "cp_cost": s.cp_cost,
+                "attacking_unit": attacking_unit,
+                "candidates": candidates,
+            })
+            self.game.event_system.publish("stratagem_window", player=self.player, duration=3.0)
+        except Exception:
+            return
 
     def _maybe_queue_overwatch(self, moving_unit, action: str, when: str) -> None:
         # Only offer to the opponent of the moving unit's owner
@@ -978,6 +1110,201 @@ class StratagemManager:
                 print("⚠️ Rapid Ingress succeeded but CP spend failed; adjusting CP manually")
             print(f"🪂 Rapid Ingress: {target.name} arrived from reserves")
             if kwargs.get('dequeue') is True:
+                self._dequeue_reaction_by_name(s.name)
+            return True
+
+        # Core: GO TO GROUND
+        if s.name.upper() == "GO TO GROUND":
+            target = kwargs.get("unit") or kwargs.get("target_unit")
+            if target is None:
+                cand = kwargs.get("candidates") or []
+                if cand:
+                    target = cand[0]
+            if target is None:
+                print("❌ GO TO GROUND: no target unit provided")
+                return False
+            # Spend CP
+            if not self.player.spend_command_points(s.cp_cost):
+                return False
+            # Mark active until end of Shooting phase; cleared in _on_phase_end.
+            try:
+                sr = getattr(target, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["go_to_ground_active"] = True
+                target.special_rules = sr
+                print(f"🛡️ GO TO GROUND used on {getattr(target, 'name', 'Unit')}: Benefit of Cover + 6++ until end of phase")
+            except Exception:
+                pass
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            return True
+
+        # Core: GRENADE
+        if s.name.upper() == "GRENADE":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            enemy = kwargs.get("enemy_unit")
+            if unit is None:
+                # Best-effort pick: first eligible GRENADES unit from your army
+                for u in list(getattr(self.player.get_army(), "units", []) or []):
+                    try:
+                        if not u.is_alive() or not getattr(u, "deployed", False):
+                            continue
+                        if not u.has_keyword("Grenades"):
+                            continue
+                        if getattr(u.round_state, "advanced_this_round", False) or getattr(u.round_state, "fell_back_this_round", False) or getattr(u.round_state, "shot_this_round", False):
+                            continue
+                        if self.game and getattr(self.game, "map", None):
+                            if any(self.game.map.is_within_engagement_range(u, e) for e in (self.game.map.get_enemy_units(u) or []) if e.is_alive()):
+                                continue
+                        unit = u
+                        break
+                    except Exception:
+                        continue
+            if unit is None:
+                print("❌ GRENADE: no eligible friendly GRENADES unit")
+                return False
+            if enemy is None and self.game and getattr(self.game, "map", None):
+                # Best-effort: pick the first eligible enemy within 8" and visible, and not in engagement range of any friendly unit.
+                try:
+                    enemies = list(self.game.map.get_enemy_units(unit)) or []
+                except Exception:
+                    enemies = []
+                for e in enemies:
+                    try:
+                        if e is None or not e.is_alive():
+                            continue
+                        # Enemy must not be within engagement range of any friendly unit
+                        ok = True
+                        for f in list(getattr(self.player.get_army(), "units", []) or []):
+                            if f is None or not getattr(f, "deployed", False) or not f.is_alive():
+                                continue
+                            if self.game.map.is_within_engagement_range(f, e):
+                                ok = False
+                                break
+                        if not ok:
+                            continue
+                        if self.game.map.get_distance_between_units(unit, e) > 8.0:
+                            continue
+                        # Visibility: any model in unit can see any model in enemy
+                        vis = False
+                        for m in (unit.get_models_for_collision() or []):
+                            if not getattr(m, "is_alive", False):
+                                continue
+                            for tm in (e.get_models_for_collision() or []):
+                                if not getattr(tm, "is_alive", False):
+                                    continue
+                                if self.game.map.can_model_see_model(m, tm):
+                                    vis = True
+                                    break
+                            if vis:
+                                break
+                        if not vis:
+                            continue
+                        enemy = e
+                        break
+                    except Exception:
+                        continue
+            if enemy is None:
+                print("❌ GRENADE: no eligible enemy target found/provided")
+                return False
+            # Spend CP
+            if not self.player.spend_command_points(s.cp_cost):
+                return False
+            # Roll 6D6; each 4+ = 1 mortal wound
+            from ..utility.dice import get_roll
+            rolls = [get_roll("D6") for _ in range(6)]
+            mw = sum(1 for r in rolls if int(r) >= 4)
+            try:
+                print(f"💣 GRENADE: rolls={rolls} -> {mw} mortal wounds to {enemy.name}")
+            except Exception:
+                pass
+            if mw > 0:
+                try:
+                    unit._apply_mortal_wounds_to_unit(enemy, int(mw), game_map=getattr(self.game, "map", None))
+                except Exception:
+                    pass
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            return True
+
+        # Core: TANK SHOCK
+        if s.name.upper() == "TANK SHOCK":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            enemy = kwargs.get("enemy_unit")
+            eligible_enemies = kwargs.get("eligible_enemy_units") or []
+            if unit is None:
+                print("❌ TANK SHOCK: no charging VEHICLE unit provided")
+                return False
+            if not bool(getattr(unit, "is_vehicle", False)):
+                print("❌ TANK SHOCK: target unit is not a VEHICLE")
+                return False
+            if enemy is None:
+                enemy = eligible_enemies[0] if eligible_enemies else None
+            if enemy is None and self.game and getattr(self.game, "map", None):
+                try:
+                    for e in (self.game.map.get_enemy_units(unit) or []):
+                        if e is None or not e.is_alive():
+                            continue
+                        if self.game.map.is_within_engagement_range(unit, e):
+                            enemy = e
+                            break
+                except Exception:
+                    enemy = None
+            if enemy is None:
+                print("❌ TANK SHOCK: no enemy unit in Engagement Range")
+                return False
+            # Spend CP
+            if not self.player.spend_command_points(s.cp_cost):
+                return False
+            # Pick a VEHICLE model in your unit within ER of that enemy unit.
+            chosen_model = None
+            try:
+                from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
+                from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VERTICAL
+                for m in unit.get_models_for_collision():
+                    if not getattr(m, "is_alive", False):
+                        continue
+                    for tm in enemy.get_models_for_collision():
+                        if not getattr(tm, "is_alive", False):
+                            continue
+                        hd = float(horizontal_distance_between_bases_2d(m.model_base, tm.model_base))
+                        vd = float(vertical_distance_between_bases(m.model_base, tm.model_base))
+                        if hd <= ENGAGEMENT_RANGE_HORIZONTAL and vd <= ENGAGEMENT_RANGE_VERTICAL:
+                            chosen_model = m
+                            break
+                    if chosen_model is not None:
+                        break
+            except Exception:
+                chosen_model = None
+            if chosen_model is None:
+                try:
+                    chosen_model = next(m for m in unit.get_models_for_collision() if getattr(m, "is_alive", False))
+                except Exception:
+                    chosen_model = None
+            if chosen_model is None:
+                print("❌ TANK SHOCK: no alive VEHICLE model found")
+                return False
+            try:
+                tval = int(getattr(chosen_model, "toughness", getattr(unit, "toughness", 0)) or 0)
+            except Exception:
+                tval = 0
+            if tval <= 0:
+                print("❌ TANK SHOCK: could not determine Toughness for VEHICLE model")
+                return False
+            from ..utility.dice import get_roll
+            rolls = [get_roll("D6") for _ in range(int(tval))]
+            mw = min(6, sum(1 for r in rolls if int(r) >= 5))
+            try:
+                print(f"🚙 TANK SHOCK: rolls={rolls} (T{tval}) -> {mw} mortal wounds to {enemy.name}")
+            except Exception:
+                pass
+            if mw > 0:
+                try:
+                    unit._apply_mortal_wounds_to_unit(enemy, int(mw), game_map=getattr(self.game, "map", None))
+                except Exception:
+                    pass
+            if kwargs.get("dequeue") is True:
                 self._dequeue_reaction_by_name(s.name)
             return True
 

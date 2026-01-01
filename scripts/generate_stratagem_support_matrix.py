@@ -154,6 +154,9 @@ def _support_classification(row: StratagemRow) -> Tuple[str, str]:
         "FIRE OVERWATCH": "Queued on enemy movement start/end; resolves shooting with hit-on-6s restriction.",
         "RAPID INGRESS": "Queued at end of opponent Movement phase; places a reserves unit immediately.",
         "NEW ORDERS": "End of your Command phase: discard 1 active Secondary and draw (Leviathan-style).",
+        "TANK SHOCK": "Charge phase: after a VEHICLE ends a Charge move; roll D6 equal to a VEHICLE model’s Toughness; 5+ = 1 MW (max 6).",
+        "GRENADE": "Shooting phase: pick a GRENADES unit + eligible enemy within 8\"; roll 6D6; 4+ = 1 MW.",
+        "GO TO GROUND": "Opponent Shooting phase: after targets selected; INFANTRY gains Benefit of Cover + 6++ until end of phase.",
     }
     if name_u in implemented:
         return ("Implemented", implemented[name_u])
@@ -180,6 +183,10 @@ def _write_md(rows: List[StratagemRow], factions: Dict[str, Dict[str, str]]) -> 
     filtered_rows: List[StratagemRow] = []
     for r in rows:
         mode = _mode_from_type(r.type).strip().lower()
+        # We will not support the "Challenger" stratagem pack; exclude from reporting.
+        if mode == "challenger":
+            excluded += 1
+            continue
         if mode == "boarding actions" or "boarding action" in (r.type or "").lower():
             excluded += 1
             continue

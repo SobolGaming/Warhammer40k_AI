@@ -3833,6 +3833,15 @@ class Unit:
         if not self.models:
             logger.error(f"Cannot charge move unit {self.name}: no models in unit")
             return False
+
+        # Publish movement start for stratagem reaction windows (e.g. FIRE OVERWATCH).
+        try:
+            _player = getattr(self.get_parent_army(), 'player', None)
+            _game = getattr(_player, 'game', None) if _player else None
+            if _game and hasattr(_game, 'event_system'):
+                _game.event_system.publish("unit_move_started", unit=self, action="charge")
+        except Exception:
+            pass
         
         # Get starting position from first model
         if not self.models or not self.models[0].is_alive:
@@ -4139,6 +4148,14 @@ class Unit:
         self.round_state.moved_this_round = True
         
         logger.info(f"Unit {self.name} charge moved from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
+        # Publish movement end for stratagem reaction windows (e.g. TANK SHOCK / FIRE OVERWATCH on Charge moves).
+        try:
+            _player = getattr(self.get_parent_army(), 'player', None)
+            _game = getattr(_player, 'game', None) if _player else None
+            if _game and hasattr(_game, 'event_system'):
+                _game.event_system.publish("unit_move_ended", unit=self, action="charge")
+        except Exception:
+            pass
         return True
 
     def fall_back(self, destination: Tuple[float, float, float], path: List[Tuple[float, float, float]], game_map: 'Map') -> bool:
@@ -4477,6 +4494,14 @@ class Unit:
         """
         # Check for Assault weapons
         if profile.is_assault():
+            # Publish movement end for stratagem reaction windows (e.g. TANK SHOCK / FIRE OVERWATCH on Charge moves).
+            try:
+                _player = getattr(self.get_parent_army(), 'player', None)
+                _game = getattr(_player, 'game', None) if _player else None
+                if _game and hasattr(_game, 'event_system'):
+                    _game.event_system.publish("unit_move_ended", unit=self, action="charge")
+            except Exception:
+                pass
             return True
             
         # Check for unit abilities that allow advance and shoot
@@ -5001,6 +5026,25 @@ class Unit:
         successful_attacks = 0
         
         # Begin attack resolution window(s) for targets (so attached leaders don't separate mid-sequence)
+        # Publish a reaction window for defensive stratagems (e.g. GO TO GROUND) right after targets are selected.
+        try:
+            if weapon_declarations and hasattr(self, "get_parent_army") and self.get_parent_army() is not None:
+                game = getattr(self.get_parent_army().player, "game", None)
+                if game is not None and hasattr(game, "event_system"):
+                    touched_targets = set()
+                    for decl in weapon_declarations:
+                        t = decl.get("target_unit")
+                        if t is not None:
+                            touched_targets.add(t)
+                    if touched_targets:
+                        game.event_system.publish(
+                            "shooting_targets_selected",
+                            attacking_unit=self,
+                            target_units=list(touched_targets),
+                        )
+        except Exception:
+            pass
+
         touched_targets = set()
         try:
             for decl in weapon_declarations:

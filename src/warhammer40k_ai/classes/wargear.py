@@ -1427,10 +1427,35 @@ class WargearProfile:
             'special_effects': []
         }
         
+        # Stratagem / rule-driven defensive modifiers that need to be reflected in the attack_instance.
+        # GO TO GROUND: 6++ invulnerable + Benefit of Cover until end of phase.
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            sr = getattr(t_unit, "special_rules", None) if t_unit is not None else None
+            if isinstance(sr, dict) and sr.get("go_to_ground_active") is True:
+                attack_instance.setdefault("benefit_of_cover", True)
+                attack_instance.setdefault("benefit_of_cover_source", "GO TO GROUND")
+                attack_instance.setdefault("inv_save_override", 6)
+        except Exception:
+            pass
+
         # Calculate save value
         save_value = target_model.save - ap
         save_result['final_save'] = save_value
         inv_save, inv_save_condition = target_model.inv_save
+
+        # Invulnerable override (e.g. GO TO GROUND 6++) can grant an invuln save even if the model lacks one.
+        try:
+            inv_override = attack_instance.get("inv_save_override", None)
+            if inv_override is not None:
+                inv_override = int(inv_override)
+                if inv_override and inv_override < save_value:
+                    save_value = inv_override
+                    save_result['save_type'] = 'invulnerable'
+                    save_result['final_save'] = save_value
+                    save_result['special_effects'].append(f"Invulnerable save {inv_override}+ (override)")
+        except Exception:
+            pass
         
         if inv_save:
             # Check invulnerable save condition (string-based, not callable)
