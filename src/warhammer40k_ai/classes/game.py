@@ -3604,6 +3604,31 @@ class Game:
             self.battle_round_starting_player_index = self.current_player_index
             self.phase = BattleRoundPhases.COMMAND_PHASE
 
+            # BR1 start-of-battle-round hook:
+            # At game start we haven't completed a full round cycle yet, so the normal
+            # next_phase() logic won't publish battle_round_started until BR2.
+            # Publish it now so "start of the first battle round" abilities trigger (e.g. Shalaxi quarry).
+            try:
+                for player in list(getattr(self, "players", []) or []):
+                    if player is None:
+                        continue
+                    try:
+                        for unit in list(getattr(player.get_army(), "units", []) or []):
+                            try:
+                                unit.initialize_round()
+                            except Exception:
+                                continue
+                    except Exception:
+                        pass
+                    # Army-level battle round start hook (faction rules/buffs)
+                    try:
+                        player.get_army().on_battle_round_start(self.turn)
+                    except Exception:
+                        pass
+                self.event_system.publish("battle_round_started", game=self, battle_round=self.turn)
+            except Exception:
+                pass
+
             # Show detailed first turn information
             first_turn_player = self.get_current_player()
             if self.first_turn_player_index == self.attacker_index:
