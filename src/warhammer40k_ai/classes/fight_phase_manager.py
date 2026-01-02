@@ -30,6 +30,13 @@ class FightPhaseManager:
         self.active_player = None  # Player who needs to select next
         self.fought_units = set()  # Units that have already fought this phase
         self.stage_complete = False
+        # Counter-Offensive support: force a specific unit to fight next.
+        self._forced_next_unit = None
+        self._forced_next_player = None
+        # Cache fight phase players for refresh requests.
+        self._current_player = None
+        self._opponent_player = None
+
     def _canonical_unit_for_fight(self, unit: Unit) -> Unit:
         """
         Attached Units are treated as one unit in 10e.
@@ -85,6 +92,10 @@ class FightPhaseManager:
         self.fought_units.clear()
         self.current_stage = FightStage.FIGHT_FIRST
         self.stage_complete = False
+        self._forced_next_unit = None
+        self._forced_next_player = None
+        self._current_player = current_player
+        self._opponent_player = opponent_player
         
         # In fight phase, the non-current player goes first
         self.active_player = opponent_player
@@ -150,6 +161,20 @@ class FightPhaseManager:
     
     def _request_unit_selection(self, current_player: Player, opponent_player: Player) -> None:
         """Request unit selection from the active player."""
+        # Counter-Offensive: force a specific unit to fight next (ignore stage).
+        try:
+            if self._forced_next_unit is not None and self._forced_next_player is not None:
+                self.active_player = self._forced_next_player
+                forced = self._canonical_unit_for_fight(self._forced_next_unit)
+                if self._is_forced_unit_valid(forced):
+                    eligible_units = [forced]
+                    if self.on_unit_selection_required:
+                        self.on_unit_selection_required(self.active_player, eligible_units, self.current_stage)
+                    return
+                self._forced_next_unit = None
+                self._forced_next_player = None
+        except Exception:
+            pass
         # Get eligible units for the active player in current stage
         eligible_units = self._get_eligible_units_for_player(self.active_player)
         
@@ -209,10 +234,75 @@ class FightPhaseManager:
                 continue
             roots.append(root)
         return roots
+
+    def _is_forced_unit_valid(self, unit: Unit) -> bool:
+        if unit is None:
+            return False
+        try:
+            if unit in self.fought_units:
+                return False
+        except Exception:
+            pass
+        try:
+            if not unit.is_alive():
+                return False
+        except Exception:
+            pass
+        try:
+            if not unit.is_eligible_to_fight(self.game.map):
+                return False
+        except Exception:
+            pass
+        return True
+
+    def force_next_unit(self, unit: Unit, player: Player) -> bool:
+        """Force a specific unit to fight next (Counter-Offensive)."""
+        if unit is None or player is None:
+            return False
+        unit = self._canonical_unit_for_fight(unit)
+        try:
+            if unit.get_parent_army().player is not player:
+                return False
+        except Exception:
+            pass
+        if not self._is_forced_unit_valid(unit):
+            return False
+        self._forced_next_unit = unit
+        self._forced_next_player = player
+        return True
+
+    def finalize_unit_fight(self, fighting_unit: Unit, current_player: Player, opponent_player: Player) -> None:
+        """Finalize a unit's fight sequence and advance turn order."""
+        fighting_unit = self._canonical_unit_for_fight(fighting_unit)
+        # Mark unit as having fought
+        self.fought_units.add(fighting_unit)
+        try:
+            fighting_unit.round_state.fought_this_phase = True
+        except Exception:
+            pass
+        # Publish event for reaction stratagems (e.g. Counter-Offensive)
+        try:
+            if hasattr(self.game, "event_system"):
+                self.game.event_system.publish(
+                    "fight_sequence_complete",
+                    unit=fighting_unit,
+                    player=self.active_player,
+                    stage=self.current_stage,
+                )
+        except Exception:
+            pass
+        # Switch to other player for next selection
+        self._switch_active_player(current_player, opponent_player)
     
     def unit_selected(self, selected_unit: Unit, current_player: Player, opponent_player: Player) -> None:
         """Handle unit selection from the active player."""
         selected_unit = self._canonical_unit_for_fight(selected_unit)
+        try:
+            if self._forced_next_unit is not None and selected_unit is self._forced_next_unit:
+                self._forced_next_unit = None
+                self._forced_next_player = None
+        except Exception:
+            pass
         print(f"⚔️ {self.active_player.name} selected {selected_unit.name} to fight")
 
         # Publish an event so reaction stratagems (e.g. EPIC CHALLENGE) can open a window.
@@ -310,14 +400,7 @@ class FightPhaseManager:
                     print(f"🏃 {fighting_unit.name} consolidate completed: {completed}")
 
                     # Mark unit as having fought
-                    self.fought_units.add(fighting_unit)
-                    try:
-                        fighting_unit.round_state.fought_this_phase = True
-                    except Exception:
-                        pass
-
-                    # Switch to other player for next selection
-                    self._switch_active_player(current_player, opponent_player)
+                    self.finalize_unit_fight(fighting_unit, current_player, opponent_player)
 
                 # Show consolidate dialog
                 ui_callback('consolidate', fighting_unit, on_consolidate_complete)
@@ -347,15 +430,7 @@ class FightPhaseManager:
         print(f"🏃 {fighting_unit.name} consolidates...")
         fighting_unit.consolidate_towards_enemies(self.game.map)
 
-        # Mark unit as having fought
-        self.fought_units.add(fighting_unit)
-        try:
-            fighting_unit.round_state.fought_this_phase = True
-        except Exception:
-            pass
-
-        # Switch to other player for next selection
-        self._switch_active_player(current_player, opponent_player)
+        self.finalize_unit_fight(fighting_unit, current_player, opponent_player)
     
     def _execute_fight_sequence_with_declarations(self, fighting_unit: Unit, target_declarations: Dict[Unit, List['Model']], current_player: Player, opponent_player: Player, ui_callback=None) -> None:
         """Execute the complete fight sequence with target declarations."""
@@ -386,15 +461,7 @@ class FightPhaseManager:
             def on_consolidate_complete(completed: bool):
                 print(f"🏃 {fighting_unit.name} consolidate completed: {completed}")
 
-                # Mark unit as having fought
-                self.fought_units.add(fighting_unit)
-                try:
-                    fighting_unit.round_state.fought_this_phase = True
-                except Exception:
-                    pass
-
-                # Switch to other player for next selection
-                self._switch_active_player(current_player, opponent_player)
+                self.finalize_unit_fight(fighting_unit, current_player, opponent_player)
 
             # Show consolidate dialog
             ui_callback('consolidate', fighting_unit, on_consolidate_complete)
@@ -418,15 +485,7 @@ class FightPhaseManager:
         print(f"🏃 {fighting_unit.name} consolidates...")
         fighting_unit.consolidate_towards_enemies(self.game.map)
         
-        # Mark unit as having fought
-        self.fought_units.add(fighting_unit)
-        try:
-            fighting_unit.round_state.fought_this_phase = True
-        except Exception:
-            pass
-        
-        # Switch to other player for next selection
-        self._switch_active_player(current_player, opponent_player)
+        self.finalize_unit_fight(fighting_unit, current_player, opponent_player)
     
     def _switch_active_player(self, current_player: Player, opponent_player: Player) -> None:
         """Switch the active player and continue the fight phase."""

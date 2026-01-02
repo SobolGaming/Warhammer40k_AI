@@ -503,6 +503,34 @@ class GameView:
                 on_chosen(cand[0])
         setattr(self.stratagem_dialog, 'on_request_rapid_ingress_unit', _request_rapid_ingress_unit)
 
+        def _request_counter_offensive_unit(player, game, candidates, on_chosen):
+            cand = list(candidates or [])
+            if not cand:
+                try:
+                    cand = list(game.get_eligible_fighting_units(player))
+                except Exception:
+                    cand = []
+            try:
+                fight_mgr = getattr(game, "fight_phase_manager", None)
+                fought = getattr(fight_mgr, "fought_units", set()) if fight_mgr else set()
+                cand = [u for u in cand if u not in fought]
+            except Exception:
+                pass
+            if not cand:
+                on_chosen(None)
+                return
+            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
+                self.overwatch_shooter_dialog.show(
+                    cand,
+                    None,
+                    lambda unit: (self.overwatch_shooter_dialog.hide(), on_chosen(unit)),
+                    title="Select Counter-Offensive Unit",
+                    subtitle="Choose a unit to fight next",
+                )
+            else:
+                on_chosen(cand[0])
+        setattr(self.stratagem_dialog, 'on_request_counter_offensive_unit', _request_counter_offensive_unit)
+
         # Generic yes/no prompt hook for optional ability decisions (e.g., Direct the Slaughter)
         def _request_yes_no(title: str, message: str, yes_label: str, no_label: str, on_chosen):
             self.yes_no_dialog.show(
@@ -4863,6 +4891,10 @@ class BattlePhaseHandler(BasePhaseHandler):
         """Initialize the fight phase manager with proper callbacks."""
         print("🎯 Initializing Fight Phase Manager")
         self.fight_phase_manager = FightPhaseManager(self.game)
+        try:
+            self.game.fight_phase_manager = self.fight_phase_manager
+        except Exception:
+            pass
         
         # Set up callbacks for human player interaction
         def on_unit_selection_required(active_player: Player, eligible_units: List[Unit], stage: FightStage):
@@ -4932,6 +4964,10 @@ class BattlePhaseHandler(BasePhaseHandler):
         def on_stage_complete():
             print("✅ Fight Phase complete")
             self.fight_phase_manager = None
+            try:
+                self.game.fight_phase_manager = None
+            except Exception:
+                pass
             # Advance to next phase
             self.game.next_phase()
 
@@ -5071,15 +5107,7 @@ class BattlePhaseHandler(BasePhaseHandler):
         def on_consolidate_complete(completed: bool):
             print(f"🏃 {fighting_unit.name} consolidate completed: {completed}")
             
-            # Mark unit as having fought
-            self.fight_phase_manager.fought_units.add(fighting_unit)
-            try:
-                fighting_unit.round_state.fought_this_phase = True
-            except Exception:
-                pass
-            
-            # Switch to other player for next selection
-            self.fight_phase_manager._switch_active_player(current_player, opponent_player)
+            self.fight_phase_manager.finalize_unit_fight(fighting_unit, current_player, opponent_player)
         
         # Start consolidate movement
         print(f"🏃 {fighting_unit.name} needs to perform consolidate movement")

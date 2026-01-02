@@ -21,7 +21,7 @@ Generated from `wahapedia_data/Stratagems.json` (and faction names from `wahaped
 | Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |
 |---|---:|---|---:|---|---|---|---|
 | COMMAND RE-ROLL | `000008335002` | Core – Battle Tactic Stratagem | 1 | Either player’s turn | Any phase | **Implemented** | Queued on `roll_made`; executes a reroll callback; limited by core once-per-phase stratagem rule (per player). |
-| COUNTER-OFFENSIVE | `000008335003` | Core – Strategic Ploy Stratagem | 2 | Either player’s turn | Fight phase | **Not implemented** | No effect logic currently wired (would just spend CP and log a warning). |
+| COUNTER-OFFENSIVE | `000008335003` | Core - Strategic Ploy Stratagem | 2 | Either player's turn | Fight phase | **Implemented** | Fight phase: after an enemy unit fights, select a friendly eligible unit to fight next (can override stage). |
 | EPIC CHALLENGE | `000008335004` | Core – Epic Deed Stratagem | 1 | Either player’s turn | Fight phase | **Implemented** | Fight phase: when a CHARACTER is selected to fight near an enemy Attached unit; one CHARACTER model’s melee attacks gain [PRECISION] until end of phase. |
 | FIRE OVERWATCH | `000008335009` | Core – Strategic Ploy Stratagem | 1 | Opponent’s turn | Movement or Charge phase | **Implemented** | Queued on enemy movement start/end; resolves shooting with hit-on-6s restriction. |
 | GO TO GROUND | `000008335010` | Core – Battle Tactic Stratagem | 1 | Opponent’s turn | Shooting phase | **Implemented** | Opponent Shooting phase: after targets selected; INFANTRY gains Benefit of Cover + 6++ until end of phase. |

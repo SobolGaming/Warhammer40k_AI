@@ -355,6 +355,8 @@ class StratagemManager:
         es.subscribe("shooting_targets_selected", self._on_shooting_targets_selected)
         # Fight phase selections for reaction stratagems (e.g. EPIC CHALLENGE)
         es.subscribe("fight_unit_selected", self._on_fight_unit_selected)
+        # Fight sequence completion for COUNTER-OFFENSIVE
+        es.subscribe("fight_sequence_complete", self._on_fight_sequence_complete)
         # Dice events for Command Re-roll
         es.subscribe("roll_made", self._on_roll_made)
         self._event_subscribed = True
@@ -786,6 +788,104 @@ class StratagemManager:
         except Exception:
             return
 
+    def _on_fight_sequence_complete(self, unit=None, player=None, stage=None, **kwargs):
+        """
+        Reaction window for COUNTER-OFFENSIVE:
+        Fight phase, just after an enemy unit has fought.
+        """
+        try:
+            if unit is None or not self.game:
+                return
+            if (self._current_phase_name or "").strip().lower() != "fight phase":
+                return
+            # Offer only to the opponent of the unit that just fought
+            owner_player = None
+            try:
+                owner_player = unit.get_parent_army().player
+            except Exception:
+                owner_player = player
+            if owner_player is None or owner_player is self.player:
+                return
+            s = self.get_by_name("COUNTER-OFFENSIVE")
+            if not s:
+                return
+            if self.player.command_points < s.cp_cost:
+                return
+            if (s.name or "").strip().upper() in self._used_stratagems_this_phase:
+                return
+            # Avoid duplicate pending entries
+            for r in self._pending_reactions:
+                if str(r.get("stratagem", "")).strip().upper() == "COUNTER-OFFENSIVE":
+                    return
+            # Build eligible candidates (any unit that can fight and has not fought)
+            try:
+                if hasattr(self.game, "get_eligible_fighting_units"):
+                    base_units = list(self.game.get_eligible_fighting_units(self.player))
+                else:
+                    base_units = list(getattr(self.player.get_army(), "units", []) or [])
+            except Exception:
+                base_units = []
+            fight_mgr = getattr(self.game, "fight_phase_manager", None)
+            try:
+                fought = set(getattr(fight_mgr, "fought_units", set()) or []) if fight_mgr else set()
+            except Exception:
+                fought = set()
+            canonicalize = getattr(fight_mgr, "_canonical_unit_for_fight", None) if fight_mgr else None
+            candidates = []
+            seen = set()
+            for u in list(base_units or []):
+                try:
+                    root = canonicalize(u) if callable(canonicalize) else u
+                except Exception:
+                    root = u
+                if root is None:
+                    continue
+                rid = id(root)
+                if rid in seen:
+                    continue
+                seen.add(rid)
+                try:
+                    if root in fought:
+                        continue
+                except Exception:
+                    pass
+                try:
+                    if getattr(root, "round_state", None) and getattr(root.round_state, "fought_this_phase", False):
+                        continue
+                except Exception:
+                    pass
+                try:
+                    if _unit_cannot_be_target_of_stratagem(root):
+                        continue
+                except Exception:
+                    pass
+                try:
+                    if root.get_parent_army().player is not self.player:
+                        continue
+                except Exception:
+                    pass
+                try:
+                    if hasattr(root, "is_eligible_to_fight") and callable(root.is_eligible_to_fight):
+                        if not root.is_eligible_to_fight(self.game.map):
+                            continue
+                except Exception:
+                    pass
+                candidates.append(root)
+            if not candidates:
+                return
+            self._pending_reactions.append({
+                "event": "fight_sequence_complete",
+                "phase_name": "Fight phase",
+                "stratagem": s.name,
+                "cp_cost": s.cp_cost,
+                "enemy_unit": unit,
+                "stage": stage,
+                "candidates": candidates,
+            })
+            self.game.event_system.publish("stratagem_window", player=self.player, duration=3.0)
+        except Exception:
+            return
+
     def _maybe_queue_overwatch(self, moving_unit, action: str, when: str) -> None:
         # Only offer to the opponent of the moving unit's owner
         try:
@@ -1077,6 +1177,82 @@ class StratagemManager:
             self._used_once_per_battle["INSANE BRAVERY"] = True
             try:
                 print(f"🛡️ INSANE BRAVERY used on {getattr(target, 'name', 'Unit')}: next Battle-shock test auto-passes (once per battle)")
+            except Exception:
+                pass
+            if kwargs.get('dequeue') is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
+            return True
+
+        # Core: COUNTER-OFFENSIVE
+        if s.name.upper() == "COUNTER-OFFENSIVE":
+            target_unit = kwargs.get("target_unit") or kwargs.get("unit")
+            if target_unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "COUNTER-OFFENSIVE":
+                        cands = r.get("candidates") or []
+                        if cands:
+                            target_unit = cands[0]
+                        break
+            if target_unit is None:
+                print("ERROR: COUNTER-OFFENSIVE: no target unit provided")
+                return False
+            if (self._current_phase_name or "").strip().lower() != "fight phase":
+                print("ERROR: COUNTER-OFFENSIVE: not in Fight phase")
+                return False
+            fight_mgr = getattr(self.game, "fight_phase_manager", None)
+            try:
+                if fight_mgr and hasattr(fight_mgr, "_canonical_unit_for_fight"):
+                    target_unit = fight_mgr._canonical_unit_for_fight(target_unit)
+            except Exception:
+                pass
+            try:
+                if target_unit.get_parent_army().player is not self.player:
+                    print("ERROR: COUNTER-OFFENSIVE: target unit is not yours")
+                    return False
+            except Exception:
+                pass
+            try:
+                if fight_mgr and hasattr(fight_mgr, "fought_units") and target_unit in fight_mgr.fought_units:
+                    print("ERROR: COUNTER-OFFENSIVE: target unit already fought this phase")
+                    return False
+            except Exception:
+                pass
+            try:
+                if getattr(target_unit, "round_state", None) and getattr(target_unit.round_state, "fought_this_phase", False):
+                    print("ERROR: COUNTER-OFFENSIVE: target unit already fought this phase")
+                    return False
+            except Exception:
+                pass
+            try:
+                if hasattr(target_unit, "is_eligible_to_fight") and callable(target_unit.is_eligible_to_fight):
+                    if not target_unit.is_eligible_to_fight(self.game.map):
+                        print("ERROR: COUNTER-OFFENSIVE: target unit is not eligible to fight")
+                        return False
+            except Exception:
+                pass
+            if not fight_mgr or not hasattr(fight_mgr, "force_next_unit"):
+                print("WARNING: COUNTER-OFFENSIVE: fight phase manager not available")
+                return False
+            try:
+                if not fight_mgr.force_next_unit(target_unit, self.player):
+                    print("ERROR: COUNTER-OFFENSIVE: could not force unit to fight next")
+                    return False
+            except Exception:
+                return False
+            if not self.player.spend_command_points(s.cp_cost):
+                try:
+                    fight_mgr._forced_next_unit = None
+                    fight_mgr._forced_next_player = None
+                except Exception:
+                    pass
+                return False
+            try:
+                if getattr(fight_mgr, "_current_player", None) is not None and getattr(fight_mgr, "_opponent_player", None) is not None:
+                    fight_mgr._request_unit_selection(fight_mgr._current_player, fight_mgr._opponent_player)
             except Exception:
                 pass
             if kwargs.get('dequeue') is True:
@@ -1676,8 +1852,8 @@ class StratagemManager:
             name_key = s.name.strip().lower()
             if name_key in reaction_names:
                 continue
-            if s.name.upper() in ("COMMAND RE-ROLL", "INSANE BRAVERY"):
-                # Only meaningful as reactions when a roll was made or battle-shock failed
+            if s.name.upper() in ("COMMAND RE-ROLL", "INSANE BRAVERY", "COUNTER-OFFENSIVE"):
+                # Only meaningful as reactions with specific trigger timing
                 continue
             if not s.is_phase_allowed(phase_name or ''):
                 continue

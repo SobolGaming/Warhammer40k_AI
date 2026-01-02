@@ -113,6 +113,13 @@ class StratagemDialog(BaseDialog):
                 self.on_request_rapid_ingress_unit(self.player, self.game, candidates, lambda unit: self._finalize_rapid_ingress(unit, context))
                 return
 
+        # For COUNTER-OFFENSIVE, choose the unit that will fight next
+        if name and str(name).strip().upper() == 'COUNTER-OFFENSIVE' and 'target_unit' not in context and 'unit' not in context:
+            if hasattr(self, 'on_request_counter_offensive_unit') and callable(self.on_request_counter_offensive_unit):
+                candidates = context.get('candidates') or []
+                self.on_request_counter_offensive_unit(self.player, self.game, candidates, lambda unit: self._finalize_counter_offensive(unit, context))
+                return
+
         # WORLD EATERS: SKULLS FOR THE SKULL THRONE! requires an interactive Blessings roll + selection.
         if name and str(name).strip().upper() == 'SKULLS FOR THE SKULL THRONE!' and 'attacker_unit' in context:
             if hasattr(self, 'on_request_blessings_roll') and callable(self.on_request_blessings_roll):
@@ -284,6 +291,27 @@ class StratagemDialog(BaseDialog):
             self.hide()
         else:
             print(f"❌ Could not use stratagem: {name}")
+
+    def _finalize_counter_offensive(self, unit, context) -> None:
+        """Called after the user picks the unit to fight next for COUNTER-OFFENSIVE."""
+        if self.selected_index is None or not self.manager or self.selected_index >= len(self.items):
+            return
+        item = self.items[self.selected_index]
+        name = item.get('name')
+        ctx = dict(context)
+        ctx['target_unit'] = unit
+        if item.get('type') == 'reaction':
+            ctx['dequeue'] = True
+        if 'phase_name' not in ctx:
+            phase_name = getattr(self.manager, '_current_phase_name', None)
+            if phase_name:
+                ctx['phase_name'] = phase_name
+        ok = self.manager.use(name, **ctx)
+        if ok:
+            print(f"ƒo. Used stratagem: {name}")
+            self.hide()
+        else:
+            print(f"ƒ?O Could not use stratagem: {name}")
 
     # --- Event handling ---
     def _handle_button_click(self, button_name: str) -> bool:

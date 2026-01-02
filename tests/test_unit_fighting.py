@@ -283,6 +283,26 @@ class TestFightPhaseManager(unittest.TestCase):
         
         # Should not include already fought units
         self.assertNotIn(self.unit2_fight_first, eligible)
+
+    def test_counter_offensive_forces_next_unit(self):
+        """Counter-Offensive should force a specific unit to fight next, ignoring stage."""
+        forced_unit = self._create_mock_unit("Forced", self.army1, charged=False)
+        forced_unit.is_eligible_to_fight.return_value = True
+
+        self.manager.current_stage = FightStage.FIGHT_FIRST
+        self.manager.active_player = self.player1
+        self.manager.on_unit_selection_required = Mock()
+
+        ok = self.manager.force_next_unit(forced_unit, self.player1)
+        self.assertTrue(ok)
+
+        self.manager._request_unit_selection(self.player1, self.player2)
+
+        args, kwargs = self.manager.on_unit_selection_required.call_args
+        active_player, eligible_units, stage = args
+        self.assertEqual(active_player, self.player1)
+        self.assertEqual(eligible_units, [forced_unit])
+        self.assertEqual(stage, FightStage.FIGHT_FIRST)
     
     def test_target_declarations_execution(self):
         """Test execution of fight sequence with target declarations."""
