@@ -70,8 +70,13 @@ def _mode_from_type(type_text: str) -> str:
     for sep in ("–", "-"):
         if sep in t:
             left = t.split(sep, 1)[0].strip()
+            # Merge "Core Stratagem – ..." into "Core" so we don't produce a second Core section.
+            if left.strip().lower() == "core stratagem":
+                return "Core"
             return left or "Unknown"
     # Fallback: first word-ish
+    if t.strip().lower() == "core stratagem":
+        return "Core"
     return t
 
 
@@ -153,11 +158,13 @@ def _support_classification(row: StratagemRow) -> Tuple[str, str]:
         "COMMAND RE-ROLL": "Queued on `roll_made`; executes a reroll callback; limited by core once-per-phase stratagem rule (per player).",
         "FIRE OVERWATCH": "Queued on enemy movement start/end; resolves shooting with hit-on-6s restriction.",
         "RAPID INGRESS": "Queued at end of opponent Movement phase; places a reserves unit immediately.",
-        "NEW ORDERS": "End of your Command phase: discard 1 active Secondary and draw (Leviathan-style).",
+        "NEW ORDERS": "End of your Command phase: discard 1 active Secondary and draw.",
         "TANK SHOCK": "Charge phase: after a VEHICLE ends a Charge move; roll D6 equal to a VEHICLE model’s Toughness; 5+ = 1 MW (max 6).",
         "GRENADE": "Shooting phase: pick a GRENADES unit + eligible enemy within 8\"; roll 6D6; 4+ = 1 MW.",
         "GO TO GROUND": "Opponent Shooting phase: after targets selected; INFANTRY gains Benefit of Cover + 6++ until end of phase.",
         "INSANE BRAVERY": "Command phase Battle-shock step: before a unit tests; that unit auto-passes. Once per battle enforced.",
+        "SMOKESCREEN": "Opponent Shooting phase: after targets selected; a SMOKE unit gains Benefit of Cover + Stealth until end of phase.",
+        "EPIC CHALLENGE": "Fight phase: when a CHARACTER is selected to fight near an enemy Attached unit; one CHARACTER model’s melee attacks gain [PRECISION] until end of phase.",
     }
     if name_u in implemented:
         return ("Implemented", implemented[name_u])
@@ -194,25 +201,26 @@ def _write_md(rows: List[StratagemRow], factions: Dict[str, Dict[str, str]]) -> 
             continue
         filtered_rows.append(r)
 
-    core = [r for r in filtered_rows if not (r.faction_id or "").strip()]
-    faction_rows = [r for r in filtered_rows if (r.faction_id or "").strip()]
+    # Chapter Approved scope: only list global (core) stratagems; do not list faction/detachment stratagems.
+    core_all = [r for r in filtered_rows if not (r.faction_id or "").strip()]
+    # Keep only the "Core" bucket (merging "Core Stratagem" into "Core" via _mode_from_type()).
+    core_mode_filtered = [r for r in core_all if _mode_from_type(r.type).strip().lower() == "core"]
+    # Deduplicate by name: keep newest/highest id (so NEW ORDERS is only shown once).
+    by_name: Dict[str, StratagemRow] = {}
+    for r in core_mode_filtered:
+        key = (r.name or "").strip().upper()
+        if not key:
+            continue
+        prev = by_name.get(key)
+        if prev is None or (r.id or "") > (prev.id or ""):
+            by_name[key] = r
+    core = list(by_name.values())
+    faction_rows: List[StratagemRow] = []
 
-    # Core sub-group by mode
+    # Core sub-group by mode (will only be "Core" in Chapter Approved scope)
     core_by_mode: Dict[str, List[StratagemRow]] = {}
     for r in core:
         core_by_mode.setdefault(_mode_from_type(r.type), []).append(r)
-
-    # Faction grouping
-    by_faction: Dict[str, List[StratagemRow]] = {}
-    for r in faction_rows:
-        by_faction.setdefault(r.faction_id, []).append(r)
-
-    # Human-readable faction ordering
-    def faction_display(fid: str) -> str:
-        info = factions.get(fid) or {}
-        return info.get("name") or fid
-
-    faction_order = sorted(by_faction.keys(), key=lambda fid: faction_display(fid).lower())
 
     def row_line(r: StratagemRow) -> str:
         status, notes = _support_classification(r)
@@ -221,10 +229,10 @@ def _write_md(rows: List[StratagemRow], factions: Dict[str, Dict[str, str]]) -> 
             f"{_escape_md(r.turn)} | {_escape_md(r.phase)} | **{status}** | {_escape_md(notes)} |"
         )
 
-    total = len(filtered_rows)
+    total = len(core)
     total_core = len(core)
     total_faction = len(faction_rows)
-    total_detachment = sum(1 for r in faction_rows if (r.detachment or "").strip())
+    total_detachment = 0
 
     # Write
     lines: List[str] = []
@@ -256,48 +264,7 @@ def _write_md(rows: List[StratagemRow], factions: Dict[str, Dict[str, str]]) -> 
         for r in bucket:
             lines.append(row_line(r))
         lines.append("")
-
-    lines.append("## Faction Stratagems")
-    lines.append("")
-
-    for fid in faction_order:
-        info = factions.get(fid) or {}
-        name = info.get("name") or fid
-        link = info.get("link") or ""
-        header = f"### {name}"
-        if link:
-            header = f"### {name} (`{fid}`) — `{_escape_md(link)}`"
-        else:
-            header = f"### {name} (`{fid}`)"
-        lines.append(header)
-        lines.append("")
-
-        rows_f = by_faction.get(fid, [])
-        general = [r for r in rows_f if not (r.detachment or "").strip()]
-        det_rows = [r for r in rows_f if (r.detachment or "").strip()]
-
-        # General (non-detachment)
-        if general:
-            lines.append("#### General")
-            lines.append("")
-            lines.append("| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |")
-            lines.append("|---|---:|---|---:|---|---|---|---|")
-            for r in sorted(general, key=_sort_key):
-                lines.append(row_line(r))
-            lines.append("")
-
-        # Detachment subsections
-        det_by_name: Dict[str, List[StratagemRow]] = {}
-        for r in det_rows:
-            det_by_name.setdefault((r.detachment or "").strip(), []).append(r)
-        for det_name in sorted(det_by_name.keys(), key=lambda s: s.lower()):
-            lines.append(f"#### {det_name}")
-            lines.append("")
-            lines.append("| Stratagem | ID | Type | CP | Turn | Phase | Status | Notes |")
-            lines.append("|---|---:|---|---:|---|---|---|---|")
-            for r in sorted(det_by_name[det_name], key=_sort_key):
-                lines.append(row_line(r))
-            lines.append("")
+    lines.append("<!-- Chapter Approved scope: faction/detachment stratagems intentionally omitted -->")
 
     content = "\n".join(lines).rstrip() + "\n"
     with open(OUT_PATH, "w", encoding="utf-8") as f:

@@ -261,6 +261,8 @@ class StratagemManager:
         self._last_failed_battle_shock_unit = None
         self._current_phase_name: Optional[str] = None
         self._pending_reactions: List[Dict[str, Any]] = []
+        # Track temporary per-phase stratagem buffs that must be cleaned up.
+        self._epic_challenge_models: list[Any] = []
         self._build_available()
         self._subscribe_events()
         # Per-turn usage limits (e.g., Overwatch once/turn)
@@ -289,31 +291,51 @@ class StratagemManager:
             return
 
     def _build_available(self) -> None:
-        army = self.player.get_army()
-        faction_id = getattr(army, "faction_id", None)
-        detachment = getattr(army, "detachment_type", None)
-        raw = self._waha.get_stratagems_for_faction(faction_id=faction_id, detachment=detachment)
-        # Exclude modes not used/supported in standard games
-        tnorm = lambda t: (t or '').strip().lower()
-        filtered = [
-            s for s in raw
-            if 'boarding actions' not in tnorm(s.get('type'))
-            and 'boarding action' not in tnorm(s.get('type'))
-            and 'challenger' not in tnorm(s.get('type'))
-        ]
-        # Prefer Core Stratagem variants and deduplicate by name (case-insensitive)
-        def _sort_key(entry: dict) -> int:
-            type_text = (entry.get('type', '') or '').strip().lower()
-            return 0 if 'core stratagem' in type_text else 1
-        filtered.sort(key=_sort_key)
-        seen_names = set()
-        unique: list[dict] = []
-        for entry in filtered:
-            name_key = (entry.get('name', '') or '').strip().lower()
-            if name_key in seen_names:
+        """
+        Chapter Approved scope:
+        - Only global stratagems (faction_id == "").
+        - Only "Core – ..." and mission-pack "Core Stratagem – ..." entries.
+        - Exclude Boarding Actions / Challenger / other game modes and all faction/detachment stratagems.
+        """
+        raw = self._waha.get_stratagems_for_faction(faction_id=None, detachment=None)
+        tnorm = lambda t: (t or "").strip().lower()
+        filtered: list[dict] = []
+        for s in list(raw or []):
+            try:
+                if (s.get("faction_id") or "").strip():
+                    continue  # skip faction/detachment stratagems entirely
+                tt = tnorm(s.get("type"))
+                if "boarding actions" in tt or "boarding action" in tt:
+                    continue
+                if "challenger" in tt:
+                    continue
+                # Keep only core + core stratagem variants
+                if not (tt.startswith("core ") or tt.startswith("core\u00a0") or tt.startswith("core\u2013") or tt.startswith("core-") or tt.startswith("core stratagem")):
+                    # For safety, also keep "core –" variants that might not start with "core " due to unicode dashes.
+                    if "core" not in tt:
+                        continue
+                    if "core stratagem" not in tt and "core \u2013" not in tt and "core -" not in tt:
+                        continue
+                filtered.append(s)
+            except Exception:
                 continue
-            seen_names.add(name_key)
-            unique.append(entry)
+        # Deduplicate by name: keep the newest/highest id for each name (case-insensitive).
+        def _id_key(entry: dict) -> int:
+            try:
+                return int((entry.get("id") or "0").strip())
+            except Exception:
+                return 0
+        by_name: dict[str, dict] = {}
+        for entry in filtered:
+            name_key = (entry.get("name", "") or "").strip().lower()
+            if not name_key:
+                continue
+            prev = by_name.get(name_key)
+            if prev is None or _id_key(entry) > _id_key(prev):
+                by_name[name_key] = entry
+        unique = list(by_name.values())
+        # Stable ordering
+        unique.sort(key=lambda e: ((e.get("name") or "").strip().lower(), -_id_key(e)))
         self.available = [Stratagem.from_json(s) for s in unique]
 
     def _subscribe_events(self) -> None:
@@ -331,14 +353,10 @@ class StratagemManager:
         es.subscribe("unit_move_ended", self._on_unit_move_ended)
         # Shooting targeting events for reaction stratagems (e.g. GO TO GROUND)
         es.subscribe("shooting_targets_selected", self._on_shooting_targets_selected)
+        # Fight phase selections for reaction stratagems (e.g. EPIC CHALLENGE)
+        es.subscribe("fight_unit_selected", self._on_fight_unit_selected)
         # Dice events for Command Re-roll
         es.subscribe("roll_made", self._on_roll_made)
-        # Kill events for faction stratagem triggers (subscribe only if this army can actually use them)
-        try:
-            if self.get_by_name("SKULLS FOR THE SKULL THRONE!"):
-                es.subscribe("model_destroyed", self._on_model_destroyed)
-        except Exception:
-            pass
         self._event_subscribed = True
 
     # -------- Event handlers --------
@@ -412,8 +430,27 @@ class StratagemManager:
                         if isinstance(sr, dict) and sr.get("go_to_ground_active") is True:
                             sr.pop("go_to_ground_active", None)
                             u.special_rules = sr
+                        if isinstance(sr, dict) and sr.get("smokescreen_active") is True:
+                            sr.pop("smokescreen_active", None)
+                            u.special_rules = sr
                     except Exception:
                         continue
+        except Exception:
+            pass
+
+        # Clear end-of-phase offensive buffs (e.g. EPIC CHALLENGE) to avoid leaking into later phases.
+        try:
+            phase_name = getattr(phase, "name", None)
+            if phase_name == "FIGHT_PHASE":
+                for m in list(getattr(self, "_epic_challenge_models", []) or []):
+                    try:
+                        sr = getattr(m, "special_rules", None)
+                        if isinstance(sr, dict) and sr.get("epic_challenge_precision_active") is True:
+                            sr.pop("epic_challenge_precision_active", None)
+                            m.special_rules = sr
+                    except Exception:
+                        continue
+                self._epic_challenge_models = []
         except Exception:
             pass
 
@@ -630,6 +667,120 @@ class StratagemManager:
                 "cp_cost": s.cp_cost,
                 "attacking_unit": attacking_unit,
                 "candidates": candidates,
+            })
+            self.game.event_system.publish("stratagem_window", player=self.player, duration=3.0)
+        except Exception:
+            return
+
+        # Also offer SMOKESCREEN in the same window (opponent Shooting phase, after targets selected).
+        try:
+            s2 = self.get_by_name("SMOKESCREEN")
+            if not s2:
+                return
+            if self.player.command_points < s2.cp_cost:
+                return
+            # Core rule: can't use the same stratagem more than once per phase
+            if (s2.name or "").strip().upper() in self._used_stratagems_this_phase:
+                return
+            smoke_candidates = []
+            for u in list(target_units or []):
+                try:
+                    if u is None or not u.is_alive():
+                        continue
+                    if u.get_parent_army().player is not self.player:
+                        continue
+                    if _unit_cannot_be_target_of_stratagem(u):
+                        continue
+                    # Target must be a SMOKE unit
+                    if hasattr(u, "has_keyword") and callable(getattr(u, "has_keyword")):
+                        if not u.has_keyword("SMOKE"):
+                            continue
+                    else:
+                        continue
+                    smoke_candidates.append(u)
+                except Exception:
+                    continue
+            if not smoke_candidates:
+                return
+            self._pending_reactions.append({
+                "event": "shooting_targets_selected",
+                "phase_name": "Shooting phase",
+                "stratagem": s2.name,
+                "cp_cost": s2.cp_cost,
+                "attacking_unit": attacking_unit,
+                "candidates": smoke_candidates,
+            })
+            self.game.event_system.publish("stratagem_window", player=self.player, duration=3.0)
+        except Exception:
+            return
+
+    def _on_fight_unit_selected(self, unit=None, selecting_player=None, **kwargs):
+        """
+        Reaction window for EPIC CHALLENGE:
+        Fight phase, when a CHARACTER unit from your army that is within Engagement Range of one or more
+        Attached units is selected to fight.
+        """
+        try:
+            if unit is None:
+                return
+            if (self._current_phase_name or "").strip().lower() != "fight phase":
+                return
+            # Offer only to the player selecting the unit
+            if selecting_player is not self.player:
+                return
+            s = self.get_by_name("EPIC CHALLENGE")
+            if not s:
+                return
+            if self.player.command_points < s.cp_cost:
+                return
+            if (s.name or "").strip().upper() in self._used_stratagems_this_phase:
+                return
+            # Must be a CHARACTER unit
+            if not bool(getattr(unit, "is_character", False)) and not (hasattr(unit, "has_keyword") and unit.has_keyword("CHARACTER")):
+                return
+            # Must be within ER of one or more enemy Attached units
+            try:
+                enemy_units = self.game.map.get_enemy_units(unit)
+            except Exception:
+                enemy_units = []
+            ok = False
+            for e in list(enemy_units or []):
+                try:
+                    if not e.is_alive():
+                        continue
+                    if not self.game.map.is_within_engagement_range(unit, e):
+                        continue
+                    members = []
+                    try:
+                        fn = getattr(e, "get_attached_unit_members", None)
+                        if callable(fn):
+                            members = list(fn())
+                    except Exception:
+                        members = []
+                    if len(members) > 1:
+                        ok = True
+                        break
+                except Exception:
+                    continue
+            if not ok:
+                return
+            # Eligible models: CHARACTER models in your unit (usually the unit itself is a single CHARACTER model).
+            models = []
+            for m in list(getattr(unit, "models", []) or []):
+                try:
+                    if getattr(m, "is_alive", True):
+                        models.append(m)
+                except Exception:
+                    continue
+            if not models:
+                return
+            self._pending_reactions.append({
+                "event": "fight_unit_selected",
+                "phase_name": "Fight phase",
+                "stratagem": s.name,
+                "cp_cost": s.cp_cost,
+                "unit": unit,
+                "eligible_models": models,
             })
             self.game.event_system.publish("stratagem_window", player=self.player, duration=3.0)
         except Exception:
@@ -935,6 +1086,46 @@ class StratagemManager:
             except Exception:
                 pass
             return True
+
+        # Core: SMOKESCREEN (Benefit of Cover + Stealth until end of phase)
+        if s.name.upper() == "SMOKESCREEN":
+            target_unit = kwargs.get("target_unit") or kwargs.get("unit")
+            if not target_unit:
+                # Try candidates from pending
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "SMOKESCREEN":
+                        cands = r.get("candidates") or []
+                        if cands:
+                            target_unit = cands[0]
+                        break
+            if not target_unit:
+                print("❌ SMOKESCREEN: missing target unit")
+                return False
+            # Target must be SMOKE
+            try:
+                if not (hasattr(target_unit, "has_keyword") and target_unit.has_keyword("SMOKE")):
+                    print("❌ SMOKESCREEN: target is not a SMOKE unit")
+                    return False
+            except Exception:
+                return False
+            if not self.player.spend_command_points(s.cp_cost):
+                return False
+            try:
+                sr = getattr(target_unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["smokescreen_active"] = True
+                target_unit.special_rules = sr
+            except Exception:
+                pass
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
+            print(f"🛡️ SMOKESCREEN: {getattr(target_unit, 'name', 'Unit')} gains Benefit of Cover + Stealth until end of phase.")
+            return True
         # Special-case: FIRE OVERWATCH full resolution
         if s.name.upper() in ("FIRE OVERWATCH", "OVERWATCH"):
             enemy_unit = kwargs.get("enemy_unit")
@@ -1094,6 +1285,50 @@ class StratagemManager:
             except Exception as e:
                 print(f"❌ Command Re-roll failed: {e}")
                 return False
+
+        # Core: EPIC CHALLENGE (grant Precision to a selected CHARACTER model's melee attacks until end of phase)
+        if s.name.upper() == "EPIC CHALLENGE":
+            unit = kwargs.get("unit")
+            model = kwargs.get("model")
+            # Try to resolve from pending reaction context
+            if unit is None or model is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "EPIC CHALLENGE":
+                        unit = unit or r.get("unit")
+                        elig = r.get("eligible_models") or []
+                        model = model or (elig[0] if elig else None)
+                        break
+            if unit is None or model is None:
+                print("❌ EPIC CHALLENGE: missing unit/model context")
+                return False
+            # Must be a CHARACTER model in your unit
+            try:
+                pu = getattr(model, "parent_unit", None)
+                if pu is None or pu is not unit:
+                    # Some internal structures may wrap, so accept as long as model is in unit.models
+                    if model not in list(getattr(unit, "models", []) or []):
+                        return False
+            except Exception:
+                return False
+            if not self.player.spend_command_points(s.cp_cost):
+                return False
+            try:
+                sr = getattr(model, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["epic_challenge_precision_active"] = True
+                model.special_rules = sr
+                self._epic_challenge_models.append(model)
+            except Exception:
+                pass
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
+            print(f"⚔️ EPIC CHALLENGE: {getattr(model, 'name', 'Character')} gains [PRECISION] on melee attacks until end of phase.")
+            return True
 
         # Special-case: NEW ORDERS (discard one active Secondary and draw a new one)
         if s.name.upper() == "NEW ORDERS":

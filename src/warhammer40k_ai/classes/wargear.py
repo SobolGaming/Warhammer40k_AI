@@ -573,7 +573,18 @@ class WargearProfile:
             # PRECISION (10e): after a successful wound vs an Attached Unit, attacker may allocate
             # the wound to a visible CHARACTER model in that unit.
             target_model = None
-            if self.is_precision() and game_map is not None:
+            # EPIC CHALLENGE: selected CHARACTER model's melee attacks gain [PRECISION] until end of phase.
+            precision_from_epic_challenge = False
+            try:
+                sr = getattr(attacker, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("epic_challenge_precision_active") is True:
+                    parent = getattr(self, "parent_wargear", None)
+                    if parent is not None and callable(getattr(parent, "is_melee", None)) and parent.is_melee():
+                        precision_from_epic_challenge = True
+            except Exception:
+                precision_from_epic_challenge = False
+
+            if (self.is_precision() or precision_from_epic_challenge) and game_map is not None:
                 try:
                     root = target.get_attached_unit_root()
                 except Exception:
@@ -1428,7 +1439,8 @@ class WargearProfile:
         }
         
         # Stratagem / rule-driven defensive modifiers that need to be reflected in the attack_instance.
-        # GO TO GROUND: 6++ invulnerable + Benefit of Cover until end of phase.
+        # - GO TO GROUND: 6++ invulnerable + Benefit of Cover until end of phase.
+        # - SMOKESCREEN: Benefit of Cover until end of phase (Stealth handled in hit modifier via Unit.has_stealth()).
         try:
             t_unit = getattr(target_model, "parent_unit", None)
             sr = getattr(t_unit, "special_rules", None) if t_unit is not None else None
@@ -1436,6 +1448,9 @@ class WargearProfile:
                 attack_instance.setdefault("benefit_of_cover", True)
                 attack_instance.setdefault("benefit_of_cover_source", "GO TO GROUND")
                 attack_instance.setdefault("inv_save_override", 6)
+            if isinstance(sr, dict) and sr.get("smokescreen_active") is True:
+                attack_instance.setdefault("benefit_of_cover", True)
+                attack_instance.setdefault("benefit_of_cover_source", "SMOKESCREEN")
         except Exception:
             pass
 

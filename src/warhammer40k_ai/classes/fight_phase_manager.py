@@ -214,6 +214,19 @@ class FightPhaseManager:
         """Handle unit selection from the active player."""
         selected_unit = self._canonical_unit_for_fight(selected_unit)
         print(f"⚔️ {self.active_player.name} selected {selected_unit.name} to fight")
+
+        # Publish an event so reaction stratagems (e.g. EPIC CHALLENGE) can open a window.
+        try:
+            es = getattr(getattr(self.game, "event_system", None), "publish", None)
+            if callable(es):
+                self.game.event_system.publish(
+                    "fight_unit_selected",
+                    unit=selected_unit,
+                    selecting_player=self.active_player,
+                    stage=self.current_stage,
+                )
+        except Exception:
+            pass
         
         # Find eligible targets for this unit
         eligible_targets = self._get_eligible_targets(selected_unit)

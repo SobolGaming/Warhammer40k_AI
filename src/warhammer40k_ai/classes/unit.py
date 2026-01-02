@@ -7525,6 +7525,13 @@ class Unit:
     
     def has_stealth(self) -> bool:
         """Check if the unit has Stealth ability."""
+        # Stratagem: SMOKESCREEN grants Stealth until end of phase.
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("smokescreen_active") is True:
+                return True
+        except Exception:
+            pass
         # Use cached result if available
         if 'stealth' in getattr(self, '_ability_cache', {}):
             return self._ability_cache['stealth']
