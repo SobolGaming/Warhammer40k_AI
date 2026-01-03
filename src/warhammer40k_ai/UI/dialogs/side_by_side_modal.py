@@ -101,14 +101,15 @@ class SideBySideModal:
         # Prefer the dialog under the cursor; if none, still forward to both (so they can handle
         # wheel scrolling / hover) and then consume.
         if pos is not None:
-            if self._contains(self.left, pos):
-                try:
-                    return bool(self.left.handle_event(event))
-                except Exception:
-                    return True
+            # Prefer the right dialog when overlapping (it is drawn last/topmost).
             if self._contains(self.right, pos):
                 try:
                     return bool(self.right.handle_event(event))
+                except Exception:
+                    return True
+            if self._contains(self.left, pos):
+                try:
+                    return bool(self.left.handle_event(event))
                 except Exception:
                     return True
 

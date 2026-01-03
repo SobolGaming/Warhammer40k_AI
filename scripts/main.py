@@ -87,10 +87,10 @@ def initialize_game(player1_type: str, player2_type: str,
     screen = None
     if not training_mode:
         pygame.init()
-        from warhammer40k_ai.UI.game_ui import ROSTER_PANE_WIDTH, BATTLEFIELD_WIDTH, BATTLEFIELD_HEIGHT, INFO_PANE_HEIGHT, TILE_SIZE
+        from warhammer40k_ai.UI.game_ui import ROSTER_PANE_WIDTH, STRATAGEM_PANE_WIDTH, BATTLEFIELD_WIDTH, BATTLEFIELD_HEIGHT, INFO_PANE_HEIGHT, TILE_SIZE
         
         # Calculate desired window size
-        desired_width = BATTLEFIELD_WIDTH + 2 * ROSTER_PANE_WIDTH
+        desired_width = BATTLEFIELD_WIDTH + 2 * (ROSTER_PANE_WIDTH + STRATAGEM_PANE_WIDTH)
         # Add 2" top status pane height to default window
         TOP_PANE_HEIGHT = int(2 * TILE_SIZE)
         desired_height = BATTLEFIELD_HEIGHT + INFO_PANE_HEIGHT + TOP_PANE_HEIGHT
@@ -561,11 +561,6 @@ def run_unified_game_loop(player_configs: dict) -> dict:
                                 if game.is_command_phase():
                                     # Start your Command phase processing (draw cards, tests, etc.)
                                     game.start_command_phase()
-                                    if game_view and hasattr(game_view, 'start_phase_end_window_if_needed'):
-                                        # If a window is started, defer advancing to Movement until it resolves
-                                        started = game_view.start_phase_end_window_if_needed()
-                                        if started:
-                                            continue
                                     # No window needed; advance immediately
                                     game.next_phase()
                                 elif game.is_fight_phase():

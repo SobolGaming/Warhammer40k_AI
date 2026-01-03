@@ -2,7 +2,7 @@ import pygame
 import math
 import re
 from pathlib import Path
-from typing import Optional, Tuple, Dict, List, Protocol, Callable
+from typing import Optional, Tuple, Dict, List, Protocol, Callable, Any
 from abc import ABC, abstractmethod
 from warhammer40k_ai.classes.unit import Unit
 from warhammer40k_ai.classes.model import Model
@@ -15,6 +15,7 @@ from warhammer40k_ai.classes.fight_phase_manager import FightPhaseManager, Fight
 
 # Import UI panels
 from .panels.roster_pane import RosterPane
+from .panels.stratagem_pane import StratagemPane
 from .panels.info_pane import InfoPane
 from ..utility.event_bus import get_recent_actions, get_recent_dice
 from .panels.reserves_arrival_panel import ReservesArrivalPanel
@@ -32,7 +33,6 @@ from .ui_utils import (
     draw_psyker_icon,
     draw_generic_icon
 )
-from .dialogs.stratagem_dialog import StratagemDialog
 from .dialogs.secondary_discard_dialog import SecondaryDiscardDialog
 from .dialogs.overwatch_shooter_dialog import OverwatchShooterDialog
 
@@ -97,6 +97,7 @@ ROSTER_PANE_BUTTON_HEIGHT = 80  # Taller for more details
 ROSTER_FONT_SIZE = 16
 ROSTER_LINE_HEIGHT = 18
 INFO_PANE_HEIGHT = 120  # Taller for more game info
+STRATAGEM_PANE_WIDTH = 260
 
 # Font sizes
 FONT_LARGE = 20
@@ -391,33 +392,35 @@ class GameView:
         self.pan_start_pos = (0, 0)
         self.pan_start_offset = (0, 0)
 
-        # Stratagem reaction windows (per-player)
-        # {player_obj: { 'expires_at': int(ms), 'claimed': bool, 'on_timeout': Optional[Callable] }}
-        self._stratagem_windows = {}
-        # Subscribe to movement end to offer opponent Overwatch window
-        self.game.event_system.subscribe("unit_move_ended", self._on_unit_move_ended)
-        self.game.event_system.subscribe("stratagem_window", self._on_stratagem_window)
-        
-        # Create roster panes with reference to all units for color correlation
-        # Roster panes now extend to full battlefield height + info pane height
-        # Handle case where armies haven't been loaded yet (during setup phases)
+        # Create roster and stratagem panes with reference to all units for color correlation
         # Fixed panes; battlefield viewport derived from actual screen size
         scaled_roster_width = ROSTER_PANE_WIDTH
+        scaled_stratagem_width = STRATAGEM_PANE_WIDTH
         scaled_info_height = INFO_PANE_HEIGHT
         screen_width, screen_height = self.screen.get_size()
-        scaled_battlefield_width = max(100, screen_width - 2 * scaled_roster_width)
+        scaled_battlefield_width = max(100, screen_width - 2 * (scaled_roster_width + scaled_stratagem_width))
         scaled_battlefield_height = max(100, screen_height - scaled_info_height)
-        
+
         # Roster panes should not overlap the bottom logs pane; limit to battlefield height
         roster_pane_height = scaled_battlefield_height
         player1_units = player1.get_army().units if player1.get_army() else []
         player2_units = player2.get_army().units if player2.get_army() else []
-        
-        self.left_roster_pane = RosterPane(0, 0, scaled_roster_width, roster_pane_height, 
-                                         player1_units, f"Player 1 ({player1.name})")
-        self.right_roster_pane = RosterPane(scaled_battlefield_width + scaled_roster_width, 0, scaled_roster_width, 
-                                          roster_pane_height, player2_units, 
-                                          f"Player 2 ({player2.name})")
+
+        self.scaled_stratagem_width = scaled_stratagem_width
+        self.battlefield_left = scaled_stratagem_width + scaled_roster_width
+        self.battlefield_right = self.battlefield_left + scaled_battlefield_width
+
+        self.left_stratagem_pane = StratagemPane(0, 0, scaled_stratagem_width, roster_pane_height,
+                                                 f"Player 1 ({player1.name})")
+        self.right_stratagem_pane = StratagemPane(self.battlefield_right + scaled_roster_width, 0,
+                                                  scaled_stratagem_width, roster_pane_height,
+                                                  f"Player 2 ({player2.name})")
+
+        self.left_roster_pane = RosterPane(scaled_stratagem_width, 0, scaled_roster_width, roster_pane_height,
+                                           player1_units, f"Player 1 ({player1.name})")
+        self.right_roster_pane = RosterPane(self.battlefield_right, 0, scaled_roster_width,
+                                            roster_pane_height, player2_units,
+                                            f"Player 2 ({player2.name})")
         
         # Store scaled dimensions for mouse coordinate conversion
         self.scaled_roster_width = scaled_roster_width
@@ -429,18 +432,19 @@ class GameView:
         all_units = player1_units + player2_units
         self.left_roster_pane.all_units = all_units
         self.right_roster_pane.all_units = all_units
+        self.left_stratagem_pane.player = self.player1
+        self.right_stratagem_pane.player = self.player2
         
         # Set game_view reference in roster panes for deployment dialog
         self.left_roster_pane.game_view = self
         self.right_roster_pane.game_view = self
         
         # Position InfoPane between roster panes and below battlefield
-        self.info_pane = InfoPane(scaled_roster_width, scaled_battlefield_height, 
-                                scaled_battlefield_width, scaled_info_height, self.selected_unit)
+        self.info_pane = InfoPane(self.battlefield_left, scaled_battlefield_height,
+                                  scaled_battlefield_width, scaled_info_height, self.selected_unit)
         
-        # Stratagem dialog instance
+        # Stratagem interaction dialogs
         screen_width, screen_height = self.screen.get_size()
-        self.stratagem_dialog = StratagemDialog(screen_width, screen_height)
         # Generic Yes/No prompt dialog (used for optional abilities, confirmations, etc.)
         from .dialogs import YesNoDialog
         self.yes_no_dialog = YesNoDialog(screen_width, screen_height)
@@ -448,15 +452,14 @@ class GameView:
         self.overwatch_shooter_dialog = OverwatchShooterDialog(screen_width, screen_height)
         # WORLD EATERS: Blessings of Khorne dialog (lazy-create only if needed)
         self.blessings_of_khorne_dialog = None
-        # Wire UI hook so StratagemDialog can request discard selection
+        # Stratagem interaction helpers
         def _request_secondary_discard(player, game, on_chosen):
             cards = list(getattr(player, 'active_secondaries', []) or [])
             if not cards:
                 on_chosen(None)
                 return
             self.secondary_discard_dialog.show(cards, lambda chosen: (self.secondary_discard_dialog.hide(), on_chosen(chosen)))
-        # Attach as method on the dialog instance
-        setattr(self.stratagem_dialog, 'on_request_secondary_discard', _request_secondary_discard)
+        self._request_secondary_discard = _request_secondary_discard
 
         def _request_overwatch_shooter(player, game, enemy_unit, on_chosen):
             # Build candidate list as StratagemManager did, but UI-driven
@@ -477,7 +480,7 @@ class GameView:
                 self.overwatch_shooter_dialog.show(candidates, enemy_unit, lambda unit: (self.overwatch_shooter_dialog.hide(), on_chosen(unit)))
             else:
                 on_chosen(candidates[0])
-        setattr(self.stratagem_dialog, 'on_request_overwatch_shooter', _request_overwatch_shooter)
+        self._request_overwatch_shooter = _request_overwatch_shooter
 
         def _request_rapid_ingress_unit(player, game, candidates, on_chosen):
             # Candidates are the units in reserves that can arrive this battle round
@@ -501,7 +504,7 @@ class GameView:
                 )
             else:
                 on_chosen(cand[0])
-        setattr(self.stratagem_dialog, 'on_request_rapid_ingress_unit', _request_rapid_ingress_unit)
+        self._request_rapid_ingress_unit = _request_rapid_ingress_unit
 
         def _request_counter_offensive_unit(player, game, candidates, on_chosen):
             cand = list(candidates or [])
@@ -529,7 +532,7 @@ class GameView:
                 )
             else:
                 on_chosen(cand[0])
-        setattr(self.stratagem_dialog, 'on_request_counter_offensive_unit', _request_counter_offensive_unit)
+        self._request_counter_offensive_unit = _request_counter_offensive_unit
 
         # Generic yes/no prompt hook for optional ability decisions (e.g., Direct the Slaughter)
         def _request_yes_no(title: str, message: str, yes_label: str, no_label: str, on_chosen):
@@ -545,7 +548,7 @@ class GameView:
                 self.dialog_manager.open(self.yes_no_dialog, modal=True)
             except Exception:
                 pass
-        setattr(self.stratagem_dialog, 'on_request_yes_no', _request_yes_no)
+        self._request_yes_no = _request_yes_no
 
         def _request_overwatch_shooting(shooter_unit, enemy_unit, on_done):
             # Reuse ShootingDeclarationDialog for interactive weapon selection/targeting
@@ -566,7 +569,7 @@ class GameView:
             self.shooting_declaration_dialog.show(shooter_unit, _cb, self.game.map, self)
             # Ensure dialog is visible and receives events immediately
             self.shooting_declaration_dialog.visible = True
-        setattr(self.stratagem_dialog, 'on_request_overwatch_shooting', _request_overwatch_shooting)
+        self._request_overwatch_shooting = _request_overwatch_shooting
 
         # WORLD EATERS: SKULLS FOR THE SKULL THRONE! -> interactive Blessings roll (extra global Blessing)
         def _request_blessings_roll(player, game, context, on_done):
@@ -614,12 +617,6 @@ class GameView:
                 reborn_in_blood_available=False,
             )
 
-            # Hide stratagem dialog while Blessings dialog runs (modal)
-            try:
-                self.stratagem_dialog.visible = False
-            except Exception:
-                pass
-
             def _on_confirm(payload):
                 # Spend CP for stratagem AFTER successful blessing selection/apply
                 ok = False
@@ -643,7 +640,15 @@ class GameView:
                 self.dialog_manager.open(self.blessings_of_khorne_dialog, modal=True)
             except Exception:
                 pass
-        setattr(self.stratagem_dialog, "on_request_blessings_roll", _request_blessings_roll)
+        self._request_blessings_roll = _request_blessings_roll
+        self._stratagem_panes = {
+            self.player1: self.left_stratagem_pane,
+            self.player2: self.right_stratagem_pane,
+        }
+        self._overwatch_flow_active = False
+        self._optional_flow_active = False
+        self._blessings_flow_active = False
+
         # Initialize shared UI state
         self._ui_hitboxes = {}
         self._mission_popup = None
@@ -1435,22 +1440,28 @@ class GameView:
         """Handle window resize: recompute pane sizes and positions based on new screen size."""
         # Recompute scaled dimensions
         scaled_roster_width = ROSTER_PANE_WIDTH
+        scaled_stratagem_width = STRATAGEM_PANE_WIDTH
         scaled_info_height = INFO_PANE_HEIGHT
-        scaled_battlefield_width = max(100, screen_width - 2 * scaled_roster_width)
+        scaled_battlefield_width = max(100, screen_width - 2 * (scaled_roster_width + scaled_stratagem_width))
         scaled_battlefield_height = max(100, screen_height - scaled_info_height)
 
         # Update stored dimensions
         self.scaled_roster_width = scaled_roster_width
+        self.scaled_stratagem_width = scaled_stratagem_width
         self.scaled_battlefield_width = scaled_battlefield_width
         self.scaled_battlefield_height = scaled_battlefield_height
         self.scaled_info_height = scaled_info_height
+        self.battlefield_left = scaled_stratagem_width + scaled_roster_width
+        self.battlefield_right = self.battlefield_left + scaled_battlefield_width
 
         # Resize roster panes
         # Roster panes should not overlap the bottom logs pane; limit to battlefield height
         roster_pane_height = scaled_battlefield_height
-        self.left_roster_pane.rect.update(0, 0, scaled_roster_width, roster_pane_height)
-        self.right_roster_pane.rect.update(scaled_battlefield_width + scaled_roster_width, 0,
-                                           scaled_roster_width, roster_pane_height)
+        self.left_stratagem_pane.update_rect(0, 0, scaled_stratagem_width, roster_pane_height)
+        self.right_stratagem_pane.update_rect(self.battlefield_right + scaled_roster_width, 0,
+                                              scaled_stratagem_width, roster_pane_height)
+        self.left_roster_pane.rect.update(scaled_stratagem_width, 0, scaled_roster_width, roster_pane_height)
+        self.right_roster_pane.rect.update(self.battlefield_right, 0, scaled_roster_width, roster_pane_height)
         # After rect updates, recreate buttons and clamp scroll to fix misalignment
         if hasattr(self.left_roster_pane, 'create_buttons'):
             self.left_roster_pane.create_buttons()
@@ -1458,7 +1469,7 @@ class GameView:
             self.right_roster_pane.create_buttons()
 
         # Resize info pane
-        self.info_pane.rect.update(scaled_roster_width, scaled_battlefield_height,
+        self.info_pane.rect.update(self.battlefield_left, scaled_battlefield_height,
                                    scaled_battlefield_width, scaled_info_height)
 
         # No UI scale factor; rendering uses only zoom and pan
@@ -1498,6 +1509,10 @@ class GameView:
             # Update player references
             self.left_roster_pane.player = self.player1
             self.right_roster_pane.player = self.player2
+            self.left_stratagem_pane.player = self.player1
+            self.right_stratagem_pane.player = self.player2
+            self.left_stratagem_pane.player_name = f"Player 1 ({self.player1.name})"
+            self.right_stratagem_pane.player_name = f"Player 2 ({self.player2.name})"
             
             # Update all_units for color correlation
             all_units = player1_units + player2_units
@@ -1515,10 +1530,18 @@ class GameView:
             print(f"✅ Roster panes refreshed successfully")
 
     def _draw_top_status_pane(self, pane_height_px: int) -> None:
-        left = self.scaled_roster_width
+        left = self.battlefield_left
         width = self.scaled_battlefield_width
         pygame.draw.rect(self.screen, (35, 35, 38), (left, 0, width, pane_height_px))
         pygame.draw.rect(self.screen, (63, 63, 70), (left, 0, width, pane_height_px), 2)
+        # Clear stale mission/secondary hitboxes before rebuilding
+        try:
+            if hasattr(self, "_ui_hitboxes"):
+                for key in list(self._ui_hitboxes.keys()):
+                    if key == "primary" or str(key).startswith("sec_"):
+                        self._ui_hitboxes.pop(key, None)
+        except Exception:
+            pass
 
         third = width // 3
         p1_rect = pygame.Rect(left, 0, third, pane_height_px)
@@ -1680,9 +1703,37 @@ class GameView:
         self._draw_scroll_text_box(boxes[2], p2_dice, key='p2_dice', title=f"{p2_name} Dice")
         self._draw_scroll_text_box(boxes[3], p2_actions, key='p2_actions', title=f"{p2_name} Actions")
 
+    def _draw_stratagem_panes(self) -> None:
+        if not hasattr(self, '_ui_hitboxes'):
+            self._ui_hitboxes = {}
+        # Clear old stratagem item hitboxes
+        for key in list(self._ui_hitboxes.keys()):
+            if str(key).startswith("strat_item_"):
+                self._ui_hitboxes.pop(key, None)
+
+        panes = [
+            ("p1", self.player1, self.left_stratagem_pane),
+            ("p2", self.player2, self.right_stratagem_pane),
+        ]
+        for prefix, player, pane in panes:
+            if pane is None or player is None:
+                continue
+            mgr = getattr(player, "stratagems", None)
+            items = []
+            try:
+                if mgr is not None:
+                    items = mgr.get_phase_stratagem_items() or []
+            except Exception:
+                items = []
+            for item in items:
+                try:
+                    item["owner"] = player
+                except Exception:
+                    pass
+            pane.set_items(items)
+            pane.draw(self.screen, hitboxes=self._ui_hitboxes, key_prefix=prefix)
+
     def _draw_stratagem_button(self, rect: pygame.Rect, player) -> None:
-        # Determine glow/available state.
-        # During setup (pre-deployment), stratagems should not appear "available" yet.
         in_setup = False
         try:
             if hasattr(self.game, "is_in_setup_phase") and callable(self.game.is_in_setup_phase):
@@ -1692,35 +1743,10 @@ class GameView:
         except Exception:
             in_setup = False
 
-        glow = False
-        count = 0
-        mgr = getattr(player, "stratagems", None)
-        if not in_setup and mgr is not None:
-            pending = mgr.get_pending_reactions() or []
-            avail = mgr.list_available_for_current_phase() or []
-            count = len(pending) + len(avail)
-            glow = count > 0
+        pane = self._stratagem_panes.get(player)
+        is_open = bool(getattr(pane, "is_open", False)) if pane else False
 
-        # If a stratagem window is active for this player, force glow and show countdown
-        window = self._stratagem_windows.get(player)
-        remaining_label = None
-        if window:
-            now_ms = pygame.time.get_ticks()
-            if not window.get('claimed', False):
-                remaining_ms = max(0, int(window.get('expires_at', 0)) - now_ms)
-                remaining_s = remaining_ms / 1000.0
-                remaining_label = f"{remaining_s:.1f}s"
-            else:
-                remaining_label = "waiting"
-            glow = True
-
-        # Visually "disable" during setup even if something tries to register as available.
-        if in_setup:
-            glow = False
-            remaining_label = None
-            count = 0
-
-        bg = (60, 60, 67) if not glow else (100, 149, 237)
+        bg = (60, 60, 67) if not is_open else (100, 149, 237)
         fg = (255, 255, 255)
         pygame.draw.rect(self.screen, bg, rect)
         pygame.draw.rect(self.screen, (63,63,70), rect, 1)
@@ -1739,12 +1765,8 @@ class GameView:
         else:
             player_label = getattr(player, 'name', 'Player')
 
-        strat_label = "Stratagem"
-        if remaining_label is not None:
-            strat_label = f"Stratagem ({remaining_label})"
-        elif count > 0:
-            strat_label = f"Stratagem ({count})"
-        elif in_setup:
+        strat_label = "Stratagems"
+        if in_setup:
             strat_label = "Stratagems (Setup)"
 
         ts1 = title_font.render(strat_label, True, fg)
@@ -1955,9 +1977,13 @@ class GameView:
             if self.game.attacker_index == 0:  # Player 1 is attacker
                 self.left_roster_pane.player_name = f"{self.player1.name} (Attacker)"
                 self.right_roster_pane.player_name = f"{self.player2.name} (Defender)"
+                self.left_stratagem_pane.player_name = f"Player 1 ({self.player1.name})"
+                self.right_stratagem_pane.player_name = f"Player 2 ({self.player2.name})"
             else:  # Player 2 is attacker
                 self.left_roster_pane.player_name = f"{self.player1.name} (Defender)"
                 self.right_roster_pane.player_name = f"{self.player2.name} (Attacker)"
+                self.left_stratagem_pane.player_name = f"Player 1 ({self.player1.name})"
+                self.right_stratagem_pane.player_name = f"Player 2 ({self.player2.name})"
 
     def handle_pygame_event(self, event):
         """Handle pygame events using phase-based routing."""
@@ -1996,21 +2022,10 @@ class GameView:
             # Mission popup overlay closes on any click
             if getattr(self, '_mission_popup', None):
                 self._mission_popup = None
-                # If a claimed stratagem window exists, resume flow now
-                for p, wnd in list(self._stratagem_windows.items()):
-                    if wnd.get('claimed', False):
-                        cb = wnd.get('on_timeout')
-                        # Clear first to avoid reentrancy issues
-                        del self._stratagem_windows[p]
-                        if callable(cb):
-                            try:
-                                cb()
-                            except Exception:
-                                pass
                 return True
             # Intercept clicks in the top status pane so they don't fall through
             if True:
-                left = self.scaled_roster_width
+                left = self.battlefield_left
                 width = self.scaled_battlefield_width
                 top_rect = pygame.Rect(left, 0, width, self.top_pane_height_px)
                 if top_rect.collidepoint(event.pos):
@@ -2028,14 +2043,35 @@ class GameView:
                     # Otherwise consume the click within top pane
                     return True
 
-            # Handle bottom stratagem button clicks
+            # Handle stratagem pane item clicks
             if self._ui_hitboxes:
-                # Left and right stratagem buttons are stored as 'strat_p1' and 'strat_p2'
+                for key, payload in list(self._ui_hitboxes.items()):
+                    if not str(key).startswith("strat_item_"):
+                        continue
+                    rect, item = payload
+                    if rect.collidepoint(event.pos):
+                        owner = item.get("owner")
+                        if owner is None:
+                            return True
+                        if item.get("available"):
+                            self._attempt_use_stratagem(owner, item)
+                        return True
+
+            # Consume clicks inside stratagem panes to avoid map interactions
+            try:
+                if self.left_stratagem_pane and self.left_stratagem_pane.rect.collidepoint(event.pos):
+                    return True
+                if self.right_stratagem_pane and self.right_stratagem_pane.rect.collidepoint(event.pos):
+                    return True
+            except Exception:
+                pass
+
+            # Handle bottom stratagem button clicks (collapse/expand)
+            if self._ui_hitboxes:
                 for key in ('strat_p1', 'strat_p2'):
                     if key in self._ui_hitboxes:
                         rect, player = self._ui_hitboxes[key]
                         if rect.collidepoint(event.pos):
-                            # During setup (pre-deployment), stratagems are not actionable.
                             try:
                                 in_setup = False
                                 if hasattr(self.game, "is_in_setup_phase") and callable(self.game.is_in_setup_phase):
@@ -2043,47 +2079,12 @@ class GameView:
                                 else:
                                     in_setup = not bool(getattr(self.game, "setup_complete", True))
                                 if in_setup:
-                                    self._mission_popup = {
-                                        'title': "Stratagems",
-                                        'body': "Stratagems become available once the battle begins (after setup/deployment)."
-                                    }
                                     return True
                             except Exception:
                                 pass
-                            # If a window exists for this player, mark it claimed to pause flow
-                            if player in self._stratagem_windows:
-                                try:
-                                    self._stratagem_windows[player]['claimed'] = True
-                                except Exception:
-                                    pass
-                            # Open interactive stratagem dialog
-                            def _on_closed():
-                                # When dialog closes, if there was a claimed window, clear it and resume via callback
-                                wnd = self._stratagem_windows.pop(player, None)
-                                if wnd:
-                                    cb = wnd.get('on_timeout')
-                                    if callable(cb):
-                                        try:
-                                            cb()
-                                        except Exception:
-                                            pass
-                            if self.stratagem_dialog:
-                                self.stratagem_dialog.show(player, self.game, on_closed=_on_closed)
-                                try:
-                                    self.dialog_manager.open(self.stratagem_dialog, modal=True)
-                                except Exception:
-                                    pass
-                            else:
-                                mgr = player.stratagems
-                                pending = mgr.get_pending_reactions()
-                                avail = mgr.list_available_for_current_phase()
-                                items = []
-                                for r in pending:
-                                    items.append(f"[Reaction] {r.get('stratagem','')} ({r.get('event','')})")
-                                for s in avail:
-                                    items.append(f"{getattr(s, 'name', 'Stratagem')}")
-                                body = "No stratagems available." if not items else "\n".join(items[:20])
-                                self._mission_popup = {'title': f"{player.name} Stratagems", 'body': body}
+                            pane = self._stratagem_panes.get(player)
+                            if pane is not None:
+                                pane.toggle()
                             return True
 
         # PRIORITY 2: Let phase manager handle phase-specific events next
@@ -2108,7 +2109,7 @@ class GameView:
             # Check for middle mouse button panning
             elif event.button == 2:  # Middle mouse button - start panning
                 x, y = event.pos
-                if self.scaled_roster_width < x < self.scaled_battlefield_width + self.scaled_roster_width:
+                if self.battlefield_left < x < self.battlefield_right:
                     self.panning = True
                     self.pan_start_pos = (x, y)
                     self.pan_start_offset = (self.offset_x, self.offset_y)
@@ -2148,60 +2149,184 @@ class GameView:
         
         return False
 
-    # -------- Stratagem window helpers --------
-    def _now_ms(self) -> int:
-        return pygame.time.get_ticks()
+    # -------- Stratagem pane helpers --------
+    def _attempt_use_stratagem(self, player, item: Dict[str, Any]) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        name = item.get("name")
+        if not name:
+            return
 
-    def _tick_stratagem_windows(self) -> None:
-        # Resolve expired windows if not claimed
-        now_ms = self._now_ms()
-        expired = []
-        for p, wnd in list(self._stratagem_windows.items()):
-            if wnd.get('claimed', False):
-                # Claimed windows persist until popup closed (handled in click handler)
-                continue
-            if now_ms >= int(wnd.get('expires_at', 0)):
-                expired.append(p)
-        for p in expired:
-            wnd = self._stratagem_windows.pop(p, None) or {}
-            cb = wnd.get('on_timeout')
-            if callable(cb):
-                cb()
+        context = dict(item.get("context", {}) or {})
+        if item.get("is_reaction"):
+            context["dequeue"] = True
+        if "phase_name" not in context:
+            phase_name = getattr(manager, "_current_phase_name", None)
+            if phase_name:
+                context["phase_name"] = phase_name
 
-    def start_stratagem_window(self, player, duration_seconds: float = 3.0, on_timeout=None) -> None:
-        expires_at = self._now_ms() + int(max(0.0, float(duration_seconds)) * 1000)
-        self._stratagem_windows[player] = {
-            'expires_at': expires_at,
-            'claimed': False,
-            'on_timeout': on_timeout,
-        }
+        name_u = str(name).strip().upper()
+        if name_u == "NEW ORDERS" and "secondary_card" not in context:
+            if callable(getattr(self, "_request_secondary_discard", None)):
+                self._request_secondary_discard(player, self.game, lambda chosen: self._finalize_new_orders(player, name, context, chosen))
+            return
 
-    def start_phase_end_window_if_needed(self) -> bool:
-        """If at end of Command phase (SPACE pressed), start a 3s window.
-        Returns True if a window was started and phase advancement should be deferred.
-        """
-        # Only for human players
-        current_player = self.game.get_current_player()
-        if current_player.type.name != 'HUMAN':
-            return False
-        # Only when current phase is Command
-        if self.game.phase.name == 'COMMAND_PHASE':
-            # On timeout/resume, actually advance the phase
-            def _advance():
-                self.game.next_phase()
-            self.start_stratagem_window(current_player, duration_seconds=3.0, on_timeout=_advance)
-            return True
-        return False
+        if name_u in ("FIRE OVERWATCH", "OVERWATCH") and "shooter_unit" not in context:
+            if callable(getattr(self, "_request_overwatch_shooter", None)):
+                enemy = context.get("enemy_unit")
+                self._request_overwatch_shooter(player, self.game, enemy, lambda shooter: self._finalize_overwatch(player, name, context, shooter))
+            return
 
-    def _on_unit_move_ended(self, unit, action: str, **kwargs):
-        """Offer opponent a brief reaction window after a unit completes movement."""
-        owner_player = unit.get_parent_army().player
-        opponent = self.player2 if owner_player is self.player1 else self.player1
-        self.start_stratagem_window(opponent, duration_seconds=3.0, on_timeout=None)
+        if name_u == "RAPID INGRESS" and "unit" not in context and "target_unit" not in context:
+            if callable(getattr(self, "_request_rapid_ingress_unit", None)):
+                candidates = context.get("candidates") or []
+                self._request_rapid_ingress_unit(player, self.game, candidates, lambda unit: self._finalize_rapid_ingress(player, name, context, unit))
+            return
 
-    def _on_stratagem_window(self, player, duration: float = 3.0, **kwargs):
-        """Start a reaction window for a specific player (from events)."""
-        self.start_stratagem_window(player, duration_seconds=float(duration) if duration is not None else 3.0, on_timeout=None)
+        if name_u == "COUNTER-OFFENSIVE" and "target_unit" not in context and "unit" not in context:
+            if callable(getattr(self, "_request_counter_offensive_unit", None)):
+                candidates = context.get("candidates") or []
+                self._request_counter_offensive_unit(player, self.game, candidates, lambda unit: self._finalize_counter_offensive(player, name, context, unit))
+            return
+
+        if name_u == "SKULLS FOR THE SKULL THRONE!" and "attacker_unit" in context:
+            if callable(getattr(self, "_request_blessings_roll", None)):
+                if self._blessings_flow_active:
+                    return
+                self._blessings_flow_active = True
+
+                def _done(executed: bool):
+                    self._blessings_flow_active = False
+                    if executed:
+                        print(f"Used stratagem: {name}")
+                    else:
+                        print("Skulls for the Skull Throne cancelled or failed")
+
+                self._request_blessings_roll(player, self.game, context, _done)
+            return
+
+        if callable(getattr(self, "_request_yes_no", None)):
+            try:
+                target_unit = context.get("target_unit", None)
+                strat = manager.get_by_name(str(name)) if manager else None
+                if strat is not None and target_unit is not None:
+                    prev = player.preview_stratagem_cp_cost(strat, target_unit=target_unit, assume_optional_discounts=True)
+                    if int(prev.get("discount", 0) or 0) >= 1:
+                        if self._optional_flow_active:
+                            return
+                        self._optional_flow_active = True
+                        base = int(prev.get("base", getattr(strat, "cp_cost", 0) or 0) or 0)
+                        msg = f"Use Direct the Slaughter to reduce CP cost by 1?\n\n{str(name)}: {base}CP -> {max(0, base-1)}CP"
+
+                        def _done(chosen: bool):
+                            self._optional_flow_active = False
+                            try:
+                                player.set_next_optional_decision("DIRECT_THE_SLAUGHTER", bool(chosen))
+                            except Exception:
+                                pass
+                            ok2 = manager.use(name, **context)
+                            if ok2:
+                                print(f"Used stratagem: {name}")
+                            else:
+                                print(f"Could not use stratagem: {name}")
+
+                        self._request_yes_no("Direct the Slaughter", msg, "Use", "Skip", _done)
+                        return
+            except Exception:
+                pass
+
+        ok = manager.use(name, **context)
+        if ok:
+            print(f"Used stratagem: {name}")
+        else:
+            print(f"Could not use stratagem: {name}")
+
+    def _finalize_new_orders(self, player, name: str, context: Dict[str, Any], selected_card) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        ctx = dict(context)
+        ctx["secondary_card"] = selected_card
+        ok = manager.use(name, **ctx)
+        if ok:
+            print(f"Used stratagem: {name}")
+        else:
+            print(f"Could not use stratagem: {name}")
+
+    def _finalize_overwatch(self, player, name: str, context: Dict[str, Any], shooter_unit) -> None:
+        if self._overwatch_flow_active:
+            return
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if shooter_unit is None:
+            print("Overwatch: no shooter selected")
+            return
+        ctx = dict(context)
+        ctx["shooter_unit"] = shooter_unit
+        if "phase_name" not in ctx:
+            phase_name = getattr(manager, "_current_phase_name", None)
+            if phase_name:
+                ctx["phase_name"] = phase_name
+        enemy = ctx.get("enemy_unit")
+        if callable(getattr(self, "_request_overwatch_shooting", None)):
+            try:
+                setattr(shooter_unit, "_overwatch_sixes_only", True)
+            except Exception:
+                pass
+            self._overwatch_flow_active = True
+
+            def _done_callback(executed: bool):
+                try:
+                    delattr(shooter_unit, "_overwatch_sixes_only")
+                except Exception:
+                    pass
+                self._overwatch_flow_active = False
+                if executed:
+                    s = manager.get_by_name(str(name)) if manager else None
+                    if s and player.spend_command_points(s.cp_cost):
+                        manager._used_this_turn["OVERWATCH"] = True
+                        if ctx.get("dequeue") is True and hasattr(manager, "_dequeue_reaction_by_name"):
+                            manager._dequeue_reaction_by_name(s.name)
+                        print(f"Used stratagem: {name}")
+                    else:
+                        print("Overwatch: failed to spend CP")
+                else:
+                    print("Overwatch cancelled or failed")
+
+            self._request_overwatch_shooting(shooter_unit, enemy, _done_callback)
+            return
+
+        ok = manager.use(name, **ctx)
+        if ok:
+            print(f"Used stratagem: {name}")
+        else:
+            print(f"Could not use stratagem: {name}")
+
+    def _finalize_rapid_ingress(self, player, name: str, context: Dict[str, Any], unit) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        ctx = dict(context)
+        ctx["unit"] = unit
+        ok = manager.use(name, **ctx)
+        if ok:
+            print(f"Used stratagem: {name}")
+        else:
+            print(f"Could not use stratagem: {name}")
+
+    def _finalize_counter_offensive(self, player, name: str, context: Dict[str, Any], unit) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        ctx = dict(context)
+        ctx["target_unit"] = unit
+        ok = manager.use(name, **ctx)
+        if ok:
+            print(f"Used stratagem: {name}")
+        else:
+            print(f"Could not use stratagem: {name}")
 
     # Note: on_mouse_press is now handled by phase-specific handlers in PhaseManager
 
@@ -2238,7 +2363,17 @@ class GameView:
                         return
         except Exception:
             pass
-        # PRIORITY 1: Check if scrolling in unit detail panel first (highest priority)
+        # PRIORITY 1: Stratagem pane scrolling
+        try:
+            if self.left_stratagem_pane and self.left_stratagem_pane.is_open and self.left_stratagem_pane.rect.collidepoint(x, y):
+                self.left_stratagem_pane.scroll(-scroll_y * 30)
+                return
+            if self.right_stratagem_pane and self.right_stratagem_pane.is_open and self.right_stratagem_pane.rect.collidepoint(x, y):
+                self.right_stratagem_pane.scroll(-scroll_y * 30)
+                return
+        except Exception:
+            pass
+        # PRIORITY 2: Check if scrolling in unit detail panel first (highest priority)
         if self.detailed_unit:
             # Use the rect that was set during drawing (if it exists)
             if hasattr(self.unit_detail_panel, 'rect') and self.unit_detail_panel.rect:
@@ -2247,14 +2382,14 @@ class GameView:
                     self.unit_detail_panel.scroll(-scroll_y * 30)  # Scroll speed
                     return  # CRITICAL: Exit early to prevent other panels from handling the event
         
-        # PRIORITY 2: Only check roster panes if unit detail panel didn't handle the event
+        # PRIORITY 3: Only check roster panes if unit detail panel didn't handle the event
         if self.left_roster_pane.rect.collidepoint(x, y):
             self.left_roster_pane.scroll(-scroll_y * 30)  # Scroll speed
         elif self.right_roster_pane.rect.collidepoint(x, y):
             self.right_roster_pane.scroll(-scroll_y * 30)
         
-        # PRIORITY 3: Handle battlefield panning with Shift+Scroll (alternative to middle mouse)
-        elif self.scaled_roster_width < x < self.scaled_battlefield_width + self.scaled_roster_width:
+        # PRIORITY 4: Handle battlefield panning with Shift+Scroll (alternative to middle mouse)
+        elif self.battlefield_left < x < self.battlefield_right:
             keys = pygame.key.get_pressed()
             if keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]:
                 # Horizontal panning with Shift+Scroll
@@ -2283,7 +2418,7 @@ class GameView:
             return hovered_unit, self.right_roster_pane
         
         # Check if hovering over a model on the battlefield
-        if self.scaled_roster_width < x < self.scaled_battlefield_width + self.scaled_roster_width:
+        if self.battlefield_left < x < self.battlefield_right:
             battlefield_x, battlefield_y = self.screen_to_game_coords(x, y)
             
             # Create a point for the mouse position
@@ -2400,14 +2535,14 @@ class GameView:
     def screen_to_game_coords(self, screen_x: int, screen_y: int) -> Tuple[float, float]:
         """Convert screen coordinates to game coordinates with proper scaling"""
         top_offset = getattr(self, 'top_pane_height_px', 0)
-        game_x = (screen_x - self.scaled_roster_width - self.offset_x) / (TILE_SIZE * self.zoom_level)
+        game_x = (screen_x - self.battlefield_left - self.offset_x) / (TILE_SIZE * self.zoom_level)
         game_y = (screen_y - top_offset - self.offset_y) / (TILE_SIZE * self.zoom_level)
         return game_x, game_y
     
     def game_to_screen_coords(self, game_x: float, game_y: float) -> Tuple[int, int]:
         """Convert game coordinates to screen coordinates with proper scaling"""
         top_offset = getattr(self, 'top_pane_height_px', 0)
-        screen_x = int(self.scaled_roster_width + (game_x * TILE_SIZE * self.zoom_level) + self.offset_x)
+        screen_x = int(self.battlefield_left + (game_x * TILE_SIZE * self.zoom_level) + self.offset_x)
         screen_y = int((game_y * TILE_SIZE * self.zoom_level) + self.offset_y + top_offset)
         return screen_x, screen_y
 
@@ -2436,7 +2571,7 @@ class GameView:
     def old_game_to_screen_coords(self, x: float, y: float) -> Tuple[int, int]:
         # DEPRECATED: Use the new game_to_screen_coords method instead
         # Convert game coordinates to screen coordinates  
-        screen_x = int(ROSTER_PANE_WIDTH + (x * TILE_SIZE * self.zoom_level) + self.offset_x)
+        screen_x = int(self.battlefield_left + (x * TILE_SIZE * self.zoom_level) + self.offset_x)
         screen_y = int(y * TILE_SIZE * self.zoom_level + self.offset_y)
         return (screen_x, screen_y)
     
@@ -2445,15 +2580,16 @@ class GameView:
         x, y = screen_pos
         # Convert from screen coordinates to game coordinates
         # Account for roster pane width, zoom level, and pan offset
-        game_x = (x - ROSTER_PANE_WIDTH - self.offset_x) / (TILE_SIZE * self.zoom_level)
+        game_x = (x - self.battlefield_left - self.offset_x) / (TILE_SIZE * self.zoom_level)
         game_y = (y - self.offset_y) / (TILE_SIZE * self.zoom_level)
         return game_x, game_y
 
     def draw(self):
-        # Tick stratagem windows for timeouts
-        self._tick_stratagem_windows()
         self.screen.fill(DARK_GREY)
-    
+
+        # Draw stratagem panes
+        self._draw_stratagem_panes()
+
         # Draw roster panes with enhanced styling
         self.left_roster_pane.draw(self.screen, self.game)
         self.right_roster_pane.draw(self.screen, self.game)
@@ -2697,7 +2833,7 @@ class GameView:
 
         # Draw top mission/status pane and shift battlefield down
         self._draw_top_status_pane(top_pane_height_px)
-        self.screen.blit(battlefield_surface, (self.scaled_roster_width, top_pane_height_px))
+        self.screen.blit(battlefield_surface, (self.battlefield_left, top_pane_height_px))
 
         # Draw repurposed bottom logs pane
         self._draw_bottom_logs_pane()
@@ -4263,7 +4399,7 @@ class DeploymentPhaseHandler(BasePhaseHandler):
             # Track hover position for silhouette preview
             if event.type == pygame.MOUSEMOTION:
                 x, y = event.pos
-                if self.game_view.scaled_roster_width < x < self.game_view.scaled_battlefield_width + self.game_view.scaled_roster_width:
+                if self.game_view.battlefield_left < x < self.game_view.battlefield_right:
                     battlefield_x, battlefield_y = self.game_view.screen_to_game_coords(x, y)
                     self.game_view.individual_model_preview_target = (battlefield_x, battlefield_y)
                     return True
@@ -4273,7 +4409,7 @@ class DeploymentPhaseHandler(BasePhaseHandler):
             # Mouse wheel rotates facing in 5° increments (consume to prevent zoom)
             if event.type == pygame.MOUSEWHEEL:
                 mx, my = pygame.mouse.get_pos()
-                if self.game_view.scaled_roster_width < mx < self.game_view.scaled_battlefield_width + self.game_view.scaled_roster_width:
+                if self.game_view.battlefield_left < mx < self.game_view.battlefield_right:
                     try:
                         self.game_view.individual_model_movement_dialog.rotate_deploy_facing_degrees(float(event.y) * 5.0)
                     except Exception:
@@ -4283,7 +4419,7 @@ class DeploymentPhaseHandler(BasePhaseHandler):
             # Some environments emit wheel as MOUSEBUTTONDOWN with button 4/5.
             if event.type == pygame.MOUSEBUTTONDOWN and event.button in (4, 5):
                 mx, my = pygame.mouse.get_pos()
-                if self.game_view.scaled_roster_width < mx < self.game_view.scaled_battlefield_width + self.game_view.scaled_roster_width:
+                if self.game_view.battlefield_left < mx < self.game_view.battlefield_right:
                     try:
                         delta = 5.0 if event.button == 4 else -5.0
                         self.game_view.individual_model_movement_dialog.rotate_deploy_facing_degrees(delta)
@@ -4346,7 +4482,7 @@ class DeploymentPhaseHandler(BasePhaseHandler):
 
         # Handle battlefield deployment clicks
         if (self.game_view.selected_unit and not self.game_view.selected_unit.deployed and
-            ROSTER_PANE_WIDTH < x < BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH):
+            self.game_view.battlefield_left < x < self.game_view.battlefield_right):
             # Always route to per-model deployment dialog for human deployments
             battlefield_x, battlefield_y = self.game_view.screen_to_game_coords(x, y)
             battlefield_z = self.game.map.get_height_at_point(battlefield_x, battlefield_y)
@@ -4570,7 +4706,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                 return True  # Still consume the event in targeting mode
 
             # Only handle clicks on the battlefield area
-            if self.game_view.scaled_roster_width < x < self.game_view.scaled_battlefield_width + self.game_view.scaled_roster_width:
+            if self.game_view.battlefield_left < x < self.game_view.battlefield_right:
                 # Convert screen coordinates to game coordinates for targeting using helper method
                 battlefield_x, battlefield_y = self.game_view.screen_to_game_coords(x, y)
 
@@ -4595,7 +4731,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                 return True
             
             # Handle battlefield clicks based on current phase
-            elif ROSTER_PANE_WIDTH < x < BATTLEFIELD_WIDTH + ROSTER_PANE_WIDTH:
+            elif self.game_view.battlefield_left < x < self.game_view.battlefield_right:
                 return self._handle_battlefield_action(x, y)
         
         elif button == 3:  # Right click - show unit details
@@ -5884,7 +6020,7 @@ class BattlePhaseHandler(BasePhaseHandler):
             print(f"🔍 DEBUG: Individual model movement tracking active at ({x}, {y})")
 
             # Check if mouse is over battlefield area
-            if self.game_view.scaled_roster_width < x < self.game_view.scaled_battlefield_width + self.game_view.scaled_roster_width:
+            if self.game_view.battlefield_left < x < self.game_view.battlefield_right:
                 # Convert to game coordinates using helper method
                 battlefield_x, battlefield_y = self.game_view.screen_to_game_coords(x, y)
 
@@ -6589,7 +6725,7 @@ class PreBattlePhaseHandler(BasePhaseHandler):
                     # print(f"🔍 DEBUG: PreBattlePhaseHandler individual model mouse motion at ({x}, {y})")
 
                     # Check if mouse is over battlefield area
-                    if self.game_view.scaled_roster_width < x < self.game_view.scaled_battlefield_width + self.game_view.scaled_roster_width:
+                    if self.game_view.battlefield_left < x < self.game_view.battlefield_right:
                         # Convert to game coordinates using helper method
                         battlefield_x, battlefield_y = self.game_view.screen_to_game_coords(x, y)
 
@@ -6611,7 +6747,7 @@ class PreBattlePhaseHandler(BasePhaseHandler):
             x, y = event.pos
             
             # Check if clicking on battlefield area
-            if self.game_view.scaled_roster_width < x < self.game_view.scaled_battlefield_width + self.game_view.scaled_roster_width:
+            if self.game_view.battlefield_left < x < self.game_view.battlefield_right:
                 # Check if individual model movement dialog is active
                 if (hasattr(self.game_view, 'individual_model_movement_dialog') and
                     self.game_view.individual_model_movement_dialog.visible):

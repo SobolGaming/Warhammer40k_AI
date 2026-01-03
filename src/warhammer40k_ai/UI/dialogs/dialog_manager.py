@@ -59,7 +59,6 @@ class DialogManager:
 
         # GameView dialogs / overlays
         discovered.extend([
-            _get(gv, "stratagem_dialog"),
             _get(gv, "yes_no_dialog"),
             _get(gv, "blessings_of_khorne_dialog"),
             _get(gv, "secondary_discard_dialog"),

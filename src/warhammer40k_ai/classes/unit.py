@@ -4494,14 +4494,6 @@ class Unit:
         """
         # Check for Assault weapons
         if profile.is_assault():
-            # Publish movement end for stratagem reaction windows (e.g. TANK SHOCK / FIRE OVERWATCH on Charge moves).
-            try:
-                _player = getattr(self.get_parent_army(), 'player', None)
-                _game = getattr(_player, 'game', None) if _player else None
-                if _game and hasattr(_game, 'event_system'):
-                    _game.event_system.publish("unit_move_ended", unit=self, action="charge")
-            except Exception:
-                pass
             return True
             
         # Check for unit abilities that allow advance and shoot

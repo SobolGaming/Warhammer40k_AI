@@ -98,12 +98,6 @@ class IndividualModelMovementDialog(BaseDialog):
                     elif self.movement_type == 'charge':
                         action = 'charge'
                     _game.event_system.publish("unit_move_started", unit=self.unit, action=action)
-                    # Start reaction window for opponent on move start
-                    try:
-                        opponent = next(p for p in _game.players if p is not _player)
-                        _game.event_system.publish("stratagem_window", player=opponent, duration=3.0)
-                    except Exception:
-                        pass
             except Exception:
                 pass
 
@@ -1336,12 +1330,6 @@ class IndividualModelMovementDialog(BaseDialog):
                 continue
         # Scout movement does not set round state flags since it happens pre-battle
 
-        # Call callback with completion status
-        if self.callback:
-            self.callback(True)  # Movement completed
-
-        self.hide()
-
         # Publish unit move ended (for Stratagem reactions like Overwatch)
         # NOTE: Do NOT publish for deployment placement.
         if self.movement_type != 'deploy':
@@ -1357,14 +1345,14 @@ class IndividualModelMovementDialog(BaseDialog):
                     elif self.movement_type == 'charge':
                         action = 'charge'
                     _game.event_system.publish("unit_move_ended", unit=self.unit, action=action)
-                    # Start a second reaction window for opponent on move end
-                    try:
-                        opponent = next(p for p in _game.players if p is not _player)
-                        _game.event_system.publish("stratagem_window", player=opponent, duration=3.0)
-                    except Exception:
-                        pass
             except Exception:
                 pass
+
+        # Call callback with completion status
+        if self.callback:
+            self.callback(True)  # Movement completed
+
+        self.hide()
         
     def _skip_movement(self):
         """Skip movement for this unit"""

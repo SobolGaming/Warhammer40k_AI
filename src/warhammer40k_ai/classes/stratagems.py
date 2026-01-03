@@ -1,4 +1,33 @@
+import time
 from typing import Callable, Optional, Dict, Any, List
+
+
+IMPLEMENTED_STRATAGEM_NAMES = {
+    "COMMAND RE-ROLL",
+    "COUNTER-OFFENSIVE",
+    "EPIC CHALLENGE",
+    "FIRE OVERWATCH",
+    "OVERWATCH",
+    "GO TO GROUND",
+    "GRENADE",
+    "INSANE BRAVERY",
+    "NEW ORDERS",
+    "RAPID INGRESS",
+    "SMOKESCREEN",
+    "TANK SHOCK",
+}
+
+REACTION_ONLY_STRATAGEM_NAMES = {
+    "COMMAND RE-ROLL",
+    "COUNTER-OFFENSIVE",
+    "FIRE OVERWATCH",
+    "OVERWATCH",
+    "GO TO GROUND",
+    "INSANE BRAVERY",
+    "NEW ORDERS",
+    "RAPID INGRESS",
+    "SMOKESCREEN",
+}
 
 
 def _unit_cannot_be_target_of_stratagem(unit: Any) -> bool:
@@ -261,6 +290,7 @@ class StratagemManager:
         self._last_failed_battle_shock_unit = None
         self._current_phase_name: Optional[str] = None
         self._pending_reactions: List[Dict[str, Any]] = []
+        self._reaction_timeout_s = 5.0
         # Track temporary per-phase stratagem buffs that must be cleaned up.
         self._epic_challenge_models: list[Any] = []
         self._build_available()
@@ -289,6 +319,133 @@ class StratagemManager:
                     return
         except Exception:
             return
+
+    def _now(self) -> float:
+        return float(time.monotonic())
+
+    def _queue_reaction(self, payload: Dict[str, Any], use_timer: bool = True) -> None:
+        if not isinstance(payload, dict):
+            return
+        if use_timer:
+            payload["expires_at"] = self._now() + float(self._reaction_timeout_s)
+        payload["reaction"] = True
+        self._pending_reactions.append(payload)
+
+    def _prune_expired_reactions(self, now: Optional[float] = None) -> None:
+        ts = self._now() if now is None else float(now)
+        kept = []
+        for r in list(self._pending_reactions):
+            try:
+                expires_at = r.get("expires_at", None)
+                if expires_at is not None and ts >= float(expires_at):
+                    continue
+            except Exception:
+                pass
+            kept.append(r)
+        self._pending_reactions = kept
+
+    def _reaction_time_left(self, reaction: Dict[str, Any], now: Optional[float] = None) -> Optional[float]:
+        try:
+            expires_at = reaction.get("expires_at", None)
+            if expires_at is None:
+                return None
+            ts = self._now() if now is None else float(now)
+            return max(0.0, float(expires_at) - ts)
+        except Exception:
+            return None
+
+    def _is_implemented_stratagem(self, stratagem: Stratagem) -> bool:
+        try:
+            return (stratagem.name or "").strip().upper() in IMPLEMENTED_STRATAGEM_NAMES
+        except Exception:
+            return False
+
+    def _turn_category(self, stratagem: Stratagem) -> str:
+        try:
+            if stratagem.is_turn_allowed(True) and stratagem.is_turn_allowed(False):
+                return "either"
+            if stratagem.is_turn_allowed(False) and not stratagem.is_turn_allowed(True):
+                return "opponent"
+            return "your"
+        except Exception:
+            return "your"
+
+    def _effective_cp_cost(self, stratagem: Stratagem, context: Dict[str, Any]) -> int:
+        target_unit = context.get("target_unit") or context.get("unit")
+        cost = int(getattr(stratagem, "cp_cost", 0) or 0)
+        try:
+            if hasattr(self.player, "preview_stratagem_cp_cost"):
+                prev = self.player.preview_stratagem_cp_cost(stratagem, target_unit=target_unit)
+                return int(prev.get("cost", cost))
+        except Exception:
+            return cost
+        return cost
+
+    def _evaluate_availability(
+        self,
+        stratagem: Stratagem,
+        context: Dict[str, Any],
+        *,
+        is_active_turn: bool,
+    ) -> Dict[str, Any]:
+        result = {"available": False, "reason": None, "cp_cost": self._effective_cp_cost(stratagem, context)}
+        name_u = (stratagem.name or "").strip().upper()
+        phase_name = context.get("phase_name") or self._current_phase_name or ""
+
+        if name_u and name_u in self._used_stratagems_this_phase:
+            result["reason"] = "Already used this phase"
+            return result
+        if name_u and self._used_once_per_battle.get(name_u, False):
+            result["reason"] = "Once per battle used"
+            return result
+        if name_u == "OVERWATCH" or name_u == "FIRE OVERWATCH":
+            if self._used_this_turn.get("OVERWATCH", False):
+                result["reason"] = "Already used this turn"
+                return result
+
+        if not stratagem.is_phase_allowed(phase_name):
+            result["reason"] = "Wrong phase"
+            return result
+        if not stratagem.is_turn_allowed(is_active_turn):
+            result["reason"] = "Wrong turn"
+            return result
+
+        if int(getattr(self.player, "command_points", 0) or 0) < int(result["cp_cost"] or 0):
+            result["reason"] = "Not enough CP"
+            return result
+
+        # Targeting restrictions for provided context
+        target = _extract_friendly_target_unit_from_kwargs(context)
+        if target is not None and _unit_cannot_be_target_of_stratagem(target):
+            if name_u != "INSANE BRAVERY":
+                result["reason"] = "Target cannot be selected"
+                return result
+
+        # Last pass: delegate to stratagem conditions
+        try:
+            if stratagem.can_use(self.player, self.game, **context):
+                result["available"] = True
+                result["reason"] = None
+                return result
+        except Exception:
+            pass
+
+        result["reason"] = "Requires valid trigger or target"
+        return result
+
+    def _reaction_target_label(self, reaction: Dict[str, Any]) -> str:
+        try:
+            if reaction.get("enemy_unit") is not None:
+                return f"Vs {getattr(reaction['enemy_unit'], 'name', 'Enemy')}"
+            if reaction.get("target_unit") is not None:
+                return f"Target: {getattr(reaction['target_unit'], 'name', 'Unit')}"
+            if reaction.get("unit") is not None:
+                return f"Target: {getattr(reaction['unit'], 'name', 'Unit')}"
+            if reaction.get("target_model") is not None:
+                return f"Target model: {getattr(reaction['target_model'], 'name', 'Model')}"
+        except Exception:
+            return ""
+        return ""
 
     def _build_available(self) -> None:
         """
@@ -412,13 +569,14 @@ class StratagemManager:
                                 already = True
                                 break
                         if not already:
-                            self._pending_reactions.append({
+                            self._queue_reaction({
                                 'event': 'phase_end',
                                 'phase': 'Command phase',
+                                'phase_name': 'Command phase',
                                 'stratagem': s.name,
                                 'cp_cost': s.cp_cost,
                                 'options': [c for c in self.player.active_secondaries],
-                            })
+                            }, use_timer=False)
         except Exception:
             pass
 
@@ -486,7 +644,7 @@ class StratagemManager:
                 for r in self._pending_reactions:
                     if r.get('event') == 'phase_end' and str(r.get('stratagem', '')).upper() == 'RAPID INGRESS':
                         return
-                self._pending_reactions.append({
+                self._queue_reaction({
                     'event': 'phase_end',
                     'phase': 'Movement phase',
                     'phase_name': 'Movement phase',
@@ -494,12 +652,6 @@ class StratagemManager:
                     'cp_cost': s.cp_cost,
                     'candidates': candidates,
                 })
-                # Offer a brief reaction window to the player who can use it
-                if hasattr(self.game, 'event_system'):
-                    try:
-                        self.game.event_system.publish("stratagem_window", player=self.player, duration=3.0)
-                    except Exception:
-                        pass
         except Exception:
             pass
     def _on_battle_shock_test_started(self, unit, **kwargs):
@@ -525,19 +677,13 @@ class StratagemManager:
             if not s.can_use(self.player, self.game, unit=unit, phase_name=self._current_phase_name):
                 return
             # Queue as a reaction (UI can choose to use it)
-            self._pending_reactions.append({
+            self._queue_reaction({
                 "event": "battle_shock_test_started",
                 "stratagem": s.name,
                 "cp_cost": s.cp_cost,
                 "unit": unit,
                 "phase_name": self._current_phase_name,
             })
-            # Offer a brief reaction window
-            try:
-                if hasattr(self.game, "event_system"):
-                    self.game.event_system.publish("stratagem_window", player=self.player, duration=3.0)
-            except Exception:
-                pass
         except Exception:
             return
 
@@ -549,7 +695,7 @@ class StratagemManager:
             if s:
                 phase_name = self._current_phase_name
                 if s.can_use(self.player, self.game, unit=unit, phase_name=phase_name):
-                    self._pending_reactions.append({
+                    self._queue_reaction({
                         'event': 'battle_shock_failed',
                         'stratagem': s.name,
                         'unit': unit,
@@ -609,7 +755,7 @@ class StratagemManager:
             return
 
         # Queue reaction: UI can choose enemy_unit later; default heuristic will pick the first.
-        self._pending_reactions.append({
+        self._queue_reaction({
             "event": "charge_move_ended",
             "phase_name": "Charge phase",
             "stratagem": s.name,
@@ -618,11 +764,6 @@ class StratagemManager:
             "target_unit": charging_unit,
             "eligible_enemy_units": eligible,
         })
-        try:
-            if hasattr(self.game, "event_system"):
-                self.game.event_system.publish("stratagem_window", player=self.player, duration=3.0)
-        except Exception:
-            pass
 
     def _on_shooting_targets_selected(self, attacking_unit=None, target_units=None, **kwargs):
         """
@@ -662,7 +803,7 @@ class StratagemManager:
             if not candidates:
                 return
             # Queue as a reaction with candidates; UI may choose which unit to protect.
-            self._pending_reactions.append({
+            self._queue_reaction({
                 "event": "shooting_targets_selected",
                 "phase_name": "Shooting phase",
                 "stratagem": s.name,
@@ -670,7 +811,6 @@ class StratagemManager:
                 "attacking_unit": attacking_unit,
                 "candidates": candidates,
             })
-            self.game.event_system.publish("stratagem_window", player=self.player, duration=3.0)
         except Exception:
             return
 
@@ -704,7 +844,7 @@ class StratagemManager:
                     continue
             if not smoke_candidates:
                 return
-            self._pending_reactions.append({
+            self._queue_reaction({
                 "event": "shooting_targets_selected",
                 "phase_name": "Shooting phase",
                 "stratagem": s2.name,
@@ -712,7 +852,6 @@ class StratagemManager:
                 "attacking_unit": attacking_unit,
                 "candidates": smoke_candidates,
             })
-            self.game.event_system.publish("stratagem_window", player=self.player, duration=3.0)
         except Exception:
             return
 
@@ -776,7 +915,7 @@ class StratagemManager:
                     continue
             if not models:
                 return
-            self._pending_reactions.append({
+            self._queue_reaction({
                 "event": "fight_unit_selected",
                 "phase_name": "Fight phase",
                 "stratagem": s.name,
@@ -784,7 +923,6 @@ class StratagemManager:
                 "unit": unit,
                 "eligible_models": models,
             })
-            self.game.event_system.publish("stratagem_window", player=self.player, duration=3.0)
         except Exception:
             return
 
@@ -873,7 +1011,7 @@ class StratagemManager:
                 candidates.append(root)
             if not candidates:
                 return
-            self._pending_reactions.append({
+            self._queue_reaction({
                 "event": "fight_sequence_complete",
                 "phase_name": "Fight phase",
                 "stratagem": s.name,
@@ -882,7 +1020,6 @@ class StratagemManager:
                 "stage": stage,
                 "candidates": candidates,
             })
-            self.game.event_system.publish("stratagem_window", player=self.player, duration=3.0)
         except Exception:
             return
 
@@ -943,11 +1080,6 @@ class StratagemManager:
             return
 
         # Queue opportunity with minimal context; UI will choose shooter before resolving
-        # Identify opponent for reaction window
-        try:
-            opponent = next(p for p in self.game.players if p is not owner_player)
-        except Exception:
-            opponent = None
         # Deduplicate if same enemy move reaction is already queued
         already = False
         for r in self._pending_reactions:
@@ -955,21 +1087,16 @@ class StratagemManager:
                 already = True
                 break
         if not already:
-            self._pending_reactions.append({
+            self._queue_reaction({
                 'event': 'enemy_move',
                 'when': when,
+                'action': action,
                 'stratagem': s.name,
                 'enemy_unit': moving_unit,
                 'phase_name': phase_name,
                 'cp_cost': s.cp_cost,
                 'candidates': candidates,
             })
-        # Publish a UI hint to start a brief reaction window for the opponent
-        if opponent is not None and hasattr(self.game, 'event_system'):
-            try:
-                self.game.event_system.publish("stratagem_window", player=opponent, duration=3.0)
-            except Exception:
-                pass
 
     # Command Re-roll trigger on roll_made for active player only
     def _on_roll_made(self, player, unit, roll_type: str, value, reroll, dice=None, **kwargs):
@@ -999,7 +1126,7 @@ class StratagemManager:
         if self.player.command_points < s.cp_cost:
             return
         # Queue re-roll opportunity with a callable to execute reroll if chosen
-        self._pending_reactions.append({
+        self._queue_reaction({
             'event': 'roll_made',
             'stratagem': s.name,
             'unit': unit,
@@ -1067,7 +1194,7 @@ class StratagemManager:
                     return
             except Exception:
                 continue
-        self._pending_reactions.append({
+        self._queue_reaction({
             "event": "model_destroyed",
             "phase_name": phase_name,
             "stratagem": s.name,
@@ -1076,12 +1203,6 @@ class StratagemManager:
             "target_model": target_model,
             "target_unit": target_unit,
         })
-        # Offer reaction window
-        try:
-            if hasattr(self.game, "event_system"):
-                self.game.event_system.publish("stratagem_window", player=self.player, duration=3.0)
-        except Exception:
-            pass
 
     # -------- Public API --------
     def list_available(self) -> List[Stratagem]:
@@ -1841,30 +1962,104 @@ class StratagemManager:
         return ok
 
     # -------- UI helpers for non-disruptive prompts --------
-    def list_available_for_current_phase(self) -> List[Stratagem]:
-        phase_name = self._current_phase_name
-        active_player = self.game.get_current_player()
+    def get_phase_stratagem_items(self) -> List[Dict[str, Any]]:
+        self._prune_expired_reactions()
+        phase_name = self._current_phase_name or ""
+        active_player = self.game.get_current_player() if self.game else None
         is_active_turn = active_player is self.player
-        # Hide any stratagem whose name is already present as a pending reaction
-        reaction_names = {str(r.get('stratagem', '')).strip().lower() for r in self._pending_reactions}
-        results: List[Stratagem] = []
+        now = self._now()
+
+        items: List[Dict[str, Any]] = []
+        pending_names: set[str] = set()
+
+        # Pending reactions first
+        for r in list(self._pending_reactions):
+            s = self.get_by_name(str(r.get("stratagem", "")))
+            if not s or not self._is_implemented_stratagem(s):
+                continue
+            ctx = dict(r)
+            if "phase_name" not in ctx and phase_name:
+                ctx["phase_name"] = phase_name
+            if not s.is_phase_allowed(ctx.get("phase_name", "") or phase_name):
+                continue
+            availability = self._evaluate_availability(s, ctx, is_active_turn=is_active_turn)
+            time_left = None
+            if availability["available"]:
+                time_left = self._reaction_time_left(r, now=now)
+            trigger_label = ""
+            try:
+                if r.get("event") == "enemy_move":
+                    action = str(r.get("action", "") or "").strip().lower()
+                    when = str(r.get("when", "") or "").strip().lower()
+                    if action == "charge":
+                        trigger_label = "Trigger: enemy charge"
+                    elif when == "start":
+                        trigger_label = "Trigger: enemy move start"
+                    elif when == "end":
+                        trigger_label = "Trigger: enemy move end"
+                elif r.get("event") == "shooting_targets_selected":
+                    trigger_label = "Trigger: after targets selected"
+                elif r.get("event") == "fight_sequence_complete":
+                    trigger_label = "Trigger: after enemy fought"
+                elif r.get("event") == "roll_made":
+                    trigger_label = "Trigger: roll made"
+                elif r.get("event") == "battle_shock_test_started":
+                    trigger_label = "Trigger: battle-shock test"
+                elif r.get("event") == "phase_end":
+                    trigger_label = "Trigger: phase end"
+            except Exception:
+                trigger_label = ""
+            items.append({
+                "name": s.name,
+                "cp_cost": availability["cp_cost"],
+                "available": availability["available"],
+                "reason": availability["reason"],
+                "turn_category": self._turn_category(s),
+                "is_reaction": True,
+                "context": ctx,
+                "target_label": self._reaction_target_label(r),
+                "trigger_label": trigger_label,
+                "time_left": time_left,
+            })
+            try:
+                pending_names.add((s.name or "").strip().upper())
+            except Exception:
+                pass
+
+        # Phase-available stratagems (implemented only)
         for s in self.available:
-            name_key = s.name.strip().lower()
-            if name_key in reaction_names:
+            if not self._is_implemented_stratagem(s):
                 continue
-            if s.name.upper() in ("COMMAND RE-ROLL", "INSANE BRAVERY", "COUNTER-OFFENSIVE"):
-                # Only meaningful as reactions with specific trigger timing
+            if not s.is_phase_allowed(phase_name or ""):
                 continue
-            if not s.is_phase_allowed(phase_name or ''):
+            name_u = (s.name or "").strip().upper()
+            if name_u in pending_names and name_u in REACTION_ONLY_STRATAGEM_NAMES:
                 continue
-            if not s.is_turn_allowed(is_active_turn):
-                continue
-            if self.player.command_points < s.cp_cost:
-                continue
-            results.append(s)
-        return results
+            ctx = {"phase_name": phase_name}
+            availability = self._evaluate_availability(s, ctx, is_active_turn=is_active_turn)
+            if name_u in REACTION_ONLY_STRATAGEM_NAMES:
+                if availability["available"]:
+                    availability["available"] = False
+                    availability["reason"] = "No trigger"
+                elif availability["reason"] in (None, "", "Requires valid trigger or target"):
+                    availability["reason"] = "No trigger"
+            items.append({
+                "name": s.name,
+                "cp_cost": availability["cp_cost"],
+                "available": availability["available"],
+                "reason": availability["reason"],
+                "turn_category": self._turn_category(s),
+                "is_reaction": False,
+                "context": ctx,
+                "target_label": "",
+                "trigger_label": "",
+                "time_left": None,
+            })
+
+        return items
 
     def get_pending_reactions(self, clear: bool = False) -> List[Dict[str, Any]]:
+        self._prune_expired_reactions()
         items = list(self._pending_reactions)
         if clear:
             self._pending_reactions = []
