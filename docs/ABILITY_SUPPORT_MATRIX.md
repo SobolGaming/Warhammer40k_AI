@@ -1345,7 +1345,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Relentless Rage | `000008430` | 53 | 53 | **Not implemented** |  |
+| Relentless Rage | `000008430` | 53 | 53 | **Supported** | Berzerker Warband detachment ability (WE). |
 
 #### Cult of Blood
 

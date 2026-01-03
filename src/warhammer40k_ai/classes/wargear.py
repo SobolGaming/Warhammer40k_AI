@@ -432,6 +432,16 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Detachment ability: Relentless Rage (World Eaters - Berzerker Warband)
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                bonus = int(getattr(attacker.parent_unit, "special_rules", {}).get("relentless_rage_melee_attacks_bonus", 0) or 0)
+                if bonus:
+                    atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="detachment:relentless_rage_attacks"))
+                    attack_result.attacks_special_modifiers.append(f"Relentless Rage +{bonus}A (melee)")
+        except Exception:
+            pass
+
         # Damaged profile: add attacks to melee weapons (+N).
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():
@@ -1129,6 +1139,15 @@ class WargearProfile:
                 if s_bonus and isinstance(strength, int):
                     strength = strength + s_bonus
                     wound_result.setdefault("modifiers", []).append(f"+{s_bonus}S from Enhancement (melee)")
+        except Exception:
+            pass
+        # Detachment ability: Relentless Rage (World Eaters - Berzerker Warband)
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                s_bonus = int(getattr(attacker.parent_unit, "special_rules", {}).get("relentless_rage_melee_strength_bonus", 0) or 0)
+                if s_bonus and isinstance(strength, int):
+                    strength = strength + s_bonus
+                    wound_result.setdefault("modifiers", []).append(f"+{s_bonus}S from Relentless Rage (melee)")
         except Exception:
             pass
         # Provide reroll callback for wound

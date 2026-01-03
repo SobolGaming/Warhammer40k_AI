@@ -155,6 +155,8 @@ class Game:
         self.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_rules)
         # Transport core rules (Destroyed Transport -> Disembark + mortals + battleshock)
         self.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_transport_rules)
+        # Detachment abilities that trigger on unit movement events
+        self.event_system.subscribe("unit_move_ended", self._on_unit_move_ended_detachment_rules)
         # Temporary effects cleanup (e.g. once-per-battle abilities that last "until end of phase")
         self.event_system.subscribe("phase_end", self._on_phase_end_cleanup)
         # Optional ability timing windows (prompt/decision hooks)
@@ -252,6 +254,59 @@ class Game:
                             fn(phase)
         except Exception:
             return
+        # Unit-level temporary effects (e.g. detachment abilities that last until end of turn)
+        try:
+            pname = str(getattr(phase, "name", "") or "").strip().upper()
+        except Exception:
+            pname = ""
+        if not pname:
+            return
+        try:
+            for p in list(getattr(self, "players", []) or []):
+                army = getattr(p, "army", None)
+                for u in list(getattr(army, "units", []) or []):
+                    sr = getattr(u, "special_rules", None)
+                    if not isinstance(sr, dict):
+                        continue
+                    exp = str(sr.get("relentless_rage_expires_phase", "") or "").strip().upper()
+                    if exp and exp == pname:
+                        for k in (
+                            "relentless_rage_melee_attacks_bonus",
+                            "relentless_rage_melee_strength_bonus",
+                            "relentless_rage_expires_phase",
+                        ):
+                            sr.pop(k, None)
+        except Exception:
+            return
+
+    def _on_unit_move_ended_detachment_rules(self, unit=None, action: str | None = None, **_kwargs) -> None:
+        if unit is None:
+            return
+        if (action or "").strip().lower() != "charge":
+            return
+        try:
+            army = unit.get_parent_army()
+        except Exception:
+            army = None
+        if army is None:
+            return
+        det = (getattr(army, "detachment_type", "") or "").strip().lower()
+        if det != "berzerker warband":
+            return
+        # Relentless Rage applies only to WORLD EATERS units
+        try:
+            if not unit.has_any_keyword("WORLD EATERS"):
+                return
+        except Exception:
+            if (getattr(army, "faction_id", "") or "").strip().upper() != "WE":
+                return
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["relentless_rage_melee_attacks_bonus"] = 1
+        sr["relentless_rage_melee_strength_bonus"] = 2
+        sr["relentless_rage_expires_phase"] = "FIGHT_PHASE"
+        unit.special_rules = sr
 
     def _on_model_destroyed_rules(self, attacker_model=None, attacker_unit=None, target_model=None, target_unit=None, **_kwargs) -> None:
         # Generic partial support for "gain CP when this model destroys an enemy KEYWORD unit/model".
