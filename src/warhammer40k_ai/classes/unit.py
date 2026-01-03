@@ -7284,13 +7284,13 @@ class Unit:
     def __hash__(self) -> int:
         return hash(self._id)
 
-    def can_declare_charge_against(self, target_unit: 'Unit', game: 'Game') -> bool:
+    def can_declare_charge_against(self, target_unit: 'Unit', game: 'Game', *, out_of_turn: bool = False) -> bool:
         """Check if this unit can declare a charge against the target unit."""
         if not self.is_alive() or not target_unit.is_alive():
             return False
             
         # Check if unit has already attempted a charge this round (successful or failed)
-        if self.round_state.attempted_charge_this_round:
+        if self.round_state.attempted_charge_this_round and not out_of_turn:
             return False
             
         if self.round_state.advanced_this_round and not self.can_charge_after_advance():

@@ -2867,7 +2867,7 @@ class Game:
             "phase": self.phase,
         }
 
-    def declare_charge(self, charging_unit: 'Unit', target_unit: 'Unit') -> dict | None:
+    def declare_charge(self, charging_unit: 'Unit', target_unit: 'Unit', *, out_of_turn: bool = False) -> dict | None:
         """
         Single source of truth for charge declaration bookkeeping + rolling:
 
@@ -2877,16 +2877,19 @@ class Game:
         - Offers a rule-based re-roll prompt (e.g. "re-roll Charge rolls") via map.roll_reroll_provider (UI hook)
         - Publishes `roll_made` for stratagem/telemetry consumers
 
+        out_of_turn: allow declaring a charge outside the active player's turn (no attempted_charge_this_round mark).
+
         Returns a dict:
           { "base_roll": int, "dice": list[int], "reroll_used": bool }
         or None if the charge cannot be declared.
         """
-        if not charging_unit.can_declare_charge_against(target_unit, self):
+        if not charging_unit.can_declare_charge_against(target_unit, self, out_of_turn=out_of_turn):
             return None
 
         # Mark as attempted immediately (prevents multiple declarations).
         try:
-            charging_unit.round_state.attempted_charge_this_round = True
+            if not out_of_turn:
+                charging_unit.round_state.attempted_charge_this_round = True
         except Exception:
             pass
 
@@ -2966,7 +2969,14 @@ class Game:
 
         return {"base_roll": int(base_roll or 0), "dice": list(dice), "reroll_used": bool(reroll_used)}
 
-    def attempt_charge(self, charging_unit: 'Unit', target_unit: 'Unit') -> bool:
+    def attempt_charge(
+        self,
+        charging_unit: 'Unit',
+        target_unit: 'Unit',
+        *,
+        out_of_turn: bool = False,
+        count_as_charged: bool = True,
+    ) -> bool:
         """Attempt a charge move with the given unit against the target.
         
         According to 10th edition rules, a successful charge requires at least one model
@@ -2975,8 +2985,10 @@ class Game:
         
         CRITICAL: If the charge roll is insufficient to reach within 1" of the enemy,
         the charge fails completely and NO MODELS MOVE AT ALL.
+        out_of_turn: allow charges outside the active player's turn.
+        count_as_charged: if False, do not apply the charge bonus (e.g., Heroic Intervention).
         """
-        declared = self.declare_charge(charging_unit, target_unit)
+        declared = self.declare_charge(charging_unit, target_unit, out_of_turn=out_of_turn)
         if not declared:
             return False
 
@@ -3063,7 +3075,8 @@ class Game:
             final_distance = self.map.get_distance_between_units(charging_unit, target_unit)
             
             if final_distance <= 1.0:
-                charging_unit.round_state.charged_this_round = True
+                if count_as_charged:
+                    charging_unit.round_state.charged_this_round = True
                 print(f"✅ Charge successful: {charging_unit.name} achieved {final_distance:.1f}\" edge-to-edge distance with {target_unit.name}")
                 return True
             else:

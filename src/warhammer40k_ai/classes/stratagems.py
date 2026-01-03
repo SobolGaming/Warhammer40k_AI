@@ -10,6 +10,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "OVERWATCH",
     "GO TO GROUND",
     "GRENADE",
+    "HEROIC INTERVENTION",
     "INSANE BRAVERY",
     "NEW ORDERS",
     "RAPID INGRESS",
@@ -23,6 +24,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "FIRE OVERWATCH",
     "OVERWATCH",
     "GO TO GROUND",
+    "HEROIC INTERVENTION",
     "INSANE BRAVERY",
     "NEW ORDERS",
     "RAPID INGRESS",
@@ -710,6 +712,7 @@ class StratagemManager:
     def _on_unit_move_ended(self, unit, action: str, **kwargs):
         self._maybe_queue_overwatch(unit, action, when='end')
         self._maybe_queue_tank_shock(unit, action)
+        self._maybe_queue_heroic_intervention(unit, action)
 
     def _maybe_queue_tank_shock(self, charging_unit, action: str) -> None:
         # Trigger condition: just after a VEHICLE unit from your army ends a Charge move.
@@ -763,6 +766,80 @@ class StratagemManager:
             "unit": charging_unit,
             "target_unit": charging_unit,
             "eligible_enemy_units": eligible,
+        })
+
+    def _maybe_queue_heroic_intervention(self, charging_unit, action: str) -> None:
+        # Trigger condition: after an enemy unit ends a Charge move (opponent's turn).
+        try:
+            if str(action or "").strip().lower() != "charge":
+                return
+            if charging_unit is None or not getattr(charging_unit, "is_alive", lambda: True)():
+                return
+            owner_player = charging_unit.get_parent_army().player
+            if owner_player is self.player:
+                return
+            if (self._current_phase_name or "").strip().lower() != "charge phase":
+                return
+        except Exception:
+            return
+
+        s = self.get_by_name("HEROIC INTERVENTION")
+        if not s:
+            return
+        if self.player.command_points < s.cp_cost:
+            return
+
+        # Find eligible friendly units within 6" that could charge that enemy unit.
+        candidates = []
+        try:
+            for unit in list(getattr(self.player.get_army(), "units", []) or []):
+                if not unit.is_alive() or not unit.deployed:
+                    continue
+                # Restriction: only WALKER vehicles can be selected.
+                try:
+                    if unit.has_keyword("Vehicle") and not unit.has_keyword("Walker"):
+                        continue
+                except Exception:
+                    pass
+                # Core rule: battle-shocked or embarked units cannot be targeted.
+                if _unit_cannot_be_target_of_stratagem(unit):
+                    continue
+                dist = None
+                try:
+                    if self.game and getattr(self.game, "map", None):
+                        dist = self.game.map.get_distance_between_units(unit, charging_unit)
+                except Exception:
+                    dist = None
+                if dist is None or dist > 6.0:
+                    continue
+                try:
+                    if not unit.can_declare_charge_against(charging_unit, self.game, out_of_turn=True):
+                        continue
+                except Exception:
+                    continue
+                candidates.append(unit)
+        except Exception:
+            return
+
+        if not candidates:
+            return
+
+        # Deduplicate for the same enemy unit.
+        already = False
+        for r in self._pending_reactions:
+            if r.get("event") == "heroic_intervention" and r.get("stratagem") == s.name and r.get("enemy_unit") is charging_unit:
+                already = True
+                break
+        if already:
+            return
+
+        self._queue_reaction({
+            "event": "heroic_intervention",
+            "phase_name": "Charge phase",
+            "stratagem": s.name,
+            "cp_cost": s.cp_cost,
+            "enemy_unit": charging_unit,
+            "candidates": candidates,
         })
 
     def _on_shooting_targets_selected(self, attacking_unit=None, target_units=None, **kwargs):
@@ -1943,6 +2020,79 @@ class StratagemManager:
                 pass
             return True
 
+        # Core: HEROIC INTERVENTION
+        if s.name.upper() == "HEROIC INTERVENTION":
+            enemy = kwargs.get("enemy_unit")
+            candidates = list(kwargs.get("candidates") or [])
+            if enemy is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").upper() == "HEROIC INTERVENTION":
+                        enemy = r.get("enemy_unit") or enemy
+                        if not candidates:
+                            candidates = list(r.get("candidates") or [])
+                        break
+            if enemy is None:
+                print("Heroic Intervention: no enemy unit context")
+                return False
+
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            if unit is None and candidates:
+                unit = candidates[0]
+            if unit is None:
+                print("Heroic Intervention: no eligible unit selected")
+                return False
+
+            try:
+                if unit.get_parent_army().player is not self.player:
+                    print("Heroic Intervention: target unit does not belong to player")
+                    return False
+            except Exception:
+                return False
+
+            try:
+                if unit.has_keyword("Vehicle") and not unit.has_keyword("Walker"):
+                    print("Heroic Intervention: only WALKER vehicles can be selected")
+                    return False
+            except Exception:
+                pass
+
+            dist = None
+            try:
+                if self.game and getattr(self.game, "map", None):
+                    dist = self.game.map.get_distance_between_units(unit, enemy)
+            except Exception:
+                dist = None
+            if dist is None or dist > 6.0:
+                print("Heroic Intervention: target not within 6\" of enemy")
+                return False
+
+            try:
+                if not unit.can_declare_charge_against(enemy, self.game, out_of_turn=True):
+                    print("Heroic Intervention: target cannot declare charge against enemy")
+                    return False
+            except Exception:
+                print("Heroic Intervention: target cannot declare charge against enemy")
+                return False
+
+            if not self.player.spend_command_points(s.cp_cost):
+                return False
+
+            ok = False
+            try:
+                ok = bool(self.game.attempt_charge(unit, enemy, out_of_turn=True, count_as_charged=False))
+            except Exception:
+                ok = False
+
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
+            if not ok:
+                print("Heroic Intervention: charge failed")
+            return True
+
         # Provide phase_name for timing checks
         if 'phase_name' not in kwargs:
             kwargs['phase_name'] = self._current_phase_name
@@ -1997,6 +2147,8 @@ class StratagemManager:
                         trigger_label = "Trigger: enemy move start"
                     elif when == "end":
                         trigger_label = "Trigger: enemy move end"
+                elif r.get("event") in ("charge_move_ended", "heroic_intervention"):
+                    trigger_label = "Trigger: enemy charge end"
                 elif r.get("event") == "shooting_targets_selected":
                     trigger_label = "Trigger: after targets selected"
                 elif r.get("event") == "fight_sequence_complete":

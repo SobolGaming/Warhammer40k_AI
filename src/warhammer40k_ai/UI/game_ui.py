@@ -482,6 +482,55 @@ class GameView:
                 on_chosen(candidates[0])
         self._request_overwatch_shooter = _request_overwatch_shooter
 
+        def _request_heroic_intervention_unit(player, game, enemy_unit, candidates, on_chosen):
+            cand = list(candidates or [])
+            if not cand:
+                if enemy_unit is None:
+                    on_chosen(None)
+                    return
+                try:
+                    from ..classes.stratagems import _unit_cannot_be_target_of_stratagem
+                except Exception:
+                    _unit_cannot_be_target_of_stratagem = None
+                for unit in player.get_army().units or []:
+                    if not unit.is_alive() or not unit.deployed:
+                        continue
+                    try:
+                        if unit.has_keyword("Vehicle") and not unit.has_keyword("Walker"):
+                            continue
+                    except Exception:
+                        pass
+                    if callable(_unit_cannot_be_target_of_stratagem) and _unit_cannot_be_target_of_stratagem(unit):
+                        continue
+                    dist = None
+                    try:
+                        dist = self.game.map.get_distance_between_units(unit, enemy_unit)
+                    except Exception:
+                        dist = None
+                    if dist is None or dist > 6.0:
+                        continue
+                    try:
+                        if not unit.can_declare_charge_against(enemy_unit, game, out_of_turn=True):
+                            continue
+                    except Exception:
+                        continue
+                    cand.append(unit)
+            if not cand:
+                on_chosen(None)
+                return
+            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
+                enemy_name = getattr(enemy_unit, "name", "enemy unit") if enemy_unit else "enemy unit"
+                self.overwatch_shooter_dialog.show(
+                    cand,
+                    enemy_unit,
+                    lambda unit: (self.overwatch_shooter_dialog.hide(), on_chosen(unit)),
+                    title="Select Heroic Intervention Unit",
+                    subtitle=f"Charge into {enemy_name} (within 6\")",
+                )
+            else:
+                on_chosen(cand[0])
+        self._request_heroic_intervention_unit = _request_heroic_intervention_unit
+
         def _request_rapid_ingress_unit(player, game, candidates, on_chosen):
             # Candidates are the units in reserves that can arrive this battle round
             cand = list(candidates or [])
@@ -646,6 +695,7 @@ class GameView:
             self.player2: self.right_stratagem_pane,
         }
         self._overwatch_flow_active = False
+        self._heroic_flow_active = False
         self._optional_flow_active = False
         self._blessings_flow_active = False
 
@@ -2178,6 +2228,19 @@ class GameView:
                 self._request_overwatch_shooter(player, self.game, enemy, lambda shooter: self._finalize_overwatch(player, name, context, shooter))
             return
 
+        if name_u == "HEROIC INTERVENTION" and "unit" not in context and "target_unit" not in context:
+            if callable(getattr(self, "_request_heroic_intervention_unit", None)):
+                enemy = context.get("enemy_unit")
+                candidates = context.get("candidates") or []
+                self._request_heroic_intervention_unit(
+                    player,
+                    self.game,
+                    enemy,
+                    candidates,
+                    lambda unit: self._finalize_heroic_intervention(player, name, context, unit),
+                )
+            return
+
         if name_u == "RAPID INGRESS" and "unit" not in context and "target_unit" not in context:
             if callable(getattr(self, "_request_rapid_ingress_unit", None)):
                 candidates = context.get("candidates") or []
@@ -2303,6 +2366,117 @@ class GameView:
             print(f"Used stratagem: {name}")
         else:
             print(f"Could not use stratagem: {name}")
+
+    def _finalize_heroic_intervention(self, player, name: str, context: Dict[str, Any], unit) -> None:
+        if self._heroic_flow_active:
+            return
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if unit is None:
+            print("Heroic Intervention: no unit selected")
+            return
+        enemy_unit = context.get("enemy_unit")
+        if enemy_unit is None:
+            print("Heroic Intervention: no enemy unit context")
+            return
+
+        dist = None
+        try:
+            if self.game and getattr(self.game, "map", None):
+                dist = self.game.map.get_distance_between_units(unit, enemy_unit)
+        except Exception:
+            dist = None
+        if dist is None or dist > 6.0:
+            print("Heroic Intervention: unit not within 6\" of enemy")
+            return
+
+        try:
+            if unit.has_keyword("Vehicle") and not unit.has_keyword("Walker"):
+                print("Heroic Intervention: only WALKER vehicles can be selected")
+                return
+        except Exception:
+            pass
+
+        try:
+            from ..classes.stratagems import _unit_cannot_be_target_of_stratagem
+            if _unit_cannot_be_target_of_stratagem(unit):
+                print("Heroic Intervention: unit cannot be targeted by stratagems")
+                return
+        except Exception:
+            pass
+
+        try:
+            if not unit.can_declare_charge_against(enemy_unit, self.game, out_of_turn=True):
+                print("Heroic Intervention: unit cannot declare a charge against that enemy")
+                return
+        except Exception:
+            print("Heroic Intervention: unit cannot declare a charge against that enemy")
+            return
+
+        declared = None
+        try:
+            declared = self.game.declare_charge(unit, enemy_unit, out_of_turn=True)
+        except Exception:
+            declared = None
+        if not declared:
+            print("Heroic Intervention: charge declaration failed")
+            return
+
+        strat = manager.get_by_name(str(name)) if manager else None
+        if strat is None or not player.spend_command_points(strat.cp_cost):
+            print("Heroic Intervention: failed to spend CP")
+            return
+
+        if context.get("dequeue") is True and hasattr(manager, "_dequeue_reaction_by_name"):
+            manager._dequeue_reaction_by_name(strat.name)
+        try:
+            manager._used_stratagems_this_phase.add((strat.name or "").strip().upper())
+        except Exception:
+            pass
+
+        max_charge_distance = int(declared.get("base_roll", 0) or 0)
+        self._heroic_flow_active = True
+
+        def on_charge_movement_complete(completed: bool):
+            self._heroic_flow_active = False
+            if completed:
+                in_engagement_range = False
+                try:
+                    enemy_units = self.game.map.get_enemy_units(unit)
+                    in_engagement_range = any(
+                        self.game.map.is_within_engagement_range(unit, enemy)
+                        for enemy in enemy_units if enemy.is_alive()
+                    )
+                except Exception:
+                    in_engagement_range = False
+                if in_engagement_range:
+                    print(f"{unit.name} Heroic Intervention charge successful - achieved engagement range")
+                else:
+                    print(f"{unit.name} Heroic Intervention charge failed - did not achieve engagement range")
+            else:
+                print(f"{unit.name} Heroic Intervention charge movement failed or skipped")
+
+        try:
+            if hasattr(self, "individual_model_movement_dialog") and self.individual_model_movement_dialog:
+                self.individual_model_movement_dialog.show(
+                    unit,
+                    "charge",
+                    on_charge_movement_complete,
+                    self.game.map,
+                    max_charge_distance,
+                    enemy_unit,
+                )
+            else:
+                print("Heroic Intervention: no movement dialog available")
+                self._heroic_flow_active = False
+                return
+        except Exception:
+            self._heroic_flow_active = False
+            print("Heroic Intervention: failed to open charge movement dialog")
+            return
+
+        print(f"Used stratagem: {name}")
 
     def _finalize_rapid_ingress(self, player, name: str, context: Dict[str, Any], unit) -> None:
         manager = getattr(player, "stratagems", None)
