@@ -20,6 +20,7 @@ from .panels.info_pane import InfoPane
 from ..utility.event_bus import get_recent_actions, get_recent_dice
 from .panels.reserves_arrival_panel import ReservesArrivalPanel
 from .panels.unit_detail_panel import UnitDetailPanel
+from .panels.rule_detail_panel import RuleDetailPanel
 
 # Import shared UI utilities
 from .ui_utils import (
@@ -53,6 +54,12 @@ GREEN = (0, 255, 0)
 BLUE = (0, 0, 255)
 RED = (255, 0, 0)
 PURPLE = (128, 0, 128)
+
+# Supported rules (display indicator only)
+SUPPORTED_ARMY_RULES = {
+    "BLESSINGS OF KHORNE",
+}
+SUPPORTED_DETACHMENT_RULES = set()
 
 # Modern UI Colors
 PANEL_BG = (45, 45, 48)  # Dark background
@@ -352,6 +359,10 @@ class GameView:
         self.detailed_unit = None
         self.detail_panel_pos = (0, 0)
         self.unit_detail_panel = UnitDetailPanel()
+        self.rule_detail_panel = RuleDetailPanel()
+        self._rule_panel_state = None
+        self._rule_support_cache = {}
+        self._waha_helper = None
         
         # UI scaling factor removed – rendering uses fixed inch grid with zoom only
         
@@ -1531,6 +1542,7 @@ class GameView:
     def refresh_roster_panes(self):
         """Refresh roster panes when armies are loaded during setup phases."""
         if self.player1 and self.player2:
+            self._rule_support_cache = {}
             player1_units = self.player1.get_army().units if self.player1.get_army() else []
             player2_units = self.player2.get_army().units if self.player2.get_army() else []
 
@@ -1701,7 +1713,7 @@ class GameView:
         pygame.draw.rect(self.screen, (45,45,48), (left, y, width, height))
         pygame.draw.rect(self.screen, (63,63,70), (left, y, width, height), 2)
 
-        # Layout: Stratagem - P1 Actions - P1 Dice - P2 Dice - P2 Actions - Stratagem
+        # Layout: Rules - P1 Actions - P1 Dice - P2 Dice - P2 Actions - Rules
         strat_w = max(120, int(width * 0.10))
         remaining = max(0, width - (strat_w * 2))
         box_w = remaining // 4
@@ -1722,15 +1734,27 @@ class GameView:
         p2_actions = get_recent_actions(p2_name, limit=50)
         p2_dice = get_recent_dice(p2_name, limit=50)
 
-        # Draw left/right Stratagem buttons
-        self._draw_stratagem_button(strat_left_rect, self.player1)
-        self._draw_stratagem_button(strat_right_rect, self.player2)
+        # Draw left/right rule buttons (stacked)
+        half_h = max(1, height // 2)
+        det_left_rect = pygame.Rect(strat_left_rect.x, strat_left_rect.y, strat_left_rect.width, half_h)
+        army_left_rect = pygame.Rect(strat_left_rect.x, strat_left_rect.y + half_h, strat_left_rect.width, height - half_h)
+        det_right_rect = pygame.Rect(strat_right_rect.x, strat_right_rect.y, strat_right_rect.width, half_h)
+        army_right_rect = pygame.Rect(strat_right_rect.x, strat_right_rect.y + half_h, strat_right_rect.width, height - half_h)
+
+        self._draw_rule_button(det_left_rect, "Detachment Rule", self.player1, "detachment")
+        self._draw_rule_button(army_left_rect, "Army Rule", self.player1, "army")
+        self._draw_rule_button(det_right_rect, "Detachment Rule", self.player2, "detachment")
+        self._draw_rule_button(army_right_rect, "Army Rule", self.player2, "army")
 
         # Save hitboxes for click handling
         if not hasattr(self, '_ui_hitboxes'):
             self._ui_hitboxes = {}
-        self._ui_hitboxes['strat_p1'] = (pygame.Rect(strat_left_rect), self.player1)
-        self._ui_hitboxes['strat_p2'] = (pygame.Rect(strat_right_rect), self.player2)
+        self._ui_hitboxes.pop('strat_p1', None)
+        self._ui_hitboxes.pop('strat_p2', None)
+        self._ui_hitboxes['det_rule_p1'] = (pygame.Rect(det_left_rect), self.player1)
+        self._ui_hitboxes['army_rule_p1'] = (pygame.Rect(army_left_rect), self.player1)
+        self._ui_hitboxes['det_rule_p2'] = (pygame.Rect(det_right_rect), self.player2)
+        self._ui_hitboxes['army_rule_p2'] = (pygame.Rect(army_right_rect), self.player2)
 
         # Initialize bottom log scroll state and hitboxes
         if not hasattr(self, '_bottom_log_scroll'):
@@ -1771,7 +1795,9 @@ class GameView:
             mgr = getattr(player, "stratagems", None)
             items = []
             try:
-                if mgr is not None:
+                if self.game is not None and hasattr(self.game, "is_in_setup_phase") and self.game.is_in_setup_phase():
+                    items = []
+                elif mgr is not None:
                     items = mgr.get_phase_stratagem_items() or []
             except Exception:
                 items = []
@@ -1783,56 +1809,47 @@ class GameView:
             pane.set_items(items)
             pane.draw(self.screen, hitboxes=self._ui_hitboxes, key_prefix=prefix)
 
-    def _draw_stratagem_button(self, rect: pygame.Rect, player) -> None:
-        in_setup = False
+    def _draw_rule_button(self, rect: pygame.Rect, label: str, player, rule_type: str) -> None:
+        is_active = False
         try:
-            if hasattr(self.game, "is_in_setup_phase") and callable(self.game.is_in_setup_phase):
-                in_setup = bool(self.game.is_in_setup_phase())
-            else:
-                in_setup = not bool(getattr(self.game, "setup_complete", True))
+            if self.rule_detail_panel.visible and isinstance(self._rule_panel_state, dict):
+                if self._rule_panel_state.get("player") is player and self._rule_panel_state.get("rule_type") == rule_type:
+                    is_active = True
         except Exception:
-            in_setup = False
+            is_active = False
 
-        pane = self._stratagem_panes.get(player)
-        is_open = bool(getattr(pane, "is_open", False)) if pane else False
+        supported = False
+        try:
+            supported = self._get_rule_support_state(player, rule_type)
+        except Exception:
+            supported = False
 
-        bg = (60, 60, 67) if not is_open else (100, 149, 237)
+        bg = (100, 149, 237) if is_active else (60, 60, 67)
         fg = (255, 255, 255)
         pygame.draw.rect(self.screen, bg, rect)
-        pygame.draw.rect(self.screen, (63,63,70), rect, 1)
+        pygame.draw.rect(self.screen, (63, 63, 70), rect, 1)
         try:
-            title_font = pygame.font.SysFont('Arial', 16, bold=True)
-            sub_font = pygame.font.SysFont('Arial', 14, bold=False)
+            font = pygame.font.SysFont('Arial', 14, bold=True)
         except Exception:
-            title_font = pygame.font.Font(None, 16)
-            sub_font = pygame.font.Font(None, 14)
+            font = pygame.font.Font(None, 14)
+        text = font.render(label, True, fg)
+        self.screen.blit(text, (rect.centerx - text.get_width() // 2, rect.centery - text.get_height() // 2))
 
-        # Two-line label: "Player 1/2" on first line, "Stratagem" (with count) on second line
-        if player is self.player1:
-            player_label = "Player 1"
-        elif player is self.player2:
-            player_label = "Player 2"
-        else:
-            player_label = getattr(player, 'name', 'Player')
-
-        strat_label = "Stratagems"
-        if in_setup:
-            strat_label = "Stratagems (Setup)"
-
-        ts1 = title_font.render(strat_label, True, fg)
-        ts2 = sub_font.render(player_label, True, fg)
-
-        # Center both lines vertically within the rect
-        total_h = ts1.get_height() + ts2.get_height() + 2
-        start_y = rect.y + (rect.height - total_h) // 2
-
-        tr1 = ts1.get_rect(centerx=rect.centerx)
-        tr1.y = start_y
-        tr2 = ts2.get_rect(centerx=rect.centerx)
-        tr2.y = tr1.bottom + 2
-
-        self.screen.blit(ts1, tr1)
-        self.screen.blit(ts2, tr2)
+        if supported:
+            try:
+                badge_font = pygame.font.SysFont('Arial', 10, bold=True)
+            except Exception:
+                badge_font = pygame.font.Font(None, 10)
+            badge_text = badge_font.render("SUP", True, fg)
+            pad = 4
+            badge_rect = pygame.Rect(
+                rect.right - badge_text.get_width() - pad * 2 - 4,
+                rect.y + 4,
+                badge_text.get_width() + pad * 2,
+                badge_text.get_height() + 2,
+            )
+            pygame.draw.rect(self.screen, (60, 160, 90), badge_rect, border_radius=3)
+            self.screen.blit(badge_text, (badge_rect.x + pad, badge_rect.y + 1))
 
     def _draw_scroll_text_box(self, rect: pygame.Rect, lines, key: str, title: str = "Logs") -> None:
         pygame.draw.rect(self.screen, (40,40,44), rect)
@@ -2068,7 +2085,13 @@ class GameView:
                     return True
 
         # PRIORITY 1: Top pane and overlay handling BEFORE phase-specific handlers
-        if event.type == pygame.MOUSEBUTTONDOWN:
+        dialog_active = False
+        try:
+            if self.dialog_manager and self.dialog_manager.top():
+                dialog_active = True
+        except Exception:
+            dialog_active = False
+        if event.type == pygame.MOUSEBUTTONDOWN and not dialog_active:
             # Mission popup overlay closes on any click
             if getattr(self, '_mission_popup', None):
                 self._mission_popup = None
@@ -2116,25 +2139,20 @@ class GameView:
             except Exception:
                 pass
 
-            # Handle bottom stratagem button clicks (collapse/expand)
+            # Handle bottom rule button clicks
             if self._ui_hitboxes:
-                for key in ('strat_p1', 'strat_p2'):
+                key_map = [
+                    ("det_rule_p1", "detachment"),
+                    ("army_rule_p1", "army"),
+                    ("det_rule_p2", "detachment"),
+                    ("army_rule_p2", "army"),
+                ]
+                for key, rule_type in key_map:
                     if key in self._ui_hitboxes:
                         rect, player = self._ui_hitboxes[key]
                         if rect.collidepoint(event.pos):
-                            try:
-                                in_setup = False
-                                if hasattr(self.game, "is_in_setup_phase") and callable(self.game.is_in_setup_phase):
-                                    in_setup = bool(self.game.is_in_setup_phase())
-                                else:
-                                    in_setup = not bool(getattr(self.game, "setup_complete", True))
-                                if in_setup:
-                                    return True
-                            except Exception:
-                                pass
-                            pane = self._stratagem_panes.get(player)
-                            if pane is not None:
-                                pane.toggle()
+                            self._rule_support_cache.pop((id(player), rule_type), None)
+                            self._toggle_rule_panel(player, rule_type)
                             return True
 
         # PRIORITY 2: Let phase manager handle phase-specific events next
@@ -2148,6 +2166,14 @@ class GameView:
         
         # PRIORITY 3: Handle universal UI events that apply to all phases
         if event.type == pygame.MOUSEBUTTONDOWN:
+            # Close rule panel on outside click, consume clicks inside
+            if self.rule_detail_panel and self.rule_detail_panel.visible and event.button == 1:
+                if getattr(self.rule_detail_panel, "rect", None):
+                    if self.rule_detail_panel.rect.collidepoint(event.pos):
+                        return True
+                    self.rule_detail_panel.hide()
+                    self._rule_panel_state = None
+                    return True
             # Check for unit detail panel clicks (highest priority)
             if self.detailed_unit and event.button == 1:  # Left click
                 if hasattr(self.unit_detail_panel, 'rect') and self.unit_detail_panel.rect:
@@ -2175,6 +2201,10 @@ class GameView:
             # Close mission popup with ESC
             if event.key == pygame.K_ESCAPE and getattr(self, '_mission_popup', None):
                 self._mission_popup = None
+                return True
+            if event.key == pygame.K_ESCAPE and self.rule_detail_panel and self.rule_detail_panel.visible:
+                self.rule_detail_panel.hide()
+                self._rule_panel_state = None
                 return True
             # Handle unit detail panel scrolling
             if self.detailed_unit:
@@ -2502,6 +2532,167 @@ class GameView:
         else:
             print(f"Could not use stratagem: {name}")
 
+    # -------- Rule info helpers --------
+    def _get_waha_helper(self):
+        helper = getattr(self, "_waha_helper", None)
+        if helper is None:
+            try:
+                from ..waha_helper import WahaHelper
+                helper = WahaHelper()
+            except Exception:
+                helper = None
+            self._waha_helper = helper
+        return helper
+
+    def _pick_best_rule(self, candidates):
+        if not candidates:
+            return None
+        def _id_key(entry):
+            try:
+                return int((entry.get("id") or "0").strip())
+            except Exception:
+                return 0
+        return max(candidates, key=lambda e: (len(e.get("description", "") or ""), _id_key(e)))
+
+    def _is_supported_rule_name(self, rule_name: str, rule_type: str) -> bool:
+        name_u = (rule_name or "").strip().upper()
+        if not name_u:
+            return False
+        if rule_type == "detachment":
+            return name_u in SUPPORTED_DETACHMENT_RULES
+        return name_u in SUPPORTED_ARMY_RULES
+
+    def _get_rule_support_state(self, player, rule_type: str) -> bool:
+        if player is None:
+            return False
+        army = player.get_army() if hasattr(player, "get_army") else None
+        if army is None:
+            return False
+        try:
+            signature = (
+                getattr(army, "detachment_type", None),
+                tuple(getattr(army, "faction_keyword", []) or []),
+                getattr(army, "faction", None),
+            )
+        except Exception:
+            signature = None
+        cache_key = (id(player), rule_type)
+        cached = self._rule_support_cache.get(cache_key)
+        if isinstance(cached, dict) and cached.get("signature") == signature:
+            return bool(cached.get("supported", False))
+        info = self._get_detachment_rule_info(player) if rule_type == "detachment" else self._get_army_rule_info(player)
+        rule_name = ""
+        try:
+            rule_name = (info.get("name") or "").strip() if info else ""
+        except Exception:
+            rule_name = ""
+        supported = self._is_supported_rule_name(rule_name, rule_type)
+        self._rule_support_cache[cache_key] = {"signature": signature, "supported": supported, "rule_name": rule_name}
+        return supported
+
+    def _get_detachment_rule_info(self, player):
+        army = player.get_army() if player else None
+        if army is None:
+            return None
+        det = (getattr(army, "detachment_type", "") or "").strip()
+        if not det:
+            return None
+        helper = self._get_waha_helper()
+        if helper is None:
+            return None
+        det_key = det.lower()
+        candidates = []
+        for entry in helper.detachment_abilities.values():
+            entry_det = (entry.get("detachment") or "").strip()
+            if not entry_det:
+                continue
+            if entry_det.lower() != det_key:
+                continue
+            if getattr(army, "faction_id", None) and entry.get("faction_id"):
+                if entry.get("faction_id") != army.faction_id:
+                    continue
+            candidates.append(entry)
+        if not candidates:
+            for entry in helper.detachment_abilities.values():
+                entry_det = (entry.get("detachment") or "").strip()
+                if not entry_det:
+                    continue
+                ed = entry_det.lower()
+                if det_key not in ed and ed not in det_key:
+                    continue
+                if getattr(army, "faction_id", None) and entry.get("faction_id"):
+                    if entry.get("faction_id") != army.faction_id:
+                        continue
+                candidates.append(entry)
+        return self._pick_best_rule(candidates)
+
+    def _get_army_rule_info(self, player):
+        army = player.get_army() if player else None
+        if army is None:
+            return None
+        helper = self._get_waha_helper()
+        if helper is None:
+            return None
+        keywords = list(getattr(army, "faction_keyword", []) or [])
+        if not keywords:
+            try:
+                for u in list(getattr(army, "units", []) or []):
+                    kw = list(getattr(u, "faction_keywords", []) or [])
+                    if kw:
+                        keywords = kw
+                        break
+            except Exception:
+                keywords = []
+        keywords = [k for k in keywords if k]
+        keywords.sort(key=len, reverse=True)
+        if not keywords:
+            return None
+        for keyword in keywords:
+            candidates = []
+            for entry in helper.abilities.values():
+                desc = entry.get("description", "") or ""
+                if "army faction" not in desc.lower():
+                    continue
+                desc_l = desc.lower()
+                if keyword.lower() in desc_l:
+                    candidates.append(entry)
+            if candidates:
+                return self._pick_best_rule(candidates)
+        return None
+
+    def _toggle_rule_panel(self, player, rule_type: str) -> None:
+        if self.rule_detail_panel is None:
+            return
+        if self.rule_detail_panel.visible and isinstance(self._rule_panel_state, dict):
+            if self._rule_panel_state.get("player") is player and self._rule_panel_state.get("rule_type") == rule_type:
+                self.rule_detail_panel.hide()
+                self._rule_panel_state = None
+                return
+
+        if rule_type == "detachment":
+            info = self._get_detachment_rule_info(player)
+            title = "Detachment Rule"
+            fallback_name = getattr(player.get_army(), "detachment_type", "Detachment") if player else "Detachment"
+            fallback_desc = f"No detachment rule data found for {fallback_name}."
+        else:
+            info = self._get_army_rule_info(player)
+            title = "Army Rule"
+            fallback_name = getattr(player.get_army(), "faction", "Army") if player else "Army"
+            fallback_desc = f"No army rule data found for {fallback_name}."
+
+        if info:
+            rule_name = (info.get("name") or "").strip()
+            legend = (info.get("legend") or "").strip()
+            description = (info.get("description") or "").strip()
+        else:
+            rule_name = fallback_name
+            legend = ""
+            description = fallback_desc
+
+        supported = self._is_supported_rule_name(rule_name, rule_type)
+        self.rule_detail_panel.set_content(title, rule_name, legend, description, supported=supported)
+        self._rule_panel_state = {"player": player, "rule_type": rule_type}
+
     # Note: on_mouse_press is now handled by phase-specific handlers in PhaseManager
 
     def on_mouse_release(self, x, y, button):
@@ -2539,12 +2730,20 @@ class GameView:
             pass
         # PRIORITY 1: Stratagem pane scrolling
         try:
-            if self.left_stratagem_pane and self.left_stratagem_pane.is_open and self.left_stratagem_pane.rect.collidepoint(x, y):
+            if self.left_stratagem_pane and self.left_stratagem_pane.rect.collidepoint(x, y):
                 self.left_stratagem_pane.scroll(-scroll_y * 30)
                 return
-            if self.right_stratagem_pane and self.right_stratagem_pane.is_open and self.right_stratagem_pane.rect.collidepoint(x, y):
+            if self.right_stratagem_pane and self.right_stratagem_pane.rect.collidepoint(x, y):
                 self.right_stratagem_pane.scroll(-scroll_y * 30)
                 return
+        except Exception:
+            pass
+        # PRIORITY 1.5: Rule detail panel scrolling
+        try:
+            if self.rule_detail_panel and self.rule_detail_panel.visible:
+                if getattr(self.rule_detail_panel, "rect", None) and self.rule_detail_panel.rect.collidepoint(x, y):
+                    self.rule_detail_panel.scroll(-scroll_y * 30)
+                    return
         except Exception:
             pass
         # PRIORITY 2: Check if scrolling in unit detail panel first (highest priority)
@@ -3015,7 +3214,13 @@ class GameView:
         # Draw unit details panel if requested
         if self.detailed_unit:
             self.unit_detail_panel.draw(self.screen, self.detailed_unit, 
-                                      self.detail_panel_pos[0], self.detail_panel_pos[1])
+                                        self.detail_panel_pos[0], self.detail_panel_pos[1])
+
+        if self.rule_detail_panel and self.rule_detail_panel.visible:
+            sw, sh = self.screen.get_size()
+            x = int(self.battlefield_left + max(0, (self.scaled_battlefield_width - self.rule_detail_panel.width) // 2))
+            y = int(max(10, (sh - self.rule_detail_panel.height) // 2))
+            self.rule_detail_panel.draw(self.screen, x, y)
 
         # Draw move paths for all units (only if armies are loaded)
         current_player = self.game.get_current_player()

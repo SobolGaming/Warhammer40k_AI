@@ -31,7 +31,6 @@ class StratagemPane(pygame.sprite.Sprite):
         self.player_name = player_name
         self.player = None
         self.items: List[Dict[str, Any]] = []
-        self.is_open = False
         self.scroll_offset = 0
         self.max_scroll = 0
         self.header_height = 52
@@ -48,10 +47,6 @@ class StratagemPane(pygame.sprite.Sprite):
 
     def update_rect(self, left: int, top: int, width: int, height: int) -> None:
         self.rect.update(left, top, width, height)
-        self._recompute_scroll()
-
-    def toggle(self) -> None:
-        self.is_open = not self.is_open
         self._recompute_scroll()
 
     def set_items(self, items: List[Dict[str, Any]]) -> None:
@@ -110,9 +105,6 @@ class StratagemPane(pygame.sprite.Sprite):
         subtitle_rect.y = title_rect.bottom + 2
         surface.blit(title_surf, title_rect)
         surface.blit(subtitle_surf, subtitle_rect)
-
-        if not self.is_open:
-            return
 
         list_top = self.rect.y + self.header_height
         list_rect = pygame.Rect(self.rect.x + 6, list_top, self.rect.width - 12, self.rect.height - self.header_height - 8)
