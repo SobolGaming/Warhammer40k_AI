@@ -34,7 +34,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 - Supreme Commander (must be Warlord) (Supported)
 - Pact of Blood (WE): disallow Blood Legions Army Faction (Supported)
 - Nurgle’s Gift (Aura): baseline Contagion Range debuff (-1 Toughness to enemies within 3/6/9") (Partial)
-- Blessings of Khorne (World Eaters) (Supported)
+- Blessings of Khorne (CSM/WE) (Supported)
 - Favoured of Khorne (Blessings rerolls) (Supported)
 - Idol of the Blessed Blood (Blessings +1D6) (Supported)
 - Reborn in Blood (Angron) (Supported)
@@ -104,7 +104,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Battle Focus | `000009894` | 81 | 81 | **Supported** | Battle Focus tokens + Agile Manoeuvres (Swift as the Wind, Flitting Shadows, Star Engines, Sudden Strike, Opportunity Seized, Fade Back). |
-| Disparate Paths | `000009896` | 19 | 19 | **Not implemented** |  |
+| Disparate Paths | `000009896` | 19 | 19 | **Supported** | Army validation allows ASURYANI + HARLEQUINS/YNNARI keywords in Aeldari armies. |
 
 ### Astra Militarum (`AM`) — `https://wahapedia.ru/wh40k10ed/factions/astra-militarum`
 
@@ -131,7 +131,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Blessings of Khorne | `000008428` | 1 | 1 | **Supported** | Blessings of Khorne (World Eaters) |
+| Blessings of Khorne | `000008428` | 1 | 1 | **Supported** | Blessings of Khorne (CSM/WE). |
 | Cabal of Sorcerers | `000008424` | 1 | 1 | **Supported** | Lone Operative |
 | Dark Pacts | `000008359` | 103 | 103 | **Not implemented** |  |
 | Nurgle’s Gift (Aura) | `000008396` | 1 | 1 | **Partial** | Nurgle’s Gift (Aura): baseline Contagion Range debuff (-1 Toughness to enemies within 3/6/9") |
@@ -148,8 +148,8 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Battle Focus | `000009894` | 10 | 10 | **Not implemented** |  |
-| Disparate Paths | `000009896` | 8 | 8 | **Not implemented** |  |
+| Battle Focus | `000009894` | 10 | 10 | **Supported** | Battle Focus tokens + Agile Manoeuvres (Swift as the Wind, Flitting Shadows, Star Engines, Sudden Strike, Opportunity Seized, Fade Back). |
+| Disparate Paths | `000009896` | 8 | 8 | **Supported** | Army validation allows DRUKHARI + HARLEQUINS/YNNARI keywords. |
 | Power from Pain | `000008507` | 30 | 30 | **Not implemented** |  |
 
 ### Emperor’s Children (`EC`) — `https://wahapedia.ru/wh40k10ed/factions/emperor-s-children`
@@ -247,7 +247,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Blessings of Khorne | `000008428` | 53 | 53 | **Supported** | Blessings of Khorne (World Eaters) |
+| Blessings of Khorne | `000008428` | 53 | 53 | **Supported** | Blessings of Khorne (CSM/WE). |
 | Pact of Blood | `000010071` | 5 | 5 | **Supported** | Pact of Blood (WE): disallow Blood Legions Army Faction |
 
 ## Detachment Abilities

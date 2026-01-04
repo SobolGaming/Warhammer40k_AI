@@ -12,6 +12,7 @@ from warhammer40k_ai.classes.player import Player
 from warhammer40k_ai.utility.dice import get_roll
 from warhammer40k_ai.classes.map import TerrainFeature, TerrainType, Objective, ObjectivePoint
 from warhammer40k_ai.classes.fight_phase_manager import FightPhaseManager, FightStage
+from warhammer40k_ai.utility.ability_support import ABILITY_BLESSINGS_OF_KHORNE, army_has_ability_id
 
 # Import UI panels
 from .panels.roster_pane import RosterPane
@@ -59,6 +60,7 @@ PURPLE = (128, 0, 128)
 SUPPORTED_ARMY_RULES = {
     "BLESSINGS OF KHORNE",
     "BATTLE FOCUS",
+    "DISPARATE PATHS",
 }
 SUPPORTED_DETACHMENT_RULES = {
     "RELENTLESS RAGE",
@@ -465,7 +467,7 @@ class GameView:
         self.secondary_discard_dialog = SecondaryDiscardDialog(screen_width, screen_height)
         self.overwatch_shooter_dialog = OverwatchShooterDialog(screen_width, screen_height)
         self.battle_focus_dialog = OverwatchShooterDialog(screen_width, screen_height)
-        # WORLD EATERS: Blessings of Khorne dialog (lazy-create only if needed)
+        # Blessings of Khorne dialog (lazy-create only if needed)
         self.blessings_of_khorne_dialog = None
         # Stratagem interaction helpers
         def _request_secondary_discard(player, game, on_chosen):
@@ -723,7 +725,7 @@ class GameView:
         # Cache "does this card have an image?" lookups (cache_key -> Optional[str path])
         self._mission_image_path_cache: Dict[str, Optional[str]] = {}
 
-        # WORLD EATERS: start-of-battle-round Blessings hook
+        # Blessings of Khorne start-of-battle-round hook
         self._pending_blessings_queue = []
         # SLAANESH/DAEMONS (Shalaxi): Monarch of the Hunt quarry selection queue
         self._pending_quarry_queue = []
@@ -741,7 +743,7 @@ class GameView:
             pass
 
     def _on_battle_round_started(self, game=None, battle_round: int = 0, **_kwargs):
-        """Event hook: at start of battle round, prompt WE human players for Blessings of Khorne selection."""
+        """Event hook: at start of battle round, prompt human players for Blessings of Khorne selection."""
         try:
             game = game or self.game
             br = int(battle_round or getattr(game, "turn", 0) or 0)
@@ -764,7 +766,7 @@ class GameView:
                 if p is None or p.type.name != "HUMAN":
                     continue
                 army = p.get_army()
-                if getattr(army, "faction_id", None) != "WE":
+                if not self._army_has_blessings_of_khorne(army):
                     continue
                 if getattr(army, "blessings_of_khorne", None) is None:
                     continue
@@ -879,7 +881,20 @@ class GameView:
             # If UI wiring is missing, just skip
             _done(False)
 
-    # ---------------- Battle Focus (Aeldari) prompts ----------------
+    def _army_has_blessings_of_khorne(self, army) -> bool:
+        if army is None:
+            return False
+        if not army_has_ability_id(army, ABILITY_BLESSINGS_OF_KHORNE):
+            return False
+        for unit in list(getattr(army, "units", []) or []):
+            try:
+                if unit.attached_unit_has_blessings_of_khorne():
+                    return True
+            except Exception:
+                continue
+        return False
+
+    # ---------------- Battle Focus prompts ----------------
 
     def _battle_focus_option_label(self, option: str) -> str:
         opt = str(option or "").strip().upper()

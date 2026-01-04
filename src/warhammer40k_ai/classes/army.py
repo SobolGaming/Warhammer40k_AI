@@ -2,6 +2,7 @@ from typing import Tuple, Dict, Set, List, Optional
 from warhammer40k_ai.classes.unit import Unit
 from warhammer40k_ai.classes.enhancement import Enhancement
 from warhammer40k_ai.waha_helper import WahaHelper
+from warhammer40k_ai.utility.ability_support import ABILITY_DISPARATE_PATHS, army_has_ability_id
 import codecs
 import uuid
 
@@ -634,17 +635,28 @@ class Army:
             raise ArmyValidationError("Failed validating detachment/army rule restrictions.")
 
     def validate_allies(self):
-        # Disparate Paths (Aeldari): allow HARLEQUINS units alongside ASURYANI.
-        try:
-            fid = str(getattr(self, "faction_id", "") or "").strip().upper()
-            fname = str(getattr(self, "faction", "") or "").strip().lower()
-            is_aeldari = fid == "AE" or "aeldari" in fname or "asuryani" in fname
-        except Exception:
-            is_aeldari = False
-        if not is_aeldari:
+        # Disparate Paths: allow Harlequins/Ynnari alongside the army faction.
+        if not army_has_ability_id(self, ABILITY_DISPARATE_PATHS):
             return
 
-        allowed = {"AELDARI", "ASURYANI", "HARLEQUINS", "YNNARI"}
+        allowed = set()
+        try:
+            allowed.update(
+                str(k).strip().upper()
+                for k in (getattr(self, "faction_keyword", []) or [])
+                if str(k).strip()
+            )
+        except Exception:
+            allowed = set()
+
+        if not allowed:
+            fid = str(getattr(self, "faction_id", "") or "").strip().upper()
+            if fid == "AE":
+                allowed.update({"AELDARI", "ASURYANI"})
+            elif fid == "DRU":
+                allowed.add("DRUKHARI")
+
+        allowed.update({"HARLEQUINS", "YNNARI"})
         for u in list(getattr(self, "units", []) or []):
             try:
                 fks = [str(k).strip().upper() for k in (getattr(u, "faction_keywords", []) or []) if str(k).strip()]
@@ -655,7 +667,7 @@ class Army:
             if not any(k in allowed for k in fks):
                 raise ArmyValidationError(
                     f"Unit '{getattr(u, 'name', 'Unknown')}' has faction keywords {fks}, "
-                    "which are not allowed for an Aeldari army (Disparate Paths allows ASURYANI + HARLEQUINS)."
+                    "which are not allowed for an army with Disparate Paths (allows base faction + HARLEQUINS/YNNARI)."
                 )
 
     def validate(self) -> None:

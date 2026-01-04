@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from typing import Optional
 
+from ..utility.ability_support import ABILITY_BATTLE_FOCUS, army_has_ability_id
+
 
 class BattleFocusManager:
     """
-    Aeldari Army Rule: Battle Focus (Asuryani).
+    Army Rule: Battle Focus.
 
     Tracks Battle Focus tokens and Agile Manoeuvre usage limits.
     """
@@ -26,28 +28,17 @@ class BattleFocusManager:
         self._maneuvers_used_this_phase: set[str] = set()
         self._fallback_engagement_snapshot: dict[str, list] = {}
 
-    def _army_is_asuryani(self) -> bool:
+    def _army_has_battle_focus(self) -> bool:
         army = self.army
         if army is None:
             return False
-        try:
-            if str(getattr(army, "faction_id", "") or "").strip().upper() == "AE":
-                return True
-        except Exception:
-            pass
-        try:
-            name = str(getattr(army, "faction", "") or "").lower()
-            if "aeldari" in name or "asuryani" in name:
-                return True
-        except Exception:
-            pass
-        return False
+        return army_has_ability_id(army, ABILITY_BATTLE_FOCUS)
 
     def _unit_has_battle_focus(self, unit) -> bool:
         if unit is None:
             return False
         try:
-            if unit.has_any_keyword("ASURYANI"):
+            if unit.has_any_keyword("ASURYANI") or unit.has_any_keyword("DRUKHARI"):
                 return True
         except Exception:
             pass
@@ -111,7 +102,7 @@ class BattleFocusManager:
         return 0
 
     def on_battle_round_start(self, battle_round: int, *, game=None) -> None:
-        if not self._army_is_asuryani():
+        if not self._army_has_battle_focus():
             return
         if game is None:
             try:
@@ -179,7 +170,7 @@ class BattleFocusManager:
     def get_move_maneuver_options(self, unit, action: str, game) -> list[str]:
         if unit is None or game is None:
             return []
-        if not self._army_is_asuryani():
+        if not self._army_has_battle_focus():
             return []
         if not self._unit_has_battle_focus(unit):
             return []
@@ -204,7 +195,7 @@ class BattleFocusManager:
     def can_use_flitting_on_charge(self, unit, game) -> bool:
         if unit is None or game is None:
             return False
-        if not self._army_is_asuryani():
+        if not self._army_has_battle_focus():
             return False
         if not self._unit_has_battle_focus(unit):
             return False
@@ -220,7 +211,7 @@ class BattleFocusManager:
     def can_use_flitting_on_setup(self, unit, game) -> bool:
         if unit is None or game is None:
             return False
-        if not self._army_is_asuryani():
+        if not self._army_has_battle_focus():
             return False
         if not self._unit_has_battle_focus(unit):
             return False
@@ -241,7 +232,7 @@ class BattleFocusManager:
     def can_use_sudden_strike(self, unit, game) -> bool:
         if unit is None or game is None:
             return False
-        if not self._army_is_asuryani():
+        if not self._army_has_battle_focus():
             return False
         if not self._unit_has_battle_focus(unit):
             return False
@@ -257,7 +248,7 @@ class BattleFocusManager:
     def consume_opportunity_seized_candidates(self, moving_unit, game) -> list:
         if moving_unit is None or game is None:
             return []
-        if not self._army_is_asuryani():
+        if not self._army_has_battle_focus():
             return []
         self._sync_phase(game)
         candidates = self._fallback_engagement_snapshot.pop(self._unit_id(moving_unit), [])
@@ -283,7 +274,7 @@ class BattleFocusManager:
     def get_fade_back_candidates(self, hit_units: list, game) -> list:
         if not hit_units or game is None:
             return []
-        if not self._army_is_asuryani():
+        if not self._army_has_battle_focus():
             return []
         if int(self.tokens or 0) <= 0:
             return []
@@ -312,7 +303,7 @@ class BattleFocusManager:
     def apply_maneuver(self, unit, maneuver: str, game) -> bool:
         if unit is None or game is None:
             return False
-        if not self._army_is_asuryani():
+        if not self._army_has_battle_focus():
             return False
         if not self._unit_has_battle_focus(unit):
             return False
@@ -328,7 +319,7 @@ class BattleFocusManager:
     def apply_reactive_maneuver(self, unit, maneuver: str, game) -> bool:
         if unit is None or game is None:
             return False
-        if not self._army_is_asuryani():
+        if not self._army_has_battle_focus():
             return False
         if not self._unit_has_battle_focus(unit):
             return False
@@ -346,7 +337,7 @@ class BattleFocusManager:
     def maybe_trigger_move_maneuvers(self, unit, action: str, game) -> None:
         if unit is None or game is None:
             return
-        if not self._army_is_asuryani():
+        if not self._army_has_battle_focus():
             return
         if not self._unit_has_battle_focus(unit):
             return
@@ -392,7 +383,7 @@ class BattleFocusManager:
     def maybe_trigger_charge_maneuver(self, unit, target, game) -> None:
         if unit is None or game is None:
             return
-        if not self._army_is_asuryani():
+        if not self._army_has_battle_focus():
             return
         if not self._unit_has_battle_focus(unit):
             return
@@ -418,7 +409,7 @@ class BattleFocusManager:
     def maybe_trigger_setup_maneuver(self, unit, game) -> None:
         if unit is None or game is None:
             return
-        if not self._army_is_asuryani():
+        if not self._army_has_battle_focus():
             return
         if not self._unit_has_battle_focus(unit):
             return
@@ -447,7 +438,7 @@ class BattleFocusManager:
     def maybe_trigger_sudden_strike(self, unit, game) -> None:
         if unit is None or game is None:
             return
-        if not self._army_is_asuryani():
+        if not self._army_has_battle_focus():
             return
         if not self._unit_has_battle_focus(unit):
             return
@@ -472,7 +463,7 @@ class BattleFocusManager:
     def record_enemy_fall_back_start(self, moving_unit, game) -> None:
         if moving_unit is None or game is None:
             return
-        if not self._army_is_asuryani():
+        if not self._army_has_battle_focus():
             return
         try:
             enemy_units = list(getattr(game.map, "get_enemy_units", lambda _u: [])(moving_unit))
@@ -499,7 +490,7 @@ class BattleFocusManager:
     def maybe_trigger_opportunity_seized(self, moving_unit, game) -> None:
         if moving_unit is None or game is None:
             return
-        if not self._army_is_asuryani():
+        if not self._army_has_battle_focus():
             return
         self._sync_phase(game)
         if self._maneuver_used_this_phase(self.MANEUVER_OPPORTUNITY):
@@ -537,7 +528,7 @@ class BattleFocusManager:
     def maybe_trigger_fade_back(self, attacker_unit, target_unit, hits: int, game) -> None:
         if target_unit is None or game is None:
             return
-        if not self._army_is_asuryani():
+        if not self._army_has_battle_focus():
             return
         try:
             if int(hits or 0) <= 0:
