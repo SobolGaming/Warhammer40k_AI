@@ -3501,6 +3501,19 @@ class Unit:
         """
         Best-effort detection for abilities that allow re-rolling Charge rolls for this unit/model.
         """
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("enhancement_charge_reroll"):
+                return True
+        except Exception:
+            pass
+        try:
+            enh = getattr(self, "enhancement", None)
+            if enh is not None and str(getattr(enh, "name", "") or "").strip().lower() == "battle-lust":
+                return True
+        except Exception:
+            pass
+
         def _texts() -> list[str]:
             items: list[str] = []
             for ab in (list(getattr(self, "possible_abilities", []) or []) + list(getattr(self, "abilities", []) or [])):

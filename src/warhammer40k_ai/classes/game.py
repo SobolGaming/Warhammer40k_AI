@@ -3674,14 +3674,27 @@ class Game:
         """Apply charge roll modifiers based on unit abilities, stratagems, etc."""
         modified_roll = base_roll
         
-        # Check for charge modifiers from abilities
+        # Check for charge modifiers from abilities/enhancements
         # TODO: Implement ability-based charge modifiers
         # Examples:
         # - Shock Assault Stratagem: +1" to charge roll
         # - Swift and Deadly ability: re-roll one dice
         # - Relentless Advance trait: roll 3 dice and drop the lowest
-        
-        # For now, just return the base roll
+        try:
+            sr = getattr(charging_unit, "special_rules", None)
+            battle_lust_bonus = int(sr.get("enhancement_battle_lust_bonus_if_unbridled", 0) or 0) if isinstance(sr, dict) else 0
+            if battle_lust_bonus:
+                army = charging_unit.get_parent_army()
+                mgr = getattr(army, "blessings_of_khorne", None) if army is not None else None
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                br = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                if mgr is not None and mgr.is_blessing_active("UNBRIDLED_BLOODLUST", battle_round=br):
+                    modified_roll += battle_lust_bonus
+                    print(f"⚔️ Battle-lust: +{battle_lust_bonus} to charge roll (Unbridled Bloodlust active)")
+        except Exception:
+            pass
+
+        # For now, just return the modified roll
         return modified_roll
     
     def get_eligible_charging_units(self, player: Player) -> List['Unit']:

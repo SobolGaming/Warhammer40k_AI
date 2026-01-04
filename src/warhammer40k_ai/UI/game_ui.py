@@ -663,12 +663,8 @@ class GameView:
             # Determine if Favoured of Khorne reroll is available (bearer on battlefield)
             rerolls_allowed = 0
             try:
-                for u in list(getattr(army, "units", []) or []):
-                    enh = getattr(u, "enhancement", None)
-                    if enh is not None and str(getattr(enh, "name", "")).strip().lower() == "favoured of khorne":
-                        if getattr(u, "deployed", False) and u.is_alive() and getattr(u, "reserve_status", "deployed") == "deployed":
-                            rerolls_allowed = 2
-                            break
+                if hasattr(mgr, "favoured_of_khorne_rerolls_for_army"):
+                    rerolls_allowed = int(mgr.favoured_of_khorne_rerolls_for_army(army) or 0)
             except Exception:
                 rerolls_allowed = 0
 
@@ -1851,12 +1847,8 @@ class GameView:
         # Favoured of Khorne rerolls (unique enhancement; bearer must be on battlefield)
         rerolls_allowed = 0
         try:
-            for u in list(getattr(army, "units", []) or []):
-                enh = getattr(u, "enhancement", None)
-                if enh is not None and str(getattr(enh, "name", "")).strip().lower() == "favoured of khorne":
-                    if getattr(u, "deployed", False) and u.is_alive() and getattr(u, "reserve_status", "deployed") == "deployed":
-                        rerolls_allowed = 2
-                        break
+            if hasattr(mgr, "favoured_of_khorne_rerolls_for_army"):
+                rerolls_allowed = int(mgr.favoured_of_khorne_rerolls_for_army(army) or 0)
         except Exception:
             rerolls_allowed = 0
 

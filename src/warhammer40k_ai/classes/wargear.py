@@ -421,6 +421,20 @@ class WargearProfile:
                     attack_result.attacks_special_modifiers.append(f"Enhancement +{bonus}A (melee)")
         except Exception:
             pass
+        # Berzerker Glaive: +1 Attacks to melee weapons (excluding Extra Attacks).
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee() and not self.is_extra_attacks():
+                bonus = int(
+                    getattr(attacker.parent_unit, "special_rules", {}).get(
+                        "enhancement_melee_attacks_bonus_no_extra_attacks", 0
+                    )
+                    or 0
+                )
+                if bonus:
+                    atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="enhancement:melee_attacks_add_no_extra"))
+                    attack_result.attacks_special_modifiers.append(f"Berzerker Glaive +{bonus}A (melee)")
+        except Exception:
+            pass
 
         # Once-per-battle temporary buffs on the attacking model (e.g. Possessed Lord)
         try:
@@ -1834,6 +1848,22 @@ class WargearProfile:
                 if d_bonus:
                     damage_mods.append(Modifier(ModifierOp.ADD, int(d_bonus), source="enhancement:melee_damage_add"))
                     damage_result['special_effects'].append(f"Enhancement +{d_bonus}D (melee)")
+        except Exception:
+            pass
+        # Berzerker Glaive: +1 Damage to melee weapons (excluding Extra Attacks).
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee() and not self.is_extra_attacks():
+                d_bonus = int(
+                    getattr(attacker.parent_unit, "special_rules", {}).get(
+                        "enhancement_melee_damage_bonus_no_extra_attacks", 0
+                    )
+                    or 0
+                )
+                if d_bonus:
+                    damage_mods.append(
+                        Modifier(ModifierOp.ADD, int(d_bonus), source="enhancement:melee_damage_add_no_extra")
+                    )
+                    damage_result['special_effects'].append(f"Berzerker Glaive +{d_bonus}D (melee)")
         except Exception:
             pass
 

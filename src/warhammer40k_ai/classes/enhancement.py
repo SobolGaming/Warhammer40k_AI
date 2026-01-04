@@ -69,5 +69,36 @@ class Enhancement:
             # Never hard-fail list loading / army parsing due to a rules parsing miss.
             pass
 
+        # Custom enhancement hooks (small, explicit support for known rules).
+        try:
+            if getattr(unit, "special_rules", None) is None:
+                unit.special_rules = {}
+        except Exception:
+            return
+
+        try:
+            name = str(getattr(self, "name", "") or "").replace("ƒ?T", "'").strip().lower()
+        except Exception:
+            name = ""
+        try:
+            enh_id = str(getattr(self, "id", "") or "").strip()
+        except Exception:
+            enh_id = ""
+
+        if name == "berzerker glaive" or enh_id == "000008432002":
+            unit.special_rules["enhancement_melee_attacks_bonus_no_extra_attacks"] = int(
+                unit.special_rules.get("enhancement_melee_attacks_bonus_no_extra_attacks", 0) or 0
+            ) + 1
+            unit.special_rules["enhancement_melee_damage_bonus_no_extra_attacks"] = int(
+                unit.special_rules.get("enhancement_melee_damage_bonus_no_extra_attacks", 0) or 0
+            ) + 1
+
+        if name == "battle-lust" or enh_id == "000008432005":
+            unit.special_rules["enhancement_charge_reroll"] = True
+            unit.special_rules["enhancement_battle_lust_bonus_if_unbridled"] = 1
+
+        if name == "favoured of khorne" or enh_id == "000008432004":
+            unit.special_rules["enhancement_favoured_of_khorne_rerolls"] = 2
+
     def __str__(self) -> str:
         return f"{self.name} ({self.points}pts) [{self.faction_id} / {self.detachment}]\n{self.description}"

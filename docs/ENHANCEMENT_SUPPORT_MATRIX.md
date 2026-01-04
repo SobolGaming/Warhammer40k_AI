@@ -1606,9 +1606,9 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 
 | Enhancement | ID | Cost | Status | Notes |
 |---|---:|---:|---|---|
-| Battle-lust | `000008432005` | 10 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Berzerker Glaive | `000008432002` | 35 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Favoured of Khorne | `000008432004` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
+| Battle-lust | `000008432005` | 10 | **Supported** | Re-roll Charge rolls for bearer’s unit; +1 to Charge rolls while Unbridled Bloodlust is active. |
+| Berzerker Glaive | `000008432002` | 35 | **Supported** | +1A/+1D to bearer’s melee weapons (excluding Extra Attacks). |
+| Favoured of Khorne | `000008432004` | 15 | **Supported** | Blessings of Khorne rolls: re-roll up to two dice while bearer is on the battlefield. |
 | Helm of Brazen Ire | `000008432003` | 30 | **Supported** | Reduce damage allocated to bearer by 1 (min 1). |
 
 #### Cult of Blood

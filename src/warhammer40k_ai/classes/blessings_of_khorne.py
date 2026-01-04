@@ -134,6 +134,37 @@ class BlessingsOfKhorneManager:
             return False
         return key in self.active_blessing_keys
 
+    def favoured_of_khorne_rerolls_for_army(self, army) -> int:
+        """
+        Return the number of Blessings rerolls granted by Favoured of Khorne.
+        Bearer must be on the battlefield.
+        """
+        if army is None:
+            return 0
+        try:
+            units = list(getattr(army, "units", []) or [])
+        except Exception:
+            units = []
+        for u in units:
+            try:
+                if not (getattr(u, "deployed", False) and u.is_alive() and getattr(u, "reserve_status", "deployed") == "deployed"):
+                    continue
+            except Exception:
+                continue
+            try:
+                sr = getattr(u, "special_rules", None)
+                if isinstance(sr, dict) and int(sr.get("enhancement_favoured_of_khorne_rerolls", 0) or 0) >= 2:
+                    return 2
+            except Exception:
+                pass
+            try:
+                enh = getattr(u, "enhancement", None)
+                if enh is not None and str(getattr(enh, "name", "") or "").strip().lower() == "favoured of khorne":
+                    return 2
+            except Exception:
+                continue
+        return 0
+
     # ---------------- Roll + choose ----------------
     def create_roll_context(
         self,
