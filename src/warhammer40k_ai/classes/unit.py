@@ -3769,14 +3769,22 @@ class Unit:
                     print(f"🎲 {self.name} advance roll: {advance_roll}\" (Move {self.movement}\" + {advance_roll}\" = {self.movement + advance_roll}\")")
 
                     # Publish roll event (reroll may be locked if already used)
+                    from ..utility.reroll_tracker import prepare_reroll_event
+                    roll_id, reroll_cb, reroll_locked = prepare_reroll_event(
+                        _game,
+                        _reroll,
+                        reroll_used=bool(reroll_used),
+                        used_result=advance_roll,
+                    )
                     _game.event_system.publish(
                         "roll_made",
                         player=_player,
                         unit=self,
                         roll_type="advance",
                         value=advance_roll,
-                        reroll=_reroll,
-                        reroll_locked=bool(reroll_used),
+                        reroll=reroll_cb,
+                        reroll_locked=bool(reroll_locked),
+                        roll_id=roll_id,
                     )
             except Exception:
                 pass
@@ -3870,14 +3878,22 @@ class Unit:
                             reroll_used = True
                     # Publish roll event (best-effort)
                     if _game is not None and hasattr(_game, "event_system"):
+                        from ..utility.reroll_tracker import prepare_reroll_event
+                        roll_id, reroll_cb, reroll_locked = prepare_reroll_event(
+                            _game,
+                            _reroll,
+                            reroll_used=bool(reroll_used),
+                            used_result=advance_roll,
+                        )
                         _game.event_system.publish(
                             "roll_made",
                             player=_player,
                             unit=self,
                             roll_type="advance",
                             value=advance_roll,
-                            reroll=_reroll,
-                            reroll_locked=bool(reroll_used),
+                            reroll=reroll_cb,
+                            reroll_locked=bool(reroll_locked),
+                            roll_id=roll_id,
                         )
                 except Exception:
                     pass
@@ -9022,5 +9038,3 @@ class Unit:
                     pass
 
         return bool(base_found)
-
-

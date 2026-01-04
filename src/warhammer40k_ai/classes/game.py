@@ -3726,6 +3726,13 @@ class Game:
                     pass
                 return new_total, new_dice
 
+            from ..utility.reroll_tracker import prepare_reroll_event
+            roll_id, reroll_cb, reroll_locked = prepare_reroll_event(
+                self,
+                _reroll,
+                reroll_used=bool(reroll_used),
+                used_result=(int(base_roll or 0), list(dice)),
+            )
             self.event_system.publish(
                 "roll_made",
                 player=player,
@@ -3733,8 +3740,9 @@ class Game:
                 roll_type="charge",
                 value=int(base_roll or 0),
                 dice=list(dice),
-                reroll=_reroll,
-                reroll_locked=bool(reroll_used),
+                reroll=reroll_cb,
+                reroll_locked=bool(reroll_locked),
+                roll_id=roll_id,
             )
         except Exception:
             pass

@@ -400,7 +400,19 @@ class WargearProfile:
             try:
                 unit = attacker.parent_unit
                 game = unit.get_parent_army().player.game
-                game.event_system.publish("roll_made", player=unit.get_parent_army().player, unit=unit, roll_type="attacks", value=num_attacks, dice=dice_rolls, reroll=_reroll_attacks)
+                from ..utility.reroll_tracker import prepare_reroll_event
+                roll_id, reroll_cb, reroll_locked = prepare_reroll_event(game, _reroll_attacks)
+                game.event_system.publish(
+                    "roll_made",
+                    player=unit.get_parent_army().player,
+                    unit=unit,
+                    roll_type="attacks",
+                    value=num_attacks,
+                    dice=dice_rolls,
+                    reroll=reroll_cb,
+                    reroll_locked=bool(reroll_locked),
+                    roll_id=roll_id,
+                )
             except Exception:
                 pass
         else:
@@ -753,7 +765,18 @@ class WargearProfile:
             try:
                 unit = attacker.parent_unit
                 game = unit.get_parent_army().player.game
-                game.event_system.publish("roll_made", player=unit.get_parent_army().player, unit=unit, roll_type="hazardous", value=hazard_roll, reroll=_reroll_hazard)
+                from ..utility.reroll_tracker import prepare_reroll_event
+                roll_id, reroll_cb, reroll_locked = prepare_reroll_event(game, _reroll_hazard)
+                game.event_system.publish(
+                    "roll_made",
+                    player=unit.get_parent_army().player,
+                    unit=unit,
+                    roll_type="hazardous",
+                    value=hazard_roll,
+                    reroll=reroll_cb,
+                    reroll_locked=bool(reroll_locked),
+                    roll_id=roll_id,
+                )
             except Exception:
                 pass
             if hazard_roll == 1:
@@ -1105,14 +1128,22 @@ class WargearProfile:
         try:
             unit = attacker.parent_unit
             game = unit.get_parent_army().player.game
+            from ..utility.reroll_tracker import prepare_reroll_event
+            roll_id, reroll_cb, reroll_locked = prepare_reroll_event(
+                game,
+                _reroll_hit,
+                reroll_used=bool(reroll_used),
+                used_result=dice_roll,
+            )
             game.event_system.publish(
                 "roll_made",
                 player=unit.get_parent_army().player,
                 unit=unit,
                 roll_type="hit",
                 value=dice_roll,
-                reroll=_reroll_hit,
-                reroll_locked=bool(reroll_used),
+                reroll=reroll_cb,
+                reroll_locked=bool(reroll_locked),
+                roll_id=roll_id,
             )
         except Exception:
             pass
@@ -1451,14 +1482,22 @@ class WargearProfile:
         try:
             unit = attacker.parent_unit
             game = unit.get_parent_army().player.game
+            from ..utility.reroll_tracker import prepare_reroll_event
+            roll_id, reroll_cb, reroll_locked = prepare_reroll_event(
+                game,
+                _reroll_wound,
+                reroll_used=bool(reroll_used),
+                used_result=dice_roll,
+            )
             game.event_system.publish(
                 "roll_made",
                 player=unit.get_parent_army().player,
                 unit=unit,
                 roll_type="wound",
                 value=dice_roll,
-                reroll=_reroll_wound,
-                reroll_locked=bool(reroll_used),
+                reroll=reroll_cb,
+                reroll_locked=bool(reroll_locked),
+                roll_id=roll_id,
             )
         except Exception:
             pass
@@ -1678,7 +1717,18 @@ class WargearProfile:
         try:
             unit = target_model.parent_unit
             game = unit.get_parent_army().player.game
-            game.event_system.publish("roll_made", player=unit.get_parent_army().player, unit=unit, roll_type="save", value=dice_roll, reroll=_reroll_save)
+            from ..utility.reroll_tracker import prepare_reroll_event
+            roll_id, reroll_cb, reroll_locked = prepare_reroll_event(game, _reroll_save)
+            game.event_system.publish(
+                "roll_made",
+                player=unit.get_parent_army().player,
+                unit=unit,
+                roll_type="save",
+                value=dice_roll,
+                reroll=reroll_cb,
+                reroll_locked=bool(reroll_locked),
+                roll_id=roll_id,
+            )
         except Exception:
             pass
         
@@ -1812,7 +1862,19 @@ class WargearProfile:
             try:
                 unit = attacker.parent_unit
                 game = unit.get_parent_army().player.game
-                game.event_system.publish("roll_made", player=unit.get_parent_army().player, unit=unit, roll_type="damage", value=damage_value, dice=dice_rolls, reroll=_reroll_damage)
+                from ..utility.reroll_tracker import prepare_reroll_event
+                roll_id, reroll_cb, reroll_locked = prepare_reroll_event(game, _reroll_damage)
+                game.event_system.publish(
+                    "roll_made",
+                    player=unit.get_parent_army().player,
+                    unit=unit,
+                    roll_type="damage",
+                    value=damage_value,
+                    dice=dice_rolls,
+                    reroll=reroll_cb,
+                    reroll_locked=bool(reroll_locked),
+                    roll_id=roll_id,
+                )
             except Exception:
                 pass
         else:

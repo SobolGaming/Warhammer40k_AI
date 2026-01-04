@@ -1208,6 +1208,14 @@ class StratagemManager:
                 return
         except Exception:
             pass
+        try:
+            from ..utility.reroll_tracker import get_reroll_tracker
+            tracker = get_reroll_tracker(self.game)
+            roll_id = kwargs.get("roll_id", None)
+            if tracker is not None and roll_id is not None and tracker.is_used(roll_id):
+                return
+        except Exception:
+            pass
         if player is not self.player:
             return
         s = self.get_by_name('COMMAND RE-ROLL')
