@@ -10,8 +10,8 @@ from .player import Player
 from .unit import Unit
 from .model import Model
 from ..utility.calcs import get_dist, clear_enemy_model_cache
-from ..utility.dice import DiceCollection
-from ..utility.constants import TOTAL_ROUNDS
+from ..utility.dice import DiceCollection, get_roll
+from ..utility.constants import TOTAL_ROUNDS, ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VERTICAL
 
 logger = logging.getLogger(__name__)
 
@@ -151,6 +151,8 @@ class Game:
         self.destroyed_units_this_battle_round_by_player: Dict[Player, int] = {}
         # Phase-scoped targeting tracking (for rules like Thrill Seekers)
         self.phase_targeted_units: Dict[str, set[str]] = {}
+        # Aeldari: Phoenix Gem pending returns (processed at end of the phase they were destroyed in)
+        self._phoenix_gem_pending: List[Dict[str, Any]] = []
 
     def _install_default_event_subscribers(self) -> None:
         """Install non-UI rule subscribers that operate off the event system."""
@@ -176,6 +178,192 @@ class Game:
         self.event_system.subscribe("phase_end", self._on_phase_end_cleanup)
         # Optional ability timing windows (prompt/decision hooks)
         self.event_system.subscribe("phase_start", self._on_phase_start_optional_abilities)
+
+    # ---------------- Phoenix Gem (Warhost) ----------------
+
+    def queue_phoenix_gem_return(
+        self,
+        *,
+        unit=None,
+        model=None,
+        position=None,
+        phase_name: str | None = None,
+        game_map=None,
+    ) -> None:
+        if unit is None or model is None:
+            return
+        payload = {
+            "unit": unit,
+            "model": model,
+            "position": position,
+            "phase_name": str(phase_name or "").strip().upper(),
+            "game_map": game_map,
+        }
+        self._phoenix_gem_pending.append(payload)
+
+    def _phoenix_gem_in_engagement_range(self, unit, candidate_base, game_map) -> bool:
+        if unit is None or candidate_base is None or game_map is None:
+            return False
+        try:
+            from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
+        except Exception:
+            return False
+        for enemy in list(game_map.get_enemy_units(unit) or []):
+            try:
+                models = enemy.get_models_for_collision()
+            except Exception:
+                models = getattr(enemy, "models", []) or []
+            for em in list(models or []):
+                try:
+                    if not getattr(em, "is_alive", True):
+                        continue
+                except Exception:
+                    pass
+                try:
+                    h = float(horizontal_distance_between_bases_2d(candidate_base, em.model_base))
+                    v = float(vertical_distance_between_bases(candidate_base, em.model_base))
+                except Exception:
+                    continue
+                if h <= float(ENGAGEMENT_RANGE_HORIZONTAL) and v <= float(ENGAGEMENT_RANGE_VERTICAL):
+                    return True
+        return False
+
+    def _find_phoenix_gem_position(self, unit, model, position, game_map):
+        if unit is None or model is None or position is None or game_map is None:
+            return None
+        try:
+            x0, y0, z0, f0 = position
+        except Exception:
+            return None
+
+        def _valid(x, y, z, facing) -> bool:
+            temp_added = False
+            try:
+                if not list(getattr(unit, "models", []) or []):
+                    unit.models.append(model)
+                    temp_added = True
+                if not game_map.is_within_boundary(model, (x, y)):
+                    return False
+                if game_map.check_collision_with_obstacles(model, (x, y)):
+                    return False
+                if game_map.check_collision_with_other_friendly_units(model, (x, y)):
+                    return False
+                if game_map.check_collision_with_other_enemy_units(model, (x, y)):
+                    return False
+            except Exception:
+                return False
+            finally:
+                if temp_added:
+                    try:
+                        unit.models.remove(model)
+                    except Exception:
+                        pass
+            try:
+                candidate_base = unit._create_potential_base(x, y, z, facing, model=model)
+            except Exception:
+                return False
+            if self._phoenix_gem_in_engagement_range(unit, candidate_base, game_map):
+                return False
+            return True
+
+        if _valid(x0, y0, z0, f0):
+            return (x0, y0, z0, f0)
+
+        max_radius = 12.0
+        step = 0.5
+        angles = [i * (math.pi / 8.0) for i in range(16)]
+        radius = step
+        while radius <= max_radius:
+            for ang in angles:
+                x = x0 + math.cos(ang) * radius
+                y = y0 + math.sin(ang) * radius
+                if _valid(x, y, z0, f0):
+                    return (x, y, z0, f0)
+            radius += step
+        return None
+
+    def _resolve_phoenix_gem_return(self, payload: Dict[str, Any]) -> None:
+        unit = payload.get("unit")
+        model = payload.get("model")
+        if unit is None or model is None:
+            return
+        try:
+            roll = int(get_roll("D6"))
+        except Exception:
+            roll = 1
+        try:
+            print(f"✨ Phoenix Gem: rolled {roll} to return {getattr(model, 'name', 'bearer')}")
+        except Exception:
+            pass
+        if roll < 2:
+            try:
+                print("❌ Phoenix Gem failed; bearer remains destroyed.")
+            except Exception:
+                pass
+            return
+
+        game_map = payload.get("game_map") or getattr(self, "map", None)
+        if game_map is None:
+            return
+
+        placement = self._find_phoenix_gem_position(unit, model, payload.get("position"), game_map)
+        if placement is None:
+            try:
+                print("❌ Phoenix Gem: no valid placement found; bearer remains destroyed.")
+            except Exception:
+                pass
+            try:
+                unit.models.remove(model)
+            except Exception:
+                pass
+            try:
+                unit.models_lost.append(model)
+            except Exception:
+                pass
+            return
+
+        try:
+            if model not in list(getattr(unit, "models", []) or []):
+                unit.models.append(model)
+        except Exception:
+            return
+        try:
+            lost = getattr(unit, "models_lost", None)
+            if isinstance(lost, list) and model in lost:
+                lost.remove(model)
+        except Exception:
+            pass
+        try:
+            model.set_parent_unit(unit)
+        except Exception:
+            pass
+        try:
+            model._wounds = int(getattr(model, "_base_wounds", getattr(model, "wounds", 0)))
+        except Exception:
+            pass
+        try:
+            model.set_location(placement[0], placement[1], placement[2], placement[3])
+        except Exception:
+            pass
+        try:
+            if unit not in list(getattr(game_map, "units", []) or []):
+                game_map.units.append(unit)
+        except Exception:
+            pass
+        try:
+            unit.deployed = True
+            unit.reserve_status = "deployed"
+        except Exception:
+            pass
+        try:
+            if hasattr(unit, "update_coherency"):
+                unit.update_coherency()
+        except Exception:
+            pass
+        try:
+            print(f"✅ Phoenix Gem: {getattr(unit, 'name', 'bearer')} returns to the battlefield.")
+        except Exception:
+            pass
 
     def _on_phase_start_target_tracking(self, player=None, phase=None, **_kwargs) -> None:
         """Reset phase-scoped target tracking at the start of each phase."""
@@ -374,6 +562,35 @@ class Game:
                     mgr.on_command_phase_end(game=self, player=player)
             except Exception:
                 pass
+
+        # Phoenix Gem: resolve pending returns at end of the phase they were destroyed in.
+        try:
+            pname = str(getattr(phase, "name", "") or "").strip().upper()
+        except Exception:
+            pname = ""
+        if pname:
+            try:
+                pending = list(getattr(self, "_phoenix_gem_pending", []) or [])
+            except Exception:
+                pending = []
+            if pending:
+                remaining = []
+                for payload in pending:
+                    try:
+                        if str(payload.get("phase_name", "") or "").strip().upper() != pname:
+                            remaining.append(payload)
+                            continue
+                    except Exception:
+                        remaining.append(payload)
+                        continue
+                    try:
+                        self._resolve_phoenix_gem_return(payload)
+                    except Exception:
+                        remaining.append(payload)
+                try:
+                    self._phoenix_gem_pending = remaining
+                except Exception:
+                    pass
 
     def _on_unit_move_started_battle_focus(self, unit=None, action: str | None = None, **_kwargs) -> None:
         if unit is None:

@@ -1836,6 +1836,42 @@ class Unit:
         except Exception:
             pass
 
+        # AELDARI (Warhost): Phoenix Gem - first time bearer is destroyed, attempt to return at end of phase.
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("enhancement_phoenix_gem", False):
+                if not getattr(model, "has_used_once_per_battle", lambda _k: False)("phoenix_gem"):
+                    game = self.get_parent_army().player.game
+                    phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    pos = None
+                    try:
+                        pos = model.get_location()
+                    except Exception:
+                        pos = None
+                    if pos is None:
+                        try:
+                            pos = getattr(self, "position", None)
+                        except Exception:
+                            pos = None
+                    if hasattr(game, "queue_phoenix_gem_return"):
+                        game.queue_phoenix_gem_return(
+                            unit=self,
+                            model=model,
+                            position=pos,
+                            phase_name=phase_name,
+                            game_map=game_map,
+                        )
+                        try:
+                            print(f"✨ Phoenix Gem: {model.name} will attempt to return at end of phase.")
+                        except Exception:
+                            pass
+                    try:
+                        model.mark_used_once_per_battle("phoenix_gem")
+                    except Exception:
+                        setattr(model, "_phoenix_gem_used", True)
+        except Exception:
+            pass
+
         # WORLD EATERS: Total Carnage (Blessings of Khorne) - deferred "fight on death" after attacker finishes attacks.
         # Trigger: a model is destroyed by a MELEE attack, model's unit benefits from Total Carnage, and unit has not fought this phase.
         try:
@@ -8986,6 +9022,5 @@ class Unit:
                     pass
 
         return bool(base_found)
-
 
 

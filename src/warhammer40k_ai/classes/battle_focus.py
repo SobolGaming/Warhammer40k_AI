@@ -101,6 +101,49 @@ class BattleFocusManager:
             return 2
         return 0
 
+    def _unit_on_battlefield_or_embarked(self, unit) -> bool:
+        if unit is None:
+            return False
+        try:
+            if bool(getattr(unit, "deployed", False)) and str(getattr(unit, "reserve_status", "deployed")) == "deployed":
+                return True
+        except Exception:
+            pass
+        try:
+            transport = getattr(unit, "embarked_in", None)
+        except Exception:
+            transport = None
+        if transport is None:
+            return False
+        try:
+            if bool(getattr(transport, "deployed", False)) and str(getattr(transport, "reserve_status", "deployed")) == "deployed":
+                return True
+        except Exception:
+            return False
+        return False
+
+    def _bonus_tokens_from_timeless_strategist(self, game) -> int:
+        army = self.army
+        if army is None:
+            return 0
+        bonus = 0
+        for u in list(getattr(army, "units", []) or []):
+            try:
+                if not getattr(u, "is_alive", lambda: True)():
+                    continue
+            except Exception:
+                pass
+            sr = getattr(u, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            val = int(sr.get("enhancement_timeless_strategist_battle_focus_bonus", 0) or 0)
+            if val <= 0:
+                continue
+            if not self._unit_on_battlefield_or_embarked(u):
+                continue
+            bonus += val
+        return int(bonus)
+
     def on_battle_round_start(self, battle_round: int, *, game=None) -> None:
         if not self._army_has_battle_focus():
             return
@@ -110,6 +153,16 @@ class BattleFocusManager:
             except Exception:
                 game = None
         self.tokens = int(self._tokens_for_battlefield(game))
+        try:
+            bonus = int(self._bonus_tokens_from_timeless_strategist(game))
+        except Exception:
+            bonus = 0
+        if bonus:
+            self.tokens += int(bonus)
+            try:
+                print(f"✨ Timeless Strategist: +{bonus} Battle Focus token(s)")
+            except Exception:
+                pass
         self._battle_round = int(battle_round or 0)
         self._phase_key = None
         self._units_used_this_phase = set()

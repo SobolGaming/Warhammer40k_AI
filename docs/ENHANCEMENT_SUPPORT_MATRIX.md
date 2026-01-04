@@ -252,10 +252,10 @@ Generated from `wahapedia_data/Enhancements.json` (faction names/links from `wah
 
 | Enhancement | ID | Cost | Status | Notes |
 |---|---:|---:|---|---|
-| Gift of Foresight | `000009899004` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Phoenix Gem | `000009899002` | 35 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Psychic Destroyer | `000009899005` | 30 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
-| Timeless Strategist | `000009899003` | 15 | **Partial** | Loadable/assignable + points counted + UI display; rules effects not executed yet. |
+| Gift of Foresight | `000009899004` | 15 | **Supported** | Command Re-roll on bearer’s unit costs 0CP once per battle round. |
+| Phoenix Gem | `000009899002` | 35 | **Supported** | First time bearer is destroyed, return on 2+ at end of phase near destroyed spot and outside Engagement Range. |
+| Psychic Destroyer | `000009899005` | 30 | **Supported** | +1 Damage to bearer’s ranged Psychic weapons. |
+| Timeless Strategist | `000009899003` | 15 | **Supported** | +1 Battle Focus token at start of battle round if bearer (or its transport) is on battlefield. |
 
 #### Windrider Host
 

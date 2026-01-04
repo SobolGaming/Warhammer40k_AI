@@ -1867,6 +1867,27 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Psychic Destroyer: +1 Damage to ranged Psychic weapons.
+        try:
+            if (
+                self.parent_wargear
+                and self.parent_wargear.is_ranged()
+                and self.is_psychic()
+            ):
+                d_bonus = int(
+                    getattr(attacker.parent_unit, "special_rules", {}).get(
+                        "enhancement_psychic_destroyer_damage_bonus", 0
+                    )
+                    or 0
+                )
+                if d_bonus:
+                    damage_mods.append(
+                        Modifier(ModifierOp.ADD, int(d_bonus), source="enhancement:psychic_destroyer_damage_add")
+                    )
+                    damage_result['special_effects'].append(f"Psychic Destroyer +{d_bonus}D (ranged psychic)")
+        except Exception:
+            pass
+
         # Enhancement: reduce damage allocated to bearer by X.
         try:
             t_unit = getattr(target_model, "parent_unit", None)

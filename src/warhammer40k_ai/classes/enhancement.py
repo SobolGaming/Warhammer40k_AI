@@ -100,5 +100,21 @@ class Enhancement:
         if name == "favoured of khorne" or enh_id == "000008432004":
             unit.special_rules["enhancement_favoured_of_khorne_rerolls"] = 2
 
+        if name == "gift of foresight" and enh_id == "000009899004":
+            unit.special_rules["enhancement_free_command_reroll_once_per_battle_round"] = True
+
+        if name == "phoenix gem" or enh_id == "000009899002":
+            unit.special_rules["enhancement_phoenix_gem"] = True
+
+        if name == "psychic destroyer" or enh_id == "000009899005":
+            unit.special_rules["enhancement_psychic_destroyer_damage_bonus"] = int(
+                unit.special_rules.get("enhancement_psychic_destroyer_damage_bonus", 0) or 0
+            ) + 1
+
+        if name == "timeless strategist" or enh_id == "000009899003":
+            unit.special_rules["enhancement_timeless_strategist_battle_focus_bonus"] = int(
+                unit.special_rules.get("enhancement_timeless_strategist_battle_focus_bonus", 0) or 0
+            ) + 1
+
     def __str__(self) -> str:
         return f"{self.name} ({self.points}pts) [{self.faction_id} / {self.detachment}]\n{self.description}"

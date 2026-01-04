@@ -257,6 +257,56 @@ class Player:
                 continue
         return 0
 
+    def _target_unit_has_gift_of_foresight(self, target_unit) -> bool:
+        if target_unit is None:
+            return False
+        try:
+            members = list(target_unit.get_attached_unit_members())
+        except Exception:
+            members = [target_unit]
+        for u in members:
+            try:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                if not sr.get("enhancement_free_command_reroll_once_per_battle_round", False):
+                    continue
+            except Exception:
+                continue
+            try:
+                alive = bool(u.is_alive())
+            except Exception:
+                try:
+                    alive = any(getattr(m, "is_alive", True) for m in (getattr(u, "models", []) or []))
+                except Exception:
+                    alive = True
+            if not alive:
+                continue
+            return True
+        return False
+
+    def _preview_gift_of_foresight_discount(self, *, stratagem=None, target_unit=None) -> int:
+        """
+        Gift of Foresight (Warhost):
+        Once per battle round, you can target the bearer's unit with Command Re-roll for 0CP.
+        """
+        if stratagem is None or target_unit is None:
+            return 0
+        try:
+            name = str(getattr(stratagem, "name", "") or "").strip().lower()
+        except Exception:
+            name = ""
+        if name != "command re-roll" and name != "command reroll" and name != "command re-roll":
+            return 0
+        if not self._target_unit_has_gift_of_foresight(target_unit):
+            return 0
+        br = self._battle_round()
+        if br <= 0:
+            return 0
+        if int(self._ability_used_battle_round.get("GIFT_OF_FORESIGHT", 0) or 0) == br:
+            return 0
+        return 1
+
     def _should_use_optional_ability(self, key: str, context: dict) -> bool:
         """
         Ask the registered decision hook whether to use an optional ability.
@@ -349,8 +399,11 @@ class Player:
             if not assume_optional_discounts:
                 try:
                     overrides = getattr(self, "_next_optional_decisions", {}) or {}
-                    if isinstance(overrides, dict) and "DIRECT_THE_SLAUGHTER" in overrides:
-                        assume_optional_discounts = bool(overrides.get("DIRECT_THE_SLAUGHTER", False))
+                    if isinstance(overrides, dict):
+                        if "DIRECT_THE_SLAUGHTER" in overrides:
+                            assume_optional_discounts = bool(overrides.get("DIRECT_THE_SLAUGHTER", False))
+                        elif "GIFT_OF_FORESIGHT" in overrides:
+                            assume_optional_discounts = bool(overrides.get("GIFT_OF_FORESIGHT", False))
                 except Exception:
                     assume_optional_discounts = False
 
@@ -359,6 +412,11 @@ class Player:
             if dts:
                 discount += int(dts)
                 reasons.append("Direct the Slaughter: -1CP (once per battle round)")
+
+        gof = self._preview_gift_of_foresight_discount(stratagem=stratagem, target_unit=target_unit)
+        if gof:
+            discount += int(gof)
+            reasons.append("Gift of Foresight: Command Re-roll for 0CP (once per battle round)")
 
         cost = max(0, base - discount)
         return {"base": base, "discount": discount, "cost": cost, "reasons": reasons}
@@ -390,6 +448,34 @@ class Player:
                 br = self._battle_round()
                 if br > 0:
                     self._ability_used_battle_round["DIRECT_THE_SLAUGHTER"] = br
+
+        # Decide whether to apply Gift of Foresight if available.
+        gof_available = bool(self._preview_gift_of_foresight_discount(stratagem=stratagem, target_unit=target_unit))
+        if gof_available:
+            ctx = {
+                "ability_name": "Gift of Foresight",
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            use_gof = True
+            try:
+                overrides = getattr(self, "_next_optional_decisions", {}) or {}
+                has_override = isinstance(overrides, dict) and "GIFT_OF_FORESIGHT" in overrides
+            except Exception:
+                has_override = False
+            if callable(getattr(self, "decision_hook", None)) or has_override:
+                use_gof = self._should_use_optional_ability("GIFT_OF_FORESIGHT", ctx)
+            if use_gof:
+                applied_discount += 1
+                reasons.append("Gift of Foresight: Command Re-roll for 0CP (used)")
+                br = self._battle_round()
+                if br > 0:
+                    self._ability_used_battle_round["GIFT_OF_FORESIGHT"] = br
+                try:
+                    print(f"✨ Gift of Foresight: {self.name} uses Command Re-roll for 0CP.")
+                except Exception:
+                    pass
 
         cost = max(0, base - applied_discount)
         return {
