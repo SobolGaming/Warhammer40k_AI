@@ -873,6 +873,13 @@ class WargearProfile:
         if hasattr(target, 'has_stealth') and target.has_stealth():
             dice_modifier -= 1
             hit_result['modifiers'].append("-1 from target Stealth")
+        # First Prince of Chaos (Shadow Legion Tzeentch): -1 to hit when targeting this unit.
+        try:
+            if hasattr(target, "has_first_prince_tzeentch_defense") and target.has_first_prince_tzeentch_defense():
+                dice_modifier -= 1
+                hit_result['modifiers'].append("-1 from First Prince of Chaos (Tzeentch)")
+        except Exception:
+            pass
 
         # Damaged profile: subtract N from the Hit roll (stored as negative modifier).
         try:
@@ -933,6 +940,56 @@ class WargearProfile:
                 hit_result["reroll"] = rr
                 dice_roll = rr
                 reroll_used = True
+        except Exception:
+            pass
+
+        # Seductive Gambit: melee attacks can re-roll the Hit roll (optional).
+        try:
+            if "reroll" not in hit_result:
+                is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+                if is_melee:
+                    sr = getattr(attacker.parent_unit, "special_rules", None)
+                    if isinstance(sr, dict) and sr.get("seductive_gambit_active"):
+                        # Determine success at this stage (before auto-hit/miss shortcuts below).
+                        try:
+                            success = (dice_roll != 1) and (self.skill > 0) and (dice_roll >= final_needed)
+                        except Exception:
+                            success = False
+
+                        do_reroll = False
+                        try:
+                            unit = attacker.parent_unit
+                            game = unit.get_parent_army().player.game
+                            player = unit.get_parent_army().player
+                            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                            provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                        except Exception:
+                            is_human = False
+                            provider = None
+                            player = None
+
+                        if is_human and callable(provider):
+                            try:
+                                do_reroll = bool(provider(
+                                    player=player,
+                                    unit=unit,
+                                    roll_type="hit",
+                                    value=dice_roll,
+                                    dice=None,
+                                    needed=final_needed,
+                                    success=success,
+                                ))
+                            except Exception:
+                                do_reroll = False
+                        else:
+                            do_reroll = (not success)
+
+                        if do_reroll:
+                            rr = _reroll_hit()
+                            hit_result.setdefault("special_effects", []).append("Seductive Gambit: re-roll Hit roll")
+                            hit_result["reroll"] = rr
+                            dice_roll = rr
+                            reroll_used = True
         except Exception:
             pass
 
@@ -1059,11 +1116,21 @@ class WargearProfile:
                 blessings_lethal = False
                 blessings_sustained = False
 
-            if self.is_lethal_hits() or blessings_lethal:
+            dark_pacts_choice = None
+            try:
+                sr = getattr(attacker.parent_unit, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("dark_pacts_active"):
+                    dark_pacts_choice = str(sr.get("dark_pacts_choice", "") or "").strip().upper()
+            except Exception:
+                dark_pacts_choice = None
+            dark_pacts_lethal = dark_pacts_choice == "LETHAL HITS"
+            dark_pacts_sustained = bool(dark_pacts_choice and dark_pacts_choice.startswith("SUSTAINED"))
+
+            if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal:
                 hit_result['special_effects'].append("Lethal Hits")
                 attack_instance['lethal_hit'] = True
             # For Sustained Hits, do not override an existing Sustained Hits X on the weapon.
-            if self.is_sustained_hits() or blessings_sustained:
+            if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained:
                 # Support Sustained Hits X / Sustained Hits D3 / etc. Roll per critical hit.
                 if self.is_sustained_hits():
                     try:
@@ -1075,8 +1142,12 @@ class WargearProfile:
                         hit_result['special_effects'].append("Sustained Hits (+1)")
                         attack_instance['sustained_hit'] = 1
                 else:
-                    # Blessings provide Sustained Hits 1
-                    hit_result['special_effects'].append("Sustained Hits (+1) [Blessings of Khorne]")
+                    label = "Sustained Hits (+1)"
+                    if blessings_sustained:
+                        label += " [Blessings of Khorne]"
+                    elif dark_pacts_sustained:
+                        label += " [Dark Pacts]"
+                    hit_result['special_effects'].append(label)
                     attack_instance['sustained_hit'] = 1
             return hit_result
 
@@ -1182,6 +1253,15 @@ class WargearProfile:
             dice_modifier += int(aura_mods.wound)
             wound_result['modifiers'].extend(list(getattr(aura_mods, "wound_reasons", ()) or ()))
 
+        # First Prince of Chaos (Shadow Legion Nurgle): -1 to wound if Strength > Toughness.
+        try:
+            if hasattr(target, "has_first_prince_nurgle_defense") and target.has_first_prince_nurgle_defense():
+                if isinstance(strength, int) and isinstance(target_toughness, int) and strength > target_toughness:
+                    dice_modifier -= 1
+                    wound_result['modifiers'].append("-1 to wound from First Prince of Chaos (Nurgle)")
+        except Exception:
+            pass
+
         dice_modifier = min(max(dice_modifier, -1), 1)
 
         dice_roll = get_roll("D6")
@@ -1202,6 +1282,22 @@ class WargearProfile:
                 wound_result["reroll"] = rr
                 dice_roll = rr
                 reroll_used = True
+        except Exception:
+            pass
+
+        # Seductive Gambit: melee attacks can re-roll Wound rolls of 1.
+        try:
+            if dice_roll == 1 and "reroll" not in wound_result:
+                is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+                if is_melee:
+                    sr = getattr(attacker.parent_unit, "special_rules", None)
+                    if isinstance(sr, dict) and sr.get("seductive_gambit_active"):
+                        rr = _reroll_wound()
+                        wound_result.setdefault("special_effects", []).append("Seductive Gambit: re-roll Wound roll of 1")
+                        wound_result["reroll_of_one"] = 1
+                        wound_result["reroll"] = rr
+                        dice_roll = rr
+                        reroll_used = True
         except Exception:
             pass
 

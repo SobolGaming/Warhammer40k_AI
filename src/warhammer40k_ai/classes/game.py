@@ -2,6 +2,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from enum import Enum
 import logging
 import copy
+import math
 from .event_system import EventSystem
 from .map import Map, Objective
 from .mission_cards import PrimaryMissionCard, SecondaryMissionCard
@@ -148,6 +149,8 @@ class Game:
         self.completed_actions_this_turn: List[Dict[str, Any]] = []
         self.models_destroyed_this_turn: List['Model'] = []
         self.destroyed_units_this_battle_round_by_player: Dict[Player, int] = {}
+        # Phase-scoped targeting tracking (for rules like Thrill Seekers)
+        self.phase_targeted_units: Dict[str, set[str]] = {}
 
     def _install_default_event_subscribers(self) -> None:
         """Install non-UI rule subscribers that operate off the event system."""
@@ -162,10 +165,68 @@ class Game:
         self.event_system.subscribe("unit_move_ended", self._on_unit_move_ended_battle_focus)
         self.event_system.subscribe("fight_unit_selected", self._on_fight_unit_selected_battle_focus)
         self.event_system.subscribe("unit_shooting_resolved", self._on_unit_shooting_resolved_battle_focus)
+        # Phase-level target tracking (Thrill Seekers)
+        self.event_system.subscribe("phase_start", self._on_phase_start_target_tracking)
+        self.event_system.subscribe("shooting_targets_selected", self._on_shooting_targets_selected_tracking)
+        self.event_system.subscribe("charge_declared", self._on_charge_declared_tracking)
+        # Dark Pacts trigger windows
+        self.event_system.subscribe("shooting_targets_selected", self._on_shooting_targets_selected_dark_pacts)
+        self.event_system.subscribe("fight_unit_selected", self._on_fight_unit_selected_dark_pacts)
         # Temporary effects cleanup (e.g. once-per-battle abilities that last "until end of phase")
         self.event_system.subscribe("phase_end", self._on_phase_end_cleanup)
         # Optional ability timing windows (prompt/decision hooks)
         self.event_system.subscribe("phase_start", self._on_phase_start_optional_abilities)
+
+    def _on_phase_start_target_tracking(self, player=None, phase=None, **_kwargs) -> None:
+        """Reset phase-scoped target tracking at the start of each phase."""
+        self.phase_targeted_units = {}
+
+    def _record_phase_target(self, target_unit=None, attacker_unit=None) -> None:
+        if target_unit is None or attacker_unit is None:
+            return
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        target_id = getattr(target_root, "_id", None)
+        attacker_id = getattr(attacker_unit, "_id", None)
+        if not target_id or not attacker_id:
+            return
+        bucket = self.phase_targeted_units.setdefault(target_id, set())
+        bucket.add(attacker_id)
+
+    def _on_shooting_targets_selected_tracking(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None:
+            return
+        for t in list(target_units or []):
+            self._record_phase_target(t, attacking_unit)
+
+    def _on_charge_declared_tracking(self, unit=None, target_unit=None, **_kwargs) -> None:
+        self._record_phase_target(target_unit, unit)
+
+    def _on_shooting_targets_selected_dark_pacts(self, attacking_unit=None, **_kwargs) -> None:
+        if attacking_unit is None:
+            return
+        try:
+            phase_name = str(getattr(self.phase, "name", "") or "")
+        except Exception:
+            phase_name = ""
+        try:
+            attacking_unit.maybe_trigger_dark_pacts(self, phase_name=phase_name, trigger="shooting")
+        except Exception:
+            return
+
+    def _on_fight_unit_selected_dark_pacts(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        try:
+            phase_name = str(getattr(self.phase, "name", "") or "")
+        except Exception:
+            phase_name = ""
+        try:
+            unit.maybe_trigger_dark_pacts(self, phase_name=phase_name, trigger="fight")
+        except Exception:
+            return
 
     def _on_phase_start_optional_abilities(self, player=None, phase=None, **_kwargs) -> None:
         """
@@ -280,6 +341,14 @@ class Game:
                             "relentless_rage_melee_strength_bonus",
                             "relentless_rage_expires_phase",
                         ):
+                            sr.pop(k, None)
+                    exp = str(sr.get("dark_pacts_expires_phase", "") or "").strip().upper()
+                    if exp and exp == pname:
+                        for k in ("dark_pacts_active", "dark_pacts_choice", "dark_pacts_expires_phase"):
+                            sr.pop(k, None)
+                    exp = str(sr.get("seductive_gambit_expires_phase", "") or "").strip().upper()
+                    if exp and exp == pname:
+                        for k in ("seductive_gambit_active", "seductive_gambit_expires_phase"):
                             sr.pop(k, None)
         except Exception:
             return
@@ -432,22 +501,45 @@ class Game:
         if army is None:
             return
         det = (getattr(army, "detachment_type", "") or "").strip().lower()
-        if det != "berzerker warband":
+        if det == "berzerker warband":
+            # Relentless Rage applies only to WORLD EATERS units
+            try:
+                if not unit.has_any_keyword("WORLD EATERS"):
+                    return
+            except Exception:
+                if (getattr(army, "faction_id", "") or "").strip().upper() != "WE":
+                    return
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["relentless_rage_melee_attacks_bonus"] = 1
+            sr["relentless_rage_melee_strength_bonus"] = 2
+            sr["relentless_rage_expires_phase"] = "FIGHT_PHASE"
+            unit.special_rules = sr
             return
-        # Relentless Rage applies only to WORLD EATERS units
-        try:
-            if not unit.has_any_keyword("WORLD EATERS"):
+
+        if det == "legion of excess":
+            # Seductive Gambit applies only to LEGIONES DAEMONICA SLAANESH units.
+            try:
+                if not unit.has_any_keyword("SLAANESH"):
+                    return
+            except Exception:
                 return
-        except Exception:
-            if (getattr(army, "faction_id", "") or "").strip().upper() != "WE":
+            try:
+                player = unit.get_parent_army().player
+            except Exception:
+                player = None
+            if player is None:
                 return
-        sr = getattr(unit, "special_rules", None)
-        if not isinstance(sr, dict):
-            sr = {}
-        sr["relentless_rage_melee_attacks_bonus"] = 1
-        sr["relentless_rage_melee_strength_bonus"] = 2
-        sr["relentless_rage_expires_phase"] = "FIGHT_PHASE"
-        unit.special_rules = sr
+            ctx = {"unit": getattr(unit, "name", "") or "", "ability_name": "Seductive Gambit"}
+            if not player._should_use_optional_ability("SEDUCTIVE_GAMBIT", ctx):
+                return
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["seductive_gambit_active"] = True
+            sr["seductive_gambit_expires_phase"] = "FIGHT_PHASE"
+            unit.special_rules = sr
 
     def _on_model_destroyed_rules(self, attacker_model=None, attacker_unit=None, target_model=None, target_unit=None, **_kwargs) -> None:
         # Generic partial support for "gain CP when this model destroys an enemy KEYWORD unit/model".
@@ -1722,6 +1814,231 @@ class Game:
 
     def is_command_phase(self) -> bool:
         return self.phase == BattleRoundPhases.COMMAND_PHASE
+
+    def _record_engaged_enemies_at_turn_start(self, player) -> None:
+        if player is None:
+            return
+        try:
+            game_map = self.map
+        except Exception:
+            game_map = None
+        if game_map is None:
+            return
+        army = getattr(player, "army", None)
+        if army is None:
+            return
+        for unit in list(getattr(army, "units", []) or []):
+            try:
+                if not unit.is_alive() or not unit.deployed:
+                    continue
+            except Exception:
+                continue
+            engaged_ids = set()
+            try:
+                enemies = game_map.get_enemy_units(unit) or []
+            except Exception:
+                enemies = []
+            for enemy in enemies:
+                try:
+                    if not enemy.is_alive() or not enemy.deployed:
+                        continue
+                except Exception:
+                    continue
+                try:
+                    if game_map.is_within_engagement_range(unit, enemy):
+                        try:
+                            root = enemy.get_attached_unit_root()
+                        except Exception:
+                            root = enemy
+                        eid = getattr(root, "_id", None)
+                        if eid:
+                            engaged_ids.add(eid)
+                except Exception:
+                    continue
+            try:
+                unit.round_state.engaged_enemies_at_turn_start = engaged_ids
+            except Exception:
+                pass
+
+    def _shadow_of_chaos_zones(self, player) -> set[str]:
+        zones = {"own"}
+        if player is None:
+            return zones
+        try:
+            opponent = next((p for p in (self.players or []) if p is not player), None)
+        except Exception:
+            opponent = None
+        objectives = list(getattr(self.map, "objectives", []) or [])
+        nml_total = 0
+        nml_controlled = 0
+        enemy_total = 0
+        enemy_controlled = 0
+        for obj in objectives:
+            try:
+                loc = getattr(obj, "location", None)
+                if loc is None or getattr(loc, "removed", False):
+                    continue
+                loc.update_control(self)
+            except Exception:
+                continue
+            try:
+                in_own = self.is_position_in_deployment_zone(loc.x, loc.y, player.name)
+            except Exception:
+                in_own = False
+            in_enemy = False
+            try:
+                if opponent is not None:
+                    in_enemy = self.is_position_in_deployment_zone(loc.x, loc.y, opponent.name)
+            except Exception:
+                in_enemy = False
+            if in_enemy:
+                enemy_total += 1
+                if getattr(loc, "controlling_player", None) is player:
+                    enemy_controlled += 1
+            elif not in_own:
+                nml_total += 1
+                if getattr(loc, "controlling_player", None) is player:
+                    nml_controlled += 1
+        if nml_total and nml_controlled >= int(math.ceil(nml_total / 2.0)):
+            zones.add("nml")
+        if enemy_total and enemy_controlled >= int(math.ceil(enemy_total / 2.0)):
+            zones.add("enemy")
+        return zones
+
+    def _unit_wholly_within_shadow_of_chaos(self, unit: Unit) -> bool:
+        try:
+            player = unit.get_parent_army().player
+        except Exception:
+            return False
+        zones = self._shadow_of_chaos_zones(player)
+        try:
+            opponent = next((p for p in (self.players or []) if p is not player), None)
+        except Exception:
+            opponent = None
+        for model in list(getattr(unit, "models", []) or []):
+            try:
+                if not getattr(model, "is_alive", True):
+                    continue
+            except Exception:
+                continue
+            try:
+                x, y, _z, _f = model.get_location()
+            except Exception:
+                try:
+                    x, y, _z = model.get_location()
+                except Exception:
+                    continue
+            base = getattr(model, "model_base", None)
+            if base is None:
+                continue
+            in_own = False
+            in_enemy = False
+            try:
+                in_own = self.is_position_wholly_in_deployment_zone(float(x), float(y), base, player.name)
+            except Exception:
+                in_own = False
+            try:
+                if opponent is not None:
+                    in_enemy = self.is_position_wholly_in_deployment_zone(float(x), float(y), base, opponent.name)
+            except Exception:
+                in_enemy = False
+            if in_own:
+                zone = "own"
+            elif in_enemy:
+                zone = "enemy"
+            else:
+                zone = "nml"
+            if zone not in zones:
+                return False
+        return True
+
+    def _warp_rifts_min_distance(self, unit: Unit) -> float:
+        try:
+            if unit is None or not unit.has_any_keyword("LEGIONES DAEMONICA"):
+                return 9.0
+        except Exception:
+            return 9.0
+        try:
+            if not unit._is_daemonic_incursion_detachment():
+                return 9.0
+        except Exception:
+            return 9.0
+        try:
+            if not unit.has_deep_strike():
+                return 9.0
+        except Exception:
+            return 9.0
+
+        try:
+            if self._unit_wholly_within_shadow_of_chaos(unit):
+                return 6.0
+        except Exception:
+            pass
+
+        # Within 6" of listed Greater Daemons with a shared god keyword.
+        try:
+            from ..utility.aura_utils import unit_wholly_within_range_of_unit
+        except Exception:
+            unit_wholly_within_range_of_unit = None
+
+        if unit_wholly_within_range_of_unit is None:
+            return 9.0
+
+        greater_names = {
+            "BLOODTHIRSTER",
+            "GREAT UNCLEAN ONE",
+            "KAIROS FATEWEAVER",
+            "KEEPER OF SECRETS",
+            "LORD OF CHANGE",
+            "ROTIGUS",
+            "SHALAXI HELBANE",
+            "SKARBRAND",
+        }
+        god_keywords = {"KHORNE", "TZEENTCH", "NURGLE", "SLAANESH"}
+
+        try:
+            army = unit.get_parent_army()
+            friendly_units = list(getattr(army, "units", []) or [])
+        except Exception:
+            friendly_units = []
+
+        for friend in friendly_units:
+            if friend is unit:
+                continue
+            try:
+                if not friend.is_alive() or not friend.deployed:
+                    continue
+            except Exception:
+                continue
+            name = str(getattr(friend, "name", "") or "").replace("’", "'").upper()
+            has_name = any(n in name for n in greater_names)
+            has_kw = False
+            for n in greater_names:
+                try:
+                    if friend.has_any_keyword(n):
+                        has_kw = True
+                        break
+                except Exception:
+                    continue
+            if not (has_name or has_kw):
+                continue
+            shared = False
+            for kw in god_keywords:
+                try:
+                    if unit.has_any_keyword(kw) and friend.has_any_keyword(kw):
+                        shared = True
+                        break
+                except Exception:
+                    continue
+            if not shared:
+                continue
+            try:
+                if unit_wholly_within_range_of_unit(friend, unit, 6.0):
+                    return 6.0
+            except Exception:
+                continue
+
+        return 9.0
     
     def start_command_phase(self) -> None:
         """Start the command phase: active player gains normal CP, then resolves any bonus CP sources."""
@@ -3083,10 +3400,20 @@ class Game:
             return None
 
         try:
+            self.event_system.publish("charge_declared", unit=charging_unit, target_unit=target_unit)
+        except Exception:
+            pass
+
+        try:
             army = charging_unit.get_parent_army()
             mgr = getattr(army, "battle_focus", None) if army is not None else None
             if mgr is not None:
                 mgr.maybe_trigger_charge_maneuver(charging_unit, target_unit, self)
+        except Exception:
+            pass
+
+        try:
+            self._record_engaged_enemies_at_turn_start(self.get_current_player())
         except Exception:
             pass
 
@@ -3338,13 +3665,11 @@ class Game:
                 continue
             
             # Check if unit advanced this round (unless special abilities allow charging after advance)
-            if unit.round_state.advanced_this_round:
-                # TODO: Check for special abilities that allow charging after advance
+            if unit.round_state.advanced_this_round and not unit.can_charge_after_advance():
                 continue
             
             # Check if unit fell back this round (unless special abilities allow charging after fall back)
-            if unit.round_state.fell_back_this_round:
-                # TODO: Check for special abilities that allow charging after fall back
+            if unit.round_state.fell_back_this_round and not unit.can_charge_after_fall_back():
                 continue
             
             # Check if unit is already in engagement range
@@ -3645,6 +3970,8 @@ class Game:
         # Check 9" restriction from enemy models using base-to-base closest-point distance.
         # We validate against the unit's *actual* prospective formation at this position.
         snapshot = [m.get_location() for m in unit.models]
+        prospective = None
+        min_enemy_distance = 9.0
         try:
             boundary_repulsors = self.map.get_battlefield_edge_repulsors() if self.map else []
             prospective = unit.calculate_model_positions(
@@ -3654,6 +3981,17 @@ class Game:
                 boundary_repulsors=boundary_repulsors,
                 avoid_friendly_units=True,
             )
+            if prospective:
+                # Temporarily apply prospective positions for Warp Rifts checks.
+                for m, loc in zip(unit.models, prospective):
+                    try:
+                        m.set_location(*loc)
+                    except Exception:
+                        pass
+                try:
+                    min_enemy_distance = float(self._warp_rifts_min_distance(unit) or 9.0)
+                except Exception:
+                    min_enemy_distance = 9.0
         finally:
             for m, loc in zip(unit.models, snapshot):
                 if loc:
@@ -3671,7 +4009,7 @@ class Game:
                 break
             mb = unit._create_potential_base(x, y, z, facing, model=unit.models[idx])
             for em in enemy_models:
-                if float(distance_between_bases_3d(mb, em.model_base)) < 9.0:
+                if float(distance_between_bases_3d(mb, em.model_base)) < float(min_enemy_distance):
                     return False
 
         if unit.is_in_strategic_reserves():

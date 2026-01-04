@@ -55,7 +55,7 @@ def _strip_html_fast(text: str) -> str:
     # Remove tags
     text = re.sub(r"<[^>]+>", " ", text)
     # Normalize special apostrophe from Wahapedia
-    text = text.replace("’", "'")
+    text = text.replace("\u2019", "'")
     # Collapse whitespace
     return re.sub(r"\s+", " ", text).strip()
 
@@ -187,9 +187,10 @@ def _ability_patterns() -> List[Tuple[str, str, str]]:
     These are intentionally conservative, matching existing engine behavior.
     """
     return [
+        ("Dark Pacts", "Supported", r"\bdark pacts\b"),
         ("Supreme Commander (must be Warlord)", "Supported", r"\bsupreme commander\b"),
         ("Pact of Blood (WE): disallow Blood Legions Army Faction", "Supported", r"\bpact of blood\b"),
-        ("Nurgle’s Gift (Aura): baseline Contagion Range debuff (-1 Toughness to enemies within 3/6/9\")", "Partial", r"\bnurgle\u2019s gift\b|\bnurgle's gift\b"),
+        ("Nurgle's Gift (Aura): baseline Contagion Range debuff (-1 Toughness to enemies within 3/6/9\")", "Partial", r"\bnurgle\u2019s gift\b|\bnurgle's gift\b"),
         ("Blessings of Khorne (World Eaters)", "Supported", r"\bblessings of khorne\b"),
         ("Favoured of Khorne (Blessings rerolls)", "Supported", r"\bfavoured of khorne\b|\bfavored of khorne\b"),
         ("Idol of the Blessed Blood (Blessings +1D6)", "Supported", r"\bidol of (?:the )?blessed blood\b"),
@@ -221,6 +222,42 @@ def _classify_support(name: str, description: str) -> Tuple[str, str]:
     """
     # Hard-coded known partials (core ability)
     name_u = (name or "").strip().upper()
+    explicit_supported = {
+        "ADVANCE+SHOOT",
+        "BATTLE FOCUS",
+        "BLESSINGS OF KHORNE",
+        "DARK PACTS",
+        "DEADLY DEMISE",
+        "DEEP STRIKE",
+        "DISPARATE PATHS",
+        "FAVOURED OF KHORNE",
+        "FAVORED OF KHORNE",
+        "FEEL NO PAIN",
+        "FIGHT ON DEATH",
+        "FIGHTS FIRST",
+        "FIRING DECK",
+        "FIRST PRINCE OF CHAOS",
+        "IDOL OF THE BLESSED BLOOD",
+        "INFILTRATORS",
+        "LONE OPERATIVE",
+        "PACT OF BLOOD",
+        "PACT OF DECAY",
+        "PACT OF EXCESS",
+        "PACT OF SORCERY",
+        "PLUNGING FIRE",
+        "REBORN IN BLOOD",
+        "REDEPLOY",
+        "RELENTLESS RAGE",
+        "SCOUTS",
+        "SEDUCTIVE GAMBIT",
+        "SHOOT ON DEATH",
+        "STEALTH",
+        "SUPREME COMMANDER",
+        "THRILL SEEKERS",
+        "WARP RIFTS",
+    }
+    if name_u in explicit_supported:
+        return ("Supported", name)
     if name_u == "LEADER":
         return (
             "Supported",
@@ -229,7 +266,7 @@ def _classify_support(name: str, description: str) -> Tuple[str, str]:
     # World Eaters: Blood Tithe is a Khorne Daemonkin detachment mechanic. We have not implemented it yet,
     # and we do not want it to be falsely marked as Supported due to shared phrasing with Blessings/other mechanics.
     if name_u == "BLOOD TITHE":
-        return ("Not implemented", "World Eaters – Khorne Daemonkin detachment mechanic; not implemented yet.")
+        return ("Not implemented", "World Eaters - Khorne Daemonkin detachment mechanic; not implemented yet.")
 
     text = _norm(_strip_html_fast(f"{name} {description}"))
     matches: List[Tuple[str, str]] = []
@@ -243,6 +280,33 @@ def _classify_support(name: str, description: str) -> Tuple[str, str]:
     # If any partial match triggers, mark Partial; otherwise Supported
     status = "Supported" if all(s == "Supported" for _, s in matches) else "Partial"
     notes = ", ".join(sorted({label for label, _ in matches}, key=str.lower))
+
+    # Conservative downgrade: if the rule text contains extra clauses beyond the matched mechanic,
+    # treat it as Partial unless it's explicitly supported.
+    if status == "Supported" and name_u not in explicit_supported and name_u != "LEADER":
+        extra_markers = [
+            " but ",
+            " instead ",
+            " unless ",
+            " except ",
+            " however ",
+            " only ",
+            " while ",
+            " after ",
+            " before ",
+            " until ",
+            " at the start",
+            " start of",
+            " each time",
+            " choose ",
+            " select ",
+            " one of",
+            " following",
+            ":",
+        ]
+        if any(m in f" {text} " for m in extra_markers):
+            status = "Partial"
+            notes = f"{notes} (extra conditions not fully modeled)"
     return (status, notes)
 
 
@@ -408,7 +472,7 @@ def _write_md(
         flink = faction_link(fid)
         header = f"### {fname} (`{fid}`)"
         if flink:
-            header += f" — `{_escape_md(flink)}`"
+            header += f" - `{_escape_md(flink)}`"
         lines.append(header)
         lines.append("")
         lines.append("| Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |")
@@ -442,7 +506,7 @@ def _write_md(
         flink = faction_link(fid)
         header = f"### {fname} (`{fid}`)"
         if flink:
-            header += f" — `{_escape_md(flink)}`"
+            header += f" - `{_escape_md(flink)}`"
         lines.append(header)
         lines.append("")
         for det_name in sorted(det_by_faction[fid].keys(), key=lambda s: (s or "").lower()):

@@ -404,6 +404,13 @@ class StratagemManager:
             if self._used_this_turn.get("OVERWATCH", False):
                 result["reason"] = "Already used this turn"
                 return result
+            enemy_unit = context.get("enemy_unit")
+            try:
+                if enemy_unit is not None and hasattr(enemy_unit, "has_first_prince_slaanesh_no_overwatch") and enemy_unit.has_first_prince_slaanesh_no_overwatch():
+                    result["reason"] = "Target cannot be overwatched"
+                    return result
+            except Exception:
+                pass
 
         if not stratagem.is_phase_allowed(phase_name):
             result["reason"] = "Wrong phase"
@@ -1117,6 +1124,12 @@ class StratagemManager:
                 active_name = str(getattr(active_player, "name", "") or "")
                 if not owner_name or owner_name == active_name:
                     return
+        except Exception:
+            pass
+        # First Prince of Chaos (Shadow Legion Slaanesh): cannot be overwatched.
+        try:
+            if hasattr(moving_unit, "has_first_prince_slaanesh_no_overwatch") and moving_unit.has_first_prince_slaanesh_no_overwatch():
+                return
         except Exception:
             pass
         s = self.get_by_name('FIRE OVERWATCH') or self.get_by_name('Overwatch')

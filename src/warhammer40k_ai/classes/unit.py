@@ -50,6 +50,7 @@ class UnitRoundState:
     action_completes_turn: Optional[int] = None
     action_locked_until_turn_end: bool = False  # Cannot shoot or declare charge while true (except titanic character rule handled at call site)
     fought_this_phase: bool = False  # Used by timing-sensitive rules (e.g., Total Carnage)
+    engaged_enemies_at_turn_start: Optional[set] = None  # Track engaged enemy unit ids at start of controlling player's turn
 
 
 class MovementAction(Enum):
@@ -3498,6 +3499,158 @@ class Unit:
                 return True
         return False
 
+    def _detachment_type_matches(self, detachment_name: str) -> bool:
+        def _norm(text: str) -> str:
+            t = re.sub(r"[^a-z0-9 ]+", " ", str(text or "").lower())
+            return re.sub(r"\s+", " ", t).strip()
+
+        try:
+            army = self.get_parent_army()
+            det = _norm(getattr(army, "detachment_type", "") or "")
+        except Exception:
+            det = ""
+        target = _norm(detachment_name)
+        if not det or not target:
+            return False
+        if det == target:
+            return True
+        if det.endswith("s") and det[:-1] == target:
+            return True
+        if target.endswith("s") and target[:-1] == det:
+            return True
+        return det in target or target in det
+
+    def has_thrill_seekers(self) -> bool:
+        for ab in (list(getattr(self, "possible_abilities", []) or []) + list(getattr(self, "abilities", []) or [])):
+            try:
+                if isinstance(ab, str):
+                    nm = ab
+                else:
+                    nm = getattr(ab, "name", "")
+                if "thrill seekers" in str(nm or "").lower():
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def _is_shadow_legion_detachment(self) -> bool:
+        return self._detachment_type_matches("Shadow Legion")
+
+    def _is_legion_of_excess_detachment(self) -> bool:
+        return self._detachment_type_matches("Legion of Excess")
+
+    def _is_daemonic_incursion_detachment(self) -> bool:
+        return self._detachment_type_matches("Daemonic Incursion")
+
+    def _first_prince_of_chaos_active(self) -> bool:
+        if not self._is_shadow_legion_detachment():
+            return False
+        try:
+            army = self.get_parent_army()
+            fid = str(getattr(army, "faction_id", "") or "").strip().upper()
+            if fid and fid != "CD":
+                return False
+        except Exception:
+            pass
+        return True
+
+    def _first_prince_has_god_keyword(self, keyword: str) -> bool:
+        kw = str(keyword or "").strip()
+        if not kw:
+            return False
+        try:
+            if self.has_any_keyword(kw):
+                return True
+        except Exception:
+            pass
+        return False
+
+    def has_first_prince_tzeentch_defense(self) -> bool:
+        return self._first_prince_of_chaos_active() and self._first_prince_has_god_keyword("TZEENTCH")
+
+    def has_first_prince_nurgle_defense(self) -> bool:
+        return self._first_prince_of_chaos_active() and self._first_prince_has_god_keyword("NURGLE")
+
+    def has_first_prince_slaanesh_no_overwatch(self) -> bool:
+        return self._first_prince_of_chaos_active() and self._first_prince_has_god_keyword("SLAANESH")
+
+    def _is_belakor(self) -> bool:
+        name = str(getattr(self, "name", "") or "").lower().replace("’", "'")
+        return "belakor" in name or "be'lakor" in name
+
+    def _is_chaos_undivided(self) -> bool:
+        try:
+            if self.has_any_keyword("UNIDIVIDED") or self.has_any_keyword("CHAOS UNDIVIDED"):
+                return True
+        except Exception:
+            pass
+        return self._is_belakor()
+
+    def has_dark_pacts(self) -> bool:
+        for ab in (list(getattr(self, "possible_abilities", []) or []) + list(getattr(self, "abilities", []) or [])):
+            try:
+                if isinstance(ab, str):
+                    nm = ab
+                else:
+                    nm = getattr(ab, "name", "")
+                if "dark pacts" in str(nm or "").lower():
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def can_use_dark_pacts(self) -> bool:
+        if self.has_dark_pacts():
+            return True
+        return self._first_prince_of_chaos_active() and self._is_chaos_undivided()
+
+    def _auto_pass_dark_pacts_test(self) -> bool:
+        return self._first_prince_of_chaos_active() and self._is_belakor()
+
+    def maybe_trigger_dark_pacts(self, game, *, phase_name: str, trigger: str) -> None:
+        if not self.can_use_dark_pacts():
+            return
+        try:
+            player = self.get_parent_army().player
+        except Exception:
+            player = None
+        if player is None:
+            return
+        ctx = {
+            "unit": getattr(self, "name", "") or "",
+            "phase": phase_name,
+            "trigger": trigger,
+        }
+        if not player._should_use_optional_ability("DARK_PACTS", ctx):
+            return
+        options = ["LETHAL HITS", "SUSTAINED HITS 1"]
+        choice = player._choose_optional_value("DARK_PACTS_CHOICE", options, ctx)
+        if not choice:
+            return
+        choice_norm = str(choice).strip().upper()
+        if choice_norm not in options:
+            return
+        passed = True
+        if not self._auto_pass_dark_pacts_test():
+            try:
+                passed = bool(self.pass_leadership_check())
+            except Exception:
+                passed = False
+        if not passed:
+            try:
+                from ..utility.dice import DiceCollection
+                dmg_roll, _dice = DiceCollection.from_string("D3").roll_detailed()
+                self._apply_mortal_wounds_to_unit(self, int(dmg_roll or 0), game_map=getattr(game, "map", None))
+            except Exception:
+                pass
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["dark_pacts_active"] = True
+        sr["dark_pacts_choice"] = choice_norm
+        sr["dark_pacts_expires_phase"] = str(phase_name or "").strip().upper() or "FIGHT_PHASE"
+        self.special_rules = sr
+
     def prepare_advance(self) -> int:
         """Pre-roll advance dice for UI display. Returns the advance roll."""
         if not hasattr(self.round_state, 'advance_roll') or self.round_state.advance_roll is None:
@@ -4383,6 +4536,43 @@ class Unit:
         self.round_state.fell_back_this_round = True
         return True
 
+    def _eligibility_text_has_extra_clauses(self, text: str) -> bool:
+        if not text:
+            return False
+        markers = [
+            " but ",
+            " instead ",
+            " unless ",
+            " except ",
+            " however ",
+            " only ",
+            " while ",
+            " after ",
+            " before ",
+            " until ",
+            " at the start",
+            " start of",
+            " each time",
+            " choose ",
+            " select ",
+            " one of",
+            " following",
+            ":",
+        ]
+        t = f" {text} "
+        return any(m in t for m in markers)
+
+    def _has_simple_eligibility_rule(self, patterns: List[str]) -> bool:
+        for name, desc in self._iter_ability_entries_for_rules():
+            text = self._normalize_rules_text(f"{name} {desc}").lower()
+            if not text:
+                continue
+            if any(p in text for p in patterns):
+                if self._eligibility_text_has_extra_clauses(text):
+                    continue
+                return True
+        return False
+
     def has_advance_and_shoot(self) -> bool:
         """Check if the unit has an ability that allows shooting after advancing.
         
@@ -4396,18 +4586,23 @@ class Unit:
         if 'advance_and_shoot' in getattr(self, '_ability_cache', {}):
             return self._ability_cache['advance_and_shoot']
         
-        # Look for patterns that match actual 40k ability descriptions
-        found, _ = self._find_ability_with_patterns([
-            "eligible to shoot in a turn in which it advanced",
-            "eligible to shoot in a turn in which it fell back or advanced", 
-            "eligible to shoot in a turn in which it advanced or fell back",
-            "eligible to shoot and declare a charge in a turn in which it advanced",
-            "eligible to shoot and declare a charge in a turn in which it advanced or fell back",
-            "eligible to shoot and declare a charge in a turn in which it fell back or advanced",
-            "that unit is eligible to shoot and declare a charge in a turn in which it advanced",
-            "that unit is eligible to shoot and declare a charge in a turn in which it advanced or fell back",
-            "that unit is eligible to shoot and declare a charge in a turn in which it fell back or advanced"
-        ])
+        found = False
+        if self.has_thrill_seekers():
+            found = True
+        elif self._first_prince_of_chaos_active() and self._first_prince_has_god_keyword("KHORNE"):
+            found = True
+        else:
+            found = self._has_simple_eligibility_rule([
+                "eligible to shoot in a turn in which it advanced",
+                "eligible to shoot in a turn in which it fell back or advanced",
+                "eligible to shoot in a turn in which it advanced or fell back",
+                "eligible to shoot and declare a charge in a turn in which it advanced",
+                "eligible to shoot and declare a charge in a turn in which it advanced or fell back",
+                "eligible to shoot and declare a charge in a turn in which it fell back or advanced",
+                "that unit is eligible to shoot and declare a charge in a turn in which it advanced",
+                "that unit is eligible to shoot and declare a charge in a turn in which it advanced or fell back",
+                "that unit is eligible to shoot and declare a charge in a turn in which it fell back or advanced",
+            ])
         
         # Cache the result
         if not hasattr(self, '_ability_cache'):
@@ -4433,22 +4628,22 @@ class Unit:
 
         print(f"🔍 {self.name} checking for advance and charge abilities...")
 
-        # Look for patterns that match actual 40k ability descriptions
-        found, matching_ability = self._find_ability_with_patterns([
-            "eligible to declare a charge in a turn in which it advanced",
-            "eligible to charge in a turn in which it advanced",
-            "eligible to shoot and declare a charge in a turn in which it advanced",
-            "eligible to shoot and declare a charge in a turn in which it advanced or fell back",
-            "eligible to shoot and declare a charge in a turn in which it fell back or advanced",
-            "that unit is eligible to shoot and declare a charge in a turn in which it advanced",
-            "that unit is eligible to shoot and declare a charge in a turn in which it advanced or fell back",
-            "that unit is eligible to shoot and declare a charge in a turn in which it fell back or advanced"
-        ])
-
-        if found and matching_ability:
-            print(f"✅ {self.name} has advance and charge ability: {matching_ability.name if hasattr(matching_ability, 'name') else 'Unknown'}")
+        found = False
+        if self.has_thrill_seekers():
+            found = True
+        elif self._first_prince_of_chaos_active() and self._first_prince_has_god_keyword("KHORNE"):
+            found = True
         else:
-            print(f"❌ {self.name} does not have advance and charge ability")
+            found = self._has_simple_eligibility_rule([
+                "eligible to declare a charge in a turn in which it advanced",
+                "eligible to charge in a turn in which it advanced",
+                "eligible to shoot and declare a charge in a turn in which it advanced",
+                "eligible to shoot and declare a charge in a turn in which it advanced or fell back",
+                "eligible to shoot and declare a charge in a turn in which it fell back or advanced",
+                "that unit is eligible to shoot and declare a charge in a turn in which it advanced",
+                "that unit is eligible to shoot and declare a charge in a turn in which it advanced or fell back",
+                "that unit is eligible to shoot and declare a charge in a turn in which it fell back or advanced",
+            ])
 
         # Cache the result
         if not hasattr(self, '_ability_cache'):
@@ -4470,18 +4665,21 @@ class Unit:
         if 'fell_back_and_shoot' in getattr(self, '_ability_cache', {}):
             return self._ability_cache['fell_back_and_shoot']
         
-        # Look for patterns that match actual 40k ability descriptions
-        found, _ = self._find_ability_with_patterns([
-            "eligible to shoot in a turn in which it fell back",
-            "eligible to shoot in a turn in which it fell back or advanced", 
-            "eligible to shoot in a turn in which it advanced or fell back",
-            "eligible to shoot and declare a charge in a turn in which it fell back",
-            "eligible to shoot and declare a charge in a turn in which it advanced or fell back",
-            "eligible to shoot and declare a charge in a turn in which it fell back or advanced",
-            "that unit is eligible to shoot and declare a charge in a turn in which it fell back",
-            "that unit is eligible to shoot and declare a charge in a turn in which it advanced or fell back",
-            "that unit is eligible to shoot and declare a charge in a turn in which it fell back or advanced"
-        ])
+        found = False
+        if self.has_thrill_seekers():
+            found = True
+        else:
+            found = self._has_simple_eligibility_rule([
+                "eligible to shoot in a turn in which it fell back",
+                "eligible to shoot in a turn in which it fell back or advanced",
+                "eligible to shoot in a turn in which it advanced or fell back",
+                "eligible to shoot and declare a charge in a turn in which it fell back",
+                "eligible to shoot and declare a charge in a turn in which it advanced or fell back",
+                "eligible to shoot and declare a charge in a turn in which it fell back or advanced",
+                "that unit is eligible to shoot and declare a charge in a turn in which it fell back",
+                "that unit is eligible to shoot and declare a charge in a turn in which it advanced or fell back",
+                "that unit is eligible to shoot and declare a charge in a turn in which it fell back or advanced",
+            ])
         
         # Cache the result
         if not hasattr(self, '_ability_cache'):
@@ -4548,6 +4746,49 @@ class Unit:
         has_ability = self.has_advance_and_charge()
         #print(f"🔍 {self.name} can_charge_after_advance check: {has_ability}")
         return has_ability
+
+    def can_charge_after_fall_back(self) -> bool:
+        """Check if this unit can charge after falling back."""
+        if self.has_thrill_seekers():
+            return True
+        return self._has_simple_eligibility_rule([
+            "eligible to declare a charge in a turn in which it fell back",
+            "eligible to shoot and declare a charge in a turn in which it fell back",
+            "eligible to shoot and declare a charge in a turn in which it advanced or fell back",
+            "eligible to shoot and declare a charge in a turn in which it fell back or advanced",
+            "that unit is eligible to shoot and declare a charge in a turn in which it fell back",
+            "that unit is eligible to shoot and declare a charge in a turn in which it advanced or fell back",
+            "that unit is eligible to shoot and declare a charge in a turn in which it fell back or advanced",
+        ])
+
+    def _thrill_seekers_restrictions_active(self) -> bool:
+        if not self.has_thrill_seekers():
+            return False
+        return bool(getattr(self.round_state, "advanced_this_round", False) or getattr(self.round_state, "fell_back_this_round", False))
+
+    def _thrill_seekers_restriction_reason(self, target_unit: 'Unit', game) -> Optional[str]:
+        if not self._thrill_seekers_restrictions_active():
+            return None
+        if target_unit is None:
+            return None
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        target_id = getattr(target_root, "_id", None)
+        engaged_ids = getattr(self.round_state, "engaged_enemies_at_turn_start", None) or set()
+        if target_id is not None and target_id in engaged_ids:
+            return "Thrill Seekers: cannot target a unit engaged at start of turn"
+        try:
+            phase_targets = getattr(game, "phase_targeted_units", None)
+        except Exception:
+            phase_targets = None
+        if isinstance(phase_targets, dict) and target_id is not None:
+            attackers = phase_targets.get(target_id, set()) or set()
+            other_attackers = [a for a in attackers if a != getattr(self, "_id", None)]
+            if other_attackers:
+                return "Thrill Seekers: target already selected by another unit this phase"
+        return None
 
     def scout_move(self, destination: Tuple[float, float, float], game_map: 'Map') -> bool:
         """Execute a scout move for the unit during pre-battle rules phase.
@@ -5157,6 +5398,16 @@ class Unit:
         if self.round_state.fell_back_this_round:
             if not self.can_shoot_after_fall_back(weapon_profile):
                 return {"valid": False, "reason": "Unit fell back and cannot shoot with this weapon"}
+
+        # Thrill Seekers: extra target restrictions when advancing or falling back
+        game = None
+        try:
+            game = self.get_parent_army().player.game
+        except Exception:
+            game = None
+        reason = self._thrill_seekers_restriction_reason(target_unit, game)
+        if reason:
+            return {"valid": False, "reason": reason}
         
         # Check if any models can actually shoot this weapon at the target
         models_in_range = []
@@ -7362,7 +7613,10 @@ class Unit:
         if getattr(self.round_state, "disembarked_from_moved_transport", False) or getattr(self.round_state, "disembarked_from_destroyed_transport", False):
             return False
             
-        if self.round_state.fell_back_this_round:
+        if self.round_state.fell_back_this_round and not self.can_charge_after_fall_back():
+            return False
+
+        if self._thrill_seekers_restriction_reason(target_unit, game):
             return False
         
         # Check if unit arrived from reserves this turn and has special charge restrictions
@@ -7553,7 +7807,15 @@ class Unit:
         if 'deep_strike' in getattr(self, '_ability_cache', {}):
             return self._ability_cache['deep_strike']
         
-        found, _ = self._find_ability_with_patterns(["deep strike", "deepstrike"])
+        found = False
+        if (
+            self._first_prince_of_chaos_active()
+            and self._is_chaos_undivided()
+            and self.has_any_keyword("HERETIC ASTARTES")
+        ):
+            found = True
+        else:
+            found, _ = self._find_ability_with_patterns(["deep strike", "deepstrike"])
         
         # Cache the result
         if not hasattr(self, '_ability_cache'):
@@ -7848,6 +8110,13 @@ class Unit:
         self._ability_cache['fight_first'] = found
         
         return found
+
+    def _seductive_gambit_active(self) -> bool:
+        try:
+            sr = getattr(self, "special_rules", None)
+            return isinstance(sr, dict) and bool(sr.get("seductive_gambit_active"))
+        except Exception:
+            return False
 
     def has_fight_on_death(self) -> bool:
         """Check if the unit has a Fight on Death style ability.
@@ -8157,6 +8426,8 @@ class Unit:
         Returns:
             bool: True if the unit should fight in the Fight First stage
         """
+        if self._seductive_gambit_active():
+            return False
         # Units that charged this turn fight first
         if self.round_state.charged_this_round:
             return True
