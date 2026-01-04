@@ -1,7 +1,7 @@
 import unittest
 
-from src.warhammer40k_ai.classes.unit import Unit
-from src.warhammer40k_ai.classes.army import Army
+from warhammer40k_ai.classes.unit import Unit
+from warhammer40k_ai.classes.army import Army
 
 
 class _DummyPlayer:

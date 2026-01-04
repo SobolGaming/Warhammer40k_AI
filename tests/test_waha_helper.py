@@ -1,6 +1,6 @@
 import unittest
 import logging
-from src.warhammer40k_ai.waha_helper import WahaHelper
+from warhammer40k_ai.waha_helper import WahaHelper
 from types import SimpleNamespace
 
 class TestWahaHelper(unittest.TestCase):

@@ -12,6 +12,7 @@ class OverwatchShooterDialog(BaseDialog):
         self.candidates: List[Any] = []
         self.selected_index: Optional[int] = None
         self.on_confirm: Optional[Callable[[Any], None]] = None
+        self.on_cancel: Optional[Callable[[], None]] = None
         self.enemy_unit: Any = None
         self._title: Optional[str] = None
         self._subtitle: Optional[str] = None
@@ -24,12 +25,14 @@ class OverwatchShooterDialog(BaseDialog):
         on_confirm: Callable[[Any], None],
         title: Optional[str] = None,
         subtitle: Optional[str] = None,
+        on_cancel: Optional[Callable[[], None]] = None,
     ):
         super().show()
         self.candidates = list(candidates)
         self.enemy_unit = enemy_unit
         self.selected_index = 0 if self.candidates else None
         self.on_confirm = on_confirm
+        self.on_cancel = on_cancel
         self._title = title
         self._subtitle = subtitle
 
@@ -38,6 +41,7 @@ class OverwatchShooterDialog(BaseDialog):
         self.candidates = []
         self.selected_index = None
         self.on_confirm = None
+        self.on_cancel = None
         self.enemy_unit = None
         self._title = None
         self._subtitle = None
@@ -50,6 +54,8 @@ class OverwatchShooterDialog(BaseDialog):
                     self.on_confirm(unit)
             return True
         if button_name in ('cancel', 'close'):
+            if callable(self.on_cancel):
+                self.on_cancel()
             self.hide()
             return True
         return False
@@ -113,6 +119,11 @@ class OverwatchShooterDialog(BaseDialog):
 
     def _handle_other_events(self, event: pygame.event.Event) -> bool:
         if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                if callable(self.on_cancel):
+                    self.on_cancel()
+                self.hide()
+                return True
             if event.key in (pygame.K_UP, pygame.K_w):
                 if self.selected_index is not None and self.candidates:
                     self.selected_index = max(0, self.selected_index - 1)

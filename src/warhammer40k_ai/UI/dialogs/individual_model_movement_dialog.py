@@ -18,7 +18,7 @@ class IndividualModelMovementDialog(BaseDialog):
         
         # Dialog-specific state
         self.unit = None
-        self.movement_type = None  # 'move', 'advance', 'fall_back', 'scout', 'pile_in', 'consolidate', 'charge'
+        self.movement_type = None  # 'move', 'advance', 'fall_back', 'scout', 'pile_in', 'consolidate', 'charge', 'reactive'
         self.game_map = None
         self.max_distance = 0.0
         self.target_unit = None  # Target unit for charge movement
@@ -85,7 +85,7 @@ class IndividualModelMovementDialog(BaseDialog):
 
         # Publish unit move started (for Stratagem reactions like Overwatch)
         # NOTE: Do NOT publish for deployment placement.
-        if self.movement_type != 'deploy':
+        if self.movement_type not in ('deploy', 'reactive'):
             try:
                 _player = getattr(self.unit.get_parent_army(), 'player', None)
                 _game = getattr(_player, 'game', None) if _player else None
@@ -126,6 +126,8 @@ class IndividualModelMovementDialog(BaseDialog):
         elif movement_type == 'scout':
             # Scout moves happen before the game starts, different tracking needed
             return False  # For now, allow scout moves
+        elif movement_type == 'reactive':
+            return False
         elif movement_type in ['pile_in', 'consolidate']:
             # These are fight phase movements, different rules
             return False  # For now, allow these
@@ -1132,7 +1134,8 @@ class IndividualModelMovementDialog(BaseDialog):
             'charge': MovementType.CHARGE,
             'scout': MovementType.SCOUT,
             'pile_in': MovementType.PILE_IN,
-            'consolidate': MovementType.CONSOLIDATE
+            'consolidate': MovementType.CONSOLIDATE,
+            'reactive': MovementType.MOVE
         }
 
         pathfinding_movement_type = movement_type_map.get(self.movement_type, MovementType.MOVE)
@@ -1332,7 +1335,7 @@ class IndividualModelMovementDialog(BaseDialog):
 
         # Publish unit move ended (for Stratagem reactions like Overwatch)
         # NOTE: Do NOT publish for deployment placement.
-        if self.movement_type != 'deploy':
+        if self.movement_type not in ('deploy', 'reactive'):
             try:
                 _player = getattr(self.unit.get_parent_army(), 'player', None)
                 _game = getattr(_player, 'game', None) if _player else None
@@ -1347,6 +1350,8 @@ class IndividualModelMovementDialog(BaseDialog):
                     _game.event_system.publish("unit_move_ended", unit=self.unit, action=action)
             except Exception:
                 pass
+        if self.movement_type == 'reactive':
+            self._clear_battle_focus_reactive_flags()
 
         # Call callback with completion status
         if self.callback:
@@ -1357,12 +1362,32 @@ class IndividualModelMovementDialog(BaseDialog):
     def _skip_movement(self):
         """Skip movement for this unit"""
         print(f"⏭️  Skipping {self.movement_type} movement for {self.unit.name}")
+        if self.movement_type == "reactive":
+            self._clear_battle_focus_reactive_flags()
 
         # Call callback with skip status
         if self.callback:
             self.callback(False)  # Movement skipped
 
         self.hide()
+
+    def _clear_battle_focus_reactive_flags(self) -> None:
+        try:
+            units_to_update = list(self._attached_members or [])
+        except Exception:
+            units_to_update = []
+        if not units_to_update:
+            units_to_update = [self.unit]
+        for u in units_to_update:
+            sr = getattr(u, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            for k in (
+                "battle_focus_reactive_move_max",
+                "battle_focus_reactive_move_source",
+                "battle_focus_reactive_move_expires_phase",
+            ):
+                sr.pop(k, None)
         
     def draw(self, screen: pygame.Surface):
         """Draw the dialog"""

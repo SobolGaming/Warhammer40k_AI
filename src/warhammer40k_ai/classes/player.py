@@ -60,6 +60,8 @@ class Player:
         # One-shot overrides that dialogs can set to drive immediate decisions without requiring
         # a persistent decision_hook. Entries are consumed on first read.
         self._next_optional_decisions: dict[str, bool] = {}
+        # One-shot selection overrides for optional ability choices.
+        self._next_optional_selections: dict[str, object] = {}
         #print(f"Player {self.name} created with army: {self.army}")
     
     def set_army(self, army: Army) -> None:
@@ -281,6 +283,33 @@ class Player:
                 return False
         return False
 
+    def _choose_optional_value(self, key: str, options: list, context: dict):
+        """
+        Ask the decision hook for a concrete choice from a list of options.
+        Conservative default: None (no automatic selection).
+        """
+        k = (key or "").strip().upper()
+        if k:
+            if isinstance(getattr(self, "_next_optional_selections", None), dict) and k in self._next_optional_selections:
+                try:
+                    return self._next_optional_selections.pop(k)
+                except Exception:
+                    try:
+                        del self._next_optional_selections[k]
+                    except Exception:
+                        pass
+                    return None
+        fn = getattr(self, "decision_hook", None)
+        if callable(fn):
+            try:
+                choice = fn(self, k or (key or ""), dict(context or {}))
+                if isinstance(choice, bool):
+                    return None
+                return choice
+            except Exception:
+                return None
+        return None
+
     def set_next_optional_decision(self, key: str, value: bool) -> None:
         """Set a one-shot decision override consumed by the next matching optional ability query."""
         k = (key or "").strip().upper()
@@ -289,6 +318,15 @@ class Player:
         if not isinstance(getattr(self, "_next_optional_decisions", None), dict):
             self._next_optional_decisions = {}
         self._next_optional_decisions[k] = bool(value)
+
+    def set_next_optional_selection(self, key: str, value) -> None:
+        """Set a one-shot selection override consumed by the next matching optional choice query."""
+        k = (key or "").strip().upper()
+        if not k:
+            return
+        if not isinstance(getattr(self, "_next_optional_selections", None), dict):
+            self._next_optional_selections = {}
+        self._next_optional_selections[k] = value
 
     def preview_stratagem_cp_cost(self, stratagem, *, target_unit=None, assume_optional_discounts: bool | None = None) -> dict:
         """

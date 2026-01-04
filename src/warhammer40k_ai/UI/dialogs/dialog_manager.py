@@ -63,6 +63,7 @@ class DialogManager:
             _get(gv, "blessings_of_khorne_dialog"),
             _get(gv, "secondary_discard_dialog"),
             _get(gv, "overwatch_shooter_dialog"),
+            _get(gv, "battle_focus_dialog"),
             _get(gv, "hazard_objective_select_dialog"),
             _get(gv, "battlefield_point_pick_dialog"),
             _get(gv, "movement_choice_dialog"),

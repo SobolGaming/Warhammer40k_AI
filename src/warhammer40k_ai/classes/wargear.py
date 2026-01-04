@@ -317,7 +317,7 @@ class WargearProfile:
             ap_val -= 1
         return int(apply_characteristic_caps("ap", int(ap_val), base_raw=getattr(self, "_raw_ap", None)))
 
-    def attack(self, target: 'Unit', attacker: 'Model', game_map: Optional['Map'] = None) -> None:
+    def attack(self, target: 'Unit', attacker: 'Model', game_map: Optional['Map'] = None) -> Optional[AttackResult]:
         # ONE SHOT: enforce once per battle per model per weapon.
         # (Higher-level code also filters declarations, but this is the final guard.)
         try:
@@ -810,7 +810,7 @@ class WargearProfile:
         except Exception:
             pass
         
-        return
+        return attack_result
 
     def _hit_target_with_tracking(self, target: 'Unit', attacker: 'Model', attack_instance: Dict) -> Dict:
         """Hit resolution with detailed tracking"""

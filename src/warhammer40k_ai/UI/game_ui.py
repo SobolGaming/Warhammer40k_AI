@@ -58,6 +58,7 @@ PURPLE = (128, 0, 128)
 # Supported rules (display indicator only)
 SUPPORTED_ARMY_RULES = {
     "BLESSINGS OF KHORNE",
+    "BATTLE FOCUS",
 }
 SUPPORTED_DETACHMENT_RULES = {
     "RELENTLESS RAGE",
@@ -463,6 +464,7 @@ class GameView:
         self.yes_no_dialog = YesNoDialog(screen_width, screen_height)
         self.secondary_discard_dialog = SecondaryDiscardDialog(screen_width, screen_height)
         self.overwatch_shooter_dialog = OverwatchShooterDialog(screen_width, screen_height)
+        self.battle_focus_dialog = OverwatchShooterDialog(screen_width, screen_height)
         # WORLD EATERS: Blessings of Khorne dialog (lazy-create only if needed)
         self.blessings_of_khorne_dialog = None
         # Stratagem interaction helpers
@@ -711,6 +713,7 @@ class GameView:
         self._heroic_flow_active = False
         self._optional_flow_active = False
         self._blessings_flow_active = False
+        self._battle_focus_flow_active = False
 
         # Initialize shared UI state
         self._ui_hitboxes = {}
@@ -731,6 +734,9 @@ class GameView:
                 self.game.event_system.subscribe("phase_start", self._on_phase_start_optional_ability_prompts)
                 # Quarry re-pick when quarry is destroyed
                 self.game.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_for_monarch_of_the_hunt)
+                # Battle Focus reactive prompts (Opportunity Seized / Fade Back)
+                self.game.event_system.subscribe("battle_focus_opportunity_prompt", self._on_battle_focus_opportunity_prompt)
+                self.game.event_system.subscribe("battle_focus_fade_back_prompt", self._on_battle_focus_fade_back_prompt)
         except Exception:
             pass
 
@@ -872,6 +878,558 @@ class GameView:
         except Exception:
             # If UI wiring is missing, just skip
             _done(False)
+
+    # ---------------- Battle Focus (Aeldari) prompts ----------------
+
+    def _battle_focus_option_label(self, option: str) -> str:
+        opt = str(option or "").strip().upper()
+        labels = {
+            "SWIFT_AS_THE_WIND": "Swift as the Wind (+2\" Move)",
+            "FLITTING_SHADOWS": "Flitting Shadows (No Overwatch)",
+            "STAR_ENGINES": "Star Engines (Advance + Shoot)",
+            "SUDDEN_STRIKE": "Sudden Strike (6\" pile-in/consolidate)",
+            "OPPORTUNITY_SEIZED": "Opportunity Seized (Reactive move 1D6+1\")",
+            "FADE_BACK": "Fade Back (Reactive move 1D6+1\")",
+        }
+        if opt in labels:
+            return labels[opt]
+        return opt.replace("_", " ").title()
+
+    def _get_battle_focus_manager(self, player):
+        if player is None:
+            return None
+        try:
+            army = player.get_army()
+        except Exception:
+            army = None
+        return getattr(army, "battle_focus", None) if army is not None else None
+
+    def _battle_focus_hud_maneuver_options(self, unit, mgr) -> Dict[str, str]:
+        if unit is None or mgr is None or self.game is None:
+            return {}
+        available_actions = []
+        try:
+            engagement_state = unit.get_engagement_state(self.game.map)
+            available_actions = list(unit.get_available_move_actions(engagement_state.value) or [])
+        except Exception:
+            available_actions = []
+
+        action_map = {}
+        try:
+            from ..classes.unit import MovementAction
+            action_map = {
+                MovementAction.MOVE.value: "move",
+                MovementAction.ADVANCE.value: "advance",
+                MovementAction.FALL_BACK.value: "fall_back",
+            }
+        except Exception:
+            action_map = {}
+
+        actions = []
+        for act in available_actions:
+            act_name = None
+            if isinstance(act, str):
+                act_name = act
+            else:
+                act_name = action_map.get(act)
+            if act_name in ("move", "advance", "fall_back") and act_name not in actions:
+                actions.append(act_name)
+
+        if not actions:
+            return {}
+
+        maneuver_to_label: Dict[str, str] = {}
+        for action in actions:
+            try:
+                options = mgr.get_move_maneuver_options(unit, action, self.game)
+            except Exception:
+                options = []
+            for maneuver in options:
+                if maneuver not in maneuver_to_label:
+                    maneuver_to_label[maneuver] = self._battle_focus_option_label(maneuver)
+
+        return {label: maneuver for maneuver, label in maneuver_to_label.items()}
+
+    def _battle_focus_hud_enabled(self, player, mgr) -> bool:
+        if self._battle_focus_flow_active:
+            return False
+        if self.game is None:
+            return False
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return False
+        except Exception:
+            return False
+        if int(getattr(mgr, "tokens", 0) or 0) <= 0:
+            return False
+        if not self.game.is_movement_phase():
+            return False
+        try:
+            if self.game.get_current_player() is not player:
+                return False
+        except Exception:
+            return False
+        unit = getattr(self, "selected_unit", None)
+        if unit is None:
+            return False
+        try:
+            if unit.get_parent_army() != player.get_army():
+                return False
+        except Exception:
+            return False
+        return bool(self._battle_focus_hud_maneuver_options(unit, mgr))
+
+    def _battle_focus_hud_hint(self, player, mgr) -> str:
+        if self.game is None:
+            return ""
+        if self._battle_focus_flow_active:
+            return "Battle Focus selection already active."
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return ""
+        except Exception:
+            return ""
+        if int(getattr(mgr, "tokens", 0) or 0) <= 0:
+            return "No tokens remaining."
+        if not self.game.is_movement_phase():
+            return "Available during the Movement phase."
+        try:
+            if self.game.get_current_player() is not player:
+                return "Available during your Movement phase."
+        except Exception:
+            return ""
+        unit = getattr(self, "selected_unit", None)
+        if unit is None:
+            return "Select a unit to use a token."
+        try:
+            if unit.get_parent_army() != player.get_army():
+                return "Select one of your units."
+        except Exception:
+            return "Select one of your units."
+        if not self._battle_focus_hud_maneuver_options(unit, mgr):
+            return "No eligible maneuvers for the selected unit."
+        return ""
+
+    def _open_battle_focus_hud_use(self, player) -> None:
+        if self._battle_focus_flow_active:
+            return
+        if self.game is None or player is None:
+            return
+        mgr = self._get_battle_focus_manager(player)
+        if mgr is None:
+            return
+        if not self._battle_focus_hud_enabled(player, mgr):
+            return
+
+        unit = getattr(self, "selected_unit", None)
+        if unit is None:
+            return
+        options = self._battle_focus_hud_maneuver_options(unit, mgr)
+        if not options:
+            return
+
+        tokens = int(getattr(mgr, "tokens", 0) or 0)
+        title = "Battle Focus"
+
+        if len(options) == 1:
+            label = next(iter(options.keys()))
+            maneuver = options.get(label)
+            msg = f"Use {label} for {getattr(unit, 'name', 'unit')}?\n\nTokens remaining: {tokens}"
+
+            def _done(choice: bool):
+                try:
+                    if choice and maneuver:
+                        mgr.apply_maneuver(unit, maneuver, self.game)
+                finally:
+                    self._battle_focus_flow_active = False
+
+            self._battle_focus_flow_active = True
+            try:
+                self.yes_no_dialog.show(title, msg, _done, yes_label="Use", no_label="Cancel")
+                self.dialog_manager.open(self.yes_no_dialog, modal=True)
+            except Exception:
+                self._battle_focus_flow_active = False
+            return
+
+        subtitle = f"{getattr(unit, 'name', 'unit')} - choose a maneuver (Tokens: {tokens})"
+
+        def _on_confirm(selected_label):
+            self._battle_focus_flow_active = False
+            try:
+                self.battle_focus_dialog.hide()
+            except Exception:
+                pass
+            maneuver = options.get(selected_label)
+            if maneuver:
+                mgr.apply_maneuver(unit, maneuver, self.game)
+
+        def _on_cancel():
+            self._battle_focus_flow_active = False
+
+        self._battle_focus_flow_active = True
+        self.battle_focus_dialog.show(
+            list(options.keys()),
+            None,
+            _on_confirm,
+            title=title,
+            subtitle=subtitle,
+            on_cancel=_on_cancel,
+        )
+        try:
+            self.dialog_manager.open(self.battle_focus_dialog, modal=True)
+        except Exception:
+            self._battle_focus_flow_active = False
+
+    def _maybe_prompt_battle_focus_move(self, unit, action: str, on_done: Callable[[], None]) -> None:
+        if on_done is None:
+            return
+        if self._battle_focus_flow_active:
+            on_done()
+            return
+
+        mgr = None
+        player = None
+        try:
+            army = unit.get_parent_army()
+            mgr = getattr(army, "battle_focus", None) if army is not None else None
+            player = getattr(army, "player", None) if army is not None else None
+        except Exception:
+            mgr = None
+            player = None
+        if mgr is None or player is None or self.game is None:
+            on_done()
+            return
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                on_done()
+                return
+        except Exception:
+            on_done()
+            return
+
+        options = mgr.get_move_maneuver_options(unit, action, self.game)
+        if not options:
+            on_done()
+            return
+
+        tokens = int(getattr(mgr, "tokens", 0) or 0)
+        title = "Battle Focus"
+
+        if len(options) == 1:
+            opt = options[0]
+            label = self._battle_focus_option_label(opt)
+            msg = f"Use {label} for {getattr(unit, 'name', 'unit')}?\n\nTokens remaining: {tokens}"
+
+            def _done(choice: bool):
+                try:
+                    if choice:
+                        mgr.apply_maneuver(unit, opt, self.game)
+                finally:
+                    self._battle_focus_flow_active = False
+                    on_done()
+
+            self._battle_focus_flow_active = True
+            try:
+                self.yes_no_dialog.show(title, msg, _done, yes_label="Use", no_label="Skip")
+                self.dialog_manager.open(self.yes_no_dialog, modal=True)
+            except Exception:
+                self._battle_focus_flow_active = False
+                on_done()
+            return
+
+        label_to_option = {}
+        for opt in options:
+            label_to_option[self._battle_focus_option_label(opt)] = opt
+        choices = list(label_to_option.keys())
+        subtitle = f"Choose an Agile Manoeuvre for {getattr(unit, 'name', 'unit')} (Tokens: {tokens})"
+
+        def _on_confirm(selected_label):
+            self._battle_focus_flow_active = False
+            try:
+                self.battle_focus_dialog.hide()
+            except Exception:
+                pass
+            opt = label_to_option.get(selected_label)
+            if opt:
+                mgr.apply_maneuver(unit, opt, self.game)
+            on_done()
+
+        def _on_cancel():
+            self._battle_focus_flow_active = False
+            on_done()
+
+        self._battle_focus_flow_active = True
+        self.battle_focus_dialog.show(
+            choices,
+            None,
+            _on_confirm,
+            title=title,
+            subtitle=subtitle,
+            on_cancel=_on_cancel,
+        )
+        try:
+            self.dialog_manager.open(self.battle_focus_dialog, modal=True)
+        except Exception:
+            self._battle_focus_flow_active = False
+            on_done()
+
+    def _maybe_prompt_battle_focus_charge(self, unit, target_unit, on_done: Callable[[], None]) -> None:
+        if on_done is None:
+            return
+        if self._battle_focus_flow_active:
+            on_done()
+            return
+
+        mgr = None
+        player = None
+        try:
+            army = unit.get_parent_army()
+            mgr = getattr(army, "battle_focus", None) if army is not None else None
+            player = getattr(army, "player", None) if army is not None else None
+        except Exception:
+            mgr = None
+            player = None
+        if mgr is None or player is None or self.game is None:
+            on_done()
+            return
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                on_done()
+                return
+        except Exception:
+            on_done()
+            return
+
+        try:
+            if not mgr.can_use_flitting_on_charge(unit, self.game):
+                on_done()
+                return
+        except Exception:
+            on_done()
+            return
+
+        tokens = int(getattr(mgr, "tokens", 0) or 0)
+        label = self._battle_focus_option_label(getattr(mgr, "MANEUVER_FLITTING", "FLITTING_SHADOWS"))
+        target_name = getattr(target_unit, "name", "enemy unit")
+        msg = f"Use {label} for {getattr(unit, 'name', 'unit')} while charging {target_name}?\n\nTokens remaining: {tokens}"
+
+        def _done(choice: bool):
+            try:
+                if choice:
+                    mgr.apply_maneuver(unit, mgr.MANEUVER_FLITTING, self.game)
+            finally:
+                self._battle_focus_flow_active = False
+                on_done()
+
+        self._battle_focus_flow_active = True
+        try:
+            self.yes_no_dialog.show("Battle Focus", msg, _done, yes_label="Use", no_label="Skip")
+            self.dialog_manager.open(self.yes_no_dialog, modal=True)
+        except Exception:
+            self._battle_focus_flow_active = False
+            on_done()
+
+    def _maybe_prompt_battle_focus_sudden_strike(self, unit, on_done: Callable[[], None]) -> None:
+        if on_done is None:
+            return
+        if self._battle_focus_flow_active:
+            on_done()
+            return
+
+        mgr = None
+        player = None
+        try:
+            army = unit.get_parent_army()
+            mgr = getattr(army, "battle_focus", None) if army is not None else None
+            player = getattr(army, "player", None) if army is not None else None
+        except Exception:
+            mgr = None
+            player = None
+        if mgr is None or player is None or self.game is None:
+            on_done()
+            return
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                on_done()
+                return
+        except Exception:
+            on_done()
+            return
+
+        try:
+            if not mgr.can_use_sudden_strike(unit, self.game):
+                on_done()
+                return
+        except Exception:
+            on_done()
+            return
+
+        tokens = int(getattr(mgr, "tokens", 0) or 0)
+        label = self._battle_focus_option_label(getattr(mgr, "MANEUVER_SUDDEN_STRIKE", "SUDDEN_STRIKE"))
+        msg = f"Use {label} for {getattr(unit, 'name', 'unit')}?\n\nTokens remaining: {tokens}"
+
+        def _done(choice: bool):
+            try:
+                if choice:
+                    mgr.apply_maneuver(unit, mgr.MANEUVER_SUDDEN_STRIKE, self.game)
+            finally:
+                self._battle_focus_flow_active = False
+                on_done()
+
+        self._battle_focus_flow_active = True
+        try:
+            self.yes_no_dialog.show("Battle Focus", msg, _done, yes_label="Use", no_label="Skip")
+            self.dialog_manager.open(self.yes_no_dialog, modal=True)
+        except Exception:
+            self._battle_focus_flow_active = False
+            on_done()
+
+    def _open_battle_focus_reactive_move(self, unit) -> None:
+        max_distance = 0.0
+        try:
+            sr = getattr(unit, "special_rules", None)
+            if isinstance(sr, dict):
+                max_distance = float(sr.get("battle_focus_reactive_move_max", 0) or 0)
+        except Exception:
+            max_distance = 0.0
+        if max_distance <= 0:
+            self._battle_focus_flow_active = False
+            return
+
+        def _done(_completed: bool):
+            self._battle_focus_flow_active = False
+
+        try:
+            self.individual_model_movement_dialog.show(
+                unit, "reactive", _done, self.game.map, max_distance
+            )
+        except Exception:
+            self._battle_focus_flow_active = False
+
+    def _on_battle_focus_opportunity_prompt(self, player=None, moving_unit=None, candidates=None, manager=None, **_kwargs):
+        if self._battle_focus_flow_active:
+            return
+        if player is None:
+            return
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return
+        except Exception:
+            return
+        cand = list(candidates or [])
+        if not cand:
+            return
+        mgr = manager
+        if mgr is None:
+            try:
+                army = player.get_army()
+                mgr = getattr(army, "battle_focus", None) if army is not None else None
+            except Exception:
+                mgr = None
+        if mgr is None:
+            return
+
+        enemy_name = getattr(moving_unit, "name", "enemy unit")
+        subtitle = f"Enemy unit fell back: {enemy_name}. Select a unit to move."
+
+        def _on_confirm(selected_unit):
+            try:
+                self.battle_focus_dialog.hide()
+            except Exception:
+                pass
+            if selected_unit is None:
+                return
+            mgr.apply_reactive_maneuver(selected_unit, mgr.MANEUVER_OPPORTUNITY, self.game)
+            self._open_battle_focus_reactive_move(selected_unit)
+
+        def _on_cancel():
+            self._battle_focus_flow_active = False
+
+        self._battle_focus_flow_active = True
+        self.battle_focus_dialog.show(
+            cand,
+            moving_unit,
+            _on_confirm,
+            title="Battle Focus: Opportunity Seized",
+            subtitle=subtitle,
+            on_cancel=_on_cancel,
+        )
+        try:
+            self.dialog_manager.open(self.battle_focus_dialog, modal=True)
+        except Exception:
+            self._battle_focus_flow_active = False
+
+    def _on_battle_focus_fade_back_prompt(self, player=None, attacker_unit=None, candidates=None, hits_by_unit=None, manager=None, **_kwargs):
+        if self._battle_focus_flow_active:
+            return
+        if player is None:
+            return
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return
+        except Exception:
+            return
+        cand = list(candidates or [])
+        if not cand:
+            return
+        mgr = manager
+        if mgr is None:
+            try:
+                army = player.get_army()
+                mgr = getattr(army, "battle_focus", None) if army is not None else None
+            except Exception:
+                mgr = None
+        if mgr is None:
+            return
+
+        label_to_unit = {}
+        choices = []
+        used = set()
+        for unit in cand:
+            try:
+                hits = int((hits_by_unit or {}).get(unit, 0) or 0)
+            except Exception:
+                hits = 0
+            base = f"{getattr(unit, 'name', 'unit')} (Hits: {hits})"
+            label = base
+            idx = 2
+            while label in used:
+                label = f"{base} [{idx}]"
+                idx += 1
+            used.add(label)
+            label_to_unit[label] = unit
+            choices.append(label)
+
+        attacker_name = getattr(attacker_unit, "name", "attacker")
+        subtitle = f"{attacker_name} scored hits. Select a unit to move."
+
+        def _on_confirm(selected_label):
+            try:
+                self.battle_focus_dialog.hide()
+            except Exception:
+                pass
+            unit = label_to_unit.get(selected_label)
+            if unit is None:
+                return
+            mgr.apply_reactive_maneuver(unit, mgr.MANEUVER_FADE_BACK, self.game)
+            self._open_battle_focus_reactive_move(unit)
+
+        def _on_cancel():
+            self._battle_focus_flow_active = False
+
+        self._battle_focus_flow_active = True
+        self.battle_focus_dialog.show(
+            choices,
+            attacker_unit,
+            _on_confirm,
+            title="Battle Focus: Fade Back",
+            subtitle=subtitle,
+            on_cancel=_on_cancel,
+        )
+        try:
+            self.dialog_manager.open(self.battle_focus_dialog, modal=True)
+        except Exception:
+            self._battle_focus_flow_active = False
 
     def _roll_reroll_provider(self, player=None, unit=None, roll_type: str = "", value=None, dice=None, **_kwargs):
         """
@@ -2157,6 +2715,14 @@ class GameView:
                             self._toggle_rule_panel(player, rule_type)
                             return True
 
+            # Handle rule detail panel clicks (HUD button, etc.)
+            if self.rule_detail_panel and self.rule_detail_panel.visible and event.button == 1:
+                if getattr(self.rule_detail_panel, "rect", None):
+                    if self.rule_detail_panel.rect.collidepoint(event.pos):
+                        if hasattr(self.rule_detail_panel, "handle_event"):
+                            self.rule_detail_panel.handle_event(event)
+                        return True
+
         # PRIORITY 2: Let phase manager handle phase-specific events next
         # print(f"🔍 DEBUG: GameView - Delegating to phase manager")
         if self.phase_manager.handle_event(event):
@@ -2692,7 +3258,19 @@ class GameView:
             description = fallback_desc
 
         supported = self._is_supported_rule_name(rule_name, rule_type)
-        self.rule_detail_panel.set_content(title, rule_name, legend, description, supported=supported)
+        hud = None
+        if rule_type == "army" and "battle focus" in rule_name.strip().lower():
+            mgr = self._get_battle_focus_manager(player)
+            if mgr is not None:
+                hud = {
+                    "label": "Battle Focus Tokens",
+                    "use_label": "Use Token",
+                    "get_tokens": lambda: int(getattr(mgr, "tokens", 0) or 0),
+                    "get_enabled": lambda: self._battle_focus_hud_enabled(player, mgr),
+                    "get_hint": lambda: self._battle_focus_hud_hint(player, mgr),
+                    "on_use": lambda: self._open_battle_focus_hud_use(player),
+                }
+        self.rule_detail_panel.set_content(title, rule_name, legend, description, supported=supported, hud=hud)
         self._rule_panel_state = {"player": player, "rule_type": rule_type}
 
     # Note: on_mouse_press is now handled by phase-specific handlers in PhaseManager
@@ -5335,41 +5913,44 @@ class BattlePhaseHandler(BasePhaseHandler):
         
         # Show charge declaration dialog
         def on_charge_declaration(charging_unit, target_unit):
-            # Single code path: delegate all charge declaration bookkeeping + rolling to Game.
-            declared = None
-            try:
-                declared = self.game.declare_charge(charging_unit, target_unit)
-            except Exception:
+            def _after_battle_focus():
+                # Single code path: delegate all charge declaration bookkeeping + rolling to Game.
                 declared = None
-            if not declared:
-                return False
+                try:
+                    declared = self.game.declare_charge(charging_unit, target_unit)
+                except Exception:
+                    declared = None
+                if not declared:
+                    return
 
-            max_charge_distance = int(declared.get("base_roll", 0) or 0)
-            
-            # Open individual model movement dialog for charge movement
-            def on_charge_movement_complete(completed: bool):
-                if completed:
-                    # Check if the charge actually achieved engagement range
-                    enemy_units = self.game.map.get_enemy_units(charging_unit)
-                    in_engagement_range = any(
-                        self.game.map.is_within_engagement_range(charging_unit, enemy_unit)
-                        for enemy_unit in enemy_units if enemy_unit.is_alive()
-                    )
-                    
-                    if in_engagement_range:
-                        print(f"✅ {charging_unit.name} charge successful - achieved engagement range")
-                        charging_unit.round_state.charged_this_round = True
+                max_charge_distance = int(declared.get("base_roll", 0) or 0)
+
+                # Open individual model movement dialog for charge movement
+                def on_charge_movement_complete(completed: bool):
+                    if completed:
+                        # Check if the charge actually achieved engagement range
+                        enemy_units = self.game.map.get_enemy_units(charging_unit)
+                        in_engagement_range = any(
+                            self.game.map.is_within_engagement_range(charging_unit, enemy_unit)
+                            for enemy_unit in enemy_units if enemy_unit.is_alive()
+                        )
+
+                        if in_engagement_range:
+                            print(f"{charging_unit.name} charge successful - achieved engagement range")
+                            charging_unit.round_state.charged_this_round = True
+                        else:
+                            print(f"{charging_unit.name} charge failed - did not achieve engagement range")
+                            # Do not set charged_this_round = True for failed charges
                     else:
-                        print(f"❌ {charging_unit.name} charge failed - did not achieve engagement range")
+                        print(f"{charging_unit.name} charge movement failed or skipped")
                         # Do not set charged_this_round = True for failed charges
-                else:
-                    print(f"❌ {charging_unit.name} charge movement failed or skipped")
-                    # Do not set charged_this_round = True for failed charges
 
-            self.game_view.individual_model_movement_dialog.show(
-                charging_unit, 'charge', on_charge_movement_complete, self.game.map, max_charge_distance, target_unit
-            )
-            return True  # Charge declaration successful
+                self.game_view.individual_model_movement_dialog.show(
+                    charging_unit, 'charge', on_charge_movement_complete, self.game.map, max_charge_distance, target_unit
+                )
+
+            self.game_view._maybe_prompt_battle_focus_charge(charging_unit, target_unit, _after_battle_focus)
+            return True  # Charge declaration selection complete
 
         self.game_view.charge_declaration_dialog.show(unit, on_charge_declaration, self.game.map, self.game_view)
     
@@ -5402,7 +5983,9 @@ class BattlePhaseHandler(BasePhaseHandler):
         
         # Unit is valid - process the selection
         print(f"✅ {unit_owner.name} selected {unit.name} to fight")
-        self.fight_phase_manager.unit_selected(unit, current_player, opponent_player)
+        def _after_battle_focus():
+            self.fight_phase_manager.unit_selected(unit, current_player, opponent_player)
+        self.game_view._maybe_prompt_battle_focus_sudden_strike(unit, _after_battle_focus)
     
     def _initialize_fight_phase_manager(self, current_player: Player, opponent_player: Player) -> None:
         """Initialize the fight phase manager with proper callbacks."""
@@ -5415,34 +5998,34 @@ class BattlePhaseHandler(BasePhaseHandler):
         
         # Set up callbacks for human player interaction
         def on_unit_selection_required(active_player: Player, eligible_units: List[Unit], stage: FightStage):
-            print(f"🔍 DEBUG: on_unit_selection_required called for {active_player.name} ({active_player.type.name})")
-            print(f"🔍 DEBUG: Stage: {stage.value}, Eligible units: {[unit.name for unit in eligible_units]}")
+            print(f"DEBUG: on_unit_selection_required called for {active_player.name} ({active_player.type.name})")
+            print(f"DEBUG: Stage: {stage.value}, Eligible units: {[unit.name for unit in eligible_units]}")
 
             if active_player.type.name == 'HUMAN':
-                print(f"🎯 {active_player.name} must select a unit to fight ({stage.value} stage)")
+                print(f"{active_player.name} must select a unit to fight ({stage.value} stage)")
                 print(f"   Eligible units: {[unit.name for unit in eligible_units]}")
                 # Show fight unit selection dialog
                 if hasattr(self.game_view, 'ui_interface') and self.game_view.ui_interface:
                     def on_unit_selected(selected_unit):
-                        print(f"🔍 DEBUG: Unit selected callback called for {selected_unit.name}")
-                        self.fight_phase_manager.unit_selected(selected_unit, current_player, opponent_player)
+                        print(f"DEBUG: Unit selected callback called for {selected_unit.name}")
+                        def _after_battle_focus():
+                            self.fight_phase_manager.unit_selected(selected_unit, current_player, opponent_player)
+                        self.game_view._maybe_prompt_battle_focus_sudden_strike(selected_unit, _after_battle_focus)
 
                     def on_cancel():
-                        print("❌ Fight unit selection cancelled")
+                        print("Fight unit selection cancelled")
 
-                    print(f"🔍 DEBUG: About to show fight unit selection dialog")
                     self.game_view.ui_interface.show_fight_unit_selection_dialog(
                         stage.value, eligible_units, on_unit_selected, on_cancel
                     )
-                    print(f"🔍 DEBUG: Fight unit selection dialog show() called")
             else:
                 # AI player - auto-select first eligible unit
-                print(f"🤖 AI player {active_player.name} selecting unit automatically")
+                print(f"AI player {active_player.name} selecting unit automatically")
                 if eligible_units:
                     selected_unit = eligible_units[0]
-                    print(f"🤖 AI selected {selected_unit.name}")
+                    print(f"AI selected {selected_unit.name}")
                     self.fight_phase_manager.unit_selected(selected_unit, current_player, opponent_player)
-        
+
         def on_target_selection_required(fighting_unit: Unit, eligible_targets: List[Unit], active_player: Player):
             if active_player.type.name == 'HUMAN':
                 print(f"🎯 {active_player.name} must select targets for {fighting_unit.name}")
@@ -5982,45 +6565,51 @@ class BattlePhaseHandler(BasePhaseHandler):
         if chosen_action.value not in available_actions:
             print(f"❌ {choice.title()} action not available for {unit.name}")
             return
-        
-        # Store the chosen action for battlefield click handling
-        self.game_view.selected_unit_for_movement = unit
-        self.game_view.movement_action = chosen_action
-        # Keep the selected model if one was previously selected
-        if not hasattr(self.game_view, 'selected_model_for_movement'):
-            self.game_view.selected_model_for_movement = None
-        
-        # Roll advance dice immediately if advancing
-        if choice == 'advance':
-            advance_roll = unit.prepare_advance()
-            max_distance = unit.movement + advance_roll
-        else:
-            max_distance = unit.movement
-        
-        if choice == 'stationary':
-            # Execute stationary action immediately (no destination needed)
-            success = unit._execute_action(chosen_action.value, (0, 0, 0), self.game.map)
-            if success:
-                print(f"🛑 {unit.name} remains stationary")
-            # Clear selection since action is complete
-            self.game_view.selected_unit_for_movement = None
-            self.game_view.movement_action = None
-            self.game_view.selected_model_for_movement = None
-        else:
-            # Open individual model movement dialog
-            def on_movement_complete(completed: bool):
-                if completed:
-                    print(f"✅ {unit.name} {choice} movement completed")
-                else:
-                    print(f"⏭️  {unit.name} {choice} movement skipped")
-                # Clear selection after movement
+
+        def _begin_movement():
+            # Store the chosen action for battlefield click handling
+            self.game_view.selected_unit_for_movement = unit
+            self.game_view.movement_action = chosen_action
+            # Keep the selected model if one was previously selected
+            if not hasattr(self.game_view, 'selected_model_for_movement'):
+                self.game_view.selected_model_for_movement = None
+
+            # Roll advance dice immediately if advancing
+            if choice == 'advance':
+                advance_roll = unit.prepare_advance()
+                max_distance = unit.movement + advance_roll
+            else:
+                max_distance = unit.movement
+
+            if choice == 'stationary':
+                # Execute stationary action immediately (no destination needed)
+                success = unit._execute_action(chosen_action.value, (0, 0, 0), self.game.map)
+                if success:
+                    print(f"dY>` {unit.name} remains stationary")
+                # Clear selection since action is complete
                 self.game_view.selected_unit_for_movement = None
                 self.game_view.movement_action = None
                 self.game_view.selected_model_for_movement = None
-            
-            self.game_view.individual_model_movement_dialog.show(
-                unit, choice, on_movement_complete, self.game.map, max_distance
-            )
+            else:
+                # Open individual model movement dialog
+                def on_movement_complete(completed: bool):
+                    if completed:
+                        print(f"{unit.name} {choice} movement completed")
+                    else:
+                        print(f"{unit.name} {choice} movement skipped")
+                    # Clear selection after movement
+                    self.game_view.selected_unit_for_movement = None
+                    self.game_view.movement_action = None
+                    self.game_view.selected_model_for_movement = None
+
+                self.game_view.individual_model_movement_dialog.show(
+                    unit, choice, on_movement_complete, self.game.map, max_distance
+                )
+
+        if choice in ("move", "advance", "fall_back"):
+            self.game_view._maybe_prompt_battle_focus_move(unit, choice, _begin_movement)
+        else:
+            _begin_movement()
 
     def _show_transport_embark_dialog(self, transport_unit) -> None:
         """Show a dialog listing only valid units that can embark into the selected transport."""

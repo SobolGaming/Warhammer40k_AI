@@ -1108,6 +1108,17 @@ class StratagemManager:
                 return
         except Exception:
             return
+        # Battle Focus: Flitting Shadows prevents Overwatch against this unit for the rest of the turn.
+        try:
+            sr = getattr(moving_unit, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("battle_focus_flitting_shadows_no_overwatch"):
+                owner_name = str(sr.get("battle_focus_flitting_shadows_turn_owner", "") or "")
+                active_player = getattr(self.game, "get_current_player", lambda: None)()
+                active_name = str(getattr(active_player, "name", "") or "")
+                if not owner_name or owner_name == active_name:
+                    return
+        except Exception:
+            pass
         s = self.get_by_name('FIRE OVERWATCH') or self.get_by_name('Overwatch')
         if not s:
             return

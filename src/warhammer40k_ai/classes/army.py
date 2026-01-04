@@ -67,6 +67,13 @@ class Army:
             self.blessings_of_khorne = BlessingsOfKhorneManager()
         except Exception:
             self.blessings_of_khorne = None
+
+        # Aeldari: Battle Focus (safe to attach, no-op if not Aeldari/Asuryani).
+        try:
+            from .battle_focus import BattleFocusManager
+            self.battle_focus = BattleFocusManager(self)
+        except Exception:
+            self.battle_focus = None
     
     def add_unit(self, unit: Unit) -> bool:
         if not self.faction_keyword:
@@ -627,8 +634,29 @@ class Army:
             raise ArmyValidationError("Failed validating detachment/army rule restrictions.")
 
     def validate_allies(self):
-        # Placeholder for ally validation based on specific rules
-        pass
+        # Disparate Paths (Aeldari): allow HARLEQUINS units alongside ASURYANI.
+        try:
+            fid = str(getattr(self, "faction_id", "") or "").strip().upper()
+            fname = str(getattr(self, "faction", "") or "").strip().lower()
+            is_aeldari = fid == "AE" or "aeldari" in fname or "asuryani" in fname
+        except Exception:
+            is_aeldari = False
+        if not is_aeldari:
+            return
+
+        allowed = {"AELDARI", "ASURYANI", "HARLEQUINS", "YNNARI"}
+        for u in list(getattr(self, "units", []) or []):
+            try:
+                fks = [str(k).strip().upper() for k in (getattr(u, "faction_keywords", []) or []) if str(k).strip()]
+            except Exception:
+                fks = []
+            if not fks:
+                continue
+            if not any(k in allowed for k in fks):
+                raise ArmyValidationError(
+                    f"Unit '{getattr(u, 'name', 'Unknown')}' has faction keywords {fks}, "
+                    "which are not allowed for an Aeldari army (Disparate Paths allows ASURYANI + HARLEQUINS)."
+                )
 
     def validate(self) -> None:
         self.validate_points_limit()
@@ -662,6 +690,13 @@ class Army:
         mgr = getattr(self, "blessings_of_khorne", None)
         if mgr is not None:
             mgr.on_battle_round_start(int(battle_round))
+        mgr = getattr(self, "battle_focus", None)
+        if mgr is not None:
+            try:
+                game = getattr(getattr(self, "player", None), "game", None)
+            except Exception:
+                game = None
+            mgr.on_battle_round_start(int(battle_round), game=game)
 
     def schedule_reborn_in_blood(self, *, game) -> bool:
         """

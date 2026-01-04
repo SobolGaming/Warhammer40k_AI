@@ -3385,6 +3385,17 @@ class Unit:
                     _game.event_system.publish(evt, **kwargs)
             except Exception:
                 pass
+        # AELDARI: Battle Focus move-triggered manoeuvres (Swift/Flitting/Star Engines)
+        if action in (MovementAction.MOVE.value, MovementAction.ADVANCE.value, MovementAction.FALL_BACK.value):
+            try:
+                army = self.get_parent_army()
+                mgr = getattr(army, "battle_focus", None) if army is not None else None
+                if mgr is not None:
+                    act_name = ('advance' if action == MovementAction.ADVANCE.value else 'fall_back' if action == MovementAction.FALL_BACK.value else 'move')
+                    mgr.maybe_trigger_move_maneuvers(self, act_name, _game)
+            except Exception:
+                pass
+
         # Overwatch trigger: movement start
         if action in (MovementAction.MOVE.value, MovementAction.ADVANCE.value, MovementAction.FALL_BACK.value):
             _publish("unit_move_started", unit=self, action=('advance' if action == MovementAction.ADVANCE.value else 'fall_back' if action == MovementAction.FALL_BACK.value else 'move'))
@@ -4492,6 +4503,12 @@ class Unit:
         Returns:
             bool: True if the unit can shoot this weapon after advancing
         """
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("battle_focus_star_engines_active"):
+                return True
+        except Exception:
+            pass
         # Check for Assault weapons
         if profile.is_assault():
             return True
@@ -5016,6 +5033,7 @@ class Unit:
             pass
         
         successful_attacks = 0
+        hit_tracker = {}
         
         # Begin attack resolution window(s) for targets (so attached leaders don't separate mid-sequence)
         # Publish a reaction window for defensive stratagems (e.g. GO TO GROUND) right after targets are selected.
@@ -5063,8 +5081,27 @@ class Unit:
                 continue
                 
             # Execute attacks with this weapon
-            weapon_attacks = self._execute_weapon_attacks(weapon_profile, target_unit, models_with_weapon, game_map, weapon_instance)
+            weapon_attacks = self._execute_weapon_attacks(
+                weapon_profile,
+                target_unit,
+                models_with_weapon,
+                game_map,
+                weapon_instance,
+                hit_tracker=hit_tracker,
+            )
             successful_attacks += weapon_attacks
+
+        if hit_tracker:
+            try:
+                game = self.get_parent_army().player.game
+                if game is not None and hasattr(game, "event_system"):
+                    game.event_system.publish(
+                        "unit_shooting_resolved",
+                        attacker_unit=self,
+                        hits_by_target=dict(hit_tracker),
+                    )
+            except Exception:
+                pass
             
         # Report shooting results
         if successful_attacks > 0:
@@ -5520,7 +5557,7 @@ class Unit:
         # If target is different from engaged unit, only vehicles can shoot
         return False
     
-    def _execute_weapon_attacks(self, weapon_profile, target_unit, models_with_weapon, game_map, weapon_instance=None) -> int:
+    def _execute_weapon_attacks(self, weapon_profile, target_unit, models_with_weapon, game_map, weapon_instance=None, hit_tracker=None) -> int:
         """Execute attacks with a specific weapon profile"""
         successful_attacks = 0
         
@@ -5563,7 +5600,14 @@ class Unit:
                 print(f"🎯 {model.name} attacking with {weapon_display}")
                 
                 # Execute the attack using the weapon profile (pass game_map for cover/terrain context)
-                weapon_profile.attack(target_unit, model, game_map=game_map)
+                attack_result = weapon_profile.attack(target_unit, model, game_map=game_map)
+                if hit_tracker is not None:
+                    try:
+                        hits = int(getattr(attack_result, "total_hits", 0) or 0)
+                    except Exception:
+                        hits = 0
+                    if hits > 0:
+                        hit_tracker[target_unit] = int(hit_tracker.get(target_unit, 0) or 0) + hits
                 # Count successful execution of the attack (not damage dealt)
                 successful_attacks += 1
 
@@ -6592,9 +6636,27 @@ class Unit:
 
     def get_fight_phase_move_distance_override(self, movement_kind: str) -> Optional[float]:
         """
-        Return a fight-phase move distance override (pile-in / consolidate) if a Blessing modifies it.
+        Return a fight-phase move distance override (pile-in / consolidate) if a rule modifies it.
         movement_kind: 'pile_in' or 'consolidate'
         """
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict):
+                exp = str(sr.get("battle_focus_sudden_strike_expires_phase", "") or "").strip().upper()
+                if exp:
+                    pname = ""
+                    try:
+                        army = self.get_parent_army()
+                        game = army.player.game if (army is not None and getattr(army, "player", None) is not None) else None
+                        phase = getattr(game, "phase", None) if game is not None else None
+                        pname = str(getattr(phase, "name", "") or phase or "").strip().upper()
+                    except Exception:
+                        pname = ""
+                    if not pname or pname == exp:
+                        if str(movement_kind).strip().lower() in ("pile_in", "consolidate"):
+                            return 6.0
+        except Exception:
+            pass
         try:
             army = self.get_parent_army()
             mgr = getattr(army, "blessings_of_khorne", None) if army is not None else None
@@ -8450,6 +8512,14 @@ class Unit:
             pass
         
         logger.info(f"🪂 {self.name} arrived from reserves at turn {turn}")
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "battle_focus", None) if army is not None else None
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            if mgr is not None and game is not None:
+                mgr.maybe_trigger_setup_maneuver(self, game)
+        except Exception:
+            pass
         return True
     
     def can_move_after_arriving_from_reserves(self) -> bool:

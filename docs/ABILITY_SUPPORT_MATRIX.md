@@ -103,7 +103,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Battle Focus | `000009894` | 81 | 81 | **Not implemented** |  |
+| Battle Focus | `000009894` | 81 | 81 | **Supported** | Battle Focus tokens + Agile Manoeuvres (Swift as the Wind, Flitting Shadows, Star Engines, Sudden Strike, Opportunity Seized, Fade Back). |
 | Disparate Paths | `000009896` | 19 | 19 | **Not implemented** |  |
 
 ### Astra Militarum (`AM`) — `https://wahapedia.ru/wh40k10ed/factions/astra-militarum`
@@ -391,12 +391,6 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Defend at All Costs | `000009910` | 7 | 7 | **Not implemented** |  |
-
-#### Seer Council
-
-| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Strands of Fate | `000009922` | 93 | 93 | **Not implemented** |  |
 
 #### Serpent’s Brood
 
@@ -2609,7 +2603,6 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Sanctity of Purpose | 1 | 1 | **Not implemented** |  |
 | Sanctuary (Psychic) | 1 | 1 | **Not implemented** |  |
 | Strafing Run | 1 | 1 | **Not implemented** |  |
-| Strands of Fate (Psychic) | 1 | 1 | **Not implemented** |  |
 | Surge of Wrath (Psychic) | 1 | 1 | **Not implemented** |  |
 | Techmarine | 1 | 1 | **Supported** | Lone Operative |
 | Truesilver Aegis (Aura) | 1 | 1 | **Supported** | Feel No Pain |

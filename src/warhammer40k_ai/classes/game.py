@@ -157,6 +157,11 @@ class Game:
         self.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_transport_rules)
         # Detachment abilities that trigger on unit movement events
         self.event_system.subscribe("unit_move_ended", self._on_unit_move_ended_detachment_rules)
+        # Battle Focus triggers (fall back reactions, fight selection, shooting reactions)
+        self.event_system.subscribe("unit_move_started", self._on_unit_move_started_battle_focus)
+        self.event_system.subscribe("unit_move_ended", self._on_unit_move_ended_battle_focus)
+        self.event_system.subscribe("fight_unit_selected", self._on_fight_unit_selected_battle_focus)
+        self.event_system.subscribe("unit_shooting_resolved", self._on_unit_shooting_resolved_battle_focus)
         # Temporary effects cleanup (e.g. once-per-battle abilities that last "until end of phase")
         self.event_system.subscribe("phase_end", self._on_phase_end_cleanup)
         # Optional ability timing windows (prompt/decision hooks)
@@ -278,6 +283,142 @@ class Game:
                             sr.pop(k, None)
         except Exception:
             return
+        try:
+            for p in list(getattr(self, "players", []) or []):
+                army = getattr(p, "army", None)
+                mgr = getattr(army, "battle_focus", None) if army is not None else None
+                if mgr is not None:
+                    mgr.cleanup_on_phase_end(phase, p)
+        except Exception:
+            return
+
+    def _on_unit_move_started_battle_focus(self, unit=None, action: str | None = None, **_kwargs) -> None:
+        if unit is None:
+            return
+        if (action or "").strip().lower() != "fall_back":
+            return
+        try:
+            owner = unit.get_parent_army().player
+        except Exception:
+            owner = None
+        for p in list(getattr(self, "players", []) or []):
+            if p is None or p is owner:
+                continue
+            army = getattr(p, "army", None)
+            mgr = getattr(army, "battle_focus", None) if army is not None else None
+            if mgr is None:
+                continue
+            mgr.record_enemy_fall_back_start(unit, self)
+
+    def _on_unit_move_ended_battle_focus(self, unit=None, action: str | None = None, **_kwargs) -> None:
+        if unit is None:
+            return
+        if (action or "").strip().lower() != "fall_back":
+            return
+        try:
+            owner = unit.get_parent_army().player
+        except Exception:
+            owner = None
+        for p in list(getattr(self, "players", []) or []):
+            if p is None or p is owner:
+                continue
+            army = getattr(p, "army", None)
+            mgr = getattr(army, "battle_focus", None) if army is not None else None
+            if mgr is None:
+                continue
+            try:
+                is_human = bool(getattr(getattr(p, "type", None), "name", "") == "HUMAN")
+            except Exception:
+                is_human = False
+            if is_human:
+                candidates = mgr.consume_opportunity_seized_candidates(unit, self)
+                if not candidates:
+                    continue
+                try:
+                    self.event_system.publish(
+                        "battle_focus_opportunity_prompt",
+                        player=p,
+                        moving_unit=unit,
+                        candidates=list(candidates),
+                        manager=mgr,
+                    )
+                except Exception:
+                    pass
+            else:
+                mgr.maybe_trigger_opportunity_seized(unit, self)
+
+    def _on_fight_unit_selected_battle_focus(self, unit=None, selecting_player=None, **_kwargs) -> None:
+        if unit is None or selecting_player is None:
+            return
+        army = getattr(selecting_player, "army", None)
+        mgr = getattr(army, "battle_focus", None) if army is not None else None
+        if mgr is None:
+            return
+        mgr.maybe_trigger_sudden_strike(unit, self)
+
+    def _on_unit_shooting_resolved_battle_focus(self, attacker_unit=None, hits_by_target=None, **_kwargs) -> None:
+        if attacker_unit is None:
+            return
+        if not hits_by_target:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            attacker_player = attacker_unit.get_parent_army().player
+        except Exception:
+            return
+        try:
+            if attacker_player is not self.get_current_player():
+                return
+        except Exception:
+            pass
+
+        hits_by_player: dict = {}
+        for target_unit, hits in (hits_by_target or {}).items():
+            if target_unit is None:
+                continue
+            try:
+                hits = int(hits or 0)
+            except Exception:
+                hits = 0
+            if hits <= 0:
+                continue
+            try:
+                target_player = target_unit.get_parent_army().player
+            except Exception:
+                continue
+            if target_player is attacker_player:
+                continue
+            hits_by_player.setdefault(target_player, {})[target_unit] = hits
+
+        for player, hits_map in hits_by_player.items():
+            army = getattr(player, "army", None)
+            mgr = getattr(army, "battle_focus", None) if army is not None else None
+            if mgr is None:
+                continue
+            hit_units = list(hits_map.keys())
+            try:
+                is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+            except Exception:
+                is_human = False
+            if is_human:
+                candidates = mgr.get_fade_back_candidates(hit_units, self)
+                if not candidates:
+                    continue
+                try:
+                    self.event_system.publish(
+                        "battle_focus_fade_back_prompt",
+                        player=player,
+                        attacker_unit=attacker_unit,
+                        candidates=list(candidates),
+                        hits_by_unit=dict(hits_map),
+                        manager=mgr,
+                    )
+                except Exception:
+                    pass
+            else:
+                for target_unit, hits in hits_map.items():
+                    mgr.maybe_trigger_fade_back(attacker_unit, target_unit, hits, self)
 
     def _on_unit_move_ended_detachment_rules(self, unit=None, action: str | None = None, **_kwargs) -> None:
         if unit is None:
@@ -2940,6 +3081,14 @@ class Game:
         """
         if not charging_unit.can_declare_charge_against(target_unit, self, out_of_turn=out_of_turn):
             return None
+
+        try:
+            army = charging_unit.get_parent_army()
+            mgr = getattr(army, "battle_focus", None) if army is not None else None
+            if mgr is not None:
+                mgr.maybe_trigger_charge_maneuver(charging_unit, target_unit, self)
+        except Exception:
+            pass
 
         # Mark as attempted immediately (prevents multiple declarations).
         try:
