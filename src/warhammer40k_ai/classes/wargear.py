@@ -891,6 +891,25 @@ class WargearProfile:
                 hit_result['modifiers'].append("-1 from First Prince of Chaos (Tzeentch)")
         except Exception:
             pass
+        # Nurgle's Gift (Aura): Skullsquirm Blight (-1 to hit for afflicted units).
+        try:
+            unit = attacker.parent_unit
+            game = None
+            game_map = None
+            try:
+                army = unit.get_parent_army()
+                game = getattr(getattr(army, "player", None), "game", None)
+                game_map = getattr(game, "map", None) if game is not None else None
+            except Exception:
+                game = None
+                game_map = None
+            from ..classes.nurgles_gift import NurglesGiftManager, PLAGUE_SKULLSQUIRM
+            plague = NurglesGiftManager.get_afflicted_plague_for_unit(unit, game=game, game_map=game_map)
+            if plague is not None and plague.key == PLAGUE_SKULLSQUIRM.key:
+                dice_modifier -= 1
+                hit_result['modifiers'].append("-1 to hit from Skullsquirm Blight (Nurgle's Gift)")
+        except Exception:
+            pass
 
         # Damaged profile: subtract N from the Hit roll (stored as negative modifier).
         try:

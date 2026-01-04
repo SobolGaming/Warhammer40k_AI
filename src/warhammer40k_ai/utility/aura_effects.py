@@ -225,6 +225,10 @@ def _nurgles_gift_contagion_range(battle_round: int) -> float:
     return 9.0
 
 
+def nurgles_gift_contagion_range(battle_round: int) -> float:
+    return _nurgles_gift_contagion_range(battle_round)
+
+
 def _beacons_of_rage(attacker_unit, target_unit, weapon_profile, source_unit) -> AuraAttackModifiers:
     # Applicability: friendly WORLD EATERS within 6" of source; melee; excludes MONSTER/VEHICLE targets.
     if not attacker_unit.has_any_keyword("WORLD EATERS"):
@@ -251,7 +255,7 @@ def _nurgles_gift(attacker_unit, target_unit, source_unit) -> AuraAttackModifier
     We implement the baseline Contagion Range scaling by battle round (3/6/9).
     """
     br = _get_battle_round_from_unit(source_unit) or _get_battle_round_from_unit(attacker_unit)
-    rng = _nurgles_gift_contagion_range(br)
+    rng = nurgles_gift_contagion_range(br)
     if not unit_within_range_of_unit(source_unit, target_unit, rng, use_attached_aggregate=True):
         return AuraAttackModifiers()
     return AuraAttackModifiers(

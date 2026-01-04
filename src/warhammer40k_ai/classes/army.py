@@ -82,6 +82,13 @@ class Army:
             self.templar_vows = TemplarVowsManager(self)
         except Exception:
             self.templar_vows = None
+
+        # Death Guard: Nurgle's Gift (Aura) plagues (safe to attach, no-op if not applicable).
+        try:
+            from .nurgles_gift import NurglesGiftManager
+            self.nurgles_gift = NurglesGiftManager(self)
+        except Exception:
+            self.nurgles_gift = None
     
     def add_unit(self, unit: Unit) -> bool:
         if not self.faction_keyword:

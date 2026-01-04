@@ -3402,6 +3402,22 @@ class GameView:
                         highlight_words.append(active_vow.name)
                     except Exception:
                         pass
+        if rule_type == "army" and "nurgle" in rule_name.strip().lower() and "gift" in rule_name.strip().lower():
+            try:
+                army = player.get_army()
+            except Exception:
+                army = None
+            mgr = getattr(army, "nurgles_gift", None) if army is not None else None
+            if mgr is not None:
+                try:
+                    active_plague = mgr.get_active_plague()
+                except Exception:
+                    active_plague = None
+                if active_plague is not None:
+                    try:
+                        highlight_words.append(active_plague.name)
+                    except Exception:
+                        pass
         hud = None
         if rule_type == "army" and "battle focus" in rule_name.strip().lower():
             mgr = self._get_battle_focus_manager(player)
@@ -5357,53 +5373,54 @@ class SetupPhaseHandler(BasePhaseHandler):
                 return False
             return True
 
-        # Step 1: Leaders (both at once)
-        from .dialogs import LeaderAttachmentDialog
-        left_leaders = LeaderAttachmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
-        right_leaders = LeaderAttachmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
-        left_leaders.title = f"Attach Leaders - {p_left.name}"
-        right_leaders.title = f"Attach Leaders - {p_right.name}"
+        def _show_leaders():
+            # Step 1: Leaders (both at once)
+            from .dialogs import LeaderAttachmentDialog
+            left_leaders = LeaderAttachmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+            right_leaders = LeaderAttachmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+            left_leaders.title = f"Attach Leaders - {p_left.name}"
+            right_leaders.title = f"Attach Leaders - {p_right.name}"
 
-        modal = SideBySideModal(self.game_view.screen.get_width(), self.game_view.screen.get_height(), left_leaders, right_leaders)
-        _position_two(left_leaders, right_leaders)
+            modal = SideBySideModal(self.game_view.screen.get_width(), self.game_view.screen.get_height(), left_leaders, right_leaders)
+            _position_two(left_leaders, right_leaders)
 
-        def _maybe_advance_from_leaders():
-            if modal.left_done and modal.right_done:
+            def _maybe_advance_from_leaders():
+                if modal.left_done and modal.right_done:
+                    try:
+                        self.game_view.refresh_roster_panes()
+                    except Exception:
+                        pass
+                    modal.hide()
+                    _show_transports()
+
+            def _left_done():
                 try:
-                    self.game_view.refresh_roster_panes()
-                except Exception:
-                    pass
-                modal.hide()
-                _show_transports()
+                    a_left.validate_leaders()
+                except Exception as e:
+                    print(f"⚠️ {p_left.name} leader attachment validation failed: {e}")
+                    return
+                _mark_attached_leaders_handled(a_left)
+                modal.left_done = True
+                _maybe_advance_from_leaders()
 
-        def _left_done():
+            def _right_done():
+                try:
+                    a_right.validate_leaders()
+                except Exception as e:
+                    print(f"⚠️ {p_right.name} leader attachment validation failed: {e}")
+                    return
+                _mark_attached_leaders_handled(a_right)
+                modal.right_done = True
+                _maybe_advance_from_leaders()
+
+            left_leaders.show(_army_units(p_left), on_confirm=_left_done, on_cancel=lambda: None)
+            right_leaders.show(_army_units(p_right), on_confirm=_right_done, on_cancel=lambda: None)
+
+            modal.show()
             try:
-                a_left.validate_leaders()
-            except Exception as e:
-                print(f"⚠️ {p_left.name} leader attachment validation failed: {e}")
-                return
-            _mark_attached_leaders_handled(a_left)
-            modal.left_done = True
-            _maybe_advance_from_leaders()
-
-        def _right_done():
-            try:
-                a_right.validate_leaders()
-            except Exception as e:
-                print(f"⚠️ {p_right.name} leader attachment validation failed: {e}")
-                return
-            _mark_attached_leaders_handled(a_right)
-            modal.right_done = True
-            _maybe_advance_from_leaders()
-
-        left_leaders.show(_army_units(p_left), on_confirm=_left_done, on_cancel=lambda: None)
-        right_leaders.show(_army_units(p_right), on_confirm=_right_done, on_cancel=lambda: None)
-
-        modal.show()
-        try:
-            self.game_view.dialog_manager.open(modal, modal=True)
-        except Exception:
-            pass
+                self.game_view.dialog_manager.open(modal, modal=True)
+            except Exception:
+                pass
 
         def _show_transports():
             from .dialogs import TransportAssignmentDialog
@@ -5491,6 +5508,137 @@ class SetupPhaseHandler(BasePhaseHandler):
                 self.game_view.dialog_manager.open(m, modal=True)
             except Exception:
                 pass
+
+        def _refresh_army_rule_panel(player_obj) -> None:
+            try:
+                if self.game_view.rule_detail_panel and self.game_view.rule_detail_panel.visible and isinstance(self.game_view._rule_panel_state, dict):
+                    state = self.game_view._rule_panel_state
+                    if state.get("player") is player_obj and state.get("rule_type") == "army":
+                        self.game_view._toggle_rule_panel(player_obj, "army", force_refresh=True)
+            except Exception:
+                pass
+
+        def _needs_plague_selection(player_obj) -> bool:
+            try:
+                army = player_obj.get_army()
+            except Exception:
+                army = None
+            if army is None:
+                return False
+            try:
+                mgr = getattr(army, "nurgles_gift", None)
+            except Exception:
+                mgr = None
+            if mgr is None:
+                return False
+            if not getattr(mgr, "_army_has_gift", lambda: False)():
+                return False
+            if getattr(mgr, "active_plague_key", None):
+                return False
+            return True
+
+        def _show_plague_selection():
+            needs_left = _needs_plague_selection(p_left)
+            needs_right = _needs_plague_selection(p_right)
+            if not (needs_left or needs_right):
+                _show_leaders()
+                return
+
+            from .dialogs import NurglesGiftPlagueDialog
+            try:
+                from ..classes.nurgles_gift import DEFAULT_PLAGUES
+                options = list(DEFAULT_PLAGUES)
+            except Exception:
+                options = []
+
+            def _apply_choice(army, plague):
+                if army is None:
+                    return
+                try:
+                    mgr = getattr(army, "nurgles_gift", None)
+                except Exception:
+                    mgr = None
+                if mgr is None or getattr(mgr, "active_plague_key", None):
+                    return
+                mgr.active_plague_key = getattr(plague, "key", None)
+
+            if needs_left and needs_right:
+                ldlg = NurglesGiftPlagueDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+                rdlg = NurglesGiftPlagueDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+                ldlg.title = f"Nurgle's Gift - {p_left.name}"
+                rdlg.title = f"Nurgle's Gift - {p_right.name}"
+
+                m = SideBySideModal(self.game_view.screen.get_width(), self.game_view.screen.get_height(), ldlg, rdlg)
+                _position_two(ldlg, rdlg)
+
+                def _maybe_advance():
+                    if m.left_done and m.right_done:
+                        m.hide()
+                        _show_leaders()
+
+                def _l_done(plague):
+                    _apply_choice(a_left, plague)
+                    _refresh_army_rule_panel(p_left)
+                    m.left_done = True
+                    _maybe_advance()
+
+                def _r_done(plague):
+                    _apply_choice(a_right, plague)
+                    _refresh_army_rule_panel(p_right)
+                    m.right_done = True
+                    _maybe_advance()
+
+                def _l_cancel():
+                    if options:
+                        _apply_choice(a_left, options[0])
+                        _refresh_army_rule_panel(p_left)
+                    m.left_done = True
+                    _maybe_advance()
+
+                def _r_cancel():
+                    if options:
+                        _apply_choice(a_right, options[0])
+                        _refresh_army_rule_panel(p_right)
+                    m.right_done = True
+                    _maybe_advance()
+
+                ldlg.show(options=options, on_confirm=_l_done, on_cancel=_l_cancel)
+                rdlg.show(options=options, on_confirm=_r_done, on_cancel=_r_cancel)
+                m.show()
+                try:
+                    self.game_view.dialog_manager.open(m, modal=True)
+                except Exception:
+                    pass
+                return
+
+            dlg = NurglesGiftPlagueDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+            if needs_left:
+                dlg.title = f"Nurgle's Gift - {p_left.name}"
+                target_player = p_left
+                target_army = a_left
+            else:
+                dlg.title = f"Nurgle's Gift - {p_right.name}"
+                target_player = p_right
+                target_army = a_right
+
+            def _done(plague):
+                _apply_choice(target_army, plague)
+                _refresh_army_rule_panel(target_player)
+                _show_leaders()
+
+            def _cancel():
+                if options:
+                    _apply_choice(target_army, options[0])
+                    _refresh_army_rule_panel(target_player)
+                _show_leaders()
+
+            dlg.show(options=options, on_confirm=_done, on_cancel=_cancel)
+            try:
+                self.game_view.dialog_manager.open(dlg, modal=True)
+            except Exception:
+                pass
+
+        _show_plague_selection()
 
     
     def get_allowed_actions(self) -> List[str]:

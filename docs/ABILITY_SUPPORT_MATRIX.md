@@ -34,7 +34,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 - Dark Pacts (Supported)
 - Supreme Commander (must be Warlord) (Supported)
 - Pact of Blood (WE): disallow Blood Legions Army Faction (Supported)
-- Nurgle's Gift (Aura): baseline Contagion Range debuff (-1 Toughness to enemies within 3/6/9") (Partial)
+- Nurgle's Gift (Aura): Contagion Range 3/6/9" with plagues (Skullsquirm -1 hit, Rattlejoint -1 save, Scabrous -1 M/Ld/OC, OC min 1) (Supported)
 - Blessings of Khorne (World Eaters) (Supported)
 - Favoured of Khorne (Blessings rerolls) (Supported)
 - Idol of the Blessed Blood (Blessings +1D6) (Supported)
@@ -135,14 +135,14 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Blessings of Khorne | `000008428` | 1 | 1 | **Supported** | Blessings of Khorne |
 | Cabal of Sorcerers | `000008424` | 1 | 1 | **Partial** | Lone Operative (extra conditions not fully modeled) |
 | Dark Pacts | `000008359` | 103 | 103 | **Supported** | Dark Pacts |
-| Nurgle’s Gift (Aura) | `000008396` | 1 | 1 | **Partial** | Nurgle's Gift (Aura): baseline Contagion Range debuff (-1 Toughness to enemies within 3/6/9") |
+| Nurgle’s Gift (Aura) | `000008396` | 1 | 1 | **Supported** | Contagion Range 3/6/9"; plagues: Skullsquirm (-1 hit), Rattlejoint (-1 save), Scabrous (-1 M/Ld/OC, OC min 1). |
 | Thrill Seekers | `000009994` | 1 | 1 | **Supported** | Thrill Seekers |
 
 ### Death Guard (`DG`) - `https://wahapedia.ru/wh40k10ed/factions/death-guard`
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Nurgle’s Gift (Aura) | `000008396` | 65 | 65 | **Partial** | Nurgle's Gift (Aura): baseline Contagion Range debuff (-1 Toughness to enemies within 3/6/9") |
+| Nurgle’s Gift (Aura) | `000008396` | 65 | 65 | **Supported** | Contagion Range 3/6/9"; plagues: Skullsquirm (-1 hit), Rattlejoint (-1 save), Scabrous (-1 M/Ld/OC, OC min 1). |
 | Pact of Decay | `000010120` | 6 | 6 | **Supported** | Pact of Decay |
 
 ### Drukhari (`DRU`) - `https://wahapedia.ru/wh40k10ed/factions/drukhari`

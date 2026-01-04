@@ -4497,6 +4497,22 @@ class Game:
             except Exception as e:
                 raise RuntimeError(f"Leader attachment validation failed for {p.name}: {e}")
 
+        # Nurgle's Gift (Aura): select a Plague during Declare Battle Formations.
+        for p in list(getattr(self, "players", []) or []):
+            army = getattr(p, "get_army", lambda: None)()
+            if army is None:
+                continue
+            try:
+                mgr = getattr(army, "nurgles_gift", None)
+            except Exception:
+                mgr = None
+            if mgr is None:
+                continue
+            try:
+                mgr.on_declare_battle_formations_start(game=self)
+            except Exception:
+                pass
+
         print("✅ Battle formations declared")
     
     def execute_deploy_armies_phase(self, manual_phases: bool = False, decision_makers: dict = None) -> None:

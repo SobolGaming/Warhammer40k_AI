@@ -316,11 +316,36 @@ class Unit:
             except Exception:
                 pass
 
+        afflicted_plague = None
+        try:
+            from .nurgles_gift import (
+                NurglesGiftManager,
+                PLAGUE_RATTLEJOINT,
+                PLAGUE_SCABROUS,
+            )
+            afflicted_plague = NurglesGiftManager.get_afflicted_plague_for_unit(self, game_map=game_map)
+        except Exception:
+            afflicted_plague = None
+
+        scabrous_oc_floor = False
+        if afflicted_plague is not None:
+            if ckey == "save" and afflicted_plague.key == PLAGUE_RATTLEJOINT.key:
+                mods.append(Modifier(ModifierOp.ADD, 1, source="nurgles_gift:rattlejoint_ague"))
+            elif ckey == "movement" and afflicted_plague.key == PLAGUE_SCABROUS.key:
+                mods.append(Modifier(ModifierOp.ADD, -1, source="nurgles_gift:scabrous_soulrot"))
+            elif ckey == "leadership" and afflicted_plague.key == PLAGUE_SCABROUS.key:
+                mods.append(Modifier(ModifierOp.ADD, 1, source="nurgles_gift:scabrous_soulrot"))
+            elif ckey == "objective_control" and afflicted_plague.key == PLAGUE_SCABROUS.key:
+                mods.append(Modifier(ModifierOp.ADD, -1, source="nurgles_gift:scabrous_soulrot"))
+                scabrous_oc_floor = True
+
         # Apply core ordering + rounding.
         interim, dbg = apply_numeric_modifiers(int(base_val), mods, base_raw=base_raw)
 
         # Damage 0 exception handled at weapon level, not model level.
         final = apply_characteristic_caps(ckey, interim, base_raw=base_raw)
+        if scabrous_oc_floor and int(base_val) > 0 and final < 1:
+            final = 1
         return int(final)
 
     def _apply_damaged_profile_effects(self, profile_text: str) -> None:
