@@ -32,7 +32,16 @@ class MockDatasheet:
         self.loadout = "This model is equipped with: nothing"
 
 
-def _setup_game(detachment_name: str):
+def _setup_game(
+    detachment_name: str,
+    *,
+    include_dark_master_source: bool = False,
+    include_greater: bool = False,
+    belakor_position=(20.0, 12.0, 0.0),
+    arriver_name: str = "Arriver",
+    arriver_abilities=None,
+    arriver_keywords=None,
+):
     bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(bf)
     game.turn = 2
@@ -48,12 +57,17 @@ def _setup_game(detachment_name: str):
     p1.set_army(a1)
     p2.set_army(a2)
 
-    belakor = Unit(MockDatasheet("Be'lakor", abilities=["The Dark Master (Aura)"], keywords=["LEGIONES DAEMONICA"]))
-    a1.add_unit(belakor)
-    belakor.deployed = True
-    belakor.models[0].set_location(20.0, 15.5, 0.0, 0.0)
+    if include_dark_master_source:
+        belakor = Unit(MockDatasheet("Be'lakor", abilities=["The Dark Master (Aura)"], keywords=["LEGIONES DAEMONICA"]))
+        a1.add_unit(belakor)
+        belakor.deployed = True
+        belakor.models[0].set_location(belakor_position[0], belakor_position[1], belakor_position[2], 0.0)
 
-    arriver = Unit(MockDatasheet("Arriver", keywords=["LEGIONES DAEMONICA"]))
+    if arriver_keywords is None:
+        arriver_keywords = ["LEGIONES DAEMONICA"]
+    if arriver_abilities is None:
+        arriver_abilities = []
+    arriver = Unit(MockDatasheet(arriver_name, abilities=arriver_abilities, keywords=arriver_keywords))
     a1.add_unit(arriver)
     arriver.reserve_status = "reserves"
     arriver.deployed = False
@@ -64,12 +78,84 @@ def _setup_game(detachment_name: str):
     enemy.deployed = True
     enemy.models[0].set_location(12.0, 10.0, 8.0, 0.0)
 
-    game.map.units = [belakor, enemy]
+    game.map.units = [enemy]
+
+    if include_greater:
+        greater = Unit(MockDatasheet("Bloodthirster", keywords=["LEGIONES DAEMONICA", "KHORNE"]))
+        a1.add_unit(greater)
+        greater.deployed = True
+        greater.models[0].set_location(18.0, 10.0, 0.0, 0.0)
+        game.map.units.append(greater)
+
+    if include_dark_master_source:
+        game.map.units.append(belakor)
+
     return game, arriver
 
 
-def test_warp_rifts_allows_6_horizontal_in_shadow():
+def test_warp_rifts_allows_6_horizontal_in_shadow_zone(monkeypatch):
     game, unit = _setup_game("Daemonic Incursion")
+    monkeypatch.setattr(
+        game,
+        "is_position_wholly_in_deployment_zone",
+        lambda _x, _y, _base, player_name: player_name == "P1",
+    )
+    position = (20.0, 10.0, 0.0)
+    assert game.can_place_unit_arriving_from_reserves(unit, position) is True
+
+
+def test_warp_rifts_does_not_allow_6_with_dark_master_self(monkeypatch):
+    game, unit = _setup_game(
+        "Daemonic Incursion",
+        arriver_name="Be'lakor",
+        arriver_abilities=["The Dark Master (Aura)"],
+    )
+    monkeypatch.setattr(
+        game,
+        "is_position_wholly_in_deployment_zone",
+        lambda _x, _y, _base, _player_name: False,
+    )
+    position = (20.0, 10.0, 0.0)
+    assert game.can_place_unit_arriving_from_reserves(unit, position) is False
+
+
+def test_warp_rifts_allows_6_with_dark_master_other_unit(monkeypatch):
+    game, unit = _setup_game("Daemonic Incursion", include_dark_master_source=True)
+    monkeypatch.setattr(
+        game,
+        "is_position_wholly_in_deployment_zone",
+        lambda _x, _y, _base, _player_name: False,
+    )
+    position = (20.0, 10.0, 0.0)
+    assert game.can_place_unit_arriving_from_reserves(unit, position) is True
+
+
+def test_warp_rifts_does_not_allow_6_with_greater_daemon_self(monkeypatch):
+    game, unit = _setup_game(
+        "Daemonic Incursion",
+        arriver_name="Bloodthirster",
+        arriver_keywords=["LEGIONES DAEMONICA", "KHORNE"],
+    )
+    monkeypatch.setattr(
+        game,
+        "is_position_wholly_in_deployment_zone",
+        lambda _x, _y, _base, _player_name: False,
+    )
+    position = (20.0, 10.0, 0.0)
+    assert game.can_place_unit_arriving_from_reserves(unit, position) is False
+
+
+def test_warp_rifts_allows_6_with_greater_daemon_other_unit(monkeypatch):
+    game, unit = _setup_game(
+        "Daemonic Incursion",
+        include_greater=True,
+        arriver_keywords=["LEGIONES DAEMONICA", "KHORNE"],
+    )
+    monkeypatch.setattr(
+        game,
+        "is_position_wholly_in_deployment_zone",
+        lambda _x, _y, _base, _player_name: False,
+    )
     position = (20.0, 10.0, 0.0)
     assert game.can_place_unit_arriving_from_reserves(unit, position) is True
 

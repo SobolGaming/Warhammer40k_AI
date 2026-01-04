@@ -2197,6 +2197,57 @@ class Game:
                 return False
         return True
 
+    def _unit_wholly_within_shadow_of_chaos_zones(self, unit: Unit) -> bool:
+        """
+        Shadow-of-Chaos check that only uses zone control (deployment zones / No Man's Land),
+        excluding aura-based sources like The Dark Master.
+        """
+        try:
+            player = unit.get_parent_army().player
+        except Exception:
+            return False
+        zones = self._shadow_of_chaos_zones(player)
+        try:
+            opponent = next((p for p in (self.players or []) if p is not player), None)
+        except Exception:
+            opponent = None
+        for model in list(getattr(unit, "models", []) or []):
+            try:
+                if not getattr(model, "is_alive", True):
+                    continue
+            except Exception:
+                continue
+            try:
+                x, y, _z, _f = model.get_location()
+            except Exception:
+                try:
+                    x, y, _z = model.get_location()
+                except Exception:
+                    continue
+            base = getattr(model, "model_base", None)
+            if base is None:
+                continue
+            in_own = False
+            in_enemy = False
+            try:
+                in_own = self.is_position_wholly_in_deployment_zone(float(x), float(y), base, player.name)
+            except Exception:
+                in_own = False
+            try:
+                if opponent is not None:
+                    in_enemy = self.is_position_wholly_in_deployment_zone(float(x), float(y), base, opponent.name)
+            except Exception:
+                in_enemy = False
+            if in_own:
+                zone = "own"
+            elif in_enemy:
+                zone = "enemy"
+            else:
+                zone = "nml"
+            if zone not in zones:
+                return False
+        return True
+
     def _warp_rifts_min_distance(self, unit: Unit) -> float:
         try:
             if unit is None or not unit.has_any_keyword("LEGIONES DAEMONICA"):
@@ -2215,73 +2266,56 @@ class Game:
             return 9.0
 
         try:
-            if self._unit_wholly_within_shadow_of_chaos(unit):
+            if self._unit_wholly_within_shadow_of_chaos_zones(unit):
                 return 6.0
         except Exception:
             pass
 
-        # Within 6" of listed Greater Daemons with a shared god keyword.
-        try:
-            from ..utility.aura_utils import unit_wholly_within_range_of_unit
-        except Exception:
-            unit_wholly_within_range_of_unit = None
-
-        if unit_wholly_within_range_of_unit is None:
-            return 9.0
-
-        greater_names = {
-            "BLOODTHIRSTER",
-            "GREAT UNCLEAN ONE",
-            "KAIROS FATEWEAVER",
-            "KEEPER OF SECRETS",
-            "LORD OF CHANGE",
-            "ROTIGUS",
-            "SHALAXI HELBANE",
-            "SKARBRAND",
-        }
-        god_keywords = {"KHORNE", "TZEENTCH", "NURGLE", "SLAANESH"}
-
         try:
             army = unit.get_parent_army()
-            friendly_units = list(getattr(army, "units", []) or [])
         except Exception:
-            friendly_units = []
+            army = None
 
-        for friend in friendly_units:
-            if friend is unit:
-                continue
+        # Warp Rifts cannot bootstrap off the arriving unit's own aura.
+        try:
+            from .shadow_of_chaos import ShadowOfChaosManager
+            from ..utility.aura_utils import unit_wholly_within_range_of_unit
+        except Exception:
+            ShadowOfChaosManager = None
+            unit_wholly_within_range_of_unit = None
+
+        if army is not None and ShadowOfChaosManager is not None and unit_wholly_within_range_of_unit is not None:
             try:
-                if not friend.is_alive() or not friend.deployed:
-                    continue
+                for source in ShadowOfChaosManager._army_dark_master_units(army):
+                    if source is unit:
+                        continue
+                    if unit_wholly_within_range_of_unit(source, unit, 6.0, use_attached_aggregate=True):
+                        return 6.0
             except Exception:
-                continue
-            name = str(getattr(friend, "name", "") or "").replace("’", "'").upper()
-            has_name = any(n in name for n in greater_names)
-            has_kw = False
-            for n in greater_names:
-                try:
-                    if friend.has_any_keyword(n):
-                        has_kw = True
-                        break
-                except Exception:
-                    continue
-            if not (has_name or has_kw):
-                continue
-            shared = False
-            for kw in god_keywords:
-                try:
-                    if unit.has_any_keyword(kw) and friend.has_any_keyword(kw):
-                        shared = True
-                        break
-                except Exception:
-                    continue
-            if not shared:
-                continue
+                pass
+
+            god_keywords = {"KHORNE", "TZEENTCH", "NURGLE", "SLAANESH"}
             try:
-                if unit_wholly_within_range_of_unit(friend, unit, 6.0):
-                    return 6.0
+                for source in ShadowOfChaosManager._army_greater_daemon_units(army):
+                    if source is unit:
+                        continue
+                    shared = False
+                    for kw in god_keywords:
+                        try:
+                            if unit.has_any_keyword(kw) and source.has_any_keyword(kw):
+                                shared = True
+                                break
+                        except Exception:
+                            continue
+                    if not shared:
+                        continue
+                    try:
+                        if unit_wholly_within_range_of_unit(source, unit, 6.0, use_attached_aggregate=True):
+                            return 6.0
+                    except Exception:
+                        continue
             except Exception:
-                continue
+                pass
 
         return 9.0
     
