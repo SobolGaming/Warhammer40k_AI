@@ -556,7 +556,7 @@ def unified_pathfinding(model: 'Model', target: Tuple[float, float, float], move
     collision_trees = build_collision_trees(moving_unit, movement_type, game_map, model, moved_models_in_unit, max_distance)
 
     # Get validation rules for this movement type
-    validation_rules = get_validation_rules(movement_type, target_unit)
+    validation_rules = get_validation_rules(movement_type, target_unit, moving_unit=moving_unit)
 
     # Special case for CHARGE: Only one model in the unit must end within engagement range.
     # If any model in the charging unit is already within engagement range of the target unit,
@@ -804,7 +804,7 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
 
 
 
-def get_validation_rules(movement_type: MovementType, target_unit: 'Unit' = None) -> dict:
+def get_validation_rules(movement_type: MovementType, target_unit: 'Unit' = None, *, moving_unit: 'Unit' = None) -> dict:
     """
     Get validation rules for specific movement types.
 
@@ -843,6 +843,14 @@ def get_validation_rules(movement_type: MovementType, target_unit: 'Unit' = None
             # Pathfinding is discretized; allow a tiny epsilon so an intended 3.0" move doesn't get rejected as 3.04".
             'distance_tolerance': 0.05,
         })
+        try:
+            if moving_unit is not None:
+                army = moving_unit.get_parent_army()
+                mgr = getattr(army, "templar_vows", None) if army is not None else None
+                if mgr is not None and mgr.use_closest_enemy_unit_rule(moving_unit):
+                    base_rules['closest_enemy_unit'] = True
+        except Exception:
+            pass
 
     elif movement_type == MovementType.CONSOLIDATE:
         from .constants import CONSOLIDATE_DISTANCE
@@ -855,6 +863,14 @@ def get_validation_rules(movement_type: MovementType, target_unit: 'Unit' = None
             # Pathfinding is discretized; allow a tiny epsilon so an intended 3.0" move doesn't get rejected as 3.04".
             'distance_tolerance': 0.05,
         })
+        try:
+            if moving_unit is not None:
+                army = moving_unit.get_parent_army()
+                mgr = getattr(army, "templar_vows", None) if army is not None else None
+                if mgr is not None and mgr.use_closest_enemy_unit_rule(moving_unit):
+                    base_rules['closest_enemy_unit'] = True
+        except Exception:
+            pass
 
     elif movement_type == MovementType.FALL_BACK:
         base_rules.update({
@@ -1649,95 +1665,162 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
         from .constants import PILE_IN_DISTANCE
         max_relevant_distance = ENGAGEMENT_RANGE_HORIZONTAL + PILE_IN_DISTANCE
         
-        enemy_models = []
-        for unit in game_map.units:
-            if unit.faction == model.parent_unit.faction or not unit.is_alive() or not unit.deployed:
-                continue
-            for enemy_model in unit.models:
-                if enemy_model.is_alive:
-                    # Optimization: exclude enemies too far away to matter for pile-in
-                    from ..utility.aura_utils import distance_between_bases_3d
-                    current_distance = float(distance_between_bases_3d(current_base, enemy_model.model_base))
-                    if current_distance <= max_relevant_distance:
-                        enemy_models.append(enemy_model)
-                    # Debug: show excluded enemies
-                    else:
-                        logger.debug(
-                            "Excluding %s from pile-in validation - too far away (%.2f > %.2f)",
-                            getattr(enemy_model, "name", "?"),
-                            current_distance,
-                            max_relevant_distance,
-                        )
-        
-        if not enemy_models:
-            return {'valid': False, 'reason': 'No enemy models within pile-in range for validation'}
-        
-        logger.debug(
-            "Pile-in validation considering %s enemy models within %.2f range",
-            len(enemy_models),
-            max_relevant_distance,
-        )
-        
-        # Find the closest enemy model to current position
-        closest_enemy = None
-        closest_distance = float('inf')
-        for enemy_model in enemy_models:
-            from ..utility.aura_utils import distance_between_bases_3d
-            current_distance = float(distance_between_bases_3d(current_base, enemy_model.model_base))
-            if current_distance < closest_distance:
-                closest_distance = current_distance
-                closest_enemy = enemy_model
-        
-        if not closest_enemy:
-            return {'valid': False, 'reason': 'No closest enemy model found for pile-in validation'}
-        
-        logger.debug(
-            "Closest enemy to %s is %s at %.2f",
-            getattr(model, "name", "?"),
-            getattr(closest_enemy, "name", "?"),
-            closest_distance,
-        )
-        
-        # Check if new position is closer to the CLOSEST enemy model
-        from ..utility.aura_utils import distance_between_bases_3d
-        new_distance_to_closest = float(distance_between_bases_3d(new_base, closest_enemy.model_base))
-        
-        if new_distance_to_closest >= closest_distance:
-            return {'valid': False, 'reason': f'Pile-in must end closer to closest enemy ({closest_enemy.name}): {new_distance_to_closest:.2f}" ≥ {closest_distance:.2f}"'}
-        
-        logger.debug(
-            "Pile-in validation - %s moved closer to %s: %.2f -> %.2f",
-            getattr(model, "name", "?"),
-            getattr(closest_enemy, "name", "?"),
-            closest_distance,
-            new_distance_to_closest,
-        )
-        
-        # Check if base-to-base contact is possible and required
-        from .constants import BASE_CONTACT_EPSILON
-        if validation_rules.get('prefer_base_contact', False):
-            # Calculate if it's possible to reach base contact with the closest enemy within pile-in distance
-            enemy_position = closest_enemy.get_location()
-            if enemy_position:
-                # Distance from model's current position to closest point on enemy base
-                max_distance_to_enemy = closest_distance
-                pile_in_distance = validation_rules.get('max_distance_override', PILE_IN_DISTANCE)
-                
-                # If base contact is achievable within pile-in distance, require it
-                if max_distance_to_enemy <= pile_in_distance:
-                    if new_distance_to_closest > BASE_CONTACT_EPSILON:
-                        return {'valid': False, 'reason': f'Pile-in must end in base contact with closest enemy ({closest_enemy.name}) when possible'}
-                    logger.debug(
-                        "Pile-in achieved required base contact with %s (distance=%.3f)",
-                        getattr(closest_enemy, "name", "?"),
-                        new_distance_to_closest,
-                    )
+        use_unit = bool(validation_rules.get('closest_enemy_unit', False))
+
+        if use_unit:
+            enemy_units = []
+            for unit in game_map.units:
+                if unit.faction == model.parent_unit.faction or not unit.is_alive() or not unit.deployed:
+                    continue
+                try:
+                    unit_models = [m for m in unit.models if getattr(m, "is_alive", False)]
+                except Exception:
+                    unit_models = []
+                if not unit_models:
+                    continue
+                from ..utility.aura_utils import distance_between_bases_3d
+                current_distance = min(float(distance_between_bases_3d(current_base, m.model_base)) for m in unit_models)
+                if current_distance <= max_relevant_distance:
+                    enemy_units.append((unit, current_distance, unit_models))
                 else:
                     logger.debug(
-                        "Base contact not required - closest enemy too far (%.2f > %.2f)",
-                        max_distance_to_enemy,
-                        pile_in_distance,
+                        "Excluding %s from pile-in validation - too far away (%.2f > %.2f)",
+                        getattr(unit, "name", "?"),
+                        current_distance,
+                        max_relevant_distance,
                     )
+
+            if not enemy_units:
+                return {'valid': False, 'reason': 'No enemy units within pile-in range for validation'}
+
+            enemy_units.sort(key=lambda entry: entry[1])
+            closest_unit, closest_distance, closest_models = enemy_units[0]
+
+            closest_model = None
+            closest_model_dist = float('inf')
+            from ..utility.aura_utils import distance_between_bases_3d
+            for em in closest_models:
+                d = float(distance_between_bases_3d(current_base, em.model_base))
+                if d < closest_model_dist:
+                    closest_model_dist = d
+                    closest_model = em
+
+            if closest_model is None:
+                return {'valid': False, 'reason': 'No closest enemy model found for pile-in validation'}
+
+            new_distance_to_unit = min(float(distance_between_bases_3d(new_base, em.model_base)) for em in closest_models)
+            if new_distance_to_unit >= closest_distance:
+                return {'valid': False, 'reason': f'Pile-in must end closer to closest enemy unit ({closest_unit.name}): {new_distance_to_unit:.2f}" ≥ {closest_distance:.2f}"'}
+
+            logger.debug(
+                "Pile-in validation - %s moved closer to %s: %.2f -> %.2f",
+                getattr(model, "name", "?"),
+                getattr(closest_unit, "name", "?"),
+                closest_distance,
+                new_distance_to_unit,
+            )
+
+            from .constants import BASE_CONTACT_EPSILON
+            if validation_rules.get('prefer_base_contact', False):
+                pile_in_distance = validation_rules.get('max_distance_override', PILE_IN_DISTANCE)
+                if closest_distance <= pile_in_distance:
+                    if new_distance_to_unit > BASE_CONTACT_EPSILON:
+                        return {'valid': False, 'reason': f'Pile-in must end in base contact with closest enemy unit ({closest_unit.name}) when possible'}
+                    logger.debug(
+                        "Pile-in achieved required base contact with %s (distance=%.3f)",
+                        getattr(closest_unit, "name", "?"),
+                        new_distance_to_unit,
+                    )
+        else:
+            enemy_models = []
+            for unit in game_map.units:
+                if unit.faction == model.parent_unit.faction or not unit.is_alive() or not unit.deployed:
+                    continue
+                for enemy_model in unit.models:
+                    if enemy_model.is_alive:
+                        # Optimization: exclude enemies too far away to matter for pile-in
+                        from ..utility.aura_utils import distance_between_bases_3d
+                        current_distance = float(distance_between_bases_3d(current_base, enemy_model.model_base))
+                        if current_distance <= max_relevant_distance:
+                            enemy_models.append(enemy_model)
+                        # Debug: show excluded enemies
+                        else:
+                            logger.debug(
+                                "Excluding %s from pile-in validation - too far away (%.2f > %.2f)",
+                                getattr(enemy_model, "name", "?"),
+                                current_distance,
+                                max_relevant_distance,
+                            )
+
+            if not enemy_models:
+                return {'valid': False, 'reason': 'No enemy models within pile-in range for validation'}
+
+            logger.debug(
+                "Pile-in validation considering %s enemy models within %.2f range",
+                len(enemy_models),
+                max_relevant_distance,
+            )
+
+            # Find the closest enemy model to current position
+            closest_enemy = None
+            closest_distance = float('inf')
+            for enemy_model in enemy_models:
+                from ..utility.aura_utils import distance_between_bases_3d
+                current_distance = float(distance_between_bases_3d(current_base, enemy_model.model_base))
+                if current_distance < closest_distance:
+                    closest_distance = current_distance
+                    closest_enemy = enemy_model
+
+            if not closest_enemy:
+                return {'valid': False, 'reason': 'No closest enemy model found for pile-in validation'}
+
+            logger.debug(
+                "Closest enemy to %s is %s at %.2f",
+                getattr(model, "name", "?"),
+                getattr(closest_enemy, "name", "?"),
+                closest_distance,
+            )
+
+            # Check if new position is closer to the CLOSEST enemy model
+            from ..utility.aura_utils import distance_between_bases_3d
+            new_distance_to_closest = float(distance_between_bases_3d(new_base, closest_enemy.model_base))
+
+            if new_distance_to_closest >= closest_distance:
+                return {'valid': False, 'reason': f'Pile-in must end closer to closest enemy ({closest_enemy.name}): {new_distance_to_closest:.2f}" ≥ {closest_distance:.2f}"'}
+
+            logger.debug(
+                "Pile-in validation - %s moved closer to %s: %.2f -> %.2f",
+                getattr(model, "name", "?"),
+                getattr(closest_enemy, "name", "?"),
+                closest_distance,
+                new_distance_to_closest,
+            )
+
+            # Check if base-to-base contact is possible and required
+            from .constants import BASE_CONTACT_EPSILON
+            if validation_rules.get('prefer_base_contact', False):
+                # Calculate if it's possible to reach base contact with the closest enemy within pile-in distance
+                enemy_position = closest_enemy.get_location()
+                if enemy_position:
+                    # Distance from model's current position to closest point on enemy base
+                    max_distance_to_enemy = closest_distance
+                    pile_in_distance = validation_rules.get('max_distance_override', PILE_IN_DISTANCE)
+
+                    # If base contact is achievable within pile-in distance, require it
+                    if max_distance_to_enemy <= pile_in_distance:
+                        if new_distance_to_closest > BASE_CONTACT_EPSILON:
+                            return {'valid': False, 'reason': f'Pile-in must end in base contact with closest enemy ({closest_enemy.name}) when possible'}
+                        logger.debug(
+                            "Pile-in achieved required base contact with %s (distance=%.3f)",
+                            getattr(closest_enemy, "name", "?"),
+                            new_distance_to_closest,
+                        )
+                    else:
+                        logger.debug(
+                            "Base contact not required - closest enemy too far (%.2f > %.2f)",
+                            max_distance_to_enemy,
+                            pile_in_distance,
+                        )
 
     if validation_rules.get('must_end_closer_to_enemies_or_objectives', False):
         # Consolidate validation (10th edition):
@@ -1784,47 +1867,96 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
                 if dist <= max_relevant_distance:
                     enemy_models.append(enemy_model)
 
+        use_unit = bool(validation_rules.get('closest_enemy_unit', False))
+
         if enemy_models:
-            # Closest enemy model by edge-to-edge distance
-            closest_enemy = None
-            closest_distance = float('inf')
-            for em in enemy_models:
-                from ..utility.aura_utils import distance_between_bases_3d
-                d = float(distance_between_bases_3d(current_base, em.model_base))
-                if d < closest_distance:
-                    closest_distance = d
-                    closest_enemy = em
+            if use_unit:
+                enemy_units = []
+                for unit in getattr(game_map, 'units', []) or []:
+                    if unit.faction == model.parent_unit.faction or not unit.is_alive() or not unit.deployed:
+                        continue
+                    try:
+                        unit_models = [m for m in unit.models if getattr(m, "is_alive", False)]
+                    except Exception:
+                        unit_models = []
+                    if not unit_models:
+                        continue
+                    from ..utility.aura_utils import distance_between_bases_3d
+                    min_dist = min(float(distance_between_bases_3d(current_base, m.model_base)) for m in unit_models)
+                    if min_dist <= max_relevant_distance:
+                        enemy_units.append((unit, min_dist, unit_models))
 
-            if closest_enemy is not None:
-                # If engagement range is achievable (based on distance), require ending in engagement range
-                engagement_possible = closest_distance <= max_relevant_distance
-                in_engagement = _is_in_engagement_range_of_any_enemy(enemy_models)
-                if engagement_possible and not in_engagement:
-                    return {
-                        'valid': False,
-                        'reason': 'Consolidate must end within engagement range of an enemy unit when possible'
-                    }
+                if enemy_units:
+                    enemy_units.sort(key=lambda entry: entry[1])
+                    closest_unit, closest_distance, closest_models = enemy_units[0]
 
-                # Must end closer to the closest enemy model (even if not reaching engagement)
-                from ..utility.aura_utils import distance_between_bases_3d
-                new_distance_to_closest = float(distance_between_bases_3d(new_base, closest_enemy.model_base))
-
-                if new_distance_to_closest >= closest_distance:
-                    return {
-                        'valid': False,
-                        'reason': f'Consolidate must end closer to closest enemy ({closest_enemy.name}): {new_distance_to_closest:.2f}" ≥ {closest_distance:.2f}"'
-                    }
-
-                # Prefer base contact if achievable within consolidate distance
-                if validation_rules.get('prefer_base_contact', False):
-                    if closest_distance <= CONSOLIDATE_DISTANCE and new_distance_to_closest > BASE_CONTACT_EPSILON:
+                    engagement_possible = closest_distance <= max_relevant_distance
+                    in_engagement = _is_in_engagement_range_of_any_enemy(enemy_models)
+                    if engagement_possible and not in_engagement:
                         return {
                             'valid': False,
-                            'reason': f'Consolidate must end in base contact with closest enemy ({closest_enemy.name}) when possible'
+                            'reason': 'Consolidate must end within engagement range of an enemy unit when possible'
                         }
 
-                # If we got here, consolidate is valid via enemy interaction
-                return {'valid': True, 'reason': 'Valid final position'}
+                    from ..utility.aura_utils import distance_between_bases_3d
+                    new_distance_to_unit = min(float(distance_between_bases_3d(new_base, em.model_base)) for em in closest_models)
+
+                    if new_distance_to_unit >= closest_distance:
+                        return {
+                            'valid': False,
+                            'reason': f'Consolidate must end closer to closest enemy unit ({closest_unit.name}): {new_distance_to_unit:.2f}" ≥ {closest_distance:.2f}"'
+                        }
+
+                    if validation_rules.get('prefer_base_contact', False):
+                        if closest_distance <= CONSOLIDATE_DISTANCE and new_distance_to_unit > BASE_CONTACT_EPSILON:
+                            return {
+                                'valid': False,
+                                'reason': f'Consolidate must end in base contact with closest enemy unit ({closest_unit.name}) when possible'
+                            }
+
+                    return {'valid': True, 'reason': 'Valid final position'}
+
+            if not use_unit:
+                # Closest enemy model by edge-to-edge distance
+                closest_enemy = None
+                closest_distance = float('inf')
+                for em in enemy_models:
+                    from ..utility.aura_utils import distance_between_bases_3d
+                    d = float(distance_between_bases_3d(current_base, em.model_base))
+                    if d < closest_distance:
+                        closest_distance = d
+                        closest_enemy = em
+
+                if closest_enemy is not None:
+                    # If engagement range is achievable (based on distance), require ending in engagement range
+                    engagement_possible = closest_distance <= max_relevant_distance
+                    in_engagement = _is_in_engagement_range_of_any_enemy(enemy_models)
+                    if engagement_possible and not in_engagement:
+                        return {
+                            'valid': False,
+                            'reason': 'Consolidate must end within engagement range of an enemy unit when possible'
+                        }
+
+                    # Must end closer to the closest enemy model (even if not reaching engagement)
+                    from ..utility.aura_utils import distance_between_bases_3d
+                    new_distance_to_closest = float(distance_between_bases_3d(new_base, closest_enemy.model_base))
+
+                    if new_distance_to_closest >= closest_distance:
+                        return {
+                            'valid': False,
+                            'reason': f'Consolidate must end closer to closest enemy ({closest_enemy.name}): {new_distance_to_closest:.2f}" ≥ {closest_distance:.2f}"'
+                        }
+
+                    # Prefer base contact if achievable within consolidate distance
+                    if validation_rules.get('prefer_base_contact', False):
+                        if closest_distance <= CONSOLIDATE_DISTANCE and new_distance_to_closest > BASE_CONTACT_EPSILON:
+                            return {
+                                'valid': False,
+                                'reason': f'Consolidate must end in base contact with closest enemy ({closest_enemy.name}) when possible'
+                            }
+
+                    # If we got here, consolidate is valid via enemy interaction
+                    return {'valid': True, 'reason': 'Valid final position'}
 
         # Enemy engagement not achievable (or no relevant enemies) -> objective fallback
         objectives = getattr(game_map, 'objectives', []) or []

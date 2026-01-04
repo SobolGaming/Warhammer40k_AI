@@ -2348,6 +2348,14 @@ class ObjectivePoint:
         self.is_hazard: bool = False
         # Some primaries can remove objectives (e.g., Scorched Earth, Supply Drop)
         self.removed = False
+        # Sticky control tracking (e.g., Uphold the Honour of the Emperor)
+        self.sticky_controller = None
+        self.sticky_source = None
+
+    def set_sticky_control(self, player, source: str | None = None) -> None:
+        self.sticky_controller = player
+        self.sticky_source = source
+        self.controlling_player = player
 
     def update_control(self, game_state: 'Game') -> None:
         # Determine which player controls the objective based on base overlap
@@ -2357,6 +2365,8 @@ class ObjectivePoint:
         # If removed, always uncontrolled
         if getattr(self, 'removed', False):
             self.controlling_player = None
+            self.sticky_controller = None
+            self.sticky_source = None
             return
         # Create objective area as a circle
         objective_area = Point(self.x, self.y).buffer(self.control_radius)
@@ -2406,13 +2416,37 @@ class ObjectivePoint:
                 self.controlling_player = None
         else:
             self.controlling_player = None
+
+        # Sticky control: retain control unless opponent has greater OC at end of phase.
+        sticky_owner = getattr(self, "sticky_controller", None)
+        if sticky_owner is not None and sticky_owner in player_oc:
+            try:
+                sticky_oc = int(player_oc.get(sticky_owner, 0) or 0)
+            except Exception:
+                sticky_oc = 0
+            opponent_max = 0
+            for player, oc in player_oc.items():
+                if player is sticky_owner:
+                    continue
+                try:
+                    opponent_max = max(opponent_max, int(oc or 0))
+                except Exception:
+                    continue
+            if opponent_max > sticky_oc:
+                # Sticky control broken.
+                self.sticky_controller = None
+                self.sticky_source = None
+            else:
+                # Retain control even if tied or empty.
+                self.controlling_player = sticky_owner
         
         # Debug output
         oc_summary = {player.name: oc for player, oc in player_oc.items() if oc > 0}
         if oc_summary:
             print(f"ObjectivePoint ({self.x:.1f}, {self.y:.1f}) OC values: {oc_summary} -> controlled by {self.controlling_player.name if self.controlling_player else 'None'}")
         else:
-            print(f"ObjectivePoint ({self.x:.1f}, {self.y:.1f}) controlled by None (no models in range)")
+            owner = self.controlling_player.name if self.controlling_player else 'None'
+            print(f"ObjectivePoint ({self.x:.1f}, {self.y:.1f}) controlled by {owner} (no models in range)")
 
 
 class ObjectiveCategory(Enum):

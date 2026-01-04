@@ -4751,6 +4751,13 @@ class Unit:
         """Check if this unit can charge after falling back."""
         if self.has_thrill_seekers():
             return True
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "templar_vows", None) if army is not None else None
+            if mgr is not None and mgr.can_charge_after_fall_back(self):
+                return True
+        except Exception:
+            pass
         return self._has_simple_eligibility_rule([
             "eligible to declare a charge in a turn in which it fell back",
             "eligible to shoot and declare a charge in a turn in which it fell back",

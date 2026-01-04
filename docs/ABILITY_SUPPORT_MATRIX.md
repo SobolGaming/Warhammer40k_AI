@@ -216,7 +216,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Kill Team | `000008519` | 1 | 1 | **Not implemented** |  |
 | Mission Tactics | `000008521` | 10 | 10 | **Not implemented** |  |
 | Oath of Moment | `000008350` | 275 | 275 | **Not implemented** |  |
-| Templar Vows | `000008526` | 19 | 19 | **Partial** | Advance+Charge (exact wording) (extra conditions not fully modeled) |
+| Templar Vows | `000008526` | 19 | 19 | **Supported** | All four vows implemented (charge reroll/precision, melee +1 to wound, charge after fall back, actions after advance + sticky objectives). |
 
 ### Thousand Sons (`TS`) - `https://wahapedia.ru/wh40k10ed/factions/thousand-sons`
 

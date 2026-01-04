@@ -75,6 +75,13 @@ class Army:
             self.battle_focus = BattleFocusManager(self)
         except Exception:
             self.battle_focus = None
+
+        # Space Marines (Black Templars): Templar Vows (safe to attach, no-op if not applicable).
+        try:
+            from .templar_vows import TemplarVowsManager
+            self.templar_vows = TemplarVowsManager(self)
+        except Exception:
+            self.templar_vows = None
     
     def add_unit(self, unit: Unit) -> bool:
         if not self.faction_keyword:
@@ -719,6 +726,13 @@ class Army:
         if mgr is not None:
             mgr.on_battle_round_start(int(battle_round))
         mgr = getattr(self, "battle_focus", None)
+        if mgr is not None:
+            try:
+                game = getattr(getattr(self, "player", None), "game", None)
+            except Exception:
+                game = None
+            mgr.on_battle_round_start(int(battle_round), game=game)
+        mgr = getattr(self, "templar_vows", None)
         if mgr is not None:
             try:
                 game = getattr(getattr(self, "player", None), "game", None)

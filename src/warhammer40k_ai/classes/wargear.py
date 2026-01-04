@@ -594,7 +594,18 @@ class WargearProfile:
             except Exception:
                 precision_from_epic_challenge = False
 
-            if (self.is_precision() or precision_from_epic_challenge) and game_map is not None:
+            precision_from_templar_vows = False
+            try:
+                parent = getattr(self, "parent_wargear", None)
+                if parent is not None and callable(getattr(parent, "is_melee", None)) and parent.is_melee():
+                    army = attacker.parent_unit.get_parent_army()
+                    mgr = getattr(army, "templar_vows", None) if army is not None else None
+                    if mgr is not None and mgr.melee_precision_against(attacker.parent_unit, target):
+                        precision_from_templar_vows = True
+            except Exception:
+                precision_from_templar_vows = False
+
+            if (self.is_precision() or precision_from_epic_challenge or precision_from_templar_vows) and game_map is not None:
                 try:
                     root = target.get_attached_unit_root()
                 except Exception:
@@ -1245,6 +1256,23 @@ class WargearProfile:
                 if charged:
                     dice_modifier += 1
                     wound_result['modifiers'].append("+1 to wound from Lance (charged)")
+        except Exception:
+            pass
+
+        # Templar Vows: Accept Any Challenge, No Matter the Odds.
+        try:
+            is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+            if is_melee:
+                army = attacker.parent_unit.get_parent_army()
+                mgr = getattr(army, "templar_vows", None) if army is not None else None
+                if mgr is not None and mgr.melee_wound_bonus_applies(
+                    attacker.parent_unit,
+                    target,
+                    strength=strength,
+                    target_toughness=target_toughness,
+                ):
+                    dice_modifier += 1
+                    wound_result['modifiers'].append("+1 to wound from Accept Any Challenge")
         except Exception:
             pass
 

@@ -25,6 +25,7 @@ from .hazard_objective_select_dialog import HazardObjectiveSelectDialog
 from .yes_no_dialog import YesNoDialog
 from .quarry_selection_dialog import QuarrySelectionDialog
 from .roll_reroll_dialog import RollRerollDialog
+from .templar_vows_dialog import TemplarVowsDialog
 
 __all__ = [
     'BaseDialog',
@@ -54,4 +55,5 @@ __all__ = [
     'YesNoDialog',
     'QuarrySelectionDialog',
     'RollRerollDialog',
+    'TemplarVowsDialog',
 ] 

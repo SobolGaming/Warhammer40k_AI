@@ -469,6 +469,7 @@ class GameView:
         self.battle_focus_dialog = OverwatchShooterDialog(screen_width, screen_height)
         # Blessings of Khorne dialog (lazy-create only if needed)
         self.blessings_of_khorne_dialog = None
+        self.templar_vows_dialog = None
         # Stratagem interaction helpers
         def _request_secondary_discard(player, game, on_chosen):
             cards = list(getattr(player, 'active_secondaries', []) or [])
@@ -733,6 +734,8 @@ class GameView:
 
         # Blessings of Khorne start-of-battle-round hook
         self._pending_blessings_queue = []
+        # Templar Vows start-of-battle-round hook
+        self._pending_templar_vows_queue = []
         # SLAANESH/DAEMONS (Shalaxi): Monarch of the Hunt quarry selection queue
         self._pending_quarry_queue = []
         try:
@@ -783,6 +786,28 @@ class GameView:
         if queue:
             self._pending_blessings_queue = list(queue)
             self._open_next_blessings_prompt(br)
+
+        # BLACK TEMPLARS: Templar Vows are chosen at the start of the first battle round.
+        if br == 1:
+            queue = []
+            for p in order:
+                try:
+                    if p is None or p.type.name != "HUMAN":
+                        continue
+                    army = p.get_army()
+                    mgr = getattr(army, "templar_vows", None) if army is not None else None
+                    if mgr is None:
+                        continue
+                    if not getattr(mgr, "_army_has_vows", lambda: False)():
+                        continue
+                    if getattr(mgr, "active_vow_key", None):
+                        continue
+                    queue.append(p)
+                except Exception:
+                    continue
+            if queue:
+                self._pending_templar_vows_queue = list(queue)
+                self._open_next_templar_vows_prompt()
 
         # SHALAXI: Monarch of the Hunt triggers at the start of the first battle round.
         if br == 1:
@@ -1889,6 +1914,63 @@ class GameView:
         self.blessings_of_khorne_dialog.show(player=player, game=self.game, army=army, ctx=ctx, on_confirm=_on_confirm)
         try:
             self.dialog_manager.open(self.blessings_of_khorne_dialog, modal=True)
+        except Exception:
+            pass
+
+    def _open_next_templar_vows_prompt(self) -> None:
+        if not self._pending_templar_vows_queue:
+            return
+        player = self._pending_templar_vows_queue.pop(0)
+        army = player.get_army()
+        mgr = getattr(army, "templar_vows", None)
+        if mgr is None:
+            self._open_next_templar_vows_prompt()
+            return
+        if getattr(mgr, "active_vow_key", None):
+            self._open_next_templar_vows_prompt()
+            return
+        if self.templar_vows_dialog is None:
+            try:
+                from .dialogs import TemplarVowsDialog
+                sw, sh = self.screen.get_size()
+                self.templar_vows_dialog = TemplarVowsDialog(sw, sh)
+            except Exception:
+                self.templar_vows_dialog = None
+        if self.templar_vows_dialog is None:
+            self._open_next_templar_vows_prompt()
+            return
+
+        try:
+            from ..classes.templar_vows import VOW_ABHOR, VOW_ACCEPT, VOW_SUFFER, VOW_UPHOLD
+            options = [VOW_ABHOR, VOW_ACCEPT, VOW_SUFFER, VOW_UPHOLD]
+        except Exception:
+            options = []
+
+        def _on_confirm(vow):
+            try:
+                if not getattr(mgr, "active_vow_key", None):
+                    mgr.active_vow_key = getattr(vow, "key", None)
+            except Exception:
+                pass
+            try:
+                if self.rule_detail_panel and self.rule_detail_panel.visible and isinstance(self._rule_panel_state, dict):
+                    if self._rule_panel_state.get("player") is player and self._rule_panel_state.get("rule_type") == "army":
+                        self._toggle_rule_panel(player, "army", force_refresh=True)
+            except Exception:
+                pass
+            self._open_next_templar_vows_prompt()
+
+        def _on_cancel():
+            try:
+                if not getattr(mgr, "active_vow_key", None) and options:
+                    mgr.active_vow_key = getattr(options[0], "key", None)
+            except Exception:
+                pass
+            self._open_next_templar_vows_prompt()
+
+        self.templar_vows_dialog.show(options=options, on_confirm=_on_confirm, on_cancel=_on_cancel)
+        try:
+            self.dialog_manager.open(self.templar_vows_dialog, modal=True)
         except Exception:
             pass
 
@@ -3304,6 +3386,22 @@ class GameView:
                     except Exception:
                         continue
                 highlight_words = sorted({str(w) for w in highlight_words if str(w).strip()}, key=str.lower)
+        if rule_type == "army" and "templar vows" in rule_name.strip().lower():
+            try:
+                army = player.get_army()
+            except Exception:
+                army = None
+            mgr = getattr(army, "templar_vows", None) if army is not None else None
+            if mgr is not None:
+                try:
+                    active_vow = mgr.get_active_vow()
+                except Exception:
+                    active_vow = None
+                if active_vow is not None:
+                    try:
+                        highlight_words.append(active_vow.name)
+                    except Exception:
+                        pass
         hud = None
         if rule_type == "army" and "battle focus" in rule_name.strip().lower():
             mgr = self._get_battle_focus_manager(player)

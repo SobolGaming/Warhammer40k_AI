@@ -361,6 +361,20 @@ class Game:
         except Exception:
             return
 
+        # Templar Vows: Uphold the Honour of the Emperor sticky objectives at end of your Command phase.
+        try:
+            pname = str(getattr(phase, "name", "") or "").strip().upper()
+        except Exception:
+            pname = ""
+        if pname == "COMMAND_PHASE":
+            try:
+                army = getattr(player, "army", None) if player is not None else None
+                mgr = getattr(army, "templar_vows", None) if army is not None else None
+                if mgr is not None:
+                    mgr.on_command_phase_end(game=self, player=player)
+            except Exception:
+                pass
+
     def _on_unit_move_started_battle_focus(self, unit=None, action: str | None = None, **_kwargs) -> None:
         if unit is None:
             return
@@ -2661,9 +2675,20 @@ class Game:
                for enemy in self.map.get_enemy_units(unit) if enemy.is_alive()):
             if not (getattr(unit, 'is_titanic', False) and getattr(unit, 'is_character', False)):
                 return {"valid": False, "reason": "Units in Engagement Range cannot perform Actions"}
-        # Not if advanced or fell back
-        if unit.round_state.advanced_this_round or unit.round_state.fell_back_this_round:
-            return {"valid": False, "reason": "Units that Advanced or Fell Back cannot perform Actions"}
+        # Not if advanced or fell back (Templar Vows: Uphold allows INFANTRY to start Actions after advancing).
+        if unit.round_state.fell_back_this_round:
+            return {"valid": False, "reason": "Units that Fell Back cannot perform Actions"}
+        if unit.round_state.advanced_this_round:
+            allow_advance_action = False
+            try:
+                army = unit.get_parent_army()
+                mgr = getattr(army, "templar_vows", None) if army is not None else None
+                if mgr is not None and mgr.allow_action_after_advance(unit, self):
+                    allow_advance_action = True
+            except Exception:
+                allow_advance_action = False
+            if not allow_advance_action:
+                return {"valid": False, "reason": "Units that Advanced cannot perform Actions"}
         # Not if not eligible to shoot this phase (includes units that have already been selected to shoot)
         if unit.round_state.shot_this_round:
             return {"valid": False, "reason": "Units already selected to shoot cannot start an Action this phase"}
@@ -3440,6 +3465,13 @@ class Game:
             can_rule_reroll = bool(charging_unit.can_reroll_charge_roll())
         except Exception:
             can_rule_reroll = False
+        try:
+            army = charging_unit.get_parent_army()
+            mgr = getattr(army, "templar_vows", None) if army is not None else None
+            if mgr is not None and mgr.can_reroll_charge_against(charging_unit, target_unit):
+                can_rule_reroll = True
+        except Exception:
+            pass
 
         # Always prompt humans via provider if available; provider will disable the reroll button if not allowed.
         try:
