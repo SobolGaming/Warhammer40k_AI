@@ -61,6 +61,7 @@ SUPPORTED_ARMY_RULES = {
     "BLESSINGS OF KHORNE",
     "BATTLE FOCUS",
     "DISPARATE PATHS",
+    "THE SHADOW OF CHAOS",
 }
 SUPPORTED_DETACHMENT_RULES = {
     "RELENTLESS RAGE",
@@ -945,6 +946,37 @@ class GameView:
         except Exception:
             army = None
         return getattr(army, "battle_focus", None) if army is not None else None
+
+    def _shadow_of_chaos_hud(self, player) -> Optional[dict]:
+        if player is None or self.game is None:
+            return None
+        try:
+            army = player.get_army()
+        except Exception:
+            army = None
+        if army is None:
+            return None
+        mgr = getattr(army, "shadow_of_chaos", None)
+        if mgr is None or not getattr(mgr, "army_has_shadow", lambda: False)():
+            return None
+        try:
+            zones = set(mgr.get_shadow_zones(game=self.game, player=player))
+        except Exception:
+            zones = set()
+
+        zone_labels = {
+            "own": "Own Deployment Zone",
+            "nml": "No Man's Land",
+            "enemy": "Opponent Deployment Zone",
+        }
+        highlight_words = [label for key, label in zone_labels.items() if key in zones]
+        hint = " | ".join(zone_labels.values())
+        return {
+            "label": "Shadow of Chaos Zones",
+            "hint": hint,
+            "highlight_words": highlight_words,
+            "show_button": False,
+        }
 
     def _battle_focus_hud_maneuver_options(self, unit, mgr) -> Dict[str, str]:
         if unit is None or mgr is None or self.game is None:
@@ -3422,6 +3454,10 @@ class GameView:
                     "get_hint": lambda: self._battle_focus_hud_hint(player, mgr),
                     "on_use": lambda: self._open_battle_focus_hud_use(player),
                 }
+        if rule_type == "army" and "shadow of chaos" in rule_name.strip().lower():
+            shadow_hud = self._shadow_of_chaos_hud(player)
+            if shadow_hud is not None:
+                hud = shadow_hud
         self.rule_detail_panel.set_content(
             title,
             rule_name,

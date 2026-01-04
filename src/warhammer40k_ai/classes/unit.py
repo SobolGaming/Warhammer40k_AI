@@ -6302,25 +6302,62 @@ class Unit:
                 event_system.publish("battle_shock_test_started", unit=self)
             except Exception:
                 pass
+        shadow_ctx = None
+        shadow_mod = 0
+        try:
+            from .shadow_of_chaos import ShadowOfChaosManager
+            shadow_ctx = ShadowOfChaosManager.battle_shock_context(self, game=game)
+            shadow_mod = int(getattr(shadow_ctx, "modifier", 0) or 0)
+        except Exception:
+            shadow_ctx = None
+            shadow_mod = 0
         # Core Stratagem: INSANE BRAVERY can make this unit automatically pass this test.
         # It is consumed on use (one-shot for the next Battle-shock test).
+        auto_passed = False
         try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("auto_pass_next_battle_shock_test") is True:
                 sr.pop("auto_pass_next_battle_shock_test", None)
                 self.special_rules = sr
                 passed = True
+                auto_passed = True
             else:
-                passed = bool(self.pass_leadership_check())
+                auto_passed = False
         except Exception:
-            passed = bool(self.pass_leadership_check())
+            auto_passed = False
+
+        if not auto_passed:
+            roll_result = get_roll("2D6")
+            leadership_value = self.leadership
+            try:
+                mod_roll = int(roll_result) + int(shadow_mod)
+            except Exception:
+                mod_roll = roll_result
+            passed = mod_roll <= leadership_value
+            if shadow_mod:
+                print(
+                    f"{self.name} Leadership test: 2D6 rolled {roll_result} (mod {shadow_mod:+}) "
+                    f"-> {mod_roll} vs Ld {leadership_value} - {'PASSED' if passed else 'FAILED'}"
+                )
+            else:
+                if passed:
+                    print(f"{self.name} Leadership test: 2D6 rolled {roll_result} vs Ld {leadership_value} - PASSED")
+                else:
+                    print(f"{self.name} Leadership test: 2D6 rolled {roll_result} vs Ld {leadership_value} - FAILED")
 
         # Units that are already Battle-shocked can still be forced to take another Battle-shock test,
         # but the result does not change the unit's Battle-shocked status or duration.
         if (not passed) and (not is_already_battle_shocked):
             battle_shock_effect = BattleShockEffect(current_turn)
             self.apply_status_effect(battle_shock_effect)
-            print(f"💥 {self.name} has failed the battle shock test and is battle-shocked!")
+            print(f"{self.name} has failed the battle shock test and is battle-shocked!")
+
+        if shadow_ctx is not None:
+            try:
+                from .shadow_of_chaos import ShadowOfChaosManager
+                ShadowOfChaosManager.apply_battle_shock_outcome(self, passed=passed, context=shadow_ctx, game=game)
+            except Exception:
+                pass
 
         if event_system is not None:
             try:

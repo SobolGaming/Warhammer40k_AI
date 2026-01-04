@@ -89,6 +89,13 @@ class Army:
             self.nurgles_gift = NurglesGiftManager(self)
         except Exception:
             self.nurgles_gift = None
+
+        # Chaos Daemons: The Shadow of Chaos (safe to attach, no-op if not applicable).
+        try:
+            from .shadow_of_chaos import ShadowOfChaosManager
+            self.shadow_of_chaos = ShadowOfChaosManager(self)
+        except Exception:
+            self.shadow_of_chaos = None
     
     def add_unit(self, unit: Unit) -> bool:
         if not self.faction_keyword:

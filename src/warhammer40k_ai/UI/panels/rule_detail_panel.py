@@ -223,6 +223,8 @@ class RuleDetailPanel(pygame.sprite.Sprite):
                 tokens = None
         label = str(hud.get("label", "Tokens"))
         use_label = str(hud.get("use_label", "Use Token"))
+        show_button = bool(hud.get("show_button", True))
+        highlight_words = list(hud.get("highlight_words") or [])
 
         enabled = True
         get_enabled = hud.get("get_enabled")
@@ -248,7 +250,7 @@ class RuleDetailPanel(pygame.sprite.Sprite):
 
         token_text = f"{label}: {tokens}" if tokens is not None else label
         token_color = TEXT_ACCENT if tokens and tokens > 0 else TEXT_SECONDARY
-        text_max_width = max(10, width - 140)
+        text_max_width = max(10, width - 140 if show_button else width - 20)
         token_lines = self.wrap_text(token_text, self.font_body, text_max_width)
         token_line = token_lines[0] if token_lines else token_text
         token_surf = self.font_body.render(token_line, True, token_color)
@@ -257,20 +259,25 @@ class RuleDetailPanel(pygame.sprite.Sprite):
             (hud_rect.x + 10, hud_rect.y + (hud_rect.height - token_surf.get_height()) // 2),
         )
 
-        btn_w = max(90, min(140, width // 3))
-        btn_rect = pygame.Rect(hud_rect.right - btn_w - 10, hud_rect.y + 6, btn_w, hud_rect.height - 12)
-        self._hud_button_rect = btn_rect
-        self._hud_on_use = hud.get("on_use") if callable(hud.get("on_use")) else None
-        self._hud_enabled = bool(enabled)
-        btn_bg = HUD_BUTTON_BG if enabled else HUD_BUTTON_BG_DISABLED
-        pygame.draw.rect(surface, btn_bg, btn_rect, border_radius=5)
-        pygame.draw.rect(surface, HUD_BORDER, btn_rect, 1, border_radius=5)
-        btn_color = TEXT_PRIMARY if enabled else TEXT_SECONDARY
-        btn_surf = self.font_small.render(use_label, True, btn_color)
-        surface.blit(
-            btn_surf,
-            (btn_rect.centerx - btn_surf.get_width() // 2, btn_rect.centery - btn_surf.get_height() // 2),
-        )
+        if show_button:
+            btn_w = max(90, min(140, width // 3))
+            btn_rect = pygame.Rect(hud_rect.right - btn_w - 10, hud_rect.y + 6, btn_w, hud_rect.height - 12)
+            self._hud_button_rect = btn_rect
+            self._hud_on_use = hud.get("on_use") if callable(hud.get("on_use")) else None
+            self._hud_enabled = bool(enabled)
+            btn_bg = HUD_BUTTON_BG if enabled else HUD_BUTTON_BG_DISABLED
+            pygame.draw.rect(surface, btn_bg, btn_rect, border_radius=5)
+            pygame.draw.rect(surface, HUD_BORDER, btn_rect, 1, border_radius=5)
+            btn_color = TEXT_PRIMARY if enabled else TEXT_SECONDARY
+            btn_surf = self.font_small.render(use_label, True, btn_color)
+            surface.blit(
+                btn_surf,
+                (btn_rect.centerx - btn_surf.get_width() // 2, btn_rect.centery - btn_surf.get_height() // 2),
+            )
+        else:
+            self._hud_button_rect = None
+            self._hud_on_use = None
+            self._hud_enabled = False
 
         y_next = hud_rect.bottom + 6
         if hint:
@@ -283,6 +290,7 @@ class RuleDetailPanel(pygame.sprite.Sprite):
                 y_next,
                 width,
                 paragraph_gap=6,
+                highlight_words=highlight_words,
             )
         return y_next
 

@@ -2141,6 +2141,20 @@ class Game:
             player = unit.get_parent_army().player
         except Exception:
             return False
+        try:
+            army = unit.get_parent_army()
+        except Exception:
+            army = None
+        try:
+            mgr = getattr(army, "shadow_of_chaos", None) if army is not None else None
+        except Exception:
+            mgr = None
+        if mgr is not None and getattr(mgr, "army_has_shadow", lambda: False)():
+            try:
+                if mgr.unit_wholly_within_dark_master_aura(unit, army, game=self):
+                    return True
+            except Exception:
+                pass
         zones = self._shadow_of_chaos_zones(player)
         try:
             opponent = next((p for p in (self.players or []) if p is not player), None)
