@@ -9,7 +9,7 @@ import os
 import subprocess
 import logging
 
-def test_training_system():
+def _run_training_system() -> bool:
     """Run a quick test of the training system."""
     print("🧪 Testing Warhammer 40k AI Training System")
     print("=" * 50)
@@ -30,7 +30,15 @@ def test_training_system():
         env = os.environ.copy()
         env['PYTHONPATH'] = os.getcwd()
         
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300, env=env)
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=300,
+            env=env,
+        )
         
         if result.returncode == 0:
             print("✅ Test completed successfully!")
@@ -63,6 +71,10 @@ def test_training_system():
     
     return result.returncode == 0
 
+def test_training_system():
+    """Run a quick test of the training system."""
+    assert _run_training_system()
+
 def test_manual_mode():
     """Test that manual mode starts without errors."""
     print("\n" + "=" * 50)
@@ -91,7 +103,7 @@ if __name__ == "__main__":
     # Set logging level to reduce noise
     logging.basicConfig(level=logging.ERROR)
     
-    success = test_training_system()
+    success = _run_training_system()
     sys.exit(0 if success else 1)
     
     # Optionally test manual mode (commented out since it's interactive)
