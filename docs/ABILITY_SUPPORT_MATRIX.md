@@ -32,7 +32,7 @@ Generated from `wahapedia_data/Abilities.json`, `wahapedia_data/Datasheets_abili
 These mechanics are currently recognized by searching ability names/descriptions for text patterns:
 
 - Supreme Commander (must be Warlord) (Supported)
-- Pact of Blood (WE): disallow Blood Legions Army Faction (Supported)
+- Pact of XXX: disallow specific Army Faction (Supported)
 - Nurgle’s Gift (Aura): baseline Contagion Range debuff (-1 Toughness to enemies within 3/6/9") (Partial)
 - Blessings of Khorne (CSM/WE) (Supported)
 - Favoured of Khorne (Blessings rerolls) (Supported)
@@ -142,7 +142,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Nurgle’s Gift (Aura) | `000008396` | 65 | 65 | **Partial** | Nurgle’s Gift (Aura): baseline Contagion Range debuff (-1 Toughness to enemies within 3/6/9") |
-| Pact of Decay | `000010120` | 6 | 6 | **Not implemented** |  |
+| Pact of Decay | `000010120` | 6 | 6 | **Supported** | Pact of Decay: disallow Plague Legions as Army Faction. |
 
 ### Drukhari (`DRU`) — `https://wahapedia.ru/wh40k10ed/factions/drukhari`
 
@@ -156,7 +156,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Pact of Excess | `000009995` | 5 | 5 | **Not implemented** |  |
+| Pact of Excess | `000009995` | 5 | 5 | **Supported** | Pact of Excess: disallow Legions of Excess as Army Faction. |
 | Thrill Seekers | `000009994` | 17 | 17 | **Supported** | Advance+Shoot (exact wording), Fall Back+Shoot (exact wording) |
 
 ### Genestealer Cults (`GC`) — `https://wahapedia.ru/wh40k10ed/factions/genestealer-cults`
@@ -222,7 +222,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Cabal of Sorcerers | `000008424` | 13 | 13 | **Supported** | Lone Operative |
-| Pact of Sorcery | `000010190` | 6 | 6 | **Not implemented** |  |
+| Pact of Sorcery | `000010190` | 6 | 6 | **Supported** | Pact of Sorcery: disallow Scintillating Legions as Army Faction. |
 
 ### Tyranids (`TYR`) — `https://wahapedia.ru/wh40k10ed/factions/tyranids`
 
@@ -248,7 +248,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Blessings of Khorne | `000008428` | 53 | 53 | **Supported** | Blessings of Khorne (CSM/WE). |
-| Pact of Blood | `000010071` | 5 | 5 | **Supported** | Pact of Blood (WE): disallow Blood Legions Army Faction |
+| Pact of Blood | `000010071` | 5 | 5 | **Supported** | Pact of Blood: disallow Blood Legions as Army Faction. |
 
 ## Detachment Abilities
 

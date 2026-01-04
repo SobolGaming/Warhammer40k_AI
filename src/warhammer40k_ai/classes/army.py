@@ -2,7 +2,7 @@ from typing import Tuple, Dict, Set, List, Optional
 from warhammer40k_ai.classes.unit import Unit
 from warhammer40k_ai.classes.enhancement import Enhancement
 from warhammer40k_ai.waha_helper import WahaHelper
-from warhammer40k_ai.utility.ability_support import ABILITY_DISPARATE_PATHS, army_has_ability_id
+from warhammer40k_ai.utility.ability_support import ABILITY_DISPARATE_PATHS, army_has_ability_id, pact_restrictions_for_faction
 import codecs
 import uuid
 
@@ -614,25 +614,41 @@ class Army:
 
     def validate_detachment_rules(self):
         # Army-rule / detachment-specific validation
-        #
-        # NOTE: "Pact of Blood" (WE) is an army-mustering restriction:
-        # "When mustering your army, unless specifically stated otherwise,
-        #  you cannot select BLOOD LEGIONS as your Army Faction."
-        #
-        # In engine terms: if the player's army faction is WORLD EATERS, they cannot
-        # choose the "Blood Legion(s)" detachment/faction framing.
         try:
-            if (getattr(self, "faction_id", "") or "").strip().upper() == "WE":
-                det = (getattr(self, "detachment_type", "") or "").strip().lower()
-                if det in {"blood legion", "blood legions"}:
+            det = (getattr(self, "detachment_type", "") or "").strip()
+            faction_id = (getattr(self, "faction_id", "") or "").strip().upper()
+            if not det or not faction_id:
+                return
+            for pact in pact_restrictions_for_faction(faction_id):
+                if self._detachment_matches_pact(det, pact.get("forbidden", "")):
                     raise ArmyValidationError(
-                        "Pact of Blood: World Eaters armies cannot select 'Blood Legion(s)' as their Army Faction."
+                        f"{pact.get('name', 'Pact')}: armies cannot select '{pact.get('forbidden', '').strip()}' as their Army Faction."
                     )
         except ArmyValidationError:
             raise
         except Exception:
             # Fail fast with a clear error if detachment validation can't be evaluated.
             raise ArmyValidationError("Failed validating detachment/army rule restrictions.")
+
+    def _detachment_matches_pact(self, detachment: str, forbidden: str) -> bool:
+        def _norm(text: str) -> str:
+            import re
+            t = re.sub(r"[^a-z0-9 ]+", " ", str(text or "").lower())
+            return re.sub(r"\s+", " ", t).strip()
+
+        det = _norm(detachment)
+        forb = _norm(forbidden)
+        if not det or not forb:
+            return False
+        if det == forb:
+            return True
+        if det.endswith("s") and det[:-1] == forb:
+            return True
+        if forb.endswith("s") and forb[:-1] == det:
+            return True
+        if det in forb or forb in det:
+            return True
+        return False
 
     def validate_allies(self):
         # Disparate Paths: allow Harlequins/Ynnari alongside the army faction.

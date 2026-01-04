@@ -699,6 +699,12 @@ class GameView:
                         pass
                     ok = True
                 finally:
+                    try:
+                        if self.rule_detail_panel and self.rule_detail_panel.visible and isinstance(self._rule_panel_state, dict):
+                            if self._rule_panel_state.get("player") is player and self._rule_panel_state.get("rule_type") == "army":
+                                self._toggle_rule_panel(player, "army", force_refresh=True)
+                    except Exception:
+                        pass
                     on_done(ok)
 
             self.blessings_of_khorne_dialog.show(player=player, game=game, army=army, ctx=ctx, on_confirm=_on_confirm)
@@ -1869,6 +1875,12 @@ class GameView:
                 res = payload.get("result") or {}
                 if res.get("reborn_used", False):
                     army.schedule_reborn_in_blood(game=self.game)
+            except Exception:
+                pass
+            try:
+                if self.rule_detail_panel and self.rule_detail_panel.visible and isinstance(self._rule_panel_state, dict):
+                    if self._rule_panel_state.get("player") is player and self._rule_panel_state.get("rule_type") == "army":
+                        self._toggle_rule_panel(player, "army", force_refresh=True)
             except Exception:
                 pass
             # Continue prompting any other human WE player
@@ -3243,14 +3255,15 @@ class GameView:
                 return self._pick_best_rule(candidates)
         return None
 
-    def _toggle_rule_panel(self, player, rule_type: str) -> None:
+    def _toggle_rule_panel(self, player, rule_type: str, *, force_refresh: bool = False) -> None:
         if self.rule_detail_panel is None:
             return
         if self.rule_detail_panel.visible and isinstance(self._rule_panel_state, dict):
             if self._rule_panel_state.get("player") is player and self._rule_panel_state.get("rule_type") == rule_type:
-                self.rule_detail_panel.hide()
-                self._rule_panel_state = None
-                return
+                if not force_refresh:
+                    self.rule_detail_panel.hide()
+                    self._rule_panel_state = None
+                    return
 
         if rule_type == "detachment":
             info = self._get_detachment_rule_info(player)
@@ -3273,6 +3286,24 @@ class GameView:
             description = fallback_desc
 
         supported = self._is_supported_rule_name(rule_name, rule_type)
+        highlight_words = []
+        if rule_type == "army" and "blessings of khorne" in rule_name.strip().lower():
+            try:
+                army = player.get_army()
+            except Exception:
+                army = None
+            mgr = getattr(army, "blessings_of_khorne", None) if army is not None else None
+            if mgr is not None:
+                try:
+                    active_keys = list(getattr(mgr, "active_blessing_keys", set()) or set())
+                except Exception:
+                    active_keys = []
+                for key in active_keys:
+                    try:
+                        highlight_words.append(mgr.definitions[key].name)
+                    except Exception:
+                        continue
+                highlight_words = sorted({str(w) for w in highlight_words if str(w).strip()}, key=str.lower)
         hud = None
         if rule_type == "army" and "battle focus" in rule_name.strip().lower():
             mgr = self._get_battle_focus_manager(player)
@@ -3285,7 +3316,15 @@ class GameView:
                     "get_hint": lambda: self._battle_focus_hud_hint(player, mgr),
                     "on_use": lambda: self._open_battle_focus_hud_use(player),
                 }
-        self.rule_detail_panel.set_content(title, rule_name, legend, description, supported=supported, hud=hud)
+        self.rule_detail_panel.set_content(
+            title,
+            rule_name,
+            legend,
+            description,
+            supported=supported,
+            hud=hud,
+            highlight_words=highlight_words,
+        )
         self._rule_panel_state = {"player": player, "rule_type": rule_type}
 
     # Note: on_mouse_press is now handled by phase-specific handlers in PhaseManager

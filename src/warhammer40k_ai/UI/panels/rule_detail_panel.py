@@ -14,6 +14,7 @@ TEXT_PRIMARY = (255, 255, 255)
 TEXT_SECONDARY = (200, 200, 200)
 TEXT_ACCENT = (100, 149, 237)
 DARK_GREY = (40, 40, 40)
+GOLD = (212, 175, 55)
 HUD_BG = (35, 35, 40)
 HUD_BORDER = (80, 80, 90)
 HUD_BUTTON_BG = (70, 120, 200)
@@ -34,6 +35,7 @@ class RuleDetailPanel(pygame.sprite.Sprite):
         self.description: str = ""
         self.supported = False
         self.hud: Optional[dict] = None
+        self.highlight_words: List[str] = []
         self.scroll_offset = 0
         self.max_scroll = 0
         self.rect: Optional[pygame.Rect] = None
@@ -85,6 +87,7 @@ class RuleDetailPanel(pygame.sprite.Sprite):
         *,
         supported: bool = False,
         hud: Optional[dict] = None,
+        highlight_words: Optional[List[str]] = None,
     ) -> None:
         self.title = title or ""
         self.rule_name = rule_name or ""
@@ -92,6 +95,7 @@ class RuleDetailPanel(pygame.sprite.Sprite):
         self.description = description or ""
         self.supported = bool(supported)
         self.hud = hud
+        self.highlight_words = list(highlight_words or [])
         self.scroll_offset = 0
         self.max_scroll = 0
         self.visible = True
@@ -104,6 +108,7 @@ class RuleDetailPanel(pygame.sprite.Sprite):
         self.scroll_offset = 0
         self.max_scroll = 0
         self.hud = None
+        self.highlight_words = []
         self._hud_button_rect = None
         self._hud_on_use = None
         self._hud_enabled = False
@@ -183,6 +188,7 @@ class RuleDetailPanel(pygame.sprite.Sprite):
                 y_pos,
                 self.width - 40,
                 paragraph_gap=10,
+                highlight_words=self.highlight_words,
             )
 
         total_content_height = y_pos - (y + 15) + self.scroll_offset
@@ -310,17 +316,93 @@ class RuleDetailPanel(pygame.sprite.Sprite):
         max_width: int,
         *,
         paragraph_gap: int = 8,
+        highlight_words: Optional[List[str]] = None,
     ) -> int:
         if not text:
             return y
         line_height = font.get_linesize() + 2
+        highlights = [w for w in (highlight_words or []) if str(w or "").strip()]
+        highlight_tokens = [str(w).strip() for w in highlights]
         for para in str(text).split("\n"):
             if not para.strip():
                 y += line_height // 2
                 continue
             for line in self.wrap_text(para, font, max_width):
-                surf = font.render(line, True, color)
-                surface.blit(surf, (x, y))
-                y += line_height
+                if highlight_tokens and self._line_has_highlight(line, highlight_tokens):
+                    y = self._draw_highlighted_line(
+                        surface,
+                        line,
+                        font,
+                        color,
+                        highlight_tokens,
+                        GOLD,
+                        x,
+                        y,
+                        line_height,
+                    )
+                else:
+                    surf = font.render(line, True, color)
+                    surface.blit(surf, (x, y))
+                    y += line_height
             y += paragraph_gap
         return y
+
+    def _line_has_highlight(self, line: str, highlights: List[str]) -> bool:
+        line_l = str(line or "").lower()
+        for word in highlights:
+            if str(word or "").lower() in line_l:
+                return True
+        return False
+
+    def _draw_highlighted_line(
+        self,
+        surface: pygame.Surface,
+        line: str,
+        font: pygame.font.Font,
+        base_color: tuple,
+        highlights: List[str],
+        highlight_color: tuple,
+        x: int,
+        y: int,
+        line_height: int,
+    ) -> int:
+        line_str = str(line or "")
+        line_lower = line_str.lower()
+        tokens = [str(w).lower() for w in highlights]
+
+        idx = 0
+        x_cursor = x
+        while idx < len(line_str):
+            best_pos = None
+            best_token = None
+            for token in tokens:
+                if not token:
+                    continue
+                pos = line_lower.find(token, idx)
+                if pos == -1:
+                    continue
+                if best_pos is None or pos < best_pos or (pos == best_pos and len(token) > len(best_token or "")):
+                    best_pos = pos
+                    best_token = token
+
+            if best_pos is None or best_token is None:
+                seg = line_str[idx:]
+                if seg:
+                    surf = font.render(seg, True, base_color)
+                    surface.blit(surf, (x_cursor, y))
+                    x_cursor += surf.get_width()
+                break
+
+            if best_pos > idx:
+                seg = line_str[idx:best_pos]
+                surf = font.render(seg, True, base_color)
+                surface.blit(surf, (x_cursor, y))
+                x_cursor += surf.get_width()
+
+            seg = line_str[best_pos:best_pos + len(best_token)]
+            surf = font.render(seg, True, highlight_color)
+            surface.blit(surf, (x_cursor, y))
+            x_cursor += surf.get_width()
+            idx = best_pos + len(best_token)
+
+        return y + line_height
