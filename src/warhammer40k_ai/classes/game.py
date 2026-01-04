@@ -4284,7 +4284,7 @@ class Game:
         if not prospective:
             return False
 
-        from ..utility.aura_utils import distance_between_bases_3d
+        from ..utility.aura_utils import horizontal_distance_between_bases_2d
         enemy_units = self.get_enemy_units(unit.get_parent_army().player)
         enemy_models = [em for eu in enemy_units if eu.is_alive() and eu.deployed for em in eu.models if em.is_alive]
 
@@ -4293,7 +4293,7 @@ class Game:
                 break
             mb = unit._create_potential_base(x, y, z, facing, model=unit.models[idx])
             for em in enemy_models:
-                if float(distance_between_bases_3d(mb, em.model_base)) < float(min_enemy_distance):
+                if float(horizontal_distance_between_bases_2d(mb, em.model_base)) < float(min_enemy_distance):
                     return False
 
         if unit.is_in_strategic_reserves():
