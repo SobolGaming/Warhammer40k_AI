@@ -674,6 +674,7 @@ class Army:
     def validate_allies(self):
         # Disparate Paths: allow Harlequins/Ynnari alongside the army faction.
         if not army_has_ability_id(self, ABILITY_DISPARATE_PATHS):
+            self._validate_daemonic_pact()
             return
 
         allowed = set()
@@ -705,6 +706,101 @@ class Army:
                 raise ArmyValidationError(
                     f"Unit '{getattr(u, 'name', 'Unknown')}' has faction keywords {fks}, "
                     "which are not allowed for an army with Disparate Paths (allows base faction + HARLEQUINS/YNNARI)."
+                )
+        self._validate_daemonic_pact()
+
+    def _daemonic_pact_points_cap(self) -> int:
+        try:
+            limit = int(self.points_limit or 0)
+        except Exception:
+            limit = 0
+        if limit <= 0:
+            return 0
+        if limit <= 1000:
+            return 250
+        if limit <= 2000:
+            return 500
+        return 750
+
+    def _is_legiones_daemonica_unit(self, unit) -> bool:
+        if unit is None:
+            return False
+        try:
+            return unit.has_any_keyword("LEGIONES DAEMONICA")
+        except Exception:
+            return False
+
+    def _validate_daemonic_pact(self) -> None:
+        """
+        Chaos Daemons army rule (Daemonic Pact):
+        - Allowed only in Chaos Knights or Heretic Astartes armies.
+        - Daemon allies are limited by points cap based on battle size.
+        - Daemon allies cannot be Warlord or have Enhancements.
+        - For each god keyword, non-Battleline daemon allies cannot exceed Battleline daemon allies.
+        """
+        daemon_units = [u for u in list(getattr(self, "units", []) or []) if self._is_legiones_daemonica_unit(u)]
+        if not daemon_units:
+            return
+
+        faction_id = str(getattr(self, "faction_id", "") or "").strip().upper()
+        if faction_id == "CD":
+            return
+        if faction_id not in {"CSM", "QT"}:
+            raise ArmyValidationError("Daemonic Pact: LEGIONES DAEMONICA units are only allowed in Chaos Knights or Heretic Astartes armies.")
+
+        base_keyword = "CHAOS KNIGHTS" if faction_id == "QT" else "HERETIC ASTARTES"
+        for unit in list(getattr(self, "units", []) or []):
+            if unit in daemon_units:
+                continue
+            try:
+                if not unit.has_any_keyword(base_keyword):
+                    raise ArmyValidationError(
+                        f"Daemonic Pact: all non-daemon units must have the {base_keyword} keyword to include daemon allies."
+                    )
+            except ArmyValidationError:
+                raise
+            except Exception:
+                raise ArmyValidationError("Daemonic Pact: failed to validate base-faction keyword requirements.")
+
+        for unit in daemon_units:
+            if getattr(unit, "is_warlord", False):
+                raise ArmyValidationError(
+                    f"Daemonic Pact: daemon unit '{getattr(unit, 'name', 'Unknown')}' cannot be your Warlord."
+                )
+            if getattr(unit, "enhancement", None) is not None:
+                raise ArmyValidationError(
+                    f"Daemonic Pact: daemon unit '{getattr(unit, 'name', 'Unknown')}' cannot take Enhancements."
+                )
+
+        cap = self._daemonic_pact_points_cap()
+        total = 0
+        for unit in daemon_units:
+            try:
+                total += int(unit.get_unit_cost())
+            except Exception:
+                continue
+        if cap <= 0 or total > cap:
+            raise ArmyValidationError(
+                f"Daemonic Pact: daemon allies total {total} points (cap {cap})."
+            )
+
+        god_keywords = ("KHORNE", "TZEENTCH", "NURGLE", "SLAANESH")
+        for god in god_keywords:
+            with_god = []
+            for unit in daemon_units:
+                try:
+                    if unit.has_any_keyword(god):
+                        with_god.append(unit)
+                except Exception:
+                    continue
+            if not with_god:
+                continue
+            battleline = sum(1 for u in with_god if getattr(u, "is_battleline", False))
+            non_battleline = len(with_god) - battleline
+            if non_battleline > battleline:
+                raise ArmyValidationError(
+                    f"Daemonic Pact: {god} daemon allies include {non_battleline} non-BATTLELINE unit(s) "
+                    f"but only {battleline} BATTLELINE unit(s)."
                 )
 
     def validate(self) -> None:

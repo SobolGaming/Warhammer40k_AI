@@ -41,6 +41,12 @@ class ShadowOfChaosManager:
     def _army_has_shadow(self) -> bool:
         if self.army is None:
             return False
+        try:
+            faction_id = str(getattr(self.army, "faction_id", "") or "").strip().upper()
+        except Exception:
+            faction_id = ""
+        if faction_id and faction_id != "CD":
+            return False
         return army_has_ability_id(self.army, ABILITY_SHADOW_OF_CHAOS)
 
     def _unit_is_legiones_daemonica(self, unit) -> bool:
