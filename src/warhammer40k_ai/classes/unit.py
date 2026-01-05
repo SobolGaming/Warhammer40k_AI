@@ -6338,23 +6338,23 @@ class Unit:
             auto_passed = False
 
         if not auto_passed:
-            roll_result = get_roll("2D6")
-            leadership_value = self.leadership
-            try:
-                mod_roll = int(roll_result) + int(shadow_mod)
-            except Exception:
-                mod_roll = roll_result
-            passed = mod_roll <= leadership_value
-            if shadow_mod:
+            if shadow_mod == 0:
+                try:
+                    passed = bool(self.pass_leadership_check())
+                except Exception:
+                    passed = False
+            else:
+                roll_result = get_roll("2D6")
+                leadership_value = self.leadership
+                try:
+                    mod_roll = int(roll_result) + int(shadow_mod)
+                except Exception:
+                    mod_roll = roll_result
+                passed = mod_roll <= leadership_value
                 print(
                     f"{self.name} Leadership test: 2D6 rolled {roll_result} (mod {shadow_mod:+}) "
                     f"-> {mod_roll} vs Ld {leadership_value} - {'PASSED' if passed else 'FAILED'}"
                 )
-            else:
-                if passed:
-                    print(f"{self.name} Leadership test: 2D6 rolled {roll_result} vs Ld {leadership_value} - PASSED")
-                else:
-                    print(f"{self.name} Leadership test: 2D6 rolled {roll_result} vs Ld {leadership_value} - FAILED")
 
         # Units that are already Battle-shocked can still be forced to take another Battle-shock test,
         # but the result does not change the unit's Battle-shocked status or duration.

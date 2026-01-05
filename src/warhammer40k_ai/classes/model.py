@@ -234,9 +234,20 @@ class Model:
         is_mortal: bool = False,
         weapon_profile: Optional['WargearProfile'] = None,
         game_map: Optional['Map'] = None,
+        wounds_cannot_be_ignored: bool = False,
     ) -> int:
-        fnp_abilities = self.parent_unit.has_feel_no_pain()
-        if fnp_abilities:
+        if not wounds_cannot_be_ignored:
+            try:
+                if weapon_profile is not None and hasattr(weapon_profile, "wounds_cannot_be_ignored"):
+                    wounds_cannot_be_ignored = bool(weapon_profile.wounds_cannot_be_ignored())
+            except Exception:
+                wounds_cannot_be_ignored = False
+
+        try:
+            fnp_abilities = self.parent_unit.has_feel_no_pain()
+        except Exception:
+            fnp_abilities = []
+        if fnp_abilities and not wounds_cannot_be_ignored:
             # Find the best applicable Feel No Pain ability (lowest dice value)
             best_fnp = self._get_best_applicable_fnp(fnp_abilities, weapon_profile, is_mortal)
             

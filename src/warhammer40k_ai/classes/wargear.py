@@ -57,6 +57,7 @@ class WargearProfile:
         self._raw_strength = wargear_data.get('S', '')
         self._raw_ap = wargear_data.get('AP', '')
         self._raw_damage = wargear_data.get('D', '')
+        self._raw_description = wargear_data.get('description', '')
         self.range = self._parse_range(wargear_data.get('range', ''))
         self.attacks = self._parse_attacks(wargear_data.get('A', ''))
         self.skill = self._parse_attribute(wargear_data.get('BS_WS', ''))
@@ -64,6 +65,7 @@ class WargearProfile:
         self.ap = self._parse_attribute(wargear_data.get('AP', ''))
         self.damage = self._parse_attribute(wargear_data.get('D', ''))
         self.keywords = self._parse_keywords(wargear_data.get('description', ''))
+        self._wounds_cannot_be_ignored_cached: Optional[bool] = None
     
     def _parse_range(self, range_string: str) -> Range:
         if "Melee" == range_string:
@@ -99,6 +101,25 @@ class WargearProfile:
 
     def get_keywords(self) -> List[str]:
         return self.keywords
+
+    def wounds_cannot_be_ignored(self) -> bool:
+        """
+        Return True if this attack explicitly disables wound-ignoring rules (e.g., Feel No Pain).
+        """
+        if self._wounds_cannot_be_ignored_cached is not None:
+            return bool(self._wounds_cannot_be_ignored_cached)
+        text_bits = [str(self._raw_description or "")] + list(self.keywords or [])
+        text = " ".join(text_bits).lower()
+        patterns = (
+            "wounds cannot be ignored",
+            "no rules can be used to ignore wounds",
+            "no rules can be used to ignore this wound",
+            "feel no pain cannot be used",
+            "feel no pain cannot be made",
+            "cannot use feel no pain",
+        )
+        self._wounds_cannot_be_ignored_cached = any(p in text for p in patterns)
+        return bool(self._wounds_cannot_be_ignored_cached)
 
     def _get_keyword_suffix_count(self, prefix: str, default: int = 1) -> Count:
         """
@@ -1982,9 +2003,25 @@ class WargearProfile:
         except Exception:
             pass
         
+        wounds_cannot_be_ignored = bool(attack_instance.get("wounds_cannot_be_ignored", False))
+        if not wounds_cannot_be_ignored:
+            try:
+                wounds_cannot_be_ignored = bool(self.wounds_cannot_be_ignored())
+            except Exception:
+                wounds_cannot_be_ignored = False
+
         # Apply damage with detailed tracking
         was_alive = target_model.is_alive
-        damage_result.update(self._apply_damage_with_tracking(target_model, attacker, damage_value, attack_instance['mortal_wound'], game_map=game_map))
+        damage_result.update(
+            self._apply_damage_with_tracking(
+                target_model,
+                attacker,
+                damage_value,
+                attack_instance["mortal_wound"],
+                game_map=game_map,
+                wounds_cannot_be_ignored=wounds_cannot_be_ignored,
+            )
+        )
         damage_result['model_killed'] = was_alive and not target_model.is_alive
         
         if attack_instance['mortal_wound']:
@@ -1992,7 +2029,15 @@ class WargearProfile:
         
         return damage_result
 
-    def _apply_damage_with_tracking(self, target_model: 'Model', attacker: 'Model', damage_amount: int, is_mortal: bool, game_map: Optional['Map'] = None) -> Dict:
+    def _apply_damage_with_tracking(
+        self,
+        target_model: 'Model',
+        attacker: 'Model',
+        damage_amount: int,
+        is_mortal: bool,
+        game_map: Optional['Map'] = None,
+        wounds_cannot_be_ignored: bool = False,
+    ) -> Dict:
         """Apply damage with detailed tracking of Feel No Pain saves"""
         from warhammer40k_ai.utility.dice import get_roll
         
@@ -2005,9 +2050,12 @@ class WargearProfile:
         
         # Handle Feel No Pain saves
         final_damage = damage_amount
-        fnp_abilities = target_model.parent_unit.has_feel_no_pain()
-        
-        if fnp_abilities:
+        try:
+            fnp_abilities = target_model.parent_unit.has_feel_no_pain()
+        except Exception:
+            fnp_abilities = []
+
+        if fnp_abilities and not wounds_cannot_be_ignored:
             # Find the best applicable Feel No Pain ability
             best_fnp = target_model._get_best_applicable_fnp(fnp_abilities, self, is_mortal)
             
