@@ -2930,6 +2930,19 @@ class Game:
             if (not is_fixed) and total_secondary_vp > 0:
                 scoring_player.discard_achieved_secondaries(achieved)
 
+        # End-of-turn cleanup for temporary stratagem effects.
+        try:
+            army = getattr(turn_ending_player, "army", None)
+            for unit in list(getattr(army, "units", []) or []):
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if sr.pop("apoplectic_frenzy_active", None) is not None:
+                    sr.pop("apoplectic_frenzy_turn", None)
+                    unit.special_rules = sr
+        except Exception:
+            pass
+
         # b) Allow voluntary discard for current player to gain 1CP (UI/AI should call explicitly). Here we do nothing automatically.
 
         # c) If deck runs out, player cannot generate additional secondaries (handled by deck empty check during draws)

@@ -4710,6 +4710,12 @@ class Unit:
         Returns:
             bool: True if the unit has an ability that allows charging after advancing
         """
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("apoplectic_frenzy_active"):
+                return True
+        except Exception:
+            pass
         # Use cached result if available
         if 'advance_and_charge' in getattr(self, '_ability_cache', {}):
             cached_result = self._ability_cache['advance_and_charge']

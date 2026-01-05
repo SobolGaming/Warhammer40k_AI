@@ -3,6 +3,7 @@ from typing import Callable, Optional, Dict, Any, List
 
 
 IMPLEMENTED_STRATAGEM_NAMES = {
+    "APOPLECTIC FRENZY",
     "COMMAND RE-ROLL",
     "COUNTER-OFFENSIVE",
     "EPIC CHALLENGE",
@@ -19,6 +20,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
 }
 
 REACTION_ONLY_STRATAGEM_NAMES = {
+    "APOPLECTIC FRENZY",
     "COMMAND RE-ROLL",
     "COUNTER-OFFENSIVE",
     "FIRE OVERWATCH",
@@ -484,30 +486,41 @@ class StratagemManager:
     def _build_available(self) -> None:
         """
         Chapter Approved scope:
-        - Only global stratagems (faction_id == "").
-        - Only "Core – ..." and mission-pack "Core Stratagem – ..." entries.
-        - Exclude Boarding Actions / Challenger / other game modes and all faction/detachment stratagems.
+        - Always include global core stratagems.
+        - If the player has a faction/detachment, include matching faction/detachment stratagems.
+        - Exclude Boarding Actions / Challenger / other game modes.
         """
-        raw = self._waha.get_stratagems_for_faction(faction_id=None, detachment=None)
+        army = None
+        try:
+            army = self.player.get_army() if self.player else None
+        except Exception:
+            army = None
+        faction_id = getattr(army, "faction_id", None)
+        detachment = getattr(army, "detachment_type", None)
+        raw = self._waha.get_stratagems_for_faction(faction_id=faction_id, detachment=detachment)
         tnorm = lambda t: (t or "").strip().lower()
         filtered: list[dict] = []
         for s in list(raw or []):
             try:
-                if (s.get("faction_id") or "").strip():
-                    continue  # skip faction/detachment stratagems entirely
+                is_global = not (s.get("faction_id") or "").strip()
                 tt = tnorm(s.get("type"))
                 if "boarding actions" in tt or "boarding action" in tt:
                     continue
                 if "challenger" in tt:
                     continue
-                # Keep only core + core stratagem variants
-                if not (tt.startswith("core ") or tt.startswith("core\u00a0") or tt.startswith("core\u2013") or tt.startswith("core-") or tt.startswith("core stratagem")):
-                    # For safety, also keep "core –" variants that might not start with "core " due to unicode dashes.
-                    if "core" not in tt:
-                        continue
-                    if "core stratagem" not in tt and "core \u2013" not in tt and "core -" not in tt:
-                        continue
-                filtered.append(s)
+                if is_global:
+                    # Keep only core + core stratagem variants
+                    if not (tt.startswith("core ") or tt.startswith("core\u00a0") or tt.startswith("core\u2013") or tt.startswith("core-") or tt.startswith("core stratagem")):
+                        # For safety, also keep "core –" variants that might not start with "core " due to unicode dashes.
+                        if "core" not in tt:
+                            continue
+                        if "core stratagem" not in tt and "core \u2013" not in tt and "core -" not in tt:
+                            continue
+                entry = dict(s)
+                name_u = (entry.get("name", "") or "").strip().upper()
+                if name_u == "APOPLECTIC FRENZY":
+                    entry["phase"] = "Movement phase"
+                filtered.append(entry)
             except Exception:
                 continue
         # Deduplicate by name: keep the newest/highest id for each name (case-insensitive).
@@ -740,6 +753,7 @@ class StratagemManager:
     # Overwatch triggers: on enemy movement start/end (enqueue for non-active player)
     def _on_unit_move_started(self, unit, action: str, **kwargs):
         self._maybe_queue_overwatch(unit, action, when='start')
+        self._maybe_queue_apoplectic_frenzy(unit, action)
 
     def _on_unit_move_ended(self, unit, action: str, **kwargs):
         self._maybe_queue_overwatch(unit, action, when='end')
@@ -1223,6 +1237,51 @@ class StratagemManager:
                 'cp_cost': s.cp_cost,
                 'candidates': candidates,
             })
+
+    def _maybe_queue_apoplectic_frenzy(self, unit, action: str) -> None:
+        try:
+            if str(action or "").strip().lower() != "advance":
+                return
+            if unit is None or not getattr(unit, "is_alive", lambda: True)():
+                return
+            owner = unit.get_parent_army().player
+            if owner is not self.player:
+                return
+            # Timing: your Movement phase
+            if (self._current_phase_name or "").strip().lower() != "movement phase":
+                return
+            active_player = getattr(self.game, "get_current_player", lambda: None)()
+            if active_player is not self.player:
+                return
+            s = self.get_by_name("APOPLECTIC FRENZY")
+            if not s:
+                return
+            if self.player.command_points < s.cp_cost:
+                return
+            if (s.name or "").strip().upper() in self._used_stratagems_this_phase:
+                return
+            if _unit_cannot_be_target_of_stratagem(unit):
+                return
+            try:
+                if not (unit.has_keyword("KHORNE") and unit.has_keyword("BERZERKERS")):
+                    return
+            except Exception:
+                return
+        except Exception:
+            return
+
+        for r in self._pending_reactions:
+            if r.get("event") == "unit_advanced" and r.get("stratagem") == s.name and r.get("unit") is unit:
+                return
+        self._queue_reaction({
+            "event": "unit_advanced",
+            "phase_name": "Movement phase",
+            "stratagem": s.name,
+            "cp_cost": s.cp_cost,
+            "unit": unit,
+            "target_unit": unit,
+            "action": "advance",
+        })
 
     # Command Re-roll trigger on roll_made for active player only
     def _on_roll_made(self, player, unit, roll_type: str, value, reroll, dice=None, **kwargs):
@@ -2149,6 +2208,63 @@ class StratagemManager:
                 pass
             if not ok:
                 print("Heroic Intervention: charge failed")
+            return True
+
+        # Berzerker Warband: APOPLETIC FRENZY (advance and charge for Khorne Berzerkers)
+        if s.name.upper() == "APOPLECTIC FRENZY":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            if unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "APOPLECTIC FRENZY":
+                        unit = r.get("unit") or r.get("target_unit")
+                        if unit is not None:
+                            kwargs.setdefault("action", r.get("action"))
+                        break
+            if unit is None:
+                print("❌ Apoplectic Frenzy: no target unit provided")
+                return False
+            # Timing: your Movement phase, just after selecting to Advance.
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "movement phase":
+                print("❌ Apoplectic Frenzy: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is not self.player:
+                print("❌ Apoplectic Frenzy: not your turn")
+                return False
+            if str(kwargs.get("action", "") or "").strip().lower() not in ("", "advance"):
+                print("❌ Apoplectic Frenzy: invalid trigger")
+                return False
+            try:
+                if _unit_cannot_be_target_of_stratagem(unit):
+                    print("❌ Apoplectic Frenzy: target cannot be selected")
+                    return False
+            except Exception:
+                return False
+            try:
+                if not (unit.has_keyword("KHORNE") and unit.has_keyword("BERZERKERS")):
+                    print("❌ Apoplectic Frenzy: target is not KHORNE BERZERKERS")
+                    return False
+            except Exception:
+                return False
+            if not self.player.spend_command_points(s.cp_cost):
+                return False
+            try:
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["apoplectic_frenzy_active"] = True
+                sr["apoplectic_frenzy_turn"] = int(getattr(self.game, "turn", 0) or 0)
+                unit.special_rules = sr
+            except Exception:
+                pass
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
+            print(f"🩸 APOPLETIC FRENZY: {getattr(unit, 'name', 'Unit')} can charge after advancing this turn.")
             return True
 
         # Provide phase_name for timing checks
