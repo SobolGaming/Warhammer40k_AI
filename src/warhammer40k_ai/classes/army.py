@@ -96,6 +96,13 @@ class Army:
             self.shadow_of_chaos = ShadowOfChaosManager(self)
         except Exception:
             self.shadow_of_chaos = None
+
+        # Chaos Daemons: Belakor Shadow Form selection (safe to attach, no-op if not applicable).
+        try:
+            from .shadow_form import ShadowFormManager
+            self.shadow_form = ShadowFormManager(self)
+        except Exception:
+            self.shadow_form = None
     
     def add_unit(self, unit: Unit) -> bool:
         if not self.faction_keyword:
@@ -843,6 +850,13 @@ class Army:
                 game = None
             mgr.on_battle_round_start(int(battle_round), game=game)
         mgr = getattr(self, "templar_vows", None)
+        if mgr is not None:
+            try:
+                game = getattr(getattr(self, "player", None), "game", None)
+            except Exception:
+                game = None
+            mgr.on_battle_round_start(int(battle_round), game=game)
+        mgr = getattr(self, "shadow_form", None)
         if mgr is not None:
             try:
                 game = getattr(getattr(self, "player", None), "game", None)

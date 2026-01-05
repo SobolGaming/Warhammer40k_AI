@@ -5619,6 +5619,15 @@ class Unit:
             # Lone Operative units can only be targeted if the attacking model is within 12 inches
             if min_distance > 12.0:
                 return False
+
+        # Wreathed in Shadows (Belakor Shadow Form): 18" ranged targeting restriction.
+        try:
+            from .shadow_form import target_unit_has_wreathed_in_shadows
+            if target_unit_has_wreathed_in_shadows(target_unit, game_map=game_map):
+                if min_distance > 18.0:
+                    return False
+        except Exception:
+            pass
             
         # Check engagement range restrictions
         if not self._can_shoot_while_engaged(model, weapon_profile, target_unit, game_map):

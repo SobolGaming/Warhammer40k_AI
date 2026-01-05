@@ -35,6 +35,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 - Supreme Commander (must be Warlord) (Supported)
 - Pact of Blood (WE): disallow Blood Legions Army Faction (Supported)
 - Nurgle's Gift (Aura): Contagion Range 3/6/9" with plagues (Skullsquirm -1 hit, Rattlejoint -1 save, Scabrous -1 M/Ld/OC, OC min 1) (Supported)
+- The Shadow of Chaos (Chaos Daemons): zones + Dark Master aura + Manifestation/Terror (Supported)
 - Blessings of Khorne (World Eaters) (Supported)
 - Favoured of Khorne (Blessings rerolls) (Supported)
 - Idol of the Blessed Blood (Blessings +1D6) (Supported)
@@ -118,7 +119,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Dark Pacts | `000008359` | 38 | 38 | **Supported** | Dark Pacts |
-| The Shadow of Chaos | `000008433` | 68 | 68 | **Not implemented** |  |
+| The Shadow of Chaos | `000008433` | 68 | 68 | **Supported** | Zones + Dark Master aura; Manifestation/Terror; Warp Rifts uses zones/auras without self-bootstrapping |
 
 ### Chaos Knights (`QT`) - `https://wahapedia.ru/wh40k10ed/factions/chaos-knights`
 
@@ -1962,7 +1963,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Scuttling Walker | 1 | 1 | **Not implemented** |  |
 | Scythed Impact | 1 | 1 | **Not implemented** |  |
 | Seed the Garden of Nurgle | 1 | 1 | **Not implemented** |  |
-| Shadow Form | 1 | 1 | **Not implemented** |  |
+| Shadow Form | 1 | 1 | **Supported** | Battle-round choice sets active Shadow Form |
 | Shadow of Khorne (Aura) | 1 | 1 | **Not implemented** |  |
 | Shroud of Flies (Aura) | 1 | 1 | **Partial** | Stealth (extra conditions not fully modeled) |
 | Skullmaster’s Fury | 1 | 1 | **Not implemented** |  |
@@ -1976,7 +1977,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Swallow Energy (Psychic) | 1 | 1 | **Partial** | Feel No Pain (extra conditions not fully modeled) |
 | Tally of Pestilence | 1 | 1 | **Not implemented** |  |
 | Terrifying Assault | 1 | 1 | **Not implemented** |  |
-| The Dark Master (Aura) | 1 | 1 | **Not implemented** |  |
+| The Dark Master (Aura) | 1 | 1 | **Supported** | Shadow of Chaos aura extension (no Warp Rifts self-bootstrapping) |
 | The Eternal Dance | 1 | 1 | **Not implemented** |  |
 | Tranceweaver | 1 | 1 | **Not implemented** |  |
 | Twisted Defence Force | 1 | 1 | **Not implemented** |  |
@@ -3848,9 +3849,9 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Daemon Prince of Nurgle | 2 | 2 | **Not implemented** |  |
 | Daemon Prince of Slaanesh | 2 | 2 | **Not implemented** |  |
 | Daemon Prince of Tzeentch | 2 | 2 | **Not implemented** |  |
-| Pall of Despair (Aura, Psychic) | 1 | 1 | **Not implemented** |  |
-| Shadow Lord (Aura, Psychic) | 1 | 1 | **Not implemented** |  |
-| Wreathed in Shadows (Aura, Psychic) | 1 | 1 | **Not implemented** |  |
+| Pall of Despair (Aura, Psychic) | 1 | 1 | **Supported** | Opponent Command phase Battle-shock heal |
+| Shadow Lord (Aura, Psychic) | 1 | 1 | **Supported** | Aura: re-roll Hit rolls of 1 |
+| Wreathed in Shadows (Aura, Psychic) | 1 | 1 | **Supported** | Aura: 18" ranged targeting restriction |
 
 #### Chaos Space Marines (`CSM`)
 

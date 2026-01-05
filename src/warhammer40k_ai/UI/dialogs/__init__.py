@@ -27,6 +27,7 @@ from .quarry_selection_dialog import QuarrySelectionDialog
 from .roll_reroll_dialog import RollRerollDialog
 from .templar_vows_dialog import TemplarVowsDialog
 from .nurgles_gift_plague_dialog import NurglesGiftPlagueDialog
+from .shadow_form_dialog import ShadowFormDialog
 
 __all__ = [
     'BaseDialog',
@@ -58,4 +59,5 @@ __all__ = [
     'RollRerollDialog',
     'TemplarVowsDialog',
     'NurglesGiftPlagueDialog',
+    'ShadowFormDialog',
 ] 

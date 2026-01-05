@@ -435,6 +435,14 @@ class Model:
                     # Lone Operative units can only be targeted if the attacking model is within 12 inches
                     if closest_dist > 12.0:
                         continue  # Skip this target due to Lone Operative restriction
+                # Wreathed in Shadows (Belakor Shadow Form): 18" ranged targeting restriction.
+                try:
+                    from .shadow_form import target_unit_has_wreathed_in_shadows
+                    if target_unit_has_wreathed_in_shadows(enemy_unit, game_map=game_map):
+                        if closest_dist > 18.0:
+                            continue
+                except Exception:
+                    pass
                 targets.append(enemy_unit)
         return targets
 

@@ -53,7 +53,7 @@ def _iter_possible_abilities(unit) -> Iterable[object]:
 
 def _is_aura_ability(ability) -> bool:
     name = str(getattr(ability, "name", "") or "")
-    return "(aura)" in _norm(name)
+    return "(aura" in _norm(name)
 
 
 def _get_map_from_attacker_unit(attacker_unit):
@@ -304,6 +304,29 @@ def get_aura_attack_modifiers(attacker_unit, target_unit, weapon_profile, *, gam
             # Nurgle’s Gift (Aura) debuff (enemy-targeted).
             if _norm_name(ab_name) == _norm_name("Nurgle's Gift (Aura)"):
                 out = out.merge(_nurgles_gift(attacker_unit, target_unit, source))
+                continue
+
+            # Belakor Shadow Form: Shadow Lord (Aura, Psychic) => re-roll Hit rolls of 1.
+            if _norm_name(ab_name) == _norm_name("Shadow Lord (Aura, Psychic)"):
+                try:
+                    from ..classes.shadow_form import unit_has_active_shadow_form, KEY_SHADOW_LORD
+                except Exception:
+                    continue
+                if not unit_has_active_shadow_form(source, KEY_SHADOW_LORD):
+                    continue
+                try:
+                    if not (attacker_unit.has_any_keyword("LEGIONES DAEMONICA") or attacker_unit.has_any_keyword("SHADOW LEGION")):
+                        continue
+                except Exception:
+                    continue
+                if not unit_within_range_of_unit(source, attacker_unit, 6.0, use_attached_aggregate=True):
+                    continue
+                out = out.merge(
+                    AuraAttackModifiers(
+                        reroll_hit_ones=True,
+                        reroll_hit_reasons=(f"Aura: re-roll Hit rolls of 1 from {ab_name}",),
+                    )
+                )
                 continue
 
             # Generic strict parser for "+1 to hit" auras (very limited subset).

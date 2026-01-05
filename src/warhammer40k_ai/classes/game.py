@@ -178,6 +178,114 @@ class Game:
         self.event_system.subscribe("phase_end", self._on_phase_end_cleanup)
         # Optional ability timing windows (prompt/decision hooks)
         self.event_system.subscribe("phase_start", self._on_phase_start_optional_abilities)
+        # Belakor: Pall of Despair healing on failed Battle-shock tests
+        self.event_system.subscribe("battle_shock_test_resolved", self._on_battle_shock_test_resolved_shadow_form)
+
+    def _apply_pall_of_despair_forced_tests(self, current_player, tested_ids: set[str]) -> None:
+        if current_player is None:
+            return
+        try:
+            from .shadow_form import shadow_form_sources_with_active_key, KEY_PALL
+            from ..utility.aura_utils import unit_within_range_of_unit
+        except Exception:
+            return
+
+        try:
+            enemies = [p for p in (self.players or []) if p is not current_player]
+        except Exception:
+            enemies = []
+        current_army = getattr(current_player, "army", None)
+        if current_army is None:
+            return
+        for enemy_player in enemies:
+            army = getattr(enemy_player, "army", None)
+            if army is None:
+                continue
+            sources = shadow_form_sources_with_active_key(army, KEY_PALL, game=self)
+            if not sources:
+                continue
+            for unit in list(getattr(current_army, "units", []) or []):
+                if unit is None:
+                    continue
+                try:
+                    if hasattr(unit, "is_alive") and callable(unit.is_alive) and not unit.is_alive():
+                        continue
+                except Exception:
+                    continue
+                try:
+                    if not bool(getattr(unit, "deployed", True)):
+                        continue
+                except Exception:
+                    pass
+                try:
+                    uid = str(getattr(unit, "_id", None) or id(unit))
+                except Exception:
+                    uid = str(id(unit))
+                if uid in tested_ids:
+                    continue
+                try:
+                    if hasattr(unit, "is_below_starting_strength") and callable(unit.is_below_starting_strength):
+                        if not unit.is_below_starting_strength():
+                            continue
+                    else:
+                        continue
+                except Exception:
+                    continue
+                for source in sources:
+                    try:
+                        if unit_within_range_of_unit(source, unit, 9.0, use_attached_aggregate=True):
+                            unit.take_battle_shock_test(self.turn)
+                            tested_ids.add(uid)
+                            break
+                    except Exception:
+                        continue
+
+    def _on_battle_shock_test_resolved_shadow_form(self, unit=None, passed: bool = True, **_kwargs) -> None:
+        if passed is True or unit is None:
+            return
+        try:
+            if self.phase != BattleRoundPhases.COMMAND_PHASE:
+                return
+        except Exception:
+            return
+        try:
+            current_player = self.get_current_player()
+        except Exception:
+            current_player = None
+        if current_player is None:
+            return
+        try:
+            unit_army = unit.get_parent_army()
+        except Exception:
+            unit_army = None
+        if unit_army is None or getattr(unit_army, "player", None) is not current_player:
+            return
+        try:
+            from .shadow_form import shadow_form_sources_with_active_key, apply_pall_of_despair_heal, KEY_PALL
+            from ..utility.aura_utils import unit_within_range_of_unit
+        except Exception:
+            return
+
+        try:
+            enemies = [p for p in (self.players or []) if p is not current_player]
+        except Exception:
+            enemies = []
+
+        for enemy_player in enemies:
+            army = getattr(enemy_player, "army", None)
+            if army is None:
+                continue
+            sources = shadow_form_sources_with_active_key(army, KEY_PALL, game=self)
+            if not sources:
+                continue
+            for source in sources:
+                try:
+                    if unit_within_range_of_unit(source, unit, 9.0, use_attached_aggregate=True):
+                        healed = apply_pall_of_despair_heal(source)
+                        if healed > 0:
+                            print(f"Shadow Form: {getattr(source, 'name', 'Model')} regains up to {healed} lost wounds (Pall of Despair).")
+                except Exception:
+                    continue
 
     # ---------------- Phoenix Gem (Warhost) ----------------
 
@@ -2401,6 +2509,7 @@ class Game:
                 except Exception:
                     pass
         # If in fifth battle round and going second, primary scoring is at end of turn, not here
+        tested_ids: set[str] = set()
         for unit in current_player.get_army().units:
             # Do battle shock tests and other command phase actions without resetting round state
             try:
@@ -2414,12 +2523,26 @@ class Game:
                 if hasattr(unit, "is_below_starting_strength") and callable(getattr(unit, "is_below_starting_strength")) and unit.is_below_starting_strength():
                     print(f"⚠️  {unit.name} is below starting strength - taking Battle-Shock test")
                     unit.take_battle_shock_test(self.turn)
+                    try:
+                        tested_ids.add(str(getattr(unit, "_id", None) or id(unit)))
+                    except Exception:
+                        tested_ids.add(str(id(unit)))
                     continue
             except Exception:
                 pass
             if unit.is_below_half_strength():
                 print(f"⚠️  {unit.name} is below half strength - taking Battle-Shock test")
                 unit.take_battle_shock_test(self.turn)
+                try:
+                    tested_ids.add(str(getattr(unit, "_id", None) or id(unit)))
+                except Exception:
+                    tested_ids.add(str(id(unit)))
+
+        # Belakor: Pall of Despair can force additional tests for eligible enemy units.
+        try:
+            self._apply_pall_of_despair_forced_tests(current_player, tested_ids)
+        except Exception:
+            pass
 
         # Primary mission scoring at command phase (2nd battle round onwards)
         if hasattr(current_player, 'primary_mission') and isinstance(current_player.primary_mission, PrimaryMissionCard):
