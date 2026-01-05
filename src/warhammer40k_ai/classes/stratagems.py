@@ -4,6 +4,7 @@ from typing import Callable, Optional, Dict, Any, List
 
 IMPLEMENTED_STRATAGEM_NAMES = {
     "APOPLECTIC FRENZY",
+    "BLOOD OFFERING",
     "COMMAND RE-ROLL",
     "COUNTER-OFFENSIVE",
     "EPIC CHALLENGE",
@@ -21,6 +22,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
 
 REACTION_ONLY_STRATAGEM_NAMES = {
     "APOPLECTIC FRENZY",
+    "BLOOD OFFERING",
     "COMMAND RE-ROLL",
     "COUNTER-OFFENSIVE",
     "FIRE OVERWATCH",
@@ -452,13 +454,19 @@ class StratagemManager:
 
         # Targeting restrictions for provided context
         target = _extract_friendly_target_unit_from_kwargs(context)
-        if target is not None and _unit_cannot_be_target_of_stratagem(target):
-            if name_u != "INSANE BRAVERY":
-                result["reason"] = "Target cannot be selected"
-                return result
+        if target is not None and name_u != "BLOOD OFFERING":
+            if _unit_cannot_be_target_of_stratagem(target):
+                if name_u != "INSANE BRAVERY":
+                    result["reason"] = "Target cannot be selected"
+                    return result
 
         # Last pass: delegate to stratagem conditions
         try:
+            if name_u == "BLOOD OFFERING":
+                if context.get("objective_candidates"):
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
             if stratagem.can_use(self.player, self.game, **context):
                 result["available"] = True
                 result["reason"] = None
@@ -561,6 +569,8 @@ class StratagemManager:
         es.subscribe("fight_unit_selected", self._on_fight_unit_selected)
         # Fight sequence completion for COUNTER-OFFENSIVE
         es.subscribe("fight_sequence_complete", self._on_fight_sequence_complete)
+        # Unit destroyed hooks for faction stratagems
+        es.subscribe("unit_destroyed", self._on_unit_destroyed)
         # Dice events for Command Re-roll
         es.subscribe("roll_made", self._on_roll_made)
         self._event_subscribed = True
@@ -1397,6 +1407,90 @@ class StratagemManager:
             "target_unit": target_unit,
         })
 
+    def _on_unit_destroyed(self, unit=None, last_model=None, **kwargs) -> None:
+        """
+        Faction stratagem reactions that trigger when a unit is destroyed.
+        """
+        # WORLD EATERS: BLOOD OFFERING
+        try:
+            s = self.get_by_name("BLOOD OFFERING")
+        except Exception:
+            s = None
+        if not s:
+            return
+        if unit is None or self.game is None:
+            return
+        try:
+            if unit.get_parent_army().player is not self.player:
+                return
+        except Exception:
+            return
+        try:
+            if not unit.has_any_keyword("WORLD EATERS"):
+                return
+        except Exception:
+            return
+        # Must have objective control snapshot from end of previous phase.
+        snapshot = getattr(self.game, "_objective_control_snapshot", None)
+        if not isinstance(snapshot, dict) or not snapshot:
+            return
+        # Determine unit position from last model (unit may already be empty).
+        pos = None
+        if last_model is not None:
+            try:
+                pos = last_model.get_location()
+            except Exception:
+                pos = None
+        if pos is None:
+            return
+        try:
+            ux, uy = float(pos[0]), float(pos[1])
+        except Exception:
+            return
+        candidates = []
+        for obj in list(getattr(self.game.map, "objectives", []) or []):
+            try:
+                loc = getattr(obj, "location", None)
+                if loc is None or getattr(loc, "removed", False):
+                    continue
+                if snapshot.get(loc) is not self.player:
+                    continue
+                radius = float(getattr(loc, "control_radius", 0.0) or 0.0)
+                base_radius = 0.0
+                try:
+                    base = getattr(last_model, "model_base", None)
+                    if base is not None:
+                        base_radius = float(getattr(base, "base_size", 0.0) or 0.0)
+                except Exception:
+                    base_radius = 0.0
+                dx = ux - float(getattr(loc, "x", 0.0))
+                dy = uy - float(getattr(loc, "y", 0.0))
+                if (dx * dx + dy * dy) ** 0.5 <= (radius + base_radius):
+                    candidates.append(obj)
+            except Exception:
+                continue
+        if not candidates:
+            return
+        if self.player.command_points < s.cp_cost:
+            return
+        try:
+            if (s.name or "").strip().upper() in self._used_stratagems_this_phase:
+                return
+        except Exception:
+            pass
+        # Deduplicate per unit destruction
+        for r in self._pending_reactions:
+            if r.get("event") == "unit_destroyed" and r.get("stratagem") == s.name and r.get("unit") is unit:
+                return
+        self._queue_reaction({
+            "event": "unit_destroyed",
+            "phase_name": self._current_phase_name,
+            "stratagem": s.name,
+            "cp_cost": s.cp_cost,
+            "unit": unit,
+            "objective_candidates": candidates,
+        })
+
     # -------- Public API --------
     def list_available(self) -> List[Stratagem]:
         return list(self.available)
@@ -1436,8 +1530,9 @@ class StratagemManager:
         # - Battle-shocked units cannot be targeted by stratagems, except INSANE BRAVERY.
         try:
             tgt = _extract_friendly_target_unit_from_kwargs(kwargs)
-            if _unit_cannot_be_target_of_stratagem(tgt):
-                if (s.name or "").strip().upper() == "INSANE BRAVERY":
+            name_u = (s.name or "").strip().upper()
+            if name_u != "BLOOD OFFERING" and _unit_cannot_be_target_of_stratagem(tgt):
+                if name_u == "INSANE BRAVERY":
                     # Only bypass battle-shock restriction, not embarked restriction.
                     try:
                         is_embarked = getattr(tgt, "is_embarked", None)
@@ -2265,6 +2360,48 @@ class StratagemManager:
             except Exception:
                 pass
             print(f"🩸 APOPLETIC FRENZY: {getattr(unit, 'name', 'Unit')} can charge after advancing this turn.")
+            return True
+
+        # Berzerker Warband: BLOOD OFFERING (sticky objective on unit destruction)
+        if s.name.upper() == "BLOOD OFFERING":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            objective = kwargs.get("objective") or kwargs.get("objective_marker")
+            candidates = kwargs.get("objective_candidates") or []
+            if unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "BLOOD OFFERING":
+                        unit = r.get("unit") or r.get("target_unit")
+                        candidates = candidates or (r.get("objective_candidates") or [])
+                        break
+            if unit is None:
+                print("❌ Blood Offering: no target unit provided")
+                return False
+            # Choose objective marker
+            if objective is None:
+                objective = candidates[0] if candidates else None
+            if objective is None:
+                print("❌ Blood Offering: no objective marker available")
+                return False
+            # Spend CP
+            if not self.player.spend_command_points(s.cp_cost):
+                return False
+            try:
+                loc = getattr(objective, "location", None)
+                if loc is not None and hasattr(loc, "set_sticky_control"):
+                    loc.set_sticky_control(self.player, source="blood_offering")
+                elif loc is not None:
+                    loc.sticky_controller = self.player
+                    loc.sticky_source = "blood_offering"
+                    loc.controlling_player = self.player
+            except Exception:
+                pass
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
+            print("🩸 BLOOD OFFERING: objective remains under your control until broken.")
             return True
 
         # Provide phase_name for timing checks

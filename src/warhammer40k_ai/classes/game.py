@@ -671,6 +671,20 @@ class Game:
             except Exception:
                 pass
 
+        # Snapshot objective control at end of each phase for "previous phase" rules.
+        try:
+            snapshot = {}
+            for obj in list(getattr(self.map, "objectives", []) or []):
+                loc = getattr(obj, "location", None)
+                if loc is None or getattr(loc, "removed", False):
+                    continue
+                if hasattr(loc, "update_control"):
+                    loc.update_control(self)
+                snapshot[loc] = getattr(loc, "controlling_player", None)
+            self._objective_control_snapshot = snapshot
+        except Exception:
+            pass
+
         # Phoenix Gem: resolve pending returns at end of the phase they were destroyed in.
         try:
             pname = str(getattr(phase, "name", "") or "").strip().upper()
