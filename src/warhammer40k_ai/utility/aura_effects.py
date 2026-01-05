@@ -89,6 +89,31 @@ def _get_battle_round_from_unit(unit) -> int:
         return 0
 
 
+def _attacker_in_own_shooting_phase(attacker_unit) -> bool:
+    try:
+        fn = getattr(attacker_unit, "_is_controlling_players_shooting_phase", None)
+        if callable(fn):
+            return bool(fn())
+    except Exception:
+        pass
+    try:
+        army = attacker_unit.get_parent_army()
+        player = getattr(army, "player", None)
+        game = getattr(player, "game", None)
+        if game is None or player is None:
+            return False
+        return bool(getattr(game, "is_shooting_phase", lambda: False)() and getattr(game, "get_current_player", lambda: None)() is player)
+    except Exception:
+        return False
+
+
+def _requires_own_shooting_phase(ability) -> bool:
+    desc = str(getattr(ability, "description", "") or "")
+    if not desc:
+        return False
+    return bool(re.search(r"\byour shooting phase\b", desc, flags=re.IGNORECASE))
+
+
 def _weapon_is_melee(weapon_profile) -> bool:
     pw = getattr(weapon_profile, "parent_wargear", None)
     if pw is None:
@@ -289,6 +314,8 @@ def get_aura_attack_modifiers(attacker_unit, target_unit, weapon_profile, *, gam
                 continue
 
             ab_name = str(getattr(ab, "name", "") or "")
+            if _requires_own_shooting_phase(ab) and not _attacker_in_own_shooting_phase(attacker_unit):
+                continue
             aura_key = _norm_name(ab_name)
             # 10e: the same Aura ability never applies more than once to a unit, even if there are
             # multiple sources (e.g. two identical Captains).

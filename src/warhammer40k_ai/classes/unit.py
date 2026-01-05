@@ -5208,7 +5208,7 @@ class Unit:
     ###########################################################################
     ### Shooting Phase Actions
     ###########################################################################
-    def execute_shooting_declarations(self, weapon_declarations: List[dict], game_map: 'Map') -> bool:
+    def execute_shooting_declarations(self, weapon_declarations: List[dict], game_map: 'Map', *, out_of_phase: bool = False) -> bool:
         """
         Execute shooting declarations according to Warhammer 40k rules.
         
@@ -5218,6 +5218,7 @@ class Unit:
                 - 'target_unit': Unit to target
                 - 'models': List of models using this weapon
             game_map: Map instance for line of sight and range checks
+            out_of_phase: True for out-of-phase shooting (e.g., Overwatch) so it does not consume normal shooting
             
         Returns:
             bool: True if any attacks were successful
@@ -5231,7 +5232,7 @@ class Unit:
         if getattr(self.round_state, 'action_locked_until_turn_end', False):
             print(f"❌ {self.name} is performing an Action and cannot shoot this turn")
             return False
-        if self.round_state.shot_this_round:
+        if (not out_of_phase) and self.round_state.shot_this_round:
             print(f"❌ {self.name} has already shot this round")
             return False
 
@@ -5337,38 +5338,39 @@ class Unit:
 
         print(f"🎯 {self.name} executing {len(weapon_declarations)} shooting declarations...")
         
-        # Mark unit as having shot this round (regardless of success)
-        self.round_state.shot_this_round = True
+        if not out_of_phase:
+            # Mark unit as having shot this round (regardless of success)
+            self.round_state.shot_this_round = True
 
-        # Firing Deck: models whose weapons are used via a transport count as having shot.
-        # We mark them here (once) so even if some declarations fail validation, they still
-        # count as having been selected to shoot via the transport.
-        try:
-            fd_models = []
-            for decl in weapon_declarations:
-                for m in (decl.get("firing_deck_source_models") or []):
-                    if m is not None:
-                        fd_models.append(m)
-            # De-dupe
-            seen = set()
-            for m in fd_models:
-                if id(m) in seen:
-                    continue
-                seen.add(id(m))
-                try:
-                    setattr(m, "_shot_via_firing_deck_this_round", True)
-                except Exception:
-                    pass
-                # Also mark the source unit as having shot this round (best-effort) to prevent
-                # shoot-again effects from re-selecting that unit in this round.
-                try:
-                    pu = getattr(m, "parent_unit", None)
-                    if pu is not None and hasattr(pu, "round_state"):
-                        pu.round_state.shot_this_round = True
-                except Exception:
-                    pass
-        except Exception:
-            pass
+            # Firing Deck: models whose weapons are used via a transport count as having shot.
+            # We mark them here (once) so even if some declarations fail validation, they still
+            # count as having been selected to shoot via the transport.
+            try:
+                fd_models = []
+                for decl in weapon_declarations:
+                    for m in (decl.get("firing_deck_source_models") or []):
+                        if m is not None:
+                            fd_models.append(m)
+                # De-dupe
+                seen = set()
+                for m in fd_models:
+                    if id(m) in seen:
+                        continue
+                    seen.add(id(m))
+                    try:
+                        setattr(m, "_shot_via_firing_deck_this_round", True)
+                    except Exception:
+                        pass
+                    # Also mark the source unit as having shot this round (best-effort) to prevent
+                    # shoot-again effects from re-selecting that unit in this round.
+                    try:
+                        pu = getattr(m, "parent_unit", None)
+                        if pu is not None and hasattr(pu, "round_state"):
+                            pu.round_state.shot_this_round = True
+                    except Exception:
+                        pass
+            except Exception:
+                pass
         
         successful_attacks = 0
         hit_tracker = {}

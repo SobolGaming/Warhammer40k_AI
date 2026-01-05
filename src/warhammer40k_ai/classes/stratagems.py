@@ -1607,17 +1607,18 @@ class StratagemManager:
                 return False
             # Apply Overwatch hit restriction: only unmodified 6 hits
             ok = False
+            out_of_phase = True
             try:
                 setattr(shooter, '_overwatch_sixes_only', True)
                 print(f"🎯 Overwatch: {shooter.name} firing at {enemy_unit.name} ({len(declarations)} weapons)")
-                ok = shooter.execute_shooting_declarations(declarations, self.game.map)
+                ok = shooter.execute_shooting_declarations(declarations, self.game.map, out_of_phase=out_of_phase)
             finally:
                 try:
                     delattr(shooter, '_overwatch_sixes_only')
                 except Exception:
                     pass
                 # If execution failed, ensure we do not mark the unit as having shot
-                if not ok and getattr(shooter, 'round_state', None):
+                if (not ok) and (not out_of_phase) and getattr(shooter, 'round_state', None):
                     shooter.round_state.shot_this_round = False
             if ok:
                 # Mark once per turn consumed
