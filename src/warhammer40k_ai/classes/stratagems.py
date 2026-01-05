@@ -362,15 +362,40 @@ class StratagemManager:
         except Exception:
             return False
 
+    @staticmethod
+    def _normalize_timing_text(text: str) -> str:
+        try:
+            t = str(text or "").strip().lower()
+        except Exception:
+            return ""
+        return t.replace("’", "'")
+
     def _turn_category(self, stratagem: Stratagem) -> str:
         try:
-            if stratagem.is_turn_allowed(True) and stratagem.is_turn_allowed(False):
-                return "either"
-            if stratagem.is_turn_allowed(False) and not stratagem.is_turn_allowed(True):
-                return "opponent"
-            return "your"
+            phase = self._normalize_timing_text(getattr(stratagem, "phase", ""))
+            turn = self._normalize_timing_text(getattr(stratagem, "turn", ""))
+
+            if phase:
+                if "opponent" in phase:
+                    return "opponent"
+                if "your " in phase:
+                    return "your"
+                if "any phase" in phase:
+                    return "either"
+                if "phase" in phase:
+                    return "either"
+
+            if turn:
+                if "opponent" in turn:
+                    return "opponent"
+                if "your" in turn:
+                    return "your"
+                if "either" in turn or "any" in turn:
+                    return "either"
+
+            return "either"
         except Exception:
-            return "your"
+            return "either"
 
     def _effective_cp_cost(self, stratagem: Stratagem, context: Dict[str, Any]) -> int:
         target_unit = context.get("target_unit") or context.get("unit")
