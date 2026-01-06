@@ -4,12 +4,60 @@ from warhammer40k_ai.classes.enhancement import Enhancement
 from warhammer40k_ai.waha_helper import WahaHelper
 from warhammer40k_ai.utility.ability_support import ABILITY_DISPARATE_PATHS, army_has_ability_id, pact_restrictions_for_faction
 import codecs
+import re
 import uuid
 
 
 # Define custom exception for validation errors
 class ArmyValidationError(Exception):
     pass
+
+
+SPACE_MARINE_CHAPTER_KEYWORDS = {
+    "BLACK TEMPLARS",
+    "BLOOD ANGELS",
+    "DARK ANGELS",
+    "DEATHWATCH",
+    "IMPERIAL FISTS",
+    "IRON HANDS",
+    "RAVEN GUARD",
+    "SALAMANDERS",
+    "SPACE MARINES",
+    "SPACE WOLVES",
+    "ULTRAMARINES",
+    "WHITE SCARS",
+}
+SPACE_MARINE_DEFAULT_CHAPTER = "SPACE MARINES"
+SPACE_MARINE_EXPLICIT_CHAPTERS = SPACE_MARINE_CHAPTER_KEYWORDS - {SPACE_MARINE_DEFAULT_CHAPTER}
+SPACE_MARINE_ALLOWED_NON_CHAPTER_FACTION_KEYWORDS: set[str] = set()
+
+BLACK_TEMPLARS_FORBIDDEN_UNITS = {
+    "GLADIATOR LANCER",
+    "GLADIATOR REAPER",
+    "GLADIATOR VALIANT",
+    "IMPULSOR",
+    "REPULSOR",
+    "REPULSOR EXECUTIONER",
+}
+DEATHWATCH_FORBIDDEN_UNITS = {
+    "ASSAULT SQUAD",
+    "ASSAULT SQUAD WITH JUMP PACKS",
+    "ATTACK BIKE SQUAD",
+    "DEVASTATOR SQUAD",
+    "LAND SPEEDER STORM",
+    "RELIC TERMINATOR SQUAD",
+    "SCOUT BIKE SQUAD",
+    "SCOUT SQUAD",
+    "SCOUT SNIPER SQUAD",
+    "TACTICAL SQUAD",
+    "TERMINATOR ASSAULT SQUAD",
+    "TERMINATOR SQUAD",
+}
+SPACE_WOLVES_FORBIDDEN_UNITS = {
+    "APOTHECARY",
+    "DEVASTATOR SQUAD",
+    "TACTICAL SQUAD",
+}
 
 
 def get_faction_id_from_name(faction_name: str) -> Optional[str]:
@@ -667,7 +715,6 @@ class Army:
 
     def _detachment_matches_pact(self, detachment: str, forbidden: str) -> bool:
         def _norm(text: str) -> str:
-            import re
             t = re.sub(r"[^a-z0-9 ]+", " ", str(text or "").lower())
             return re.sub(r"\s+", " ", t).strip()
 
@@ -684,6 +731,139 @@ class Army:
         if det in forb or forb in det:
             return True
         return False
+
+    def validate_space_marine_chapters(self) -> None:
+        fid = str(getattr(self, "faction_id", "") or "").strip().upper()
+        if fid != "SM":
+            return
+
+        def _unit_has_keyword(unit, keyword: str) -> bool:
+            if unit is None:
+                return False
+            try:
+                return bool(unit.has_any_keyword(keyword))
+            except Exception:
+                pass
+            kw = (keyword or "").strip().lower()
+            if not kw:
+                return False
+            try:
+                if kw in [k.lower() for k in (getattr(unit, "keywords", []) or [])]:
+                    return True
+            except Exception:
+                pass
+            try:
+                if kw in [k.lower() for k in (getattr(unit, "faction_keywords", []) or [])]:
+                    return True
+            except Exception:
+                pass
+            return False
+
+        def _unit_is_psyker(unit) -> bool:
+            if unit is None:
+                return False
+            try:
+                val = getattr(unit, "is_psyker", False)
+                if callable(val):
+                    val = val()
+                return bool(val)
+            except Exception:
+                return False
+
+        def _norm_name(name: str) -> str:
+            txt = re.sub(r"[^a-z0-9]+", " ", str(name or "").lower())
+            return re.sub(r"\s+", " ", txt).strip()
+
+        astartes_units = [u for u in list(getattr(self, "units", []) or []) if _unit_has_keyword(u, "ADEPTUS ASTARTES")]
+        if not astartes_units:
+            return
+
+        chapter_present = set()
+        unexpected_keywords: dict[str, list[str]] = {}
+
+        for unit in astartes_units:
+            unit_chapters = [ch for ch in SPACE_MARINE_EXPLICIT_CHAPTERS if _unit_has_keyword(unit, ch)]
+            if len(unit_chapters) > 1:
+                raise ArmyValidationError(
+                    f"Unit '{getattr(unit, 'name', 'Unknown')}' has multiple Chapter keywords: {unit_chapters}."
+                )
+            if unit_chapters:
+                chapter_present.update(unit_chapters)
+
+            fks = list(getattr(unit, "faction_keywords", []) or [])
+            if not fks:
+                continue
+            for kw in fks:
+                kw_u = str(kw).strip().upper()
+                if not kw_u:
+                    continue
+                if kw_u == "ADEPTUS ASTARTES":
+                    continue
+                if kw_u in SPACE_MARINE_CHAPTER_KEYWORDS:
+                    continue
+                if kw_u in SPACE_MARINE_ALLOWED_NON_CHAPTER_FACTION_KEYWORDS:
+                    continue
+                unexpected_keywords.setdefault(kw_u, []).append(getattr(unit, "name", "Unknown"))
+
+        if unexpected_keywords:
+            parts = []
+            for kw, units in sorted(unexpected_keywords.items()):
+                units_s = ", ".join(sorted({str(u) for u in units}))
+                parts.append(f"{kw} (units: {units_s})")
+            raise ArmyValidationError(
+                "Unexpected Adeptus Astartes faction keyword(s) detected: "
+                + "; ".join(parts)
+                + ". Expected chapter keywords: "
+                + ", ".join(sorted(SPACE_MARINE_CHAPTER_KEYWORDS))
+                + "."
+            )
+
+        if len(chapter_present) > 1:
+            raise ArmyValidationError(
+                f"Space Marine armies cannot include units from more than one Chapter ({sorted(chapter_present)})."
+            )
+
+        has_black_templars = any(_unit_has_keyword(u, "BLACK TEMPLARS") for u in astartes_units)
+        has_deathwatch = any(_unit_has_keyword(u, "DEATHWATCH") for u in astartes_units)
+        has_space_wolves = any(_unit_has_keyword(u, "SPACE WOLVES") for u in astartes_units)
+
+        bt_banned = {_norm_name(n) for n in BLACK_TEMPLARS_FORBIDDEN_UNITS}
+        dw_banned = {_norm_name(n) for n in DEATHWATCH_FORBIDDEN_UNITS}
+        sw_banned = {_norm_name(n) for n in SPACE_WOLVES_FORBIDDEN_UNITS}
+
+        for unit in list(getattr(self, "units", []) or []):
+            unit_name = getattr(unit, "name", "Unknown")
+            unit_norm = _norm_name(unit_name)
+            is_astartes = _unit_has_keyword(unit, "ADEPTUS ASTARTES")
+
+            if has_black_templars and is_astartes:
+                if _unit_is_psyker(unit):
+                    raise ArmyValidationError(
+                        f"Black Templars armies cannot include ADEPTUS ASTARTES PSYKER units ({unit_name})."
+                    )
+                if unit_norm in bt_banned and not _unit_has_keyword(unit, "BLACK TEMPLARS"):
+                    raise ArmyValidationError(
+                        f"Black Templars armies cannot include {unit_name} without the BLACK TEMPLARS keyword."
+                    )
+
+            if has_deathwatch:
+                if is_astartes and not _unit_has_keyword(unit, "DEATHWATCH"):
+                    raise ArmyValidationError(
+                        f"Deathwatch armies cannot include ADEPTUS ASTARTES units from other Chapters ({unit_name})."
+                    )
+                if _unit_has_keyword(unit, "AGENTS OF THE IMPERIUM") and _unit_has_keyword(unit, "DEATHWATCH"):
+                    raise ArmyValidationError(
+                        f"Deathwatch armies cannot include AGENTS OF THE IMPERIUM DEATHWATCH units ({unit_name})."
+                    )
+                if is_astartes and unit_norm in dw_banned:
+                    raise ArmyValidationError(
+                        f"Deathwatch armies cannot include {unit_name}."
+                    )
+
+            if has_space_wolves and is_astartes and unit_norm in sw_banned:
+                raise ArmyValidationError(
+                    f"Space Wolves armies cannot include {unit_name}."
+                )
 
     def validate_allies(self):
         # Disparate Paths: allow Harlequins/Ynnari alongside the army faction.
@@ -825,6 +1005,7 @@ class Army:
         self.validate_enhancements()
         self.validate_warlord()
         self.validate_detachment_rules()
+        self.validate_space_marine_chapters()
         self.validate_allies()
         print("Army is valid and ready for battle!")
 
