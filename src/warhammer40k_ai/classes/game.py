@@ -180,6 +180,8 @@ class Game:
         self.event_system.subscribe("phase_start", self._on_phase_start_optional_abilities)
         # Belakor: Pall of Despair healing on failed Battle-shock tests
         self.event_system.subscribe("battle_shock_test_resolved", self._on_battle_shock_test_resolved_shadow_form)
+        # Chaos Knights: Harbingers of Dread (Delirium) on failed Battle-shock tests
+        self.event_system.subscribe("battle_shock_test_resolved", self._on_battle_shock_test_resolved_harbingers)
 
     def _apply_pall_of_despair_forced_tests(self, current_player, tested_ids: set[str]) -> None:
         if current_player is None:
@@ -240,6 +242,74 @@ class Game:
                     except Exception:
                         continue
 
+    def _apply_harbingers_dismay_forced_tests(self, current_player, tested_ids: set[str]) -> None:
+        if current_player is None:
+            return
+        try:
+            from .harbingers_of_dread import DISMAY
+            from ..utility.aura_utils import unit_within_range_of_unit
+        except Exception:
+            return
+
+        try:
+            enemies = [p for p in (self.players or []) if p is not current_player]
+        except Exception:
+            enemies = []
+        current_army = getattr(current_player, "army", None)
+        if current_army is None:
+            return
+
+        for enemy_player in enemies:
+            army = getattr(enemy_player, "army", None)
+            if army is None:
+                continue
+            mgr = getattr(army, "harbingers_of_dread", None)
+            if mgr is None or not getattr(mgr, "_army_has_harbingers", lambda: False)():
+                continue
+            if not mgr.is_dread_active(DISMAY.key):
+                continue
+            aura_range = float(mgr.get_aura_range())
+            sources = [u for u in list(getattr(army, "units", []) or []) if mgr._unit_is_valid_source(u)]
+            if not sources:
+                continue
+
+            for unit in list(getattr(current_army, "units", []) or []):
+                if unit is None:
+                    continue
+                try:
+                    if hasattr(unit, "is_alive") and callable(unit.is_alive) and not unit.is_alive():
+                        continue
+                except Exception:
+                    continue
+                try:
+                    if not bool(getattr(unit, "deployed", True)):
+                        continue
+                except Exception:
+                    pass
+                try:
+                    uid = str(getattr(unit, "_id", None) or id(unit))
+                except Exception:
+                    uid = str(id(unit))
+                if uid in tested_ids:
+                    continue
+                try:
+                    if hasattr(unit, "is_below_starting_strength") and callable(unit.is_below_starting_strength):
+                        if not unit.is_below_starting_strength():
+                            continue
+                    else:
+                        continue
+                except Exception:
+                    continue
+
+                for source in sources:
+                    try:
+                        if unit_within_range_of_unit(source, unit, aura_range, use_attached_aggregate=True):
+                            unit.take_battle_shock_test(self.turn)
+                            tested_ids.add(uid)
+                            break
+                    except Exception:
+                        continue
+
     def _on_battle_shock_test_resolved_shadow_form(self, unit=None, passed: bool = True, **_kwargs) -> None:
         if passed is True or unit is None:
             return
@@ -284,6 +354,62 @@ class Game:
                         healed = apply_pall_of_despair_heal(source)
                         if healed > 0:
                             print(f"Shadow Form: {getattr(source, 'name', 'Model')} regains up to {healed} lost wounds (Pall of Despair).")
+                except Exception:
+                    continue
+
+    def _on_battle_shock_test_resolved_harbingers(self, unit=None, passed: bool = True, **_kwargs) -> None:
+        if passed is True or unit is None:
+            return
+        try:
+            if not unit.is_below_half_strength():
+                return
+        except Exception:
+            return
+        try:
+            unit_army = unit.get_parent_army()
+        except Exception:
+            unit_army = None
+        if unit_army is None:
+            return
+
+        try:
+            from .harbingers_of_dread import DELIRIUM
+            from ..utility.aura_utils import unit_within_range_of_unit
+            from ..utility.dice import get_roll
+        except Exception:
+            return
+
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+
+        try:
+            enemies = [p for p in (self.players or []) if getattr(p, "army", None) is not unit_army]
+        except Exception:
+            enemies = []
+
+        for enemy_player in enemies:
+            army = getattr(enemy_player, "army", None)
+            if army is None:
+                continue
+            mgr = getattr(army, "harbingers_of_dread", None)
+            if mgr is None or not getattr(mgr, "_army_has_harbingers", lambda: False)():
+                continue
+            if not mgr.is_dread_active(DELIRIUM.key):
+                continue
+            aura_range = float(mgr.get_aura_range())
+            for source in list(getattr(army, "units", []) or []):
+                if not mgr._unit_is_valid_source(source):
+                    continue
+                try:
+                    if unit_within_range_of_unit(source, unit, aura_range, use_attached_aggregate=True):
+                        d3 = int(get_roll("D3") or 0)
+                        try:
+                            unit._apply_mortal_wounds_to_unit(unit, d3, game_map=game_map)
+                        except Exception:
+                            pass
+                        print(f"Harbingers of Dread: {getattr(unit, 'name', 'Unit')} suffers {d3} mortal wounds (Delirium).")
+                        return
                 except Exception:
                     continue
 
@@ -2567,6 +2693,11 @@ class Game:
         # Belakor: Pall of Despair can force additional tests for eligible enemy units.
         try:
             self._apply_pall_of_despair_forced_tests(current_player, tested_ids)
+        except Exception:
+            pass
+        # Chaos Knights: Dismay can force additional tests for eligible enemy units.
+        try:
+            self._apply_harbingers_dismay_forced_tests(current_player, tested_ids)
         except Exception:
             pass
 

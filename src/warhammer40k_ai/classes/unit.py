@@ -339,6 +339,25 @@ class Unit:
                 mods.append(Modifier(ModifierOp.ADD, -1, source="nurgles_gift:scabrous_soulrot"))
                 scabrous_oc_floor = True
 
+        if ckey == "leadership":
+            if game_map is None:
+                try:
+                    army = self.get_parent_army()
+                    game = getattr(getattr(army, "player", None), "game", None)
+                    game_map = getattr(game, "map", None) if game is not None else None
+                except Exception:
+                    game_map = None
+            if game_map is not None:
+                try:
+                    from .harbingers_of_dread import HarbingersOfDreadManager, DEATHLY_TERROR, DESPAIR
+                    active = HarbingersOfDreadManager.leadership_auras_for_unit(self, game_map=game_map)
+                    if DEATHLY_TERROR.key in active:
+                        mods.append(Modifier(ModifierOp.ADD, 1, source="harbingers_of_dread:deathly_terror"))
+                    if DESPAIR.key in active:
+                        mods.append(Modifier(ModifierOp.ADD, 1, source="harbingers_of_dread:despair"))
+                except Exception:
+                    pass
+
         # Apply core ordering + rounding.
         interim, dbg = apply_numeric_modifiers(int(base_val), mods, base_raw=base_raw)
 
@@ -3035,12 +3054,25 @@ class Unit:
     @property
     def is_imperium_primarch(self) -> bool:
         return self.has_keyword("Imperium") and self.has_keyword("Primarch")
+
+    def has_super_heavy_walker(self) -> bool:
+        """True if this unit has the Super-heavy Walker ability (Chaos Knights only)."""
+        try:
+            if not self.has_any_keyword("CHAOS KNIGHTS"):
+                return False
+        except Exception:
+            return False
+        try:
+            found, _ = self._find_ability_with_patterns(["super-heavy walker"])
+            return bool(found)
+        except Exception:
+            return False
     
     def can_move_through_ruins_walls(self) -> bool:
         """Check if this unit can move through RUINS walls (not just on ground floor)."""
         return (self.is_infantry or self.is_beast or 
                 self.is_imperium_primarch or self.is_belisarius_cawl or 
-                self.is_flying)
+                self.is_flying or self.has_super_heavy_walker())
     
     def can_access_upper_floors(self) -> bool:
         """Check if this unit can be placed on upper floors of RUINS."""
@@ -3798,6 +3830,116 @@ class Unit:
         """Get the current advance roll, or None if not rolled yet."""
         return getattr(self.round_state, 'advance_roll', None)
 
+    def _path_crosses_tall_terrain(self, path, game_map, *, height_threshold: float = 4.0) -> bool:
+        try:
+            from shapely.geometry import LineString
+        except Exception:
+            return False
+        if game_map is None:
+            return False
+        try:
+            terrain_features = list(getattr(game_map, "terrain_features", []) or [])
+        except Exception:
+            terrain_features = []
+        if not terrain_features:
+            return False
+
+        for i in range(1, len(path or [])):
+            try:
+                x0, y0 = float(path[i - 1][0]), float(path[i - 1][1])
+                x1, y1 = float(path[i][0]), float(path[i][1])
+            except Exception:
+                continue
+            seg = LineString([(x0, y0), (x1, y1)])
+            for terrain in terrain_features:
+                footprint = getattr(terrain, "footprint", None)
+                if footprint is None:
+                    continue
+                try:
+                    if not seg.intersects(footprint):
+                        continue
+                except Exception:
+                    continue
+
+                walls = getattr(terrain, "walls", None)
+                if walls:
+                    for wall in list(walls or []):
+                        try:
+                            poly = wall.get("polygon", None)
+                            if poly is None or not seg.intersects(poly):
+                                continue
+                            z0 = float(wall.get("z_bottom", 0.0) or 0.0)
+                            z1 = float(wall.get("z_top", 0.0) or 0.0)
+                            if (z1 - z0) > height_threshold:
+                                return True
+                        except Exception:
+                            continue
+
+                feature_height = None
+                try:
+                    if hasattr(terrain, "height"):
+                        feature_height = float(getattr(terrain, "height", 0.0) or 0.0)
+                    elif hasattr(terrain, "rim_height"):
+                        feature_height = float(getattr(terrain, "rim_height", 0.0) or 0.0)
+                    elif hasattr(terrain, "bounding_box") and isinstance(terrain.bounding_box, dict):
+                        max_z = float(terrain.bounding_box.get("max", (0.0, 0.0, 0.0))[2] or 0.0)
+                        min_z = float(terrain.bounding_box.get("min", (0.0, 0.0, 0.0))[2] or 0.0)
+                        feature_height = max_z - min_z
+                except Exception:
+                    feature_height = None
+                if feature_height is not None and feature_height > height_threshold:
+                    return True
+
+        return False
+
+    def _apply_super_heavy_walker_terrain_shock(self, game_map, *, action: str) -> None:
+        if action not in ("move", "advance", "fall_back"):
+            return
+        if not self.has_super_heavy_walker():
+            return
+        if game_map is None:
+            return
+
+        any_crossed = False
+        for model in list(getattr(self, "models", []) or []):
+            try:
+                if not getattr(model, "is_alive", True):
+                    continue
+            except Exception:
+                continue
+            path = getattr(model, "last_move_path", None)
+            if not path or len(path) < 2:
+                continue
+            if self._path_crosses_tall_terrain(path, game_map, height_threshold=4.0):
+                any_crossed = True
+                break
+
+        if not any_crossed:
+            return
+
+        roll = int(get_roll("D6"))
+        try:
+            from ..utility.event_bus import append_dice
+            pn = self.get_parent_army().player.name
+            append_dice(pn, f"Super-heavy Walker terrain roll: {roll} for {self.name}")
+        except Exception:
+            pass
+        if roll != 1:
+            return
+
+        try:
+            game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+            current_turn = int(getattr(game, "turn", 1) or 1) if game is not None else 1
+        except Exception:
+            current_turn = 1
+
+        try:
+            if not self.is_battle_shocked():
+                self.apply_status_effect(BattleShockEffect(current_turn))
+        except Exception:
+            pass
+        print(f"⚠️ {self.name} is battle-shocked after moving through tall terrain (Super-heavy Walker).")
+
     def advance(self, destination: Tuple[float, float, float], game_map: 'Map') -> bool:
         # Check if unit can advance after arriving from reserves
         if self.arrived_from_reserves_this_turn and not self.can_advance_after_arriving_from_reserves():
@@ -4070,6 +4212,13 @@ class Unit:
 
         logger.info(f"Unit {self.name} {action_name} from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
         self.round_state.advanced_this_round = advance
+        try:
+            self._apply_super_heavy_walker_terrain_shock(
+                game_map,
+                action="advance" if advance else "move",
+            )
+        except Exception:
+            pass
         return True
 
     def charge_move(self, destination: Tuple[float, float, float], game_map: 'Map', target_unit: 'Unit' = None) -> bool:
@@ -4493,9 +4642,15 @@ class Unit:
                 continue  # Skip this model, don't move it
             
             # Try pathfinding for Fall Back movement using standard pathfinding
-            from ..utility.calcs import get_movement_path_preview
+            from ..utility.calcs import get_movement_path_preview, MovementType
 
-            pathfinding_result = get_movement_path_preview(model, model_destination[:2], self.movement, game_map)
+            pathfinding_result = get_movement_path_preview(
+                model,
+                model_destination[:2],
+                self.movement,
+                game_map,
+                movement_type=MovementType.FALL_BACK,
+            )
 
             if not pathfinding_result or not pathfinding_result.get('valid'):
                 logger.debug(f"Model {model._id} pathfinding failed for fall back - destination may be invalid")
@@ -4624,6 +4779,10 @@ class Unit:
         
         logger.info(f"Unit {self.name} fell back from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
         self.round_state.fell_back_this_round = True
+        try:
+            self._apply_super_heavy_walker_terrain_shock(game_map, action="fall_back")
+        except Exception:
+            pass
         return True
 
     def _eligibility_text_has_extra_clauses(self, text: str) -> bool:

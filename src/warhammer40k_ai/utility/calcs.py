@@ -106,6 +106,16 @@ def angle_difference(angle1: float, angle2: float) -> float:
     diff = (angle2 - angle1 + pi) % (2 * pi) - pi
     return diff
 
+def get_freely_climbable_range(unit: 'Unit') -> float:
+    """Return the height threshold that can be traversed without vertical cost."""
+    try:
+        if unit is not None and hasattr(unit, "has_super_heavy_walker"):
+            if bool(unit.has_super_heavy_walker()):
+                return 4.0
+    except Exception:
+        pass
+    return float(FREELY_CLIMBABLE_RANGE)
+
 def can_traverse_freely(unit: 'Unit', terrain_feature: 'TerrainFeature') -> bool:
     """Check if a unit can freely traverse over terrain without vertical movement cost.
 
@@ -114,6 +124,11 @@ def can_traverse_freely(unit: 'Unit', terrain_feature: 'TerrainFeature') -> bool
     # Flying units can traverse any terrain freely
     if unit.is_flying:
         return True
+    try:
+        if unit is not None and hasattr(unit, "has_super_heavy_walker") and unit.has_super_heavy_walker():
+            return True
+    except Exception:
+        pass
 
     # Import at runtime to avoid circular import
     from ..classes.map import TerrainType, RuinsTerrain
@@ -127,9 +142,9 @@ def can_traverse_freely(unit: 'Unit', terrain_feature: 'TerrainFeature') -> bool
                 unit.is_belisarius_cawl or unit.is_imperium_primarch)
 
     # For other terrain types, check height-based traversal rules
-    # Most terrain ≤2" height can be traversed freely
+    # Most terrain ≤2" height can be traversed freely (Super-heavy Walker extends to 4")
     max_height = getattr(terrain_feature, 'height', 0.0)
-    if max_height <= FREELY_CLIMBABLE_RANGE:
+    if max_height <= get_freely_climbable_range(unit):
         return True
 
     # All other terrain types >2" can be traversed but require vertical movement cost
@@ -143,6 +158,11 @@ def is_terrain_impassable(unit: 'Unit', terrain_feature: 'TerrainFeature') -> bo
     # Flying units can pass through any terrain
     if unit.is_flying:
         return False
+    try:
+        if unit is not None and hasattr(unit, "has_super_heavy_walker") and unit.has_super_heavy_walker():
+            return False
+    except Exception:
+        pass
 
     # Import at runtime to avoid circular import
     from ..classes.map import TerrainType, RuinsTerrain
@@ -162,7 +182,7 @@ def is_terrain_impassable(unit: 'Unit', terrain_feature: 'TerrainFeature') -> bo
                 try:
                     z0 = float(wall.get("z_bottom", 0.0) or 0.0)
                     z1 = float(wall.get("z_top", 0.0) or 0.0)
-                    if (z1 - z0) > FREELY_CLIMBABLE_RANGE:
+                    if (z1 - z0) > get_freely_climbable_range(unit):
                         return True
                 except Exception:
                     # If wall metadata is missing, err on the side of blocking (legacy behavior)
@@ -204,6 +224,11 @@ def get_terrain_blocking_polygons(unit: 'Unit', terrain_feature: 'TerrainFeature
     if terrain_type == TerrainType.RUINS and isinstance(terrain_feature, RuinsTerrain):
         can_traverse_walls = (unit.is_infantry or unit.is_beast or
                              unit.is_belisarius_cawl or unit.is_imperium_primarch)
+        try:
+            if unit is not None and hasattr(unit, "has_super_heavy_walker") and unit.has_super_heavy_walker():
+                can_traverse_walls = True
+        except Exception:
+            pass
 
         if not can_traverse_walls:
             # Add wall polygons as blocking ONLY if wall segment height > 2".
@@ -211,7 +236,7 @@ def get_terrain_blocking_polygons(unit: 'Unit', terrain_feature: 'TerrainFeature
                 try:
                     z0 = float(wall.get("z_bottom", 0.0) or 0.0)
                     z1 = float(wall.get("z_top", 0.0) or 0.0)
-                    if (z1 - z0) <= FREELY_CLIMBABLE_RANGE:
+                    if (z1 - z0) <= get_freely_climbable_range(unit):
                         continue
                     poly = wall.get("polygon", None)
                     if poly is not None:
@@ -260,18 +285,19 @@ def get_movement_cost(model: 'Model', point_a: Tuple[float, float], point_b: Tup
 
     # Determine the maximum terrain height along the path that requires vertical movement
     max_terrain_height = 0
+    threshold = get_freely_climbable_range(model.parent_unit)
     for terrain_feature in intersecting_terrain:
         # Only consider terrain that is not impassable
         if not is_terrain_impassable(model.parent_unit, terrain_feature):
             # Get terrain height
             terrain_height = getattr(terrain_feature, 'height', 0.0)
-            # If terrain is >2" height, it requires vertical movement cost
-            if terrain_height > FREELY_CLIMBABLE_RANGE:
+            # If terrain is > threshold height, it requires vertical movement cost
+            if terrain_height > threshold:
                 if terrain_height > max_terrain_height:
                     max_terrain_height = terrain_height
 
     # Set vertical distance based on the highest terrain that requires climbing
-    dz = max_terrain_height if max_terrain_height > FREELY_CLIMBABLE_RANGE else 0
+    dz = max_terrain_height if max_terrain_height > threshold else 0
 
     # For units with 'Fly', they pay vertical movement cost but can traverse over obstacles
     if model.parent_unit.is_flying:
@@ -689,7 +715,13 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
 
     # Get terrain blocking polygons with caching and spatial filtering
     unit_keywords = tuple(sorted(moving_unit.keywords)) if hasattr(moving_unit, 'keywords') else ()
-    terrain_cache_key = (id(game_map), unit_keywords)
+    super_heavy = False
+    try:
+        if hasattr(moving_unit, "has_super_heavy_walker"):
+            super_heavy = bool(moving_unit.has_super_heavy_walker())
+    except Exception:
+        super_heavy = False
+    terrain_cache_key = (id(game_map), unit_keywords, super_heavy)
     if terrain_cache_key in _terrain_cache:
         all_blocking_terrain = _terrain_cache[terrain_cache_key]
     else:
@@ -785,11 +817,6 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
         # For now, skip deployment zone buffer in pathfinding - this will be validated
         # at a higher level by the scout movement validation in the Game class
         pass
-
-    elif movement_type == MovementType.FALL_BACK:
-        # Fall back: can move through models, only terrain blocks
-        trees['friendly_models'] = None  # Can move through friendly models
-        trees['enemy_models'] = None     # Can move through enemy models
 
     elif movement_type == MovementType.CHARGE:
         # Charge: no engagement range buffer (can move into engagement range)
@@ -889,6 +916,19 @@ def get_validation_rules(movement_type: MovementType, target_unit: 'Unit' = None
         base_rules.update({
             'cannot_move_within_engagement_range': True,  # Cannot move within 1" of enemies
         })
+
+    # Super-heavy Walker (Chaos Knights): move through models (excluding TITANIC), can pass within
+    # engagement range but cannot end within it for Normal/Advance/Fall Back moves.
+    try:
+        is_super_heavy = bool(moving_unit is not None and moving_unit.has_super_heavy_walker())
+    except Exception:
+        is_super_heavy = False
+    if is_super_heavy and movement_type in [MovementType.MOVE, MovementType.ADVANCE, MovementType.FALL_BACK]:
+        base_rules['can_move_through_models'] = True
+        base_rules['block_titanic_models'] = True
+        if movement_type in [MovementType.MOVE, MovementType.ADVANCE]:
+            base_rules['cannot_move_within_engagement_range'] = False
+            base_rules['cannot_end_in_engagement_range'] = True
 
     return base_rules
 
@@ -1262,9 +1302,37 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
         if actual_hits:
             return {'valid': False, 'reason': 'Position blocked by terrain'}
 
+    # Super-heavy Walker: cannot move through TITANIC models.
+    if validation_rules.get('block_titanic_models', False) and game_map is not None:
+        for unit in list(getattr(game_map, "units", []) or []):
+            if unit is model.parent_unit:
+                continue
+            try:
+                if not getattr(unit, "is_titanic", False):
+                    continue
+            except Exception:
+                continue
+            try:
+                if not unit.is_alive() or not getattr(unit, "deployed", True):
+                    continue
+            except Exception:
+                continue
+            for other_model in list(getattr(unit, "models", []) or []):
+                try:
+                    if not getattr(other_model, "is_alive", True):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    other_shape = other_model.model_base.get_base_shape()
+                    if test_shape.intersects(other_shape):
+                        return {'valid': False, 'reason': 'Position blocked by TITANIC model'}
+                except Exception:
+                    continue
+
     # Check friendly model collisions using shape intersection with 3D consideration
     if collision_trees.get('friendly_models') and validation_rules.get('prevent_friendly_overlap', True):
-        if not validation_rules.get('can_move_through_models', False):
+        if (not validation_rules.get('can_move_through_models', False)) or is_final_position:
             potential_hits = query_spatial_index(collision_trees['friendly_models'], test_shape)
             actual_hits = []
 
@@ -1311,7 +1379,7 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
 
     # Check enemy model collisions using shape intersection
     if collision_trees.get('enemy_models') and validation_rules.get('prevent_enemy_overlap', True):
-        if not validation_rules.get('can_move_through_models', False):
+        if (not validation_rules.get('can_move_through_models', False)) or is_final_position:
             potential_hits = query_spatial_index(collision_trees['enemy_models'], test_shape)
             actual_hits = []
 
@@ -1351,6 +1419,8 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
                     continue
 
             if actual_hits:
+                if validation_rules.get('can_move_through_models', False) and is_final_position and validation_rules.get('cannot_end_in_engagement_range', False):
+                    return {'valid': False, 'reason': 'Position within engagement range of enemy models'}
                 return {'valid': False, 'reason': 'Position blocked by enemy models'}
 
     # Check engagement range using fast spatial indexing (engagement_buffer tree)
@@ -3187,7 +3257,8 @@ def a_star_optimized_enhanced(model: 'Model', game_map: 'Map', target: Tuple[flo
 
 
 def get_movement_path_preview(moving_model: 'Model', target_position: tuple,
-                            max_distance: float, game_map: 'Map') -> dict:
+                            max_distance: float, game_map: 'Map',
+                            movement_type: Optional['MovementType'] = None) -> dict:
     """
     Get a movement path preview using the unified pathfinding system.
     """
@@ -3197,10 +3268,11 @@ def get_movement_path_preview(moving_model: 'Model', target_position: tuple,
     else:
         target_3d = target_position
 
+    use_type = movement_type or MovementType.MOVE
     return unified_pathfinding(
         model=moving_model,
         target=target_3d,
-        movement_type=MovementType.MOVE,
+        movement_type=use_type,
         max_distance=max_distance,
         game_map=game_map
     )

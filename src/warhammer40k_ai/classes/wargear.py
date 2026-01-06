@@ -968,6 +968,39 @@ class WargearProfile:
                 hit_result['modifiers'].append("-1 to hit from Skullsquirm Blight (Nurgle's Gift)")
         except Exception:
             pass
+        # Harbingers of Dread: Darkness (-1 to hit against Chaos Knights).
+        try:
+            target_army = target.get_parent_army()
+            mgr = getattr(target_army, "harbingers_of_dread", None) if target_army is not None else None
+            if mgr is not None:
+                from ..classes.harbingers_of_dread import DARKNESS
+                if mgr.is_dread_active(DARKNESS.key, unit=target):
+                    attacker_unit = attacker.parent_unit
+                    apply_darkness = False
+                    try:
+                        if attacker_unit.is_battle_shocked():
+                            apply_darkness = True
+                    except Exception:
+                        apply_darkness = False
+                    if not apply_darkness:
+                        try:
+                            army = attacker_unit.get_parent_army()
+                            game = getattr(getattr(army, "player", None), "game", None)
+                            game_map = getattr(game, "map", None) if game is not None else None
+                        except Exception:
+                            game_map = None
+                        if game_map is not None:
+                            try:
+                                dist = float(game_map.get_distance_between_units(attacker_unit, target))
+                                if dist > 18.0:
+                                    apply_darkness = True
+                            except Exception:
+                                apply_darkness = False
+                    if apply_darkness:
+                        dice_modifier -= 1
+                        hit_result['modifiers'].append("-1 to hit from Darkness (Harbingers of Dread)")
+        except Exception:
+            pass
 
         # Damaged profile: subtract N from the Hit roll (stored as negative modifier).
         try:
@@ -1419,6 +1452,21 @@ class WargearProfile:
             if mgr is not None and mgr.wound_bonus_applies(attacker.parent_unit, target):
                 dice_modifier += 1
                 wound_result['modifiers'].append("+1 to wound from Oath of Moment")
+        except Exception:
+            pass
+        # Harbingers of Dread: Doom (+1 to wound vs Battle-shocked targets).
+        try:
+            army = attacker.parent_unit.get_parent_army()
+            mgr = getattr(army, "harbingers_of_dread", None) if army is not None else None
+            if mgr is not None:
+                from ..classes.harbingers_of_dread import DOOM
+                if mgr.is_dread_active(DOOM.key, unit=attacker.parent_unit):
+                    try:
+                        if target.is_battle_shocked():
+                            dice_modifier += 1
+                            wound_result['modifiers'].append("+1 to wound from Doom (Harbingers of Dread)")
+                    except Exception:
+                        pass
         except Exception:
             pass
 

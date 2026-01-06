@@ -158,6 +158,13 @@ class Army:
             self.shadow_form = ShadowFormManager(self)
         except Exception:
             self.shadow_form = None
+
+        # Chaos Knights: Harbingers of Dread (safe to attach, no-op if not applicable).
+        try:
+            from .harbingers_of_dread import HarbingersOfDreadManager
+            self.harbingers_of_dread = HarbingersOfDreadManager(self)
+        except Exception:
+            self.harbingers_of_dread = None
     
     def add_unit(self, unit: Unit) -> bool:
         if not self.faction_keyword:
@@ -865,6 +872,65 @@ class Army:
                     f"Space Wolves armies cannot include {unit_name}."
                 )
 
+    def validate_dreadblades(self) -> None:
+        fid = str(getattr(self, "faction_id", "") or "").strip().upper()
+        if fid == "QT":
+            return
+
+        def _has_keyword(unit, keyword: str) -> bool:
+            if unit is None:
+                return False
+            try:
+                return bool(unit.has_any_keyword(keyword))
+            except Exception:
+                return False
+
+        chaos_knight_units = [u for u in list(getattr(self, "units", []) or []) if _has_keyword(u, "CHAOS KNIGHTS")]
+        if not chaos_knight_units:
+            return
+
+        for unit in list(getattr(self, "units", []) or []):
+            if not _has_keyword(unit, "CHAOS"):
+                raise ArmyValidationError(
+                    "Dreadblades: all models in the army must have the CHAOS keyword to include Chaos Knights allies."
+                )
+
+        titanic_models = 0
+        war_dog_models = 0
+
+        for unit in chaos_knight_units:
+            if getattr(unit, "is_warlord", False):
+                raise ArmyValidationError(
+                    f"Dreadblades: Chaos Knights unit '{getattr(unit, 'name', 'Unknown')}' cannot be your Warlord."
+                )
+            if getattr(unit, "enhancement", None) is not None:
+                raise ArmyValidationError(
+                    f"Dreadblades: Chaos Knights unit '{getattr(unit, 'name', 'Unknown')}' cannot take Enhancements."
+                )
+
+            model_count = len(getattr(unit, "models", []) or [])
+            if _has_keyword(unit, "TITANIC"):
+                titanic_models += model_count
+            elif _has_keyword(unit, "WAR DOG"):
+                war_dog_models += model_count
+            else:
+                raise ArmyValidationError(
+                    f"Dreadblades: Chaos Knights unit '{getattr(unit, 'name', 'Unknown')}' is neither TITANIC nor WAR DOG."
+                )
+
+        if titanic_models and war_dog_models:
+            raise ArmyValidationError(
+                "Dreadblades: cannot include both TITANIC and WAR DOG models."
+            )
+        if titanic_models > 1:
+            raise ArmyValidationError(
+                f"Dreadblades: too many TITANIC models included ({titanic_models}); maximum is 1."
+            )
+        if war_dog_models > 3:
+            raise ArmyValidationError(
+                f"Dreadblades: too many WAR DOG models included ({war_dog_models}); maximum is 3."
+            )
+
     def validate_allies(self):
         # Disparate Paths: allow Harlequins/Ynnari alongside the army faction.
         if not army_has_ability_id(self, ABILITY_DISPARATE_PATHS):
@@ -1006,6 +1072,7 @@ class Army:
         self.validate_warlord()
         self.validate_detachment_rules()
         self.validate_space_marine_chapters()
+        self.validate_dreadblades()
         self.validate_allies()
         print("Army is valid and ready for battle!")
 
@@ -1045,6 +1112,13 @@ class Army:
                 game = None
             mgr.on_battle_round_start(int(battle_round), game=game)
         mgr = getattr(self, "shadow_form", None)
+        if mgr is not None:
+            try:
+                game = getattr(getattr(self, "player", None), "game", None)
+            except Exception:
+                game = None
+            mgr.on_battle_round_start(int(battle_round), game=game)
+        mgr = getattr(self, "harbingers_of_dread", None)
         if mgr is not None:
             try:
                 game = getattr(getattr(self, "player", None), "game", None)

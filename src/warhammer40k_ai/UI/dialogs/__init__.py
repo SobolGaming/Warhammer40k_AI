@@ -28,6 +28,7 @@ from .roll_reroll_dialog import RollRerollDialog
 from .templar_vows_dialog import TemplarVowsDialog
 from .nurgles_gift_plague_dialog import NurglesGiftPlagueDialog
 from .shadow_form_dialog import ShadowFormDialog
+from .harbingers_of_dread_dialog import HarbingersOfDreadDialog
 
 __all__ = [
     'BaseDialog',
@@ -60,4 +61,5 @@ __all__ = [
     'TemplarVowsDialog',
     'NurglesGiftPlagueDialog',
     'ShadowFormDialog',
+    'HarbingersOfDreadDialog',
 ] 

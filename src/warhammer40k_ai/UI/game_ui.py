@@ -63,6 +63,7 @@ SUPPORTED_ARMY_RULES = {
     "DISPARATE PATHS",
     "THE SHADOW OF CHAOS",
     "OATH OF MOMENT",
+    "HARBINGERS OF DREAD",
 }
 SUPPORTED_DETACHMENT_RULES = {
     "RELENTLESS RAGE",
@@ -474,6 +475,7 @@ class GameView:
         self.blessings_of_khorne_dialog = None
         self.templar_vows_dialog = None
         self.shadow_form_dialog = None
+        self.harbingers_of_dread_dialog = None
         # Stratagem interaction helpers
         def _request_secondary_discard(player, game, on_chosen):
             cards = list(getattr(player, 'active_secondaries', []) or [])
@@ -739,6 +741,8 @@ class GameView:
         self._pending_templar_vows_queue = []
         # Belakor Shadow Form selection queue
         self._pending_shadow_form_queue = []
+        # Chaos Knights: Harbingers of Dread selection queue
+        self._pending_harbingers_queue = []
         # SLAANESH/DAEMONS (Shalaxi): Monarch of the Hunt quarry selection queue
         self._pending_quarry_queue = []
         try:
@@ -813,6 +817,28 @@ class GameView:
             if queue:
                 self._pending_templar_vows_queue = list(queue)
                 self._open_next_templar_vows_prompt()
+
+        # CHAOS KNIGHTS: Harbingers of Dread selection at the start of battle rounds 1, 3, and 5.
+        if br in (1, 3, 5):
+            queue = []
+            for p in order:
+                try:
+                    if p is None or p.type.name != "HUMAN":
+                        continue
+                    army = p.get_army()
+                    mgr = getattr(army, "harbingers_of_dread", None) if army is not None else None
+                    if mgr is None or not getattr(mgr, "_army_has_harbingers", lambda: False)():
+                        continue
+                    if getattr(mgr, "last_selection_round", None) == br:
+                        continue
+                    if not getattr(mgr, "get_available_dread_abilities", lambda: [])():
+                        continue
+                    queue.append(p)
+                except Exception:
+                    continue
+            if queue:
+                self._pending_harbingers_queue = list(queue)
+                self._open_next_harbingers_prompt(br)
 
         # BELAKOR: Shadow Form is chosen at the start of each battle round.
         queue = []
@@ -2118,6 +2144,91 @@ class GameView:
         self.templar_vows_dialog.show(options=options, on_confirm=_on_confirm, on_cancel=_on_cancel)
         try:
             self.dialog_manager.open(self.templar_vows_dialog, modal=True)
+        except Exception:
+            pass
+
+    def _open_next_harbingers_prompt(self, battle_round: int) -> None:
+        if not self._pending_harbingers_queue:
+            return
+        player = self._pending_harbingers_queue.pop(0)
+        army = player.get_army()
+        mgr = getattr(army, "harbingers_of_dread", None)
+        if mgr is None:
+            self._open_next_harbingers_prompt(battle_round)
+            return
+        if getattr(mgr, "last_selection_round", None) == battle_round:
+            self._open_next_harbingers_prompt(battle_round)
+            return
+        if not getattr(mgr, "get_available_dread_abilities", lambda: [])():
+            try:
+                mgr.last_selection_round = int(battle_round)
+            except Exception:
+                pass
+            self._open_next_harbingers_prompt(battle_round)
+            return
+
+        if self.harbingers_of_dread_dialog is None:
+            try:
+                from .dialogs import HarbingersOfDreadDialog
+                sw, sh = self.screen.get_size()
+                self.harbingers_of_dread_dialog = HarbingersOfDreadDialog(sw, sh)
+            except Exception:
+                self.harbingers_of_dread_dialog = None
+        if self.harbingers_of_dread_dialog is None:
+            try:
+                mgr.roll_dread_abilities(battle_round=battle_round)
+            except Exception:
+                pass
+            self._open_next_harbingers_prompt(battle_round)
+            return
+
+        try:
+            from types import SimpleNamespace
+            roll_option = SimpleNamespace(
+                key="ROLL",
+                name="Roll 2D6 (randomly select two)",
+                summary="Apply both results; duplicates have no additional effect.",
+            )
+        except Exception:
+            roll_option = None
+
+        try:
+            options = list(mgr.get_available_dread_abilities())
+        except Exception:
+            options = []
+        if roll_option is not None:
+            options = [roll_option] + options
+
+        def _on_confirm(choice):
+            try:
+                key = getattr(choice, "key", "")
+            except Exception:
+                key = ""
+            try:
+                if str(key).strip().upper() == "ROLL":
+                    mgr.roll_dread_abilities(battle_round=battle_round)
+                else:
+                    mgr.select_dread_ability(choice, battle_round=battle_round)
+            except Exception:
+                pass
+            try:
+                if self.rule_detail_panel and self.rule_detail_panel.visible and isinstance(self._rule_panel_state, dict):
+                    if self._rule_panel_state.get("player") is player and self._rule_panel_state.get("rule_type") == "army":
+                        self._toggle_rule_panel(player, "army", force_refresh=True)
+            except Exception:
+                pass
+            self._open_next_harbingers_prompt(battle_round)
+
+        def _on_cancel():
+            try:
+                mgr.roll_dread_abilities(battle_round=battle_round)
+            except Exception:
+                pass
+            self._open_next_harbingers_prompt(battle_round)
+
+        self.harbingers_of_dread_dialog.show(options=options, on_confirm=_on_confirm, on_cancel=_on_cancel)
+        try:
+            self.dialog_manager.open(self.harbingers_of_dread_dialog, modal=True)
         except Exception:
             pass
 
@@ -3630,6 +3741,22 @@ class GameView:
                         highlight_words.append(active_plague.name)
                     except Exception:
                         pass
+        if rule_type == "army" and "harbingers of dread" in rule_name.strip().lower():
+            try:
+                army = player.get_army()
+            except Exception:
+                army = None
+            mgr = getattr(army, "harbingers_of_dread", None) if army is not None else None
+            if mgr is not None:
+                try:
+                    active_dreads = mgr.get_active_dread_abilities()
+                except Exception:
+                    active_dreads = []
+                for dread in active_dreads:
+                    try:
+                        highlight_words.append(dread.name)
+                    except Exception:
+                        continue
         hud = None
         if rule_type == "army" and "battle focus" in rule_name.strip().lower():
             mgr = self._get_battle_focus_manager(player)
