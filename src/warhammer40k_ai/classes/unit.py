@@ -3706,14 +3706,28 @@ class Unit:
         return False
 
     def can_use_dark_pacts(self) -> bool:
-        if self.has_dark_pacts():
+        has_pacts = self.has_dark_pacts()
+        first_prince = self._first_prince_of_chaos_active() and self._is_chaos_undivided()
+        if not has_pacts and not first_prince:
+            return False
+        try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        if army is None:
             return True
-        return self._first_prince_of_chaos_active() and self._is_chaos_undivided()
+        fid = str(getattr(army, "faction_id", "") or "").strip().upper()
+        if fid and fid != "CSM" and not first_prince:
+            return False
+        return True
 
     def _auto_pass_dark_pacts_test(self) -> bool:
         return self._first_prince_of_chaos_active() and self._is_belakor()
 
     def maybe_trigger_dark_pacts(self, game, *, phase_name: str, trigger: str) -> None:
+        trigger_norm = str(trigger or "").strip().lower()
+        if trigger_norm not in ("shooting", "fight"):
+            return
         if not self.can_use_dark_pacts():
             return
         try:

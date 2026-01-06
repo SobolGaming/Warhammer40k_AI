@@ -64,6 +64,8 @@ SUPPORTED_ARMY_RULES = {
     "THE SHADOW OF CHAOS",
     "OATH OF MOMENT",
     "HARBINGERS OF DREAD",
+    "DARK PACTS",
+    "CULT OF THE DARK GODS",
 }
 SUPPORTED_DETACHMENT_RULES = {
     "RELENTLESS RAGE",
@@ -476,6 +478,7 @@ class GameView:
         self.templar_vows_dialog = None
         self.shadow_form_dialog = None
         self.harbingers_of_dread_dialog = None
+        self.dark_pacts_dialog = None
         # Stratagem interaction helpers
         def _request_secondary_discard(player, game, on_chosen):
             cards = list(getattr(player, 'active_secondaries', []) or [])
@@ -726,6 +729,7 @@ class GameView:
         self._blessings_flow_active = False
         self._battle_focus_flow_active = False
         self._oath_of_moment_flow_active = False
+        self._dark_pacts_flow_active = False
 
         # Initialize shared UI state
         self._ui_hitboxes = {}
@@ -743,6 +747,8 @@ class GameView:
         self._pending_shadow_form_queue = []
         # Chaos Knights: Harbingers of Dread selection queue
         self._pending_harbingers_queue = []
+        # Chaos Space Marines: Dark Pacts selection queue
+        self._pending_dark_pacts_queue = []
         # SLAANESH/DAEMONS (Shalaxi): Monarch of the Hunt quarry selection queue
         self._pending_quarry_queue = []
         try:
@@ -752,6 +758,8 @@ class GameView:
                 self.game.event_system.subscribe("phase_start", self._on_phase_start_optional_ability_prompts)
                 # Oath of Moment target selection (start of Command phase)
                 self.game.event_system.subscribe("oath_of_moment_prompt", self._on_oath_of_moment_prompt)
+                # Dark Pacts prompt when a unit is selected to shoot or fight
+                self.game.event_system.subscribe("dark_pacts_prompt", self._on_dark_pacts_prompt)
                 # Quarry re-pick when quarry is destroyed
                 self.game.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_for_monarch_of_the_hunt)
                 # Battle Focus reactive prompts (Opportunity Seized / Fade Back)
@@ -970,6 +978,110 @@ class GameView:
         except Exception:
             # If UI wiring is missing, just skip
             _done(False)
+
+    def _on_dark_pacts_prompt(self, player=None, unit=None, phase_name=None, trigger=None, game=None, **_kwargs):
+        if player is None or unit is None:
+            return
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return
+        except Exception:
+            return
+
+        if self._dark_pacts_flow_active:
+            self._pending_dark_pacts_queue.append((player, unit, phase_name, trigger))
+            return
+        self._pending_dark_pacts_queue.append((player, unit, phase_name, trigger))
+        self._open_next_dark_pacts_prompt(game or self.game)
+
+    def _open_next_dark_pacts_prompt(self, game):
+        q = list(getattr(self, "_pending_dark_pacts_queue", []) or [])
+        if not q:
+            self._pending_dark_pacts_queue = []
+            self._dark_pacts_flow_active = False
+            return
+        player, unit, phase_name, trigger = q.pop(0)
+        self._pending_dark_pacts_queue = q
+
+        if player is None or unit is None:
+            self._open_next_dark_pacts_prompt(game)
+            return
+        try:
+            if not unit.can_use_dark_pacts():
+                self._open_next_dark_pacts_prompt(game)
+                return
+        except Exception:
+            self._open_next_dark_pacts_prompt(game)
+            return
+        try:
+            sr = getattr(unit, "special_rules", None)
+            exp = ""
+            if isinstance(sr, dict):
+                exp = str(sr.get("dark_pacts_expires_phase", "") or "").strip().upper()
+                if sr.get("dark_pacts_active") and exp == str(phase_name or "").strip().upper():
+                    self._open_next_dark_pacts_prompt(game)
+                    return
+        except Exception:
+            pass
+
+        if self.dark_pacts_dialog is None:
+            try:
+                from .dialogs import DarkPactsDialog
+                sw, sh = self.screen.get_width(), self.screen.get_height()
+                self.dark_pacts_dialog = DarkPactsDialog(sw, sh)
+            except Exception:
+                self.dark_pacts_dialog = None
+        if self.dark_pacts_dialog is None:
+            self._dark_pacts_flow_active = False
+            return
+
+        subtitle = f"{getattr(unit, 'name', 'Unit')} selected to {('shoot' if trigger == 'shooting' else 'fight')}."
+        options = [
+            {
+                "label": "Skip Dark Pact",
+                "summary": "Do not make a Dark Pact.",
+                "value": None,
+            },
+            {
+                "label": "Lethal Hits",
+                "summary": "Weapons gain [LETHAL HITS] until end of phase.",
+                "value": "LETHAL HITS",
+            },
+            {
+                "label": "Sustained Hits 1",
+                "summary": "Weapons gain [SUSTAINED HITS 1] until end of phase.",
+                "value": "SUSTAINED HITS 1",
+            },
+        ]
+
+        def _on_confirm(selected):
+            try:
+                value = selected.get("value")
+                if value:
+                    player.set_next_optional_decision("DARK_PACTS", True)
+                    player.set_next_optional_selection("DARK_PACTS_CHOICE", value)
+                else:
+                    player.set_next_optional_decision("DARK_PACTS", False)
+            except Exception:
+                pass
+            try:
+                unit.maybe_trigger_dark_pacts(game, phase_name=phase_name, trigger=trigger or "")
+            except Exception:
+                pass
+            self._dark_pacts_flow_active = False
+            self._open_next_dark_pacts_prompt(game)
+
+        def _on_cancel():
+            self._dark_pacts_flow_active = False
+            self._open_next_dark_pacts_prompt(game)
+
+        self._dark_pacts_flow_active = True
+        self.dark_pacts_dialog.show(options=options, on_confirm=_on_confirm, on_cancel=_on_cancel, subtitle=subtitle)
+        try:
+            self.dialog_manager.open(self.dark_pacts_dialog, modal=True)
+        except Exception:
+            self._dark_pacts_flow_active = False
+            self._open_next_dark_pacts_prompt(game)
 
     def _on_oath_of_moment_prompt(self, player=None, game=None, **_kwargs):
         """Prompt human players to select an Oath of Moment target at Command phase start."""

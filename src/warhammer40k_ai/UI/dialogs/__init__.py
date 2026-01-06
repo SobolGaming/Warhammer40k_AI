@@ -29,6 +29,7 @@ from .templar_vows_dialog import TemplarVowsDialog
 from .nurgles_gift_plague_dialog import NurglesGiftPlagueDialog
 from .shadow_form_dialog import ShadowFormDialog
 from .harbingers_of_dread_dialog import HarbingersOfDreadDialog
+from .dark_pacts_dialog import DarkPactsDialog
 
 __all__ = [
     'BaseDialog',
@@ -62,4 +63,5 @@ __all__ = [
     'NurglesGiftPlagueDialog',
     'ShadowFormDialog',
     'HarbingersOfDreadDialog',
+    'DarkPactsDialog',
 ] 

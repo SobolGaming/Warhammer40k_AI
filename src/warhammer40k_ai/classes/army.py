@@ -58,6 +58,12 @@ SPACE_WOLVES_FORBIDDEN_UNITS = {
     "DEVASTATOR SQUAD",
     "TACTICAL SQUAD",
 }
+CULT_OF_DARK_GODS_UNITS = {
+    "KHORNE BERZERKERS",
+    "RUBRIC MARINES",
+    "PLAGUE MARINES",
+    "NOISE MARINES",
+}
 
 
 def get_faction_id_from_name(faction_name: str) -> Optional[str]:
@@ -931,6 +937,66 @@ class Army:
                 f"Dreadblades: too many WAR DOG models included ({war_dog_models}); maximum is 3."
             )
 
+    def _cult_of_dark_gods_points_cap(self) -> int:
+        try:
+            limit = int(self.points_limit or 0)
+        except Exception:
+            limit = 0
+        if limit <= 0:
+            return 0
+        if limit <= 1000:
+            return 250
+        if limit <= 2000:
+            return 500
+        return 750
+
+    def validate_cult_of_dark_gods(self) -> None:
+        fid = str(getattr(self, "faction_id", "") or "").strip().upper()
+        if fid != "CSM":
+            return
+
+        def _norm_name(name: str) -> str:
+            txt = re.sub(r"[^a-z0-9]+", " ", str(name or "").lower())
+            return re.sub(r"\s+", " ", txt).strip()
+
+        allowed = {_norm_name(n) for n in CULT_OF_DARK_GODS_UNITS}
+        cult_units = []
+        for unit in list(getattr(self, "units", []) or []):
+            unit_name = getattr(unit, "name", "")
+            if _norm_name(unit_name) in allowed:
+                cult_units.append(unit)
+
+        if not cult_units:
+            return
+
+        for unit in cult_units:
+            try:
+                unit.faction_keywords = ["Heretic Astartes"]
+            except Exception:
+                pass
+            try:
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["cult_of_dark_gods"] = True
+                if _norm_name(getattr(unit, "name", "")) == "plague marines":
+                    sr["infused_blessings_of_nurgle_disabled"] = True
+                unit.special_rules = sr
+            except Exception:
+                pass
+
+        cap = self._cult_of_dark_gods_points_cap()
+        total = 0
+        for unit in cult_units:
+            try:
+                total += int(unit.get_unit_cost())
+            except Exception:
+                continue
+        if cap <= 0 or total > cap:
+            raise ArmyValidationError(
+                f"Cult of the Dark Gods: cult allies total {total} points (cap {cap})."
+            )
+
     def validate_allies(self):
         # Disparate Paths: allow Harlequins/Ynnari alongside the army faction.
         if not army_has_ability_id(self, ABILITY_DISPARATE_PATHS):
@@ -1073,6 +1139,7 @@ class Army:
         self.validate_detachment_rules()
         self.validate_space_marine_chapters()
         self.validate_dreadblades()
+        self.validate_cult_of_dark_gods()
         self.validate_allies()
         print("Army is valid and ready for battle!")
 

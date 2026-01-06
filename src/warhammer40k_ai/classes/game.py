@@ -626,13 +626,39 @@ class Game:
     def _on_charge_declared_tracking(self, unit=None, target_unit=None, **_kwargs) -> None:
         self._record_phase_target(target_unit, unit)
 
-    def _on_shooting_targets_selected_dark_pacts(self, attacking_unit=None, **_kwargs) -> None:
+    def _on_shooting_targets_selected_dark_pacts(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:
+            return
+        if not list(target_units or []):
             return
         try:
             phase_name = str(getattr(self.phase, "name", "") or "")
         except Exception:
             phase_name = ""
+        try:
+            player = attacking_unit.get_parent_army().player
+        except Exception:
+            player = None
+        es = getattr(self, "event_system", None)
+        try:
+            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+        except Exception:
+            is_human = False
+        if is_human and es is not None:
+            try:
+                subs = getattr(es, "subscribers", {})
+                if isinstance(subs, dict) and subs.get("dark_pacts_prompt"):
+                    es.publish(
+                        "dark_pacts_prompt",
+                        player=player,
+                        unit=attacking_unit,
+                        phase_name=phase_name,
+                        trigger="shooting",
+                        game=self,
+                    )
+                    return
+            except Exception:
+                pass
         try:
             attacking_unit.maybe_trigger_dark_pacts(self, phase_name=phase_name, trigger="shooting")
         except Exception:
@@ -645,6 +671,30 @@ class Game:
             phase_name = str(getattr(self.phase, "name", "") or "")
         except Exception:
             phase_name = ""
+        try:
+            player = unit.get_parent_army().player
+        except Exception:
+            player = None
+        es = getattr(self, "event_system", None)
+        try:
+            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+        except Exception:
+            is_human = False
+        if is_human and es is not None:
+            try:
+                subs = getattr(es, "subscribers", {})
+                if isinstance(subs, dict) and subs.get("dark_pacts_prompt"):
+                    es.publish(
+                        "dark_pacts_prompt",
+                        player=player,
+                        unit=unit,
+                        phase_name=phase_name,
+                        trigger="fight",
+                        game=self,
+                    )
+                    return
+            except Exception:
+                pass
         try:
             unit.maybe_trigger_dark_pacts(self, phase_name=phase_name, trigger="fight")
         except Exception:
