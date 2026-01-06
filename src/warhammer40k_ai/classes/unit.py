@@ -3705,6 +3705,19 @@ class Unit:
                 continue
         return False
 
+    def has_cabal_of_sorcerers(self) -> bool:
+        for ab in (list(getattr(self, "possible_abilities", []) or []) + list(getattr(self, "abilities", []) or [])):
+            try:
+                if isinstance(ab, str):
+                    nm = ab
+                else:
+                    nm = getattr(ab, "name", "")
+                if "cabal of sorcerers" in str(nm or "").lower():
+                    return True
+            except Exception:
+                continue
+        return False
+
     def can_use_dark_pacts(self) -> bool:
         has_pacts = self.has_dark_pacts()
         first_prince = self._first_prince_of_chaos_active() and self._is_chaos_undivided()
@@ -7925,6 +7938,21 @@ class Unit:
         """Check if this unit can declare a charge against the target unit."""
         if not self.is_alive() or not target_unit.is_alive():
             return False
+
+        # Cabal of Sorcerers (Temporal Surge): cannot charge until end of turn.
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("cabal_temporal_surge_no_charge_turn_owner"):
+                owner = str(sr.get("cabal_temporal_surge_no_charge_turn_owner") or "")
+                turn = int(sr.get("cabal_temporal_surge_no_charge_turn", 0) or 0)
+                if owner and game is not None:
+                    try:
+                        if game.get_current_player().name == owner and int(getattr(game, "turn", 0) or 0) == turn:
+                            return False
+                    except Exception:
+                        return False
+        except Exception:
+            pass
             
         # Check if unit has already attempted a charge this round (successful or failed)
         if self.round_state.attempted_charge_this_round and not out_of_turn:

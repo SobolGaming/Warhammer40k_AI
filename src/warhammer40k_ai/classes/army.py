@@ -171,6 +171,13 @@ class Army:
             self.harbingers_of_dread = HarbingersOfDreadManager(self)
         except Exception:
             self.harbingers_of_dread = None
+
+        # Thousand Sons: Cabal of Sorcerers (safe to attach, no-op if not applicable).
+        try:
+            from .cabal_of_sorcerers import CabalOfSorcerersManager
+            self.cabal_of_sorcerers = CabalOfSorcerersManager(self)
+        except Exception:
+            self.cabal_of_sorcerers = None
     
     def add_unit(self, unit: Unit) -> bool:
         if not self.faction_keyword:
@@ -711,12 +718,11 @@ class Army:
     def validate_detachment_rules(self):
         # Army-rule / detachment-specific validation
         try:
-            det = (getattr(self, "detachment_type", "") or "").strip()
             faction_id = (getattr(self, "faction_id", "") or "").strip().upper()
-            if not det or not faction_id:
+            if not faction_id:
                 return
             for pact in pact_restrictions_for_faction(faction_id):
-                if self._detachment_matches_pact(det, pact.get("forbidden", "")):
+                if self._army_faction_matches_pact(pact.get("forbidden", "")):
                     raise ArmyValidationError(
                         f"{pact.get('name', 'Pact')}: armies cannot select '{pact.get('forbidden', '').strip()}' as their Army Faction."
                     )
@@ -743,6 +749,18 @@ class Army:
             return True
         if det in forb or forb in det:
             return True
+        return False
+
+    def _army_faction_matches_pact(self, forbidden: str) -> bool:
+        name = (getattr(self, "faction", "") or "").strip()
+        if name and self._detachment_matches_pact(name, forbidden):
+            return True
+        for kw in list(getattr(self, "faction_keyword", []) or []):
+            try:
+                if self._detachment_matches_pact(str(kw), forbidden):
+                    return True
+            except Exception:
+                continue
         return False
 
     def validate_space_marine_chapters(self) -> None:

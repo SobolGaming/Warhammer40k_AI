@@ -174,6 +174,8 @@ class Game:
         # Dark Pacts trigger windows
         self.event_system.subscribe("shooting_targets_selected", self._on_shooting_targets_selected_dark_pacts)
         self.event_system.subscribe("fight_unit_selected", self._on_fight_unit_selected_dark_pacts)
+        # Thousand Sons: Cabal of Sorcerers reset at Shooting phase start
+        self.event_system.subscribe("phase_start", self._on_phase_start_cabal_of_sorcerers)
         # Temporary effects cleanup (e.g. once-per-battle abilities that last "until end of phase")
         self.event_system.subscribe("phase_end", self._on_phase_end_cleanup)
         # Optional ability timing windows (prompt/decision hooks)
@@ -780,6 +782,30 @@ class Game:
                         pass
                 break
 
+    def _on_phase_start_cabal_of_sorcerers(self, player=None, phase=None, **_kwargs) -> None:
+        """Reset Cabal of Sorcerers usage at the start of the active player's Shooting phase."""
+        try:
+            pname = str(getattr(phase, "name", "") or "").strip().upper()
+        except Exception:
+            pname = ""
+        if pname != "SHOOTING_PHASE":
+            return
+        if player is None:
+            return
+        try:
+            army = player.get_army()
+        except Exception:
+            army = None
+        if army is None:
+            return
+        mgr = getattr(army, "cabal_of_sorcerers", None)
+        if mgr is None:
+            return
+        try:
+            mgr.on_shooting_phase_start(game=self, player=player)
+        except Exception:
+            pass
+
     def _on_phase_end_cleanup(self, player=None, phase=None, **_kwargs) -> None:
         """Best-effort cleanup for model-level temporary effects that expire at end of a phase."""
         try:
@@ -822,6 +848,16 @@ class Game:
                     if exp and exp == pname:
                         for k in ("seductive_gambit_active", "seductive_gambit_expires_phase"):
                             sr.pop(k, None)
+                    exp = str(sr.get("cabal_destinys_ruin_expires_phase", "") or "").strip().upper()
+                    if exp and exp == pname:
+                        for k in ("cabal_destinys_ruin_mode", "cabal_destinys_ruin_owner", "cabal_destinys_ruin_expires_phase"):
+                            sr.pop(k, None)
+                    exp = str(sr.get("cabal_twist_of_fate_expires_phase", "") or "").strip().upper()
+                    if exp and exp == pname:
+                        for k in ("cabal_twist_of_fate_ap_bonus", "cabal_twist_of_fate_owner", "cabal_twist_of_fate_expires_phase"):
+                            sr.pop(k, None)
+                    if pname == "SHOOTING_PHASE":
+                        sr.pop("cabal_temporal_surge_move_max", None)
         except Exception:
             return
         try:
@@ -844,6 +880,25 @@ class Game:
                 mgr = getattr(army, "templar_vows", None) if army is not None else None
                 if mgr is not None:
                     mgr.on_command_phase_end(game=self, player=player)
+            except Exception:
+                pass
+
+        # Cabal of Sorcerers: Temporal Surge charge restriction ends at the end of the turn.
+        if pname == "FIGHT_PHASE":
+            try:
+                owner_name = str(getattr(player, "name", "") or "")
+            except Exception:
+                owner_name = ""
+            try:
+                for p in list(getattr(self, "players", []) or []):
+                    army = getattr(p, "army", None)
+                    for u in list(getattr(army, "units", []) or []):
+                        sr = getattr(u, "special_rules", None)
+                        if not isinstance(sr, dict):
+                            continue
+                        if str(sr.get("cabal_temporal_surge_no_charge_turn_owner", "") or "") == owner_name:
+                            for k in ("cabal_temporal_surge_no_charge_turn_owner", "cabal_temporal_surge_no_charge_turn"):
+                                sr.pop(k, None)
             except Exception:
                 pass
 

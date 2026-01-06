@@ -326,6 +326,41 @@ class WargearProfile:
 
         return False
 
+    def _cabal_twist_of_fate_ap_bonus(self, attacker: 'Model', target: 'Unit') -> int:
+        """Return the AP bonus from Cabal of Sorcerers: Twist of Fate, if applicable."""
+        if attacker is None or target is None:
+            return 0
+        try:
+            sr = getattr(target, "special_rules", None)
+        except Exception:
+            sr = None
+        if not isinstance(sr, dict):
+            return 0
+        bonus = int(sr.get("cabal_twist_of_fate_ap_bonus", 0) or 0)
+        if bonus <= 0:
+            return 0
+        try:
+            owner = str(sr.get("cabal_twist_of_fate_owner", "") or "")
+        except Exception:
+            owner = ""
+        try:
+            unit = attacker.parent_unit
+        except Exception:
+            unit = None
+        if unit is None:
+            return 0
+        try:
+            if owner and owner != str(getattr(unit.get_parent_army(), "_id", "") or ""):
+                return 0
+        except Exception:
+            pass
+        try:
+            if not (unit.has_any_keyword("THOUSAND SONS") or unit.has_any_keyword("SCINTILLATING LEGIONS")):
+                return 0
+        except Exception:
+            return 0
+        return int(bonus)
+
     def get_effective_ap(self, attacker: 'Model', target: 'Unit') -> int:
         """Return AP after applying global modifiers like Plunging Fire."""
         from ..utility.modifiers import apply_characteristic_caps
@@ -336,6 +371,9 @@ class WargearProfile:
         if self._plunging_fire_applies(attacker, target):
             # Improve AP by 1: AP -1 becomes -2, AP 0 becomes -1, etc.
             ap_val -= 1
+        cabal_bonus = self._cabal_twist_of_fate_ap_bonus(attacker, target)
+        if cabal_bonus:
+            ap_val -= int(cabal_bonus)
         return int(apply_characteristic_caps("ap", int(ap_val), base_raw=getattr(self, "_raw_ap", None)))
 
     def attack(self, target: 'Unit', attacker: 'Model', game_map: Optional['Map'] = None) -> Optional[AttackResult]:
@@ -534,12 +572,17 @@ class WargearProfile:
 
         # Apply AP modifiers that depend on attacker/target context (e.g., Plunging Fire)
         effective_ap = self.get_effective_ap(attacker, target)
+        cabal_ap_bonus = self._cabal_twist_of_fate_ap_bonus(attacker, target)
         try:
             base_ap = int(self.ap)
         except Exception:
             base_ap = effective_ap
         if effective_ap == (base_ap - 1):
             attack_result.attacks_special_modifiers.append("Plunging Fire (AP improved by 1)")
+        if cabal_ap_bonus:
+            attack_result.attacks_special_modifiers.append(
+                f"Twist of Fate (AP improved by {int(cabal_ap_bonus)})"
+            )
         
         # Apply attack modifiers
         if closest_dist <= (self.range.max / 2) and self.is_rapid_fire():
@@ -1061,6 +1104,77 @@ class WargearProfile:
                 hit_result["reroll"] = rr
                 dice_roll = rr
                 reroll_used = True
+        except Exception:
+            pass
+
+        # Cabal of Sorcerers: Destiny's Ruin rerolls (TS/Scintillating Legions only).
+        try:
+            if "reroll" not in hit_result:
+                unit = attacker.parent_unit
+                sr = getattr(target, "special_rules", None)
+                if isinstance(sr, dict):
+                    mode = str(sr.get("cabal_destinys_ruin_mode", "") or "").strip().lower()
+                    owner = str(sr.get("cabal_destinys_ruin_owner", "") or "")
+                else:
+                    mode = ""
+                    owner = ""
+                if mode and unit is not None:
+                    try:
+                        if owner and owner != str(getattr(unit.get_parent_army(), "_id", "") or ""):
+                            mode = ""
+                    except Exception:
+                        pass
+                if mode and unit is not None:
+                    try:
+                        if not (unit.has_any_keyword("THOUSAND SONS") or unit.has_any_keyword("SCINTILLATING LEGIONS")):
+                            mode = ""
+                    except Exception:
+                        mode = ""
+                if mode == "ones" and dice_roll == 1:
+                    rr = _reroll_hit()
+                    hit_result.setdefault("special_effects", []).append("Destiny's Ruin: re-roll Hit rolls of 1")
+                    hit_result["reroll_of_one"] = 1
+                    hit_result["reroll"] = rr
+                    dice_roll = rr
+                    reroll_used = True
+                elif mode == "full":
+                    try:
+                        success = (dice_roll != 1) and (self.skill > 0) and (dice_roll >= final_needed)
+                    except Exception:
+                        success = False
+                    do_reroll = False
+                    try:
+                        army = unit.get_parent_army()
+                        game = army.player.game
+                        player = army.player
+                        is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                        provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                    except Exception:
+                        is_human = False
+                        provider = None
+                        player = None
+                    if is_human and callable(provider):
+                        try:
+                            do_reroll = bool(provider(
+                                player=player,
+                                unit=unit,
+                                roll_type="hit",
+                                value=dice_roll,
+                                dice=None,
+                                needed=final_needed,
+                                success=success,
+                                reason="Destiny's Ruin",
+                            ))
+                        except Exception:
+                            do_reroll = False
+                    else:
+                        do_reroll = (not success)
+                    if do_reroll:
+                        rr = _reroll_hit()
+                        hit_result.setdefault("special_effects", []).append("Destiny's Ruin: re-roll Hit roll")
+                        hit_result["reroll"] = rr
+                        dice_roll = rr
+                        reroll_used = True
         except Exception:
             pass
 

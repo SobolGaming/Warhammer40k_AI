@@ -37,6 +37,13 @@ class TestRelentlessRage(unittest.TestCase):
             def is_alive(self):
                 return True
 
+            def remove_model(self, model, fleed: bool = False, game_map=None) -> None:
+                try:
+                    if model in self.models:
+                        self.models.remove(model)
+                except Exception:
+                    pass
+
         unit = _Unit()
         unit.set_parent_army(army)
         return unit

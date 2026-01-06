@@ -30,6 +30,7 @@ from .nurgles_gift_plague_dialog import NurglesGiftPlagueDialog
 from .shadow_form_dialog import ShadowFormDialog
 from .harbingers_of_dread_dialog import HarbingersOfDreadDialog
 from .dark_pacts_dialog import DarkPactsDialog
+from .cabal_of_sorcerers_dialog import CabalOfSorcerersDialog
 
 __all__ = [
     'BaseDialog',
@@ -64,4 +65,5 @@ __all__ = [
     'ShadowFormDialog',
     'HarbingersOfDreadDialog',
     'DarkPactsDialog',
+    'CabalOfSorcerersDialog',
 ] 

@@ -3,6 +3,7 @@ import math
 import re
 from pathlib import Path
 from typing import Optional, Tuple, Dict, List, Protocol, Callable, Any
+from types import SimpleNamespace
 from abc import ABC, abstractmethod
 from warhammer40k_ai.classes.unit import Unit
 from warhammer40k_ai.classes.model import Model
@@ -66,6 +67,8 @@ SUPPORTED_ARMY_RULES = {
     "HARBINGERS OF DREAD",
     "DARK PACTS",
     "CULT OF THE DARK GODS",
+    "CABAL OF SORCERERS",
+    "PACT OF SORCERY",
 }
 SUPPORTED_DETACHMENT_RULES = {
     "RELENTLESS RAGE",
@@ -479,6 +482,9 @@ class GameView:
         self.shadow_form_dialog = None
         self.harbingers_of_dread_dialog = None
         self.dark_pacts_dialog = None
+        self.cabal_ritual_dialog = None
+        self.cabal_caster_dialog = None
+        self.cabal_target_dialog = None
         # Stratagem interaction helpers
         def _request_secondary_discard(player, game, on_chosen):
             cards = list(getattr(player, 'active_secondaries', []) or [])
@@ -730,6 +736,7 @@ class GameView:
         self._battle_focus_flow_active = False
         self._oath_of_moment_flow_active = False
         self._dark_pacts_flow_active = False
+        self._cabal_flow_active = False
 
         # Initialize shared UI state
         self._ui_hitboxes = {}
@@ -765,6 +772,10 @@ class GameView:
                 # Battle Focus reactive prompts (Opportunity Seized / Fade Back)
                 self.game.event_system.subscribe("battle_focus_opportunity_prompt", self._on_battle_focus_opportunity_prompt)
                 self.game.event_system.subscribe("battle_focus_fade_back_prompt", self._on_battle_focus_fade_back_prompt)
+                # Cabal of Sorcerers: Temporal Surge movement prompt
+                self.game.event_system.subscribe("cabal_temporal_surge_move", self._on_cabal_temporal_surge_move)
+                # Cabal of Sorcerers: Ritual resolution popup
+                self.game.event_system.subscribe("cabal_ritual_resolved", self._on_cabal_ritual_resolved)
         except Exception:
             pass
 
@@ -1762,6 +1773,324 @@ class GameView:
         except Exception:
             self._battle_focus_flow_active = False
 
+    def _on_cabal_temporal_surge_move(self, player=None, unit=None, max_distance=None, **_kwargs):
+        if player is None or unit is None or self.game is None:
+            return
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return
+        except Exception:
+            return
+        try:
+            if unit.get_parent_army() != player.get_army():
+                return
+        except Exception:
+            return
+        try:
+            max_dist = float(max_distance or 0)
+        except Exception:
+            max_dist = 0.0
+        if max_dist <= 0:
+            return
+
+        def _done(_completed: bool):
+            pass
+
+        try:
+            self.individual_model_movement_dialog.show(
+                unit, "reactive", _done, self.game.map, max_dist
+            )
+            self.dialog_manager.open(self.individual_model_movement_dialog, modal=True)
+        except Exception:
+            return
+
+    def _on_cabal_ritual_resolved(
+        self,
+        player=None,
+        ritual=None,
+        caster_unit=None,
+        caster_model=None,
+        target_unit=None,
+        result=None,
+        **_kwargs,
+    ):
+        if self.game is None or ritual is None or result is None:
+            return
+        try:
+            if player is None or getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return
+        except Exception:
+            return
+
+        rolls = list(result.get("rolls") or [])
+        if not rolls:
+            return
+        total = int(result.get("total") or 0)
+        rolls_text = " + ".join(str(r) for r in rolls)
+        caster_name = getattr(caster_model, "name", None) or getattr(caster_unit, "name", "Caster")
+        target_name = getattr(target_unit, "name", None) or "no target"
+        try:
+            warp_charge = int(getattr(ritual, "warp_charge", 0) or 0)
+        except Exception:
+            warp_charge = 0
+        channel_text = "Yes" if result.get("channeled") else "No"
+        status = "Success" if result.get("success") else "Failed"
+        reason = str(result.get("reason") or "")
+        if reason and not result.get("success"):
+            status = f"Failed ({reason})"
+        mw_self = int(result.get("mortal_wounds") or 0)
+        mw_target = int(result.get("target_mortal_wounds") or 0)
+
+        body = (
+            f"Caster: {caster_name} | Target: {target_name} | Ritual: {ritual.name} (WC {warp_charge}) | "
+            f"Rolls: {rolls_text} = {total} | Channel the Warp: {channel_text} | "
+            f"Result: {status} | Mortal wounds: self {mw_self}, target {mw_target}"
+        )
+        self._mission_popup = {"title": "Cabal of Sorcerers", "body": body, "image_path": None}
+
+    # ---------------- Cabal of Sorcerers HUD ----------------
+
+    def _get_cabal_manager(self, player):
+        if player is None:
+            return None
+        try:
+            army = player.get_army()
+        except Exception:
+            army = None
+        if army is None:
+            return None
+        mgr = getattr(army, "cabal_of_sorcerers", None)
+        if mgr is None:
+            return None
+        try:
+            if not getattr(mgr, "_army_has_cabal", lambda: False)():
+                return None
+        except Exception:
+            return None
+        return mgr
+
+    def _cabal_hud_enabled(self, player, mgr) -> bool:
+        if self._cabal_flow_active:
+            return False
+        if self.game is None:
+            return False
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return False
+        except Exception:
+            return False
+        if not self.game.is_shooting_phase():
+            return False
+        try:
+            if self.game.get_current_player() is not player:
+                return False
+        except Exception:
+            return False
+        try:
+            casters = list(mgr.get_eligible_casters(game=self.game, player=player) or [])
+        except Exception:
+            casters = []
+        if not casters:
+            return False
+        try:
+            rituals = list(mgr.get_available_rituals() or [])
+        except Exception:
+            rituals = []
+        return bool(rituals)
+
+    def _cabal_hud_hint(self, player, mgr) -> str:
+        if self.game is None:
+            return ""
+        if self._cabal_flow_active:
+            return "Cabal ritual selection already active."
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return ""
+        except Exception:
+            return ""
+        if not self.game.is_shooting_phase():
+            return "Available during the Shooting phase."
+        try:
+            if self.game.get_current_player() is not player:
+                return "Available during your Shooting phase."
+        except Exception:
+            return ""
+        try:
+            casters = list(mgr.get_eligible_casters(game=self.game, player=player) or [])
+        except Exception:
+            casters = []
+        if not casters:
+            return "No eligible Cabal models available."
+        try:
+            rituals = list(mgr.get_available_rituals() or [])
+        except Exception:
+            rituals = []
+        if not rituals:
+            return "No rituals remaining this turn."
+        return ""
+
+    def _open_cabal_hud_use(self, player) -> None:
+        if self._cabal_flow_active:
+            return
+        if self.game is None or player is None:
+            return
+        mgr = self._get_cabal_manager(player)
+        if mgr is None:
+            return
+        if not self._cabal_hud_enabled(player, mgr):
+            return
+
+        try:
+            casters = list(mgr.get_eligible_casters(game=self.game, player=player) or [])
+        except Exception:
+            casters = []
+        if not casters:
+            return
+
+        # Build display options for caster models.
+        options = []
+        used = set()
+        for unit, model in casters:
+            label = f"{getattr(unit, 'name', 'Unit')} - {getattr(model, 'name', 'Model')}"
+            base = label
+            idx = 2
+            while label in used:
+                label = f"{base} [{idx}]"
+                idx += 1
+            used.add(label)
+            options.append(SimpleNamespace(name=label, unit=unit, model=model))
+
+        if self.cabal_caster_dialog is None:
+            try:
+                from .dialogs import QuarrySelectionDialog
+                sw, sh = self.screen.get_width(), self.screen.get_height()
+                self.cabal_caster_dialog = QuarrySelectionDialog(sw, sh)
+            except Exception:
+                self.cabal_caster_dialog = None
+        if self.cabal_caster_dialog is None:
+            return
+
+        def _cancel_flow():
+            self._cabal_flow_active = False
+
+        def _on_caster(chosen):
+            if chosen is None:
+                _cancel_flow()
+                return
+            caster_unit = getattr(chosen, "unit", None)
+            caster_model = getattr(chosen, "model", None)
+            rituals = list(mgr.get_available_rituals() or [])
+            if not rituals:
+                _cancel_flow()
+                return
+
+            if self.cabal_ritual_dialog is None:
+                try:
+                    from .dialogs import CabalOfSorcerersDialog
+                    sw, sh = self.screen.get_width(), self.screen.get_height()
+                    self.cabal_ritual_dialog = CabalOfSorcerersDialog(sw, sh)
+                except Exception:
+                    self.cabal_ritual_dialog = None
+            if self.cabal_ritual_dialog is None:
+                _cancel_flow()
+                return
+
+            subtitle = f"{getattr(caster_unit, 'name', 'Unit')} - choose a ritual"
+
+            def _on_ritual(ritual):
+                if ritual is None:
+                    _cancel_flow()
+                    return
+
+                game_map = getattr(self.game, "map", None)
+                targets = list(mgr.get_eligible_targets(ritual, caster_model, game_map) or [])
+                if not targets:
+                    _cancel_flow()
+                    return
+
+                if self.cabal_target_dialog is None:
+                    try:
+                        from .dialogs import QuarrySelectionDialog
+                        sw, sh = self.screen.get_width(), self.screen.get_height()
+                        self.cabal_target_dialog = QuarrySelectionDialog(sw, sh)
+                    except Exception:
+                        self.cabal_target_dialog = None
+                if self.cabal_target_dialog is None:
+                    _cancel_flow()
+                    return
+
+                target_title = f"{ritual.name} Target"
+                target_header = "Choose a target unit."
+
+                def _on_target(target_unit):
+                    if target_unit is None:
+                        _cancel_flow()
+                        return
+                    r1 = int(get_roll("D6") or 0)
+                    r2 = int(get_roll("D6") or 0)
+                    roll_sum = r1 + r2
+                    msg = (
+                        f"{getattr(caster_unit, 'name', 'Unit')} attempts {ritual.name}.\n"
+                        f"Psychic test roll: {r1} + {r2} = {roll_sum}\n\n"
+                        "Channel the Warp?"
+                    )
+
+                    def _on_channel(choice: bool):
+                        try:
+                            mgr.attempt_ritual(
+                                self.game,
+                                caster_model=caster_model,
+                                ritual_key=ritual.key,
+                                target_unit=target_unit,
+                                rolls=[r1, r2],
+                                channel_decision=choice,
+                            )
+                        finally:
+                            self._cabal_flow_active = False
+
+                    self.yes_no_dialog.show("Cabal of Sorcerers", msg, _on_channel, yes_label="Channel", no_label="No")
+                    try:
+                        self.dialog_manager.open(self.yes_no_dialog, modal=True)
+                    except Exception:
+                        self._cabal_flow_active = False
+
+                self.cabal_target_dialog.show(
+                    title=target_title,
+                    header=target_header,
+                    subtitle="Select a valid unit within 24\" and visible.",
+                    choices=targets,
+                    on_confirm=_on_target,
+                    on_cancel=_cancel_flow,
+                )
+                try:
+                    self.dialog_manager.open(self.cabal_target_dialog, modal=True)
+                except Exception:
+                    _cancel_flow()
+
+            self.cabal_ritual_dialog.show(
+                options=rituals,
+                on_confirm=_on_ritual,
+                on_cancel=_cancel_flow,
+                subtitle=subtitle,
+            )
+            try:
+                self.dialog_manager.open(self.cabal_ritual_dialog, modal=True)
+            except Exception:
+                _cancel_flow()
+
+        self._cabal_flow_active = True
+        self.cabal_caster_dialog.show(
+            title="Cabal of Sorcerers",
+            header="Choose a model to manifest a ritual.",
+            subtitle="Each model and ritual can be used once per turn.",
+            choices=options,
+            on_confirm=_on_caster,
+            on_cancel=_cancel_flow,
+        )
+        try:
+            self.dialog_manager.open(self.cabal_caster_dialog, modal=True)
+        except Exception:
+            self._cabal_flow_active = False
     def _roll_reroll_provider(self, player=None, unit=None, roll_type: str = "", value=None, dice=None, **_kwargs):
         """
         Blocking modal prompt for rule-based (free) re-rolls.
@@ -3880,6 +4209,16 @@ class GameView:
                     "get_enabled": lambda: self._battle_focus_hud_enabled(player, mgr),
                     "get_hint": lambda: self._battle_focus_hud_hint(player, mgr),
                     "on_use": lambda: self._open_battle_focus_hud_use(player),
+                }
+        if rule_type == "army" and "cabal of sorcerers" in rule_name.strip().lower():
+            mgr = self._get_cabal_manager(player)
+            if mgr is not None:
+                hud = {
+                    "label": "Cabal Rituals",
+                    "use_label": "Manifest",
+                    "get_enabled": lambda: self._cabal_hud_enabled(player, mgr),
+                    "get_hint": lambda: self._cabal_hud_hint(player, mgr),
+                    "on_use": lambda: self._open_cabal_hud_use(player),
                 }
         if rule_type == "army" and "shadow of chaos" in rule_name.strip().lower():
             shadow_hud = self._shadow_of_chaos_hud(player)
