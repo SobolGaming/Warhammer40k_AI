@@ -194,6 +194,16 @@ class OathOfMomentManager:
             except Exception:
                 root = unit
             try:
+                if bool(getattr(root, "is_embarked", False)):
+                    continue
+            except Exception:
+                pass
+            try:
+                if getattr(root, "embarked_in", None) is not None:
+                    continue
+            except Exception:
+                pass
+            try:
                 rid = getattr(root, "_id", None)
             except Exception:
                 rid = None

@@ -20,6 +20,7 @@ class TestOathOfMoment(unittest.TestCase):
                 self.special_rules = {}
                 self._keywords = set((keywords or []))
                 self._army = None
+                self.embarked_in = None
 
             def set_army(self, army):
                 self._army = army
@@ -32,6 +33,10 @@ class TestOathOfMoment(unittest.TestCase):
 
             def is_alive(self):
                 return True
+
+            @property
+            def is_embarked(self):
+                return self.embarked_in is not None
 
             def has_any_keyword(self, keyword: str) -> bool:
                 return keyword.strip().upper() in {k.upper() for k in self._keywords}
@@ -90,6 +95,7 @@ class TestOathOfMoment(unittest.TestCase):
                 self.models = []
                 self.special_rules = {}
                 self._keywords = set((keywords or []))
+                self.embarked_in = None
 
             def get_parent_army(self):
                 return army
@@ -99,6 +105,10 @@ class TestOathOfMoment(unittest.TestCase):
 
             def is_alive(self):
                 return True
+
+            @property
+            def is_embarked(self):
+                return self.embarked_in is not None
 
             def has_any_keyword(self, keyword: str) -> bool:
                 return keyword.strip().upper() in {k.upper() for k in self._keywords}
@@ -183,6 +193,43 @@ class TestOathOfMoment(unittest.TestCase):
             self.assertTrue(any("Oath of Moment" in x for x in wound_res.get("modifiers", [])))
         finally:
             wargear_mod.get_roll = old_get_roll
+
+    def test_oath_excludes_embarked_targets(self):
+        from warhammer40k_ai.classes.oath_of_moment import OathOfMomentManager
+
+        class _Unit:
+            def __init__(self, name: str):
+                self.name = name
+                self._id = name
+                self.embarked_in = None
+
+            def get_attached_unit_root(self):
+                return self
+
+            @property
+            def is_embarked(self):
+                return self.embarked_in is not None
+
+            def is_alive(self):
+                return True
+
+        embarked = _Unit("EmbarkedUnit")
+        embarked.embarked_in = object()
+        available = _Unit("AvailableUnit")
+
+        player = SimpleNamespace(type=SimpleNamespace(name="AI"), _choose_optional_value=lambda *_a, **_k: None)
+        army = SimpleNamespace(faction_id="SM", detachment_type="Gladius Task Force", units=[])
+        player.get_army = lambda: army
+        army.player = player
+
+        mgr = OathOfMomentManager(army)
+
+        class _Game:
+            def get_enemy_units(self, _player):
+                return [embarked, available]
+
+        mgr.on_command_phase_start(game=_Game(), player=player)
+        self.assertEqual(mgr.oathOfMomentTargetUnitId, available._id)
 
 
 if __name__ == "__main__":
