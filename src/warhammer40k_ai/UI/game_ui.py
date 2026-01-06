@@ -956,15 +956,22 @@ class GameView:
 
     # ---------------- Battle Focus prompts ----------------
 
-    def _battle_focus_option_label(self, option: str) -> str:
+    def _battle_focus_option_label(self, option: str, mgr=None) -> str:
         opt = str(option or "").strip().upper()
+        warhost = False
+        try:
+            warhost = bool(getattr(mgr, "is_warhost_detachment", lambda: False)())
+        except Exception:
+            warhost = False
+        swift_bonus = 3 if warhost else 2
+        reactive_bonus = 2 if warhost else 1
         labels = {
-            "SWIFT_AS_THE_WIND": "Swift as the Wind (+2\" Move)",
+            "SWIFT_AS_THE_WIND": f"Swift as the Wind (+{swift_bonus}\" Move)",
             "FLITTING_SHADOWS": "Flitting Shadows (No Overwatch)",
             "STAR_ENGINES": "Star Engines (Advance + Shoot)",
             "SUDDEN_STRIKE": "Sudden Strike (6\" pile-in/consolidate)",
-            "OPPORTUNITY_SEIZED": "Opportunity Seized (Reactive move 1D6+1\")",
-            "FADE_BACK": "Fade Back (Reactive move 1D6+1\")",
+            "OPPORTUNITY_SEIZED": f"Opportunity Seized (Reactive move 1D6+{reactive_bonus}\")",
+            "FADE_BACK": f"Fade Back (Reactive move 1D6+{reactive_bonus}\")",
         }
         if opt in labels:
             return labels[opt]
@@ -1052,7 +1059,7 @@ class GameView:
                 options = []
             for maneuver in options:
                 if maneuver not in maneuver_to_label:
-                    maneuver_to_label[maneuver] = self._battle_focus_option_label(maneuver)
+                    maneuver_to_label[maneuver] = self._battle_focus_option_label(maneuver, mgr)
 
         return {label: maneuver for maneuver, label in maneuver_to_label.items()}
 
@@ -1223,7 +1230,7 @@ class GameView:
 
         if len(options) == 1:
             opt = options[0]
-            label = self._battle_focus_option_label(opt)
+            label = self._battle_focus_option_label(opt, mgr)
             msg = f"Use {label} for {getattr(unit, 'name', 'unit')}?\n\nTokens remaining: {tokens}"
 
             def _done(choice: bool):
@@ -1245,7 +1252,7 @@ class GameView:
 
         label_to_option = {}
         for opt in options:
-            label_to_option[self._battle_focus_option_label(opt)] = opt
+            label_to_option[self._battle_focus_option_label(opt, mgr)] = opt
         choices = list(label_to_option.keys())
         subtitle = f"Choose an Agile Manoeuvre for {getattr(unit, 'name', 'unit')} (Tokens: {tokens})"
 
@@ -1315,7 +1322,7 @@ class GameView:
             return
 
         tokens = int(getattr(mgr, "tokens", 0) or 0)
-        label = self._battle_focus_option_label(getattr(mgr, "MANEUVER_FLITTING", "FLITTING_SHADOWS"))
+        label = self._battle_focus_option_label(getattr(mgr, "MANEUVER_FLITTING", "FLITTING_SHADOWS"), mgr)
         target_name = getattr(target_unit, "name", "enemy unit")
         msg = f"Use {label} for {getattr(unit, 'name', 'unit')} while charging {target_name}?\n\nTokens remaining: {tokens}"
 
@@ -1371,7 +1378,7 @@ class GameView:
             return
 
         tokens = int(getattr(mgr, "tokens", 0) or 0)
-        label = self._battle_focus_option_label(getattr(mgr, "MANEUVER_SUDDEN_STRIKE", "SUDDEN_STRIKE"))
+        label = self._battle_focus_option_label(getattr(mgr, "MANEUVER_SUDDEN_STRIKE", "SUDDEN_STRIKE"), mgr)
         msg = f"Use {label} for {getattr(unit, 'name', 'unit')}?\n\nTokens remaining: {tokens}"
 
         def _done(choice: bool):

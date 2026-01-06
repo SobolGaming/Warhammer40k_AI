@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Optional
 
 from ..utility.ability_support import ABILITY_BATTLE_FOCUS, army_has_ability_id
@@ -33,6 +34,29 @@ class BattleFocusManager:
         if army is None:
             return False
         return army_has_ability_id(army, ABILITY_BATTLE_FOCUS)
+
+    def _detachment_type_matches(self, detachment_name: str) -> bool:
+        def _norm(text: str) -> str:
+            t = re.sub(r"[^a-z0-9 ]+", " ", str(text or "").lower())
+            return re.sub(r"\s+", " ", t).strip()
+
+        try:
+            det = _norm(getattr(self.army, "detachment_type", "") or "")
+        except Exception:
+            det = ""
+        target = _norm(detachment_name)
+        if not det or not target:
+            return False
+        if det == target:
+            return True
+        if det.endswith("s") and det[:-1] == target:
+            return True
+        if target.endswith("s") and target[:-1] == det:
+            return True
+        return det in target or target in det
+
+    def is_warhost_detachment(self) -> bool:
+        return self._detachment_type_matches("Warhost")
 
     def _unit_has_battle_focus(self, unit) -> bool:
         if unit is None:
@@ -153,6 +177,8 @@ class BattleFocusManager:
             except Exception:
                 game = None
         self.tokens = int(self._tokens_for_battlefield(game))
+        if self.is_warhost_detachment():
+            self.tokens += 1
         try:
             bonus = int(self._bonus_tokens_from_timeless_strategist(game))
         except Exception:
@@ -638,9 +664,12 @@ class BattleFocusManager:
 
         if maneuver == self.MANEUVER_SWIFT:
             from ..utility.modifiers import Modifier, ModifierOp
+            swift_bonus = 2
+            if self.is_warhost_detachment():
+                swift_bonus += 1
             unit.add_characteristic_modifier(
                 "movement",
-                Modifier(ModifierOp.ADD, 2, source="battle_focus:swift_as_the_wind"),
+                Modifier(ModifierOp.ADD, swift_bonus, source="battle_focus:swift_as_the_wind"),
             )
             sr["battle_focus_swift_as_the_wind_expires_phase"] = phase_name
         elif maneuver == self.MANEUVER_FLITTING:
@@ -670,6 +699,8 @@ class BattleFocusManager:
             roll = int(get_roll("D6"))
         except Exception:
             roll = 1
+        if self.is_warhost_detachment():
+            roll += 1
         max_dist = int(roll) + 1
         phase = getattr(game, "phase", None)
         phase_name = str(getattr(phase, "name", "") or phase or "").strip().upper()

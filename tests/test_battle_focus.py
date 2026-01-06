@@ -1,5 +1,6 @@
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 
 class _DummyPlayer:
@@ -10,11 +11,12 @@ class _DummyPlayer:
 
 
 class _DummyArmy:
-    def __init__(self, units, *, faction_id="AE", faction="Aeldari", points_limit=2000):
+    def __init__(self, units, *, faction_id="AE", faction="Aeldari", points_limit=2000, detachment_type="Other Detachment"):
         self.units = list(units or [])
         self.faction_id = faction_id
         self.faction = faction
         self.points_limit = points_limit
+        self.detachment_type = detachment_type
         self.player = _DummyPlayer()
         self.player.game = None
 
@@ -54,6 +56,56 @@ class TestBattleFocus(unittest.TestCase):
 
         mgr.on_battle_round_start(1, game=game)
         self.assertEqual(mgr.tokens, 4)
+
+    def test_martial_grace_adds_battle_focus_token(self):
+        from warhammer40k_ai.classes.battle_focus import BattleFocusManager
+        from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize
+
+        army = _DummyArmy([], detachment_type="Warhost")
+        mgr = BattleFocusManager(army)
+        game = SimpleNamespace(
+            battlefield=Battlefield(BattlefieldSize.STRIKE_FORCE),
+            turn=1,
+            phase=SimpleNamespace(name="COMMAND_PHASE"),
+        )
+
+        mgr.on_battle_round_start(1, game=game)
+        self.assertEqual(mgr.tokens, 5)
+
+    def test_martial_grace_swift_as_the_wind_bonus(self):
+        from warhammer40k_ai.classes.battle_focus import BattleFocusManager
+
+        unit = _DummyUnit()
+        army = _DummyArmy([unit], detachment_type="Warhost")
+        game = SimpleNamespace(
+            turn=1,
+            phase=SimpleNamespace(name="MOVEMENT_PHASE"),
+            get_current_player=lambda: army.player,
+        )
+        army.player.game = game
+
+        mgr = BattleFocusManager(army)
+        mgr.tokens = 1
+
+        applied = mgr.apply_maneuver(unit, mgr.MANEUVER_SWIFT, game)
+        self.assertTrue(applied)
+        self.assertEqual(unit._mods[0][1].value, 3)
+
+    def test_martial_grace_reactive_move_bonus(self):
+        from warhammer40k_ai.classes.battle_focus import BattleFocusManager
+
+        unit = _DummyUnit()
+        army = _DummyArmy([unit], detachment_type="Warhost")
+        game = SimpleNamespace(turn=1, phase=SimpleNamespace(name="MOVEMENT_PHASE"))
+        army.player.game = game
+
+        mgr = BattleFocusManager(army)
+        mgr.tokens = 1
+
+        with patch("warhammer40k_ai.utility.dice.get_roll", return_value=3):
+            applied = mgr.apply_reactive_maneuver(unit, mgr.MANEUVER_FADE_BACK, game)
+        self.assertTrue(applied)
+        self.assertEqual(int(unit.special_rules.get("battle_focus_reactive_move_max", 0)), 5)
 
     def test_swift_as_the_wind_expires_at_phase_end(self):
         from warhammer40k_ai.classes.battle_focus import BattleFocusManager
