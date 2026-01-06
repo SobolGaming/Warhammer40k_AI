@@ -1031,6 +1031,56 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Oath of Moment: attacks vs the selected target can re-roll the Hit roll (optional).
+        try:
+            if "reroll" not in hit_result:
+                unit = attacker.parent_unit
+                army = unit.get_parent_army()
+                mgr = getattr(army, "oath_of_moment", None) if army is not None else None
+                if mgr is not None and mgr.can_reroll_hit(unit, target):
+                    # Determine success at this stage (before auto-hit/miss shortcuts below).
+                    try:
+                        success = (dice_roll != 1) and (self.skill > 0) and (dice_roll >= final_needed)
+                    except Exception:
+                        success = False
+
+                    do_reroll = False
+                    try:
+                        game = army.player.game
+                        player = army.player
+                        is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                        provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                    except Exception:
+                        is_human = False
+                        provider = None
+                        player = None
+
+                    if is_human and callable(provider):
+                        try:
+                            do_reroll = bool(provider(
+                                player=player,
+                                unit=unit,
+                                roll_type="hit",
+                                value=dice_roll,
+                                dice=None,
+                                needed=final_needed,
+                                success=success,
+                                reason="Oath of Moment",
+                            ))
+                        except Exception:
+                            do_reroll = False
+                    else:
+                        do_reroll = (not success)
+
+                    if do_reroll:
+                        rr = _reroll_hit()
+                        hit_result.setdefault("special_effects", []).append("Oath of Moment: re-roll Hit roll")
+                        hit_result["reroll"] = rr
+                        dice_roll = rr
+                        reroll_used = True
+        except Exception:
+            pass
+
         # Seductive Gambit: melee attacks can re-roll the Hit roll (optional).
         try:
             if "reroll" not in hit_result:
@@ -1066,6 +1116,7 @@ class WargearProfile:
                                     dice=None,
                                     needed=final_needed,
                                     success=success,
+                                    reason="Monarch of the Hunt",
                                 ))
                             except Exception:
                                 do_reroll = False
@@ -1361,6 +1412,16 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Oath of Moment: +1 to wound vs the selected target (Codex: Space Marines detachment only).
+        try:
+            army = attacker.parent_unit.get_parent_army()
+            mgr = getattr(army, "oath_of_moment", None) if army is not None else None
+            if mgr is not None and mgr.wound_bonus_applies(attacker.parent_unit, target):
+                dice_modifier += 1
+                wound_result['modifiers'].append("+1 to wound from Oath of Moment")
+        except Exception:
+            pass
+
         # Friendly aura roll modifiers (e.g. "Beacons of Rage (Aura)")
         if getattr(aura_mods, "wound", 0):
             dice_modifier += int(aura_mods.wound)
@@ -1484,6 +1545,7 @@ class WargearProfile:
                                         dice=None,
                                         needed=final_needed,
                                         success=success,
+                                        reason="Monarch of the Hunt",
                                     ))
                                 except Exception:
                                     do_reroll = False

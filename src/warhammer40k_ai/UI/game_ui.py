@@ -62,6 +62,7 @@ SUPPORTED_ARMY_RULES = {
     "BATTLE FOCUS",
     "DISPARATE PATHS",
     "THE SHADOW OF CHAOS",
+    "OATH OF MOMENT",
 }
 SUPPORTED_DETACHMENT_RULES = {
     "RELENTLESS RAGE",
@@ -722,6 +723,7 @@ class GameView:
         self._optional_flow_active = False
         self._blessings_flow_active = False
         self._battle_focus_flow_active = False
+        self._oath_of_moment_flow_active = False
 
         # Initialize shared UI state
         self._ui_hitboxes = {}
@@ -744,6 +746,8 @@ class GameView:
                 self.game.event_system.subscribe("battle_round_started", self._on_battle_round_started)
                 # Optional ability prompts (phase-start timing windows)
                 self.game.event_system.subscribe("phase_start", self._on_phase_start_optional_ability_prompts)
+                # Oath of Moment target selection (start of Command phase)
+                self.game.event_system.subscribe("oath_of_moment_prompt", self._on_oath_of_moment_prompt)
                 # Quarry re-pick when quarry is destroyed
                 self.game.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_for_monarch_of_the_hunt)
                 # Battle Focus reactive prompts (Opportunity Seized / Fade Back)
@@ -940,6 +944,82 @@ class GameView:
         except Exception:
             # If UI wiring is missing, just skip
             _done(False)
+
+    def _on_oath_of_moment_prompt(self, player=None, game=None, **_kwargs):
+        """Prompt human players to select an Oath of Moment target at Command phase start."""
+        if player is None:
+            return
+        try:
+            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+        except Exception:
+            is_human = False
+        if not is_human:
+            return
+
+        game = game or self.game
+        if game is None:
+            return
+
+        try:
+            army = player.get_army()
+        except Exception:
+            army = None
+        if army is None:
+            return
+        mgr = getattr(army, "oath_of_moment", None)
+        if mgr is None or not getattr(mgr, "army_has_oath", lambda: False)():
+            return
+        if getattr(mgr, "oathOfMomentTargetUnitId", None):
+            return
+        if bool(getattr(self, "_oath_of_moment_flow_active", False)):
+            return
+
+        try:
+            options = list(getattr(mgr, "get_eligible_enemy_units", lambda **_k: [])(game=game, player=player) or [])
+        except Exception:
+            options = []
+        if not options:
+            return
+        if len(options) == 1:
+            mgr.set_target(options[0])
+            return
+
+        try:
+            from .dialogs import QuarrySelectionDialog
+        except Exception:
+            mgr.set_target(options[0])
+            return
+
+        if not hasattr(self, "oath_of_moment_dialog") or self.oath_of_moment_dialog is None:
+            self.oath_of_moment_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+
+        dlg = self.oath_of_moment_dialog
+
+        def _done(chosen_unit):
+            try:
+                mgr.set_target(chosen_unit)
+            finally:
+                self._oath_of_moment_flow_active = False
+
+        def _cancel():
+            try:
+                mgr.set_target(options[0])
+            finally:
+                self._oath_of_moment_flow_active = False
+
+        self._oath_of_moment_flow_active = True
+        dlg.show(
+            title=f"Oath of Moment - {getattr(player, 'name', 'Player')}",
+            header="Choose an enemy unit to be your Oath of Moment target.",
+            subtitle="Target lasts until your next Command phase.",
+            choices=options,
+            on_confirm=_done,
+            on_cancel=_cancel,
+        )
+        try:
+            self.dialog_manager.open(dlg, modal=True)
+        except Exception:
+            self._oath_of_moment_flow_active = False
 
     def _army_has_blessings_of_khorne(self, army) -> bool:
         if army is None:
@@ -1595,7 +1675,11 @@ class GameView:
             roll_border = None
 
         if rt in ("hit", "wound"):
-            msg = f"{msg}\n\nEligible for re-roll (Monarch of the Hunt). You may re-roll even if successful."
+            reason = str(_kwargs.get("reason", "") or "").strip()
+            extra = "Eligible for re-roll"
+            if reason:
+                extra = f"{extra} ({reason})"
+            msg = f"{msg}\n\n{extra}. You may re-roll even if successful."
         else:
             msg = f"{msg}\n\nYou may re-roll this {rt} roll."
 

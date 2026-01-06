@@ -216,7 +216,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Curse of the Wulfen | `000010256` | 4 | 4 | **Not implemented** |  |
 | Kill Team | `000008519` | 1 | 1 | **Not implemented** |  |
 | Mission Tactics | `000008521` | 10 | 10 | **Not implemented** |  |
-| Oath of Moment | `000008350` | 275 | 275 | **Not implemented** |  |
+| Oath of Moment | `000008350` | 275 | 275 | **Supported** | Command phase target selection; hit re-rolls vs target; +1 wound vs target for Codex: Space Marines detachments without divergent chapter keywords. |
 | Templar Vows | `000008526` | 19 | 19 | **Supported** | All four vows implemented (charge reroll/precision, melee +1 to wound, charge after fall back, actions after advance + sticky objectives). |
 
 ### Thousand Sons (`TS`) - `https://wahapedia.ru/wh40k10ed/factions/thousand-sons`

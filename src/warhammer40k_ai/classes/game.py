@@ -2463,6 +2463,18 @@ class Game:
         except Exception:
             pass
 
+        # Space Marines: Oath of Moment target selection at the start of your Command phase.
+        try:
+            current_player = self.get_current_player()
+            army = getattr(current_player, "get_army", lambda: None)()
+            mgr = getattr(army, "oath_of_moment", None) if army is not None else None
+            if mgr is not None:
+                mgr.on_command_phase_start(game=self, player=current_player)
+                if getattr(self, "event_system", None) is not None:
+                    self.event_system.publish("oath_of_moment_prompt", player=current_player, game=self)
+        except Exception:
+            pass
+
         # Core (per official app wording): at the start of your Command phase, before doing anything else,
         # BOTH players gain the normal Command phase CP. This normal CP does not count toward the
         # per-battle-round "bonus CP" guardrail.

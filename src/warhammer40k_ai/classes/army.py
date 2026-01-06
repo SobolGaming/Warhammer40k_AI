@@ -83,6 +83,13 @@ class Army:
         except Exception:
             self.templar_vows = None
 
+        # Space Marines: Oath of Moment (safe to attach, no-op if not applicable).
+        try:
+            from .oath_of_moment import OathOfMomentManager
+            self.oath_of_moment = OathOfMomentManager(self)
+        except Exception:
+            self.oath_of_moment = None
+
         # Death Guard: Nurgle's Gift (Aura) plagues (safe to attach, no-op if not applicable).
         try:
             from .nurgles_gift import NurglesGiftManager

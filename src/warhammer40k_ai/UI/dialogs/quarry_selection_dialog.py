@@ -29,6 +29,7 @@ class QuarrySelectionDialog(BaseDialog):
         super().__init__(screen_width, screen_height, width=640, height=420, draggable=True, center=True)
         self.title = "Select Quarry"
         self.subtitle = ""
+        self.header = ""
         self.choices = []
         self.selected_idx: Optional[int] = None
         self._on_confirm: Optional[Callable[[object], None]] = None
@@ -41,6 +42,7 @@ class QuarrySelectionDialog(BaseDialog):
         self,
         *,
         title: str = "Select Quarry",
+        header: str = "",
         subtitle: str = "",
         choices: List[object],
         on_confirm: Callable[[object], None],
@@ -49,6 +51,7 @@ class QuarrySelectionDialog(BaseDialog):
         super().show()
         self.visible = True
         self.title = title or "Select Quarry"
+        self.header = header or ""
         self.subtitle = subtitle or ""
         self.choices = list(choices or [])
         self.selected_idx = 0 if self.choices else None
@@ -58,6 +61,7 @@ class QuarrySelectionDialog(BaseDialog):
     def hide(self):
         super().hide()
         self.subtitle = ""
+        self.header = ""
         self.choices = []
         self.selected_idx = None
         self._on_confirm = None
@@ -122,7 +126,7 @@ class QuarrySelectionDialog(BaseDialog):
 
         self.draw_title_bar(screen, self.title)
 
-        header = "Choose an enemy unit to be this model's quarry."
+        header = self.header or "Choose an enemy unit to be this model's quarry."
         if self.subtitle:
             header = f"{header}\n{self.subtitle}"
         try:
@@ -173,5 +177,4 @@ class QuarrySelectionDialog(BaseDialog):
 
         self.draw_button(screen, "confirm", "Confirm")
         self.draw_button(screen, "cancel", "Cancel")
-
 
