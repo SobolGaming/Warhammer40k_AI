@@ -58,6 +58,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 - Gain CP on destroy (partial) (Partial)
 - Heal on destroy (partial) (Partial)
 - Plunging Fire (Supported)
+- Reanimation Protocols (Supported)
 
 ## Core Abilities
 
@@ -200,7 +201,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Reanimation Protocols | `000008369` | 63 | 63 | **Not implemented** |  |
+| Reanimation Protocols | `000008369` | 63 | 63 | **Supported** | End of Command phase D3 wounds; heal wounded models before returning destroyed ones; no embarked. |
 
 ### Orks (`ORK`) - `https://wahapedia.ru/wh40k10ed/factions/orks`
 

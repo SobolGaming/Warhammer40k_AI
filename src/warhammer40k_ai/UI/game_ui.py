@@ -69,6 +69,7 @@ SUPPORTED_ARMY_RULES = {
     "CULT OF THE DARK GODS",
     "CABAL OF SORCERERS",
     "PACT OF SORCERY",
+    "REANIMATION PROTOCOLS",
 }
 SUPPORTED_DETACHMENT_RULES = {
     "RELENTLESS RAGE",
@@ -398,6 +399,7 @@ class GameView:
                 self.game.map.damage_allocation_provider = self._damage_allocation_provider
                 self.game.map.hazardous_allocation_provider = self._hazardous_allocation_provider
                 self.game.map.roll_reroll_provider = self._roll_reroll_provider
+                self.game.map.reanimation_allocation_provider = self._reanimation_allocation_provider
         except Exception:
             pass
         try:
@@ -406,6 +408,7 @@ class GameView:
                 self.game_map.damage_allocation_provider = self._damage_allocation_provider
                 self.game_map.hazardous_allocation_provider = self._hazardous_allocation_provider
                 self.game_map.roll_reroll_provider = self._roll_reroll_provider
+                self.game_map.reanimation_allocation_provider = self._reanimation_allocation_provider
         except Exception:
             pass
         
@@ -2899,6 +2902,72 @@ class GameView:
             attacker_unit_root,
             list(eligible_models or []),
             title=title,
+            subtitle=subtitle,
+            instruction=instruction,
+            on_choice=_on_choice,
+        )
+        try:
+            self.dialog_manager.open(dlg, modal=True)
+        except Exception:
+            pass
+
+        clock = pygame.time.Clock()
+        while dlg.visible and not choice_holder["done"]:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    return None
+                try:
+                    self.dialog_manager.handle_event(event)
+                except Exception:
+                    pass
+            try:
+                self.draw()
+            except Exception:
+                try:
+                    dlg.draw(self.screen)
+                    pygame.display.update()
+                except Exception:
+                    pass
+            clock.tick(60)
+
+        return choice_holder["choice"]
+
+    def _reanimation_allocation_provider(self, target_unit_root, eligible_models, ctx):
+        """
+        Blocking modal prompt for Reanimation Protocols model selection.
+        Returns: selected model, or None to fall back to deterministic engine choice.
+        """
+        try:
+            from .dialogs import DamageAllocationDialog
+        except Exception:
+            return None
+
+        if not hasattr(self, "damage_allocation_dialog") or self.damage_allocation_dialog is None:
+            self.damage_allocation_dialog = DamageAllocationDialog(self.screen.get_width(), self.screen.get_height())
+
+        dlg = self.damage_allocation_dialog
+        choice_holder = {"choice": None, "done": False}
+
+        def _on_choice(chosen):
+            choice_holder["choice"] = chosen
+            choice_holder["done"] = True
+
+        reason = ""
+        instruction = ""
+        try:
+            reason = (ctx or {}).get("reason", "") or "Reanimation Protocols"
+            instruction = (ctx or {}).get("instruction", "") or "Select a model for Reanimation Protocols."
+        except Exception:
+            reason = "Reanimation Protocols"
+            instruction = "Select a model for Reanimation Protocols."
+
+        subtitle = getattr(target_unit_root, "name", "Unit")
+
+        dlg.show(
+            target_unit_root,
+            list(eligible_models or []),
+            title=reason,
             subtitle=subtitle,
             instruction=instruction,
             on_choice=_on_choice,

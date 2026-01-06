@@ -6580,6 +6580,334 @@ class Unit:
                     continue
         return removed
 
+    # ---------------- Reanimation Protocols ----------------
+
+    def _reanimation_choose_model(self, eligible_models, *, is_human: bool, provider, reason: str, instruction: Optional[str] = None):
+        if not eligible_models:
+            return None
+        if len(eligible_models) == 1:
+            return eligible_models[0]
+        if is_human and callable(provider):
+            try:
+                ctx = {"reason": reason}
+                if instruction:
+                    ctx["instruction"] = instruction
+                chosen = provider(self.get_attached_unit_root(), list(eligible_models), ctx)
+                if chosen is not None and chosen in eligible_models:
+                    return chosen
+            except Exception:
+                pass
+        return eligible_models[0]
+
+    def _reanimation_position_valid(
+        self,
+        x: float,
+        y: float,
+        z: float,
+        facing: float,
+        model: Model,
+        alive_models: list[Model],
+        game_map: Optional['Map'],
+        required_neighbors: int,
+    ) -> bool:
+        if game_map is None:
+            return True
+        try:
+            if not game_map.is_within_boundary(model, destination=(x, y)):
+                return False
+            if game_map.check_collision_with_obstacles(model, destination=(x, y)):
+                return False
+            if game_map.check_collision_with_other_friendly_units(model, destination=(x, y)):
+                return False
+            if game_map.check_collision_with_other_enemy_units(model, destination=(x, y)):
+                return False
+        except Exception:
+            return False
+
+        try:
+            candidate_base = self._create_potential_base(x, y, z, facing, model=model)
+        except Exception:
+            return False
+
+        for m in list(alive_models or []):
+            try:
+                if not getattr(m, "is_alive", True):
+                    continue
+            except Exception:
+                pass
+            try:
+                if candidate_base.collides_with(m.model_base):
+                    return False
+            except Exception:
+                pass
+
+        if required_neighbors <= 0:
+            return True
+
+        neighbors = 0
+        for m in list(alive_models or []):
+            try:
+                base = m.model_base
+                horizontal = candidate_base.get_base_shape().distance(base.get_base_shape())
+                vertical = abs(float(getattr(candidate_base, "z", 0.0)) - float(getattr(base, "z", 0.0)))
+            except Exception:
+                continue
+            if horizontal <= 2.0 + 1e-6 and vertical <= 5.0 + 1e-6:
+                neighbors += 1
+                if neighbors >= required_neighbors:
+                    return True
+        return False
+
+    def _find_reanimation_position(
+        self,
+        model: Model,
+        alive_models: list[Model],
+        *,
+        game_map: Optional['Map'],
+        required_neighbors: int,
+    ) -> Optional[Tuple[float, float, float, float]]:
+        if not alive_models:
+            return None
+        if game_map is None:
+            return None
+
+        try:
+            mr = float(model.model_base.get_longest_radius())
+        except Exception:
+            try:
+                mr = float(model.model_base.get_radius())
+            except Exception:
+                mr = 1.0
+
+        for anchor in list(alive_models or []):
+            try:
+                ax, ay, az, af = anchor.get_location()
+            except Exception:
+                continue
+            try:
+                ar = float(anchor.model_base.get_longest_radius())
+            except Exception:
+                try:
+                    ar = float(anchor.model_base.get_radius())
+                except Exception:
+                    ar = 1.0
+
+            min_center = ar + mr + 0.05
+            max_center = min_center + 2.0 + 1e-6
+            for ring in np.arange(0.0, max(0.01, max_center - min_center) + 0.001, 0.5):
+                r = float(min_center + ring)
+                if r > max_center + 1e-6:
+                    break
+                for deg in range(0, 360, 15):
+                    ang = math.radians(deg)
+                    x = ax + math.cos(ang) * r
+                    y = ay + math.sin(ang) * r
+                    z = az
+                    facing = af
+                    if self._reanimation_position_valid(
+                        x,
+                        y,
+                        z,
+                        facing,
+                        model,
+                        alive_models,
+                        game_map,
+                        required_neighbors,
+                    ):
+                        return (x, y, z, facing)
+        return None
+
+    def apply_reanimation_protocols(
+        self,
+        wounds_to_restore: int,
+        *,
+        game_map: Optional['Map'] = None,
+        is_human: bool = False,
+        provider=None,
+    ) -> dict:
+        """
+        Resolve Reanimation Protocols for this (attached) unit group.
+
+        Returns a dict with counts of healed wounds and returned models.
+        """
+        result = {"healed": 0, "returned": 0}
+        if int(wounds_to_restore or 0) <= 0:
+            return result
+
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+
+        try:
+            if not getattr(root, "deployed", True):
+                return result
+            if str(getattr(root, "reserve_status", "deployed")) != "deployed":
+                return result
+            if bool(getattr(root, "embarked_in", None)):
+                return result
+            if bool(getattr(root, "is_embarked", False)):
+                return result
+        except Exception:
+            pass
+
+        try:
+            if hasattr(root, "is_alive") and callable(getattr(root, "is_alive")) and not root.is_alive():
+                return result
+        except Exception:
+            pass
+
+        try:
+            members = root.get_attached_unit_members()
+        except Exception:
+            members = [root]
+
+        def _is_alive_model(m) -> bool:
+            try:
+                return bool(getattr(m, "is_alive", True))
+            except Exception:
+                return True
+
+        def _is_wounded_model(m) -> bool:
+            try:
+                return _is_alive_model(m) and (not bool(getattr(m, "is_max_health", True)))
+            except Exception:
+                try:
+                    w = int(getattr(m, "wounds", 0))
+                    bw = int(getattr(m, "_base_wounds", getattr(m, "base_wounds", w)))
+                    return _is_alive_model(m) and w < bw
+                except Exception:
+                    return False
+
+        alive_models = [m for u in (members or []) for m in (getattr(u, "models", []) or []) if _is_alive_model(m)]
+        if not alive_models:
+            return result
+
+        for _ in range(int(wounds_to_restore or 0)):
+            wounded = [m for m in alive_models if _is_wounded_model(m)]
+            if wounded:
+                target = self._reanimation_choose_model(
+                    wounded,
+                    is_human=is_human,
+                    provider=provider,
+                    reason="Reanimation Protocols - Restore Wound",
+                    instruction="Select a wounded model to regain 1 wound.",
+                )
+                if target is None:
+                    break
+                try:
+                    if hasattr(target, "heal"):
+                        target.heal(1)
+                    else:
+                        base_wounds = int(getattr(target, "_base_wounds", getattr(target, "base_wounds", 0)) or 0)
+                        target.wounds = min(base_wounds, int(getattr(target, "wounds", 0) or 0) + 1)
+                    if hasattr(target, "_check_damaged_profile"):
+                        target._check_damaged_profile()
+                except Exception:
+                    pass
+                result["healed"] += 1
+                continue
+
+            try:
+                if hasattr(root, "is_below_starting_strength") and callable(getattr(root, "is_below_starting_strength")):
+                    if not root.is_below_starting_strength():
+                        break
+            except Exception:
+                pass
+
+            destroyed_pool: List[Tuple['Unit', Model]] = []
+            for u in (members or []):
+                lost = getattr(u, "models_lost", None)
+                if isinstance(lost, list) and lost:
+                    destroyed_pool.extend([(u, m) for m in lost])
+            if not destroyed_pool:
+                break
+
+            if len(destroyed_pool) == 1:
+                unit_for_model, model = destroyed_pool[0]
+            else:
+                candidates = [m for (_u, m) in destroyed_pool]
+                chosen = self._reanimation_choose_model(
+                    candidates,
+                    is_human=is_human,
+                    provider=provider,
+                    reason="Reanimation Protocols - Return Model",
+                    instruction="Select a destroyed model to return with 1 wound.",
+                )
+                if chosen is None or chosen not in candidates:
+                    chosen = candidates[0]
+                unit_for_model = next((u for (u, m) in destroyed_pool if m is chosen), members[0])
+                model = chosen
+
+            try:
+                if hasattr(unit_for_model, "models_lost") and model in unit_for_model.models_lost:
+                    unit_for_model.models_lost.remove(model)
+            except Exception:
+                pass
+
+            try:
+                if hasattr(model, "set_parent_unit"):
+                    model.set_parent_unit(unit_for_model)
+                else:
+                    model.parent_unit = unit_for_model
+            except Exception:
+                pass
+
+            try:
+                model.wounds = 1
+            except Exception:
+                try:
+                    model._wounds = 1
+                except Exception:
+                    pass
+            try:
+                if hasattr(model, "_check_damaged_profile"):
+                    model._check_damaged_profile()
+            except Exception:
+                pass
+
+            try:
+                setattr(model, "_on_death_reactions_resolved", False)
+                setattr(model, "_fight_on_death_used", False)
+                setattr(model, "_shoot_on_death_used", False)
+            except Exception:
+                pass
+
+            try:
+                if hasattr(unit_for_model, "add_model"):
+                    unit_for_model.add_model(model)
+                else:
+                    unit_for_model.models.append(model)
+            except Exception:
+                pass
+
+            alive_models = [m for u in (members or []) for m in (getattr(u, "models", []) or []) if _is_alive_model(m)]
+            new_count = len(alive_models)
+            required_neighbors = 0 if new_count <= 1 else (2 if new_count >= 7 else 1)
+            pos = self._find_reanimation_position(
+                model,
+                [m for m in alive_models if m is not model],
+                game_map=game_map,
+                required_neighbors=required_neighbors,
+            )
+            if pos is not None:
+                try:
+                    model.set_location(*pos)
+                except Exception:
+                    pass
+
+            try:
+                if hasattr(unit_for_model, "update_coherency"):
+                    unit_for_model.update_coherency()
+                if root is not unit_for_model and hasattr(root, "update_coherency"):
+                    root.update_coherency()
+            except Exception:
+                pass
+
+            result["returned"] += 1
+
+        return result
+
     def use_ability(self, ability: Ability, target: 'Unit', game_map: 'Map'):
         """Uses a special ability."""
         from .map import Map  # Import inside the function
@@ -7220,6 +7548,16 @@ class Unit:
                 found = False
             if found:
                 return True
+        return False
+
+    def attached_unit_has_reanimation_protocols(self) -> bool:
+        """Attached unit eligibility: true if any attached member has Reanimation Protocols."""
+        for u in self.get_attached_unit_members():
+            try:
+                if u.has_reanimation_protocols():
+                    return True
+            except Exception:
+                continue
         return False
 
     def get_fight_phase_move_distance_override(self, movement_kind: str) -> Optional[float]:
@@ -8520,6 +8858,18 @@ class Unit:
         if not hasattr(self, '_ability_cache'):
             self._ability_cache = {}
         self._ability_cache['shoot_on_death'] = found
+        return found
+
+    def has_reanimation_protocols(self) -> bool:
+        """Check if the unit has Reanimation Protocols (Necrons army rule)."""
+        if 'reanimation_protocols' in getattr(self, '_ability_cache', {}):
+            return self._ability_cache['reanimation_protocols']
+
+        found, _ = self._find_ability_with_patterns(["reanimation protocols", "reanimation protocol"])
+
+        if not hasattr(self, '_ability_cache'):
+            self._ability_cache = {}
+        self._ability_cache['reanimation_protocols'] = found
         return found
 
     def _normalize_rules_text(self, text: str) -> str:

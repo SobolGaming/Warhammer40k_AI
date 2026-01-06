@@ -36,6 +36,8 @@ class Map:
         self.damage_allocation_provider = None
         # Signature: provider(attacker_unit_root, eligible_models, ctx_dict) -> chosen_model | None
         self.hazardous_allocation_provider = None
+        # Signature: provider(target_unit_root, eligible_models, ctx_dict) -> chosen_model | None
+        self.reanimation_allocation_provider = None
 
     def create_boundary_polygon(self) -> Polygon:
         """

@@ -312,6 +312,73 @@ class Game:
                     except Exception:
                         continue
 
+    def _apply_reanimation_protocols_end_command_phase(self, current_player) -> None:
+        if current_player is None:
+            return
+        try:
+            army = current_player.get_army()
+        except Exception:
+            army = getattr(current_player, "army", None)
+        if army is None:
+            return
+        game_map = getattr(self, "map", None)
+        provider = getattr(game_map, "reanimation_allocation_provider", None) if game_map is not None else None
+        try:
+            is_human = bool(getattr(getattr(current_player, "type", None), "name", "") == "HUMAN")
+        except Exception:
+            is_human = False
+
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            try:
+                uid = str(getattr(root, "_id", None) or id(root))
+            except Exception:
+                uid = str(id(root))
+            if uid in seen:
+                continue
+            seen.add(uid)
+
+            try:
+                if not getattr(root, "deployed", True):
+                    continue
+                if str(getattr(root, "reserve_status", "deployed")) != "deployed":
+                    continue
+                if bool(getattr(root, "embarked_in", None)):
+                    continue
+                if bool(getattr(root, "is_embarked", False)):
+                    continue
+            except Exception:
+                pass
+
+            try:
+                if hasattr(root, "is_alive") and callable(getattr(root, "is_alive")) and not root.is_alive():
+                    continue
+            except Exception:
+                pass
+
+            try:
+                if not root.attached_unit_has_reanimation_protocols():
+                    continue
+            except Exception:
+                continue
+
+            try:
+                d3 = int(get_roll("D3") or 0)
+            except Exception:
+                d3 = 0
+            if d3 <= 0:
+                continue
+            try:
+                root.apply_reanimation_protocols(d3, game_map=game_map, is_human=is_human, provider=provider)
+            except Exception:
+                continue
+
     def _on_battle_shock_test_resolved_shadow_form(self, unit=None, passed: bool = True, **_kwargs) -> None:
         if passed is True or unit is None:
             return
@@ -2803,6 +2870,12 @@ class Game:
         # Chaos Knights: Dismay can force additional tests for eligible enemy units.
         try:
             self._apply_harbingers_dismay_forced_tests(current_player, tested_ids)
+        except Exception:
+            pass
+
+        # Necrons: Reanimation Protocols at end of Command phase (resolve before scoring).
+        try:
+            self._apply_reanimation_protocols_end_command_phase(current_player)
         except Exception:
             pass
 
