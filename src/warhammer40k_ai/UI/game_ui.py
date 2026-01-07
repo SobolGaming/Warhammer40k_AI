@@ -74,6 +74,7 @@ SUPPORTED_ARMY_RULES = {
     "SHADOW IN THE WARP",
     "POWER FROM PAIN",
     "CORSAIRS AND TRAVELLING PLAYERS",
+    "PRIORITISED EFFICIENCY",
 }
 SUPPORTED_DETACHMENT_RULES = {
     "RELENTLESS RAGE",
@@ -799,6 +800,8 @@ class GameView:
                 self.game.event_system.subscribe("cabal_temporal_surge_move", self._on_cabal_temporal_surge_move)
                 # Cabal of Sorcerers: Ritual resolution popup
                 self.game.event_system.subscribe("cabal_ritual_resolved", self._on_cabal_ritual_resolved)
+                # Leagues of Votann: Prioritised Efficiency updates (Yield Points / mode)
+                self.game.event_system.subscribe("prioritised_efficiency_updated", self._on_prioritised_efficiency_updated)
         except Exception:
             pass
 
@@ -1404,6 +1407,16 @@ class GameView:
         except Exception:
             self._waaagh_flow_active = False
 
+    def _on_prioritised_efficiency_updated(self, player=None, **_kwargs):
+        if player is None:
+            return
+        try:
+            if self.rule_detail_panel and self.rule_detail_panel.visible and isinstance(self._rule_panel_state, dict):
+                if self._rule_panel_state.get("player") is player and self._rule_panel_state.get("rule_type") == "army":
+                    self._toggle_rule_panel(player, "army", force_refresh=True)
+        except Exception:
+            pass
+
     def _on_for_the_greater_good_prompt(self, player=None, game=None, **_kwargs):
         if player is None:
             return
@@ -1591,6 +1604,15 @@ class GameView:
         except Exception:
             army = None
         return getattr(army, "power_from_pain", None) if army is not None else None
+
+    def _get_prioritised_efficiency_manager(self, player):
+        if player is None:
+            return None
+        try:
+            army = player.get_army()
+        except Exception:
+            army = None
+        return getattr(army, "prioritised_efficiency", None) if army is not None else None
 
     def _shadow_of_chaos_hud(self, player) -> Optional[dict]:
         if player is None or self.game is None:
@@ -4675,6 +4697,23 @@ class GameView:
             shadow_hud = self._shadow_of_chaos_hud(player)
             if shadow_hud is not None:
                 hud = shadow_hud
+        if rule_type == "army" and "prioritised efficiency" in rule_name.strip().lower():
+            mgr = self._get_prioritised_efficiency_manager(player)
+            if mgr is not None:
+                mode_name = ""
+                try:
+                    mode_name = str(getattr(mgr, "get_mode_name", lambda: "")() or "")
+                except Exception:
+                    mode_name = ""
+                hud = {
+                    "label": "Yield Points",
+                    "get_tokens": lambda: int(getattr(mgr, "yield_points", 0) or 0),
+                    "show_button": False,
+                    "get_hint": lambda: f"Mode: {mode_name or 'Unknown'}",
+                    "highlight_words": [mode_name] if mode_name else [],
+                }
+                if mode_name:
+                    highlight_words.append(mode_name)
         self.rule_detail_panel.set_content(
             title,
             rule_name,

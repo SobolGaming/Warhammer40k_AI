@@ -326,6 +326,13 @@ class Army:
             self.waaagh = WaaaghManager(self)
         except Exception:
             self.waaagh = None
+
+        # Leagues of Votann: Prioritised Efficiency (safe to attach, no-op if not applicable).
+        try:
+            from .prioritised_efficiency import PrioritisedEfficiencyManager
+            self.prioritised_efficiency = PrioritisedEfficiencyManager(self)
+        except Exception:
+            self.prioritised_efficiency = None
     
     def add_unit(self, unit: Unit) -> bool:
         if not self.faction_keyword:

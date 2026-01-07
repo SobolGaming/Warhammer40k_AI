@@ -3569,6 +3569,14 @@ class Unit:
         This is intentionally text-based so it can support multiple datasheets without hardcoding.
         """
         try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "prioritised_efficiency", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "_army_has_rule", lambda: False)() and getattr(mgr, "_unit_in_army", lambda _u: False)(self):
+                if getattr(mgr, "is_hostile_acquisition", lambda: False)():
+                    return True
+        except Exception:
+            pass
+        try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("pain_reroll_advance"):
                 return True
@@ -3601,6 +3609,14 @@ class Unit:
         """
         Best-effort detection for abilities that allow re-rolling Charge rolls for this unit/model.
         """
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "prioritised_efficiency", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "_army_has_rule", lambda: False)() and getattr(mgr, "_unit_in_army", lambda _u: False)(self):
+                if getattr(mgr, "is_hostile_acquisition", lambda: False)():
+                    return True
+        except Exception:
+            pass
         try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("enhancement_charge_reroll"):

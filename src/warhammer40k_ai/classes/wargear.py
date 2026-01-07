@@ -1048,6 +1048,25 @@ class WargearProfile:
                 hit_result['modifiers'].append("-1 to hit from Skullsquirm Blight (Nurgle's Gift)")
         except Exception:
             pass
+        # Leagues of Votann: Prioritised Efficiency (Hostile/Fortify hit bonus).
+        try:
+            unit = attacker.parent_unit
+            army = None
+            game = None
+            try:
+                army = unit.get_parent_army()
+                game = getattr(getattr(army, "player", None), "game", None)
+            except Exception:
+                game = None
+            mgr = getattr(army, "prioritised_efficiency", None) if army is not None else None
+            if mgr is not None:
+                bonus, reason = mgr.hit_roll_bonus(unit, target, game=game)
+                if bonus:
+                    dice_modifier += int(bonus)
+                    if reason:
+                        hit_result['modifiers'].append(reason)
+        except Exception:
+            pass
         # Harbingers of Dread: Darkness (-1 to hit against Chaos Knights).
         try:
             target_army = target.get_parent_army()
@@ -1706,6 +1725,18 @@ class WargearProfile:
                             wound_result['modifiers'].append("+1 to wound from Doom (Harbingers of Dread)")
                     except Exception:
                         pass
+        except Exception:
+            pass
+        # Leagues of Votann: Prioritised Efficiency (Fortify Takeover -1 to wound vs non-vehicle).
+        try:
+            target_army = target.get_parent_army()
+            mgr = getattr(target_army, "prioritised_efficiency", None) if target_army is not None else None
+            if mgr is not None:
+                delta, reason = mgr.wound_roll_penalty(target, strength=strength, toughness=target_toughness)
+                if delta:
+                    dice_modifier += int(delta)
+                    if reason:
+                        wound_result['modifiers'].append(reason)
         except Exception:
             pass
 

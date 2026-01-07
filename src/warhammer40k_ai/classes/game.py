@@ -3348,6 +3348,29 @@ class Game:
                 if hasattr(obj, 'location') and hasattr(obj.location, 'update_control'):
                     obj.location.update_control(self)
 
+        # Leagues of Votann: Prioritised Efficiency (Yield Points + mode updates).
+        try:
+            for p in list(getattr(self, "players", []) or []):
+                army = getattr(p, "army", None)
+                mgr = getattr(army, "prioritised_efficiency", None) if army is not None else None
+                if mgr is None:
+                    continue
+                delta = mgr.gain_yield_points(self)
+                mode_changed = False
+                if p is current_player:
+                    mode_changed = mgr.update_mode_for_player(self, p)
+                if (delta or mode_changed) and getattr(self, "event_system", None) is not None:
+                    self.event_system.publish(
+                        "prioritised_efficiency_updated",
+                        player=p,
+                        game=self,
+                        delta=int(delta or 0),
+                        mode=getattr(mgr, "mode", None),
+                        yield_points=int(getattr(mgr, "yield_points", 0) or 0),
+                    )
+        except Exception:
+            pass
+
         # Burden of Trust: assign guards at the end of the Command phase.
         try:
             self._assign_burden_of_trust_guards(current_player)
