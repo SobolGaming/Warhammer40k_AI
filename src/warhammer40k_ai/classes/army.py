@@ -340,6 +340,13 @@ class Army:
             self.cult_ambush = CultAmbushManager(self)
         except Exception:
             self.cult_ambush = None
+
+        # Adepta Sororitas: Acts of Faith (safe to attach, no-op if not applicable).
+        try:
+            from .acts_of_faith import ActsOfFaithManager
+            self.acts_of_faith = ActsOfFaithManager(self)
+        except Exception:
+            self.acts_of_faith = None
     
     def add_unit(self, unit: Unit) -> bool:
         if not self.faction_keyword:
@@ -1449,6 +1456,13 @@ class Army:
                 game = None
             mgr.on_battle_round_start(int(battle_round), game=game)
         mgr = getattr(self, "cult_ambush", None)
+        if mgr is not None:
+            try:
+                game = getattr(getattr(self, "player", None), "game", None)
+            except Exception:
+                game = None
+            mgr.on_battle_round_start(int(battle_round), game=game)
+        mgr = getattr(self, "acts_of_faith", None)
         if mgr is not None:
             try:
                 game = getattr(getattr(self, "player", None), "game", None)

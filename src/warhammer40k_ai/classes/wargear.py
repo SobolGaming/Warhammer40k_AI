@@ -981,19 +981,49 @@ class WargearProfile:
 
         # Overwatch restriction: only unmodified 6s hit
         if getattr(attacker.parent_unit, '_overwatch_sixes_only', False):
-            dice_roll = get_roll("D6")
+            dice_roll = None
+            miracle_used = False
+            try:
+                unit = attacker.parent_unit
+                army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "acts_of_faith", None) if army is not None else None
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if mgr is not None and mgr.can_use_act_of_faith(unit, game=game):
+                    dice_roll, _dice, miracle_used = mgr.resolve_roll(
+                        unit,
+                        roll_type="hit",
+                        game=game,
+                        dice_count=1,
+                        die_faces=6,
+                        needed=6,
+                    )
+            except Exception:
+                dice_roll = None
+                miracle_used = False
+            if dice_roll is None:
+                dice_roll = get_roll("D6")
             weapon_name_for_log = getattr(self, 'parent_wargear', None).name if getattr(self, 'parent_wargear', None) else getattr(self, 'name', 'Weapon')
-            append_dice(attacker.parent_unit.get_parent_army().player.name, f"Overwatch Hit roll: {dice_roll} for {attacker.name} with {weapon_name_for_log}")
+            try:
+                if miracle_used:
+                    append_dice(attacker.parent_unit.get_parent_army().player.name, f"Miracle die used for Overwatch Hit roll: {dice_roll} for {attacker.name} with {weapon_name_for_log}")
+                else:
+                    append_dice(attacker.parent_unit.get_parent_army().player.name, f"Overwatch Hit roll: {dice_roll} for {attacker.name} with {weapon_name_for_log}")
+            except Exception:
+                pass
             hit_result['roll'] = dice_roll
             hit_result['needed'] = 6
             hit_result['final_needed'] = 6
             if dice_roll == 6:
                 hit_result['hit'] = True
                 hit_result['special_effects'].append("Overwatch: 6 required to hit")
+                if miracle_used:
+                    hit_result['special_effects'].append("Miracle die")
                 attack_instance['crit_hit'] = True
             else:
                 hit_result['hit'] = False
                 hit_result['special_effects'].append("Overwatch: Miss (requires unmodified 6)")
+                if miracle_used:
+                    hit_result['special_effects'].append("Miracle die")
             return hit_result
 
         # Calculate modifiers first (always do this)
@@ -1141,11 +1171,34 @@ class WargearProfile:
             except Exception:
                 pass
             return new_roll
-        dice_roll = get_roll("D6")
+        dice_roll = None
+        miracle_used = False
+        try:
+            unit = attacker.parent_unit
+            army = unit.get_parent_army() if unit is not None else None
+            mgr = getattr(army, "acts_of_faith", None) if army is not None else None
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            if mgr is not None and mgr.can_use_act_of_faith(unit, game=game):
+                dice_roll, _dice, miracle_used = mgr.resolve_roll(
+                    unit,
+                    roll_type="hit",
+                    game=game,
+                    dice_count=1,
+                    die_faces=6,
+                    needed=final_needed,
+                )
+        except Exception:
+            dice_roll = None
+            miracle_used = False
+        if dice_roll is None:
+            dice_roll = get_roll("D6")
         try:
             # weapon_display_name available in attack(); provide fallback here
             weapon_name_for_log = getattr(self, 'parent_wargear', None).name if getattr(self, 'parent_wargear', None) else getattr(self, 'name', 'Weapon')
-            append_dice(attacker.parent_unit.get_parent_army().player.name, f"Hit roll: {dice_roll} for {attacker.name} with {weapon_name_for_log}")
+            if miracle_used:
+                append_dice(attacker.parent_unit.get_parent_army().player.name, f"Miracle die used for Hit roll: {dice_roll} for {attacker.name} with {weapon_name_for_log}")
+            else:
+                append_dice(attacker.parent_unit.get_parent_army().player.name, f"Hit roll: {dice_roll} for {attacker.name} with {weapon_name_for_log}")
         except Exception:
             pass
 
@@ -1444,6 +1497,8 @@ class WargearProfile:
         except Exception:
             pass
         hit_result['roll'] = dice_roll
+        if miracle_used:
+            hit_result['special_effects'].append("Miracle die")
         # Publish roll_made for hit
         try:
             unit = attacker.parent_unit
@@ -1464,6 +1519,7 @@ class WargearProfile:
                 reroll=reroll_cb,
                 reroll_locked=bool(reroll_locked),
                 roll_id=roll_id,
+                miracle_used=bool(miracle_used),
             )
         except Exception:
             pass
@@ -1756,12 +1812,54 @@ class WargearProfile:
 
         dice_modifier = min(max(dice_modifier, -1), 1)
 
-        dice_roll = get_roll("D6")
+        dice_roll = None
+        miracle_used = False
+        try:
+            unit = attacker.parent_unit
+            army = unit.get_parent_army() if unit is not None else None
+            mgr = getattr(army, "acts_of_faith", None) if army is not None else None
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            if mgr is not None and mgr.can_use_act_of_faith(unit, game=game):
+                final_needed = None
+                try:
+                    if isinstance(strength, int) and isinstance(target_toughness, int):
+                        if strength >= 2 * target_toughness:
+                            final_needed = 2
+                        elif strength > target_toughness:
+                            final_needed = 3
+                        elif strength == target_toughness:
+                            final_needed = 4
+                        elif strength * 2 <= target_toughness:
+                            final_needed = 6
+                        else:
+                            final_needed = 5
+                        final_needed = int(final_needed) - int(dice_modifier)
+                        final_needed = min(max(final_needed, 2), 6)
+                except Exception:
+                    final_needed = None
+                dice_roll, _dice, miracle_used = mgr.resolve_roll(
+                    unit,
+                    roll_type="wound",
+                    game=game,
+                    dice_count=1,
+                    die_faces=6,
+                    needed=final_needed,
+                )
+        except Exception:
+            dice_roll = None
+            miracle_used = False
+        if dice_roll is None:
+            dice_roll = get_roll("D6")
         try:
             weapon_name_for_log = getattr(self, 'parent_wargear', None).name if getattr(self, 'parent_wargear', None) else getattr(self, 'name', 'Weapon')
-            append_dice(attacker.parent_unit.get_parent_army().player.name, f"Wound roll: {dice_roll} vs T{target_toughness} by {attacker.name} with {weapon_name_for_log}")
+            if miracle_used:
+                append_dice(attacker.parent_unit.get_parent_army().player.name, f"Miracle die used for Wound roll: {dice_roll} vs T{target_toughness} by {attacker.name} with {weapon_name_for_log}")
+            else:
+                append_dice(attacker.parent_unit.get_parent_army().player.name, f"Wound roll: {dice_roll} vs T{target_toughness} by {attacker.name} with {weapon_name_for_log}")
         except Exception:
             pass
+        if miracle_used:
+            wound_result['special_effects'].append("Miracle die")
 
         # Strict aura support: re-roll Wound rolls of 1
         reroll_used = False
@@ -1899,6 +1997,7 @@ class WargearProfile:
                 reroll=reroll_cb,
                 reroll_locked=bool(reroll_locked),
                 roll_id=roll_id,
+                miracle_used=bool(miracle_used),
             )
         except Exception:
             pass
@@ -2119,13 +2218,38 @@ class WargearProfile:
             except Exception:
                 pass
             return new_roll
-        dice_roll = get_roll("D6")
+        dice_roll = None
+        miracle_used = False
         try:
-            append_dice(target_model.parent_unit.get_parent_army().player.name, f"Save roll: {dice_roll} (need {save_value}+) for {target_model.name}")
+            unit = target_model.parent_unit
+            army = unit.get_parent_army() if unit is not None else None
+            mgr = getattr(army, "acts_of_faith", None) if army is not None else None
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            if mgr is not None and mgr.can_use_act_of_faith(unit, game=game):
+                dice_roll, _dice, miracle_used = mgr.resolve_roll(
+                    unit,
+                    roll_type="save",
+                    game=game,
+                    dice_count=1,
+                    die_faces=6,
+                    needed=save_value,
+                )
+        except Exception:
+            dice_roll = None
+            miracle_used = False
+        if dice_roll is None:
+            dice_roll = get_roll("D6")
+        try:
+            if miracle_used:
+                append_dice(target_model.parent_unit.get_parent_army().player.name, f"Miracle die used for Save roll: {dice_roll} (need {save_value}+) for {target_model.name}")
+            else:
+                append_dice(target_model.parent_unit.get_parent_army().player.name, f"Save roll: {dice_roll} (need {save_value}+) for {target_model.name}")
         except Exception:
             pass
         save_result['roll'] = dice_roll
         save_result['needed'] = save_value
+        if miracle_used:
+            save_result['special_effects'].append("Miracle die")
         # Publish roll_made for save
         try:
             unit = target_model.parent_unit
@@ -2141,6 +2265,7 @@ class WargearProfile:
                 reroll=reroll_cb,
                 reroll_locked=bool(reroll_locked),
                 roll_id=roll_id,
+                miracle_used=bool(miracle_used),
             )
         except Exception:
             pass
@@ -2276,8 +2401,32 @@ class WargearProfile:
             def _reroll_damage():
                 new_val, new_rolls = self.damage.roll_detailed()
                 return new_val, new_rolls
-            damage_value, dice_rolls = self.damage.roll_detailed()
+            damage_value = None
+            dice_rolls = None
+            miracle_used = False
+            try:
+                unit = attacker.parent_unit
+                army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "acts_of_faith", None) if army is not None else None
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if mgr is not None and mgr.can_use_act_of_faith(unit, game=game):
+                    damage_value, dice_rolls, miracle_used = mgr.resolve_roll(
+                        unit,
+                        roll_type="damage",
+                        game=game,
+                        dice_count=self.damage.number,
+                        die_faces=self.damage.die_faces,
+                        modifier=self.damage.modifier,
+                    )
+            except Exception:
+                damage_value = None
+                dice_rolls = None
+                miracle_used = False
+            if damage_value is None or dice_rolls is None:
+                damage_value, dice_rolls = self.damage.roll_detailed()
             damage_result['damage_dice_rolls'] = dice_rolls
+            if miracle_used:
+                damage_result['special_effects'].append("Miracle die")
             # Publish roll_made for damage
             try:
                 unit = attacker.parent_unit
@@ -2294,6 +2443,7 @@ class WargearProfile:
                     reroll=reroll_cb,
                     reroll_locked=bool(reroll_locked),
                     roll_id=roll_id,
+                    miracle_used=bool(miracle_used),
                 )
             except Exception:
                 pass

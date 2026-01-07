@@ -25,6 +25,7 @@ from .hazard_objective_select_dialog import HazardObjectiveSelectDialog
 from .yes_no_dialog import YesNoDialog
 from .quarry_selection_dialog import QuarrySelectionDialog
 from .roll_reroll_dialog import RollRerollDialog
+from .miracle_dice_dialog import MiracleDiceDialog
 from .templar_vows_dialog import TemplarVowsDialog
 from .nurgles_gift_plague_dialog import NurglesGiftPlagueDialog
 from .shadow_form_dialog import ShadowFormDialog
@@ -60,6 +61,7 @@ __all__ = [
     'YesNoDialog',
     'QuarrySelectionDialog',
     'RollRerollDialog',
+    'MiracleDiceDialog',
     'TemplarVowsDialog',
     'NurglesGiftPlagueDialog',
     'ShadowFormDialog',

@@ -80,6 +80,7 @@ SUPPORTED_ARMY_RULES = {
     "CORSAIRS AND TRAVELLING PLAYERS",
     "PRIORITISED EFFICIENCY",
     "CULT AMBUSH",
+    "ACTS OF FAITH",
 }
 SUPPORTED_DETACHMENT_RULES = {
     "RELENTLESS RAGE",
@@ -410,6 +411,7 @@ class GameView:
                 self.game.map.hazardous_allocation_provider = self._hazardous_allocation_provider
                 self.game.map.roll_reroll_provider = self._roll_reroll_provider
                 self.game.map.reanimation_allocation_provider = self._reanimation_allocation_provider
+                self.game.map.miracle_dice_provider = self._miracle_dice_provider
         except Exception:
             pass
         try:
@@ -419,6 +421,7 @@ class GameView:
                 self.game_map.hazardous_allocation_provider = self._hazardous_allocation_provider
                 self.game_map.roll_reroll_provider = self._roll_reroll_provider
                 self.game_map.reanimation_allocation_provider = self._reanimation_allocation_provider
+                self.game_map.miracle_dice_provider = self._miracle_dice_provider
         except Exception:
             pass
         
@@ -1852,6 +1855,15 @@ class GameView:
             army = None
         return getattr(army, "cult_ambush", None) if army is not None else None
 
+    def _get_acts_of_faith_manager(self, player):
+        if player is None:
+            return None
+        try:
+            army = player.get_army()
+        except Exception:
+            army = None
+        return getattr(army, "acts_of_faith", None) if army is not None else None
+
     def _shadow_of_chaos_hud(self, player) -> Optional[dict]:
         if player is None or self.game is None:
             return None
@@ -2837,6 +2849,101 @@ class GameView:
             clock.tick(60)
 
         return bool(choice_holder["choice"])
+
+    def _miracle_dice_provider(
+        self,
+        player=None,
+        unit=None,
+        roll_type: str = "",
+        dice_count: int = 1,
+        die_faces: int = 6,
+        pool: Optional[list[int]] = None,
+        **_kwargs,
+    ):
+        """
+        Blocking modal prompt for selecting a Miracle die to substitute.
+        Returns the chosen die value, or None to skip.
+        """
+        try:
+            if player is None or getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return None
+        except Exception:
+            return None
+
+        values = list(pool or [])
+        if not values:
+            return None
+
+        try:
+            from .dialogs import MiracleDiceDialog
+        except Exception:
+            return None
+
+        if not hasattr(self, "miracle_dice_dialog") or self.miracle_dice_dialog is None:
+            self.miracle_dice_dialog = MiracleDiceDialog(self.screen.get_width(), self.screen.get_height())
+
+        rt = str(roll_type or "").strip().lower()
+        title = "Acts of Faith"
+        ulabel = getattr(unit, "name", "Unit")
+        msg = f"{ulabel} can perform an Act of Faith.\nChoose a Miracle die to substitute for this {rt or 'roll'}."
+        try:
+            if int(dice_count or 1) > 1:
+                msg += f"\nThis replaces 1 of {int(dice_count)} dice."
+        except Exception:
+            pass
+        try:
+            needed = _kwargs.get("needed", None)
+            if needed is not None:
+                msg += f"\nNeed {int(needed)}+."
+        except Exception:
+            pass
+
+        dlg = self.miracle_dice_dialog
+        choice_holder = {"choice": None, "done": False}
+
+        def _on_choice(chosen):
+            choice_holder["choice"] = chosen
+            choice_holder["done"] = True
+
+        # Show highest values first for clarity
+        try:
+            values_sorted = sorted(values, reverse=True)
+        except Exception:
+            values_sorted = values
+
+        dlg.show(
+            title=title,
+            message=msg,
+            dice_values=values_sorted,
+            callback=_on_choice,
+            skip_label="Skip",
+        )
+        try:
+            self.dialog_manager.open(dlg, modal=True)
+        except Exception:
+            pass
+
+        clock = pygame.time.Clock()
+        while dlg.visible and not choice_holder["done"]:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    return None
+                try:
+                    self.dialog_manager.handle_event(event)
+                except Exception:
+                    pass
+            try:
+                self.draw()
+            except Exception:
+                try:
+                    dlg.draw(self.screen)
+                    pygame.display.update()
+                except Exception:
+                    pass
+            clock.tick(60)
+
+        return choice_holder["choice"]
 
     # ---------------- Monarch of the Hunt (Shalaxi) ----------------
 
@@ -4971,6 +5078,24 @@ class GameView:
                     "get_tokens": lambda: int(getattr(mgr, "resurgence_points", 0) or 0),
                     "show_button": False,
                     "get_hint": _marker_hint,
+                }
+        if rule_type == "army" and "acts of faith" in rule_name.strip().lower():
+            mgr = self._get_acts_of_faith_manager(player)
+            if mgr is not None:
+                def _miracle_hint():
+                    try:
+                        values = list(getattr(mgr, "miracle_dice", []) or [])
+                    except Exception:
+                        values = []
+                    if not values:
+                        return "No Miracle dice in pool."
+                    return "Values: " + ", ".join(str(v) for v in values)
+
+                hud = {
+                    "label": "Miracle Dice",
+                    "get_tokens": lambda: len(list(getattr(mgr, "miracle_dice", []) or [])),
+                    "show_button": False,
+                    "get_hint": _miracle_hint,
                 }
         self.rule_detail_panel.set_content(
             title,

@@ -208,6 +208,9 @@ class Game:
         # Genestealer Cults: Cult Ambush (unit destruction + marker clearance)
         self.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_cult_ambush)
         self.event_system.subscribe("unit_move_ended", self._on_unit_move_ended_cult_ambush)
+        # Adepta Sororitas: Acts of Faith (Miracle dice gains)
+        self.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_acts_of_faith)
+        self.event_system.subscribe("model_destroyed_before_removal", self._on_model_destroyed_acts_of_faith)
 
     def _apply_pall_of_despair_forced_tests(self, current_player, tested_ids: set[str]) -> None:
         if current_player is None:
@@ -1883,6 +1886,36 @@ class Game:
                 mgr.on_enemy_unit_move_ended(unit, game=self)
             except Exception:
                 continue
+
+    def _on_unit_destroyed_acts_of_faith(self, unit=None, last_model=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        try:
+            army = unit.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "acts_of_faith", None) if army is not None else None
+        if mgr is None:
+            return
+        try:
+            mgr.on_unit_destroyed(unit, game=self, game_map=self.map, last_model=last_model)
+        except Exception:
+            pass
+
+    def _on_model_destroyed_acts_of_faith(self, unit=None, model=None, **_kwargs) -> None:
+        if unit is None or model is None:
+            return
+        try:
+            army = unit.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "acts_of_faith", None) if army is not None else None
+        if mgr is None:
+            return
+        try:
+            mgr.on_model_destroyed(unit, model, game=self, game_map=self.map)
+        except Exception:
+            pass
 
     def _on_unit_destroyed_transport_rules(self, unit=None, last_model=None, game_map=None, **_kwargs) -> None:
         """
@@ -4726,7 +4759,26 @@ class Game:
             pass
 
         dice_collection = DiceCollection.from_string("2D6")
-        base_roll, dice = dice_collection.roll_detailed()
+        base_roll = None
+        dice = None
+        miracle_used = False
+        try:
+            army = charging_unit.get_parent_army()
+            mgr = getattr(army, "acts_of_faith", None) if army is not None else None
+            if mgr is not None and mgr.can_use_act_of_faith(charging_unit, game=self):
+                base_roll, dice, miracle_used = mgr.resolve_roll(
+                    charging_unit,
+                    roll_type="charge",
+                    game=self,
+                    dice_count=2,
+                    die_faces=6,
+                )
+        except Exception:
+            base_roll = None
+            dice = None
+            miracle_used = False
+        if base_roll is None or dice is None:
+            base_roll, dice = dice_collection.roll_detailed()
 
         player = None
         try:
@@ -4802,6 +4854,7 @@ class Game:
                 reroll=reroll_cb,
                 reroll_locked=bool(reroll_locked),
                 roll_id=roll_id,
+                miracle_used=bool(miracle_used),
             )
         except Exception:
             pass
@@ -4810,11 +4863,18 @@ class Game:
         try:
             from ..utility.event_bus import append_dice
             if player is not None:
-                append_dice(player.name, f"Charge roll: {int(base_roll or 0)} (dice {list(dice)}) for {charging_unit.name}")
+                if miracle_used:
+                    append_dice(player.name, f"Miracle die used for Charge roll: {int(base_roll or 0)} (dice {list(dice)}) for {charging_unit.name}")
+                else:
+                    append_dice(player.name, f"Charge roll: {int(base_roll or 0)} (dice {list(dice)}) for {charging_unit.name}")
         except Exception:
             pass
-
-        return {"base_roll": int(base_roll or 0), "dice": list(dice), "reroll_used": bool(reroll_used)}
+        return {
+            "base_roll": int(base_roll or 0),
+            "dice": list(dice),
+            "reroll_used": bool(reroll_used),
+            "miracle_used": bool(miracle_used),
+        }
 
     def attempt_charge(
         self,

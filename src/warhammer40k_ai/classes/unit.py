@@ -2447,16 +2447,40 @@ class Unit:
         Returns:
             bool: True if the test is passed, False if failed
         """
-        roll_result = get_roll("2D6")
+        roll_result = None
+        dice_rolls = None
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "acts_of_faith", None) if army is not None else None
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            if mgr is not None and mgr.can_use_act_of_faith(self, game=game):
+                roll_result, dice_rolls, _miracle_used = mgr.resolve_roll(
+                    self,
+                    roll_type="battle-shock",
+                    game=game,
+                    dice_count=2,
+                    die_faces=6,
+                )
+        except Exception:
+            roll_result = None
+            dice_rolls = None
+        if roll_result is None:
+            roll_result = get_roll("2D6")
         leadership_value = self.leadership
         # 10e: lower Leadership is better; you pass if roll <= Ld.
         passed = roll_result <= leadership_value
         
         # Provide detailed feedback
+        dice_note = ""
+        try:
+            if dice_rolls and isinstance(dice_rolls, list):
+                dice_note = f" (dice {list(dice_rolls)})"
+        except Exception:
+            dice_note = ""
         if passed:
-            print(f"🎲 {self.name} Leadership test: 2D6 rolled {roll_result} vs Ld {leadership_value} - PASSED! ✅")
+            print(f"🎲 {self.name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - PASSED! ✅")
         else:
-            print(f"🎲 {self.name} Leadership test: 2D6 rolled {roll_result} vs Ld {leadership_value} - FAILED! ❌")
+            print(f"🎲 {self.name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - FAILED! ❌")
         
         return passed
 
@@ -3841,11 +3865,32 @@ class Unit:
     def prepare_advance(self) -> int:
         """Pre-roll advance dice for UI display. Returns the advance roll."""
         if not hasattr(self.round_state, 'advance_roll') or self.round_state.advance_roll is None:
-            advance_roll = get_roll("D6")
+            advance_roll = None
+            miracle_used = False
+            try:
+                army = self.get_parent_army()
+                mgr = getattr(army, "acts_of_faith", None) if army is not None else None
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if mgr is not None and mgr.can_use_act_of_faith(self, game=game):
+                    advance_roll, _dice, miracle_used = mgr.resolve_roll(
+                        self,
+                        roll_type="advance",
+                        game=game,
+                        dice_count=1,
+                        die_faces=6,
+                    )
+            except Exception:
+                advance_roll = None
+                miracle_used = False
+            if advance_roll is None:
+                advance_roll = get_roll("D6")
             try:
                 from ..utility.event_bus import append_dice
                 pn = self.get_parent_army().player.name
-                append_dice(pn, f"Advance roll: {advance_roll} for {self.name}")
+                if miracle_used:
+                    append_dice(pn, f"Miracle die used for Advance roll: {advance_roll} for {self.name}")
+                else:
+                    append_dice(pn, f"Advance roll: {advance_roll} for {self.name}")
             except Exception:
                 pass
             # Provide reroll callback (may be used by rules/stratagems)
@@ -3898,6 +3943,7 @@ class Unit:
                         reroll=reroll_cb,
                         reroll_locked=bool(reroll_locked),
                         roll_id=roll_id,
+                        miracle_used=bool(miracle_used),
                     )
             except Exception:
                 pass
@@ -4072,11 +4118,32 @@ class Unit:
         if advance:
             # Use stored advance roll if available, otherwise roll new one
             if not hasattr(self.round_state, 'advance_roll') or self.round_state.advance_roll is None:
-                advance_roll = get_roll("D6")
+                advance_roll = None
+                miracle_used = False
+                try:
+                    army = self.get_parent_army()
+                    mgr = getattr(army, "acts_of_faith", None) if army is not None else None
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    if mgr is not None and mgr.can_use_act_of_faith(self, game=game):
+                        advance_roll, _dice, miracle_used = mgr.resolve_roll(
+                            self,
+                            roll_type="advance",
+                            game=game,
+                            dice_count=1,
+                            die_faces=6,
+                        )
+                except Exception:
+                    advance_roll = None
+                    miracle_used = False
+                if advance_roll is None:
+                    advance_roll = get_roll("D6")
                 try:
                     from ..utility.event_bus import append_dice
                     pn = self.get_parent_army().player.name
-                    append_dice(pn, f"Advance roll: {advance_roll} for {self.name}")
+                    if miracle_used:
+                        append_dice(pn, f"Miracle die used for Advance roll: {advance_roll} for {self.name}")
+                    else:
+                        append_dice(pn, f"Advance roll: {advance_roll} for {self.name}")
                 except Exception:
                     pass
                 # Optional rule-based reroll prompt (e.g., "re-roll Advance rolls")
@@ -4117,6 +4184,7 @@ class Unit:
                             reroll=reroll_cb,
                             reroll_locked=bool(reroll_locked),
                             roll_id=roll_id,
+                            miracle_used=bool(miracle_used),
                         )
                 except Exception:
                     pass
@@ -6624,21 +6692,45 @@ class Unit:
                     passed = False
             else:
                 dice_expr = "3D6" if synapse_3d6 else "2D6"
-                roll_result = get_roll(dice_expr)
+                roll_result = None
+                dice_rolls = None
+                try:
+                    army = self.get_parent_army()
+                    mgr = getattr(army, "acts_of_faith", None) if army is not None else None
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    if mgr is not None and mgr.can_use_act_of_faith(self, game=game):
+                        roll_result, dice_rolls, _miracle_used = mgr.resolve_roll(
+                            self,
+                            roll_type="battle-shock",
+                            game=game,
+                            dice_count=3 if synapse_3d6 else 2,
+                            die_faces=6,
+                        )
+                except Exception:
+                    roll_result = None
+                    dice_rolls = None
+                if roll_result is None:
+                    roll_result = get_roll(dice_expr)
                 leadership_value = self.leadership
                 try:
                     mod_roll = int(roll_result) + int(total_mod)
                 except Exception:
                     mod_roll = roll_result
+                dice_note = ""
+                try:
+                    if dice_rolls and isinstance(dice_rolls, list):
+                        dice_note = f" (dice {list(dice_rolls)})"
+                except Exception:
+                    dice_note = ""
                 passed = mod_roll <= leadership_value
                 if total_mod:
                     print(
-                        f"{self.name} Leadership test: {dice_expr} rolled {roll_result} (mod {total_mod:+}) "
+                        f"{self.name} Leadership test: {dice_expr} rolled {roll_result}{dice_note} (mod {total_mod:+}) "
                         f"-> {mod_roll} vs Ld {leadership_value} - {'PASSED' if passed else 'FAILED'}"
                     )
                 else:
                     print(
-                        f"{self.name} Leadership test: {dice_expr} rolled {roll_result} "
+                        f"{self.name} Leadership test: {dice_expr} rolled {roll_result}{dice_note} "
                         f"-> {mod_roll} vs Ld {leadership_value} - {'PASSED' if passed else 'FAILED'}"
                     )
 

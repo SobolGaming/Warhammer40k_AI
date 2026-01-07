@@ -38,6 +38,8 @@ class Map:
         self.hazardous_allocation_provider = None
         # Signature: provider(target_unit_root, eligible_models, ctx_dict) -> chosen_model | None
         self.reanimation_allocation_provider = None
+        # Signature: provider(player, unit, roll_type, dice_count, die_faces, pool, needed) -> chosen_value | None
+        self.miracle_dice_provider = None
 
     def create_boundary_polygon(self) -> Polygon:
         """
