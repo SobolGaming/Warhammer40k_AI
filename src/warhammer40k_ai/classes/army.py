@@ -319,6 +319,13 @@ class Army:
             self.for_the_greater_good = ForTheGreaterGoodManager(self)
         except Exception:
             self.for_the_greater_good = None
+
+        # Orks: Waaagh! (safe to attach, no-op if not applicable).
+        try:
+            from .waaagh import WaaaghManager
+            self.waaagh = WaaaghManager(self)
+        except Exception:
+            self.waaagh = None
     
     def add_unit(self, unit: Unit) -> bool:
         if not self.faction_keyword:

@@ -438,6 +438,47 @@ class Game:
             except Exception:
                 continue
 
+    def _maybe_prompt_waaagh(self) -> None:
+        es = getattr(self, "event_system", None)
+        subs = getattr(es, "subscribers", {}) if es is not None else {}
+        try:
+            player = self.get_current_player()
+        except Exception:
+            player = None
+        if player is None:
+            return
+        try:
+            army = player.get_army()
+        except Exception:
+            army = getattr(player, "army", None)
+        if army is None:
+            return
+        mgr = getattr(army, "waaagh", None)
+        if mgr is None:
+            return
+        try:
+            if not mgr.can_call_now(game=self, player=player):
+                return
+        except Exception:
+            return
+        try:
+            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+        except Exception:
+            is_human = False
+        if is_human and es is not None and isinstance(subs, dict) and subs.get("waaagh_prompt"):
+            es.publish("waaagh_prompt", player=player, game=self)
+            return
+        ctx = {
+            "ability_name": "Waaagh!",
+            "phase": "Command phase",
+        }
+        try:
+            should = bool(player._should_use_optional_ability("WAAAGH", ctx))
+        except Exception:
+            should = True
+        if should:
+            mgr.call_waaagh(game=self, player=player)
+
     def _on_battle_shock_test_resolved_shadow_form(self, unit=None, passed: bool = True, **_kwargs) -> None:
         if passed is True or unit is None:
             return
@@ -3152,6 +3193,16 @@ class Game:
         except Exception:
             pass
 
+        # Orks: Waaagh! (expires at your next Command phase; prompt to call).
+        try:
+            current_player = self.get_current_player()
+            army = getattr(current_player, "get_army", lambda: None)()
+            mgr = getattr(army, "waaagh", None) if army is not None else None
+            if mgr is not None:
+                mgr.on_command_phase_start(game=self, player=current_player)
+        except Exception:
+            pass
+
         # Core (per official app wording): at the start of your Command phase, before doing anything else,
         # BOTH players gain the normal Command phase CP. This normal CP does not count toward the
         # per-battle-round "bonus CP" guardrail.
@@ -3204,6 +3255,11 @@ class Game:
         # Tyranids: Shadow in the Warp (once per battle, either player's Command phase).
         try:
             self._maybe_prompt_shadow_in_the_warp()
+        except Exception:
+            pass
+        # Orks: Waaagh! prompt (once per battle, start of your Command phase).
+        try:
+            self._maybe_prompt_waaagh()
         except Exception:
             pass
 

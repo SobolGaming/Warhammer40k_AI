@@ -746,6 +746,7 @@ class GameView:
         self._cabal_flow_active = False
         self._shadow_in_the_warp_flow_active = False
         self._pain_flow_active = False
+        self._waaagh_flow_active = False
         self._ftgg_flow_active = False
 
         # Initialize shared UI state
@@ -781,6 +782,8 @@ class GameView:
                 self.game.event_system.subscribe("oath_of_moment_prompt", self._on_oath_of_moment_prompt)
                 # Tyranids: Shadow in the Warp prompt (either Command phase)
                 self.game.event_system.subscribe("shadow_in_the_warp_prompt", self._on_shadow_in_the_warp_prompt)
+                # Orks: Waaagh! prompt (start of Command phase)
+                self.game.event_system.subscribe("waaagh_prompt", self._on_waaagh_prompt)
                 # T'au Empire: For the Greater Good observer/spotter selection
                 self.game.event_system.subscribe("for_the_greater_good_prompt", self._on_for_the_greater_good_prompt)
                 # Dark Pacts prompt when a unit is selected to shoot or fight
@@ -1347,6 +1350,59 @@ class GameView:
         except Exception:
             self._shadow_in_the_warp_flow_active = False
             self._open_next_shadow_in_the_warp_prompt(game)
+
+    def _on_waaagh_prompt(self, player=None, game=None, **_kwargs):
+        if player is None:
+            return
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return
+        except Exception:
+            return
+
+        if self._waaagh_flow_active:
+            return
+
+        game = game or self.game
+        if game is None:
+            return
+        try:
+            army = player.get_army()
+        except Exception:
+            army = None
+        if army is None:
+            return
+        mgr = getattr(army, "waaagh", None)
+        if mgr is None:
+            return
+        try:
+            if not mgr.can_call_now(game=game, player=player):
+                return
+        except Exception:
+            return
+
+        title = "Waaagh!"
+        msg = (
+            "Call the Waaagh! now?\n\n"
+            "Until the start of your next Command phase:\n"
+            "- Your units can charge after advancing\n"
+            "- Melee weapons get +1S and +1A\n"
+            "- Your models gain a 5+ invulnerable save"
+        )
+
+        def _done(choice: bool):
+            try:
+                if choice:
+                    mgr.call_waaagh(game=game, player=player)
+            finally:
+                self._waaagh_flow_active = False
+
+        self._waaagh_flow_active = True
+        try:
+            self.yes_no_dialog.show(title, msg, _done, yes_label="Call", no_label="Skip")
+            self.dialog_manager.open(self.yes_no_dialog, modal=True)
+        except Exception:
+            self._waaagh_flow_active = False
 
     def _on_for_the_greater_good_prompt(self, player=None, game=None, **_kwargs):
         if player is None:

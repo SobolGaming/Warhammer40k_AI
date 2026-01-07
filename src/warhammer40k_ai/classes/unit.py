@@ -4909,6 +4909,14 @@ class Unit:
             bool: True if the unit has an ability that allows charging after advancing
         """
         try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "waaagh", None) if army is not None else None
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            if mgr is not None and mgr.unit_is_affected(self, game=game):
+                return True
+        except Exception:
+            pass
+        try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("apoplectic_frenzy_active"):
                 return True

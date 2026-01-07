@@ -525,6 +525,19 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Orks: Waaagh! (+1 Attacks to melee weapons).
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "waaagh", None) if army is not None else None
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if mgr is not None and mgr.unit_is_affected(unit, game=game):
+                    atk_mods.append(Modifier(ModifierOp.ADD, 1, source="ability:waaagh_melee_attacks_add"))
+                    attack_result.attacks_special_modifiers.append("Waaagh! +1A (melee)")
+        except Exception:
+            pass
+
         # Detachment ability: Relentless Rage (World Eaters - Berzerker Warband)
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():
@@ -1598,6 +1611,19 @@ class WargearProfile:
                         wound_result.setdefault("modifiers", []).append("+1S from Synapse (melee)")
         except Exception:
             pass
+        # Orks: Waaagh! (+1 Strength to melee weapons).
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "waaagh", None) if army is not None else None
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if mgr is not None and mgr.unit_is_affected(unit, game=game):
+                    if isinstance(strength, int):
+                        strength = strength + 1
+                        wound_result.setdefault("modifiers", []).append("+1S from Waaagh! (melee)")
+        except Exception:
+            pass
         # Drukhari: Power from Pain (Brides of Death).
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():
@@ -2013,6 +2039,18 @@ class WargearProfile:
             if isinstance(sr, dict) and sr.get("smokescreen_active") is True:
                 attack_instance.setdefault("benefit_of_cover", True)
                 attack_instance.setdefault("benefit_of_cover_source", "SMOKESCREEN")
+        except Exception:
+            pass
+        # Orks: Waaagh! (5+ invulnerable save while active).
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            army = t_unit.get_parent_army() if t_unit is not None else None
+            mgr = getattr(army, "waaagh", None) if army is not None else None
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            if mgr is not None and t_unit is not None and mgr.unit_is_affected(t_unit, game=game):
+                current = attack_instance.get("inv_save_override", None)
+                if current is None or int(current) > 5:
+                    attack_instance["inv_save_override"] = 5
         except Exception:
             pass
 
