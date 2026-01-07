@@ -3084,6 +3084,32 @@ class Unit:
         # Only flying units can overhang floors on upper levels
         return self.is_flying
 
+    def has_keyword_local(self, keyword: str) -> bool:
+        kw = (keyword or "").lower().strip()
+        if not kw:
+            return False
+        try:
+            return kw in [k.lower() for k in (self.keywords or [])]
+        except Exception:
+            return False
+
+    def has_any_keyword_local(self, keyword: str) -> bool:
+        """Case-insensitive keyword check across local keywords + faction_keywords."""
+        kw = (keyword or "").lower().strip()
+        if not kw:
+            return False
+        try:
+            if kw in [k.lower() for k in (self.keywords or [])]:
+                return True
+        except Exception:
+            pass
+        try:
+            if kw in [k.lower() for k in (self.faction_keywords or [])]:
+                return True
+        except Exception:
+            pass
+        return False
+
     def has_keyword(self, keyword: str) -> bool:
         kw = (keyword or "").lower().strip()
         if not kw:

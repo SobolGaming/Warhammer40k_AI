@@ -737,10 +737,7 @@ class WargearProfile:
                         try:
                             if not getattr(m, "is_alive", True):
                                 continue
-                            pu = getattr(m, "parent_unit", None)
-                            if pu is None:
-                                continue
-                            if not bool(getattr(pu, "is_character", False)):
+                            if not bool(getattr(m, "is_character", False)):
                                 continue
                             # Visibility requirement
                             if hasattr(game_map, "can_model_see_model") and callable(getattr(game_map, "can_model_see_model")):

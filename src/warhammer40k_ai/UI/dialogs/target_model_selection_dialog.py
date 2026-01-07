@@ -102,13 +102,19 @@ class TargetModelSelectionDialog(BaseDialog):
             return list(getattr(root, "models", []) or [])
 
         def _is_character_model(m: Model) -> bool:
+            if bool(getattr(m, "is_character", False)):
+                return True
             pu = getattr(m, "parent_unit", None)
             if pu is None:
                 return False
-            # Prefer unit-level flag; models do not carry keywords in this project.
-            if bool(getattr(pu, "is_character", False)):
-                return True
-            # Fallback to keyword list if present on the unit
+            try:
+                fn = getattr(pu, "has_keyword_local", None)
+                if callable(fn):
+                    return bool(fn("Character"))
+            except Exception:
+                pass
+            if not hasattr(pu, "keywords"):
+                return bool(getattr(pu, "is_character", False))
             kws = getattr(pu, "keywords", []) or []
             return "CHARACTER" in [str(kw).upper() for kw in kws]
 

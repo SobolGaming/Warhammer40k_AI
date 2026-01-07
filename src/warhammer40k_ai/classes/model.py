@@ -90,6 +90,26 @@ class Model:
         return self.wounds > 0
 
     @property
+    def is_character(self) -> bool:
+        pu = getattr(self, "parent_unit", None)
+        if pu is None:
+            return False
+        try:
+            fn = getattr(pu, "has_keyword_local", None)
+            if callable(fn):
+                return bool(fn("Character"))
+        except Exception:
+            pass
+        try:
+            if not hasattr(pu, "keywords"):
+                return bool(getattr(pu, "is_character", False))
+            kws = getattr(pu, "keywords", []) or []
+            return "character" in [str(k).lower() for k in kws]
+        except Exception:
+            pass
+        return bool(getattr(pu, "is_character", False))
+
+    @property
     def has_circular_base(self) -> bool:
         """Return whether the model has a circular base."""
         return self.model_base.has_circular_base

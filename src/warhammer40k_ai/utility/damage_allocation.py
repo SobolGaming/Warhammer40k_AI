@@ -119,12 +119,23 @@ def choose_hazardous_failure_model(
 
 def _is_character_model(model: Any) -> bool:
     try:
+        if bool(getattr(model, "is_character", False)):
+            return True
+    except Exception:
+        return False
+    try:
         pu = getattr(model, "parent_unit", None)
         if pu is None:
             return False
-        return bool(getattr(pu, "is_character", False))
+        fn = getattr(pu, "has_keyword_local", None)
+        if callable(fn):
+            return bool(fn("Character"))
+        if not hasattr(pu, "keywords"):
+            return bool(getattr(pu, "is_character", False))
+        kws = getattr(pu, "keywords", []) or []
+        return "character" in [str(k).lower() for k in kws]
     except Exception:
-        return False
+        return bool(getattr(getattr(model, "parent_unit", None), "is_character", False))
 
 
 def _ctx_to_dict(ctx: Optional[DamageAllocationCtx]) -> dict:
@@ -136,5 +147,3 @@ def _ctx_to_dict(ctx: Optional[DamageAllocationCtx]) -> dict:
         "weapon_name": ctx.weapon_name,
         "attacker_name": ctx.attacker_name,
     }
-
-

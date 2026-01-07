@@ -1096,11 +1096,34 @@ class StratagemManager:
                     continue
             if not ok:
                 return
-            # Eligible models: CHARACTER models in your unit (usually the unit itself is a single CHARACTER model).
+            # Eligible models: CHARACTER models in your unit (include attached leaders).
+            try:
+                fn = getattr(unit, "get_attached_unit_models", None)
+                candidates = list(fn() or []) if callable(fn) else list(getattr(unit, "models", []) or [])
+            except Exception:
+                candidates = list(getattr(unit, "models", []) or [])
             models = []
-            for m in list(getattr(unit, "models", []) or []):
+            for m in list(candidates or []):
                 try:
-                    if getattr(m, "is_alive", True):
+                    if not getattr(m, "is_alive", True):
+                        continue
+                    if bool(getattr(m, "is_character", False)):
+                        models.append(m)
+                        continue
+                    pu = getattr(m, "parent_unit", None)
+                    if pu is None:
+                        continue
+                    fn = getattr(pu, "has_keyword_local", None)
+                    if callable(fn):
+                        if bool(fn("Character")):
+                            models.append(m)
+                        continue
+                    if not hasattr(pu, "keywords"):
+                        if bool(getattr(pu, "is_character", False)):
+                            models.append(m)
+                        continue
+                    kws = getattr(pu, "keywords", []) or []
+                    if "character" in [str(k).lower() for k in kws]:
                         models.append(m)
                 except Exception:
                     continue
@@ -1952,6 +1975,23 @@ class StratagemManager:
                     # Some internal structures may wrap, so accept as long as model is in unit.models
                     if model not in list(getattr(unit, "models", []) or []):
                         return False
+            except Exception:
+                return False
+            try:
+                if not bool(getattr(model, "is_character", False)):
+                    pu = getattr(model, "parent_unit", None)
+                    fn = getattr(pu, "has_keyword_local", None)
+                    if callable(fn):
+                        if not bool(fn("Character")):
+                            return False
+                    else:
+                        if not hasattr(pu, "keywords"):
+                            if not bool(getattr(pu, "is_character", False)):
+                                return False
+                        else:
+                            kws = getattr(pu, "keywords", []) or []
+                            if "character" not in [str(k).lower() for k in kws]:
+                                return False
             except Exception:
                 return False
             if not self.player.spend_command_points(s.cp_cost):
