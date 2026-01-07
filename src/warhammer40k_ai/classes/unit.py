@@ -6788,6 +6788,9 @@ class Unit:
                 return result
             if str(getattr(root, "reserve_status", "deployed")) != "deployed":
                 return result
+            if hasattr(root, "is_in_reserves") and callable(getattr(root, "is_in_reserves")):
+                if bool(root.is_in_reserves()):
+                    return result
             if bool(getattr(root, "embarked_in", None)):
                 return result
             if bool(getattr(root, "is_embarked", False)):

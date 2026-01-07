@@ -359,6 +359,9 @@ class Game:
                     continue
                 if str(getattr(root, "reserve_status", "deployed")) != "deployed":
                     continue
+                if hasattr(root, "is_in_reserves") and callable(getattr(root, "is_in_reserves")):
+                    if bool(root.is_in_reserves()):
+                        continue
                 if bool(getattr(root, "embarked_in", None)):
                     continue
                 if bool(getattr(root, "is_embarked", False)):

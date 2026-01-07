@@ -40,6 +40,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 - Favoured of Khorne (Blessings rerolls) (Supported)
 - Idol of the Blessed Blood (Blessings +1D6) (Supported)
 - Reborn in Blood (Angron) (Supported)
+- Cabal of Sorcerers (Supported)
 - Deep Strike (Supported)
 - Infiltrators (Supported)
 - Scouts (Supported)
@@ -58,7 +59,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 - Gain CP on destroy (partial) (Partial)
 - Heal on destroy (partial) (Partial)
 - Plunging Fire (Supported)
-- Reanimation Protocols (Supported)
+- Reanimation Protocols (Supported; no embarked or reserve units)
 - Synapse (Supported)
 - Shadow in the Warp (Supported)
 - Power from Pain (partial: tokens + select Pain abilities + stratagem spend hook) (Partial)
@@ -139,7 +140,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Blessings of Khorne | `000008428` | 1 | 1 | **Supported** | Blessings of Khorne |
-| Cabal of Sorcerers | `000008424` | 1 | 1 | **Partial** | Lone Operative (extra conditions not fully modeled) |
+| Cabal of Sorcerers | `000008424` | 1 | 1 | **Supported** | Cabal rituals supported. |
 | Dark Pacts | `000008359` | 103 | 103 | **Supported** | Dark Pacts |
 | Nurgle’s Gift (Aura) | `000008396` | 1 | 1 | **Supported** | Contagion Range 3/6/9"; plagues: Skullsquirm (-1 hit), Rattlejoint (-1 save), Scabrous (-1 M/Ld/OC, OC min 1). |
 | Thrill Seekers | `000009994` | 1 | 1 | **Supported** | Thrill Seekers |
@@ -155,8 +156,6 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Battle Focus | `000009894` | 10 | 10 | **Supported** | Battle Focus |
-| Disparate Paths | `000009896` | 8 | 8 | **Not implemented** | DRU uses Corsairs and Travelling Players. |
 | Corsairs and Travelling Players | `000009974` | 0 | 0 | **Supported** | Allies cap + no Warlord/Enhancements for Harlequins/Anhrathe. |
 | Power from Pain | `000008507` | 30 | 30 | **Partial** | Pain tokens; limited Pain abilities (Hatred Eternal, Lithe Agility, Brides of Death, Sculptor of Torments, Fleshcraft); stratagem pain token spend hook. |
 
@@ -206,7 +205,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Reanimation Protocols | `000008369` | 63 | 63 | **Supported** | End of Command phase D3 wounds; heal wounded models before returning destroyed ones; no embarked. |
+| Reanimation Protocols | `000008369` | 63 | 63 | **Supported** | End of Command phase D3 wounds; heal wounded models before returning destroyed ones; no embarked or reserves. |
 
 ### Orks (`ORK`) - `https://wahapedia.ru/wh40k10ed/factions/orks`
 
@@ -229,7 +228,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Cabal of Sorcerers | `000008424` | 13 | 13 | **Partial** | Lone Operative (extra conditions not fully modeled) |
+| Cabal of Sorcerers | `000008424` | 13 | 13 | **Supported** | Cabal rituals supported. |
 | Pact of Sorcery | `000010190` | 6 | 6 | **Supported** | Pact of Sorcery |
 
 ### Tyranids (`TYR`) - `https://wahapedia.ru/wh40k10ed/factions/tyranids`
@@ -244,12 +243,6 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | For the Greater Good | `000008439` | 41 | 41 | **Not implemented** |  |
-
-### Unaligned Forces (`UN`) - `https://wahapedia.ru/wh40k10ed/factions/unaligned-forces`
-
-| Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---:|---|---|
-| Unaligned Forces | `000008537` | 20 | 20 | **Not implemented** |  |
 
 ### World Eaters (`WE`) - `https://wahapedia.ru/wh40k10ed/factions/world-eaters`
 
@@ -3583,33 +3576,6 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Way of the Short Blade | 1 | 1 | **Not implemented** |  |
 | XV02 Pilot Battlesuit | 1 | 1 | **Not implemented** |  |
 
-#### Unaligned Forces (`UN`)
-
-| Ability | Occurrences (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---|---|
-| Reinforced Cover | 16 | 16 | **Not implemented** |  |
-| Roof Access | 6 | 6 | **Not implemented** |  |
-| Defence Line | 3 | 3 | **Not implemented** |  |
-| Battlements | 2 | 2 | **Not implemented** |  |
-| Trench Line | 2 | 2 | **Not implemented** |  |
-| Automated Defences | 1 | 1 | **Not implemented** |  |
-| Disruptive Influence (Aura) | 1 | 1 | **Not implemented** |  |
-| Drone Commander (Aura) | 1 | 1 | **Not implemented** |  |
-| Emergency Plasma Vents | 1 | 1 | **Not implemented** |  |
-| Fearsome Assault | 1 | 1 | **Not implemented** |  |
-| Fortress | 1 | 1 | **Not implemented** |  |
-| Frenzy | 1 | 1 | **Not implemented** |  |
-| Gates | 1 | 1 | **Not implemented** |  |
-| Inviolable Bastion | 1 | 1 | **Not implemented** |  |
-| Projected Void Shields (Aura) | 1 | 1 | **Not implemented** |  |
-| Repair Aircraft | 1 | 1 | **Not implemented** |  |
-| Skyshield | 1 | 1 | **Not implemented** |  |
-| Stronghold | 1 | 1 | **Not implemented** |  |
-| Threat Level Rising | 1 | 1 | **Not implemented** |  |
-| Tremor Quake | 1 | 1 | **Not implemented** |  |
-| Vantage Point | 1 | 1 | **Not implemented** |  |
-| Vortex | 1 | 1 | **Not implemented** |  |
-
 #### World Eaters (`WE`)
 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
@@ -3807,13 +3773,6 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 |---|---:|---:|---|---|
 | SUPREME COMMANDER | 1 | 1 | **Supported** | SUPREME COMMANDER |
 
-#### Unaligned Forces (`UN`)
-
-| Ability | Occurrences (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---|---|
-| FORTIFICATION | 16 | 16 | **Not implemented** |  |
-| MIGHTY EDIFICE | 1 | 1 | **Not implemented** |  |
-
 #### World Eaters (`WE`)
 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
@@ -3926,12 +3885,6 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Impossible Form (Psychic) | 1 | 1 | **Not implemented** |  |
 | Time Flux (Aura, Psychic) | 1 | 1 | **Not implemented** |  |
 | Treason of Tzeentch (Psychic) | 1 | 1 | **Not implemented** |  |
-
-#### Unaligned Forces (`UN`)
-
-| Ability | Occurrences (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---|---|
-| MIGHTY EDIFICE | 1 | 1 | **Not implemented** |  |
 
 #### World Eaters (`WE`)
 
@@ -4458,13 +4411,6 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Pulse Accelerator Drone | 1 | 1 | **Not implemented** |  |
 | Recon Drone | 1 | 1 | **Supported** | Infiltrators |
 | Transport Bay | 1 | 1 | **Not implemented** |  |
-
-#### Unaligned Forces (`UN`)
-
-| Ability | Occurrences (rows) | Datasheets | Status | Notes |
-|---|---:|---:|---|---|
-| Comms Antenna | 4 | 4 | **Not implemented** |  |
-| Borewyrm Infestation | 1 | 1 | **Not implemented** |  |
 
 #### World Eaters (`WE`)
 

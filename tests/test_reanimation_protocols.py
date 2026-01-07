@@ -108,6 +108,15 @@ class TestReanimationProtocols(unittest.TestCase):
 
         self.assertEqual(m1.wounds, 1)
 
+    def test_reanimation_skips_units_in_reserves(self):
+        m1 = _ModelStub(wounds=1, base_wounds=3, name="Model 1")
+        unit = self._make_unit([m1], lost=[])
+        unit.reserve_status = "reserves"
+
+        unit.apply_reanimation_protocols(2, game_map=None, is_human=False, provider=None)
+
+        self.assertEqual(m1.wounds, 1)
+
     def test_reanimation_uses_provider_only_with_choices(self):
         m1 = _ModelStub(wounds=1, base_wounds=3, name="Model 1")
         m2 = _ModelStub(wounds=1, base_wounds=3, name="Model 2")
