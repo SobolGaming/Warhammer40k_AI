@@ -1,4 +1,4 @@
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, TYPE_CHECKING
 from enum import Enum
 import logging
 import copy
@@ -14,6 +14,9 @@ from ..utility.dice import DiceCollection, get_roll
 from ..utility.constants import TOTAL_ROUNDS, ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VERTICAL
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from .army_muster import ArmyMusterRequest
 
 class SetupPhase(Enum):
     """
@@ -155,6 +158,8 @@ class Game:
         self.phase_targeted_units: Dict[str, set[str]] = {}
         # Aeldari: Phoenix Gem pending returns (processed at end of the phase they were destroyed in)
         self._phoenix_gem_pending: List[Dict[str, Any]] = []
+        # Optional in-engine army mustering requests (player1/player2) for setup phase.
+        self.army_muster_requests: Dict[str, Any] = {}
 
     def _install_default_event_subscribers(self) -> None:
         """Install non-UI rule subscribers that operate off the event system."""
@@ -5391,10 +5396,23 @@ class Game:
             print(f"📋 Advanced to setup phase: {self.setup_phase.name}")
             return False
 
-    def execute_muster_armies_phase(self, player1_army_file: str = None, player2_army_file: str = None) -> None:
+    def execute_muster_armies_phase(
+        self,
+        player1_army_file: str = None,
+        player2_army_file: str = None,
+        player1_muster: "ArmyMusterRequest" = None,
+        player2_muster: "ArmyMusterRequest" = None,
+    ) -> None:
         """Phase 1: Muster Armies - Load army lists for both players."""
         print("📋 MUSTER ARMIES: Loading army lists...")
         
+        if player1_muster is None or player2_muster is None:
+            stored = getattr(self, "army_muster_requests", {}) or {}
+            if player1_muster is None:
+                player1_muster = stored.get("player1")
+            if player2_muster is None:
+                player2_muster = stored.get("player2")
+
         # Use army files from game.army_files if not provided as parameters
         if player1_army_file is None:
             player1_army_file = getattr(self, 'army_files', {}).get('player1', 'army_lists/warhammer_app_dump.txt')
@@ -5403,24 +5421,32 @@ class Game:
         
         # Validate army files exist
         import os
-        if not os.path.exists(player1_army_file):
+        if player1_muster is None and not os.path.exists(player1_army_file):
             raise FileNotFoundError(f"Player 1 army file not found: {player1_army_file}")
-        if not os.path.exists(player2_army_file):
+        if player2_muster is None and not os.path.exists(player2_army_file):
             raise FileNotFoundError(f"Player 2 army file not found: {player2_army_file}")
         
         # Load armies for both players
         from ..classes.army import parse_army_list
+        from ..classes.army_muster import ArmyMusterer
         from ..waha_helper import WahaHelper
 
         waha_helper = WahaHelper()
+        muster = ArmyMusterer(waha_helper)
         
         if len(self.players) >= 2:
             # Load army for Player 1
-            player1_army = parse_army_list(player1_army_file, waha_helper)
+            if player1_muster is not None:
+                player1_army = muster.muster_army(player1_muster)
+            else:
+                player1_army = parse_army_list(player1_army_file, waha_helper)
             self.players[0].set_army(player1_army)
             
             # Load army for Player 2  
-            player2_army = parse_army_list(player2_army_file, waha_helper)
+            if player2_muster is not None:
+                player2_army = muster.muster_army(player2_muster)
+            else:
+                player2_army = parse_army_list(player2_army_file, waha_helper)
             self.players[1].set_army(player2_army)
             
             player1_units = len(self.players[0].get_army().units)

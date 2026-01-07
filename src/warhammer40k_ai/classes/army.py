@@ -10,6 +10,7 @@ from warhammer40k_ai.utility.ability_support import (
 )
 import codecs
 import re
+import unicodedata
 import uuid
 
 
@@ -35,6 +36,103 @@ SPACE_MARINE_CHAPTER_KEYWORDS = {
 SPACE_MARINE_DEFAULT_CHAPTER = "SPACE MARINES"
 SPACE_MARINE_EXPLICIT_CHAPTERS = SPACE_MARINE_CHAPTER_KEYWORDS - {SPACE_MARINE_DEFAULT_CHAPTER}
 SPACE_MARINE_ALLOWED_NON_CHAPTER_FACTION_KEYWORDS: set[str] = set()
+
+
+def _normalize_faction_name(name: str) -> str:
+    text = unicodedata.normalize("NFKD", str(name or ""))
+    text = text.encode("ascii", "ignore").decode("ascii")
+    text = re.sub(r"[^a-zA-Z0-9]+", " ", text).strip().lower()
+    return re.sub(r"\s+", " ", text)
+
+
+_SPACE_MARINE_CHAPTERS_NORMALIZED = {
+    _normalize_faction_name(ch) for ch in SPACE_MARINE_EXPLICIT_CHAPTERS
+}
+_FACTION_NAME_ALIASES = {
+    _normalize_faction_name("Adeptus Astartes"): "SM",
+    _normalize_faction_name("Asuryani"): "AE",
+    _normalize_faction_name("Legiones Daemonica"): "CD",
+    _normalize_faction_name("Heretic Astartes"): "CSM",
+    _normalize_faction_name("Agents of the Imperium"): "AOI",
+}
+
+SUPPORTED_FACTION_IDS = {
+    "AC",
+    "AE",
+    "AM",
+    "AS",
+    "ADM",
+    "AOI",
+    "CD",
+    "CSM",
+    "DG",
+    "DRU",
+    "EC",
+    "GC",
+    "GK",
+    "LOV",
+    "NEC",
+    "ORK",
+    "QI",
+    "QT",
+    "SM",
+    "TAU",
+    "TS",
+    "TYR",
+    "WE",
+}
+
+SUPPORTED_FACTION_NAMES = [
+    "Adepta Sororitas",
+    "Adeptus Custodes",
+    "Adeptus Mechanicus",
+    "Aeldari",
+    "Astra Militarum",
+    "Chaos Daemons",
+    "Chaos Knights",
+    "Chaos Space Marines",
+    "Death Guard",
+    "Drukhari",
+    "Emperor's Children",
+    "Genestealer Cult",
+    "Grey Knights",
+    "Imperial Agents",
+    "Imperial Knights",
+    "Leagues of Votann",
+    "Necrons",
+    "Orks",
+    "Space Marines",
+    "Thousand Sons",
+    "Tyranids",
+    "T'au Empire",
+    "World Eaters",
+]
+
+
+def _format_supported_factions() -> str:
+    return ", ".join(SUPPORTED_FACTION_NAMES)
+
+
+def _format_space_marine_chapters() -> str:
+    chapters = sorted(ch.title() for ch in SPACE_MARINE_EXPLICIT_CHAPTERS)
+    return ", ".join(chapters)
+
+
+def _assert_supported_faction(faction_name: str, faction_id: Optional[str]) -> None:
+    fid = str(faction_id or "").strip().upper()
+    if fid:
+        if fid not in SUPPORTED_FACTION_IDS:
+            raise ArmyValidationError(
+                f"Unsupported army faction '{faction_name}'. Supported factions: "
+                f"{_format_supported_factions()}. Space Marines also allow chapters: "
+                f"{_format_space_marine_chapters()}."
+            )
+        return
+    raise ArmyValidationError(
+        f"Unsupported army faction '{faction_name}'. Supported factions: "
+        f"{_format_supported_factions()}. Space Marines also allow chapters: "
+        f"{_format_space_marine_chapters()}."
+    )
 
 BLACK_TEMPLARS_FORBIDDEN_UNITS = {
     "GLADIATOR LANCER",
@@ -80,7 +178,14 @@ def get_faction_id_from_name(faction_name: str) -> Optional[str]:
     import os
     
     # Normalize faction name for comparison
-    faction_name_lower = faction_name.lower().strip()
+    faction_name_norm = _normalize_faction_name(faction_name)
+    if not faction_name_norm:
+        return None
+    if faction_name_norm in _SPACE_MARINE_CHAPTERS_NORMALIZED:
+        return "SM"
+    alias_id = _FACTION_NAME_ALIASES.get(faction_name_norm)
+    if alias_id:
+        return alias_id
     
     # Load factions from the JSON file
     factions_file = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'wahapedia_data', 'Factions.json')
@@ -93,14 +198,17 @@ def get_faction_id_from_name(faction_name: str) -> Optional[str]:
     
     # Try exact match first
     for faction in factions:
-        if faction['name'].lower() == faction_name_lower:
-            return faction['id']
+        if _normalize_faction_name(faction.get("name", "")) == faction_name_norm:
+            return faction.get("id")
     
     # Try partial matches for more flexible matching
     for faction in factions:
-        faction_name_json = faction['name'].lower()
-        if faction_name_json in faction_name_lower or faction_name_lower in faction_name_json:
-            return faction['id']
+        faction_name_json = _normalize_faction_name(faction.get("name", ""))
+        if faction_name_json and (
+            faction_name_json in faction_name_norm
+            or faction_name_norm in faction_name_json
+        ):
+            return faction.get("id")
     
     # If no match found, return None (will use generic lookup)
     return None
@@ -1466,6 +1574,7 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
     
     # Map faction names to faction IDs for datasheet lookup
     faction_id = get_faction_id_from_name(faction_keyword)
+    _assert_supported_faction(faction_keyword, faction_id)
     if faction_id:
         print(f"Using faction ID: {faction_id} for datasheet lookups")
         army.faction_id = faction_id
