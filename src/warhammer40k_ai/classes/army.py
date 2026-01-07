@@ -333,6 +333,13 @@ class Army:
             self.prioritised_efficiency = PrioritisedEfficiencyManager(self)
         except Exception:
             self.prioritised_efficiency = None
+
+        # Genestealer Cults: Cult Ambush (safe to attach, no-op if not applicable).
+        try:
+            from .cult_ambush import CultAmbushManager
+            self.cult_ambush = CultAmbushManager(self)
+        except Exception:
+            self.cult_ambush = None
     
     def add_unit(self, unit: Unit) -> bool:
         if not self.faction_keyword:
@@ -1435,6 +1442,13 @@ class Army:
                 game = None
             mgr.on_battle_round_start(int(battle_round), game=game)
         mgr = getattr(self, "harbingers_of_dread", None)
+        if mgr is not None:
+            try:
+                game = getattr(getattr(self, "player", None), "game", None)
+            except Exception:
+                game = None
+            mgr.on_battle_round_start(int(battle_round), game=game)
+        mgr = getattr(self, "cult_ambush", None)
         if mgr is not None:
             try:
                 game = getattr(getattr(self, "player", None), "game", None)

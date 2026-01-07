@@ -2081,6 +2081,10 @@ class StratagemManager:
             if not getattr(target, "is_in_reserves", lambda: False)():
                 print("❌ Rapid Ingress: target unit is not in reserves")
                 return False
+            # Cult Ambush restriction: cannot be targeted by Rapid Ingress.
+            if bool(getattr(target, "_cult_ambush", False)):
+                print("❌ Rapid Ingress: target unit is in Cult Ambush")
+                return False
             # Restriction: cannot arrive in a battle round it would not normally be able to
             if not getattr(target, "can_arrive_from_reserves", lambda _t: False)(getattr(self.game, "turn", 0)):
                 print("❌ Rapid Ingress: target unit cannot arrive from reserves this battle round")

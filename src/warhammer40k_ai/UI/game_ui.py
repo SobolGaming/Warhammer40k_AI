@@ -38,6 +38,7 @@ from .ui_utils import (
 )
 from .dialogs.secondary_discard_dialog import SecondaryDiscardDialog
 from .dialogs.overwatch_shooter_dialog import OverwatchShooterDialog
+from .dialogs.battlefield_point_pick_dialog import BattlefieldPointPickDialog
 
 # Constants
 TILE_SIZE = 20  # 20 pixels per inch
@@ -45,6 +46,9 @@ BATTLEFIELD_WIDTH_INCHES = 60
 BATTLEFIELD_HEIGHT_INCHES = 44
 BATTLEFIELD_WIDTH = BATTLEFIELD_WIDTH_INCHES * TILE_SIZE
 BATTLEFIELD_HEIGHT = BATTLEFIELD_HEIGHT_INCHES * TILE_SIZE
+
+# Cult Ambush marker size (32mm ≈ 1.26" diameter)
+CULT_AMBUSH_MARKER_RADIUS_INCHES = 0.63
 
 # Enhanced Colors - Modern UI Palette
 WHITE = (255, 255, 255)
@@ -75,6 +79,7 @@ SUPPORTED_ARMY_RULES = {
     "POWER FROM PAIN",
     "CORSAIRS AND TRAVELLING PLAYERS",
     "PRIORITISED EFFICIENCY",
+    "CULT AMBUSH",
 }
 SUPPORTED_DETACHMENT_RULES = {
     "RELENTLESS RAGE",
@@ -481,6 +486,7 @@ class GameView:
         # Generic Yes/No prompt dialog (used for optional abilities, confirmations, etc.)
         from .dialogs import YesNoDialog
         self.yes_no_dialog = YesNoDialog(screen_width, screen_height)
+        self.cult_ambush_point_dialog = BattlefieldPointPickDialog(screen_width, screen_height)
         self.secondary_discard_dialog = SecondaryDiscardDialog(screen_width, screen_height)
         self.overwatch_shooter_dialog = OverwatchShooterDialog(screen_width, screen_height)
         self.battle_focus_dialog = OverwatchShooterDialog(screen_width, screen_height)
@@ -749,6 +755,8 @@ class GameView:
         self._pain_flow_active = False
         self._waaagh_flow_active = False
         self._ftgg_flow_active = False
+        self._cult_ambush_flow_active = False
+        self._cult_ambush_marker_flow_active = False
 
         # Initialize shared UI state
         self._ui_hitboxes = {}
@@ -774,6 +782,9 @@ class GameView:
         self._pending_pain_prompt_queue = []
         # SLAANESH/DAEMONS (Shalaxi): Monarch of the Hunt quarry selection queue
         self._pending_quarry_queue = []
+        # Genestealer Cults: Cult Ambush prompt queues
+        self._pending_cult_ambush_queue = []
+        self._pending_cult_ambush_marker_queue = []
         try:
             if self.game and getattr(self.game, "event_system", None) is not None:
                 self.game.event_system.subscribe("battle_round_started", self._on_battle_round_started)
@@ -802,6 +813,10 @@ class GameView:
                 self.game.event_system.subscribe("cabal_ritual_resolved", self._on_cabal_ritual_resolved)
                 # Leagues of Votann: Prioritised Efficiency updates (Yield Points / mode)
                 self.game.event_system.subscribe("prioritised_efficiency_updated", self._on_prioritised_efficiency_updated)
+                # Genestealer Cults: Cult Ambush prompts + HUD updates
+                self.game.event_system.subscribe("cult_ambush_prompt", self._on_cult_ambush_prompt)
+                self.game.event_system.subscribe("cult_ambush_reinforcements_prompt", self._on_cult_ambush_reinforcements_prompt)
+                self.game.event_system.subscribe("cult_ambush_updated", self._on_cult_ambush_updated)
         except Exception:
             pass
 
@@ -1417,6 +1432,220 @@ class GameView:
         except Exception:
             pass
 
+    def _on_cult_ambush_updated(self, player=None, **_kwargs):
+        if player is None:
+            return
+        try:
+            if self.rule_detail_panel and self.rule_detail_panel.visible and isinstance(self._rule_panel_state, dict):
+                if self._rule_panel_state.get("player") is player and self._rule_panel_state.get("rule_type") == "army":
+                    self._toggle_rule_panel(player, "army", force_refresh=True)
+        except Exception:
+            pass
+
+    def _on_cult_ambush_prompt(self, player=None, unit=None, cost=None, game=None, **_kwargs):
+        if player is None or unit is None:
+            return
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return
+        except Exception:
+            return
+
+        if self._cult_ambush_flow_active:
+            self._pending_cult_ambush_queue.append((player, unit, cost, game))
+            return
+        self._pending_cult_ambush_queue.append((player, unit, cost, game))
+        self._open_next_cult_ambush_prompt(game or self.game)
+
+    def _open_next_cult_ambush_prompt(self, game):
+        q = list(getattr(self, "_pending_cult_ambush_queue", []) or [])
+        if not q:
+            self._pending_cult_ambush_queue = []
+            self._cult_ambush_flow_active = False
+            return
+        player, unit, cost, game_ctx = q.pop(0)
+        self._pending_cult_ambush_queue = q
+
+        game_ctx = game_ctx or game or self.game
+        if player is None or unit is None or game_ctx is None:
+            self._open_next_cult_ambush_prompt(game_ctx)
+            return
+
+        mgr = self._get_cult_ambush_manager(player)
+        if mgr is None:
+            self._open_next_cult_ambush_prompt(game_ctx)
+            return
+
+        try:
+            cost_val = int(cost if cost is not None else mgr.resurgence_cost_for_unit(unit) or 0)
+        except Exception:
+            cost_val = 0
+        try:
+            points = int(getattr(mgr, "resurgence_points", 0) or 0)
+        except Exception:
+            points = 0
+        if cost_val <= 0 or points < cost_val:
+            self._open_next_cult_ambush_prompt(game_ctx)
+            return
+
+        title = "Cult Ambush"
+        msg = (
+            f"Spend {cost_val} Resurgence point(s) to return {getattr(unit, 'name', 'unit')} in Cult Ambush?\n\n"
+            f"Resurgence points available: {points}"
+        )
+
+        def _done(choice: bool):
+            try:
+                self._cult_ambush_flow_active = False
+                if choice:
+                    new_unit = mgr.spend_resurgence_for_unit(unit, game=game_ctx)
+                    if new_unit is None:
+                        return
+
+                    # If no legal marker placement exists, skip the marker dialog.
+                    try:
+                        if mgr.find_marker_position(game_ctx) is None:
+                            return
+                    except Exception:
+                        pass
+
+                    def _validate(x, y):
+                        try:
+                            ok = bool(mgr._marker_position_valid(game_ctx, float(x), float(y)))
+                        except Exception:
+                            ok = False
+                        if ok:
+                            return {"valid": True, "reason": "OK"}
+                        return {"valid": False, "reason": "Must be more than 9\" from enemy units"}
+
+                    def _confirm(point):
+                        try:
+                            mgr.place_marker_at(game_ctx, point[0], point[1])
+                        finally:
+                            self._cult_ambush_flow_active = False
+                            self._open_next_cult_ambush_prompt(game_ctx)
+
+                    def _cancel():
+                        self._cult_ambush_flow_active = False
+                        self._open_next_cult_ambush_prompt(game_ctx)
+
+                    self._cult_ambush_flow_active = True
+                    try:
+                        self.cult_ambush_point_dialog.show(
+                            game_view=self,
+                            title="Cult Ambush Marker",
+                            instructions="Select a marker position more than 9\" from enemy units.",
+                            validate_cb=_validate,
+                            on_confirm=_confirm,
+                            on_cancel=_cancel,
+                        )
+                        self.dialog_manager.open(self.cult_ambush_point_dialog, modal=True)
+                        return
+                    except Exception:
+                        self._cult_ambush_flow_active = False
+                        return
+            finally:
+                if not self._cult_ambush_flow_active:
+                    self._open_next_cult_ambush_prompt(game_ctx)
+
+        self._cult_ambush_flow_active = True
+        try:
+            self.yes_no_dialog.show(title, msg, _done, yes_label="Use", no_label="Skip")
+            self.dialog_manager.open(self.yes_no_dialog, modal=True)
+        except Exception:
+            self._cult_ambush_flow_active = False
+            self._open_next_cult_ambush_prompt(game_ctx)
+
+    def _on_cult_ambush_reinforcements_prompt(self, player=None, markers=None, game=None, **_kwargs):
+        if player is None:
+            return
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return
+        except Exception:
+            return
+        markers = list(markers or [])
+        if not markers:
+            return
+        for marker in markers:
+            self._pending_cult_ambush_marker_queue.append((player, marker, game))
+        if self._cult_ambush_marker_flow_active:
+            return
+        self._open_next_cult_ambush_marker_prompt(game or self.game)
+
+    def _open_next_cult_ambush_marker_prompt(self, game):
+        q = list(getattr(self, "_pending_cult_ambush_marker_queue", []) or [])
+        if not q:
+            self._pending_cult_ambush_marker_queue = []
+            self._cult_ambush_marker_flow_active = False
+            return
+        player, marker, game_ctx = q.pop(0)
+        self._pending_cult_ambush_marker_queue = q
+
+        game_ctx = game_ctx or game or self.game
+        if player is None or marker is None or game_ctx is None:
+            self._open_next_cult_ambush_marker_prompt(game_ctx)
+            return
+
+        mgr = self._get_cult_ambush_manager(player)
+        if mgr is None:
+            self._open_next_cult_ambush_marker_prompt(game_ctx)
+            return
+        if not bool(getattr(marker, "active", False)):
+            self._open_next_cult_ambush_marker_prompt(game_ctx)
+            return
+
+        try:
+            units = list(mgr.get_units_in_cult_ambush(game=game_ctx, only_arrivable=True) or [])
+        except Exception:
+            units = []
+        if not units:
+            self._open_next_cult_ambush_marker_prompt(game_ctx)
+            return
+
+        skip_choice = SimpleNamespace(name="Skip (leave marker)", _skip_marker=True)
+        choices = list(units) + [skip_choice]
+
+        try:
+            from .dialogs import QuarrySelectionDialog
+        except Exception:
+            self._open_next_cult_ambush_marker_prompt(game_ctx)
+            return
+
+        if not hasattr(self, "cult_ambush_unit_dialog") or self.cult_ambush_unit_dialog is None:
+            self.cult_ambush_unit_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+
+        title = "Cult Ambush"
+        subtitle = f"Marker at ({getattr(marker, 'x', 0.0):.1f}\", {getattr(marker, 'y', 0.0):.1f}\")"
+
+        def _on_confirm(choice):
+            try:
+                if getattr(choice, "_skip_marker", False):
+                    return
+                mgr.deploy_unit_from_marker(choice, marker, game=game_ctx)
+            finally:
+                self._cult_ambush_marker_flow_active = False
+                self._open_next_cult_ambush_marker_prompt(game_ctx)
+
+        def _on_cancel():
+            self._cult_ambush_marker_flow_active = False
+            self._open_next_cult_ambush_marker_prompt(game_ctx)
+
+        self._cult_ambush_marker_flow_active = True
+        try:
+            self.cult_ambush_unit_dialog.show(
+                title=title,
+                header="Select a unit to set up using this Cult Ambush marker.",
+                subtitle=subtitle,
+                choices=choices,
+                on_confirm=_on_confirm,
+                on_cancel=_on_cancel,
+            )
+            self.dialog_manager.open(self.cult_ambush_unit_dialog, modal=True)
+        except Exception:
+            self._cult_ambush_marker_flow_active = False
+            self._open_next_cult_ambush_marker_prompt(game_ctx)
+
     def _on_for_the_greater_good_prompt(self, player=None, game=None, **_kwargs):
         if player is None:
             return
@@ -1613,6 +1842,15 @@ class GameView:
         except Exception:
             army = None
         return getattr(army, "prioritised_efficiency", None) if army is not None else None
+
+    def _get_cult_ambush_manager(self, player):
+        if player is None:
+            return None
+        try:
+            army = player.get_army()
+        except Exception:
+            army = None
+        return getattr(army, "cult_ambush", None) if army is not None else None
 
     def _shadow_of_chaos_hud(self, player) -> Optional[dict]:
         if player is None or self.game is None:
@@ -4714,6 +4952,26 @@ class GameView:
                 }
                 if mode_name:
                     highlight_words.append(mode_name)
+        if rule_type == "army" and "cult ambush" in rule_name.strip().lower():
+            mgr = self._get_cult_ambush_manager(player)
+            if mgr is not None:
+                def _marker_hint():
+                    try:
+                        markers = len(mgr.get_active_markers())
+                    except Exception:
+                        markers = 0
+                    try:
+                        ambush_units = len(mgr.get_units_in_cult_ambush())
+                    except Exception:
+                        ambush_units = 0
+                    return f"Markers: {markers} | Cult Ambush units: {ambush_units}"
+
+                hud = {
+                    "label": "Resurgence Points",
+                    "get_tokens": lambda: int(getattr(mgr, "resurgence_points", 0) or 0),
+                    "show_button": False,
+                    "get_hint": _marker_hint,
+                }
         self.rule_detail_panel.set_content(
             title,
             rule_name,
@@ -4989,6 +5247,39 @@ class GameView:
         game_y = (y - self.offset_y) / (TILE_SIZE * self.zoom_level)
         return game_x, game_y
 
+    def _draw_cult_ambush_markers(self, surface: pygame.Surface) -> None:
+        if not self.game:
+            return
+        try:
+            players = list(getattr(self.game, "players", []) or [])
+        except Exception:
+            players = []
+        if not players:
+            return
+
+        color = (220, 180, 40)
+        radius = max(4, int(CULT_AMBUSH_MARKER_RADIUS_INCHES * TILE_SIZE * self.zoom_level))
+
+        for p in players:
+            try:
+                army = p.get_army()
+            except Exception:
+                army = None
+            mgr = getattr(army, "cult_ambush", None) if army is not None else None
+            if mgr is None:
+                continue
+            try:
+                markers = list(mgr.get_active_markers() or [])
+            except Exception:
+                markers = []
+            for marker in markers:
+                try:
+                    sx, sy = self.game_to_screen_coords(marker.x, marker.y)
+                    pygame.draw.circle(surface, color, (sx, sy), radius, 2)
+                    pygame.draw.circle(surface, color, (sx, sy), max(2, radius // 3), 1)
+                except Exception:
+                    continue
+
     def draw(self):
         self.screen.fill(DARK_GREY)
 
@@ -5043,6 +5334,9 @@ class GameView:
                 self.offset_x,
                 self.offset_y,
             )
+
+        # Draw Cult Ambush markers
+        self._draw_cult_ambush_markers(battlefield_surface)
 
         # Draw units on the battlefield
         units_to_draw = list(self.game_map.units)

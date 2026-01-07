@@ -1,5 +1,7 @@
 from typing import List, Dict, Any, Optional, Tuple, TYPE_CHECKING
 from enum import Enum
+import html
+import re
 import logging
 import copy
 import math
@@ -203,6 +205,9 @@ class Game:
         # Drukhari: Power from Pain token gain hooks
         self.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_power_from_pain)
         self.event_system.subscribe("battle_shock_test_resolved", self._on_battle_shock_test_resolved_power_from_pain)
+        # Genestealer Cults: Cult Ambush (unit destruction + marker clearance)
+        self.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_cult_ambush)
+        self.event_system.subscribe("unit_move_ended", self._on_unit_move_ended_cult_ambush)
 
     def _apply_pall_of_despair_forced_tests(self, current_player, tested_ids: set[str]) -> None:
         if current_player is None:
@@ -1820,6 +1825,62 @@ class Game:
                 continue
             try:
                 mgr.on_enemy_unit_destroyed(unit)
+            except Exception:
+                continue
+
+    def _on_unit_destroyed_cult_ambush(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        try:
+            army = unit.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "cult_ambush", None) if army is not None else None
+        if mgr is None:
+            return
+        try:
+            if not mgr.can_spend_for_unit(unit):
+                return
+        except Exception:
+            return
+        try:
+            player = getattr(army, "player", None)
+        except Exception:
+            player = None
+        es = getattr(self, "event_system", None)
+        try:
+            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+        except Exception:
+            is_human = False
+        if is_human and es is not None:
+            try:
+                subs = getattr(es, "subscribers", {})
+                if isinstance(subs, dict) and subs.get("cult_ambush_prompt"):
+                    es.publish(
+                        "cult_ambush_prompt",
+                        player=player,
+                        unit=unit,
+                        cost=mgr.resurgence_cost_for_unit(unit),
+                        game=self,
+                    )
+                    return
+            except Exception:
+                pass
+        try:
+            mgr.handle_unit_destroyed(unit, game=self, player=player)
+        except Exception:
+            pass
+
+    def _on_unit_move_ended_cult_ambush(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        for p in list(getattr(self, "players", []) or []):
+            army = getattr(p, "army", None)
+            mgr = getattr(army, "cult_ambush", None) if army is not None else None
+            if mgr is None:
+                continue
+            try:
+                mgr.on_enemy_unit_move_ended(unit, game=self)
             except Exception:
                 continue
 
@@ -5092,6 +5153,95 @@ class Game:
             player.get_army().units.remove(unit)
         
         return units_to_destroy
+
+    def _normalize_ability_text(self, text: str) -> str:
+        raw = re.sub(r"<[^>]+>", " ", str(text or ""))
+        raw = html.unescape(raw)
+        raw = re.sub(r"\s+", " ", raw).strip().lower()
+        return raw
+
+    def _reserves_denial_ranges_for_unit(self, unit) -> list[float]:
+        ranges: list[float] = []
+        for ab in list(getattr(unit, "possible_abilities", []) or []):
+            try:
+                name = str(getattr(ab, "name", "") or "")
+                desc = str(getattr(ab, "description", "") or "")
+            except Exception:
+                name = ""
+                desc = ""
+            text = self._normalize_ability_text(f"{name} {desc}")
+            if not text:
+                continue
+            if "enemy" not in text:
+                continue
+            if ("reinforcement" not in text) and ("reserves" not in text) and ("deep strike" not in text):
+                continue
+            if ("cannot be set up" not in text) and ("cannot set up" not in text):
+                continue
+            distances = []
+            for match in re.finditer(r"within\s+(\d+(?:\.\d+)?)\s*(?:\"|inches)", text):
+                try:
+                    distances.append(float(match.group(1)))
+                except Exception:
+                    continue
+            if distances:
+                ranges.append(max(distances))
+        return ranges
+
+    def _reserves_denial_violated(self, unit, prospective: list[Tuple[float, float, float, float]]) -> bool:
+        if unit is None or not prospective:
+            return False
+        try:
+            player = unit.get_parent_army().player
+        except Exception:
+            player = None
+        if player is None:
+            return False
+        enemy_units = self.get_enemy_units(player)
+        if not enemy_units:
+            return False
+
+        from ..utility.aura_utils import horizontal_distance_between_bases_2d
+
+        for enemy in enemy_units:
+            try:
+                if not getattr(enemy, "is_alive", lambda: True)():
+                    continue
+            except Exception:
+                continue
+            try:
+                if not bool(getattr(enemy, "deployed", False)):
+                    continue
+                if str(getattr(enemy, "reserve_status", "deployed")) != "deployed":
+                    continue
+            except Exception:
+                continue
+            try:
+                if getattr(enemy, "embarked_in", None) is not None:
+                    continue
+            except Exception:
+                pass
+            try:
+                if bool(getattr(enemy, "is_embarked", False)):
+                    continue
+            except Exception:
+                pass
+            ranges = self._reserves_denial_ranges_for_unit(enemy)
+            if not ranges:
+                continue
+            enemy_models = [m for m in list(getattr(enemy, "models", []) or []) if getattr(m, "is_alive", True)]
+            if not enemy_models:
+                continue
+            for idx, (x, y, z, facing) in enumerate(prospective):
+                if idx >= len(getattr(unit, "models", []) or []):
+                    break
+                base = unit._create_potential_base(x, y, z, facing, model=unit.models[idx])
+                for em in enemy_models:
+                    dist = float(horizontal_distance_between_bases_2d(base, em.model_base))
+                    for r in ranges:
+                        if dist < float(r):
+                            return True
+        return False
     
     def can_place_unit_arriving_from_reserves(self, unit: 'Unit', position: Tuple[float, float, float], 
                                               battlefield_edge: str = None) -> bool:
@@ -5280,6 +5430,9 @@ class Game:
                 if float(horizontal_distance_between_bases_2d(mb, em.model_base)) < float(min_enemy_distance):
                     return False
 
+        if self._reserves_denial_violated(unit, prospective):
+            return False
+
         if unit.is_in_strategic_reserves():
             deep_strike_ok = bool(unit.has_deep_strike())
             ok = bool(strategic_ok or deep_strike_ok)
@@ -5350,10 +5503,36 @@ class Game:
         # Handle reserves arrivals for the current player
         units_arrived = self.process_player_reserves_arrivals(current_player)
         arrival_results[current_player.name] = units_arrived
-        
+
+        # Cult Ambush: opponent's reinforcements step (end of this player's Movement phase)
+        try:
+            self._handle_cult_ambush_reinforcements(current_player)
+        except Exception:
+            pass
+
         # Chapter Approved "destroy after battle round 3" is enforced at end-of-battle-round.
         
         return arrival_results
+
+    def _handle_cult_ambush_reinforcements(self, current_player) -> None:
+        try:
+            players = list(getattr(self, "players", []) or [])
+        except Exception:
+            players = []
+        for p in players:
+            if p is None or p is current_player:
+                continue
+            try:
+                army = p.get_army()
+            except Exception:
+                army = None
+            mgr = getattr(army, "cult_ambush", None) if army is not None else None
+            if mgr is None:
+                continue
+            try:
+                mgr.handle_reinforcements(game=self, player=p)
+            except Exception:
+                continue
     
     def process_player_reserves_arrivals(self, player: Player) -> List['Unit']:
         """Process reserves arrivals for a specific player.
