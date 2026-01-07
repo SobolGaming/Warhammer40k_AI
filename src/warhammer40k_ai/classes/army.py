@@ -312,6 +312,13 @@ class Army:
             self.power_from_pain = PowerFromPainManager(self)
         except Exception:
             self.power_from_pain = None
+
+        # T'au Empire: For the Greater Good (safe to attach, no-op if not applicable).
+        try:
+            from .for_the_greater_good import ForTheGreaterGoodManager
+            self.for_the_greater_good = ForTheGreaterGoodManager(self)
+        except Exception:
+            self.for_the_greater_good = None
     
     def add_unit(self, unit: Unit) -> bool:
         if not self.faction_keyword:

@@ -188,8 +188,12 @@ class Game:
         self.event_system.subscribe("charge_declared", self._on_charge_declared_power_from_pain)
         # Thousand Sons: Cabal of Sorcerers reset at Shooting phase start
         self.event_system.subscribe("phase_start", self._on_phase_start_cabal_of_sorcerers)
+        # T'au Empire: For the Greater Good selection at Shooting phase start
+        self.event_system.subscribe("phase_start", self._on_phase_start_for_the_greater_good)
         # Temporary effects cleanup (e.g. once-per-battle abilities that last "until end of phase")
         self.event_system.subscribe("phase_end", self._on_phase_end_cleanup)
+        # T'au Empire: clear Spotted/Observer state at end of Shooting phase
+        self.event_system.subscribe("phase_end", self._on_phase_end_for_the_greater_good)
         # Optional ability timing windows (prompt/decision hooks)
         self.event_system.subscribe("phase_start", self._on_phase_start_optional_abilities)
         # Belakor: Pall of Despair healing on failed Battle-shock tests
@@ -1164,6 +1168,59 @@ class Game:
             return
         try:
             mgr.on_shooting_phase_start(game=self, player=player)
+        except Exception:
+            pass
+
+    def _on_phase_start_for_the_greater_good(self, player=None, phase=None, **_kwargs) -> None:
+        """Prompt Observer selection at the start of the active player's Shooting phase."""
+        try:
+            pname = str(getattr(phase, "name", "") or "").strip().upper()
+        except Exception:
+            pname = ""
+        if pname != "SHOOTING_PHASE":
+            return
+        if player is None:
+            return
+        try:
+            army = player.get_army()
+        except Exception:
+            army = None
+        if army is None:
+            return
+        mgr = getattr(army, "for_the_greater_good", None)
+        if mgr is None:
+            return
+        try:
+            mgr.on_shooting_phase_start(game=self, player=player)
+        except Exception:
+            pass
+        try:
+            if getattr(self, "event_system", None) is not None:
+                self.event_system.publish("for_the_greater_good_prompt", player=player, game=self)
+        except Exception:
+            pass
+
+    def _on_phase_end_for_the_greater_good(self, player=None, phase=None, **_kwargs) -> None:
+        """Clear For the Greater Good state at the end of the Shooting phase."""
+        try:
+            pname = str(getattr(phase, "name", "") or "").strip().upper()
+        except Exception:
+            pname = ""
+        if pname != "SHOOTING_PHASE":
+            return
+        if player is None:
+            return
+        try:
+            army = player.get_army()
+        except Exception:
+            army = None
+        if army is None:
+            return
+        mgr = getattr(army, "for_the_greater_good", None)
+        if mgr is None:
+            return
+        try:
+            mgr.on_shooting_phase_end(game=self, player=player)
         except Exception:
             pass
 

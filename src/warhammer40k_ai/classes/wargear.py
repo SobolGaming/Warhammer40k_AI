@@ -943,6 +943,25 @@ class WargearProfile:
             'hit': False,
             'special_effects': []
         }
+
+        base_skill = self.skill
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            mgr = getattr(army, "for_the_greater_good", None) if army is not None else None
+            if mgr is not None:
+                bonus = mgr.guided_attack_bonus(unit, target)
+                if isinstance(bonus, dict) and bonus.get("bs_improve"):
+                    try:
+                        base_skill = max(2, int(base_skill) - int(bonus.get("bs_improve", 0) or 0))
+                        hit_result['special_effects'].append("For the Greater Good: Guided (+1 BS)")
+                    except Exception:
+                        base_skill = base_skill
+                if isinstance(bonus, dict) and bonus.get("ignores_cover"):
+                    attack_instance["ignores_cover"] = True
+        except Exception:
+            pass
+        hit_result['base_skill'] = base_skill
         
         # Torrent auto-hits (in case of Overwatch it ignores 6+ restrictions)
         if self.is_torrent():
@@ -1079,9 +1098,9 @@ class WargearProfile:
             hit_result['modifiers'].extend(list(getattr(aura_mods, "hit_reasons", ()) or ()))
         
         dice_modifier = min(max(dice_modifier, -1), 1)  # modifications are capped between -1 and 1
-        final_needed = self.skill - dice_modifier  # Note: negative dice_modifier makes it harder (higher final_needed)
+        final_needed = base_skill - dice_modifier  # Note: negative dice_modifier makes it harder (higher final_needed)
         
-        hit_result['needed'] = self.skill
+        hit_result['needed'] = base_skill
         hit_result['final_needed'] = final_needed
 
         # Provide reroll callback for hit
@@ -1365,7 +1384,7 @@ class WargearProfile:
                             # Determine "success" at this stage (before auto-hit/miss shortcuts below).
                             # Natural 1 always fails; otherwise use final_needed.
                             try:
-                                success = (dice_roll != 1) and (self.skill > 0) and (dice_roll >= final_needed)
+                                success = (dice_roll != 1) and (base_skill > 0) and (dice_roll >= final_needed)
                             except Exception:
                                 success = False
 
@@ -2073,15 +2092,22 @@ class WargearProfile:
         # - Models with a Save characteristic of 3+ or better cannot benefit vs AP 0.
         # - Multiple instances are not cumulative (we only ever apply +1).
         try:
+            ignores_cover = bool(attack_instance.get("ignores_cover", False))
+        except Exception:
+            ignores_cover = False
+        try:
             if save_result.get('save_type') == 'armor' and attack_instance.get('benefit_of_cover', False):
-                ap_val = int(ap)
-                if not (ap_val == 0 and int(target_model.save) <= 3):
-                    dice_modifier += 1
-                    src = attack_instance.get('benefit_of_cover_source')
-                    if src:
-                        save_result['special_effects'].append(f"Benefit of Cover ({src})")
-                    else:
-                        save_result['special_effects'].append("Benefit of Cover")
+                if ignores_cover:
+                    save_result['special_effects'].append("Ignores Cover")
+                else:
+                    ap_val = int(ap)
+                    if not (ap_val == 0 and int(target_model.save) <= 3):
+                        dice_modifier += 1
+                        src = attack_instance.get('benefit_of_cover_source')
+                        if src:
+                            save_result['special_effects'].append(f"Benefit of Cover ({src})")
+                        else:
+                            save_result['special_effects'].append("Benefit of Cover")
         except Exception:
             pass
 

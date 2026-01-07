@@ -746,6 +746,7 @@ class GameView:
         self._cabal_flow_active = False
         self._shadow_in_the_warp_flow_active = False
         self._pain_flow_active = False
+        self._ftgg_flow_active = False
 
         # Initialize shared UI state
         self._ui_hitboxes = {}
@@ -780,6 +781,8 @@ class GameView:
                 self.game.event_system.subscribe("oath_of_moment_prompt", self._on_oath_of_moment_prompt)
                 # Tyranids: Shadow in the Warp prompt (either Command phase)
                 self.game.event_system.subscribe("shadow_in_the_warp_prompt", self._on_shadow_in_the_warp_prompt)
+                # T'au Empire: For the Greater Good observer/spotter selection
+                self.game.event_system.subscribe("for_the_greater_good_prompt", self._on_for_the_greater_good_prompt)
                 # Dark Pacts prompt when a unit is selected to shoot or fight
                 self.game.event_system.subscribe("dark_pacts_prompt", self._on_dark_pacts_prompt)
                 # Drukhari: Power from Pain prompt when a unit can be empowered
@@ -1344,6 +1347,140 @@ class GameView:
         except Exception:
             self._shadow_in_the_warp_flow_active = False
             self._open_next_shadow_in_the_warp_prompt(game)
+
+    def _on_for_the_greater_good_prompt(self, player=None, game=None, **_kwargs):
+        if player is None:
+            return
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return
+        except Exception:
+            return
+
+        if self._ftgg_flow_active:
+            return
+
+        game = game or self.game
+        if game is None:
+            return
+        try:
+            army = player.get_army()
+        except Exception:
+            army = None
+        if army is None:
+            return
+        mgr = getattr(army, "for_the_greater_good", None)
+        if mgr is None:
+            return
+
+        self._ftgg_flow_active = True
+        self._open_next_ftgg_observer_prompt(game, player)
+
+    def _open_next_ftgg_observer_prompt(self, game, player) -> None:
+        if not self._ftgg_flow_active:
+            return
+        if game is None or player is None:
+            self._ftgg_flow_active = False
+            return
+        try:
+            army = player.get_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "for_the_greater_good", None) if army is not None else None
+        if mgr is None:
+            self._ftgg_flow_active = False
+            return
+
+        try:
+            observers = list(mgr.get_eligible_observers(game=game, player=player) or [])
+        except Exception:
+            observers = []
+        options = []
+        for obs in observers:
+            try:
+                targets = list(mgr.get_eligible_spotted_targets(obs, game=game, player=player) or [])
+            except Exception:
+                targets = []
+            if targets:
+                options.append(obs)
+        if not options:
+            self._ftgg_flow_active = False
+            return
+
+        try:
+            from .dialogs import QuarrySelectionDialog
+        except Exception:
+            self._ftgg_flow_active = False
+            return
+
+        if not hasattr(self, "ftgg_observer_dialog") or self.ftgg_observer_dialog is None:
+            self.ftgg_observer_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+        obs_dialog = self.ftgg_observer_dialog
+
+        def _cancel_observer():
+            self._ftgg_flow_active = False
+
+        def _on_observer(observer_unit):
+            if observer_unit is None:
+                _cancel_observer()
+                return
+            try:
+                targets = list(mgr.get_eligible_spotted_targets(observer_unit, game=game, player=player) or [])
+            except Exception:
+                targets = []
+            if not targets:
+                self._open_next_ftgg_observer_prompt(game, player)
+                return
+            if len(targets) == 1:
+                try:
+                    mgr.mark_spotted(observer_unit, targets[0], game=game, player=player)
+                except Exception:
+                    pass
+                self._open_next_ftgg_observer_prompt(game, player)
+                return
+
+            if not hasattr(self, "ftgg_target_dialog") or self.ftgg_target_dialog is None:
+                self.ftgg_target_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+            tgt_dialog = self.ftgg_target_dialog
+
+            def _cancel_target():
+                self._ftgg_flow_active = False
+
+            def _on_target(target_unit):
+                if target_unit is None:
+                    _cancel_target()
+                    return
+                try:
+                    mgr.mark_spotted(observer_unit, target_unit, game=game, player=player)
+                except Exception:
+                    pass
+                self._open_next_ftgg_observer_prompt(game, player)
+
+            tgt_dialog.show(
+                title=f"For the Greater Good - {getattr(player, 'name', 'Player')}",
+                header=f"Choose a Spotted target for {getattr(observer_unit, 'name', 'Observer')}.",
+                subtitle="Each enemy unit can only be Spotted once per phase.",
+                choices=targets,
+                on_confirm=_on_target,
+                on_cancel=_cancel_target,
+            )
+            try:
+                self.dialog_manager.open(tgt_dialog, modal=True)
+            except Exception:
+                self._ftgg_flow_active = False
+
+        obs_dialog.show(
+            title=f"For the Greater Good - {getattr(player, 'name', 'Player')}",
+            header="Select an Observer unit.",
+            subtitle="Cancel to stop selecting Observers for this phase.",
+            choices=options,
+            on_confirm=_on_observer,
+            on_cancel=_cancel_observer,
+        )
+        try:
+            self.dialog_manager.open(obs_dialog, modal=True)
+        except Exception:
+            self._ftgg_flow_active = False
 
     def _army_has_blessings_of_khorne(self, army) -> bool:
         if army is None:
