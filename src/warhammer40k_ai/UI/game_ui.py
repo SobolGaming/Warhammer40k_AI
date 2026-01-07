@@ -72,6 +72,8 @@ SUPPORTED_ARMY_RULES = {
     "REANIMATION PROTOCOLS",
     "SYNAPSE",
     "SHADOW IN THE WARP",
+    "POWER FROM PAIN",
+    "CORSAIRS AND TRAVELLING PLAYERS",
 }
 SUPPORTED_DETACHMENT_RULES = {
     "RELENTLESS RAGE",
@@ -743,6 +745,7 @@ class GameView:
         self._dark_pacts_flow_active = False
         self._cabal_flow_active = False
         self._shadow_in_the_warp_flow_active = False
+        self._pain_flow_active = False
 
         # Initialize shared UI state
         self._ui_hitboxes = {}
@@ -764,6 +767,8 @@ class GameView:
         self._pending_dark_pacts_queue = []
         # Tyranids: Shadow in the Warp prompt queue
         self._pending_shadow_in_the_warp_queue = []
+        # Drukhari: Power from Pain prompt queue
+        self._pending_pain_prompt_queue = []
         # SLAANESH/DAEMONS (Shalaxi): Monarch of the Hunt quarry selection queue
         self._pending_quarry_queue = []
         try:
@@ -777,6 +782,8 @@ class GameView:
                 self.game.event_system.subscribe("shadow_in_the_warp_prompt", self._on_shadow_in_the_warp_prompt)
                 # Dark Pacts prompt when a unit is selected to shoot or fight
                 self.game.event_system.subscribe("dark_pacts_prompt", self._on_dark_pacts_prompt)
+                # Drukhari: Power from Pain prompt when a unit can be empowered
+                self.game.event_system.subscribe("pain_token_prompt", self._on_pain_token_prompt)
                 # Quarry re-pick when quarry is destroyed
                 self.game.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_for_monarch_of_the_hunt)
                 # Battle Focus reactive prompts (Opportunity Seized / Fade Back)
@@ -1104,6 +1111,82 @@ class GameView:
             self._dark_pacts_flow_active = False
             self._open_next_dark_pacts_prompt(game)
 
+    # ---------------- Power from Pain prompts ----------------
+
+    def _on_pain_token_prompt(self, player=None, unit=None, trigger=None, abilities=None, game=None, **_kwargs):
+        if player is None or unit is None:
+            return
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return
+        except Exception:
+            return
+
+        if self._pain_flow_active:
+            self._pending_pain_prompt_queue.append((player, unit, trigger, abilities, game))
+            return
+        self._pending_pain_prompt_queue.append((player, unit, trigger, abilities, game))
+        self._open_next_pain_prompt(game or self.game)
+
+    def _open_next_pain_prompt(self, game):
+        q = list(getattr(self, "_pending_pain_prompt_queue", []) or [])
+        if not q:
+            self._pending_pain_prompt_queue = []
+            self._pain_flow_active = False
+            return
+        player, unit, trigger, abilities, game_ctx = q.pop(0)
+        self._pending_pain_prompt_queue = q
+
+        game_ctx = game_ctx or game or self.game
+        if player is None or unit is None or game_ctx is None:
+            self._open_next_pain_prompt(game_ctx)
+            return
+
+        mgr = self._get_power_from_pain_manager(player)
+        if mgr is None:
+            self._open_next_pain_prompt(game_ctx)
+            return
+
+        try:
+            ability_list = list(abilities or mgr.get_applicable_pain_ability_names(unit, trigger=trigger or "", game=game_ctx))
+        except Exception:
+            ability_list = []
+        if not ability_list:
+            self._open_next_pain_prompt(game_ctx)
+            return
+
+        tokens = int(getattr(mgr, "tokens", 0) or 0)
+        if tokens <= 0:
+            self._open_next_pain_prompt(game_ctx)
+            return
+
+        phase_label = str(getattr(getattr(game_ctx, "phase", None), "name", "") or "").replace("_", " ").title()
+        ability_text = ", ".join(ability_list)
+        title = "Power from Pain"
+        msg = (
+            f"{getattr(unit, 'name', 'Unit')} can be Empowered.\n\n"
+            f"Spend 1 Pain token to activate: {ability_text}.\n"
+            f"Phase: {phase_label or 'Current phase'}\n"
+            f"Tokens available: {tokens}"
+        )
+
+        def _done(chosen: bool):
+            if chosen:
+                try:
+                    mgr.empower_unit_for_trigger(unit, trigger=trigger or "", game=game_ctx)
+                except Exception:
+                    pass
+            self._pain_flow_active = False
+            self._open_next_pain_prompt(game_ctx)
+
+        self._pain_flow_active = True
+        try:
+            self.yes_no_dialog.show(title, msg, _done, yes_label="Use", no_label="Skip")
+            self.dialog_manager.open(self.yes_no_dialog, modal=True)
+        except Exception:
+            self._pain_flow_active = False
+            self._open_next_pain_prompt(game_ctx)
+
     def _on_oath_of_moment_prompt(self, player=None, game=None, **_kwargs):
         """Prompt human players to select an Oath of Moment target at Command phase start."""
         if player is None:
@@ -1306,6 +1389,15 @@ class GameView:
         except Exception:
             army = None
         return getattr(army, "battle_focus", None) if army is not None else None
+
+    def _get_power_from_pain_manager(self, player):
+        if player is None:
+            return None
+        try:
+            army = player.get_army()
+        except Exception:
+            army = None
+        return getattr(army, "power_from_pain", None) if army is not None else None
 
     def _shadow_of_chaos_hud(self, player) -> Optional[dict]:
         if player is None or self.game is None:
@@ -4367,6 +4459,14 @@ class GameView:
                     "get_enabled": lambda: self._battle_focus_hud_enabled(player, mgr),
                     "get_hint": lambda: self._battle_focus_hud_hint(player, mgr),
                     "on_use": lambda: self._open_battle_focus_hud_use(player),
+                }
+        if rule_type == "army" and "power from pain" in rule_name.strip().lower():
+            mgr = self._get_power_from_pain_manager(player)
+            if mgr is not None:
+                hud = {
+                    "label": "Pain Tokens",
+                    "get_tokens": lambda: int(getattr(mgr, "tokens", 0) or 0),
+                    "show_button": False,
                 }
         if rule_type == "army" and "cabal of sorcerers" in rule_name.strip().lower():
             mgr = self._get_cabal_manager(player)

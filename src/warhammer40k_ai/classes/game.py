@@ -176,6 +176,11 @@ class Game:
         # Dark Pacts trigger windows
         self.event_system.subscribe("shooting_targets_selected", self._on_shooting_targets_selected_dark_pacts)
         self.event_system.subscribe("fight_unit_selected", self._on_fight_unit_selected_dark_pacts)
+        # Drukhari: Power from Pain trigger windows
+        self.event_system.subscribe("shooting_targets_selected", self._on_shooting_targets_selected_power_from_pain)
+        self.event_system.subscribe("fight_unit_selected", self._on_fight_unit_selected_power_from_pain)
+        self.event_system.subscribe("unit_move_started", self._on_unit_move_started_power_from_pain)
+        self.event_system.subscribe("charge_declared", self._on_charge_declared_power_from_pain)
         # Thousand Sons: Cabal of Sorcerers reset at Shooting phase start
         self.event_system.subscribe("phase_start", self._on_phase_start_cabal_of_sorcerers)
         # Temporary effects cleanup (e.g. once-per-battle abilities that last "until end of phase")
@@ -186,6 +191,9 @@ class Game:
         self.event_system.subscribe("battle_shock_test_resolved", self._on_battle_shock_test_resolved_shadow_form)
         # Chaos Knights: Harbingers of Dread (Delirium) on failed Battle-shock tests
         self.event_system.subscribe("battle_shock_test_resolved", self._on_battle_shock_test_resolved_harbingers)
+        # Drukhari: Power from Pain token gain hooks
+        self.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_power_from_pain)
+        self.event_system.subscribe("battle_shock_test_resolved", self._on_battle_shock_test_resolved_power_from_pain)
 
     def _apply_pall_of_despair_forced_tests(self, current_player, tested_ids: set[str]) -> None:
         if current_player is None:
@@ -521,6 +529,19 @@ class Game:
                 except Exception:
                     continue
 
+    def _on_battle_shock_test_resolved_power_from_pain(self, unit=None, passed: bool = True, **_kwargs) -> None:
+        if unit is None or passed:
+            return
+        for p in list(getattr(self, "players", []) or []):
+            army = getattr(p, "army", None)
+            mgr = getattr(army, "power_from_pain", None) if army is not None else None
+            if mgr is None:
+                continue
+            try:
+                mgr.on_enemy_battle_shock_failed(unit)
+            except Exception:
+                continue
+
     # ---------------- Phoenix Gem (Warhost) ----------------
 
     def queue_phoenix_gem_return(
@@ -808,6 +829,232 @@ class Game:
         except Exception:
             return
 
+    def _on_shooting_targets_selected_power_from_pain(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None:
+            return
+        if not list(target_units or []):
+            return
+        try:
+            player = attacking_unit.get_parent_army().player
+        except Exception:
+            player = None
+        try:
+            army = attacking_unit.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "power_from_pain", None) if army is not None else None
+        if mgr is None:
+            return
+        abilities = mgr.get_applicable_pain_ability_names(attacking_unit, trigger="shooting", game=self)
+        if not abilities:
+            return
+        es = getattr(self, "event_system", None)
+        try:
+            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+        except Exception:
+            is_human = False
+        if is_human and es is not None:
+            try:
+                subs = getattr(es, "subscribers", {})
+                if isinstance(subs, dict) and subs.get("pain_token_prompt"):
+                    es.publish(
+                        "pain_token_prompt",
+                        player=player,
+                        unit=attacking_unit,
+                        phase_name=str(getattr(self.phase, "name", "") or ""),
+                        trigger="shooting",
+                        abilities=list(abilities),
+                        game=self,
+                    )
+                    return
+            except Exception:
+                pass
+        try:
+            mgr.maybe_empower_unit_for_trigger(attacking_unit, trigger="shooting", game=self)
+        except Exception:
+            return
+
+    def _on_fight_unit_selected_power_from_pain(self, unit=None, selecting_player=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        try:
+            player = unit.get_parent_army().player
+        except Exception:
+            player = None
+        try:
+            army = unit.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "power_from_pain", None) if army is not None else None
+        if mgr is None:
+            return
+        abilities = mgr.get_applicable_pain_ability_names(unit, trigger="fight", game=self)
+        if not abilities:
+            return
+        es = getattr(self, "event_system", None)
+        try:
+            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+        except Exception:
+            is_human = False
+        if is_human and es is not None:
+            try:
+                subs = getattr(es, "subscribers", {})
+                if isinstance(subs, dict) and subs.get("pain_token_prompt"):
+                    es.publish(
+                        "pain_token_prompt",
+                        player=player,
+                        unit=unit,
+                        phase_name=str(getattr(self.phase, "name", "") or ""),
+                        trigger="fight",
+                        abilities=list(abilities),
+                        game=self,
+                    )
+                    return
+            except Exception:
+                pass
+        try:
+            mgr.maybe_empower_unit_for_trigger(unit, trigger="fight", game=self)
+        except Exception:
+            return
+
+    def _on_unit_move_started_power_from_pain(self, unit=None, action: str | None = None, **_kwargs) -> None:
+        if unit is None:
+            return
+        if (action or "").strip().lower() != "advance":
+            return
+        try:
+            player = unit.get_parent_army().player
+        except Exception:
+            player = None
+        try:
+            army = unit.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "power_from_pain", None) if army is not None else None
+        if mgr is None:
+            return
+        abilities = mgr.get_applicable_pain_ability_names(unit, trigger="advance", game=self)
+        if not abilities:
+            return
+        es = getattr(self, "event_system", None)
+        try:
+            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+        except Exception:
+            is_human = False
+        if is_human and es is not None:
+            try:
+                subs = getattr(es, "subscribers", {})
+                if isinstance(subs, dict) and subs.get("pain_token_prompt"):
+                    es.publish(
+                        "pain_token_prompt",
+                        player=player,
+                        unit=unit,
+                        phase_name=str(getattr(self.phase, "name", "") or ""),
+                        trigger="advance",
+                        abilities=list(abilities),
+                        game=self,
+                    )
+                    return
+            except Exception:
+                pass
+        try:
+            mgr.maybe_empower_unit_for_trigger(unit, trigger="advance", game=self)
+        except Exception:
+            return
+
+    def _on_charge_declared_power_from_pain(self, unit=None, target_unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        try:
+            player = unit.get_parent_army().player
+        except Exception:
+            player = None
+        try:
+            army = unit.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "power_from_pain", None) if army is not None else None
+        if mgr is None:
+            return
+        abilities = mgr.get_applicable_pain_ability_names(unit, trigger="charge", game=self)
+        if not abilities:
+            return
+        es = getattr(self, "event_system", None)
+        try:
+            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+        except Exception:
+            is_human = False
+        if is_human and es is not None:
+            try:
+                subs = getattr(es, "subscribers", {})
+                if isinstance(subs, dict) and subs.get("pain_token_prompt"):
+                    es.publish(
+                        "pain_token_prompt",
+                        player=player,
+                        unit=unit,
+                        phase_name=str(getattr(self.phase, "name", "") or ""),
+                        trigger="charge",
+                        abilities=list(abilities),
+                        game=self,
+                    )
+                    return
+            except Exception:
+                pass
+        try:
+            mgr.maybe_empower_unit_for_trigger(unit, trigger="charge", game=self)
+        except Exception:
+            return
+
+    def _maybe_prompt_power_from_pain_command_phase(self) -> None:
+        try:
+            player = self.get_current_player()
+        except Exception:
+            player = None
+        if player is None:
+            return
+        army = getattr(player, "army", None)
+        mgr = getattr(army, "power_from_pain", None) if army is not None else None
+        if mgr is None:
+            return
+        if int(getattr(mgr, "tokens", 0) or 0) <= 0:
+            return
+        units = []
+        for unit in list(getattr(army, "units", []) or []):
+            try:
+                abilities = mgr.get_applicable_pain_ability_names(unit, trigger="command", game=self)
+            except Exception:
+                abilities = []
+            if abilities:
+                units.append((unit, abilities))
+        if not units:
+            return
+        es = getattr(self, "event_system", None)
+        try:
+            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+        except Exception:
+            is_human = False
+        for unit, abilities in units:
+            if is_human and es is not None:
+                try:
+                    subs = getattr(es, "subscribers", {})
+                    if isinstance(subs, dict) and subs.get("pain_token_prompt"):
+                        es.publish(
+                            "pain_token_prompt",
+                            player=player,
+                            unit=unit,
+                            phase_name=str(getattr(self.phase, "name", "") or ""),
+                            trigger="command",
+                            abilities=list(abilities),
+                            game=self,
+                        )
+                        continue
+                except Exception:
+                    pass
+            try:
+                mgr.maybe_empower_unit_for_trigger(unit, trigger="command", game=self)
+            except Exception:
+                continue
+
     def _on_phase_start_optional_abilities(self, player=None, phase=None, **_kwargs) -> None:
         """
         Hook point for optional, player-decided abilities that trigger at specific timing windows.
@@ -953,6 +1200,20 @@ class Game:
                     exp = str(sr.get("seductive_gambit_expires_phase", "") or "").strip().upper()
                     if exp and exp == pname:
                         for k in ("seductive_gambit_active", "seductive_gambit_expires_phase"):
+                            sr.pop(k, None)
+                    exp = str(sr.get("pain_empowered_expires_phase", "") or "").strip().upper()
+                    if exp and exp == pname:
+                        for k in (
+                            "pain_empowered",
+                            "pain_empowered_expires_phase",
+                            "pain_empowered_sources",
+                            "pain_reroll_hit",
+                            "pain_reroll_advance",
+                            "pain_reroll_charge",
+                            "pain_melee_strength_bonus",
+                            "pain_melee_ap_bonus",
+                            "pain_melee_wound_bonus",
+                        ):
                             sr.pop(k, None)
                     exp = str(sr.get("cabal_destinys_ruin_expires_phase", "") or "").strip().upper()
                     if exp and exp == pname:
@@ -1442,6 +1703,19 @@ class Game:
                         pass
                 except Exception:
                     continue
+
+    def _on_unit_destroyed_power_from_pain(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        for p in list(getattr(self, "players", []) or []):
+            army = getattr(p, "army", None)
+            mgr = getattr(army, "power_from_pain", None) if army is not None else None
+            if mgr is None:
+                continue
+            try:
+                mgr.on_enemy_unit_destroyed(unit)
+            except Exception:
+                continue
 
     def _on_unit_destroyed_transport_rules(self, unit=None, last_model=None, game_map=None, **_kwargs) -> None:
         """
@@ -2843,9 +3117,23 @@ class Game:
                     cp_player.gain_command_points(bonus, reason="Command phase bonus CP")
         except Exception:
             pass
+        # Drukhari: Power from Pain tokens at start of your Command phase.
+        try:
+            current_player = self.get_current_player()
+            army = getattr(current_player, "army", None) if current_player is not None else None
+            mgr = getattr(army, "power_from_pain", None) if army is not None else None
+            if mgr is not None:
+                mgr.on_command_phase_start(game=self, player=current_player)
+        except Exception:
+            pass
         # Explicit phase start publish for command phase entry
         try:
             self.event_system.publish("phase_start", player=self.get_current_player(), phase=self.phase)
+        except Exception:
+            pass
+        # Drukhari: command phase Pain abilities (e.g., Fleshcraft).
+        try:
+            self._maybe_prompt_power_from_pain_command_phase()
         except Exception:
             pass
         # Tyranids: Shadow in the Warp (once per battle, either player's Command phase).

@@ -2,7 +2,12 @@ from typing import Tuple, Dict, Set, List, Optional
 from warhammer40k_ai.classes.unit import Unit
 from warhammer40k_ai.classes.enhancement import Enhancement
 from warhammer40k_ai.waha_helper import WahaHelper
-from warhammer40k_ai.utility.ability_support import ABILITY_DISPARATE_PATHS, army_has_ability_id, pact_restrictions_for_faction
+from warhammer40k_ai.utility.ability_support import (
+    ABILITY_DISPARATE_PATHS,
+    ABILITY_CORSAIRS_AND_TRAVELLING_PLAYERS,
+    army_has_ability_id,
+    pact_restrictions_for_faction,
+)
 import codecs
 import re
 import uuid
@@ -192,6 +197,13 @@ class Army:
             self.shadow_in_the_warp = ShadowInTheWarpManager(self)
         except Exception:
             self.shadow_in_the_warp = None
+
+        # Drukhari: Power from Pain (safe to attach, no-op if not applicable).
+        try:
+            from .power_from_pain import PowerFromPainManager
+            self.power_from_pain = PowerFromPainManager(self)
+        except Exception:
+            self.power_from_pain = None
     
     def add_unit(self, unit: Unit) -> bool:
         if not self.faction_keyword:
@@ -1030,6 +1042,11 @@ class Army:
             )
 
     def validate_allies(self):
+        # Drukhari: Corsairs and Travelling Players.
+        if army_has_ability_id(self, ABILITY_CORSAIRS_AND_TRAVELLING_PLAYERS):
+            self._validate_corsairs_and_travelling_players()
+            self._validate_daemonic_pact()
+            return
         # Disparate Paths: allow Harlequins/Ynnari alongside the army faction.
         if not army_has_ability_id(self, ABILITY_DISPARATE_PATHS):
             self._validate_daemonic_pact()
@@ -1066,6 +1083,77 @@ class Army:
                     "which are not allowed for an army with Disparate Paths (allows base faction + HARLEQUINS/YNNARI)."
                 )
         self._validate_daemonic_pact()
+
+    def _corsairs_points_cap(self) -> int:
+        try:
+            limit = int(self.points_limit or 0)
+        except Exception:
+            limit = 0
+        if limit <= 0:
+            return 0
+        if limit <= 1000:
+            return 250
+        if limit <= 2000:
+            return 500
+        return 750
+
+    def _validate_corsairs_and_travelling_players(self) -> None:
+        allowed_allies = {"HARLEQUINS", "ANHRATHE"}
+        allied_units = []
+        for unit in list(getattr(self, "units", []) or []):
+            if unit is None:
+                continue
+            try:
+                is_dru = unit.has_any_keyword("DRUKHARI")
+                is_harl = unit.has_any_keyword("HARLEQUINS")
+                is_anhr = unit.has_any_keyword("ANHRATHE")
+            except Exception:
+                # Fall back to raw faction keyword list if helpers are unavailable
+                try:
+                    fks = [str(k).strip().upper() for k in (getattr(unit, "faction_keywords", []) or []) if str(k).strip()]
+                except Exception:
+                    fks = []
+                is_dru = "DRUKHARI" in fks
+                is_harl = "HARLEQUINS" in fks
+                is_anhr = "ANHRATHE" in fks
+
+            if not (is_dru or is_harl or is_anhr):
+                try:
+                    fks = [str(k).strip().upper() for k in (getattr(unit, "faction_keywords", []) or []) if str(k).strip()]
+                except Exception:
+                    fks = []
+                raise ArmyValidationError(
+                    f"Unit '{getattr(unit, 'name', 'Unknown')}' has faction keywords {fks}, "
+                    "which are not allowed for Corsairs and Travelling Players (allows DRUKHARI + HARLEQUINS + ANHRATHE)."
+                )
+
+            if is_harl or is_anhr:
+                allied_units.append(unit)
+
+        if not allied_units:
+            return
+
+        for unit in allied_units:
+            if getattr(unit, "is_warlord", False):
+                raise ArmyValidationError(
+                    f"Corsairs and Travelling Players: allied unit '{getattr(unit, 'name', 'Unknown')}' cannot be your Warlord."
+                )
+            if getattr(unit, "enhancement", None) is not None:
+                raise ArmyValidationError(
+                    f"Corsairs and Travelling Players: allied unit '{getattr(unit, 'name', 'Unknown')}' cannot take Enhancements."
+                )
+
+        cap = self._corsairs_points_cap()
+        total = 0
+        for unit in allied_units:
+            try:
+                total += int(unit.get_unit_cost())
+            except Exception:
+                continue
+        if cap <= 0 or total > cap:
+            raise ArmyValidationError(
+                f"Corsairs and Travelling Players: allied units total {total} points (cap {cap})."
+            )
 
     def _daemonic_pact_points_cap(self) -> int:
         try:

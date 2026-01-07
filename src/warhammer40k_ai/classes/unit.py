@@ -3542,6 +3542,12 @@ class Unit:
 
         This is intentionally text-based so it can support multiple datasheets without hardcoding.
         """
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("pain_reroll_advance"):
+                return True
+        except Exception:
+            pass
         def _texts() -> list[str]:
             items: list[str] = []
             for ab in (list(getattr(self, "possible_abilities", []) or []) + list(getattr(self, "abilities", []) or [])):
@@ -3572,6 +3578,12 @@ class Unit:
         try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("enhancement_charge_reroll"):
+                return True
+        except Exception:
+            pass
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("pain_reroll_charge"):
                 return True
         except Exception:
             pass

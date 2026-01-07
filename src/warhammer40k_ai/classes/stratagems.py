@@ -225,6 +225,31 @@ class Stratagem:
             eff_cost = self.cp_cost
         if not player.spend_command_points(eff_cost):
             return False
+        # Drukhari: allow optional Pain token spends for stratagem add-on effects.
+        try:
+            army = player.get_army() if player is not None else None
+        except Exception:
+            army = None
+        mgr = getattr(army, "power_from_pain", None) if army is not None else None
+        if mgr is not None:
+            try:
+                cost = int(mgr.stratagem_pain_token_cost(self) or 0)
+            except Exception:
+                cost = 0
+            if cost > 0 and int(getattr(mgr, "tokens", 0) or 0) >= cost:
+                ctx = {
+                    "ability_name": "Power from Pain",
+                    "stratagem": getattr(self, "name", None) or "",
+                    "pain_cost": cost,
+                }
+                try:
+                    should = bool(getattr(player, "_should_use_optional_ability", lambda *_a, **_k: False)(
+                        "POWER_FROM_PAIN_STRATAGEM", ctx
+                    ))
+                except Exception:
+                    should = False
+                if should and mgr.spend_pain_for_stratagem(self):
+                    kwargs["pain_tokens_spent"] = cost
         if self.effect is not None:
             self.effect(player, game, **kwargs)
         else:

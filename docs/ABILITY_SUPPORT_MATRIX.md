@@ -61,6 +61,8 @@ These mechanics are currently recognized by searching ability names/descriptions
 - Reanimation Protocols (Supported)
 - Synapse (Supported)
 - Shadow in the Warp (Supported)
+- Power from Pain (partial: tokens + select Pain abilities + stratagem spend hook) (Partial)
+- Corsairs and Travelling Players (Supported)
 
 ## Core Abilities
 
@@ -154,8 +156,9 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Battle Focus | `000009894` | 10 | 10 | **Supported** | Battle Focus |
-| Disparate Paths | `000009896` | 8 | 8 | **Supported** | Disparate Paths |
-| Power from Pain | `000008507` | 30 | 30 | **Not implemented** |  |
+| Disparate Paths | `000009896` | 8 | 8 | **Not implemented** | DRU uses Corsairs and Travelling Players. |
+| Corsairs and Travelling Players | `000009974` | 0 | 0 | **Supported** | Allies cap + no Warlord/Enhancements for Harlequins/Anhrathe. |
+| Power from Pain | `000008507` | 30 | 30 | **Partial** | Pain tokens; limited Pain abilities (Hatred Eternal, Lithe Agility, Brides of Death, Sculptor of Torments, Fleshcraft); stratagem pain token spend hook. |
 
 ### Emperor’s Children (`EC`) - `https://wahapedia.ru/wh40k10ed/factions/emperor-s-children`
 

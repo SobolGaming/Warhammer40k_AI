@@ -371,6 +371,14 @@ class WargearProfile:
         if self._plunging_fire_applies(attacker, target):
             # Improve AP by 1: AP -1 becomes -2, AP 0 becomes -1, etc.
             ap_val -= 1
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                sr = getattr(attacker.parent_unit, "special_rules", None)
+                bonus = int(sr.get("pain_melee_ap_bonus", 0) or 0) if isinstance(sr, dict) else 0
+                if bonus:
+                    ap_val -= bonus
+        except Exception:
+            pass
         cabal_bonus = self._cabal_twist_of_fate_ap_bonus(attacker, target)
         if cabal_bonus:
             ap_val -= int(cabal_bonus)
@@ -1228,6 +1236,51 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Drukhari: Power from Pain (Hatred Eternal) re-roll Hit rolls (optional).
+        try:
+            if "reroll" not in hit_result:
+                sr = getattr(attacker.parent_unit, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("pain_reroll_hit"):
+                    try:
+                        success = (dice_roll != 1) and (self.skill > 0) and (dice_roll >= final_needed)
+                    except Exception:
+                        success = False
+                    do_reroll = False
+                    try:
+                        unit = attacker.parent_unit
+                        game = unit.get_parent_army().player.game
+                        player = unit.get_parent_army().player
+                        is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                        provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                    except Exception:
+                        is_human = False
+                        provider = None
+                        player = None
+                    if is_human and callable(provider):
+                        try:
+                            do_reroll = bool(provider(
+                                player=player,
+                                unit=unit,
+                                roll_type="hit",
+                                value=dice_roll,
+                                dice=None,
+                                needed=final_needed,
+                                success=success,
+                                reason="Power from Pain",
+                            ))
+                        except Exception:
+                            do_reroll = False
+                    else:
+                        do_reroll = (not success)
+                    if do_reroll:
+                        rr = _reroll_hit()
+                        hit_result.setdefault("special_effects", []).append("Power from Pain: re-roll Hit roll")
+                        hit_result["reroll"] = rr
+                        dice_roll = rr
+                        reroll_used = True
+        except Exception:
+            pass
+
         # Seductive Gambit: melee attacks can re-roll the Hit roll (optional).
         try:
             if "reroll" not in hit_result:
@@ -1526,6 +1579,15 @@ class WargearProfile:
                         wound_result.setdefault("modifiers", []).append("+1S from Synapse (melee)")
         except Exception:
             pass
+        # Drukhari: Power from Pain (Brides of Death).
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                s_bonus = int(getattr(attacker.parent_unit, "special_rules", {}).get("pain_melee_strength_bonus", 0) or 0)
+                if s_bonus and isinstance(strength, int):
+                    strength = strength + s_bonus
+                    wound_result.setdefault("modifiers", []).append(f"+{s_bonus}S from Power from Pain (melee)")
+        except Exception:
+            pass
         # Provide reroll callback for wound
         def _reroll_wound():
             new_roll = get_roll("D6")
@@ -1577,6 +1639,16 @@ class WargearProfile:
             if mgr is not None and mgr.wound_bonus_applies(attacker.parent_unit, target):
                 dice_modifier += 1
                 wound_result['modifiers'].append("+1 to wound from Oath of Moment")
+        except Exception:
+            pass
+        # Drukhari: Power from Pain (Sculptor of Torments).
+        try:
+            is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+            if is_melee:
+                w_bonus = int(getattr(attacker.parent_unit, "special_rules", {}).get("pain_melee_wound_bonus", 0) or 0)
+                if w_bonus:
+                    dice_modifier += w_bonus
+                    wound_result['modifiers'].append(f"+{w_bonus} to wound from Power from Pain (melee)")
         except Exception:
             pass
         # Harbingers of Dread: Doom (+1 to wound vs Battle-shocked targets).
