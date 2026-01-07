@@ -722,6 +722,23 @@ class StratagemManager:
                     return
             except Exception:
                 return
+            try:
+                if not bool(getattr(self.game, "battle_shock_step_active", False)):
+                    return
+            except Exception:
+                return
+            # Shadow in the Warp: Insane Bravery cannot be used for these tests.
+            try:
+                sr = getattr(unit, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("shadow_in_the_warp_battleshock") is True:
+                    return
+            except Exception:
+                pass
+            try:
+                if getattr(self.game, "get_current_player", lambda: None)() is not self.player:
+                    return
+            except Exception:
+                return
             s = self.get_by_name("INSANE BRAVERY")
             if not s:
                 return
@@ -746,6 +763,22 @@ class StratagemManager:
 
     def _on_battle_shock_test_resolved(self, unit, passed: bool, **kwargs):
         if not passed and unit and unit.get_parent_army() and unit.get_parent_army().player is self.player:
+            try:
+                if not bool(getattr(self.game, "battle_shock_step_active", False)):
+                    return
+            except Exception:
+                return
+            try:
+                sr = getattr(unit, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("shadow_in_the_warp_battleshock") is True:
+                    return
+            except Exception:
+                pass
+            try:
+                if getattr(self.game, "get_current_player", lambda: None)() is not self.player:
+                    return
+            except Exception:
+                return
             self._last_failed_battle_shock_unit = unit
             # Queue a reaction opportunity for UI: INSANE BRAVERY
             s = self.get_by_name('INSANE BRAVERY')

@@ -59,6 +59,8 @@ These mechanics are currently recognized by searching ability names/descriptions
 - Heal on destroy (partial) (Partial)
 - Plunging Fire (Supported)
 - Reanimation Protocols (Supported)
+- Synapse (Supported)
+- Shadow in the Warp (Supported)
 
 ## Core Abilities
 
@@ -231,8 +233,8 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Shadow in the Warp | `000000707` | 16 | 16 | **Not implemented** |  |
-| Synapse | `000000705` | 55 | 55 | **Not implemented** |  |
+| Shadow in the Warp | `000000707` | 16 | 16 | **Supported** | Once per battle in either Command phase; all enemy units test; -1 if within 6" of SYNAPSE. |
+| Synapse | `000000705` | 55 | 55 | **Supported** | Within 6" of SYNAPSE: Battle-shock on 3D6; melee +1 Strength. |
 
 ### T’au Empire (`TAU`) - `https://wahapedia.ru/wh40k10ed/factions/t-au-empire`
 

@@ -113,6 +113,8 @@ class Game:
         self.commands = []
         self.phase = BattleRoundPhases.COMMAND_PHASE  # Initialize phase to COMMAND_PHASE
         self.do_ai_action = False  # Initialize AI action flag
+        # Command phase timing: True only during the Battle-shock step of the current player's Command phase.
+        self.battle_shock_step_active = False
         
         # Wire game reference into any pre-supplied players
         for p in self.players:
@@ -376,6 +378,43 @@ class Game:
                 continue
             try:
                 root.apply_reanimation_protocols(d3, game_map=game_map, is_human=is_human, provider=provider)
+            except Exception:
+                continue
+
+    def _maybe_prompt_shadow_in_the_warp(self) -> None:
+        es = getattr(self, "event_system", None)
+        subs = getattr(es, "subscribers", {}) if es is not None else {}
+        for player in list(getattr(self, "players", []) or []):
+            if player is None:
+                continue
+            try:
+                army = player.get_army()
+            except Exception:
+                army = getattr(player, "army", None)
+            if army is None:
+                continue
+            mgr = getattr(army, "shadow_in_the_warp", None)
+            if mgr is None:
+                continue
+            try:
+                if not mgr.can_use_now(game=self, player=player):
+                    continue
+            except Exception:
+                continue
+            try:
+                is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+            except Exception:
+                is_human = False
+            if is_human and es is not None and isinstance(subs, dict) and subs.get("shadow_in_the_warp_prompt"):
+                es.publish("shadow_in_the_warp_prompt", player=player, game=self)
+                continue
+            ctx = {
+                "ability_name": "Shadow in the Warp",
+                "phase": "Command phase",
+            }
+            try:
+                if player._should_use_optional_ability("SHADOW_IN_THE_WARP", ctx):
+                    mgr.activate(game=self, player=player)
             except Exception:
                 continue
 
@@ -2744,6 +2783,7 @@ class Game:
         # Battle-shock expires at the start of *your* next Command phase (even if the unit was later destroyed).
         # Clear it before doing anything else in the Command phase.
         try:
+            self.battle_shock_step_active = False
             from .status_effects import BattleShockEffect
             current_player = self.get_current_player()
             for unit in list(getattr(current_player.get_army(), "units", []) or []):
@@ -2808,6 +2848,11 @@ class Game:
             self.event_system.publish("phase_start", player=self.get_current_player(), phase=self.phase)
         except Exception:
             pass
+        # Tyranids: Shadow in the Warp (once per battle, either player's Command phase).
+        try:
+            self._maybe_prompt_shadow_in_the_warp()
+        except Exception:
+            pass
 
         # Execute command actions for current player's units (without resetting round state)
         current_player = self.get_current_player()
@@ -2834,6 +2879,7 @@ class Game:
                     pass
         # If in fifth battle round and going second, primary scoring is at end of turn, not here
         tested_ids: set[str] = set()
+        self.battle_shock_step_active = True
         for unit in current_player.get_army().units:
             # Do battle shock tests and other command phase actions without resetting round state
             try:
@@ -2862,6 +2908,7 @@ class Game:
                 except Exception:
                     tested_ids.add(str(id(unit)))
 
+        self.battle_shock_step_active = False
         # Belakor: Pall of Despair can force additional tests for eligible enemy units.
         try:
             self._apply_pall_of_despair_forced_tests(current_player, tested_ids)

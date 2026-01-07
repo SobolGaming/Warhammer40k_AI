@@ -178,6 +178,20 @@ class Army:
             self.cabal_of_sorcerers = CabalOfSorcerersManager(self)
         except Exception:
             self.cabal_of_sorcerers = None
+
+        # Tyranids: Synapse (safe to attach, no-op if not applicable).
+        try:
+            from .synapse import SynapseManager
+            self.synapse = SynapseManager(self)
+        except Exception:
+            self.synapse = None
+
+        # Tyranids: Shadow in the Warp (safe to attach, no-op if not applicable).
+        try:
+            from .shadow_in_the_warp import ShadowInTheWarpManager
+            self.shadow_in_the_warp = ShadowInTheWarpManager(self)
+        except Exception:
+            self.shadow_in_the_warp = None
     
     def add_unit(self, unit: Unit) -> bool:
         if not self.faction_keyword:

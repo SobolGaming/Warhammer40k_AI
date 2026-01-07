@@ -6514,6 +6514,30 @@ class Unit:
         except Exception:
             shadow_ctx = None
             shadow_mod = 0
+        synapse_3d6 = False
+        try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        try:
+            synapse_mgr = getattr(army, "synapse", None) if army is not None else None
+        except Exception:
+            synapse_mgr = None
+        try:
+            if synapse_mgr is not None and synapse_mgr.unit_in_synapse_range(self, game=game):
+                synapse_3d6 = True
+        except Exception:
+            synapse_3d6 = False
+        extra_mod = 0
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and "battle_shock_test_modifier" in sr:
+                extra_mod = int(sr.get("battle_shock_test_modifier", 0) or 0)
+                sr.pop("battle_shock_test_modifier", None)
+                sr.pop("battle_shock_test_modifier_reasons", None)
+                self.special_rules = sr
+        except Exception:
+            extra_mod = 0
         # Core Stratagem: INSANE BRAVERY can make this unit automatically pass this test.
         # It is consumed on use (one-shot for the next Battle-shock test).
         auto_passed = False
@@ -6530,23 +6554,31 @@ class Unit:
             auto_passed = False
 
         if not auto_passed:
-            if shadow_mod == 0:
+            total_mod = int(shadow_mod) + int(extra_mod)
+            if not synapse_3d6 and total_mod == 0:
                 try:
                     passed = bool(self.pass_leadership_check())
                 except Exception:
                     passed = False
             else:
-                roll_result = get_roll("2D6")
+                dice_expr = "3D6" if synapse_3d6 else "2D6"
+                roll_result = get_roll(dice_expr)
                 leadership_value = self.leadership
                 try:
-                    mod_roll = int(roll_result) + int(shadow_mod)
+                    mod_roll = int(roll_result) + int(total_mod)
                 except Exception:
                     mod_roll = roll_result
                 passed = mod_roll <= leadership_value
-                print(
-                    f"{self.name} Leadership test: 2D6 rolled {roll_result} (mod {shadow_mod:+}) "
-                    f"-> {mod_roll} vs Ld {leadership_value} - {'PASSED' if passed else 'FAILED'}"
-                )
+                if total_mod:
+                    print(
+                        f"{self.name} Leadership test: {dice_expr} rolled {roll_result} (mod {total_mod:+}) "
+                        f"-> {mod_roll} vs Ld {leadership_value} - {'PASSED' if passed else 'FAILED'}"
+                    )
+                else:
+                    print(
+                        f"{self.name} Leadership test: {dice_expr} rolled {roll_result} "
+                        f"-> {mod_roll} vs Ld {leadership_value} - {'PASSED' if passed else 'FAILED'}"
+                    )
 
         # Units that are already Battle-shocked can still be forced to take another Battle-shock test,
         # but the result does not change the unit's Battle-shocked status or duration.

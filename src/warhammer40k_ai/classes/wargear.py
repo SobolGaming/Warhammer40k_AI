@@ -1515,6 +1515,17 @@ class WargearProfile:
                     wound_result.setdefault("modifiers", []).append(f"+{s_bonus}S from Relentless Rage (melee)")
         except Exception:
             pass
+        # Tyranids: Synapse (+1 Strength in melee while within Synapse Range).
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                army = attacker.parent_unit.get_parent_army()
+                mgr = getattr(army, "synapse", None) if army is not None else None
+                if mgr is not None and mgr.unit_in_synapse_range(attacker.parent_unit):
+                    if isinstance(strength, int):
+                        strength = strength + 1
+                        wound_result.setdefault("modifiers", []).append("+1S from Synapse (melee)")
+        except Exception:
+            pass
         # Provide reroll callback for wound
         def _reroll_wound():
             new_roll = get_roll("D6")

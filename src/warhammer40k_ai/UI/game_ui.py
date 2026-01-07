@@ -70,6 +70,8 @@ SUPPORTED_ARMY_RULES = {
     "CABAL OF SORCERERS",
     "PACT OF SORCERY",
     "REANIMATION PROTOCOLS",
+    "SYNAPSE",
+    "SHADOW IN THE WARP",
 }
 SUPPORTED_DETACHMENT_RULES = {
     "RELENTLESS RAGE",
@@ -740,6 +742,7 @@ class GameView:
         self._oath_of_moment_flow_active = False
         self._dark_pacts_flow_active = False
         self._cabal_flow_active = False
+        self._shadow_in_the_warp_flow_active = False
 
         # Initialize shared UI state
         self._ui_hitboxes = {}
@@ -759,6 +762,8 @@ class GameView:
         self._pending_harbingers_queue = []
         # Chaos Space Marines: Dark Pacts selection queue
         self._pending_dark_pacts_queue = []
+        # Tyranids: Shadow in the Warp prompt queue
+        self._pending_shadow_in_the_warp_queue = []
         # SLAANESH/DAEMONS (Shalaxi): Monarch of the Hunt quarry selection queue
         self._pending_quarry_queue = []
         try:
@@ -768,6 +773,8 @@ class GameView:
                 self.game.event_system.subscribe("phase_start", self._on_phase_start_optional_ability_prompts)
                 # Oath of Moment target selection (start of Command phase)
                 self.game.event_system.subscribe("oath_of_moment_prompt", self._on_oath_of_moment_prompt)
+                # Tyranids: Shadow in the Warp prompt (either Command phase)
+                self.game.event_system.subscribe("shadow_in_the_warp_prompt", self._on_shadow_in_the_warp_prompt)
                 # Dark Pacts prompt when a unit is selected to shoot or fight
                 self.game.event_system.subscribe("dark_pacts_prompt", self._on_dark_pacts_prompt)
                 # Quarry re-pick when quarry is destroyed
@@ -1172,6 +1179,88 @@ class GameView:
             self.dialog_manager.open(dlg, modal=True)
         except Exception:
             self._oath_of_moment_flow_active = False
+
+    def _on_shadow_in_the_warp_prompt(self, player=None, game=None, **_kwargs):
+        if player is None:
+            return
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return
+        except Exception:
+            return
+
+        game = game or self.game
+        if game is None:
+            return
+        try:
+            army = player.get_army()
+        except Exception:
+            army = None
+        if army is None:
+            return
+        mgr = getattr(army, "shadow_in_the_warp", None)
+        if mgr is None:
+            return
+        try:
+            if not mgr.can_use_now(game=game, player=player):
+                return
+        except Exception:
+            return
+
+        if self._shadow_in_the_warp_flow_active:
+            self._pending_shadow_in_the_warp_queue.append(player)
+            return
+        self._pending_shadow_in_the_warp_queue.append(player)
+        self._open_next_shadow_in_the_warp_prompt(game)
+
+    def _open_next_shadow_in_the_warp_prompt(self, game):
+        q = list(getattr(self, "_pending_shadow_in_the_warp_queue", []) or [])
+        if not q:
+            self._pending_shadow_in_the_warp_queue = []
+            self._shadow_in_the_warp_flow_active = False
+            return
+        player = q.pop(0)
+        self._pending_shadow_in_the_warp_queue = q
+
+        try:
+            army = player.get_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "shadow_in_the_warp", None) if army is not None else None
+        if mgr is None:
+            self._open_next_shadow_in_the_warp_prompt(game)
+            return
+        try:
+            if not mgr.can_use_now(game=game, player=player):
+                self._open_next_shadow_in_the_warp_prompt(game)
+                return
+        except Exception:
+            self._open_next_shadow_in_the_warp_prompt(game)
+            return
+
+        title = "Shadow in the Warp"
+        msg = (
+            "Use Shadow in the Warp now?\n\n"
+            "Once per battle, in either Command phase, each enemy unit on the battlefield "
+            "must take a Battle-shock test. If an enemy unit is within 6\" of your SYNAPSE units, "
+            "subtract 1 from that test."
+        )
+
+        def _done(chosen: bool):
+            try:
+                if chosen:
+                    mgr.activate(game=game, player=player)
+            finally:
+                self._shadow_in_the_warp_flow_active = False
+                self._open_next_shadow_in_the_warp_prompt(game)
+
+        self._shadow_in_the_warp_flow_active = True
+        try:
+            self.yes_no_dialog.show(title, msg, _done, yes_label="Use", no_label="Skip")
+            self.dialog_manager.open(self.yes_no_dialog, modal=True)
+        except Exception:
+            self._shadow_in_the_warp_flow_active = False
+            self._open_next_shadow_in_the_warp_prompt(game)
 
     def _army_has_blessings_of_khorne(self, army) -> bool:
         if army is None:
