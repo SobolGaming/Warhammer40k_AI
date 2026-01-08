@@ -200,10 +200,15 @@ class Game:
         self.event_system.subscribe("phase_end", self._on_phase_end_for_the_greater_good)
         # Optional ability timing windows (prompt/decision hooks)
         self.event_system.subscribe("phase_start", self._on_phase_start_optional_abilities)
+        # Astra Militarum: Voice of Command issue windows
+        self.event_system.subscribe("phase_start", self._on_phase_start_voice_of_command)
+        self.event_system.subscribe("phase_end", self._on_phase_end_voice_of_command)
         # Belakor: Pall of Despair healing on failed Battle-shock tests
         self.event_system.subscribe("battle_shock_test_resolved", self._on_battle_shock_test_resolved_shadow_form)
         # Chaos Knights: Harbingers of Dread (Delirium) on failed Battle-shock tests
         self.event_system.subscribe("battle_shock_test_resolved", self._on_battle_shock_test_resolved_harbingers)
+        # Astra Militarum: Voice of Command clears on battle-shock
+        self.event_system.subscribe("battle_shock_test_resolved", self._on_battle_shock_test_resolved_voice_of_command)
         # Drukhari: Power from Pain token gain hooks
         self.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_power_from_pain)
         self.event_system.subscribe("battle_shock_test_resolved", self._on_battle_shock_test_resolved_power_from_pain)
@@ -591,6 +596,32 @@ class Game:
                         return
                 except Exception:
                     continue
+
+    def _on_battle_shock_test_resolved_voice_of_command(self, unit=None, passed: bool = True, **_kwargs) -> None:
+        if unit is None or passed:
+            return
+        try:
+            army = unit.get_parent_army()
+        except Exception:
+            army = None
+        if army is None:
+            return
+        mgr = getattr(army, "voice_of_command", None)
+        if mgr is None:
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        try:
+            mgr.clear_order(root)
+        except Exception:
+            pass
+        try:
+            for leader in list(getattr(root, "attached_leaders", []) or []):
+                mgr.clear_order(leader)
+        except Exception:
+            pass
 
     def _on_battle_shock_test_resolved_power_from_pain(self, unit=None, passed: bool = True, **_kwargs) -> None:
         if unit is None or passed:
@@ -1298,6 +1329,110 @@ class Game:
                 self.event_system.publish("for_the_greater_good_prompt", player=player, game=self)
         except Exception:
             pass
+
+    def _on_phase_start_voice_of_command(self, player=None, phase=None, **_kwargs) -> None:
+        """Astra Militarum: issue Orders at the start of the Command phase."""
+        try:
+            pname = str(getattr(phase, "name", "") or "").strip().upper()
+        except Exception:
+            pname = ""
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None:
+            return
+        try:
+            army = player.get_army()
+        except Exception:
+            army = None
+        if army is None:
+            return
+        mgr = getattr(army, "voice_of_command", None)
+        if mgr is None or not getattr(mgr, "_army_has_voice", lambda: False)():
+            return
+
+        try:
+            mgr.clear_orders_for_player(player)
+        except Exception:
+            pass
+
+        try:
+            officers = mgr.get_eligible_officers(game=self, player=player, phase_name=pname, trigger="command_phase_start")
+        except Exception:
+            officers = []
+        if not officers:
+            return
+        es = getattr(self, "event_system", None)
+        try:
+            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+        except Exception:
+            is_human = False
+        if is_human and es is not None:
+            try:
+                subs = getattr(es, "subscribers", {})
+                if isinstance(subs, dict) and subs.get("voice_of_command_prompt"):
+                    es.publish(
+                        "voice_of_command_prompt",
+                        player=player,
+                        game=self,
+                        phase_name=pname,
+                        trigger="command_phase_start",
+                    )
+                    return
+            except Exception:
+                pass
+        try:
+            mgr.auto_issue_orders(self, player, phase_name=pname, trigger="command_phase_start")
+        except Exception:
+            return
+
+    def _on_phase_end_voice_of_command(self, player=None, phase=None, **_kwargs) -> None:
+        """Astra Militarum: issue Orders at end of phase if an Officer disembarked or was set up."""
+        if player is None:
+            return
+        try:
+            pname = str(getattr(phase, "name", "") or "").strip().upper()
+        except Exception:
+            pname = ""
+        if not pname:
+            return
+        try:
+            army = player.get_army()
+        except Exception:
+            army = None
+        if army is None:
+            return
+        mgr = getattr(army, "voice_of_command", None)
+        if mgr is None or not getattr(mgr, "_army_has_voice", lambda: False)():
+            return
+        try:
+            officers = mgr.get_eligible_officers(game=self, player=player, phase_name=pname, trigger="phase_end")
+        except Exception:
+            officers = []
+        if not officers:
+            return
+        es = getattr(self, "event_system", None)
+        try:
+            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+        except Exception:
+            is_human = False
+        if is_human and es is not None:
+            try:
+                subs = getattr(es, "subscribers", {})
+                if isinstance(subs, dict) and subs.get("voice_of_command_prompt"):
+                    es.publish(
+                        "voice_of_command_prompt",
+                        player=player,
+                        game=self,
+                        phase_name=pname,
+                        trigger="phase_end",
+                    )
+                    return
+            except Exception:
+                pass
+        try:
+            mgr.auto_issue_orders(self, player, phase_name=pname, trigger="phase_end")
+        except Exception:
+            return
 
     def _on_phase_end_for_the_greater_good(self, player=None, phase=None, **_kwargs) -> None:
         """Clear For the Greater Good state at the end of the Shooting phase."""

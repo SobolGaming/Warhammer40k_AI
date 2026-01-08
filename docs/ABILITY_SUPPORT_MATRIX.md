@@ -112,7 +112,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Voice of Command | `000008377` | 16 | 16 | **Not implemented** |  |
+| Voice of Command | `000008377` | 16 | 16 | **Supported** | Voice of Command |
 
 ### Chaos Daemons (`CD`) - `https://wahapedia.ru/wh40k10ed/factions/chaos-daemons`
 

@@ -82,6 +82,7 @@ SUPPORTED_ARMY_RULES = {
     "CULT AMBUSH",
     "ACTS OF FAITH",
     "DOCTRINA IMPERATIVES",
+    "VOICE OF COMMAND",
 }
 SUPPORTED_DETACHMENT_RULES = {
     "MARTIAL GRACE",
@@ -501,6 +502,9 @@ class GameView:
         self.shadow_form_dialog = None
         self.harbingers_of_dread_dialog = None
         self.doctrina_imperatives_dialog = None
+        self.voice_of_command_dialog = None
+        self.voice_of_command_officer_dialog = None
+        self.voice_of_command_target_dialog = None
         self.dark_pacts_dialog = None
         self.martial_katah_dialog = None
         self.cabal_ritual_dialog = None
@@ -763,6 +767,7 @@ class GameView:
         self._dark_pacts_flow_active = False
         self._martial_katah_flow_active = False
         self._cabal_flow_active = False
+        self._voice_of_command_flow_active = False
         self._shadow_in_the_warp_flow_active = False
         self._pain_flow_active = False
         self._waaagh_flow_active = False
@@ -796,6 +801,8 @@ class GameView:
         self._pending_doctrina_queue = []
         # Chaos Space Marines: Dark Pacts selection queue
         self._pending_dark_pacts_queue = []
+        # Astra Militarum: Voice of Command prompt queue
+        self._pending_voice_of_command_queue = []
         # Adeptus Custodes: Martial Ka'tah selection queue
         self._pending_martial_katah_queue = []
         # Tyranids: Shadow in the Warp prompt queue
@@ -822,6 +829,8 @@ class GameView:
                 self.game.event_system.subscribe("for_the_greater_good_prompt", self._on_for_the_greater_good_prompt)
                 # Dark Pacts prompt when a unit is selected to shoot or fight
                 self.game.event_system.subscribe("dark_pacts_prompt", self._on_dark_pacts_prompt)
+                # Astra Militarum: Voice of Command prompt at Command phase start/end
+                self.game.event_system.subscribe("voice_of_command_prompt", self._on_voice_of_command_prompt)
                 # Adeptus Custodes: Martial Ka'tah stance selection
                 self.game.event_system.subscribe("martial_katah_prompt", self._on_martial_katah_prompt)
                 # Drukhari: Power from Pain prompt when a unit can be empowered
@@ -1177,6 +1186,279 @@ class GameView:
         except Exception:
             self._dark_pacts_flow_active = False
             self._open_next_dark_pacts_prompt(game)
+
+    # ---------------- Voice of Command prompts ----------------
+
+    def _on_voice_of_command_prompt(self, player=None, phase_name=None, trigger=None, game=None, **_kwargs):
+        if player is None:
+            return
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return
+        except Exception:
+            return
+
+        if self._voice_of_command_flow_active:
+            self._pending_voice_of_command_queue.append((player, phase_name, trigger))
+            return
+        self._pending_voice_of_command_queue.append((player, phase_name, trigger))
+        self._open_next_voice_of_command_prompt(game or self.game)
+
+    def _open_next_voice_of_command_prompt(self, game):
+        q = list(getattr(self, "_pending_voice_of_command_queue", []) or [])
+        if not q:
+            self._pending_voice_of_command_queue = []
+            self._voice_of_command_flow_active = False
+            return
+        player, phase_name, trigger = q.pop(0)
+        self._pending_voice_of_command_queue = q
+
+        if player is None:
+            self._open_next_voice_of_command_prompt(game)
+            return
+        try:
+            army = player.get_army()
+        except Exception:
+            army = None
+        if army is None:
+            self._open_next_voice_of_command_prompt(game)
+            return
+        mgr = getattr(army, "voice_of_command", None)
+        if mgr is None or not getattr(mgr, "_army_has_voice", lambda: False)():
+            self._open_next_voice_of_command_prompt(game)
+            return
+
+        self._voice_of_command_flow_active = True
+        self._open_voice_of_command_officer_dialog(player, game, phase_name, trigger)
+
+    def _end_voice_of_command_flow(self, game):
+        self._voice_of_command_flow_active = False
+        self._open_next_voice_of_command_prompt(game)
+
+    def _open_voice_of_command_officer_dialog(self, player, game, phase_name, trigger):
+        try:
+            army = player.get_army()
+        except Exception:
+            army = None
+        if army is None:
+            self._end_voice_of_command_flow(game)
+            return
+        mgr = getattr(army, "voice_of_command", None)
+        if mgr is None or not getattr(mgr, "_army_has_voice", lambda: False)():
+            self._end_voice_of_command_flow(game)
+            return
+
+        try:
+            officers = list(mgr.get_eligible_officers(game=game, player=player, phase_name=phase_name, trigger=trigger) or [])
+        except Exception:
+            officers = []
+        if not officers:
+            self._end_voice_of_command_flow(game)
+            return
+
+        battle_round = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        choices = []
+        used = set()
+        for officer in officers:
+            try:
+                remaining = int(mgr.orders_remaining(officer, battle_round))
+            except Exception:
+                remaining = 0
+            label = f"{getattr(officer, 'name', 'Officer')} ({remaining} order{'s' if remaining != 1 else ''} remaining)"
+            base = label
+            idx = 2
+            while label in used:
+                label = f"{base} [{idx}]"
+                idx += 1
+            used.add(label)
+            choices.append(SimpleNamespace(name=label, unit=officer, remaining=remaining))
+
+        if self.voice_of_command_officer_dialog is None:
+            try:
+                from .dialogs import QuarrySelectionDialog
+                sw, sh = self.screen.get_width(), self.screen.get_height()
+                self.voice_of_command_officer_dialog = QuarrySelectionDialog(sw, sh)
+            except Exception:
+                self.voice_of_command_officer_dialog = None
+        if self.voice_of_command_officer_dialog is None:
+            self._end_voice_of_command_flow(game)
+            return
+
+        def _on_confirm(choice):
+            officer = getattr(choice, "unit", None) if choice is not None else None
+            if officer is None:
+                self._end_voice_of_command_flow(game)
+                return
+            self._open_voice_of_command_order_dialog(player, game, phase_name, trigger, officer)
+
+        def _on_cancel():
+            self._end_voice_of_command_flow(game)
+
+        subtitle = "Choose an officer to issue orders."
+        self.voice_of_command_officer_dialog.show(
+            title="Voice of Command",
+            header="Select an officer.",
+            subtitle=subtitle,
+            choices=choices,
+            on_confirm=_on_confirm,
+            on_cancel=_on_cancel,
+        )
+        try:
+            self.dialog_manager.open(self.voice_of_command_officer_dialog, modal=True)
+        except Exception:
+            self._end_voice_of_command_flow(game)
+
+    def _open_voice_of_command_order_dialog(self, player, game, phase_name, trigger, officer):
+        if officer is None:
+            self._open_voice_of_command_officer_dialog(player, game, phase_name, trigger)
+            return
+        try:
+            army = player.get_army()
+        except Exception:
+            army = None
+        if army is None:
+            self._end_voice_of_command_flow(game)
+            return
+        mgr = getattr(army, "voice_of_command", None)
+        if mgr is None or not getattr(mgr, "_army_has_voice", lambda: False)():
+            self._end_voice_of_command_flow(game)
+            return
+
+        battle_round = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        try:
+            remaining = int(mgr.orders_remaining(officer, battle_round))
+        except Exception:
+            remaining = 0
+        if remaining <= 0:
+            self._open_voice_of_command_officer_dialog(player, game, phase_name, trigger)
+            return
+
+        if self.voice_of_command_dialog is None:
+            try:
+                from .dialogs import VoiceOfCommandDialog
+                sw, sh = self.screen.get_width(), self.screen.get_height()
+                self.voice_of_command_dialog = VoiceOfCommandDialog(sw, sh)
+            except Exception:
+                self.voice_of_command_dialog = None
+        if self.voice_of_command_dialog is None:
+            self._end_voice_of_command_flow(game)
+            return
+
+        try:
+            from ..classes.voice_of_command import ORDER_LIST
+        except Exception:
+            ORDER_LIST = []
+        skip_choice = SimpleNamespace(
+            key="SKIP",
+            name="Skip orders",
+            summary="Do not issue an order with this officer right now.",
+        )
+        options = [skip_choice] + list(ORDER_LIST or [])
+
+        def _on_confirm(choice):
+            key = str(getattr(choice, "key", "") or "").strip().upper()
+            if key == "SKIP":
+                self._open_voice_of_command_officer_dialog(player, game, phase_name, trigger)
+                return
+            self._open_voice_of_command_target_dialog(player, game, phase_name, trigger, officer, choice)
+
+        def _on_cancel():
+            self._open_voice_of_command_officer_dialog(player, game, phase_name, trigger)
+
+        self.voice_of_command_dialog.show(options=options, on_confirm=_on_confirm, on_cancel=_on_cancel)
+        try:
+            self.dialog_manager.open(self.voice_of_command_dialog, modal=True)
+        except Exception:
+            self._end_voice_of_command_flow(game)
+
+    def _open_voice_of_command_target_dialog(self, player, game, phase_name, trigger, officer, order):
+        if officer is None or order is None:
+            self._open_voice_of_command_officer_dialog(player, game, phase_name, trigger)
+            return
+        try:
+            army = player.get_army()
+        except Exception:
+            army = None
+        if army is None:
+            self._end_voice_of_command_flow(game)
+            return
+        mgr = getattr(army, "voice_of_command", None)
+        if mgr is None or not getattr(mgr, "_army_has_voice", lambda: False)():
+            self._end_voice_of_command_flow(game)
+            return
+
+        try:
+            targets = list(mgr.get_eligible_targets(officer, game=game, order_key=getattr(order, "key", "")) or [])
+        except Exception:
+            targets = []
+        if not targets:
+            self._open_voice_of_command_order_dialog(player, game, phase_name, trigger, officer)
+            return
+
+        if self.voice_of_command_target_dialog is None:
+            try:
+                from .dialogs import QuarrySelectionDialog
+                sw, sh = self.screen.get_width(), self.screen.get_height()
+                self.voice_of_command_target_dialog = QuarrySelectionDialog(sw, sh)
+            except Exception:
+                self.voice_of_command_target_dialog = None
+        if self.voice_of_command_target_dialog is None:
+            self._end_voice_of_command_flow(game)
+            return
+
+        order_name = getattr(order, "name", "Order")
+        header = f"{getattr(officer, 'name', 'Officer')} issues {order_name}."
+        subtitle = "Choose an eligible friendly unit within 6\"."
+
+        def _on_target(target_unit):
+            if target_unit is None:
+                self._open_voice_of_command_order_dialog(player, game, phase_name, trigger, officer)
+                return
+            ok = False
+            try:
+                ok = bool(mgr.issue_order(game, officer, target_unit, getattr(order, "key", ""), phase_name=phase_name))
+            except Exception:
+                ok = False
+            if ok:
+                try:
+                    from ..utility.event_bus import append_action
+                    append_action(
+                        player.name,
+                        f"Voice of Command: {order_name} from {getattr(officer, 'name', 'Officer')} to {getattr(target_unit, 'name', 'Unit')}",
+                    )
+                except Exception:
+                    pass
+                try:
+                    if self.rule_detail_panel and self.rule_detail_panel.visible and isinstance(self._rule_panel_state, dict):
+                        if self._rule_panel_state.get("player") is player and self._rule_panel_state.get("rule_type") == "army":
+                            self._toggle_rule_panel(player, "army", force_refresh=True)
+                except Exception:
+                    pass
+            battle_round = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+            try:
+                remaining = int(mgr.orders_remaining(officer, battle_round))
+            except Exception:
+                remaining = 0
+            if remaining > 0:
+                self._open_voice_of_command_order_dialog(player, game, phase_name, trigger, officer)
+            else:
+                self._open_voice_of_command_officer_dialog(player, game, phase_name, trigger)
+
+        def _on_cancel():
+            self._open_voice_of_command_order_dialog(player, game, phase_name, trigger, officer)
+
+        self.voice_of_command_target_dialog.show(
+            title=f"{order_name} Target",
+            header=header,
+            subtitle=subtitle,
+            choices=targets,
+            on_confirm=_on_target,
+            on_cancel=_on_cancel,
+        )
+        try:
+            self.dialog_manager.open(self.voice_of_command_target_dialog, modal=True)
+        except Exception:
+            self._end_voice_of_command_flow(game)
 
     # ---------------- Martial Ka'tah prompts ----------------
 

@@ -31,6 +31,7 @@ from .nurgles_gift_plague_dialog import NurglesGiftPlagueDialog
 from .shadow_form_dialog import ShadowFormDialog
 from .harbingers_of_dread_dialog import HarbingersOfDreadDialog
 from .doctrina_imperatives_dialog import DoctrinaImperativesDialog
+from .voice_of_command_dialog import VoiceOfCommandDialog
 from .dark_pacts_dialog import DarkPactsDialog
 from .martial_katah_dialog import MartialKatahDialog
 from .cabal_of_sorcerers_dialog import CabalOfSorcerersDialog
@@ -69,6 +70,7 @@ __all__ = [
     'ShadowFormDialog',
     'HarbingersOfDreadDialog',
     'DoctrinaImperativesDialog',
+    'VoiceOfCommandDialog',
     'DarkPactsDialog',
     'MartialKatahDialog',
     'CabalOfSorcerersDialog',

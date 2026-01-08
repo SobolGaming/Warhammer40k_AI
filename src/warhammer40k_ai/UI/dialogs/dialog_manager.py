@@ -61,6 +61,7 @@ class DialogManager:
         discovered.extend([
             _get(gv, "yes_no_dialog"),
             _get(gv, "blessings_of_khorne_dialog"),
+            _get(gv, "voice_of_command_dialog"),
             _get(gv, "secondary_discard_dialog"),
             _get(gv, "overwatch_shooter_dialog"),
             _get(gv, "battle_focus_dialog"),
@@ -210,5 +211,4 @@ class DialogManager:
                     d.draw(screen)
             except Exception:
                 continue
-
 

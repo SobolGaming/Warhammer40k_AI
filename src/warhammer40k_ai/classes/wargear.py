@@ -629,6 +629,15 @@ class WargearProfile:
                 attack_result.attacks_special_modifiers.append("Rapid Fire +1")
                 atk_mods.append(Modifier(ModifierOp.ADD, 1, source="weapon:rapid_fire"))
 
+        try:
+            sr = getattr(attacker.parent_unit, "special_rules", None)
+            order_key = str(sr.get("voice_of_command_order_key", "") or "") if isinstance(sr, dict) else ""
+            if order_key == "FIRST_RANK_FIRE" and self.is_rapid_fire():
+                attack_result.attacks_special_modifiers.append("First Rank, Fire! Second Rank, Fire! +1A")
+                atk_mods.append(Modifier(ModifierOp.ADD, 1, source="voice_of_command:first_rank_fire"))
+        except Exception:
+            pass
+
         if self.is_blast():
             target_model_count = len(target.models)
             num_attacks_modifier = int(target_model_count / 5)
@@ -998,6 +1007,21 @@ class WargearProfile:
                     elif imperative.key == "CONQUEROR" and is_melee:
                         base_skill = max(2, int(base_skill) - 1)
                         hit_result['special_effects'].append("Conqueror Imperative: +1 WS")
+        except Exception:
+            pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            sr = getattr(unit, "special_rules", None)
+            order_key = str(sr.get("voice_of_command_order_key", "") or "") if isinstance(sr, dict) else ""
+            if order_key:
+                is_ranged = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_ranged())
+                is_melee = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_melee())
+                if order_key == "TAKE_AIM" and is_ranged:
+                    base_skill = max(2, int(base_skill) - 1)
+                    hit_result['special_effects'].append("Take Aim!: +1 BS")
+                elif order_key == "FIX_BAYONETS" and is_melee:
+                    base_skill = max(2, int(base_skill) - 1)
+                    hit_result['special_effects'].append("Fix Bayonets!: +1 WS")
         except Exception:
             pass
         hit_result['base_skill'] = base_skill

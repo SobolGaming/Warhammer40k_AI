@@ -354,6 +354,13 @@ class Army:
             self.doctrina_imperatives = DoctrinaImperativesManager(self)
         except Exception:
             self.doctrina_imperatives = None
+
+        # Astra Militarum: Voice of Command (safe to attach, no-op if not applicable).
+        try:
+            from .voice_of_command import VoiceOfCommandManager
+            self.voice_of_command = VoiceOfCommandManager(self)
+        except Exception:
+            self.voice_of_command = None
     
     def add_unit(self, unit: Unit) -> bool:
         if not self.faction_keyword:
@@ -1483,6 +1490,18 @@ class Army:
             except Exception:
                 game = None
             mgr.on_battle_round_start(int(battle_round), game=game)
+        mgr = getattr(self, "voice_of_command", None)
+        if mgr is not None:
+            try:
+                game = getattr(getattr(self, "player", None), "game", None)
+            except Exception:
+                game = None
+            # Orders per officer are tracked by battle round.
+            try:
+                for unit in list(getattr(self, "units", []) or []):
+                    mgr._order_issued_state(unit, int(battle_round))
+            except Exception:
+                pass
 
     def schedule_reborn_in_blood(self, *, game) -> bool:
         """

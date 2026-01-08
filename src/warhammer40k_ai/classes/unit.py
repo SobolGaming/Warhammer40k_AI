@@ -365,6 +365,21 @@ class Unit:
         final = apply_characteristic_caps(ckey, interim, base_raw=base_raw)
         if scabrous_oc_floor and int(base_val) > 0 and final < 1:
             final = 1
+        if ckey == "save":
+            try:
+                sr = getattr(self, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("voice_of_command_take_cover_cap"):
+                    try:
+                        base_save = int(base_val)
+                    except Exception:
+                        base_save = None
+                    if base_save is not None and base_save <= 3:
+                        # Do not improve saves already 3+ or better.
+                        final = max(int(final), base_save)
+                    else:
+                        final = max(int(final), 3)
+            except Exception:
+                pass
         return int(final)
 
     def _apply_damaged_profile_effects(self, profile_text: str) -> None:
@@ -7580,6 +7595,22 @@ class Unit:
                 self.round_state.disembarked_from_destroyed_transport = True
                 self.round_state.moved_this_round = True
                 self.round_state.remained_stationary_this_round = False
+                try:
+                    army = self.get_parent_army()
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    sr = getattr(self, "special_rules", None)
+                    if not isinstance(sr, dict):
+                        sr = {}
+                    if pname:
+                        sr["voice_of_command_disembark_phase"] = pname
+                        try:
+                            sr["voice_of_command_disembark_round"] = int(getattr(game, "turn", current_turn) or current_turn)
+                        except Exception:
+                            sr["voice_of_command_disembark_round"] = int(current_turn or 0)
+                    self.special_rules = sr
+                except Exception:
+                    pass
 
                 # Battle-shock until next Command phase
                 try:
@@ -7629,6 +7660,22 @@ class Unit:
             pass
 
         self.round_state.disembarked_this_round = True
+        try:
+            army = self.get_parent_army()
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            sr = getattr(self, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            if pname:
+                sr["voice_of_command_disembark_phase"] = pname
+                try:
+                    sr["voice_of_command_disembark_round"] = int(getattr(game, "turn", current_turn) or current_turn)
+                except Exception:
+                    sr["voice_of_command_disembark_round"] = int(current_turn or 0)
+            self.special_rules = sr
+        except Exception:
+            pass
 
         # Apply moved/charge restrictions depending on cause
         if destroyed_transport:
@@ -9714,6 +9761,23 @@ class Unit:
         self.reserve_status = 'deployed'
         self.reserve_turn_deployed = turn
         self.arrived_from_reserves_this_turn = True
+
+        try:
+            army = self.get_parent_army()
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            sr = getattr(self, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            if pname:
+                sr["voice_of_command_set_up_phase"] = pname
+                try:
+                    sr["voice_of_command_set_up_round"] = int(getattr(game, "turn", turn) or turn)
+                except Exception:
+                    sr["voice_of_command_set_up_round"] = int(turn or 0)
+            self.special_rules = sr
+        except Exception:
+            pass
 
         # Reserves arrivals count as having made a Normal move this turn (reinforced).
         try:
