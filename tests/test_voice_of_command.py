@@ -341,7 +341,16 @@ class TestVoiceOfCommand(unittest.TestCase):
             abilities=[],
             army=_ArmyStub(faction_id="SM"),
         )
-        target.models = [SimpleNamespace(is_alive=True, z=0.0)]
+        target.models = [
+            SimpleNamespace(
+                name="Target Model",
+                is_alive=True,
+                z=0.0,
+                save=4,
+                inv_save=(None, ""),
+                parent_unit=target,
+            )
+        ]
         army.units = [officer, shooter]
         officer.set_parent_army(army)
         shooter.set_parent_army(army)

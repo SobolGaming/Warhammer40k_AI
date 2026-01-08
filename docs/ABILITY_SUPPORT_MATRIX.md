@@ -173,7 +173,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Gate of Infinity | `000010345` | 20 | 20 | **Not implemented** |  |
+| Gate of Infinity | `000010345` | 20 | 20 | **Supported** | Gate of Infinity |
 
 ### Imperial Agents (`AoI`) - `https://wahapedia.ru/wh40k10ed/factions/imperial-agents`
 

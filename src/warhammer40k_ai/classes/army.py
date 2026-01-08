@@ -361,6 +361,13 @@ class Army:
             self.voice_of_command = VoiceOfCommandManager(self)
         except Exception:
             self.voice_of_command = None
+
+        # Grey Knights: Gate of Infinity (safe to attach, no-op if not applicable).
+        try:
+            from .gate_of_infinity import GateOfInfinityManager
+            self.gate_of_infinity = GateOfInfinityManager(self)
+        except Exception:
+            self.gate_of_infinity = None
     
     def add_unit(self, unit: Unit) -> bool:
         if not self.faction_keyword:

@@ -83,6 +83,7 @@ SUPPORTED_ARMY_RULES = {
     "ACTS OF FAITH",
     "DOCTRINA IMPERATIVES",
     "VOICE OF COMMAND",
+    "GATE OF INFINITY",
 }
 SUPPORTED_DETACHMENT_RULES = {
     "MARTIAL GRACE",
@@ -505,6 +506,7 @@ class GameView:
         self.voice_of_command_dialog = None
         self.voice_of_command_officer_dialog = None
         self.voice_of_command_target_dialog = None
+        self.gate_of_infinity_dialog = None
         self.dark_pacts_dialog = None
         self.martial_katah_dialog = None
         self.cabal_ritual_dialog = None
@@ -768,6 +770,7 @@ class GameView:
         self._martial_katah_flow_active = False
         self._cabal_flow_active = False
         self._voice_of_command_flow_active = False
+        self._gate_of_infinity_flow_active = False
         self._shadow_in_the_warp_flow_active = False
         self._pain_flow_active = False
         self._waaagh_flow_active = False
@@ -803,6 +806,8 @@ class GameView:
         self._pending_dark_pacts_queue = []
         # Astra Militarum: Voice of Command prompt queue
         self._pending_voice_of_command_queue = []
+        # Grey Knights: Gate of Infinity prompt queue
+        self._pending_gate_of_infinity_queue = []
         # Adeptus Custodes: Martial Ka'tah selection queue
         self._pending_martial_katah_queue = []
         # Tyranids: Shadow in the Warp prompt queue
@@ -831,6 +836,8 @@ class GameView:
                 self.game.event_system.subscribe("dark_pacts_prompt", self._on_dark_pacts_prompt)
                 # Astra Militarum: Voice of Command prompt at Command phase start/end
                 self.game.event_system.subscribe("voice_of_command_prompt", self._on_voice_of_command_prompt)
+                # Grey Knights: Gate of Infinity prompt at end of opponent's Fight phase
+                self.game.event_system.subscribe("gate_of_infinity_prompt", self._on_gate_of_infinity_prompt)
                 # Adeptus Custodes: Martial Ka'tah stance selection
                 self.game.event_system.subscribe("martial_katah_prompt", self._on_martial_katah_prompt)
                 # Drukhari: Power from Pain prompt when a unit can be empowered
@@ -1459,6 +1466,153 @@ class GameView:
             self.dialog_manager.open(self.voice_of_command_target_dialog, modal=True)
         except Exception:
             self._end_voice_of_command_flow(game)
+
+    # ---------------- Gate of Infinity prompts ----------------
+
+    def _on_gate_of_infinity_prompt(self, player=None, max_units=None, game=None, **_kwargs):
+        if player is None:
+            return
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return
+        except Exception:
+            return
+
+        try:
+            cap = int(max_units or 0)
+        except Exception:
+            cap = 0
+        if self._gate_of_infinity_flow_active:
+            self._pending_gate_of_infinity_queue.append((player, cap))
+            return
+        self._pending_gate_of_infinity_queue.append((player, cap))
+        self._open_next_gate_of_infinity_prompt(game or self.game)
+
+    def _finish_gate_of_infinity_flow(self, game):
+        self._gate_of_infinity_flow_active = False
+        self._open_next_gate_of_infinity_prompt(game)
+
+    def _open_next_gate_of_infinity_prompt(self, game):
+        q = list(getattr(self, "_pending_gate_of_infinity_queue", []) or [])
+        if not q:
+            self._pending_gate_of_infinity_queue = []
+            self._gate_of_infinity_flow_active = False
+            return
+        player, cap = q.pop(0)
+        self._pending_gate_of_infinity_queue = q
+
+        if player is None:
+            self._open_next_gate_of_infinity_prompt(game)
+            return
+        try:
+            army = player.get_army()
+        except Exception:
+            army = None
+        if army is None:
+            self._open_next_gate_of_infinity_prompt(game)
+            return
+        mgr = getattr(army, "gate_of_infinity", None)
+        if mgr is None or not getattr(mgr, "_army_has_gate", lambda: False)():
+            self._open_next_gate_of_infinity_prompt(game)
+            return
+        if cap <= 0:
+            try:
+                cap = int(mgr.get_max_units_for_battlefield(game))
+            except Exception:
+                cap = 0
+        if cap <= 0:
+            self._open_next_gate_of_infinity_prompt(game)
+            return
+        try:
+            eligible = list(mgr.get_eligible_units(game=game, player=player) or [])
+        except Exception:
+            eligible = []
+        if not eligible:
+            self._open_next_gate_of_infinity_prompt(game)
+            return
+
+        self._gate_of_infinity_flow_active = True
+        self._open_gate_of_infinity_dialog(player, game, eligible, cap)
+
+    def _open_gate_of_infinity_dialog(self, player, game, eligible, remaining: int):
+        if remaining <= 0 or not eligible:
+            self._finish_gate_of_infinity_flow(game)
+            return
+        try:
+            army = player.get_army()
+        except Exception:
+            army = None
+        if army is None:
+            self._finish_gate_of_infinity_flow(game)
+            return
+        mgr = getattr(army, "gate_of_infinity", None)
+        if mgr is None:
+            self._finish_gate_of_infinity_flow(game)
+            return
+
+        if self.gate_of_infinity_dialog is None:
+            try:
+                from .dialogs import QuarrySelectionDialog
+                sw, sh = self.screen.get_width(), self.screen.get_height()
+                self.gate_of_infinity_dialog = QuarrySelectionDialog(sw, sh)
+            except Exception:
+                self.gate_of_infinity_dialog = None
+        if self.gate_of_infinity_dialog is None:
+            self._finish_gate_of_infinity_flow(game)
+            return
+
+        done_choice = SimpleNamespace(name="Done", _gate_done=True)
+        options = [done_choice] + list(eligible or [])
+
+        header = f"Select up to {remaining} unit{'s' if remaining != 1 else ''} to enter Strategic Reserves."
+        subtitle = "Eligible units must be on the battlefield and not in Engagement Range."
+
+        def _on_confirm(choice):
+            if choice is None or bool(getattr(choice, "_gate_done", False)):
+                self._finish_gate_of_infinity_flow(game)
+                return
+            unit = choice
+            try:
+                unit = choice.get_attached_unit_root()
+            except Exception:
+                unit = choice
+            try:
+                mgr.send_units_to_strategic_reserves([unit], game=game)
+            except Exception:
+                pass
+            try:
+                from ..utility.event_bus import append_action
+                append_action(
+                    player.name,
+                    f"Gate of Infinity: {getattr(unit, 'name', 'Unit')} placed into Strategic Reserves",
+                )
+            except Exception:
+                pass
+            try:
+                if self.rule_detail_panel and self.rule_detail_panel.visible and isinstance(self._rule_panel_state, dict):
+                    if self._rule_panel_state.get("player") is player and self._rule_panel_state.get("rule_type") == "army":
+                        self._toggle_rule_panel(player, "army", force_refresh=True)
+            except Exception:
+                pass
+
+            new_eligible = [u for u in eligible if u is not unit]
+            self._open_gate_of_infinity_dialog(player, game, new_eligible, remaining - 1)
+
+        def _on_cancel():
+            self._finish_gate_of_infinity_flow(game)
+
+        self.gate_of_infinity_dialog.show(
+            title="Gate of Infinity",
+            header=header,
+            subtitle=subtitle,
+            choices=options,
+            on_confirm=_on_confirm,
+            on_cancel=_on_cancel,
+        )
+        try:
+            self.dialog_manager.open(self.gate_of_infinity_dialog, modal=True)
+        except Exception:
+            self._finish_gate_of_infinity_flow(game)
 
     # ---------------- Martial Ka'tah prompts ----------------
 

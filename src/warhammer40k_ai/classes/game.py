@@ -203,6 +203,8 @@ class Game:
         # Astra Militarum: Voice of Command issue windows
         self.event_system.subscribe("phase_start", self._on_phase_start_voice_of_command)
         self.event_system.subscribe("phase_end", self._on_phase_end_voice_of_command)
+        # Grey Knights: Gate of Infinity (end of opponent's Fight phase)
+        self.event_system.subscribe("phase_end", self._on_phase_end_gate_of_infinity)
         # Belakor: Pall of Despair healing on failed Battle-shock tests
         self.event_system.subscribe("battle_shock_test_resolved", self._on_battle_shock_test_resolved_shadow_form)
         # Chaos Knights: Harbingers of Dread (Delirium) on failed Battle-shock tests
@@ -1433,6 +1435,68 @@ class Game:
             mgr.auto_issue_orders(self, player, phase_name=pname, trigger="phase_end")
         except Exception:
             return
+
+    def _on_phase_end_gate_of_infinity(self, player=None, phase=None, **_kwargs) -> None:
+        """Grey Knights: Gate of Infinity at the end of the opponent's Fight phase."""
+        try:
+            pname = str(getattr(phase, "name", "") or "").strip().upper()
+        except Exception:
+            pname = ""
+        if pname != "FIGHT_PHASE":
+            return
+        if player is None:
+            return
+        try:
+            opponents = [p for p in (self.players or []) if p is not None and p is not player]
+        except Exception:
+            opponents = []
+        if not opponents:
+            return
+        es = getattr(self, "event_system", None)
+        subs = getattr(es, "subscribers", {}) if es is not None else {}
+        for opp in opponents:
+            if opp is None:
+                continue
+            try:
+                army = opp.get_army()
+            except Exception:
+                army = None
+            if army is None:
+                continue
+            mgr = getattr(army, "gate_of_infinity", None)
+            if mgr is None or not getattr(mgr, "_army_has_gate", lambda: False)():
+                continue
+            try:
+                max_units = int(mgr.get_max_units_for_battlefield(self))
+            except Exception:
+                max_units = 0
+            if max_units <= 0:
+                continue
+            try:
+                eligible = list(mgr.get_eligible_units(game=self, player=opp) or [])
+            except Exception:
+                eligible = []
+            if not eligible:
+                continue
+            try:
+                is_human = bool(getattr(getattr(opp, "type", None), "name", "") == "HUMAN")
+            except Exception:
+                is_human = False
+            if is_human and es is not None and isinstance(subs, dict) and subs.get("gate_of_infinity_prompt"):
+                try:
+                    es.publish(
+                        "gate_of_infinity_prompt",
+                        player=opp,
+                        game=self,
+                        max_units=max_units,
+                    )
+                except Exception:
+                    pass
+                continue
+            try:
+                mgr.auto_gate_units(game=self, player=opp)
+            except Exception:
+                continue
 
     def _on_phase_end_for_the_greater_good(self, player=None, phase=None, **_kwargs) -> None:
         """Clear For the Greater Good state at the end of the Shooting phase."""
