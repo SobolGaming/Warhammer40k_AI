@@ -1,0 +1,93 @@
+Wahapedia diff report
+Old: C:\Users\nostr\Documents\Projects\Warhammer40k_AI\wahapedia_data\Archive
+New: C:\Users\nostr\Documents\Projects\Warhammer40k_AI\wahapedia_data
+Options: strip_html=True, normalize_punct=True, normalize_ws=True
+
+File: Abilities.json
+Counts: old=90, new=90, added=0, removed=0, changed=0
+
+File: Datasheets.json
+Counts: old=1676, new=1676, added=0, removed=0, changed=0
+
+File: Datasheets_abilities.json
+Counts: old=6975, new=6975, added=0, removed=0, changed=1
+Changed:
+  * datasheet_id=000003828, line=5, name=INQUISITORIAL RETINUE
+      description: If your Army Faction is not AGENTS OF THE IMPERIUM , then for each unique pairing of 1 INQUISITORIAL AGENTS unit and 1 DAEMONHOST unit occuring in your army, increase the maximum number of RETINUE units permitted in your army by 1. At th... -> If your Army Faction is not AGENTS OF THE IMPERIUM , then for each unique pairing of 1 INQUISITORIAL AGENTS unit and 1 DAEMONHOST unit occuring in your army, increase the maximum number of RETINUE units permitted in your army by 1. At th...
+
+File: Datasheets_detachment_abilities.json
+Counts: old=14423, new=14423, added=0, removed=0, changed=0
+
+File: Datasheets_enhancements.json
+Counts: old=9416, new=9416, added=0, removed=0, changed=0
+
+File: Datasheets_keywords.json
+Counts: old=15583, new=15583, added=0, removed=0, changed=0
+Note: Duplicate keys detected; duplicates are disambiguated by full-row signature.
+
+File: Datasheets_leader.json
+Counts: old=1863, new=1863, added=0, removed=0, changed=0
+Note: Duplicate keys detected; duplicates are disambiguated by full-row signature.
+
+File: Datasheets_models.json
+Counts: old=1780, new=1780, added=0, removed=0, changed=0
+
+File: Datasheets_models_cost.json
+Counts: old=2091, new=2091, added=0, removed=0, changed=0
+
+File: Datasheets_options.json
+Counts: old=2758, new=2758, added=0, removed=0, changed=0
+
+File: Datasheets_stratagems.json
+Counts: old=77386, new=77386, added=0, removed=0, changed=0
+
+File: Datasheets_unit_composition.json
+Counts: old=2116, new=2116, added=0, removed=0, changed=0
+
+File: Datasheets_wargear.json
+Counts: old=9139, new=9139, added=0, removed=0, changed=5
+Note: Duplicate keys detected; duplicates are disambiguated by full-row signature.
+Changed:
+  * datasheet_id=000000073, line=3, line_in_wargear=1, name=Master-crafted bolter
+      name: Master-crafted boltgun -> Master-crafted bolter
+  * datasheet_id=000000166, line=2, line_in_wargear=1, name=Twin heavy bolter
+      description: sustained hits 1 . twin-linked -> sustained hits 1 , twin-linked
+  * datasheet_id=000000168, line=1, line_in_wargear=1, name=Baal flamestorm cannon
+      description: ASSAULT , IGNORES COVER . TORRENT -> ASSAULT , IGNORES COVER , TORRENT
+  * datasheet_id=000000168, line=6, line_in_wargear=1, name=Twin assault cannon
+      description: ASSAULT . DEVASTATING WOUNDS . TWIN-LINKED -> ASSAULT , DEVASTATING WOUNDS , TWIN-LINKED
+  * datasheet_id=000003818, line=5, line_in_wargear=1, name=Condemnor boltgun
+      description: ANTI-PSYKER 2+ , DEVASTATING WOUNDS . PRECISION , RAPID FIRE 1 -> ANTI-PSYKER 2+ , DEVASTATING WOUNDS , PRECISION , RAPID FIRE 1
+
+File: Detachment_abilities.json
+Counts: old=253, new=253, added=0, removed=0, changed=0
+
+File: Detachments.json
+Counts: old=234, new=234, added=0, removed=0, changed=0
+
+File: Enhancements.json
+Counts: old=821, new=821, added=0, removed=0, changed=1
+Changed:
+  * id=000008872005, name=Wazblasta
+      legend: This warlord's fanatical devotion to speed is such that he cannot stand being anywhere other than in the hear, of the action and he pushes the ladz around him to crank their throttles in order to close the distance with the enemy as soon... -> This warlord's fanatical devotion to speed is such that he cannot stand being anywhere other than in the heart of the action and he pushes the ladz around him to crank their throttles in order to close the distance with the enemy as soon...
+
+File: Factions.json
+Counts: old=26, new=26, added=0, removed=0, changed=0
+
+File: Last_update.json
+Counts: old=1, new=1, added=1, removed=1, changed=0
+Added:
+  + last_update=2026-01-05 16:22:39
+Removed:
+  - last_update=2025-12-20 00:07:32
+
+File: Source.json
+Counts: old=70, new=70, added=0, removed=0, changed=0
+
+File: Stratagems.json
+Counts: old=1326, new=1326, added=0, removed=0, changed=2
+Changed:
+  * id=000009928004, name=SKYBORNE SANCTUARY
+      description: WHEN: End of the Fight phase . TARGET: One ASURYANI unit from your army that was eligible to fight this phase and one friendly TRANSPORT it is able to embark within. EFFECT: If your ASURYANI unit is wholly within 6" of that TRANSPORT , i... -> WHEN: End of the Fight phase . TARGET: One ASURYANI unit from your army that was eligible to fight this phase and one friendly TRANSPORT it is able to embark within. EFFECT: If your ASURYANI unit is not within Engagement Range of one or ...
+  * id=000009900003, name=SKYBORNE SANCTUARY
+      description: WHEN: End of the Fight phase . TARGET: One ASURYANI unit from your army that was eligible to fight this phase and one friendly TRANSPORT it is able to embark within. EFFECT: If your ASURYANI unit is wholly within 6" of that TRANSPORT , i... -> WHEN: End of the Fight phase . TARGET: One ASURYANI unit from your army that was eligible to fight this phase and one friendly TRANSPORT it is able to embark within. EFFECT: If your ASURYANI unit is not within Engagement Range of one or ...
