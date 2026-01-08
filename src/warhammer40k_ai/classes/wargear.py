@@ -654,6 +654,21 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Imperial Agents Kill Team: majority Toughness (tie -> highest) for the attack sequence.
+        kill_team_toughness = None
+        try:
+            root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+            has_kill_team = bool(getattr(root, "attached_unit_has_kill_team", lambda: False)())
+            if has_kill_team and hasattr(root, "get_kill_team_majority_toughness"):
+                kt = root.get_kill_team_majority_toughness()
+                if kt is not None:
+                    kill_team_toughness = int(kt)
+                    attack_result.attacks_special_modifiers.append(
+                        f"Kill Team majority Toughness {kill_team_toughness}"
+                    )
+        except Exception:
+            kill_team_toughness = None
+
         # Process each attack
         for attack_num in range(num_attacks):
             attack_instance = {
@@ -661,7 +676,8 @@ class WargearProfile:
                 'crit_wound': False,
                 'mortal_wound': False,
                 'below_half_distance': closest_dist <= (self.range.max / 2),
-                'damage': 0
+                'damage': 0,
+                'target_toughness_override': kill_team_toughness,
             }
 
             if indirect_fire_no_visible:
@@ -685,7 +701,8 @@ class WargearProfile:
                             'crit_wound': False,
                             'mortal_wound': False,
                             'below_half_distance': attack_instance['below_half_distance'],
-                            'damage': 0
+                            'damage': 0,
+                            'target_toughness_override': kill_team_toughness,
                         }
                         hit_instances.append(extra_instance)
                         attack_result.total_hits += 1
@@ -1726,34 +1743,6 @@ class WargearProfile:
             wound_result['special_effects'].append("Lethal Hit (auto-wound)")
             return wound_result
 
-        # Attached units can still be valid targets even if bodyguard models are gone (leaders remain)
-        try:
-            alloc = target.get_models_for_wound_allocation()
-        except Exception:
-            alloc = list(getattr(target, "models", []) or [])
-        if not alloc:
-            wound_result['special_effects'].append("No valid targets")
-            return wound_result
-
-        target_toughness = target.toughness
-
-        # Aura cache (shared with hit resolution for the same attack_instance)
-        aura_mods = attack_instance.get("_aura_attack_mods")
-        if aura_mods is None:
-            from ..utility.aura_effects import get_aura_attack_modifiers
-            aura_mods = get_aura_attack_modifiers(attacker.parent_unit, target, self)
-            attack_instance["_aura_attack_mods"] = aura_mods
-
-        # Enemy-targeted aura debuffs affecting target characteristics (e.g. Nurgle’s Gift (Aura): -1T)
-        try:
-            dt = int(getattr(aura_mods, "target_toughness_delta", 0) or 0)
-            if dt:
-                target_toughness = int(target_toughness) + dt
-                wound_result['modifiers'].extend(list(getattr(aura_mods, "target_toughness_reasons", ()) or ()))
-        except Exception:
-            pass
-
-        wound_result['target_toughness'] = target_toughness
         strength = self.strength
         # Enhancement: improve melee weapons' Strength by X (bearer enhancement).
         try:
@@ -1806,6 +1795,37 @@ class WargearProfile:
                     wound_result.setdefault("modifiers", []).append(f"+{s_bonus}S from Power from Pain (melee)")
         except Exception:
             pass
+
+        # Attached units can still be valid targets even if bodyguard models are gone (leaders remain)
+        try:
+            alloc = target.get_models_for_wound_allocation()
+        except Exception:
+            alloc = list(getattr(target, "models", []) or [])
+        if not alloc:
+            wound_result['special_effects'].append("No valid targets")
+            return wound_result
+
+        target_toughness = attack_instance.get("target_toughness_override", None)
+        if target_toughness is None:
+            target_toughness = target.toughness
+
+        # Aura cache (shared with hit resolution for the same attack_instance)
+        aura_mods = attack_instance.get("_aura_attack_mods")
+        if aura_mods is None:
+            from ..utility.aura_effects import get_aura_attack_modifiers
+            aura_mods = get_aura_attack_modifiers(attacker.parent_unit, target, self)
+            attack_instance["_aura_attack_mods"] = aura_mods
+
+        # Enemy-targeted aura debuffs affecting target characteristics (e.g. Nurgle’s Gift (Aura): -1T)
+        try:
+            dt = int(getattr(aura_mods, "target_toughness_delta", 0) or 0)
+            if dt:
+                target_toughness = int(target_toughness) + dt
+                wound_result['modifiers'].extend(list(getattr(aura_mods, "target_toughness_reasons", ()) or ()))
+        except Exception:
+            pass
+
+        wound_result['target_toughness'] = target_toughness
         # Provide reroll callback for wound
         def _reroll_wound():
             new_roll = get_roll("D6")

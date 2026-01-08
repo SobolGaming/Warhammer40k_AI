@@ -179,8 +179,8 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Assigned Agents | `000008452` | 45 | 45 | **Not implemented** |  |
-| Kill Team | `000008519` | 5 | 5 | **Not implemented** |  |
+| Assigned Agents | `000008452` | 45 | 45 | **Supported** |  |
+| Kill Team | `000008519` | 5 | 5 | **Supported** |  |
 
 ### Imperial Knights (`QI`) - `https://wahapedia.ru/wh40k10ed/factions/imperial-knights`
 
@@ -212,9 +212,9 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Assigned Agents | `000008452` | 1 | 1 | **Not implemented** |  |
+| Assigned Agents | `000008452` | 1 | 1 | **Supported** |  |
 | Curse of the Wulfen | `000010256` | 4 | 4 | **Not implemented** |  |
-| Kill Team | `000008519` | 1 | 1 | **Not implemented** |  |
+| Kill Team | `000008519` | 1 | 1 | **Supported** |  |
 | Mission Tactics | `000008521` | 10 | 10 | **Not implemented** |  |
 | Oath of Moment | `000008350` | 275 | 275 | **Not implemented** |  |
 | Templar Vows | `000008526` | 19 | 19 | **Partial** | Advance+Charge (exact wording) (extra conditions not fully modeled) |
@@ -2654,7 +2654,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Incensor Cherub | 1 | 1 | **Not implemented** |  |
 | Inconceivable Augmentation | 1 | 1 | **Not implemented** |  |
 | Indomitor Doctrines | 1 | 1 | **Not implemented** |  |
-| Kill Team | 1 | 1 | **Not implemented** |  |
+| Kill Team | 1 | 1 | **Supported** |  |
 | Lord of Deceit (Aura) | 1 | 1 | **Not implemented** |  |
 | Loyal Henchmen | 1 | 1 | **Not implemented** |  |
 | Malefic Warding | 1 | 1 | **Not implemented** |  |

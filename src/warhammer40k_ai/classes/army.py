@@ -1206,6 +1206,8 @@ class Army:
             )
 
     def validate_allies(self):
+        # Imperial Agents: Assigned Agents.
+        self._validate_assigned_agents()
         # Drukhari: Corsairs and Travelling Players.
         if army_has_ability_id(self, ABILITY_CORSAIRS_AND_TRAVELLING_PLAYERS):
             self._validate_corsairs_and_travelling_players()
@@ -1260,6 +1262,27 @@ class Army:
         if limit <= 2000:
             return 500
         return 750
+
+    def _assigned_agents_unit_caps(self) -> dict[str, int]:
+        try:
+            limit = int(self.points_limit or 0)
+        except Exception:
+            limit = 0
+        if limit <= 0:
+            return {"retinue": 0, "character": 0, "requisitioned": 0}
+        if limit <= 1000:
+            return {"retinue": 1, "character": 1, "requisitioned": 1}
+        if limit <= 2000:
+            return {"retinue": 2, "character": 2, "requisitioned": 1}
+        return {"retinue": 3, "character": 3, "requisitioned": 2}
+
+    def _is_agents_of_imperium_unit(self, unit) -> bool:
+        if unit is None:
+            return False
+        try:
+            return unit.has_any_keyword("AGENTS OF THE IMPERIUM")
+        except Exception:
+            return False
 
     def _validate_corsairs_and_travelling_players(self) -> None:
         allowed_allies = {"HARLEQUINS", "ANHRATHE"}
@@ -1317,6 +1340,57 @@ class Army:
         if cap <= 0 or total > cap:
             raise ArmyValidationError(
                 f"Corsairs and Travelling Players: allied units total {total} points (cap {cap})."
+            )
+
+    def _validate_assigned_agents(self) -> None:
+        agents_units = [u for u in list(getattr(self, "units", []) or []) if self._is_agents_of_imperium_unit(u)]
+        if not agents_units:
+            return
+        faction_id = str(getattr(self, "faction_id", "") or "").strip().upper()
+        if faction_id == "AOI":
+            return
+
+        for unit in list(getattr(self, "units", []) or []):
+            try:
+                if not unit.has_any_keyword("IMPERIUM"):
+                    raise ArmyValidationError(
+                        "Assigned Agents: all units must have the IMPERIUM keyword to include Agents of the Imperium allies."
+                    )
+            except ArmyValidationError:
+                raise
+            except Exception:
+                raise ArmyValidationError("Assigned Agents: failed to validate IMPERIUM keyword requirements.")
+
+        retinue = 0
+        character = 0
+        requisitioned = 0
+        for unit in agents_units:
+            if getattr(unit, "is_dedicated_transport", False):
+                continue
+            try:
+                if unit.has_any_keyword("REQUISITIONED"):
+                    requisitioned += 1
+                elif unit.has_any_keyword("RETINUE"):
+                    retinue += 1
+                elif getattr(unit, "is_character", False):
+                    character += 1
+                else:
+                    requisitioned += 1  # Conservative fallback for unclassified Agents units.
+            except Exception:
+                requisitioned += 1
+
+        caps = self._assigned_agents_unit_caps()
+        if retinue > caps["retinue"]:
+            raise ArmyValidationError(
+                f"Assigned Agents: too many Retinue units ({retinue}/{caps['retinue']})."
+            )
+        if character > caps["character"]:
+            raise ArmyValidationError(
+                f"Assigned Agents: too many Character units ({character}/{caps['character']})."
+            )
+        if requisitioned > caps["requisitioned"]:
+            raise ArmyValidationError(
+                f"Assigned Agents: too many Requisitioned units ({requisitioned}/{caps['requisitioned']})."
             )
 
     def _daemonic_pact_points_cap(self) -> int:
@@ -1443,6 +1517,51 @@ class Army:
         """Set the player that owns this army."""
         self.player = player
 
+    def _destroy_unit_models(self, unit: Unit, game_map=None) -> None:
+        """Destroy all models in a unit (best-effort)."""
+        try:
+            models = list(getattr(unit, "models", []) or [])
+        except Exception:
+            models = []
+        for model in models:
+            try:
+                model.die(game_map=game_map)
+            except Exception:
+                try:
+                    unit.remove_model(model, fleed=False, game_map=game_map)
+                except Exception:
+                    continue
+
+    def _assigned_agents_destroy_empty_transports(self, battle_round: int, game=None) -> None:
+        if int(battle_round or 0) != 1:
+            return
+        faction_id = str(getattr(self, "faction_id", "") or "").strip().upper()
+        if faction_id == "AOI":
+            return
+        units = list(getattr(self, "units", []) or [])
+        if not any(self._is_agents_of_imperium_unit(u) for u in units):
+            return
+        try:
+            game_map = getattr(game, "map", None)
+        except Exception:
+            game_map = None
+        for unit in units:
+            if unit is None or not self._is_agents_of_imperium_unit(unit):
+                continue
+            if not getattr(unit, "is_dedicated_transport", False):
+                continue
+            try:
+                if not unit.is_alive():
+                    continue
+            except Exception:
+                pass
+            try:
+                if len(getattr(unit, "transport_passengers", []) or []) > 0:
+                    continue
+            except Exception:
+                pass
+            self._destroy_unit_models(unit, game_map=game_map)
+
     def on_battle_round_start(self, battle_round: int) -> None:
         """Army-level start-of-battle-round hook for faction rules/state resets."""
         mgr = getattr(self, "blessings_of_khorne", None)
@@ -1509,6 +1628,11 @@ class Army:
                     mgr._order_issued_state(unit, int(battle_round))
             except Exception:
                 pass
+        try:
+            game = getattr(getattr(self, "player", None), "game", None)
+        except Exception:
+            game = None
+        self._assigned_agents_destroy_empty_transports(int(battle_round), game=game)
 
     def schedule_reborn_in_blood(self, *, game) -> bool:
         """

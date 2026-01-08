@@ -2652,6 +2652,28 @@ class Unit:
                 return 0
         except Exception:
             pass
+        # Imperial Agents Kill Team: specific models count as 2 slots.
+        has_kill_team = False
+        try:
+            root = self.get_attached_unit_root()
+            if root is not None and hasattr(root, "attached_unit_has_kill_team"):
+                has_kill_team = bool(root.attached_unit_has_kill_team())
+        except Exception:
+            has_kill_team = False
+        if has_kill_team:
+            try:
+                models = self.get_models_for_collision()
+            except Exception:
+                models = self.models
+            total = 0
+            for m in (models or []):
+                try:
+                    if not getattr(m, "is_alive", False):
+                        continue
+                except Exception:
+                    pass
+                total += 2 if self._kill_team_model_uses_two_transport_slots(m) else 1
+            return int(total)
         try:
             # If this unit has attached leaders, include their models for capacity.
             try:
@@ -2661,6 +2683,13 @@ class Unit:
             return sum(1 for m in models if getattr(m, "is_alive", False))
         except Exception:
             return len(self.models)
+
+    def _kill_team_model_uses_two_transport_slots(self, model: Model) -> bool:
+        name = str(getattr(model, "name", "") or "").lower()
+        if not name:
+            return False
+        tokens = ("terminator", "outrider", "biker", "jump pack", "jump-pack")
+        return any(tok in name for tok in tokens)
 
     @property
     def transport_slots_used(self) -> int:
@@ -2820,6 +2849,37 @@ class Unit:
             except Exception:
                 continue
         return models
+
+    def get_kill_team_majority_toughness(self) -> Optional[int]:
+        """
+        Return the majority Toughness across models in this attached unit.
+        If tied, return the highest Toughness.
+        """
+        try:
+            models = list(self.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(self, "models", []) or [])
+        if not models:
+            return None
+        counts: dict[int, int] = {}
+        for m in models:
+            try:
+                if not getattr(m, "is_alive", False):
+                    continue
+            except Exception:
+                pass
+            try:
+                t_val = int(getattr(m, "toughness", getattr(m, "_toughness", 0)) or 0)
+            except Exception:
+                continue
+            if t_val <= 0:
+                continue
+            counts[t_val] = counts.get(t_val, 0) + 1
+        if not counts:
+            return None
+        max_count = max(counts.values())
+        tied = [t for (t, c) in counts.items() if c == max_count]
+        return max(tied) if tied else None
 
     def get_models_for_rendering(self) -> List['Model']:
         """Models used for battlefield rendering/hover detection (include attached Leaders)."""
@@ -3066,6 +3126,18 @@ class Unit:
     def is_infantry(self) -> bool:
         return self.has_keyword("Infantry")
 
+    def counts_as_infantry_for_terrain(self) -> bool:
+        """Kill Team models count as Infantry for terrain interaction (RUINS traversal)."""
+        if self.is_infantry:
+            return True
+        try:
+            root = self.get_attached_unit_root()
+            if root is not None and hasattr(root, "attached_unit_has_kill_team"):
+                return bool(root.attached_unit_has_kill_team())
+        except Exception:
+            pass
+        return False
+
     @property
     def is_beast(self) -> bool:
         return self.has_keyword("Beast")
@@ -3106,10 +3178,20 @@ class Unit:
             return bool(found)
         except Exception:
             return False
+
+    def has_kill_team(self) -> bool:
+        """Check if the unit has the Kill Team ability (Imperial Agents)."""
+        if 'kill_team' in getattr(self, '_ability_cache', {}):
+            return self._ability_cache['kill_team']
+        found, _ = self._find_ability_with_patterns(["kill team"])
+        if not hasattr(self, '_ability_cache'):
+            self._ability_cache = {}
+        self._ability_cache['kill_team'] = found
+        return found
     
     def can_move_through_ruins_walls(self) -> bool:
         """Check if this unit can move through RUINS walls (not just on ground floor)."""
-        return (self.is_infantry or self.is_beast or 
+        return (self.counts_as_infantry_for_terrain() or self.is_beast or 
                 self.is_imperium_primarch or self.is_belisarius_cawl or 
                 self.is_flying or self.has_super_heavy_walker())
     
@@ -7823,6 +7905,16 @@ class Unit:
                 found = False
             if found:
                 return True
+        return False
+
+    def attached_unit_has_kill_team(self) -> bool:
+        """Attached unit eligibility: true if any attached member has the Kill Team ability."""
+        for u in self.get_attached_unit_members():
+            try:
+                if u.has_kill_team():
+                    return True
+            except Exception:
+                continue
         return False
 
     def attached_unit_has_martial_katah(self) -> bool:

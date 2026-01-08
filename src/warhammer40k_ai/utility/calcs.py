@@ -116,6 +116,19 @@ def get_freely_climbable_range(unit: 'Unit') -> float:
         pass
     return float(FREELY_CLIMBABLE_RANGE)
 
+def counts_as_infantry_for_terrain(unit: 'Unit') -> bool:
+    """Resolve Infantry-equivalent terrain interaction (Kill Team counts as Infantry)."""
+    try:
+        fn = getattr(unit, "counts_as_infantry_for_terrain", None)
+        if callable(fn):
+            return bool(fn())
+    except Exception:
+        pass
+    try:
+        return bool(getattr(unit, "is_infantry", False))
+    except Exception:
+        return False
+
 def can_traverse_freely(unit: 'Unit', terrain_feature: 'TerrainFeature') -> bool:
     """Check if a unit can freely traverse over terrain without vertical movement cost.
 
@@ -138,7 +151,7 @@ def can_traverse_freely(unit: 'Unit', terrain_feature: 'TerrainFeature') -> bool
     # RUINS have special traversal rules
     if terrain_type == TerrainType.RUINS and isinstance(terrain_feature, RuinsTerrain):
         # Infantry, Beasts, Imperium Primarch, and Belisarius Cawl can move through walls freely
-        return (unit.is_infantry or unit.is_beast or
+        return (counts_as_infantry_for_terrain(unit) or unit.is_beast or
                 unit.is_belisarius_cawl or unit.is_imperium_primarch)
 
     # For other terrain types, check height-based traversal rules
@@ -172,7 +185,7 @@ def is_terrain_impassable(unit: 'Unit', terrain_feature: 'TerrainFeature') -> bo
     # Only RUINS walls are truly impassable for certain unit types
     if terrain_type == TerrainType.RUINS and isinstance(terrain_feature, RuinsTerrain):
         # Non-Infantry/Beast units cannot move through RUINS walls
-        can_traverse_walls = (unit.is_infantry or unit.is_beast or
+        can_traverse_walls = (counts_as_infantry_for_terrain(unit) or unit.is_beast or
                              unit.is_belisarius_cawl or unit.is_imperium_primarch)
 
         if not can_traverse_walls:
@@ -222,7 +235,7 @@ def get_terrain_blocking_polygons(unit: 'Unit', terrain_feature: 'TerrainFeature
 
     # RUINS: only walls block movement for non-Infantry/Beast units
     if terrain_type == TerrainType.RUINS and isinstance(terrain_feature, RuinsTerrain):
-        can_traverse_walls = (unit.is_infantry or unit.is_beast or
+        can_traverse_walls = (counts_as_infantry_for_terrain(unit) or unit.is_beast or
                              unit.is_belisarius_cawl or unit.is_imperium_primarch)
         try:
             if unit is not None and hasattr(unit, "has_super_heavy_walker") and unit.has_super_heavy_walker():
@@ -2686,7 +2699,13 @@ def can_end_move_on_terrain(model: 'Model', terrain_feature: 'TerrainFeature') -
     elif terrain == TerrainType.RUINS:
         # All models can end move on ground floor of ruins
         # Special keyworded models + FLY can end move on any floor level
-        if unit.is_infantry or unit.is_beast or unit.is_belisarius_cawl or unit.is_imperium_primarch or unit.is_flying():
+        is_flying = False
+        try:
+            val = getattr(unit, "is_flying", False)
+            is_flying = bool(val() if callable(val) else val)
+        except Exception:
+            is_flying = False
+        if counts_as_infantry_for_terrain(unit) or unit.is_beast or unit.is_belisarius_cawl or unit.is_imperium_primarch or is_flying:
             return not base_overhang  # Must not overhang if not ground floor
         else:
             # Other units can only end move on ground floor
