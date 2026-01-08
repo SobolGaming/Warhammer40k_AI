@@ -81,6 +81,7 @@ SUPPORTED_ARMY_RULES = {
     "PRIORITISED EFFICIENCY",
     "CULT AMBUSH",
     "ACTS OF FAITH",
+    "DOCTRINA IMPERATIVES",
 }
 SUPPORTED_DETACHMENT_RULES = {
     "MARTIAL GRACE",
@@ -499,6 +500,7 @@ class GameView:
         self.templar_vows_dialog = None
         self.shadow_form_dialog = None
         self.harbingers_of_dread_dialog = None
+        self.doctrina_imperatives_dialog = None
         self.dark_pacts_dialog = None
         self.martial_katah_dialog = None
         self.cabal_ritual_dialog = None
@@ -790,6 +792,8 @@ class GameView:
         self._pending_shadow_form_queue = []
         # Chaos Knights: Harbingers of Dread selection queue
         self._pending_harbingers_queue = []
+        # Adeptus Mechanicus: Doctrina Imperatives selection queue
+        self._pending_doctrina_queue = []
         # Chaos Space Marines: Dark Pacts selection queue
         self._pending_dark_pacts_queue = []
         # Adeptus Custodes: Martial Ka'tah selection queue
@@ -919,6 +923,25 @@ class GameView:
             if queue:
                 self._pending_harbingers_queue = list(queue)
                 self._open_next_harbingers_prompt(br)
+
+        # ADEPTUS MECHANICUS: Doctrina Imperatives selection at the start of each battle round.
+        queue = []
+        for p in order:
+            try:
+                if p is None or p.type.name != "HUMAN":
+                    continue
+                army = p.get_army()
+                mgr = getattr(army, "doctrina_imperatives", None) if army is not None else None
+                if mgr is None or not getattr(mgr, "_army_has_doctrina", lambda: False)():
+                    continue
+                if getattr(mgr, "active_round", None) == br and getattr(mgr, "active_imperative_key", None):
+                    continue
+                queue.append(p)
+            except Exception:
+                continue
+        if queue:
+            self._pending_doctrina_queue = list(queue)
+            self._open_next_doctrina_prompt(br)
 
         # BELAKOR: Shadow Form is chosen at the start of each battle round.
         queue = []
@@ -3519,6 +3542,68 @@ class GameView:
         self.harbingers_of_dread_dialog.show(options=options, on_confirm=_on_confirm, on_cancel=_on_cancel)
         try:
             self.dialog_manager.open(self.harbingers_of_dread_dialog, modal=True)
+        except Exception:
+            pass
+
+    def _open_next_doctrina_prompt(self, battle_round: int) -> None:
+        if not self._pending_doctrina_queue:
+            return
+        player = self._pending_doctrina_queue.pop(0)
+        army = player.get_army()
+        mgr = getattr(army, "doctrina_imperatives", None)
+        if mgr is None or not getattr(mgr, "_army_has_doctrina", lambda: False)():
+            self._open_next_doctrina_prompt(battle_round)
+            return
+        if getattr(mgr, "active_round", None) == battle_round and getattr(mgr, "active_imperative_key", None):
+            self._open_next_doctrina_prompt(battle_round)
+            return
+
+        if self.doctrina_imperatives_dialog is None:
+            try:
+                from .dialogs import DoctrinaImperativesDialog
+                sw, sh = self.screen.get_size()
+                self.doctrina_imperatives_dialog = DoctrinaImperativesDialog(sw, sh)
+            except Exception:
+                self.doctrina_imperatives_dialog = None
+        if self.doctrina_imperatives_dialog is None:
+            try:
+                from ..classes.doctrina_imperatives import PROTECTOR_IMPERATIVE, CONQUEROR_IMPERATIVE
+                from ..utility.dice import get_roll
+                roll = int(get_roll("D6") or 0)
+                choice = PROTECTOR_IMPERATIVE if roll <= 3 else CONQUEROR_IMPERATIVE
+                mgr.select_imperative(choice, battle_round=battle_round)
+            except Exception:
+                pass
+            self._open_next_doctrina_prompt(battle_round)
+            return
+
+        try:
+            from ..classes.doctrina_imperatives import PROTECTOR_IMPERATIVE, CONQUEROR_IMPERATIVE
+            options = [PROTECTOR_IMPERATIVE, CONQUEROR_IMPERATIVE]
+        except Exception:
+            options = []
+
+        def _on_confirm(choice):
+            try:
+                mgr.select_imperative(choice, battle_round=battle_round)
+            except Exception:
+                pass
+            try:
+                from ..utility.event_bus import append_action
+                append_action(player.name, f"Doctrina Imperatives: {choice.name} (Battle Round {battle_round})")
+            except Exception:
+                pass
+            try:
+                if self.rule_detail_panel and self.rule_detail_panel.visible and isinstance(self._rule_panel_state, dict):
+                    if self._rule_panel_state.get("player") is player and self._rule_panel_state.get("rule_type") == "army":
+                        self._toggle_rule_panel(player, "army", force_refresh=True)
+            except Exception:
+                pass
+            self._open_next_doctrina_prompt(battle_round)
+
+        self.doctrina_imperatives_dialog.show(options=options, on_confirm=_on_confirm)
+        try:
+            self.dialog_manager.open(self.doctrina_imperatives_dialog, modal=True)
         except Exception:
             pass
 

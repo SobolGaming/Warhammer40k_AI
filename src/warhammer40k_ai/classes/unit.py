@@ -5148,6 +5148,16 @@ class Unit:
                 return True
         except Exception:
             pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "doctrina_imperatives", None) if army is not None else None
+            if mgr is not None:
+                game = getattr(getattr(army, "player", None), "game", None)
+                if mgr.conqueror_assault_applies(self, game=game):
+                    if getattr(profile, "parent_wargear", None) is not None and profile.parent_wargear.is_ranged():
+                        return True
+        except Exception:
+            pass
         # Check for Assault weapons
         if profile.is_assault():
             return True

@@ -30,6 +30,7 @@ from .templar_vows_dialog import TemplarVowsDialog
 from .nurgles_gift_plague_dialog import NurglesGiftPlagueDialog
 from .shadow_form_dialog import ShadowFormDialog
 from .harbingers_of_dread_dialog import HarbingersOfDreadDialog
+from .doctrina_imperatives_dialog import DoctrinaImperativesDialog
 from .dark_pacts_dialog import DarkPactsDialog
 from .martial_katah_dialog import MartialKatahDialog
 from .cabal_of_sorcerers_dialog import CabalOfSorcerersDialog
@@ -67,6 +68,7 @@ __all__ = [
     'NurglesGiftPlagueDialog',
     'ShadowFormDialog',
     'HarbingersOfDreadDialog',
+    'DoctrinaImperativesDialog',
     'DarkPactsDialog',
     'MartialKatahDialog',
     'CabalOfSorcerersDialog',

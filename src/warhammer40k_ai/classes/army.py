@@ -347,6 +347,13 @@ class Army:
             self.acts_of_faith = ActsOfFaithManager(self)
         except Exception:
             self.acts_of_faith = None
+
+        # Adeptus Mechanicus: Doctrina Imperatives (safe to attach, no-op if not applicable).
+        try:
+            from .doctrina_imperatives import DoctrinaImperativesManager
+            self.doctrina_imperatives = DoctrinaImperativesManager(self)
+        except Exception:
+            self.doctrina_imperatives = None
     
     def add_unit(self, unit: Unit) -> bool:
         if not self.faction_keyword:
@@ -1463,6 +1470,13 @@ class Army:
                 game = None
             mgr.on_battle_round_start(int(battle_round), game=game)
         mgr = getattr(self, "acts_of_faith", None)
+        if mgr is not None:
+            try:
+                game = getattr(getattr(self, "player", None), "game", None)
+            except Exception:
+                game = None
+            mgr.on_battle_round_start(int(battle_round), game=game)
+        mgr = getattr(self, "doctrina_imperatives", None)
         if mgr is not None:
             try:
                 game = getattr(getattr(self, "player", None), "game", None)

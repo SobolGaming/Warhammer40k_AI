@@ -93,7 +93,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Doctrina Imperatives | `000008382` | 36 | 36 | **Not implemented** |  |
+| Doctrina Imperatives | `000008382` | 36 | 36 | **Supported** | Battle-round selection; BS/WS improve, Heavy/Assault, AP bonus, melee -1 to hit. |
 
 ### Adeptus Titanicus (`TL`) - `https://wahapedia.ru/wh40k10ed/factions/adeptus-titanicus`
 
@@ -187,7 +187,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Code Chivalric | `000008458` | 21 | 21 | **Not implemented** |  |
-| Doctrina Imperatives | `000008382` | 5 | 5 | **Not implemented** |  |
+| Doctrina Imperatives | `000008382` | 5 | 5 | **Supported** | Battle-round selection; BS/WS improve, Heavy/Assault, AP bonus, melee -1 to hit. |
 | Super-heavy Walker | `000008460` | 18 | 18 | **Not implemented** |  |
 
 ### Leagues of Votann (`LoV`) - `https://wahapedia.ru/wh40k10ed/factions/leagues-of-votann`

@@ -379,6 +379,17 @@ class WargearProfile:
                     ap_val -= bonus
         except Exception:
             pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            mgr = getattr(army, "doctrina_imperatives", None) if army is not None else None
+            if mgr is not None and unit is not None:
+                game = getattr(getattr(army, "player", None), "game", None)
+                game_map = getattr(game, "map", None) if game is not None else None
+                if mgr.conqueror_ap_bonus_applies(unit, game=game, game_map=game_map):
+                    ap_val -= 1
+        except Exception:
+            pass
         cabal_bonus = self._cabal_twist_of_fate_ap_bonus(attacker, target)
         if cabal_bonus:
             ap_val -= int(cabal_bonus)
@@ -971,6 +982,24 @@ class WargearProfile:
                     attack_instance["ignores_cover"] = True
         except Exception:
             pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            mgr = getattr(army, "doctrina_imperatives", None) if army is not None else None
+            if mgr is not None and unit is not None:
+                game = getattr(getattr(army, "player", None), "game", None)
+                imperative = mgr.get_active_imperative_for_unit(unit, game=game)
+                if imperative is not None:
+                    is_ranged = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_ranged())
+                    is_melee = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_melee())
+                    if imperative.key == "PROTECTOR" and is_ranged:
+                        base_skill = max(2, int(base_skill) - 1)
+                        hit_result['special_effects'].append("Protector Imperative: +1 BS")
+                    elif imperative.key == "CONQUEROR" and is_melee:
+                        base_skill = max(2, int(base_skill) - 1)
+                        hit_result['special_effects'].append("Conqueror Imperative: +1 WS")
+        except Exception:
+            pass
         hit_result['base_skill'] = base_skill
         
         # Torrent auto-hits (in case of Overwatch it ignores 6+ restrictions)
@@ -1028,9 +1057,24 @@ class WargearProfile:
 
         # Calculate modifiers first (always do this)
         dice_modifier = 0
-        if self.is_heavy() and attacker.parent_unit.round_state.remained_stationary_this_round:
+        heavy_from_doctrina = False
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            mgr = getattr(army, "doctrina_imperatives", None) if army is not None else None
+            if mgr is not None and unit is not None:
+                game = getattr(getattr(army, "player", None), "game", None)
+                if mgr.protector_heavy_applies(unit, game=game):
+                    if getattr(self, "parent_wargear", None) and self.parent_wargear.is_ranged():
+                        heavy_from_doctrina = True
+        except Exception:
+            heavy_from_doctrina = False
+        if (self.is_heavy() or heavy_from_doctrina) and attacker.parent_unit.round_state.remained_stationary_this_round:
             dice_modifier += 1
-            hit_result['modifiers'].append("+1 from Heavy (stationary)")
+            if heavy_from_doctrina and not self.is_heavy():
+                hit_result['modifiers'].append("+1 from Protector Imperative (counts as Heavy)")
+            else:
+                hit_result['modifiers'].append("+1 from Heavy (stationary)")
 
         # INDIRECT FIRE: if no target models were visible at selection time, -1 to hit
         if attack_instance.get("indirect_fire_no_visible", False):
@@ -1057,6 +1101,18 @@ class WargearProfile:
             if hasattr(target, "has_first_prince_tzeentch_defense") and target.has_first_prince_tzeentch_defense():
                 dice_modifier -= 1
                 hit_result['modifiers'].append("-1 from First Prince of Chaos (Tzeentch)")
+        except Exception:
+            pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            target_army = target.get_parent_army() if target is not None else None
+            mgr = getattr(target_army, "doctrina_imperatives", None) if target_army is not None else None
+            if mgr is not None and getattr(self, "parent_wargear", None) and self.parent_wargear.is_melee():
+                game = getattr(getattr(target_army, "player", None), "game", None)
+                game_map = getattr(game, "map", None) if game is not None else None
+                if mgr.protector_melee_hit_penalty_applies(target, game=game, game_map=game_map):
+                    dice_modifier -= 1
+                    hit_result['modifiers'].append("-1 from Protector Imperative (battleline screen)")
         except Exception:
             pass
         # Nurgle's Gift (Aura): Skullsquirm Blight (-1 to hit for afflicted units).
