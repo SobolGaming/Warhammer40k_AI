@@ -39,6 +39,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 - Favoured of Khorne (Blessings rerolls) (Supported)
 - Idol of the Blessed Blood (Blessings +1D6) (Supported)
 - Reborn in Blood (Angron) (Supported)
+- Martial Ka'tah (Adeptus Custodes) (Supported)
 - Deep Strike (Supported)
 - Infiltrators (Supported)
 - Scouts (Supported)
@@ -86,7 +87,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Martial Ka’tah | `000008391` | 25 | 25 | **Not implemented** |  |
+| Martial Ka’tah | `000008391` | 25 | 25 | **Supported** | Martial Ka’tah |
 
 ### Adeptus Mechanicus (`AdM`) - `https://wahapedia.ru/wh40k10ed/factions/adeptus-mechanicus`
 
@@ -309,7 +310,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Martial Mastery | `000008393` | 25 | 25 | **Not implemented** |  |
+| Martial Mastery | `000008393` | 25 | 25 | **Partial** | Martial Ka'tah (Adeptus Custodes) (extra conditions not fully modeled) |
 
 #### Solar Spearhead
 
@@ -415,7 +416,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Martial Grace | `000009898` | 93 | 93 | **Supported** | Warhost: +1 Battle Focus token each battle round; Swift as the Wind +1" Move; Agile Manoeuvre D6 rolls +1. |
+| Martial Grace | `000009898` | 93 | 93 | **Supported** | Martial Grace |
 
 #### Windrider Host
 

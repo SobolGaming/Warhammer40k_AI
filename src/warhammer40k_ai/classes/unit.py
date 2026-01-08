@@ -3796,6 +3796,35 @@ class Unit:
                 continue
         return False
 
+    def has_martial_katah(self) -> bool:
+        if "martial_katah" in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache["martial_katah"])
+
+        def _norm(text: str) -> str:
+            return str(text or "").replace("’", "'").replace("ƒ?T", "'").lower()
+
+        patterns = ("martial ka'tah", "martial katah")
+        found = False
+        for ab in (list(getattr(self, "possible_abilities", []) or []) + list(getattr(self, "abilities", []) or [])):
+            try:
+                if isinstance(ab, str):
+                    name = ab
+                    desc = ab
+                else:
+                    name = getattr(ab, "name", "") or ""
+                    desc = getattr(ab, "description", "") or ""
+                text = _norm(f"{name} {desc}")
+                if any(p in text for p in patterns):
+                    found = True
+                    break
+            except Exception:
+                continue
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache["martial_katah"] = found
+        return found
+
     def can_use_dark_pacts(self) -> bool:
         has_pacts = self.has_dark_pacts()
         first_prince = self._first_prince_of_chaos_active() and self._is_chaos_undivided()
@@ -7738,6 +7767,32 @@ class Unit:
             if found:
                 return True
         return False
+
+    def attached_unit_has_martial_katah(self) -> bool:
+        """Attached unit eligibility: true if any attached member has Martial Ka'tah."""
+        for u in self.get_attached_unit_members():
+            try:
+                if u.has_martial_katah():
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def set_martial_katah_choice(self, choice: str) -> None:
+        root = self.get_attached_unit_root()
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["martial_katah_choice"] = str(choice or "").strip().upper()
+        root.special_rules = sr
+
+    def clear_martial_katah_choice(self) -> None:
+        root = self.get_attached_unit_root()
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        sr.pop("martial_katah_choice", None)
+        root.special_rules = sr
 
     def attached_unit_has_reanimation_protocols(self) -> bool:
         """Attached unit eligibility: true if any attached member has Reanimation Protocols."""

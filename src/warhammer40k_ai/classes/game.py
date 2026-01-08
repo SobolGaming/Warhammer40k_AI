@@ -183,6 +183,8 @@ class Game:
         # Dark Pacts trigger windows
         self.event_system.subscribe("shooting_targets_selected", self._on_shooting_targets_selected_dark_pacts)
         self.event_system.subscribe("fight_unit_selected", self._on_fight_unit_selected_dark_pacts)
+        # Adeptus Custodes: Martial Ka'tah selection on fight activation
+        self.event_system.subscribe("fight_unit_selected", self._on_fight_unit_selected_martial_katah)
         # Drukhari: Power from Pain trigger windows
         self.event_system.subscribe("shooting_targets_selected", self._on_shooting_targets_selected_power_from_pain)
         self.event_system.subscribe("fight_unit_selected", self._on_fight_unit_selected_power_from_pain)
@@ -887,6 +889,54 @@ class Game:
                 pass
         try:
             unit.maybe_trigger_dark_pacts(self, phase_name=phase_name, trigger="fight")
+        except Exception:
+            return
+
+    def _on_fight_unit_selected_martial_katah(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        try:
+            if not root.attached_unit_has_martial_katah():
+                return
+        except Exception:
+            return
+        try:
+            player = root.get_parent_army().player
+        except Exception:
+            player = None
+        try:
+            phase_name = str(getattr(self.phase, "name", "") or "")
+        except Exception:
+            phase_name = ""
+        es = getattr(self, "event_system", None)
+        try:
+            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+        except Exception:
+            is_human = False
+        if is_human and es is not None:
+            try:
+                subs = getattr(es, "subscribers", {})
+                if isinstance(subs, dict) and subs.get("martial_katah_prompt"):
+                    es.publish(
+                        "martial_katah_prompt",
+                        player=player,
+                        unit=root,
+                        phase_name=phase_name,
+                        game=self,
+                    )
+                    return
+            except Exception:
+                pass
+        try:
+            import random
+            choice = random.choice(["DACATARAI", "RENDAX"])
+            root.set_martial_katah_choice(choice)
         except Exception:
             return
 

@@ -280,6 +280,10 @@ class FightPhaseManager:
             fighting_unit.round_state.fought_this_phase = True
         except Exception:
             pass
+        try:
+            fighting_unit.clear_martial_katah_choice()
+        except Exception:
+            pass
         # Publish event for reaction stratagems (e.g. Counter-Offensive)
         try:
             if hasattr(self.game, "event_system"):

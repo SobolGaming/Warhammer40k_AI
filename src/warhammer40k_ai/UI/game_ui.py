@@ -500,6 +500,7 @@ class GameView:
         self.shadow_form_dialog = None
         self.harbingers_of_dread_dialog = None
         self.dark_pacts_dialog = None
+        self.martial_katah_dialog = None
         self.cabal_ritual_dialog = None
         self.cabal_caster_dialog = None
         self.cabal_target_dialog = None
@@ -754,6 +755,7 @@ class GameView:
         self._battle_focus_flow_active = False
         self._oath_of_moment_flow_active = False
         self._dark_pacts_flow_active = False
+        self._martial_katah_flow_active = False
         self._cabal_flow_active = False
         self._shadow_in_the_warp_flow_active = False
         self._pain_flow_active = False
@@ -780,6 +782,8 @@ class GameView:
         self._pending_harbingers_queue = []
         # Chaos Space Marines: Dark Pacts selection queue
         self._pending_dark_pacts_queue = []
+        # Adeptus Custodes: Martial Ka'tah selection queue
+        self._pending_martial_katah_queue = []
         # Tyranids: Shadow in the Warp prompt queue
         self._pending_shadow_in_the_warp_queue = []
         # Drukhari: Power from Pain prompt queue
@@ -804,6 +808,8 @@ class GameView:
                 self.game.event_system.subscribe("for_the_greater_good_prompt", self._on_for_the_greater_good_prompt)
                 # Dark Pacts prompt when a unit is selected to shoot or fight
                 self.game.event_system.subscribe("dark_pacts_prompt", self._on_dark_pacts_prompt)
+                # Adeptus Custodes: Martial Ka'tah stance selection
+                self.game.event_system.subscribe("martial_katah_prompt", self._on_martial_katah_prompt)
                 # Drukhari: Power from Pain prompt when a unit can be empowered
                 self.game.event_system.subscribe("pain_token_prompt", self._on_pain_token_prompt)
                 # Quarry re-pick when quarry is destroyed
@@ -1138,6 +1144,94 @@ class GameView:
         except Exception:
             self._dark_pacts_flow_active = False
             self._open_next_dark_pacts_prompt(game)
+
+    # ---------------- Martial Ka'tah prompts ----------------
+
+    def _on_martial_katah_prompt(self, player=None, unit=None, phase_name=None, game=None, **_kwargs):
+        if player is None or unit is None:
+            return
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return
+        except Exception:
+            return
+
+        if self._martial_katah_flow_active:
+            self._pending_martial_katah_queue.append((player, unit, phase_name))
+            return
+        self._pending_martial_katah_queue.append((player, unit, phase_name))
+        self._open_next_martial_katah_prompt(game or self.game)
+
+    def _open_next_martial_katah_prompt(self, game):
+        q = list(getattr(self, "_pending_martial_katah_queue", []) or [])
+        if not q:
+            self._pending_martial_katah_queue = []
+            self._martial_katah_flow_active = False
+            return
+        player, unit, _phase_name = q.pop(0)
+        self._pending_martial_katah_queue = q
+
+        if player is None or unit is None:
+            self._open_next_martial_katah_prompt(game)
+            return
+        try:
+            if not unit.attached_unit_has_martial_katah():
+                self._open_next_martial_katah_prompt(game)
+                return
+        except Exception:
+            self._open_next_martial_katah_prompt(game)
+            return
+
+        if self.martial_katah_dialog is None:
+            try:
+                from .dialogs import MartialKatahDialog
+                sw, sh = self.screen.get_width(), self.screen.get_height()
+                self.martial_katah_dialog = MartialKatahDialog(sw, sh)
+            except Exception:
+                self.martial_katah_dialog = None
+        if self.martial_katah_dialog is None:
+            self._martial_katah_flow_active = False
+            return
+
+        subtitle = f"{getattr(unit, 'name', 'Unit')} selected to fight."
+        options = [
+            {
+                "label": "Dacatarai Stance",
+                "summary": "Melee weapons gain [SUSTAINED HITS 1] for this fight.",
+                "value": "DACATARAI",
+            },
+            {
+                "label": "Rendax Stance",
+                "summary": "Melee weapons gain [LETHAL HITS] for this fight.",
+                "value": "RENDAX",
+            },
+        ]
+
+        def _on_confirm(selected):
+            try:
+                value = selected.get("value")
+                if value:
+                    unit.set_martial_katah_choice(value)
+            except Exception:
+                pass
+            self._martial_katah_flow_active = False
+            self._open_next_martial_katah_prompt(game)
+
+        def _on_cancel():
+            try:
+                unit.set_martial_katah_choice("DACATARAI")
+            except Exception:
+                pass
+            self._martial_katah_flow_active = False
+            self._open_next_martial_katah_prompt(game)
+
+        self._martial_katah_flow_active = True
+        self.martial_katah_dialog.show(options=options, on_confirm=_on_confirm, on_cancel=_on_cancel, subtitle=subtitle)
+        try:
+            self.dialog_manager.open(self.martial_katah_dialog, modal=True)
+        except Exception:
+            self._martial_katah_flow_active = False
+            self._open_next_martial_katah_prompt(game)
 
     # ---------------- Power from Pain prompts ----------------
 

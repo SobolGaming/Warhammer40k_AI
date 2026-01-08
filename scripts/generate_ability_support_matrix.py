@@ -195,6 +195,7 @@ def _ability_patterns() -> List[Tuple[str, str, str]]:
         ("Favoured of Khorne (Blessings rerolls)", "Supported", r"\bfavoured of khorne\b|\bfavored of khorne\b"),
         ("Idol of the Blessed Blood (Blessings +1D6)", "Supported", r"\bidol of (?:the )?blessed blood\b"),
         ("Reborn in Blood (Angron)", "Supported", r"\breborn in blood\b"),
+        ("Martial Ka'tah (Adeptus Custodes)", "Supported", r"\bmartial ka.?tah\b"),
         ("Deep Strike", "Supported", r"\bdeep strike\b"),
         ("Infiltrators", "Supported", r"\binfiltrator"),
         ("Scouts", "Supported", r"\bscouts?\b"),
@@ -222,6 +223,7 @@ def _classify_support(name: str, description: str) -> Tuple[str, str]:
     """
     # Hard-coded known partials (core ability)
     name_u = (name or "").strip().upper()
+    name_u = name_u.replace("\u2019", "'").replace("ƒ?T", "'")
     explicit_supported = {
         "ADVANCE+SHOOT",
         "BATTLE FOCUS",
@@ -245,6 +247,7 @@ def _classify_support(name: str, description: str) -> Tuple[str, str]:
         "PACT OF EXCESS",
         "PACT OF SORCERY",
         "MARTIAL GRACE",
+        "MARTIAL KA'TAH",
         "PLUNGING FIRE",
         "REBORN IN BLOOD",
         "REDEPLOY",

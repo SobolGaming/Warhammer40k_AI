@@ -1577,11 +1577,30 @@ class WargearProfile:
             dark_pacts_lethal = dark_pacts_choice == "LETHAL HITS"
             dark_pacts_sustained = bool(dark_pacts_choice and dark_pacts_choice.startswith("SUSTAINED"))
 
-            if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal:
+            martial_katah_lethal = False
+            martial_katah_sustained = False
+            try:
+                if is_melee:
+                    unit = getattr(attacker, "parent_unit", None)
+                    root = unit.get_attached_unit_root() if unit is not None else None
+                    if root is not None and root.attached_unit_has_martial_katah():
+                        sr = getattr(root, "special_rules", None)
+                        choice = ""
+                        if isinstance(sr, dict):
+                            choice = str(sr.get("martial_katah_choice", "") or "").strip().upper()
+                        if choice == "RENDAX":
+                            martial_katah_lethal = True
+                        elif choice == "DACATARAI":
+                            martial_katah_sustained = True
+            except Exception:
+                martial_katah_lethal = False
+                martial_katah_sustained = False
+
+            if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal or martial_katah_lethal:
                 hit_result['special_effects'].append("Lethal Hits")
                 attack_instance['lethal_hit'] = True
             # For Sustained Hits, do not override an existing Sustained Hits X on the weapon.
-            if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained:
+            if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained:
                 # Support Sustained Hits X / Sustained Hits D3 / etc. Roll per critical hit.
                 if self.is_sustained_hits():
                     try:
@@ -1598,6 +1617,8 @@ class WargearProfile:
                         label += " [Blessings of Khorne]"
                     elif dark_pacts_sustained:
                         label += " [Dark Pacts]"
+                    elif martial_katah_sustained:
+                        label += " [Martial Ka'tah]"
                     hit_result['special_effects'].append(label)
                     attack_instance['sustained_hit'] = 1
             return hit_result
