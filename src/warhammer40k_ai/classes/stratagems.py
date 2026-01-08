@@ -375,6 +375,22 @@ class StratagemManager:
             kept.append(r)
         self._pending_reactions = kept
 
+    def _prune_reactions_for_phase(self) -> None:
+        current = str(self._current_phase_name or "").strip().lower()
+        if not current:
+            return
+        kept = []
+        for r in list(self._pending_reactions):
+            try:
+                reaction_phase = r.get("phase_name") or r.get("phase")
+            except Exception:
+                reaction_phase = None
+            if reaction_phase:
+                if str(reaction_phase).strip().lower() != current:
+                    continue
+            kept.append(r)
+        self._pending_reactions = kept
+
     def _reaction_time_left(self, reaction: Dict[str, Any], now: Optional[float] = None) -> Optional[float]:
         try:
             expires_at = reaction.get("expires_at", None)
@@ -623,6 +639,10 @@ class StratagemManager:
                 self._current_phase_name = str(phase)
         except Exception:
             self._current_phase_name = None
+        try:
+            self._prune_reactions_for_phase()
+        except Exception:
+            pass
         # Reset once-per-turn limits on your turn start
         try:
             is_active_turn = player is self.player
@@ -2543,6 +2563,13 @@ class StratagemManager:
             ctx = dict(r)
             if "phase_name" not in ctx and phase_name:
                 ctx["phase_name"] = phase_name
+            try:
+                reaction_phase = ctx.get("phase_name") or ctx.get("phase")
+            except Exception:
+                reaction_phase = None
+            if reaction_phase and phase_name:
+                if str(reaction_phase).strip().lower() != str(phase_name).strip().lower():
+                    continue
             if not s.is_phase_allowed(ctx.get("phase_name", "") or phase_name):
                 continue
             availability = self._evaluate_availability(s, ctx, is_active_turn=is_active_turn)

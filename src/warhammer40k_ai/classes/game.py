@@ -5755,6 +5755,12 @@ class Game:
             except Exception:
                 pass
 
+            # Start of Command phase for the first battle round.
+            try:
+                self.start_command_phase()
+            except Exception:
+                pass
+
             # Show detailed first turn information
             first_turn_player = self.get_current_player()
             if self.first_turn_player_index == self.attacker_index:
