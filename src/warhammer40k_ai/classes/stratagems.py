@@ -223,7 +223,7 @@ class Stratagem:
                 eff_cost = int(player.apply_stratagem_cp_cost(self, target_unit=target_unit).get("cost", self.cp_cost))
         except Exception:
             eff_cost = self.cp_cost
-        if not player.spend_command_points(eff_cost):
+        if not player.spend_command_points(eff_cost, reason=f"Stratagem: {self.name}", source="stratagem"):
             return False
         # Drukhari: allow optional Pain token spends for stratagem add-on effects.
         try:
@@ -1673,7 +1673,7 @@ class StratagemManager:
                 print("❌ INSANE BRAVERY: no target unit provided")
                 return False
             # Spend CP
-            if not self.player.spend_command_points(s.cp_cost):
+            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
             # Mark auto-pass flag to be consumed by Unit.take_battle_shock_test()
             try:
@@ -1753,7 +1753,7 @@ class StratagemManager:
                     return False
             except Exception:
                 return False
-            if not self.player.spend_command_points(s.cp_cost):
+            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 try:
                     fight_mgr._forced_next_unit = None
                     fight_mgr._forced_next_player = None
@@ -1794,7 +1794,7 @@ class StratagemManager:
                     return False
             except Exception:
                 return False
-            if not self.player.spend_command_points(s.cp_cost):
+            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
             try:
                 sr = getattr(target_unit, "special_rules", None)
@@ -1907,7 +1907,7 @@ class StratagemManager:
                 if kwargs.get('dequeue') is True:
                     self._dequeue_reaction_by_name(s.name)
                 # Spend CP and return through normal use path (so CP is deducted consistently)
-                if not self.player.spend_command_points(s.cp_cost):
+                if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                     print("⚠️ Overwatch succeeded but CP spend failed; adjusting CP manually")
                 try:
                     self._used_stratagems_this_phase.add((s.name or "").strip().upper())
@@ -1939,7 +1939,7 @@ class StratagemManager:
                 print("❌ Command Re-roll: no reroll callback available")
                 return False
             # Spend CP first per rules, then perform the reroll
-            if not self.player.spend_command_points(s.cp_cost):
+            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
             try:
                 result = reroll_cb()
@@ -2014,7 +2014,7 @@ class StratagemManager:
                                 return False
             except Exception:
                 return False
-            if not self.player.spend_command_points(s.cp_cost):
+            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
             try:
                 sr = getattr(model, "special_rules", None)
@@ -2057,7 +2057,7 @@ class StratagemManager:
                 print("❌ New Orders: invalid or missing target Secondary card")
                 return False
             # Spend CP per stratagem cost
-            if not self.player.spend_command_points(s.cp_cost):
+            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
             # Discard chosen card and draw back up to two
             try:
@@ -2136,7 +2136,7 @@ class StratagemManager:
             except Exception:
                 pass
             # Spend CP (after success to avoid consuming CP on placement failure)
-            if not self.player.spend_command_points(s.cp_cost):
+            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 print("⚠️ Rapid Ingress succeeded but CP spend failed; adjusting CP manually")
             print(f"🪂 Rapid Ingress: {target.name} arrived from reserves")
             if kwargs.get('dequeue') is True:
@@ -2158,7 +2158,7 @@ class StratagemManager:
                 print("❌ GO TO GROUND: no target unit provided")
                 return False
             # Spend CP
-            if not self.player.spend_command_points(s.cp_cost):
+            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
             # Mark active until end of Shooting phase; cleared in _on_phase_end.
             try:
@@ -2247,7 +2247,7 @@ class StratagemManager:
                 print("❌ GRENADE: no eligible enemy target found/provided")
                 return False
             # Spend CP
-            if not self.player.spend_command_points(s.cp_cost):
+            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
             # Roll 6D6; each 4+ = 1 mortal wound
             from ..utility.dice import get_roll
@@ -2297,7 +2297,7 @@ class StratagemManager:
                 print("❌ TANK SHOCK: no enemy unit in Engagement Range")
                 return False
             # Spend CP
-            if not self.player.spend_command_points(s.cp_cost):
+            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
             # Pick a VEHICLE model in your unit within ER of that enemy unit.
             chosen_model = None
@@ -2408,7 +2408,7 @@ class StratagemManager:
                 print("Heroic Intervention: target cannot declare charge against enemy")
                 return False
 
-            if not self.player.spend_command_points(s.cp_cost):
+            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
 
             ok = False
@@ -2464,7 +2464,7 @@ class StratagemManager:
                     return False
             except Exception:
                 return False
-            if not self.player.spend_command_points(s.cp_cost):
+            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
             try:
                 sr = getattr(unit, "special_rules", None)
@@ -2505,7 +2505,7 @@ class StratagemManager:
                 print("❌ Blood Offering: no objective marker available")
                 return False
             # Spend CP
-            if not self.player.spend_command_points(s.cp_cost):
+            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
             try:
                 loc = getattr(objective, "location", None)

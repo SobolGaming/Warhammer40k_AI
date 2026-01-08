@@ -1,6 +1,7 @@
 # This is the player that gets put onto a Battlefield and has an Army
 
 import logging
+from typing import Any
 from enum import Enum, auto
 from .army import Army
 from .unit import Unit
@@ -35,6 +36,10 @@ class Player:
         self.vp_primary: int = 0
         self.vp_secondary: int = 0
         self.vp_battle_ready: int = 0
+        # Chronological VP log entries (most recent last).
+        self.vp_history: list[dict[str, Any]] = []
+        # Chronological CP log entries (most recent last).
+        self.cp_history: list[dict[str, Any]] = []
         # Battle Ready (painted) bonus: assume TRUE by default per project rules.
         self.is_battle_ready: bool = True
         # Mission cards
@@ -139,10 +144,12 @@ class Player:
 
         if is_normal_command_phase_gain:
             self.command_points += amount
+            self._record_cp_change(amount, reason=reason or "Normal Command phase CP", source="gain")
             return amount
 
         if exempt_from_guardrail:
             self.command_points += amount
+            self._record_cp_change(amount, reason=reason or "Command Points gained", source="gain")
             return amount
 
         # Guardrail: max +1 CP per battle round from non-normal sources.
@@ -152,6 +159,7 @@ class Player:
         gained = min(amount, 1)
         self.command_points += gained
         self.cp_gained_this_battle_round_excluding_normal_command_cp += 1
+        self._record_cp_change(gained, reason=reason or "Command Points gained", source="gain")
         return gained
 
     def get_normal_command_phase_cp_gain(self) -> int:
@@ -185,12 +193,68 @@ class Player:
         """Legacy wrapper: gain 1 CP subject to the guardrail (non-normal source)."""
         self.gain_command_points(1)
     
-    def spend_command_points(self, amount: int) -> bool:
+    def spend_command_points(self, amount: int, *, reason: str | None = None, source: str | None = None) -> bool:
         """Spend command points if available"""
+        try:
+            amount = int(amount or 0)
+        except Exception:
+            amount = 0
+        if amount <= 0:
+            return False
         if self.command_points >= amount:
             self.command_points -= amount
+            self._record_cp_change(-amount, reason=reason or "Command Points spent", source=source or "spend")
             return True
         return False
+
+    def _record_cp_change(self, delta: int, *, reason: str | None = None, source: str | None = None) -> None:
+        try:
+            delta = int(delta or 0)
+        except Exception:
+            delta = 0
+        if delta == 0:
+            return
+        try:
+            if not hasattr(self, "cp_history") or self.cp_history is None:
+                self.cp_history = []
+        except Exception:
+            return
+
+        game = getattr(self, "game", None)
+        try:
+            round_val = int(getattr(game, "get_battle_round", lambda: 0)() or 0) if game is not None else 0
+        except Exception:
+            round_val = 0
+        phase_label = None
+        try:
+            if game is not None and hasattr(game, "_current_phase_label"):
+                phase_label = game._current_phase_label()
+        except Exception:
+            phase_label = None
+        if not phase_label:
+            try:
+                phase = getattr(game, "phase", None) if game is not None else None
+                if hasattr(phase, "name"):
+                    phase_label = str(phase.name).replace("_", " ").title()
+                elif phase is not None:
+                    phase_label = str(phase)
+            except Exception:
+                phase_label = None
+        if not phase_label:
+            phase_label = "Unknown Phase"
+
+        entry = {
+            "round": round_val,
+            "phase": phase_label,
+            "delta": delta,
+            "current": int(getattr(self, "command_points", 0) or 0),
+            "reason": reason,
+            "source": source,
+        }
+        try:
+            self.cp_history.append(entry)
+        except Exception:
+            pass
 
     # ---------------- Stratagem CP modifiers (e.g. Direct the Slaughter) ----------------
 

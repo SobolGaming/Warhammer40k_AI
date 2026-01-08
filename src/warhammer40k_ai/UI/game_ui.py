@@ -719,7 +719,11 @@ class GameView:
                 ok = False
                 try:
                     cp_cost = int(context.get("cp_cost", 1) or 1)
-                    if not player.spend_command_points(cp_cost):
+                    if not player.spend_command_points(
+                        cp_cost,
+                        reason="Stratagem: SKULLS FOR THE SKULL THRONE!",
+                        source="stratagem",
+                    ):
                         on_done(False)
                         return
                     # Dequeue reaction if present
@@ -767,6 +771,12 @@ class GameView:
         # Initialize shared UI state
         self._ui_hitboxes = {}
         self._mission_popup = None
+        self._vp_history_popup = None
+        self._vp_history_scroll = 0
+        self._vp_history_max_scroll = 0
+        self._cp_history_popup = None
+        self._cp_history_scroll = 0
+        self._cp_history_max_scroll = 0
         # Cache loaded mission card images (path string -> pygame.Surface)
         self._mission_image_surface_cache: Dict[str, pygame.Surface] = {}
         # Cache "does this card have an image?" lookups (cache_key -> Optional[str path])
@@ -3938,7 +3948,7 @@ class GameView:
         try:
             if hasattr(self, "_ui_hitboxes"):
                 for key in list(self._ui_hitboxes.keys()):
-                    if key == "primary" or str(key).startswith("sec_"):
+                    if key == "primary" or str(key).startswith("sec_") or str(key).startswith("vp_") or str(key).startswith("cp_"):
                         self._ui_hitboxes.pop(key, None)
         except Exception:
             pass
@@ -3977,8 +3987,14 @@ class GameView:
         x0 = p1_rect.x + 6
         y0 = p1_rect.y + 6
         h = pane_height_px - 12
-        draw_box(pygame.Rect(x0, y0, box_w, h), f"VP: {p1.score}")
-        draw_box(pygame.Rect(x0 + box_w + 6, y0, box_w, h), f"CP: {p1.command_points}")
+        vp1_rect = pygame.Rect(x0, y0, box_w, h)
+        draw_box(vp1_rect, f"VP: {p1.score}")
+        cp1_rect = pygame.Rect(x0 + box_w + 6, y0, box_w, h)
+        draw_box(cp1_rect, f"CP: {p1.command_points}")
+        if not hasattr(self, "_ui_hitboxes"):
+            self._ui_hitboxes = {}
+        self._ui_hitboxes["vp_p1"] = (pygame.Rect(vp1_rect), p1)
+        self._ui_hitboxes["cp_p1"] = (pygame.Rect(cp1_rect), p1)
         sec_area_width = int((p1_rect.width - (2 * (box_w + 6)) - 12) * 0.95)
         self._draw_secondaries_buttons(pygame.Rect(x0 + 2*(box_w + 6), y0, sec_area_width, h), p1, align='left')
 
@@ -3997,8 +4013,14 @@ class GameView:
         box_w2 = p2_rect.width // 6 - 6
         y2 = p2_rect.y + 6
         h2 = h
-        draw_box(pygame.Rect(p2_rect.right - box_w2 - 6, y2, box_w2, h2), f"VP: {p2.score}", align='right')
-        draw_box(pygame.Rect(p2_rect.right - 2*(box_w2 + 6), y2, box_w2, h2), f"CP: {p2.command_points}", align='right')
+        vp2_rect = pygame.Rect(p2_rect.right - box_w2 - 6, y2, box_w2, h2)
+        draw_box(vp2_rect, f"VP: {p2.score}", align='right')
+        cp2_rect = pygame.Rect(p2_rect.right - 2*(box_w2 + 6), y2, box_w2, h2)
+        draw_box(cp2_rect, f"CP: {p2.command_points}", align='right')
+        if not hasattr(self, "_ui_hitboxes"):
+            self._ui_hitboxes = {}
+        self._ui_hitboxes["vp_p2"] = (pygame.Rect(vp2_rect), p2)
+        self._ui_hitboxes["cp_p2"] = (pygame.Rect(cp2_rect), p2)
         sec2_area_width = int((p2_rect.width - (2 * (box_w2 + 6)) - 12) * 0.95)
         # Position Player 2 secondaries area immediately to the left of the CP/VP boxes
         sec2_x = p2_rect.right - 2*(box_w2 + 6) - 6 - sec2_area_width
@@ -4312,11 +4334,37 @@ class GameView:
         overlay = pygame.Surface(self.screen.get_size(), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 160))
         self.screen.blit(overlay, (0, 0))
+        screen_w = self.screen.get_width()
+        screen_h = self.screen.get_height()
         # Slightly larger to fit mission card images comfortably.
-        width = int(self.screen.get_width() * 0.62)
-        height = int(self.screen.get_height() * 0.78)
+        width = int(screen_w * 0.62)
+        height = int(screen_h * 0.78)
+        img = None
+        scaled_img = None
+        image_size = None
+        if image_path:
+            try:
+                img = self._load_image_surface_cached(image_path)
+            except Exception:
+                img = None
+        if img is not None:
+            iw, ih = img.get_width(), img.get_height()
+            if iw > 0 and ih > 0:
+                # Keep the popup tight to the image for mission card art.
+                outer_margin = 24
+                inner_pad = 16
+                header_h = 56
+                hint_h = 36
+                max_img_w = max(1, screen_w - (outer_margin * 2) - (inner_pad * 2))
+                max_img_h = max(1, screen_h - (outer_margin * 2) - header_h - hint_h)
+                scale = min(1.0, max_img_w / iw, max_img_h / ih)
+                new_w = max(1, int(iw * scale))
+                new_h = max(1, int(ih * scale))
+                width = new_w + (inner_pad * 2)
+                height = new_h + header_h + hint_h
+                image_size = (new_w, new_h)
         rect = pygame.Rect(0, 0, width, height)
-        rect.center = (self.screen.get_width() // 2, self.screen.get_height() // 2)
+        rect.center = (screen_w // 2, screen_h // 2)
         pygame.draw.rect(self.screen, (35,35,38), rect)
         pygame.draw.rect(self.screen, (90,90,100), rect, 2)
         try:
@@ -4337,16 +4385,21 @@ class GameView:
         # If an image is available, show it instead of text.
         if image_path:
             try:
-                img = self._load_image_surface_cached(image_path)
                 if img is not None:
                     iw, ih = img.get_width(), img.get_height()
                     if iw > 0 and ih > 0:
-                        scale = min(content_rect.width / iw, content_rect.height / ih)
-                        new_w = max(1, int(iw * scale))
-                        new_h = max(1, int(ih * scale))
-                        scaled = pygame.transform.smoothscale(img, (new_w, new_h))
-                        dest = scaled.get_rect(center=content_rect.center)
-                        self.screen.blit(scaled, dest)
+                        if image_size:
+                            new_w, new_h = image_size
+                        else:
+                            scale = min(content_rect.width / iw, content_rect.height / ih)
+                            new_w = max(1, int(iw * scale))
+                            new_h = max(1, int(ih * scale))
+                        if (new_w, new_h) != (iw, ih):
+                            scaled_img = pygame.transform.smoothscale(img, (new_w, new_h))
+                        else:
+                            scaled_img = img
+                        dest = scaled_img.get_rect(center=content_rect.center)
+                        self.screen.blit(scaled_img, dest)
                         hint = hint_font.render("Click anywhere to close", True, (180, 180, 180))
                         self.screen.blit(hint, (rect.x + 16, rect.bottom - 28))
                         return
@@ -4374,6 +4427,220 @@ class GameView:
             self.screen.blit(ls, (x, y))
         hint = hint_font.render("Click anywhere to close", True, (180, 180, 180))
         self.screen.blit(hint, (rect.x + 16, rect.bottom - 28))
+
+    def _wrap_text_lines(
+        self,
+        text: str,
+        font: pygame.font.Font,
+        max_width: int,
+        *,
+        first_prefix: str = "",
+        next_prefix: str = "",
+    ) -> list[str]:
+        words = str(text or "").split()
+        if not words:
+            return [first_prefix.rstrip()]
+        lines: list[str] = []
+        prefix = first_prefix
+        line = ""
+        for word in words:
+            test = (line + " " + word).strip()
+            if font.size(f"{prefix}{test}")[0] <= max_width:
+                line = test
+                continue
+            if line:
+                lines.append(f"{prefix}{line}")
+            else:
+                lines.append(f"{prefix}{test}")
+                test = ""
+            prefix = next_prefix
+            line = word if test != "" else ""
+        if line:
+            lines.append(f"{prefix}{line}")
+        return lines
+
+    def _draw_vp_history_popup_overlay(self, player) -> None:
+        if player is None:
+            return
+        overlay = pygame.Surface(self.screen.get_size(), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 160))
+        self.screen.blit(overlay, (0, 0))
+
+        screen_w = self.screen.get_width()
+        screen_h = self.screen.get_height()
+        width = int(screen_w * 0.64)
+        height = int(screen_h * 0.72)
+        rect = pygame.Rect(0, 0, width, height)
+        rect.center = (screen_w // 2, screen_h // 2)
+        pygame.draw.rect(self.screen, (35,35,38), rect)
+        pygame.draw.rect(self.screen, (90,90,100), rect, 2)
+
+        try:
+            title_font = pygame.font.SysFont('Arial', 18, bold=True)
+            body_font = pygame.font.SysFont('Arial', 14)
+            hint_font = pygame.font.SysFont('Arial', 12)
+        except Exception:
+            title_font = pygame.font.Font(None, 18)
+            body_font = pygame.font.Font(None, 14)
+            hint_font = pygame.font.Font(None, 12)
+
+        title = f"VP History - {getattr(player, 'name', 'Player')}"
+        ts = title_font.render(title, True, (255,255,255))
+        tr = ts.get_rect(center=(rect.centerx, rect.y + 26))
+        self.screen.blit(ts, tr)
+
+        content_rect = pygame.Rect(rect.x + 16, rect.y + 48, rect.width - 32, rect.height - 48 - 28)
+
+        entries = list(reversed(getattr(player, "vp_history", []) or []))
+        lines: list[str] = []
+        if not entries:
+            lines.append("No VP scored yet.")
+        else:
+            for entry in entries:
+                round_val = entry.get("round") or 0
+                phase = entry.get("phase") or "Unknown Phase"
+                timing = entry.get("timing")
+                when = f"Round {round_val} - {phase}"
+                if timing:
+                    when = f"{when} ({timing})"
+                lines.extend(self._wrap_text_lines(when, body_font, content_rect.width, first_prefix="When: ", next_prefix="      "))
+
+                source = str(entry.get("source") or "").lower()
+                card_name = entry.get("card_name")
+                if source == "primary":
+                    label = "Primary"
+                elif source == "secondary":
+                    label = "Secondary"
+                elif source in ("battle_ready", "battleready", "battle-ready"):
+                    label = "Battle Ready"
+                else:
+                    label = source.title() if source else "VP"
+                if card_name:
+                    if label in ("Primary", "Secondary"):
+                        label = f"{label}: {card_name}"
+                    else:
+                        label = f"{label} ({card_name})"
+                what = f"{entry.get('awarded', 0)} VP - {label}"
+                lines.extend(self._wrap_text_lines(what, body_font, content_rect.width, first_prefix="What: ", next_prefix="      "))
+
+                detail_lines = []
+                details = entry.get("details")
+                if details:
+                    if isinstance(details, list):
+                        detail_lines = [str(d).strip() for d in details if str(d).strip()]
+                    else:
+                        detail_lines = [d.strip() for d in str(details).splitlines() if d.strip()]
+                else:
+                    scoring_text = entry.get("card_scoring_text")
+                    if scoring_text:
+                        detail_lines = [d.strip() for d in str(scoring_text).splitlines() if d.strip()]
+                if detail_lines:
+                    for i, detail in enumerate(detail_lines):
+                        if i == 0:
+                            lines.extend(self._wrap_text_lines(detail, body_font, content_rect.width, first_prefix="Why: ", next_prefix="     "))
+                        else:
+                            lines.extend(self._wrap_text_lines(detail, body_font, content_rect.width, first_prefix="     ", next_prefix="     "))
+                lines.append("")
+
+        line_height = body_font.get_height() + 4
+        total_height = len(lines) * line_height
+        self._vp_history_max_scroll = max(0, total_height - content_rect.height)
+        self._vp_history_scroll = max(0, min(self._vp_history_scroll, self._vp_history_max_scroll))
+        y = content_rect.y - self._vp_history_scroll
+        for line in lines:
+            if y + line_height < content_rect.y:
+                y += line_height
+                continue
+            if y > content_rect.bottom:
+                break
+            if line:
+                surf = body_font.render(line, True, (220,220,220))
+                self.screen.blit(surf, (content_rect.x, y))
+            y += line_height
+
+        hint = hint_font.render("Mouse wheel to scroll, click to close", True, (180, 180, 180))
+        self.screen.blit(hint, (rect.x + 16, rect.bottom - 22))
+
+    def _draw_cp_history_popup_overlay(self, player) -> None:
+        if player is None:
+            return
+        overlay = pygame.Surface(self.screen.get_size(), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 160))
+        self.screen.blit(overlay, (0, 0))
+
+        screen_w = self.screen.get_width()
+        screen_h = self.screen.get_height()
+        width = int(screen_w * 0.64)
+        height = int(screen_h * 0.72)
+        rect = pygame.Rect(0, 0, width, height)
+        rect.center = (screen_w // 2, screen_h // 2)
+        pygame.draw.rect(self.screen, (35,35,38), rect)
+        pygame.draw.rect(self.screen, (90,90,100), rect, 2)
+
+        try:
+            title_font = pygame.font.SysFont('Arial', 18, bold=True)
+            body_font = pygame.font.SysFont('Arial', 14)
+            hint_font = pygame.font.SysFont('Arial', 12)
+        except Exception:
+            title_font = pygame.font.Font(None, 18)
+            body_font = pygame.font.Font(None, 14)
+            hint_font = pygame.font.Font(None, 12)
+
+        title = f"CP History - {getattr(player, 'name', 'Player')} (Current: {int(getattr(player, 'command_points', 0) or 0)})"
+        ts = title_font.render(title, True, (255,255,255))
+        tr = ts.get_rect(center=(rect.centerx, rect.y + 26))
+        self.screen.blit(ts, tr)
+
+        content_rect = pygame.Rect(rect.x + 16, rect.y + 48, rect.width - 32, rect.height - 48 - 28)
+
+        entries = list(reversed(getattr(player, "cp_history", []) or []))
+        lines: list[str] = []
+        if not entries:
+            lines.append("No CP changes yet.")
+        else:
+            for entry in entries:
+                round_val = entry.get("round") or 0
+                phase = entry.get("phase") or "Unknown Phase"
+                when = f"Round {round_val} - {phase}"
+                lines.extend(self._wrap_text_lines(when, body_font, content_rect.width, first_prefix="When: ", next_prefix="      "))
+
+                delta = int(entry.get("delta") or 0)
+                sign = "+" if delta >= 0 else "-"
+                current = entry.get("current")
+                if current is None:
+                    current = int(getattr(player, "command_points", 0) or 0)
+                what = f"{sign}{abs(delta)} CP (Current: {current})"
+                lines.extend(self._wrap_text_lines(what, body_font, content_rect.width, first_prefix="What: ", next_prefix="      "))
+
+                reason = entry.get("reason")
+                if not reason:
+                    src = entry.get("source")
+                    if src and str(src).lower() not in ("gain", "spend"):
+                        reason = str(src)
+                if reason:
+                    lines.extend(self._wrap_text_lines(str(reason), body_font, content_rect.width, first_prefix="Why: ", next_prefix="     "))
+                else:
+                    lines.append("Why: (unspecified)")
+                lines.append("")
+
+        line_height = body_font.get_height() + 4
+        total_height = len(lines) * line_height
+        self._cp_history_max_scroll = max(0, total_height - content_rect.height)
+        self._cp_history_scroll = max(0, min(self._cp_history_scroll, self._cp_history_max_scroll))
+        y = content_rect.y - self._cp_history_scroll
+        for line in lines:
+            if y + line_height < content_rect.y:
+                y += line_height
+                continue
+            if y > content_rect.bottom:
+                break
+            if line:
+                surf = body_font.render(line, True, (220,220,220))
+                self.screen.blit(surf, (content_rect.x, y))
+            y += line_height
+
+        hint = hint_font.render("Mouse wheel to scroll, click to close", True, (180, 180, 180))
+        self.screen.blit(hint, (rect.x + 16, rect.bottom - 22))
     
     def update_roster_pane_titles(self):
         """Update roster pane titles to show Attacker/Defender after roles are determined."""
@@ -4431,6 +4698,12 @@ class GameView:
             dialog_active = False
         if event.type == pygame.MOUSEBUTTONDOWN and not dialog_active:
             # Mission popup overlay closes on any click
+            if getattr(self, '_cp_history_popup', None):
+                self._cp_history_popup = None
+                return True
+            if getattr(self, '_vp_history_popup', None):
+                self._vp_history_popup = None
+                return True
             if getattr(self, '_mission_popup', None):
                 self._mission_popup = None
                 return True
@@ -4440,6 +4713,22 @@ class GameView:
                 width = self.scaled_battlefield_width
                 top_rect = pygame.Rect(left, 0, width, self.top_pane_height_px)
                 if top_rect.collidepoint(event.pos):
+                    if self._ui_hitboxes:
+                        for key, (rect, player) in list(self._ui_hitboxes.items()):
+                            if not str(key).startswith("vp_"):
+                                continue
+                            if rect.collidepoint(event.pos) and player is not None:
+                                self._vp_history_popup = {"player": player}
+                                self._vp_history_scroll = 0
+                                return True
+                    if self._ui_hitboxes:
+                        for key, (rect, player) in list(self._ui_hitboxes.items()):
+                            if not str(key).startswith("cp_"):
+                                continue
+                            if rect.collidepoint(event.pos) and player is not None:
+                                self._cp_history_popup = {"player": player}
+                                self._cp_history_scroll = 0
+                                return True
                     # If clicking on mission buttons (primary/secondaries), open popup
                     if self._ui_hitboxes:
                         for key, (rect, card) in list(self._ui_hitboxes.items()):
@@ -4541,12 +4830,42 @@ class GameView:
         elif event.type == pygame.MOUSEMOTION:
             self.on_mouse_motion(event.pos[0], event.pos[1])
         elif event.type == pygame.MOUSEWHEEL:
+            if getattr(self, '_cp_history_popup', None):
+                try:
+                    self._cp_history_scroll = max(
+                        0,
+                        min(
+                            self._cp_history_max_scroll,
+                            int(self._cp_history_scroll) - int(event.y * 24),
+                        ),
+                    )
+                except Exception:
+                    self._cp_history_scroll = 0
+                return True
+            if getattr(self, '_vp_history_popup', None):
+                try:
+                    self._vp_history_scroll = max(
+                        0,
+                        min(
+                            self._vp_history_max_scroll,
+                            int(self._vp_history_scroll) - int(event.y * 24),
+                        ),
+                    )
+                except Exception:
+                    self._vp_history_scroll = 0
+                return True
             mouse_x, mouse_y = pygame.mouse.get_pos()
             self.on_mouse_scroll(mouse_x, mouse_y, event.y)
         elif event.type == pygame.KEYDOWN:
             # Close mission popup with ESC
             if event.key == pygame.K_ESCAPE and getattr(self, '_mission_popup', None):
                 self._mission_popup = None
+                return True
+            if event.key == pygame.K_ESCAPE and getattr(self, '_cp_history_popup', None):
+                self._cp_history_popup = None
+                return True
+            if event.key == pygame.K_ESCAPE and getattr(self, '_vp_history_popup', None):
+                self._vp_history_popup = None
                 return True
             if event.key == pygame.K_ESCAPE and self.rule_detail_panel and self.rule_detail_panel.visible:
                 self.rule_detail_panel.hide()
@@ -4724,7 +5043,11 @@ class GameView:
                 self._overwatch_flow_active = False
                 if executed:
                     s = manager.get_by_name(str(name)) if manager else None
-                    if s and player.spend_command_points(s.cp_cost):
+                    if s and player.spend_command_points(
+                        s.cp_cost,
+                        reason=f"Stratagem: {s.name}",
+                        source="stratagem",
+                    ):
                         manager._used_this_turn["OVERWATCH"] = True
                         if ctx.get("dequeue") is True and hasattr(manager, "_dequeue_reaction_by_name"):
                             manager._dequeue_reaction_by_name(s.name)
@@ -4800,7 +5123,11 @@ class GameView:
             return
 
         strat = manager.get_by_name(str(name)) if manager else None
-        if strat is None or not player.spend_command_points(strat.cp_cost):
+        if strat is None or not player.spend_command_points(
+            strat.cp_cost,
+            reason=f"Stratagem: {strat.name}",
+            source="stratagem",
+        ):
             print("Heroic Intervention: failed to spend CP")
             return
 
@@ -5789,6 +6116,10 @@ class GameView:
                 self._mission_popup.get('body', ''),
                 image_path=self._mission_popup.get('image_path'),
             )
+        if getattr(self, '_vp_history_popup', None):
+            self._draw_vp_history_popup_overlay(self._vp_history_popup.get("player"))
+        if getattr(self, '_cp_history_popup', None):
+            self._draw_cp_history_popup_overlay(self._cp_history_popup.get("player"))
         pygame.display.update()
 
     # Note: on_key_press is now handled by phase-specific handlers in PhaseManager

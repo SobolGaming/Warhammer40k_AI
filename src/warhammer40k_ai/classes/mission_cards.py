@@ -9,6 +9,8 @@ from typing import Callable, Dict, List, Optional, Tuple
 class ScoreResult:
     vp: int
     achieved: bool = False  # For secondary cards that complete upon scoring
+    # Optional detail lines to explain why scoring occurred.
+    details: list[str] | str | None = None
 
 
 class SecondaryScoringWindow(Enum):

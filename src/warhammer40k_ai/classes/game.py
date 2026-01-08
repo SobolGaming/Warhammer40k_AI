@@ -3483,7 +3483,13 @@ class Game:
         if hasattr(current_player, 'primary_mission') and isinstance(current_player.primary_mission, PrimaryMissionCard):
             vp = current_player.primary_mission.score_at_command_phase(self, current_player)
             if vp:
-                added = self.award_vp(current_player, vp, source="primary", card=current_player.primary_mission)
+                added = self.award_vp(
+                    current_player,
+                    vp,
+                    source="primary",
+                    card=current_player.primary_mission,
+                    timing="End of Command phase",
+                )
                 if added:
                     print(f"🎯 {current_player.name} scored {added} VP from Primary: {current_player.primary_mission.name}")
         else:
@@ -3666,7 +3672,74 @@ class Game:
         except Exception:
             pass
 
-    def award_vp(self, player: Player, requested_vp: int, *, source: str, card: object | None = None) -> int:
+    def _current_phase_label(self) -> str:
+        try:
+            if hasattr(self, "is_in_setup_phase") and self.is_in_setup_phase():
+                try:
+                    return self.get_current_setup_phase().name.replace("_", " ").title()
+                except Exception:
+                    return "Setup"
+        except Exception:
+            pass
+        try:
+            phase = getattr(self, "phase", None)
+            if phase is None:
+                return "Unknown Phase"
+            if hasattr(phase, "name"):
+                return str(phase.name).replace("_", " ").title()
+            return str(phase)
+        except Exception:
+            return "Unknown Phase"
+
+    def _record_vp_award(
+        self,
+        *,
+        player: Player,
+        requested_vp: int,
+        awarded_vp: int,
+        source: str,
+        card: object | None = None,
+        details: list[str] | str | None = None,
+        timing: str | None = None,
+    ) -> None:
+        try:
+            if not hasattr(player, "vp_history") or player.vp_history is None:
+                player.vp_history = []
+        except Exception:
+            return
+        card_name = getattr(card, "name", None) if card is not None else None
+        card_scoring_text = None
+        if card is not None:
+            try:
+                card_scoring_text = getattr(card, "scoring_text", None) or getattr(card, "summary", None)
+            except Exception:
+                card_scoring_text = None
+        entry = {
+            "round": int(getattr(self, "get_battle_round", lambda: 0)() or 0),
+            "phase": self._current_phase_label(),
+            "timing": timing,
+            "source": str(source or ""),
+            "card_name": card_name,
+            "awarded": int(awarded_vp or 0),
+            "requested": int(requested_vp or 0),
+            "details": details,
+            "card_scoring_text": card_scoring_text,
+        }
+        try:
+            player.vp_history.append(entry)
+        except Exception:
+            pass
+
+    def award_vp(
+        self,
+        player: Player,
+        requested_vp: int,
+        *,
+        source: str,
+        card: object | None = None,
+        details: list[str] | str | None = None,
+        timing: str | None = None,
+    ) -> int:
         """
         Award VP to a player, enforcing caps:
         - Primary Mission: 50VP max
@@ -3799,6 +3872,19 @@ class Game:
                 card=card,
             )
 
+        try:
+            self._record_vp_award(
+                player=player,
+                requested_vp=int(requested_vp or 0),
+                awarded_vp=int(to_add),
+                source=source_key,
+                card=card,
+                details=details,
+                timing=timing,
+            )
+        except Exception:
+            pass
+
         return int(to_add)
 
     def finalize_battle_scoring(self) -> None:
@@ -3809,7 +3895,13 @@ class Game:
             return
         for p in list(getattr(self, "players", []) or []):
             if getattr(p, "is_battle_ready", True):
-                self.award_vp(p, self.VP_MAX_BATTLE_READY, source="battle_ready")
+                self.award_vp(
+                    p,
+                    self.VP_MAX_BATTLE_READY,
+                    source="battle_ready",
+                    details="Battle Ready bonus",
+                    timing="End of battle",
+                )
         self._final_scoring_applied = True
 
     def end_of_turn_scoring(self) -> None:
@@ -3829,7 +3921,13 @@ class Game:
         if hasattr(turn_ending_player, 'primary_mission') and isinstance(turn_ending_player.primary_mission, PrimaryMissionCard):
             vp = turn_ending_player.primary_mission.score_at_end_of_turn(self, turn_ending_player)
             if vp:
-                added = self.award_vp(turn_ending_player, vp, source="primary", card=turn_ending_player.primary_mission)
+                added = self.award_vp(
+                    turn_ending_player,
+                    vp,
+                    source="primary",
+                    card=turn_ending_player.primary_mission,
+                    timing="End of turn",
+                )
                 if added:
                     print(f"🎯 {turn_ending_player.name} scored {added} VP (end of turn) from Primary: {turn_ending_player.primary_mission.name}")
 
@@ -3845,7 +3943,13 @@ class Game:
                 except Exception:
                     vp = 0
                 if vp:
-                    added = self.award_vp(p, vp, source="primary", card=prim)
+                    added = self.award_vp(
+                        p,
+                        vp,
+                        source="primary",
+                        card=prim,
+                        timing="End of opponent turn",
+                    )
                     if added:
                         print(f"🎯 {p.name} scored {added} VP (opponent turn end) from Primary: {getattr(prim, 'name', 'Primary')}")
 
@@ -3877,7 +3981,15 @@ class Game:
                 if not result:
                     continue
                 if result.vp:
-                    added = self.award_vp(scoring_player, result.vp, source="secondary", card=card)
+                    timing = "End of your turn" if scoring_player is turn_ending_player else "End of opponent turn"
+                    added = self.award_vp(
+                        scoring_player,
+                        result.vp,
+                        source="secondary",
+                        card=card,
+                        details=getattr(result, "details", None),
+                        timing=timing,
+                    )
                     if added:
                         total_secondary_vp += added
                         print(f"🎯 {scoring_player.name} scored {added} VP from Secondary: {card.name}")
@@ -3923,7 +4035,13 @@ class Game:
                 except Exception:
                     vp = 0
                 if vp:
-                    added = self.award_vp(player, vp, source="primary", card=player.primary_mission)
+                    added = self.award_vp(
+                        player,
+                        vp,
+                        source="primary",
+                        card=player.primary_mission,
+                        timing="End of battle round",
+                    )
                     if added:
                         print(f"🎯 {player.name} scored {added} VP (end of battle round) from Primary: {player.primary_mission.name}")
 
@@ -3983,7 +4101,22 @@ class Game:
                     except Exception:
                         points = 0
                     if points:
-                        added = self.award_vp(player, points, source="secondary", card=card)
+                        detail = None
+                        try:
+                            if getattr(unit, "is_character", False):
+                                detail = f"Destroyed Character unit: {unit.name}"
+                            else:
+                                detail = f"Destroyed unit: {unit.name}"
+                        except Exception:
+                            detail = None
+                        added = self.award_vp(
+                            player,
+                            points,
+                            source="secondary",
+                            card=card,
+                            details=detail,
+                            timing="Unit destroyed",
+                        )
                         if added:
                             print(f"🎯 {player.name} scored {added} VP from Secondary: {getattr(card, 'name', 'Unknown')} (unit destroyed)")
         except Exception:
@@ -4008,7 +4141,25 @@ class Game:
                     except Exception:
                         points = 0
                     if points:
-                        added = self.award_vp(player, points, source="secondary", card=card)
+                        detail = None
+                        try:
+                            unit = getattr(model, "parent_unit", None)
+                            if getattr(model, "is_character", False):
+                                detail = f"Destroyed Character: {model.name}"
+                            else:
+                                detail = f"Destroyed model: {model.name}"
+                            if unit is not None and getattr(unit, "name", None) and unit.name != model.name:
+                                detail = f"{detail} (Unit: {unit.name})"
+                        except Exception:
+                            detail = None
+                        added = self.award_vp(
+                            player,
+                            points,
+                            source="secondary",
+                            card=card,
+                            details=detail,
+                            timing="Model destroyed",
+                        )
                         if added:
                             print(f"🎯 {player.name} scored {added} VP from Secondary: {getattr(card, 'name', 'Unknown')} (model destroyed)")
         except Exception:
@@ -4710,7 +4861,19 @@ class Game:
                         loc.removed = True
                         print("🔥 Scorched Earth burned objective at ({:.1f}, {:.1f})".format(loc.x, loc.y))
                         # Immediate scoring per mission rules (Any time when burned)
-                        added = self.award_vp(actor, vp, source="primary", card=getattr(actor, "primary_mission", None))
+                        details = [
+                            f"Burned objective at ({loc.x:.1f}, {loc.y:.1f})",
+                        ]
+                        if in_opponent_dz:
+                            details.append("Objective in opponent deployment zone")
+                        added = self.award_vp(
+                            actor,
+                            vp,
+                            source="primary",
+                            card=getattr(actor, "primary_mission", None),
+                            details=details,
+                            timing="Action: Burn objective",
+                        )
                         if added:
                             print(f"🎯 {actor.name} scored {added} VP for burning objective")
                     unit.round_state.performing_action_name = None
