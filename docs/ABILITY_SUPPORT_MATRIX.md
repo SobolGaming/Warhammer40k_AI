@@ -34,13 +34,11 @@ These mechanics are currently recognized by searching ability names/descriptions
 - Dark Pacts (Supported)
 - Supreme Commander (must be Warlord) (Supported)
 - Pact of Blood (WE): disallow Blood Legions Army Faction (Supported)
-- Nurgle's Gift (Aura): Contagion Range 3/6/9" with plagues (Skullsquirm -1 hit, Rattlejoint -1 save, Scabrous -1 M/Ld/OC, OC min 1) (Supported)
-- The Shadow of Chaos (Chaos Daemons): zones + Dark Master aura + Manifestation/Terror (Supported)
+- Nurgle's Gift (Aura): baseline Contagion Range debuff (-1 Toughness to enemies within 3/6/9") (Partial)
 - Blessings of Khorne (World Eaters) (Supported)
 - Favoured of Khorne (Blessings rerolls) (Supported)
 - Idol of the Blessed Blood (Blessings +1D6) (Supported)
 - Reborn in Blood (Angron) (Supported)
-- Cabal of Sorcerers (Supported)
 - Deep Strike (Supported)
 - Infiltrators (Supported)
 - Scouts (Supported)
@@ -59,11 +57,6 @@ These mechanics are currently recognized by searching ability names/descriptions
 - Gain CP on destroy (partial) (Partial)
 - Heal on destroy (partial) (Partial)
 - Plunging Fire (Supported)
-- Reanimation Protocols (Supported; no embarked or reserve units)
-- Synapse (Supported)
-- Shadow in the Warp (Supported)
-- Power from Pain (partial: tokens + select Pain abilities + stratagem spend hook) (Partial)
-- Corsairs and Travelling Players (Supported)
 
 ## Core Abilities
 
@@ -125,7 +118,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Dark Pacts | `000008359` | 38 | 38 | **Supported** | Dark Pacts |
-| The Shadow of Chaos | `000008433` | 68 | 68 | **Supported** | Zones + Dark Master aura; Manifestation/Terror; Warp Rifts uses zones/auras without self-bootstrapping |
+| The Shadow of Chaos | `000008433` | 68 | 68 | **Not implemented** |  |
 
 ### Chaos Knights (`QT`) - `https://wahapedia.ru/wh40k10ed/factions/chaos-knights`
 
@@ -140,24 +133,25 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | Blessings of Khorne | `000008428` | 1 | 1 | **Supported** | Blessings of Khorne |
-| Cabal of Sorcerers | `000008424` | 1 | 1 | **Supported** | Cabal rituals supported. |
+| Cabal of Sorcerers | `000008424` | 1 | 1 | **Partial** | Lone Operative (extra conditions not fully modeled) |
 | Dark Pacts | `000008359` | 103 | 103 | **Supported** | Dark Pacts |
-| Nurgle’s Gift (Aura) | `000008396` | 1 | 1 | **Supported** | Contagion Range 3/6/9"; plagues: Skullsquirm (-1 hit), Rattlejoint (-1 save), Scabrous (-1 M/Ld/OC, OC min 1). |
+| Nurgle’s Gift (Aura) | `000008396` | 1 | 1 | **Partial** | Nurgle's Gift (Aura): baseline Contagion Range debuff (-1 Toughness to enemies within 3/6/9") |
 | Thrill Seekers | `000009994` | 1 | 1 | **Supported** | Thrill Seekers |
 
 ### Death Guard (`DG`) - `https://wahapedia.ru/wh40k10ed/factions/death-guard`
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Nurgle’s Gift (Aura) | `000008396` | 65 | 65 | **Supported** | Contagion Range 3/6/9"; plagues: Skullsquirm (-1 hit), Rattlejoint (-1 save), Scabrous (-1 M/Ld/OC, OC min 1). |
+| Nurgle’s Gift (Aura) | `000008396` | 65 | 65 | **Partial** | Nurgle's Gift (Aura): baseline Contagion Range debuff (-1 Toughness to enemies within 3/6/9") |
 | Pact of Decay | `000010120` | 6 | 6 | **Supported** | Pact of Decay |
 
 ### Drukhari (`DRU`) - `https://wahapedia.ru/wh40k10ed/factions/drukhari`
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Corsairs and Travelling Players | `000009974` | 0 | 0 | **Supported** | Allies cap + no Warlord/Enhancements for Harlequins/Anhrathe. |
-| Power from Pain | `000008507` | 30 | 30 | **Partial** | Pain tokens; limited Pain abilities (Hatred Eternal, Lithe Agility, Brides of Death, Sculptor of Torments, Fleshcraft); stratagem pain token spend hook. |
+| Battle Focus | `000009894` | 10 | 10 | **Supported** | Battle Focus |
+| Disparate Paths | `000009896` | 8 | 8 | **Supported** | Disparate Paths |
+| Power from Pain | `000008507` | 30 | 30 | **Not implemented** |  |
 
 ### Emperor’s Children (`EC`) - `https://wahapedia.ru/wh40k10ed/factions/emperor-s-children`
 
@@ -205,7 +199,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Reanimation Protocols | `000008369` | 63 | 63 | **Supported** | End of Command phase D3 wounds; heal wounded models before returning destroyed ones; no embarked or reserves. |
+| Reanimation Protocols | `000008369` | 63 | 63 | **Not implemented** |  |
 
 ### Orks (`ORK`) - `https://wahapedia.ru/wh40k10ed/factions/orks`
 
@@ -221,28 +215,34 @@ These mechanics are currently recognized by searching ability names/descriptions
 | Curse of the Wulfen | `000010256` | 4 | 4 | **Not implemented** |  |
 | Kill Team | `000008519` | 1 | 1 | **Not implemented** |  |
 | Mission Tactics | `000008521` | 10 | 10 | **Not implemented** |  |
-| Oath of Moment | `000008350` | 275 | 275 | **Supported** | Command phase target selection; hit re-rolls vs target; +1 wound vs target for Codex: Space Marines detachments without divergent chapter keywords. |
-| Templar Vows | `000008526` | 19 | 19 | **Supported** | All four vows implemented (charge reroll/precision, melee +1 to wound, charge after fall back, actions after advance + sticky objectives). |
+| Oath of Moment | `000008350` | 275 | 275 | **Not implemented** |  |
+| Templar Vows | `000008526` | 19 | 19 | **Partial** | Advance+Charge (exact wording) (extra conditions not fully modeled) |
 
 ### Thousand Sons (`TS`) - `https://wahapedia.ru/wh40k10ed/factions/thousand-sons`
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Cabal of Sorcerers | `000008424` | 13 | 13 | **Supported** | Cabal rituals supported. |
+| Cabal of Sorcerers | `000008424` | 13 | 13 | **Partial** | Lone Operative (extra conditions not fully modeled) |
 | Pact of Sorcery | `000010190` | 6 | 6 | **Supported** | Pact of Sorcery |
 
 ### Tyranids (`TYR`) - `https://wahapedia.ru/wh40k10ed/factions/tyranids`
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Shadow in the Warp | `000000707` | 16 | 16 | **Supported** | Once per battle in either Command phase; all enemy units test; -1 if within 6" of SYNAPSE. |
-| Synapse | `000000705` | 55 | 55 | **Supported** | Within 6" of SYNAPSE: Battle-shock on 3D6; melee +1 Strength. |
+| Shadow in the Warp | `000000707` | 16 | 16 | **Not implemented** |  |
+| Synapse | `000000705` | 55 | 55 | **Not implemented** |  |
 
 ### T’au Empire (`TAU`) - `https://wahapedia.ru/wh40k10ed/factions/t-au-empire`
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
 | For the Greater Good | `000008439` | 41 | 41 | **Not implemented** |  |
+
+### Unaligned Forces (`UN`) - `https://wahapedia.ru/wh40k10ed/factions/unaligned-forces`
+
+| Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
+|---|---:|---:|---:|---|---|
+| Unaligned Forces | `000008537` | 20 | 20 | **Not implemented** |  |
 
 ### World Eaters (`WE`) - `https://wahapedia.ru/wh40k10ed/factions/world-eaters`
 
@@ -415,7 +415,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Martial Grace | `000009898` | 93 | 93 | **Not implemented** |  |
+| Martial Grace | `000009898` | 93 | 93 | **Supported** | Warhost: +1 Battle Focus token each battle round; Swift as the Wind +1" Move; Agile Manoeuvre D6 rolls +1. |
 
 #### Windrider Host
 
@@ -1962,7 +1962,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Scuttling Walker | 1 | 1 | **Not implemented** |  |
 | Scythed Impact | 1 | 1 | **Not implemented** |  |
 | Seed the Garden of Nurgle | 1 | 1 | **Not implemented** |  |
-| Shadow Form | 1 | 1 | **Supported** | Battle-round choice sets active Shadow Form |
+| Shadow Form | 1 | 1 | **Not implemented** |  |
 | Shadow of Khorne (Aura) | 1 | 1 | **Not implemented** |  |
 | Shroud of Flies (Aura) | 1 | 1 | **Partial** | Stealth (extra conditions not fully modeled) |
 | Skullmaster’s Fury | 1 | 1 | **Not implemented** |  |
@@ -1976,7 +1976,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Swallow Energy (Psychic) | 1 | 1 | **Partial** | Feel No Pain (extra conditions not fully modeled) |
 | Tally of Pestilence | 1 | 1 | **Not implemented** |  |
 | Terrifying Assault | 1 | 1 | **Not implemented** |  |
-| The Dark Master (Aura) | 1 | 1 | **Supported** | Shadow of Chaos aura extension (no Warp Rifts self-bootstrapping) |
+| The Dark Master (Aura) | 1 | 1 | **Not implemented** |  |
 | The Eternal Dance | 1 | 1 | **Not implemented** |  |
 | Tranceweaver | 1 | 1 | **Not implemented** |  |
 | Twisted Defence Force | 1 | 1 | **Not implemented** |  |
@@ -3576,6 +3576,33 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Way of the Short Blade | 1 | 1 | **Not implemented** |  |
 | XV02 Pilot Battlesuit | 1 | 1 | **Not implemented** |  |
 
+#### Unaligned Forces (`UN`)
+
+| Ability | Occurrences (rows) | Datasheets | Status | Notes |
+|---|---:|---:|---|---|
+| Reinforced Cover | 16 | 16 | **Not implemented** |  |
+| Roof Access | 6 | 6 | **Not implemented** |  |
+| Defence Line | 3 | 3 | **Not implemented** |  |
+| Battlements | 2 | 2 | **Not implemented** |  |
+| Trench Line | 2 | 2 | **Not implemented** |  |
+| Automated Defences | 1 | 1 | **Not implemented** |  |
+| Disruptive Influence (Aura) | 1 | 1 | **Not implemented** |  |
+| Drone Commander (Aura) | 1 | 1 | **Not implemented** |  |
+| Emergency Plasma Vents | 1 | 1 | **Not implemented** |  |
+| Fearsome Assault | 1 | 1 | **Not implemented** |  |
+| Fortress | 1 | 1 | **Not implemented** |  |
+| Frenzy | 1 | 1 | **Not implemented** |  |
+| Gates | 1 | 1 | **Not implemented** |  |
+| Inviolable Bastion | 1 | 1 | **Not implemented** |  |
+| Projected Void Shields (Aura) | 1 | 1 | **Not implemented** |  |
+| Repair Aircraft | 1 | 1 | **Not implemented** |  |
+| Skyshield | 1 | 1 | **Not implemented** |  |
+| Stronghold | 1 | 1 | **Not implemented** |  |
+| Threat Level Rising | 1 | 1 | **Not implemented** |  |
+| Tremor Quake | 1 | 1 | **Not implemented** |  |
+| Vantage Point | 1 | 1 | **Not implemented** |  |
+| Vortex | 1 | 1 | **Not implemented** |  |
+
 #### World Eaters (`WE`)
 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
@@ -3773,6 +3800,13 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 |---|---:|---:|---|---|
 | SUPREME COMMANDER | 1 | 1 | **Supported** | SUPREME COMMANDER |
 
+#### Unaligned Forces (`UN`)
+
+| Ability | Occurrences (rows) | Datasheets | Status | Notes |
+|---|---:|---:|---|---|
+| FORTIFICATION | 16 | 16 | **Not implemented** |  |
+| MIGHTY EDIFICE | 1 | 1 | **Not implemented** |  |
+
 #### World Eaters (`WE`)
 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
@@ -3814,9 +3848,9 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Daemon Prince of Nurgle | 2 | 2 | **Not implemented** |  |
 | Daemon Prince of Slaanesh | 2 | 2 | **Not implemented** |  |
 | Daemon Prince of Tzeentch | 2 | 2 | **Not implemented** |  |
-| Pall of Despair (Aura, Psychic) | 1 | 1 | **Supported** | Opponent Command phase Battle-shock heal |
-| Shadow Lord (Aura, Psychic) | 1 | 1 | **Supported** | Aura: re-roll Hit rolls of 1 |
-| Wreathed in Shadows (Aura, Psychic) | 1 | 1 | **Supported** | Aura: 18" ranged targeting restriction |
+| Pall of Despair (Aura, Psychic) | 1 | 1 | **Not implemented** |  |
+| Shadow Lord (Aura, Psychic) | 1 | 1 | **Not implemented** |  |
+| Wreathed in Shadows (Aura, Psychic) | 1 | 1 | **Not implemented** |  |
 
 #### Chaos Space Marines (`CSM`)
 
@@ -3885,6 +3919,12 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Impossible Form (Psychic) | 1 | 1 | **Not implemented** |  |
 | Time Flux (Aura, Psychic) | 1 | 1 | **Not implemented** |  |
 | Treason of Tzeentch (Psychic) | 1 | 1 | **Not implemented** |  |
+
+#### Unaligned Forces (`UN`)
+
+| Ability | Occurrences (rows) | Datasheets | Status | Notes |
+|---|---:|---:|---|---|
+| MIGHTY EDIFICE | 1 | 1 | **Not implemented** |  |
 
 #### World Eaters (`WE`)
 
@@ -4411,6 +4451,13 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Pulse Accelerator Drone | 1 | 1 | **Not implemented** |  |
 | Recon Drone | 1 | 1 | **Supported** | Infiltrators |
 | Transport Bay | 1 | 1 | **Not implemented** |  |
+
+#### Unaligned Forces (`UN`)
+
+| Ability | Occurrences (rows) | Datasheets | Status | Notes |
+|---|---:|---:|---|---|
+| Comms Antenna | 4 | 4 | **Not implemented** |  |
+| Borewyrm Infestation | 1 | 1 | **Not implemented** |  |
 
 #### World Eaters (`WE`)
 

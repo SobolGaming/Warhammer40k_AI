@@ -244,6 +244,7 @@ def _classify_support(name: str, description: str) -> Tuple[str, str]:
         "PACT OF DECAY",
         "PACT OF EXCESS",
         "PACT OF SORCERY",
+        "MARTIAL GRACE",
         "PLUNGING FIRE",
         "REBORN IN BLOOD",
         "REDEPLOY",
@@ -595,4 +596,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
