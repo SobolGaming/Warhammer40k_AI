@@ -319,8 +319,8 @@ def _extract_restrictions(desc_html: str) -> List[str]:
 
 def _row(cells: Sequence[str], status: str) -> str:
     color = _status_color(status)
-    tds = "".join(f"<td>{c}</td>" for c in cells)
-    return f"<tr bgcolor=\"{color}\">{tds}</tr>"
+    tds = "".join(f"<td bgcolor=\"{color}\">{c}</td>" for c in cells)
+    return f"<tr>{tds}</tr>"
 
 
 def _table(headers: Sequence[str], rows: Sequence[Tuple[Sequence[str], str]]) -> str:
