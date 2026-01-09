@@ -568,11 +568,8 @@ def _build_matrix() -> str:
             continue
         strats_by_det.setdefault(det_id, []).append(row)
 
-    datasheet_abilities_by_faction: Dict[str, set[str]] = {}
+    datasheet_abilities_by_faction: Dict[str, Dict[Tuple[str, ...], dict]] = {}
     for row in ds_abilities_rows:
-        ability_id = str(row.get("ability_id", "") or "").strip()
-        if not ability_id:
-            continue
         dsid = str(row.get("datasheet_id", "") or "").strip()
         ds = ds_map.get(dsid)
         if not ds:
@@ -580,7 +577,25 @@ def _build_matrix() -> str:
         fid = str(ds.get("faction_id", "") or "").strip().upper()
         if fid not in SUPPORTED_FACTION_IDS:
             continue
-        datasheet_abilities_by_faction.setdefault(fid, set()).add(ability_id)
+
+        ability_id = str(row.get("ability_id", "") or "").strip()
+        entry = abilities_by_id.get(ability_id) if ability_id else None
+        name = (entry.get("name", "") if entry else "") or row.get("name", "") or ""
+        desc = (entry.get("description", "") if entry else "") or row.get("description", "") or ""
+        if not name and not desc:
+            continue
+        if not name:
+            name = "Unnamed ability"
+
+        if ability_id:
+            key = ("id", ability_id)
+        else:
+            key = ("row", _norm(name), _norm(_strip_html(desc)))
+
+        bucket = datasheet_abilities_by_faction.setdefault(fid, {})
+        if key not in bucket:
+            bucket[key] = {"name": name, "description": desc, "units": set()}
+        bucket[key]["units"].add(ds.get("name", dsid))
 
     lines: List[str] = []
     lines.append("# Ability support matrix (Wahapedia)")
@@ -853,21 +868,14 @@ def _build_matrix() -> str:
 
         # Datasheet abilities
         ds_ability_rows = []
-        ability_ids = sorted(
-            datasheet_abilities_by_faction.get(faction_id, set()),
-            key=lambda a: _norm(abilities_by_id.get(a, {}).get("name", a)),
-        )
-        for ability_id in ability_ids:
-            entry = abilities_by_id.get(ability_id)
-            if not entry:
-                continue
+        ability_entries = list(datasheet_abilities_by_faction.get(faction_id, {}).values())
+        ability_entries.sort(key=lambda e: (_norm(e.get("name", "")), _norm(_strip_html(e.get("description", "")))))
+        for entry in ability_entries:
             name = entry.get("name", "") or ""
-            if not name:
-                continue
             desc = entry.get("description", "") or ""
             status, notes = _classify_ability(name, desc)
             faction_items.append((status, name))
-            units = _collect_units_for_ability(ability_id, ds_abilities_rows, ds_map, faction_id=faction_id)
+            units = sorted({u for u in (entry.get("units") or set()) if u}, key=lambda s: s.lower())
             ds_ability_rows.append(
                 (
                     [
