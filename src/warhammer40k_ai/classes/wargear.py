@@ -453,6 +453,27 @@ class WargearProfile:
         except Exception:
             pass
         try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                sr = getattr(attacker.parent_unit, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("sensational_performance_active"):
+                    apply_bonus = True
+                    exp = str(sr.get("sensational_performance_expires_phase", "") or "").strip().upper()
+                    if exp:
+                        try:
+                            army = attacker.parent_unit.get_parent_army()
+                            game = getattr(getattr(army, "player", None), "game", None)
+                            pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                        except Exception:
+                            pname = ""
+                        if pname and pname != exp:
+                            apply_bonus = False
+                    if apply_bonus:
+                        bonus = int(sr.get("sensational_performance_ap_bonus", 0) or 0)
+                        if bonus:
+                            ap_val -= bonus
+        except Exception:
+            pass
+        try:
             unit = getattr(attacker, "parent_unit", None)
             army = unit.get_parent_army() if unit is not None else None
             mgr = getattr(army, "doctrina_imperatives", None) if army is not None else None
@@ -1412,6 +1433,38 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Emperor's Children: Pledges to the Dark Prince (1+) re-roll Hit rolls of 1.
+        try:
+            if dice_roll == 1 and "reroll" not in hit_result:
+                unit = attacker.parent_unit
+                army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "emperors_children", None) if army is not None else None
+                if mgr is not None and mgr.pact_points_at_least(1) and mgr.is_emperors_children_unit(unit):
+                    rr = _reroll_hit()
+                    hit_result.setdefault("special_effects", []).append("Pledges to the Dark Prince: re-roll Hit roll of 1")
+                    hit_result["reroll_of_one"] = 1
+                    hit_result["reroll"] = rr
+                    dice_roll = rr
+                    reroll_used = True
+        except Exception:
+            pass
+
+        # Emperor's Children: Mechanised Murder re-roll Hit rolls of 1.
+        try:
+            if dice_roll == 1 and "reroll" not in hit_result:
+                unit = attacker.parent_unit
+                army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "emperors_children", None) if army is not None else None
+                if mgr is not None and mgr.mechanised_murder_applies(unit):
+                    rr = _reroll_hit()
+                    hit_result.setdefault("special_effects", []).append("Mechanised Murder: re-roll Hit roll of 1")
+                    hit_result["reroll_of_one"] = 1
+                    hit_result["reroll"] = rr
+                    dice_roll = rr
+                    reroll_used = True
+        except Exception:
+            pass
+
         # Cabal of Sorcerers: Destiny's Ruin rerolls (TS/Scintillating Legions only).
         try:
             if "reroll" not in hit_result:
@@ -1872,13 +1925,36 @@ class WargearProfile:
             hit_result['special_effects'].append("Indirect Fire: 1-3 always fail (no target models visible)")
             return hit_result
 
+        # Determine critical hit threshold (default 6).
+        crit_threshold = 6
+        empowered_sustained = False
+        try:
+            unit = attacker.parent_unit
+            army = unit.get_parent_army() if unit is not None else None
+            mgr = getattr(army, "emperors_children", None) if army is not None else None
+            if mgr is not None:
+                if mgr.pact_points_at_least(7) and mgr.is_emperors_children_unit(unit):
+                    crit_threshold = min(int(crit_threshold), 5)
+                if mgr.is_carnival_of_excess():
+                    game = getattr(getattr(army, "player", None), "game", None)
+                    if mgr.is_empowered(unit, game=game):
+                        if self.is_sustained_hits():
+                            crit_threshold = min(int(crit_threshold), 5)
+                        else:
+                            empowered_sustained = True
+        except Exception:
+            pass
+
         if dice_roll == 1:  # unmodified dice roll of 1 is always a miss
             hit_result['hit'] = False
             hit_result['special_effects'].append("Natural 1 (auto-miss)")
             return hit_result
-        elif dice_roll == 6:  # unmodified dice roll of 6 is always a hit
+        elif dice_roll >= crit_threshold:  # unmodified critical hit
             hit_result['hit'] = True
-            hit_result['special_effects'].append("Natural 6 (auto-hit)")
+            if dice_roll == 6:
+                hit_result['special_effects'].append("Natural 6 (auto-hit)")
+            elif crit_threshold < 6:
+                hit_result['special_effects'].append(f"Critical hit ({crit_threshold}+)")
             attack_instance['crit_hit'] = True
             
             # WORLD EATERS: Blessings of Khorne keyword injection (melee-only).
@@ -1956,11 +2032,52 @@ class WargearProfile:
                 martial_katah_lethal = False
                 martial_katah_sustained = False
 
-            if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal or martial_katah_lethal or bondsman_lethal:
+            pact_lethal = False
+            pact_sustained = False
+            exquisite_lethal = False
+            exquisite_sustained = False
+            try:
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "emperors_children", None) if army is not None else None
+                if mgr is not None and mgr.is_emperors_children_unit(unit):
+                    if mgr.pact_points_at_least(5) and is_melee:
+                        pact_lethal = True
+                        pact_sustained = True
+                if is_melee:
+                    try:
+                        root = unit.get_attached_unit_root()
+                    except Exception:
+                        root = unit
+                    sr = getattr(root, "special_rules", None) if root is not None else None
+                    if not isinstance(sr, dict):
+                        sr = None
+                if is_melee and sr:
+                    choice = str(sr.get("exquisite_swordsmanship_choice", "") or "").strip().upper()
+                    exp = str(sr.get("exquisite_swordsmanship_expires_phase", "") or "").strip().upper()
+                    if exp:
+                        try:
+                            game = getattr(getattr(army, "player", None), "game", None)
+                            pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                        except Exception:
+                            pname = ""
+                        if pname and pname != exp:
+                            choice = ""
+                    if choice == "LETHAL":
+                        exquisite_lethal = True
+                    elif choice == "SUSTAINED":
+                        exquisite_sustained = True
+            except Exception:
+                pact_lethal = False
+                pact_sustained = False
+                exquisite_lethal = False
+                exquisite_sustained = False
+
+            if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal or martial_katah_lethal or bondsman_lethal or pact_lethal or exquisite_lethal:
                 hit_result['special_effects'].append("Lethal Hits")
                 attack_instance['lethal_hit'] = True
             # For Sustained Hits, do not override an existing Sustained Hits X on the weapon.
-            if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged:
+            if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained:
                 # Support Sustained Hits X / Sustained Hits D3 / etc. Roll per critical hit.
                 if self.is_sustained_hits():
                     try:
@@ -1981,6 +2098,12 @@ class WargearProfile:
                         label += " [Martial Ka'tah]"
                     elif bondsman_sustained or bondsman_sustained_ranged:
                         label += " [Bondsman]"
+                    elif pact_sustained:
+                        label += " [Pact Points]"
+                    elif exquisite_sustained:
+                        label += " [Exquisite Swordsmanship]"
+                    elif empowered_sustained:
+                        label += " [Daemonic Empowerment]"
                     hit_result['special_effects'].append(label)
                     attack_instance['sustained_hit'] = 1
             return hit_result
@@ -2058,6 +2181,29 @@ class WargearProfile:
                 if s_bonus and isinstance(strength, int):
                     strength = strength + s_bonus
                     wound_result.setdefault("modifiers", []).append(f"+{s_bonus}S from Power from Pain (melee)")
+        except Exception:
+            pass
+        # Emperor's Children: Sensational Performance (+1 Strength to melee weapons this phase).
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                sr = getattr(attacker.parent_unit, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("sensational_performance_active"):
+                    apply_bonus = True
+                    exp = str(sr.get("sensational_performance_expires_phase", "") or "").strip().upper()
+                    if exp:
+                        try:
+                            army = attacker.parent_unit.get_parent_army()
+                            game = getattr(getattr(army, "player", None), "game", None)
+                            pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                        except Exception:
+                            pname = ""
+                        if pname and pname != exp:
+                            apply_bonus = False
+                    if apply_bonus:
+                        s_bonus = int(sr.get("sensational_performance_strength_bonus", 0) or 0)
+                        if s_bonus and isinstance(strength, int):
+                            strength = strength + s_bonus
+                            wound_result.setdefault("modifiers", []).append(f"+{s_bonus}S from Sensational Performance")
         except Exception:
             pass
         # Bondsman: Magaera's Duty (+1S vs closest target for ranged attacks).
@@ -2279,6 +2425,38 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Emperor's Children: Pledges to the Dark Prince (3+) re-roll Wound rolls of 1.
+        try:
+            if dice_roll == 1 and "reroll" not in wound_result:
+                unit = attacker.parent_unit
+                army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "emperors_children", None) if army is not None else None
+                if mgr is not None and mgr.pact_points_at_least(3) and mgr.is_emperors_children_unit(unit):
+                    rr = _reroll_wound()
+                    wound_result.setdefault("special_effects", []).append("Pledges to the Dark Prince: re-roll Wound roll of 1")
+                    wound_result["reroll_of_one"] = 1
+                    wound_result["reroll"] = rr
+                    dice_roll = rr
+                    reroll_used = True
+        except Exception:
+            pass
+
+        # Emperor's Children: Mechanised Murder re-roll Wound rolls of 1.
+        try:
+            if dice_roll == 1 and "reroll" not in wound_result:
+                unit = attacker.parent_unit
+                army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "emperors_children", None) if army is not None else None
+                if mgr is not None and mgr.mechanised_murder_applies(unit):
+                    rr = _reroll_wound()
+                    wound_result.setdefault("special_effects", []).append("Mechanised Murder: re-roll Wound roll of 1")
+                    wound_result["reroll_of_one"] = 1
+                    wound_result["reroll"] = rr
+                    dice_roll = rr
+                    reroll_used = True
+        except Exception:
+            pass
+
         # Seductive Gambit: melee attacks can re-roll Wound rolls of 1.
         try:
             if dice_roll == 1 and "reroll" not in wound_result:
@@ -2289,6 +2467,74 @@ class WargearProfile:
                         rr = _reroll_wound()
                         wound_result.setdefault("special_effects", []).append("Seductive Gambit: re-roll Wound roll of 1")
                         wound_result["reroll_of_one"] = 1
+                        wound_result["reroll"] = rr
+                        dice_roll = rr
+                        reroll_used = True
+        except Exception:
+            pass
+
+        # Emperor's Children: Internal Rivalries (Favoured Champions) re-roll Wound roll (optional).
+        try:
+            if "reroll" not in wound_result:
+                unit = attacker.parent_unit
+                army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "emperors_children", None) if army is not None else None
+                if mgr is not None and mgr.is_favoured_champions(unit):
+                    needed = 0
+                    try:
+                        s_val = strength
+                        t_val = target_toughness
+                        if isinstance(s_val, int) and isinstance(t_val, int):
+                            if s_val >= 2 * t_val:
+                                needed = 2
+                            elif s_val > t_val:
+                                needed = 3
+                            elif s_val == t_val:
+                                needed = 4
+                            elif s_val * 2 <= t_val:
+                                needed = 6
+                            else:
+                                needed = 5
+                    except Exception:
+                        needed = 0
+                    final_needed = needed
+                    try:
+                        final_needed = int(min(max(int(final_needed) - int(dice_modifier), 2), 6))
+                    except Exception:
+                        pass
+                    try:
+                        success = (dice_roll != 1) and (bool(final_needed) and dice_roll >= int(final_needed))
+                    except Exception:
+                        success = False
+                    do_reroll = False
+                    try:
+                        game = army.player.game if army is not None else None
+                        player = army.player if army is not None else None
+                        is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                        provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                    except Exception:
+                        is_human = False
+                        provider = None
+                        player = None
+                    if is_human and callable(provider):
+                        try:
+                            do_reroll = bool(provider(
+                                player=player,
+                                unit=unit,
+                                roll_type="wound",
+                                value=dice_roll,
+                                dice=None,
+                                needed=final_needed,
+                                success=success,
+                                reason="Internal Rivalries (Favoured Champions)",
+                            ))
+                        except Exception:
+                            do_reroll = False
+                    else:
+                        do_reroll = (not success)
+                    if do_reroll:
+                        rr = _reroll_wound()
+                        wound_result.setdefault("special_effects", []).append("Internal Rivalries: re-roll Wound roll (Favoured Champions)")
                         wound_result["reroll"] = rr
                         dice_roll = rr
                         reroll_used = True

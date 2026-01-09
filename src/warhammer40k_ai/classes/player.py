@@ -371,6 +371,47 @@ class Player:
             return 0
         return 1
 
+    def _preview_master_of_the_pageant_discount(self, *, stratagem=None, target_unit=None) -> int:
+        """
+        Master of the Pageant (Court of the Phoenician):
+        Once per battle round, when you target a FULGRIM unit with Sinuous Breach or
+        Prideful Superiority, reduce the CP cost by 1.
+        """
+        if stratagem is None or target_unit is None:
+            return 0
+        try:
+            name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        except Exception:
+            name_u = ""
+        if name_u not in ("SINUOUS BREACH", "PRIDEFUL SUPERIORITY"):
+            return 0
+        try:
+            if not target_unit.has_any_keyword("FULGRIM"):
+                return 0
+        except Exception:
+            return 0
+        try:
+            army = self.get_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "emperors_children", None) if army is not None else None
+        if mgr is None or not getattr(mgr, "is_court_of_the_phoenician", lambda: False)():
+            return 0
+        try:
+            if not mgr.is_emperors_children_unit(target_unit):
+                return 0
+        except Exception:
+            return 0
+        br = self._battle_round()
+        if br <= 0:
+            return 0
+        try:
+            if int(getattr(mgr, "master_of_pageant_used_round", 0) or 0) == br:
+                return 0
+        except Exception:
+            return 0
+        return 1
+
     def _should_use_optional_ability(self, key: str, context: dict) -> bool:
         """
         Ask the registered decision hook whether to use an optional ability.
@@ -468,6 +509,8 @@ class Player:
                             assume_optional_discounts = bool(overrides.get("DIRECT_THE_SLAUGHTER", False))
                         elif "GIFT_OF_FORESIGHT" in overrides:
                             assume_optional_discounts = bool(overrides.get("GIFT_OF_FORESIGHT", False))
+                        elif "MASTER_OF_THE_PAGEANT" in overrides:
+                            assume_optional_discounts = bool(overrides.get("MASTER_OF_THE_PAGEANT", False))
                 except Exception:
                     assume_optional_discounts = False
 
@@ -481,6 +524,11 @@ class Player:
         if gof:
             discount += int(gof)
             reasons.append("Gift of Foresight: Command Re-roll for 0CP (once per battle round)")
+
+        mop = self._preview_master_of_the_pageant_discount(stratagem=stratagem, target_unit=target_unit)
+        if mop:
+            discount += int(mop)
+            reasons.append("Master of the Pageant: -1CP (once per battle round)")
 
         cost = max(0, base - discount)
         return {"base": base, "discount": discount, "cost": cost, "reasons": reasons}
@@ -540,6 +588,38 @@ class Player:
                     print(f"✨ Gift of Foresight: {self.name} uses Command Re-roll for 0CP.")
                 except Exception:
                     pass
+
+        # Decide whether to apply Master of the Pageant if available.
+        mop_available = bool(self._preview_master_of_the_pageant_discount(stratagem=stratagem, target_unit=target_unit))
+        if mop_available:
+            ctx = {
+                "ability_name": "Master of the Pageant",
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            use_mop = True
+            try:
+                overrides = getattr(self, "_next_optional_decisions", {}) or {}
+                has_override = isinstance(overrides, dict) and "MASTER_OF_THE_PAGEANT" in overrides
+            except Exception:
+                has_override = False
+            if callable(getattr(self, "decision_hook", None)) or has_override:
+                use_mop = self._should_use_optional_ability("MASTER_OF_THE_PAGEANT", ctx)
+            if use_mop:
+                applied_discount += 1
+                reasons.append("Master of the Pageant: -1CP (used)")
+                br = self._battle_round()
+                try:
+                    army = self.get_army()
+                except Exception:
+                    army = None
+                mgr = getattr(army, "emperors_children", None) if army is not None else None
+                if mgr is not None and br > 0:
+                    try:
+                        mgr.master_of_pageant_used_round = br
+                    except Exception:
+                        pass
 
         cost = max(0, base - applied_discount)
         return {

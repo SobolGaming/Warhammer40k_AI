@@ -18,6 +18,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "RAPID INGRESS",
     "SMOKESCREEN",
     "TANK SHOCK",
+    "UNBOUND ARROGANCE",
 }
 
 REACTION_ONLY_STRATAGEM_NAMES = {
@@ -33,6 +34,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "NEW ORDERS",
     "RAPID INGRESS",
     "SMOKESCREEN",
+    "UNBOUND ARROGANCE",
 }
 
 
@@ -1517,79 +1519,137 @@ class StratagemManager:
             s = self.get_by_name("BLOOD OFFERING")
         except Exception:
             s = None
+        if s:
+            if unit is None or self.game is None:
+                return
+            try:
+                if unit.get_parent_army().player is not self.player:
+                    return
+            except Exception:
+                return
+            try:
+                if not unit.has_any_keyword("WORLD EATERS"):
+                    return
+            except Exception:
+                return
+            # Must have objective control snapshot from end of previous phase.
+            snapshot = getattr(self.game, "_objective_control_snapshot", None)
+            if not isinstance(snapshot, dict) or not snapshot:
+                return
+            # Determine unit position from last model (unit may already be empty).
+            pos = None
+            if last_model is not None:
+                try:
+                    pos = last_model.get_location()
+                except Exception:
+                    pos = None
+            if pos is None:
+                return
+            try:
+                ux, uy = float(pos[0]), float(pos[1])
+            except Exception:
+                return
+            candidates = []
+            for obj in list(getattr(self.game.map, "objectives", []) or []):
+                try:
+                    loc = getattr(obj, "location", None)
+                    if loc is None or getattr(loc, "removed", False):
+                        continue
+                    if snapshot.get(loc) is not self.player:
+                        continue
+                    radius = float(getattr(loc, "control_radius", 0.0) or 0.0)
+                    base_radius = 0.0
+                    try:
+                        base = getattr(last_model, "model_base", None)
+                        if base is not None:
+                            base_radius = float(getattr(base, "base_size", 0.0) or 0.0)
+                    except Exception:
+                        base_radius = 0.0
+                    dx = ux - float(getattr(loc, "x", 0.0))
+                    dy = uy - float(getattr(loc, "y", 0.0))
+                    if (dx * dx + dy * dy) ** 0.5 <= (radius + base_radius):
+                        candidates.append(obj)
+                except Exception:
+                    continue
+            if not candidates:
+                return
+            if self.player.command_points < s.cp_cost:
+                return
+            try:
+                if (s.name or "").strip().upper() in self._used_stratagems_this_phase:
+                    return
+            except Exception:
+                pass
+            # Deduplicate per unit destruction
+            for r in self._pending_reactions:
+                if r.get("event") == "unit_destroyed" and r.get("stratagem") == s.name and r.get("unit") is unit:
+                    return
+            self._queue_reaction({
+                "event": "unit_destroyed",
+                "phase_name": self._current_phase_name,
+                "stratagem": s.name,
+                "cp_cost": s.cp_cost,
+                "unit": unit,
+                "objective_candidates": candidates,
+            })
+
+        # EMPEROR'S CHILDREN: UNBOUND ARROGANCE
+        try:
+            s = self.get_by_name("UNBOUND ARROGANCE")
+        except Exception:
+            s = None
         if not s:
             return
-        if unit is None or self.game is None:
+        destroyed_by_unit = kwargs.get("destroyed_by_unit")
+        if destroyed_by_unit is None or self.game is None:
             return
         try:
-            if unit.get_parent_army().player is not self.player:
+            if destroyed_by_unit.get_parent_army().player is not self.player:
                 return
         except Exception:
             return
         try:
-            if not unit.has_any_keyword("WORLD EATERS"):
-                return
-        except Exception:
-            return
-        # Must have objective control snapshot from end of previous phase.
-        snapshot = getattr(self.game, "_objective_control_snapshot", None)
-        if not isinstance(snapshot, dict) or not snapshot:
-            return
-        # Determine unit position from last model (unit may already be empty).
-        pos = None
-        if last_model is not None:
-            try:
-                pos = last_model.get_location()
-            except Exception:
-                pos = None
-        if pos is None:
-            return
-        try:
-            ux, uy = float(pos[0]), float(pos[1])
-        except Exception:
-            return
-        candidates = []
-        for obj in list(getattr(self.game.map, "objectives", []) or []):
-            try:
-                loc = getattr(obj, "location", None)
-                if loc is None or getattr(loc, "removed", False):
-                    continue
-                if snapshot.get(loc) is not self.player:
-                    continue
-                radius = float(getattr(loc, "control_radius", 0.0) or 0.0)
-                base_radius = 0.0
-                try:
-                    base = getattr(last_model, "model_base", None)
-                    if base is not None:
-                        base_radius = float(getattr(base, "base_size", 0.0) or 0.0)
-                except Exception:
-                    base_radius = 0.0
-                dx = ux - float(getattr(loc, "x", 0.0))
-                dy = uy - float(getattr(loc, "y", 0.0))
-                if (dx * dx + dy * dy) ** 0.5 <= (radius + base_radius):
-                    candidates.append(obj)
-            except Exception:
-                continue
-        if not candidates:
-            return
-        if self.player.command_points < s.cp_cost:
-            return
-        try:
-            if (s.name or "").strip().upper() in self._used_stratagems_this_phase:
+            if unit is not None and unit.get_parent_army().player is self.player:
                 return
         except Exception:
             pass
-        # Deduplicate per unit destruction
-        for r in self._pending_reactions:
-            if r.get("event") == "unit_destroyed" and r.get("stratagem") == s.name and r.get("unit") is unit:
+        try:
+            army = destroyed_by_unit.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "emperors_children", None) if army is not None else None
+        if mgr is None or not getattr(mgr, "is_coterie_of_conceited", lambda: False)():
+            return
+        try:
+            if not mgr.is_emperors_children_unit(destroyed_by_unit):
                 return
+        except Exception:
+            return
+        phase_name = str(self._current_phase_name or "").strip().lower()
+        if phase_name not in ("shooting phase", "fight phase"):
+            return
+        br = int(getattr(self.game, "turn", 0) or 0)
+        try:
+            if br > 0 and int(getattr(mgr, "unbound_arrogance_used_round", 0) or 0) == br:
+                return
+        except Exception:
+            pass
+        if not s.can_use(self.player, self.game, unit=destroyed_by_unit, phase_name=self._current_phase_name):
+            return
+        for r in self._pending_reactions:
+            try:
+                if r.get("event") == "unit_destroyed" and r.get("stratagem") == s.name and r.get("unit") is destroyed_by_unit and r.get("enemy_unit") is unit:
+                    return
+            except Exception:
+                continue
         self._queue_reaction({
             "event": "unit_destroyed",
             "phase_name": self._current_phase_name,
             "stratagem": s.name,
             "cp_cost": s.cp_cost,
-            "unit": unit,
-            "objective_candidates": candidates,
+            "unit": destroyed_by_unit,
+            "target_unit": destroyed_by_unit,
+            "enemy_unit": unit,
         })
 
     # -------- Public API --------
@@ -2032,6 +2092,71 @@ class StratagemManager:
             except Exception:
                 pass
             print(f"⚔️ EPIC CHALLENGE: {getattr(model, 'name', 'Character')} gains [PRECISION] on melee attacks until end of phase.")
+            return True
+
+        # EMPEROR'S CHILDREN: UNBOUND ARROGANCE
+        if s.name.upper() == "UNBOUND ARROGANCE":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            if unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "UNBOUND ARROGANCE":
+                        unit = r.get("unit") or r.get("target_unit")
+                        break
+            if unit is None:
+                print("UNBOUND ARROGANCE: missing target unit context")
+                return False
+            try:
+                army = self.player.get_army()
+            except Exception:
+                army = None
+            mgr = getattr(army, "emperors_children", None) if army is not None else None
+            if mgr is None or not getattr(mgr, "is_coterie_of_conceited", lambda: False)():
+                return False
+            try:
+                if not mgr.is_emperors_children_unit(unit):
+                    return False
+            except Exception:
+                return False
+            br = int(getattr(self.game, "turn", 0) or 0)
+            if br <= 0:
+                return False
+            try:
+                if int(getattr(mgr, "unbound_arrogance_used_round", 0) or 0) == br:
+                    return False
+            except Exception:
+                pass
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=unit).get("cost", s.cp_cost))
+            except Exception:
+                eff_cost = s.cp_cost
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                new_val = mgr.increase_pledge(1)
+            except Exception:
+                new_val = None
+            try:
+                mgr.unbound_arrogance_used_round = br
+            except Exception:
+                pass
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
+            if new_val is None:
+                try:
+                    print("UNBOUND ARROGANCE: pledge increased by 1")
+                except Exception:
+                    pass
+            else:
+                try:
+                    print(f"UNBOUND ARROGANCE: pledge increased to {new_val}")
+                except Exception:
+                    pass
             return True
 
         # Special-case: NEW ORDERS (discard one active Secondary and draw a new one)

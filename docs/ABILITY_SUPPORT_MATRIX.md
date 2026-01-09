@@ -93,7 +93,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Doctrina Imperatives | `000008382` | 36 | 36 | **Supported** | Battle-round selection; BS/WS improve, Heavy/Assault, AP bonus, melee -1 to hit. |
+| Doctrina Imperatives | `000008382` | 36 | 36 | **Not implemented** |  |
 
 ### Adeptus Titanicus (`TL`) - `https://wahapedia.ru/wh40k10ed/factions/adeptus-titanicus`
 
@@ -112,7 +112,7 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Voice of Command | `000008377` | 16 | 16 | **Supported** | Voice of Command |
+| Voice of Command | `000008377` | 16 | 16 | **Not implemented** |  |
 
 ### Chaos Daemons (`CD`) - `https://wahapedia.ru/wh40k10ed/factions/chaos-daemons`
 
@@ -173,24 +173,22 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Gate of Infinity | `000010345` | 20 | 20 | **Supported** | Gate of Infinity |
+| Gate of Infinity | `000010345` | 20 | 20 | **Not implemented** |  |
 
 ### Imperial Agents (`AoI`) - `https://wahapedia.ru/wh40k10ed/factions/imperial-agents`
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Assigned Agents | `000008452` | 45 | 45 | **Supported** |  |
-| Kill Team | `000008519` | 5 | 5 | **Supported** |  |
+| Assigned Agents | `000008452` | 45 | 45 | **Not implemented** |  |
+| Kill Team | `000008519` | 5 | 5 | **Not implemented** |  |
 
 ### Imperial Knights (`QI`) - `https://wahapedia.ru/wh40k10ed/factions/imperial-knights`
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Bondsman | `000008459` | 0 | 0 | **Supported** | Command phase Armiger selection; applies Bondsman effects. |
-| Code Chivalric | `000008458` | 21 | 21 | **Supported** | Deed/Quality selection, rerolls, Honoured CP. |
-| Freeblades | `000008461` | 0 | 0 | **Supported** | List-building restrictions for Imperial Knights allies. |
-| Doctrina Imperatives | `000008382` | 5 | 5 | **Supported** | Battle-round selection; BS/WS improve, Heavy/Assault, AP bonus, melee -1 to hit. |
-| Super-heavy Walker | `000008460` | 18 | 18 | **Supported** | Move through models/terrain; battleshock on tall terrain. |
+| Code Chivalric | `000008458` | 21 | 21 | **Not implemented** |  |
+| Doctrina Imperatives | `000008382` | 5 | 5 | **Not implemented** |  |
+| Super-heavy Walker | `000008460` | 18 | 18 | **Not implemented** |  |
 
 ### Leagues of Votann (`LoV`) - `https://wahapedia.ru/wh40k10ed/factions/leagues-of-votann`
 
@@ -214,9 +212,9 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Assigned Agents | `000008452` | 1 | 1 | **Supported** |  |
+| Assigned Agents | `000008452` | 1 | 1 | **Not implemented** |  |
 | Curse of the Wulfen | `000010256` | 4 | 4 | **Not implemented** |  |
-| Kill Team | `000008519` | 1 | 1 | **Supported** |  |
+| Kill Team | `000008519` | 1 | 1 | **Not implemented** |  |
 | Mission Tactics | `000008521` | 10 | 10 | **Not implemented** |  |
 | Oath of Moment | `000008350` | 275 | 275 | **Not implemented** |  |
 | Templar Vows | `000008526` | 19 | 19 | **Partial** | Advance+Charge (exact wording) (extra conditions not fully modeled) |
@@ -700,44 +698,44 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Daemonic Empowerment | `000010009` | 9 | 9 | **Not implemented** |  |
+| Daemonic Empowerment | `000010009` | 9 | 9 | **Supported** | Daemonic Empowerment |
 
 #### Coterie of the Conceited
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Pledges to the Dark Prince | `000010013` | 17 | 17 | **Not implemented** |  |
+| Pledges to the Dark Prince | `000010013` | 17 | 17 | **Supported** | Pledges to the Dark Prince |
 
 #### Court of the Phoenician
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Master of the Pageant | `000010653` | 17 | 17 | **Not implemented** |  |
-| Sensational Performance | `000010652` | 17 | 17 | **Not implemented** |  |
+| Master of the Pageant | `000010653` | 17 | 17 | **Supported** | Master of the Pageant |
+| Sensational Performance | `000010652` | 17 | 17 | **Supported** | Sensational Performance |
 
 #### Mercurial Host
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Quicksilver Grace | `000009997` | 17 | 17 | **Not implemented** |  |
+| Quicksilver Grace | `000009997` | 17 | 17 | **Supported** | Quicksilver Grace |
 
 #### Peerless Bladesmen
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Exquisite Swordsmanship | `000010001` | 17 | 17 | **Not implemented** |  |
+| Exquisite Swordsmanship | `000010001` | 17 | 17 | **Supported** | Exquisite Swordsmanship |
 
 #### Rapid Evisceration
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Mechanised Murder | `000010005` | 11 | 11 | **Not implemented** |  |
+| Mechanised Murder | `000010005` | 11 | 11 | **Supported** | Mechanised Murder |
 
 #### Slaanesh’s Chosen
 
 | Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Internal Rivalries | `000010017` | 7 | 7 | **Not implemented** |  |
+| Internal Rivalries | `000010017` | 7 | 7 | **Supported** | Internal Rivalries |
 
 ### Genestealer Cults (`GC`) - `https://wahapedia.ru/wh40k10ed/factions/genestealer-cults`
 
@@ -2656,7 +2654,7 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Incensor Cherub | 1 | 1 | **Not implemented** |  |
 | Inconceivable Augmentation | 1 | 1 | **Not implemented** |  |
 | Indomitor Doctrines | 1 | 1 | **Not implemented** |  |
-| Kill Team | 1 | 1 | **Supported** |  |
+| Kill Team | 1 | 1 | **Not implemented** |  |
 | Lord of Deceit (Aura) | 1 | 1 | **Not implemented** |  |
 | Loyal Henchmen | 1 | 1 | **Not implemented** |  |
 | Malefic Warding | 1 | 1 | **Not implemented** |  |
@@ -2697,32 +2695,32 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---|---|
 | Ion Aegis (Aura) | 2 | 2 | **Not implemented** |  |
-| Acheron’s Duty (Bondsman) | 1 | 1 | **Supported** | Battle-shock in Engagement Range at Fight phase start. |
+| Acheron’s Duty (Bondsman) | 1 | 1 | **Not implemented** |  |
 | Aggressive Assault | 1 | 1 | **Not implemented** |  |
-| Atrapos’ Duty (Bondsman) | 1 | 1 | **Supported** | Re-roll Hit/Wound vs TITANIC/TOWERING. |
+| Atrapos’ Duty (Bondsman) | 1 | 1 | **Not implemented** |  |
 | Bastion of Firepower | 1 | 1 | **Not implemented** |  |
-| Castigator’s Duty (Bondsman) | 1 | 1 | **Supported** | Sustained Hits 1 + AP bonus (ranged). |
+| Castigator’s Duty (Bondsman) | 1 | 1 | **Not implemented** |  |
 | Chainbreaker | 1 | 1 | **Not implemented** |  |
 | Control Edict | 1 | 1 | **Not implemented** |  |
-| Crusader’s Duty (Bondsman) | 1 | 1 | **Supported** | +1 to ranged Hit rolls. |
+| Crusader’s Duty (Bondsman) | 1 | 1 | **Not implemented** |  |
 | Data-spike | 1 | 1 | **Not implemented** |  |
 | Defend the Divine Work | 1 | 1 | **Not implemented** |  |
-| Defender’s Duty (Bondsman) | 1 | 1 | **Supported** | -1 Damage on allocated attacks. |
-| Errant’s Duty (Bondsman) | 1 | 1 | **Supported** | Re-roll Advance; Assault (ranged). |
+| Defender’s Duty (Bondsman) | 1 | 1 | **Not implemented** |  |
+| Errant’s Duty (Bondsman) | 1 | 1 | **Not implemented** |  |
 | Exemplar of the Code | 1 | 1 | **Not implemented** |  |
-| Gallant’s Duty (Bondsman) | 1 | 1 | **Supported** | Re-roll Charge; re-roll melee Hit. |
+| Gallant’s Duty (Bondsman) | 1 | 1 | **Not implemented** |  |
 | Galvanic Field | 1 | 1 | **Not implemented** |  |
 | Grav-pinned | 1 | 1 | **Not implemented** |  |
 | Impetuous Glory | 1 | 1 | **Not implemented** |  |
-| Lancer’s Duty (Bondsman) | 1 | 1 | **Supported** | Advance+Charge. |
+| Lancer’s Duty (Bondsman) | 1 | 1 | **Partial** | Advance+Charge (exact wording) (extra conditions not fully modeled) |
 | Legendary Freeblade | 1 | 1 | **Not implemented** |  |
 | Lord of the Machine Cult | 1 | 1 | **Partial** | Feel No Pain (extra conditions not fully modeled) |
 | Macro-extinction Protocols | 1 | 1 | **Not implemented** |  |
-| Magaera’s Duty (Bondsman) | 1 | 1 | **Supported** | +1S/AP vs closest eligible target (ranged). |
+| Magaera’s Duty (Bondsman) | 1 | 1 | **Not implemented** |  |
 | Martial Pride | 1 | 1 | **Not implemented** |  |
-| Mentor (Bondsman) | 1 | 1 | **Partial** | Re-roll Wound vs quarry (requires quarry selection). |
+| Mentor (Bondsman) | 1 | 1 | **Not implemented** |  |
 | Objective Scouted | 1 | 1 | **Not implemented** |  |
-| Paladin’s Duty (Bondsman) | 1 | 1 | **Supported** | Lethal Hits; Lance (melee). |
+| Paladin’s Duty (Bondsman) | 1 | 1 | **Not implemented** |  |
 | Protection Protocols | 1 | 1 | **Not implemented** |  |
 | Punishing Salvoes | 1 | 1 | **Not implemented** |  |
 | Rad-saturation (Aura) | 1 | 1 | **Not implemented** |  |
@@ -2733,13 +2731,13 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Servo-skull Uplink | 1 | 1 | **Not implemented** |  |
 | Shock Charge | 1 | 1 | **Not implemented** |  |
 | Storm of Bolts | 1 | 1 | **Not implemented** |  |
-| Styrix’s Duty (Bondsman) | 1 | 1 | **Supported** | Battle-shock on unit hit (shoot/fight). |
+| Styrix’s Duty (Bondsman) | 1 | 1 | **Not implemented** |  |
 | Sunderer of Fortresses | 1 | 1 | **Not implemented** |  |
 | Suppression Protocols | 1 | 1 | **Not implemented** |  |
 | Thin Their Ranks | 1 | 1 | **Not implemented** |  |
 | Thundershock | 1 | 1 | **Not implemented** |  |
 | Titan Hunter | 1 | 1 | **Not implemented** |  |
-| Warden’s Duty (Bondsman) | 1 | 1 | **Supported** | Sustained Hits 1; Ignores Cover (ranged). |
+| Warden’s Duty (Bondsman) | 1 | 1 | **Not implemented** |  |
 
 #### Leagues of Votann (`LoV`)
 

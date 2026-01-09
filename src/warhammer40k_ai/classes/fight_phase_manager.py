@@ -347,6 +347,16 @@ class FightPhaseManager:
                 setattr(fighting_unit, "_last_fight_targets", list(target_declarations.keys()))
             except Exception:
                 pass
+
+        try:
+            if hasattr(self.game, "event_system"):
+                self.game.event_system.publish(
+                    "fight_targets_selected",
+                    attacking_unit=fighting_unit,
+                    target_units=list(target_declarations.keys()),
+                )
+        except Exception:
+            pass
         
         # Execute the complete fight sequence
         ui_callback = getattr(self, 'on_movement_required', None)
@@ -372,6 +382,14 @@ class FightPhaseManager:
             seen.add(rid)
             try:
                 if enemy_root.is_alive() and self.game.map.is_within_engagement_range(fighting_unit, enemy_root):
+                    reason = None
+                    try:
+                        if hasattr(fighting_unit, "_sensational_performance_restriction_reason"):
+                            reason = fighting_unit._sensational_performance_restriction_reason(enemy_root, self.game)
+                    except Exception:
+                        reason = None
+                    if isinstance(reason, str) and reason:
+                        continue
                     eligible_targets.append(enemy_root)
             except Exception:
                 continue
@@ -406,6 +424,15 @@ class FightPhaseManager:
                 # Step 3: Resolve melee attacks
                 # Use attached view so leader models fight as part of the attached unit
                 self._resolve_melee_attacks(self._as_attached_view(fighting_unit), target_unit, weapon_declarations)
+                try:
+                    if hasattr(self.game, "event_system"):
+                        self.game.event_system.publish(
+                            "fight_attacks_resolved",
+                            unit=fighting_unit,
+                            target_unit=target_unit,
+                        )
+                except Exception:
+                    pass
 
                 # Step 4: Consolidate using Individual Model Movement Dialog
                 def on_consolidate_complete(completed: bool):
@@ -437,6 +464,15 @@ class FightPhaseManager:
         # Step 2: Make melee attacks
         print(f"⚔️ {fighting_unit.name} makes melee attacks against {target_unit.name}")
         # TODO: Implement proper melee attack resolution
+        try:
+            if hasattr(self.game, "event_system"):
+                self.game.event_system.publish(
+                    "fight_attacks_resolved",
+                    unit=fighting_unit,
+                    target_unit=target_unit,
+                )
+        except Exception:
+            pass
 
         # Step 3: Consolidate
         print(f"🏃 {fighting_unit.name} consolidates...")
@@ -468,6 +504,15 @@ class FightPhaseManager:
             for target_unit, attacking_models in target_declarations.items():
                 print(f"  {len(attacking_models)} models attacking {target_unit.name}")
                 # TODO: Implement proper melee attack resolution with model-specific targeting
+            try:
+                if hasattr(self.game, "event_system"):
+                    self.game.event_system.publish(
+                        "fight_attacks_resolved",
+                        unit=fighting_unit,
+                        target_unit=None,
+                    )
+            except Exception:
+                pass
 
             # Step 3: Consolidate using Individual Model Movement Dialog
             def on_consolidate_complete(completed: bool):
@@ -492,6 +537,15 @@ class FightPhaseManager:
         for target_unit, attacking_models in target_declarations.items():
             print(f"  {len(attacking_models)} models attacking {target_unit.name}")
             # TODO: Implement proper melee attack resolution with model-specific targeting
+        try:
+            if hasattr(self.game, "event_system"):
+                self.game.event_system.publish(
+                    "fight_attacks_resolved",
+                    unit=fighting_unit,
+                    target_unit=None,
+                )
+        except Exception:
+            pass
 
         # Step 3: Consolidate
         print(f"🏃 {fighting_unit.name} consolidates...")

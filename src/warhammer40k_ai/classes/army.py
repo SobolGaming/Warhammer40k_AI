@@ -382,6 +382,13 @@ class Army:
             self.gate_of_infinity = GateOfInfinityManager(self)
         except Exception:
             self.gate_of_infinity = None
+
+        # Emperor's Children: Detachment rule manager (safe to attach).
+        try:
+            from .emperors_children import EmperorsChildrenDetachmentManager
+            self.emperors_children = EmperorsChildrenDetachmentManager(self)
+        except Exception:
+            self.emperors_children = None
     
     def add_unit(self, unit: Unit) -> bool:
         if not self.faction_keyword:
@@ -929,6 +936,68 @@ class Army:
                 if self._army_faction_matches_pact(pact.get("forbidden", "")):
                     raise ArmyValidationError(
                         f"{pact.get('name', 'Pact')}: armies cannot select '{pact.get('forbidden', '').strip()}' as their Army Faction."
+                    )
+
+            # Emperor's Children: Carnival of Excess detachment restrictions.
+            detachment = (getattr(self, "detachment_type", "") or "").strip()
+            if faction_id == "EC" and self._detachment_matches_pact(detachment, "Carnival of Excess"):
+                def _has_keyword(unit, keyword: str) -> bool:
+                    if unit is None:
+                        return False
+                    try:
+                        return bool(unit.has_any_keyword(keyword))
+                    except Exception:
+                        pass
+                    kw = (keyword or "").strip().lower()
+                    if not kw:
+                        return False
+                    try:
+                        if kw in [k.lower() for k in (getattr(unit, "keywords", []) or [])]:
+                            return True
+                    except Exception:
+                        pass
+                    try:
+                        if kw in [k.lower() for k in (getattr(unit, "faction_keywords", []) or [])]:
+                            return True
+                    except Exception:
+                        pass
+                    return False
+
+                points_limit = int(getattr(self, "points_limit", 0) or 0)
+                if points_limit <= 1000:
+                    cap = 500
+                    size_label = "Incursion"
+                elif points_limit <= 2000:
+                    cap = 1000
+                    size_label = "Strike Force"
+                else:
+                    cap = 1500
+                    size_label = "Onslaught"
+
+                loe_units = [u for u in list(getattr(self, "units", []) or []) if _has_keyword(u, "LEGIONS OF EXCESS")]
+                loe_points = 0
+                for u in loe_units:
+                    try:
+                        loe_points += int(u.get_unit_cost() or 0)
+                    except Exception:
+                        continue
+                if loe_points > cap:
+                    raise ArmyValidationError(
+                        f"Carnival of Excess: total LEGIONS OF EXCESS points ({loe_points}) exceed {size_label} cap of {cap}."
+                    )
+
+                warlord = getattr(self, "warlord", None)
+                if warlord is None:
+                    for u in list(getattr(self, "units", []) or []):
+                        try:
+                            if getattr(u, "is_warlord", False):
+                                warlord = u
+                                break
+                        except Exception:
+                            continue
+                if warlord is not None and _has_keyword(warlord, "LEGIONS OF EXCESS"):
+                    raise ArmyValidationError(
+                        "Carnival of Excess: LEGIONS OF EXCESS units cannot be your WARLORD."
                     )
         except ArmyValidationError:
             raise

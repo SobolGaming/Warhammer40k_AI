@@ -156,8 +156,10 @@ class Game:
         self.completed_actions_this_turn: List[Dict[str, Any]] = []
         self.models_destroyed_this_turn: List['Model'] = []
         self.destroyed_units_this_battle_round_by_player: Dict[Player, int] = {}
-        # Phase-scoped targeting tracking (for rules like Thrill Seekers)
+        # Phase-scoped targeting tracking (for rules like Thrill Seekers).
+        # Track attack targets separately from charge targets so abilities can opt in to either.
         self.phase_targeted_units: Dict[str, set[str]] = {}
+        self.phase_charge_targets: Dict[str, set[str]] = {}
         # Aeldari: Phoenix Gem pending returns (processed at end of the phase they were destroyed in)
         self._phoenix_gem_pending: List[Dict[str, Any]] = []
         # Optional in-engine army mustering requests (player1/player2) for setup phase.
@@ -192,6 +194,13 @@ class Game:
         self.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_code_chivalric)
         # Adeptus Custodes: Martial Ka'tah selection on fight activation
         self.event_system.subscribe("fight_unit_selected", self._on_fight_unit_selected_martial_katah)
+        # Emperor's Children: detachment rule hooks
+        self.event_system.subscribe("battle_round_started", self._on_battle_round_started_emperors_children)
+        self.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_emperors_children)
+        self.event_system.subscribe("unit_shooting_resolved", self._on_unit_shooting_resolved_emperors_children)
+        self.event_system.subscribe("fight_attacks_resolved", self._on_fight_attacks_resolved_emperors_children)
+        self.event_system.subscribe("fight_unit_selected", self._on_fight_unit_selected_emperors_children)
+        self.event_system.subscribe("fight_targets_selected", self._on_fight_targets_selected_tracking)
         # Drukhari: Power from Pain trigger windows
         self.event_system.subscribe("shooting_targets_selected", self._on_shooting_targets_selected_power_from_pain)
         self.event_system.subscribe("fight_unit_selected", self._on_fight_unit_selected_power_from_pain)
@@ -838,6 +847,7 @@ class Game:
     def _on_phase_start_target_tracking(self, player=None, phase=None, **_kwargs) -> None:
         """Reset phase-scoped target tracking at the start of each phase."""
         self.phase_targeted_units = {}
+        self.phase_charge_targets = {}
 
     def _record_phase_target(self, target_unit=None, attacker_unit=None) -> None:
         if target_unit is None or attacker_unit is None:
@@ -853,6 +863,20 @@ class Game:
         bucket = self.phase_targeted_units.setdefault(target_id, set())
         bucket.add(attacker_id)
 
+    def _record_phase_charge_target(self, target_unit=None, attacker_unit=None) -> None:
+        if target_unit is None or attacker_unit is None:
+            return
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        target_id = getattr(target_root, "_id", None)
+        attacker_id = getattr(attacker_unit, "_id", None)
+        if not target_id or not attacker_id:
+            return
+        bucket = self.phase_charge_targets.setdefault(target_id, set())
+        bucket.add(attacker_id)
+
     def _on_shooting_targets_selected_tracking(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:
             return
@@ -860,7 +884,7 @@ class Game:
             self._record_phase_target(t, attacking_unit)
 
     def _on_charge_declared_tracking(self, unit=None, target_unit=None, **_kwargs) -> None:
-        self._record_phase_target(target_unit, unit)
+        self._record_phase_charge_target(target_unit, unit)
 
     def _on_shooting_targets_selected_dark_pacts(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:
@@ -1076,6 +1100,234 @@ class Game:
             root.set_martial_katah_choice(choice)
         except Exception:
             return
+
+    def _on_battle_round_started_emperors_children(self, game=None, battle_round: int = 0, **_kwargs) -> None:
+        game = game or self
+        try:
+            br = int(battle_round or getattr(game, "turn", 0) or 0)
+        except Exception:
+            br = 0
+        if br <= 0:
+            return
+        for player in list(getattr(game, "players", []) or []):
+            if player is None:
+                continue
+            try:
+                army = player.get_army()
+            except Exception:
+                army = None
+            if army is None:
+                continue
+            mgr = getattr(army, "emperors_children", None)
+            if mgr is None:
+                continue
+            try:
+                mgr.on_battle_round_start(game)
+            except Exception:
+                pass
+            if not getattr(mgr, "is_coterie_of_conceited", lambda: False)():
+                continue
+            # Pledge target selection (if Warlord on battlefield)
+            max_units = 0
+            try:
+                opponents = [p for p in list(getattr(game, "players", []) or []) if p is not player]
+            except Exception:
+                opponents = []
+            for opp in opponents:
+                try:
+                    opp_army = opp.get_army()
+                    max_units += len(list(getattr(opp_army, "units", []) or []))
+                except Exception:
+                    continue
+            if max_units <= 0:
+                max_units = 1
+            try:
+                mgr.pledge_max_units = int(max_units)
+            except Exception:
+                pass
+            if not getattr(mgr, "warlord_on_battlefield", lambda: False)():
+                try:
+                    mgr.set_pledge_target(0, battle_round=br, max_value=max_units)
+                except Exception:
+                    pass
+                continue
+            try:
+                is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+            except Exception:
+                is_human = False
+            if is_human and getattr(self, "event_system", None) is not None:
+                try:
+                    subs = getattr(self.event_system, "subscribers", {})
+                    if isinstance(subs, dict) and subs.get("emperors_children_pledge_prompt"):
+                        self.event_system.publish(
+                            "emperors_children_pledge_prompt",
+                            player=player,
+                            game=game,
+                            battle_round=br,
+                            max_value=int(max_units),
+                            default_value=1,
+                            manager=mgr,
+                        )
+                        continue
+                except Exception:
+                    pass
+            try:
+                import random
+                pledge = random.randint(1, int(max_units))
+                mgr.set_pledge_target(pledge, battle_round=br, max_value=max_units)
+            except Exception:
+                pass
+
+    def _on_unit_destroyed_emperors_children(self, unit=None, destroyed_by_unit=None, **_kwargs) -> None:
+        if unit is None or destroyed_by_unit is None:
+            return
+        try:
+            if unit.get_parent_army() == destroyed_by_unit.get_parent_army():
+                return
+        except Exception:
+            return
+        try:
+            army = destroyed_by_unit.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "emperors_children", None) if army is not None else None
+        if mgr is None:
+            return
+        try:
+            mgr.record_enemy_unit_destroyed(unit, destroyed_by_unit, game=self)
+        except Exception:
+            pass
+
+    def _on_unit_shooting_resolved_emperors_children(self, attacker_unit=None, **_kwargs) -> None:
+        if attacker_unit is None:
+            return
+        try:
+            army = attacker_unit.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "emperors_children", None) if army is not None else None
+        if mgr is None:
+            return
+        try:
+            mgr.resolve_pending_favoured_champions(attacker_unit, game=self)
+        except Exception:
+            pass
+
+    def _on_fight_attacks_resolved_emperors_children(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        try:
+            army = unit.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "emperors_children", None) if army is not None else None
+        if mgr is None:
+            return
+        try:
+            mgr.resolve_pending_favoured_champions(unit, game=self)
+        except Exception:
+            pass
+
+    def _on_fight_unit_selected_emperors_children(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "emperors_children", None) if army is not None else None
+        if mgr is None:
+            return
+        try:
+            charged = bool(getattr(getattr(root, "round_state", None), "charged_this_round", False))
+        except Exception:
+            charged = False
+
+        # Exquisite Swordsmanship (Peerless Bladesmen): choose Lethal or Sustained on charge.
+        if charged and getattr(mgr, "exquisite_swordsmanship_applies", lambda _u: False)(root):
+            try:
+                player = root.get_parent_army().player
+            except Exception:
+                player = None
+            try:
+                is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+            except Exception:
+                is_human = False
+            if is_human and getattr(self, "event_system", None) is not None:
+                try:
+                    subs = getattr(self.event_system, "subscribers", {})
+                    if isinstance(subs, dict) and subs.get("emperors_children_exquisite_prompt"):
+                        self.event_system.publish(
+                            "emperors_children_exquisite_prompt",
+                            player=player,
+                            unit=root,
+                            phase_name=str(getattr(self.phase, "name", "") or ""),
+                            game=self,
+                        )
+                        return
+                except Exception:
+                    pass
+            try:
+                import random
+                choice = random.choice(["LETHAL", "SUSTAINED"])
+                root.set_exquisite_swordsmanship_choice(choice)
+            except Exception:
+                pass
+            return
+
+        # Sensational Performance (Court of the Phoenician): optional on charge.
+        if charged and getattr(mgr, "sensational_performance_applies", lambda _u: False)(root):
+            try:
+                player = root.get_parent_army().player
+            except Exception:
+                player = None
+            try:
+                is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+            except Exception:
+                is_human = False
+            if is_human and getattr(self, "event_system", None) is not None:
+                try:
+                    subs = getattr(self.event_system, "subscribers", {})
+                    if isinstance(subs, dict) and subs.get("emperors_children_sensational_prompt"):
+                        self.event_system.publish(
+                            "emperors_children_sensational_prompt",
+                            player=player,
+                            unit=root,
+                            phase_name=str(getattr(self.phase, "name", "") or ""),
+                            game=self,
+                        )
+                        return
+                except Exception:
+                    pass
+            try:
+                import random
+                use_it = random.choice([True, False])
+            except Exception:
+                use_it = False
+            if use_it:
+                try:
+                    sr = getattr(root, "special_rules", None)
+                    if not isinstance(sr, dict):
+                        sr = {}
+                    sr["sensational_performance_active"] = True
+                    sr["sensational_performance_expires_phase"] = "FIGHT_PHASE"
+                    sr["sensational_performance_strength_bonus"] = 1
+                    sr["sensational_performance_ap_bonus"] = 1
+                    root.special_rules = sr
+                except Exception:
+                    pass
+
+    def _on_fight_targets_selected_tracking(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None:
+            return
+        for t in list(target_units or []):
+            self._record_phase_target(t, attacking_unit)
 
     def _on_shooting_targets_selected_power_from_pain(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:
@@ -1710,6 +1962,19 @@ class Game:
                     exp = str(sr.get("dark_pacts_expires_phase", "") or "").strip().upper()
                     if exp and exp == pname:
                         for k in ("dark_pacts_active", "dark_pacts_choice", "dark_pacts_expires_phase"):
+                            sr.pop(k, None)
+                    exp = str(sr.get("exquisite_swordsmanship_expires_phase", "") or "").strip().upper()
+                    if exp and exp == pname:
+                        for k in ("exquisite_swordsmanship_choice", "exquisite_swordsmanship_expires_phase"):
+                            sr.pop(k, None)
+                    exp = str(sr.get("sensational_performance_expires_phase", "") or "").strip().upper()
+                    if exp and exp == pname:
+                        for k in (
+                            "sensational_performance_active",
+                            "sensational_performance_expires_phase",
+                            "sensational_performance_strength_bonus",
+                            "sensational_performance_ap_bonus",
+                        ):
                             sr.pop(k, None)
                     exp = str(sr.get("seductive_gambit_expires_phase", "") or "").strip().upper()
                     if exp and exp == pname:
@@ -4429,6 +4694,25 @@ class Game:
         except Exception:
             pass
 
+        # Emperor's Children: Pledges to the Dark Prince resolution (Coterie of the Conceited).
+        try:
+            for p in list(getattr(self, "players", []) or []):
+                army = getattr(p, "get_army", lambda: None)()
+                mgr = getattr(army, "emperors_children", None) if army is not None else None
+                if mgr is None or not getattr(mgr, "is_coterie_of_conceited", lambda: False)():
+                    continue
+                result = mgr.resolve_pledge_end_of_round(self)
+                if result.get("resolved") and getattr(self, "event_system", None) is not None:
+                    self.event_system.publish(
+                        "emperors_children_pact_points_updated",
+                        player=p,
+                        game=self,
+                        manager=mgr,
+                        result=dict(result),
+                    )
+        except Exception:
+            pass
+
         # Chapter Approved: any units still in reserves at the end of battle round 3 are destroyed.
         # `self.turn` is the current battle round number when this hook is invoked.
         try:
@@ -5614,7 +5898,8 @@ class Game:
     def _apply_charge_modifiers(self, charging_unit: 'Unit', base_roll: int) -> int:
         """Apply charge roll modifiers based on unit abilities, stratagems, etc."""
         modified_roll = base_roll
-        
+        modifiers: list[tuple[int, str]] = []
+
         # Check for charge modifiers from abilities/enhancements
         # TODO: Implement ability-based charge modifiers
         # Examples:
@@ -5630,21 +5915,61 @@ class Game:
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 br = int(getattr(game, "turn", 0) or 0) if game is not None else 0
                 if mgr is not None and mgr.is_blessing_active("UNBRIDLED_BLOODLUST", battle_round=br):
-                    modified_roll += battle_lust_bonus
-                    print(f"⚔️ Battle-lust: +{battle_lust_bonus} to charge roll (Unbridled Bloodlust active)")
+                    modifiers.append((battle_lust_bonus, "Battle-lust (Unbridled Bloodlust)"))
         except Exception:
             pass
         try:
             sr = getattr(charging_unit, "special_rules", None)
             bonus = int(sr.get("code_chivalric_charge_bonus", 0) or 0) if isinstance(sr, dict) else 0
             if bonus:
-                modified_roll += bonus
-                print(f"⚔️ Code Chivalric: +{bonus} to charge roll")
+                modifiers.append((bonus, "Code Chivalric"))
+        except Exception:
+            pass
+        try:
+            sr = getattr(charging_unit, "special_rules", None)
+            if isinstance(sr, dict):
+                extra = int(sr.get("charge_roll_modifier", 0) or 0)
+                if extra:
+                    modifiers.append((extra, "Charge roll modifier"))
+                extra_list = sr.get("charge_roll_modifiers", None)
+                if isinstance(extra_list, list):
+                    for item in extra_list:
+                        try:
+                            if isinstance(item, (list, tuple)) and len(item) >= 1:
+                                val = int(item[0] or 0)
+                                source = str(item[1] if len(item) > 1 else "Charge roll modifier")
+                            elif isinstance(item, dict):
+                                val = int(item.get("value", 0) or 0)
+                                source = str(item.get("source", "") or "Charge roll modifier")
+                            else:
+                                val = int(item or 0)
+                                source = "Charge roll modifier"
+                        except Exception:
+                            continue
+                        if val:
+                            modifiers.append((val, source))
         except Exception:
             pass
 
+        try:
+            modifiers = charging_unit._filter_internal_rivalries_roll_modifiers(modifiers, kind="charge")
+        except Exception:
+            modifiers = list(modifiers or [])
+
+        for val, source in modifiers:
+            if not val:
+                continue
+            modified_roll += int(val)
+            try:
+                if val > 0:
+                    print(f"⚔️ Charge bonus: +{val} ({source})")
+                else:
+                    print(f"⚔️ Charge penalty: {val} ({source})")
+            except Exception:
+                pass
+
         # For now, just return the modified roll
-        return modified_roll
+        return int(modified_roll)
     
     def get_eligible_charging_units(self, player: Player) -> List['Unit']:
         """Get all units belonging to a player that are eligible to declare charges."""

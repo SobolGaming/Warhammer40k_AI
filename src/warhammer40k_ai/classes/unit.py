@@ -358,6 +358,62 @@ class Unit:
                 except Exception:
                     pass
 
+        # Emperor's Children: Internal Rivalries (Slaanesh's Chosen) - ignore negative Move modifiers.
+        try:
+            if ckey == "movement":
+                army = self.get_parent_army()
+                mgr = getattr(army, "emperors_children", None) if army is not None else None
+                if mgr is not None and getattr(mgr, "internal_rivalries_applies", lambda _u: False)(self):
+                    kept = []
+                    ignored = []
+                    for m in list(mods or []):
+                        try:
+                            val = int(getattr(m, "value", 0) or 0)
+                        except Exception:
+                            val = 0
+                        try:
+                            op = getattr(m, "op", None)
+                        except Exception:
+                            op = None
+                        negative = False
+                        if op == ModifierOp.ADD and val < 0:
+                            negative = True
+                        elif op == ModifierOp.SUB and val > 0:
+                            negative = True
+                        elif op == ModifierOp.MUL and val < 1:
+                            negative = True
+                        elif op == ModifierOp.DIV and val > 1:
+                            negative = True
+                        if negative:
+                            ignored.append(m)
+                        else:
+                            kept.append(m)
+                    if ignored:
+                        mods = kept
+                        try:
+                            sr = getattr(self, "special_rules", None)
+                            if not isinstance(sr, dict):
+                                sr = {}
+                            ignored_sources = tuple(sorted(str(getattr(m, "source", "") or "") for m in ignored))
+                            kept_sources = tuple(sorted(str(getattr(m, "source", "") or "") for m in kept))
+                            sig = (ignored_sources, kept_sources)
+                            if sr.get("internal_rivalries_move_mod_signature") != sig:
+                                sr["internal_rivalries_move_mod_signature"] = sig
+                                self.special_rules = sr
+                                from ..utility.event_bus import append_action
+                                pn = self.get_parent_army().player.name
+                                ignored_text = ", ".join(s for s in ignored_sources if s) or "unnamed sources"
+                                msg = f"Internal Rivalries: ignored negative Move modifiers ({ignored_text})."
+                                append_action(pn, msg)
+                                if kept_sources:
+                                    kept_text = ", ".join(s for s in kept_sources if s)
+                                    if kept_text:
+                                        append_action(pn, f"Internal Rivalries: applied Move modifiers ({kept_text}).")
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+
         # Apply core ordering + rounding.
         interim, dbg = apply_numeric_modifiers(int(base_val), mods, base_raw=base_raw)
 
@@ -3693,6 +3749,13 @@ class Unit:
         except Exception:
             pass
         try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "emperors_children", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "quicksilver_grace_applies", lambda _u: False)(self):
+                return True
+        except Exception:
+            pass
+        try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("pain_reroll_advance"):
                 return True
@@ -3726,6 +3789,109 @@ class Unit:
             if ("re-roll" in s or "reroll" in s) and "advance" in s:
                 return True
         return False
+
+    def _filter_internal_rivalries_roll_modifiers(self, modifiers, *, kind: str) -> list[tuple[int, str]]:
+        if not modifiers:
+            return list(modifiers or [])
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "emperors_children", None) if army is not None else None
+            if mgr is None or not getattr(mgr, "internal_rivalries_applies", lambda _u: False)(self):
+                return list(modifiers or [])
+        except Exception:
+            return list(modifiers or [])
+
+        kept = []
+        ignored = []
+        for val, source in list(modifiers or []):
+            try:
+                v = int(val or 0)
+            except Exception:
+                v = 0
+            if v < 0:
+                ignored.append((v, source))
+            else:
+                kept.append((v, source))
+
+        if ignored:
+            try:
+                sr = getattr(self, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                ignored_sources = tuple(sorted(str(s or "") for _v, s in ignored if str(s or "").strip()))
+                kept_sources = tuple(sorted(str(s or "") for _v, s in kept if str(s or "").strip()))
+                sig = (ignored_sources, kept_sources)
+                key = f"internal_rivalries_{str(kind or '').strip().lower()}_mod_signature"
+                if sr.get(key) != sig:
+                    sr[key] = sig
+                    self.special_rules = sr
+                    from ..utility.event_bus import append_action
+                    pn = self.get_parent_army().player.name
+                    label = "Advance roll" if str(kind or "").strip().lower() == "advance" else "Charge roll"
+                    ignored_text = ", ".join(s for s in ignored_sources if s) or "unnamed sources"
+                    append_action(pn, f"Internal Rivalries: ignored negative {label} modifiers ({ignored_text}).")
+                    if kept_sources:
+                        kept_text = ", ".join(s for s in kept_sources if s)
+                        if kept_text:
+                            append_action(pn, f"Internal Rivalries: applied {label} modifiers ({kept_text}).")
+            except Exception:
+                pass
+
+        return kept
+
+    def _collect_advance_roll_modifiers(self) -> list[tuple[int, str]]:
+        mods: list[tuple[int, str]] = []
+        sr = getattr(self, "special_rules", None)
+        try:
+            bonus = int(sr.get("code_chivalric_advance_bonus", 0) or 0) if isinstance(sr, dict) else 0
+        except Exception:
+            bonus = 0
+        if bonus:
+            mods.append((bonus, "Code Chivalric"))
+        if isinstance(sr, dict):
+            try:
+                extra = int(sr.get("advance_roll_modifier", 0) or 0)
+            except Exception:
+                extra = 0
+            if extra:
+                mods.append((extra, "Advance roll modifier"))
+            try:
+                extra_list = sr.get("advance_roll_modifiers", None)
+            except Exception:
+                extra_list = None
+            if isinstance(extra_list, list):
+                for item in extra_list:
+                    try:
+                        if isinstance(item, (list, tuple)) and len(item) >= 1:
+                            val = int(item[0] or 0)
+                            source = str(item[1] if len(item) > 1 else "Advance roll modifier")
+                        elif isinstance(item, dict):
+                            val = int(item.get("value", 0) or 0)
+                            source = str(item.get("source", "") or "Advance roll modifier")
+                        else:
+                            val = int(item or 0)
+                            source = "Advance roll modifier"
+                    except Exception:
+                        continue
+                    if val:
+                        mods.append((val, source))
+        return mods
+
+    def _apply_advance_roll_modifiers(self, roll: int) -> int:
+        mods = self._collect_advance_roll_modifiers()
+        mods = self._filter_internal_rivalries_roll_modifiers(mods, kind="advance")
+        for val, source in mods:
+            if not val:
+                continue
+            roll += int(val)
+            try:
+                if val > 0:
+                    print(f"⚔️ {self.name} advance bonus: +{val}\" ({source})")
+                else:
+                    print(f"⚔️ {self.name} advance penalty: {val}\" ({source})")
+            except Exception:
+                pass
+        return int(roll)
 
     def can_reroll_charge_roll(self) -> bool:
         """
@@ -4026,18 +4192,11 @@ class Unit:
                     append_dice(pn, f"Advance roll: {advance_roll} for {self.name}")
             except Exception:
                 pass
-            # Apply static advance bonuses (e.g., Code Chivalric).
+            # Apply advance roll modifiers (includes Code Chivalric, etc).
             try:
-                sr = getattr(self, "special_rules", None)
-                bonus = int(sr.get("code_chivalric_advance_bonus", 0) or 0) if isinstance(sr, dict) else 0
+                advance_roll = self._apply_advance_roll_modifiers(int(advance_roll))
             except Exception:
-                bonus = 0
-            if bonus:
-                advance_roll += bonus
-                try:
-                    print(f"⚔️ {self.name} advance bonus: +{bonus}\" (Code Chivalric)")
-                except Exception:
-                    pass
+                pass
             # Provide reroll callback (may be used by rules/stratagems)
             try:
                 _player = getattr(self.get_parent_army(), 'player', None)
@@ -4311,18 +4470,11 @@ class Unit:
                         if bool(provider(player=_player, unit=self, roll_type="advance", value=advance_roll, dice=None)):
                             advance_roll = _reroll()
                             reroll_used = True
-                    # Apply static advance bonuses (e.g., Code Chivalric).
+                    # Apply advance roll modifiers (includes Code Chivalric, etc).
                     try:
-                        sr = getattr(self, "special_rules", None)
-                        bonus = int(sr.get("code_chivalric_advance_bonus", 0) or 0) if isinstance(sr, dict) else 0
+                        advance_roll = self._apply_advance_roll_modifiers(int(advance_roll))
                     except Exception:
-                        bonus = 0
-                    if bonus:
-                        advance_roll += bonus
-                        try:
-                            print(f"⚔️ {self.name} advance bonus: +{bonus}\" (Code Chivalric)")
-                        except Exception:
-                            pass
+                        pass
                     # Publish roll event (best-effort)
                     if _game is not None and hasattr(_game, "event_system"):
                         from ..utility.reroll_tracker import prepare_reroll_event
@@ -5382,11 +5534,55 @@ class Unit:
             phase_targets = getattr(game, "phase_targeted_units", None)
         except Exception:
             phase_targets = None
+        try:
+            phase_charge_targets = getattr(game, "phase_charge_targets", None)
+        except Exception:
+            phase_charge_targets = None
         if isinstance(phase_targets, dict) and target_id is not None:
             attackers = phase_targets.get(target_id, set()) or set()
             other_attackers = [a for a in attackers if a != getattr(self, "_id", None)]
             if other_attackers:
                 return "Thrill Seekers: target already selected by another unit this phase"
+        if isinstance(phase_charge_targets, dict) and target_id is not None:
+            chargers = phase_charge_targets.get(target_id, set()) or set()
+            other_chargers = [a for a in chargers if a != getattr(self, "_id", None)]
+            if other_chargers:
+                return "Thrill Seekers: target already selected by another unit this phase"
+        return None
+
+    def _sensational_performance_restriction_reason(self, target_unit: 'Unit', game) -> Optional[str]:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return None
+        if not sr.get("sensational_performance_active"):
+            return None
+        exp = str(sr.get("sensational_performance_expires_phase", "") or "").strip().upper()
+        if exp:
+            try:
+                pname = str(getattr(getattr(game, "phase", None), "name", "") or getattr(game, "phase", "") or "").strip().upper()
+            except Exception:
+                pname = ""
+            if pname and pname != exp:
+                return None
+        if target_unit is None:
+            return None
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        target_id = getattr(target_root, "_id", None)
+        engaged_ids = getattr(self.round_state, "engaged_enemies_at_turn_start", None) or set()
+        if target_id is not None and target_id in engaged_ids:
+            return "Sensational Performance: cannot target a unit engaged at start of turn"
+        try:
+            phase_targets = getattr(game, "phase_targeted_units", None)
+        except Exception:
+            phase_targets = None
+        if isinstance(phase_targets, dict) and target_id is not None:
+            attackers = phase_targets.get(target_id, set()) or set()
+            other_attackers = [a for a in attackers if a != getattr(self, "_id", None)]
+            if other_attackers:
+                return "Sensational Performance: target already selected by another unit this phase"
         return None
 
     def scout_move(self, destination: Tuple[float, float, float], game_map: 'Map') -> bool:
@@ -7985,6 +8181,24 @@ class Unit:
         if not isinstance(sr, dict):
             return
         sr.pop("martial_katah_choice", None)
+        root.special_rules = sr
+
+    def set_exquisite_swordsmanship_choice(self, choice: str) -> None:
+        root = self.get_attached_unit_root()
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["exquisite_swordsmanship_choice"] = str(choice or "").strip().upper()
+        sr["exquisite_swordsmanship_expires_phase"] = "FIGHT_PHASE"
+        root.special_rules = sr
+
+    def clear_exquisite_swordsmanship_choice(self) -> None:
+        root = self.get_attached_unit_root()
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for k in ("exquisite_swordsmanship_choice", "exquisite_swordsmanship_expires_phase"):
+            sr.pop(k, None)
         root.special_rules = sr
 
     def attached_unit_has_reanimation_protocols(self) -> bool:

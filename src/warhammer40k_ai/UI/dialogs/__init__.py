@@ -24,6 +24,7 @@ from .battlefield_point_pick_dialog import BattlefieldPointPickDialog
 from .hazard_objective_select_dialog import HazardObjectiveSelectDialog
 from .yes_no_dialog import YesNoDialog
 from .quarry_selection_dialog import QuarrySelectionDialog
+from .pledge_selection_dialog import PledgeSelectionDialog
 from .roll_reroll_dialog import RollRerollDialog
 from .miracle_dice_dialog import MiracleDiceDialog
 from .templar_vows_dialog import TemplarVowsDialog
@@ -64,6 +65,7 @@ __all__ = [
     'HazardObjectiveSelectDialog',
     'YesNoDialog',
     'QuarrySelectionDialog',
+    'PledgeSelectionDialog',
     'RollRerollDialog',
     'MiracleDiceDialog',
     'TemplarVowsDialog',

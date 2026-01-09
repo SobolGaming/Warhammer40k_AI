@@ -94,6 +94,14 @@ SUPPORTED_DETACHMENT_RULES = {
     "MARTIAL GRACE",
     "RELENTLESS RAGE",
     "WARP RIFTS",
+    "QUICKSILVER GRACE",
+    "EXQUISITE SWORDSMANSHIP",
+    "MECHANISED MURDER",
+    "DAEMONIC EMPOWERMENT",
+    "PLEDGES TO THE DARK PRINCE",
+    "INTERNAL RIVALRIES",
+    "SENSATIONAL PERFORMANCE",
+    "MASTER OF THE PAGEANT",
 }
 
 # Modern UI Colors
@@ -513,6 +521,7 @@ class GameView:
         self.voice_of_command_target_dialog = None
         self.gate_of_infinity_dialog = None
         self.dark_pacts_dialog = None
+        self.pledge_selection_dialog = None
         self.martial_katah_dialog = None
         self.cabal_ritual_dialog = None
         self.cabal_caster_dialog = None
@@ -775,6 +784,9 @@ class GameView:
         self._bondsman_flow_active = False
         self._dark_pacts_flow_active = False
         self._martial_katah_flow_active = False
+        self._emperors_children_pledge_flow_active = False
+        self._emperors_children_exquisite_flow_active = False
+        self._emperors_children_sensational_flow_active = False
         self._cabal_flow_active = False
         self._voice_of_command_flow_active = False
         self._gate_of_infinity_flow_active = False
@@ -821,6 +833,10 @@ class GameView:
         self._pending_gate_of_infinity_queue = []
         # Adeptus Custodes: Martial Ka'tah selection queue
         self._pending_martial_katah_queue = []
+        # Emperor's Children: Pledge/Exquisite/Sensational prompt queues
+        self._pending_emperors_children_pledge_queue = []
+        self._pending_emperors_children_exquisite_queue = []
+        self._pending_emperors_children_sensational_queue = []
         # Tyranids: Shadow in the Warp prompt queue
         self._pending_shadow_in_the_warp_queue = []
         # Drukhari: Power from Pain prompt queue
@@ -855,6 +871,11 @@ class GameView:
                 self.game.event_system.subscribe("gate_of_infinity_prompt", self._on_gate_of_infinity_prompt)
                 # Adeptus Custodes: Martial Ka'tah stance selection
                 self.game.event_system.subscribe("martial_katah_prompt", self._on_martial_katah_prompt)
+                # Emperor's Children: Detachment prompts
+                self.game.event_system.subscribe("emperors_children_pledge_prompt", self._on_emperors_children_pledge_prompt)
+                self.game.event_system.subscribe("emperors_children_exquisite_prompt", self._on_emperors_children_exquisite_prompt)
+                self.game.event_system.subscribe("emperors_children_sensational_prompt", self._on_emperors_children_sensational_prompt)
+                self.game.event_system.subscribe("emperors_children_pact_points_updated", self._on_emperors_children_pact_points_updated)
                 # Drukhari: Power from Pain prompt when a unit can be empowered
                 self.game.event_system.subscribe("pain_token_prompt", self._on_pain_token_prompt)
                 # Quarry re-pick when quarry is destroyed
@@ -1716,6 +1737,251 @@ class GameView:
         except Exception:
             self._martial_katah_flow_active = False
             self._open_next_martial_katah_prompt(game)
+
+    # ---------------- Emperor's Children prompts ----------------
+
+    def _on_emperors_children_pledge_prompt(self, player=None, game=None, battle_round: int = 0, max_value: int = 1, default_value: int = 1, manager=None, **_kwargs):
+        if player is None:
+            return
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return
+        except Exception:
+            return
+
+        if self._emperors_children_pledge_flow_active:
+            self._pending_emperors_children_pledge_queue.append((player, game, battle_round, max_value, default_value, manager))
+            return
+        self._pending_emperors_children_pledge_queue.append((player, game, battle_round, max_value, default_value, manager))
+        self._open_next_emperors_children_pledge_prompt(game or self.game)
+
+    def _open_next_emperors_children_pledge_prompt(self, game):
+        q = list(getattr(self, "_pending_emperors_children_pledge_queue", []) or [])
+        if not q:
+            self._pending_emperors_children_pledge_queue = []
+            self._emperors_children_pledge_flow_active = False
+            return
+        player, game_ctx, battle_round, max_value, default_value, manager = q.pop(0)
+        self._pending_emperors_children_pledge_queue = q
+
+        game_ctx = game_ctx or game or self.game
+        if player is None or game_ctx is None:
+            self._open_next_emperors_children_pledge_prompt(game_ctx)
+            return
+        mgr = manager
+        if mgr is None:
+            try:
+                army = player.get_army()
+            except Exception:
+                army = None
+            mgr = getattr(army, "emperors_children", None) if army is not None else None
+        if mgr is None:
+            self._open_next_emperors_children_pledge_prompt(game_ctx)
+            return
+
+        if self.pledge_selection_dialog is None:
+            try:
+                from .dialogs import PledgeSelectionDialog
+                sw, sh = self.screen.get_width(), self.screen.get_height()
+                self.pledge_selection_dialog = PledgeSelectionDialog(sw, sh)
+            except Exception:
+                self.pledge_selection_dialog = None
+        if self.pledge_selection_dialog is None:
+            self._emperors_children_pledge_flow_active = False
+            return
+
+        try:
+            max_value = max(1, int(max_value or 1))
+        except Exception:
+            max_value = 1
+        try:
+            default_value = int(default_value or 1)
+        except Exception:
+            default_value = 1
+        default_value = max(1, min(default_value, max_value))
+
+        subtitle = f"Battle round {int(battle_round or getattr(game_ctx, 'turn', 0) or 0)}"
+
+        def _on_confirm(value: int):
+            try:
+                mgr.set_pledge_target(int(value), battle_round=int(battle_round or 0), max_value=max_value)
+            except Exception:
+                pass
+            self._emperors_children_pledge_flow_active = False
+            try:
+                if self.rule_detail_panel and self.rule_detail_panel.visible and isinstance(self._rule_panel_state, dict):
+                    if self._rule_panel_state.get("player") is player and self._rule_panel_state.get("rule_type") == "detachment":
+                        self._toggle_rule_panel(player, "detachment", force_refresh=True)
+            except Exception:
+                pass
+            self._open_next_emperors_children_pledge_prompt(game_ctx)
+
+        def _on_cancel():
+            try:
+                mgr.set_pledge_target(int(default_value), battle_round=int(battle_round or 0), max_value=max_value)
+            except Exception:
+                pass
+            self._emperors_children_pledge_flow_active = False
+            self._open_next_emperors_children_pledge_prompt(game_ctx)
+
+        self._emperors_children_pledge_flow_active = True
+        self.pledge_selection_dialog.show(
+            max_value=max_value,
+            default_value=default_value,
+            on_confirm=_on_confirm,
+            on_cancel=_on_cancel,
+            subtitle=subtitle,
+        )
+        try:
+            self.dialog_manager.open(self.pledge_selection_dialog, modal=True)
+        except Exception:
+            self._emperors_children_pledge_flow_active = False
+            self._open_next_emperors_children_pledge_prompt(game_ctx)
+
+    def _on_emperors_children_exquisite_prompt(self, player=None, unit=None, phase_name=None, game=None, **_kwargs):
+        if player is None or unit is None:
+            return
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return
+        except Exception:
+            return
+
+        if self._emperors_children_exquisite_flow_active:
+            self._pending_emperors_children_exquisite_queue.append((player, unit, phase_name, game))
+            return
+        self._pending_emperors_children_exquisite_queue.append((player, unit, phase_name, game))
+        self._open_next_emperors_children_exquisite_prompt(game or self.game)
+
+    def _open_next_emperors_children_exquisite_prompt(self, game):
+        q = list(getattr(self, "_pending_emperors_children_exquisite_queue", []) or [])
+        if not q:
+            self._pending_emperors_children_exquisite_queue = []
+            self._emperors_children_exquisite_flow_active = False
+            return
+        player, unit, _phase_name, game_ctx = q.pop(0)
+        self._pending_emperors_children_exquisite_queue = q
+
+        game_ctx = game_ctx or game or self.game
+        if player is None or unit is None:
+            self._open_next_emperors_children_exquisite_prompt(game_ctx)
+            return
+
+        if self.martial_katah_dialog is None:
+            try:
+                from .dialogs import MartialKatahDialog
+                sw, sh = self.screen.get_width(), self.screen.get_height()
+                self.martial_katah_dialog = MartialKatahDialog(sw, sh)
+            except Exception:
+                self.martial_katah_dialog = None
+        if self.martial_katah_dialog is None:
+            self._emperors_children_exquisite_flow_active = False
+            return
+
+        subtitle = f"{getattr(unit, 'name', 'Unit')} selected to fight."
+        options = [
+            {
+                "label": "Lethal Hits",
+                "summary": "Melee weapons gain [LETHAL HITS] for this fight.",
+                "value": "LETHAL",
+            },
+            {
+                "label": "Sustained Hits 1",
+                "summary": "Melee weapons gain [SUSTAINED HITS 1] for this fight.",
+                "value": "SUSTAINED",
+            },
+        ]
+
+        def _on_confirm(selected):
+            try:
+                value = selected.get("value")
+                if value:
+                    unit.set_exquisite_swordsmanship_choice(value)
+            except Exception:
+                pass
+            self._emperors_children_exquisite_flow_active = False
+            self._open_next_emperors_children_exquisite_prompt(game_ctx)
+
+        def _on_cancel():
+            try:
+                unit.set_exquisite_swordsmanship_choice("LETHAL")
+            except Exception:
+                pass
+            self._emperors_children_exquisite_flow_active = False
+            self._open_next_emperors_children_exquisite_prompt(game_ctx)
+
+        self._emperors_children_exquisite_flow_active = True
+        self.martial_katah_dialog.show(options=options, on_confirm=_on_confirm, on_cancel=_on_cancel, subtitle=subtitle, title="Exquisite Swordsmanship")
+        try:
+            self.dialog_manager.open(self.martial_katah_dialog, modal=True)
+        except Exception:
+            self._emperors_children_exquisite_flow_active = False
+            self._open_next_emperors_children_exquisite_prompt(game_ctx)
+
+    def _on_emperors_children_sensational_prompt(self, player=None, unit=None, phase_name=None, game=None, **_kwargs):
+        if player is None or unit is None:
+            return
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return
+        except Exception:
+            return
+
+        if self._emperors_children_sensational_flow_active:
+            self._pending_emperors_children_sensational_queue.append((player, unit, phase_name, game))
+            return
+        self._pending_emperors_children_sensational_queue.append((player, unit, phase_name, game))
+        self._open_next_emperors_children_sensational_prompt(game or self.game)
+
+    def _open_next_emperors_children_sensational_prompt(self, game):
+        q = list(getattr(self, "_pending_emperors_children_sensational_queue", []) or [])
+        if not q:
+            self._pending_emperors_children_sensational_queue = []
+            self._emperors_children_sensational_flow_active = False
+            return
+        player, unit, _phase_name, game_ctx = q.pop(0)
+        self._pending_emperors_children_sensational_queue = q
+
+        game_ctx = game_ctx or game or self.game
+        if player is None or unit is None:
+            self._open_next_emperors_children_sensational_prompt(game_ctx)
+            return
+
+        title = "Sensational Performance"
+        msg = f"Activate Sensational Performance for {getattr(unit, 'name', 'Unit')}?"
+
+        def _done(chosen: bool):
+            if chosen:
+                try:
+                    sr = getattr(unit, "special_rules", None)
+                    if not isinstance(sr, dict):
+                        sr = {}
+                    sr["sensational_performance_active"] = True
+                    sr["sensational_performance_expires_phase"] = "FIGHT_PHASE"
+                    sr["sensational_performance_strength_bonus"] = 1
+                    sr["sensational_performance_ap_bonus"] = 1
+                    unit.special_rules = sr
+                except Exception:
+                    pass
+            self._emperors_children_sensational_flow_active = False
+            self._open_next_emperors_children_sensational_prompt(game_ctx)
+
+        try:
+            self._emperors_children_sensational_flow_active = True
+            self._request_yes_no(title, msg, "Use", "Skip", _done)
+        except Exception:
+            self._emperors_children_sensational_flow_active = False
+            self._open_next_emperors_children_sensational_prompt(game_ctx)
+
+    def _on_emperors_children_pact_points_updated(self, player=None, **_kwargs):
+        if player is None:
+            return
+        try:
+            if self.rule_detail_panel and self.rule_detail_panel.visible and isinstance(self._rule_panel_state, dict):
+                if self._rule_panel_state.get("player") is player and self._rule_panel_state.get("rule_type") == "detachment":
+                    self._toggle_rule_panel(player, "detachment", force_refresh=True)
+        except Exception:
+            pass
 
     # ---------------- Power from Pain prompts ----------------
 
@@ -5821,17 +6087,27 @@ class GameView:
                 strat = manager.get_by_name(str(name)) if manager else None
                 if strat is not None and target_unit is not None:
                     prev = player.preview_stratagem_cp_cost(strat, target_unit=target_unit, assume_optional_discounts=True)
-                    if int(prev.get("discount", 0) or 0) >= 1:
+                    reasons = list(prev.get("reasons", []) or [])
+                    use_mop = any("Master of the Pageant" in str(r) for r in reasons)
+                    use_dts = any("Direct the Slaughter" in str(r) for r in reasons)
+                    if use_mop or use_dts:
                         if self._optional_flow_active:
                             return
                         self._optional_flow_active = True
                         base = int(prev.get("base", getattr(strat, "cp_cost", 0) or 0) or 0)
-                        msg = f"Use Direct the Slaughter to reduce CP cost by 1?\n\n{str(name)}: {base}CP -> {max(0, base-1)}CP"
+                        if use_mop:
+                            title = "Master of the Pageant"
+                            msg = f"Use Master of the Pageant to reduce CP cost by 1?\n\n{str(name)}: {base}CP -> {max(0, base-1)}CP"
+                            decision_key = "MASTER_OF_THE_PAGEANT"
+                        else:
+                            title = "Direct the Slaughter"
+                            msg = f"Use Direct the Slaughter to reduce CP cost by 1?\n\n{str(name)}: {base}CP -> {max(0, base-1)}CP"
+                            decision_key = "DIRECT_THE_SLAUGHTER"
 
                         def _done(chosen: bool):
                             self._optional_flow_active = False
                             try:
-                                player.set_next_optional_decision("DIRECT_THE_SLAUGHTER", bool(chosen))
+                                player.set_next_optional_decision(decision_key, bool(chosen))
                             except Exception:
                                 pass
                             ok2 = manager.use(name, **context)
@@ -5840,7 +6116,7 @@ class GameView:
                             else:
                                 print(f"Could not use stratagem: {name}")
 
-                        self._request_yes_no("Direct the Slaughter", msg, "Use", "Skip", _done)
+                        self._request_yes_no(title, msg, "Use", "Skip", _done)
                         return
             except Exception:
                 pass
@@ -6281,6 +6557,31 @@ class GameView:
                         highlight_words.append(dread.name)
                     except Exception:
                         continue
+        if rule_type == "detachment" and "pledges to the dark prince" in rule_name.strip().lower():
+            try:
+                army = player.get_army()
+            except Exception:
+                army = None
+            mgr = getattr(army, "emperors_children", None) if army is not None else None
+            if mgr is not None:
+                def _pact_active():
+                    try:
+                        return list(mgr.active_pact_thresholds() or [])
+                    except Exception:
+                        return []
+                active = _pact_active()
+                for token in active:
+                    try:
+                        highlight_words.append(token)
+                    except Exception:
+                        continue
+                hud = {
+                    "label": "Pact Points",
+                    "get_tokens": lambda: int(getattr(mgr, "pact_points", 0) or 0),
+                    "show_button": False,
+                    "get_hint": lambda: ("Active bonuses: " + ", ".join(_pact_active())) if _pact_active() else "No Pact bonuses active.",
+                    "highlight_words": active,
+                }
         hud = None
         if rule_type == "army" and "battle focus" in rule_name.strip().lower():
             mgr = self._get_battle_focus_manager(player)
