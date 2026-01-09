@@ -389,6 +389,38 @@ class Army:
             self.emperors_children = EmperorsChildrenDetachmentManager(self)
         except Exception:
             self.emperors_children = None
+
+        # Detachment managers by faction (safe to attach, no-op if not applicable).
+        self.detachment_managers = {}
+        try:
+            from .detachment_registry import DETACHMENT_MANAGER_CLASSES
+        except Exception:
+            DETACHMENT_MANAGER_CLASSES = {}
+        for attr_name, manager_cls in DETACHMENT_MANAGER_CLASSES.items():
+            mgr = None
+            try:
+                mgr = manager_cls(self)
+            except Exception:
+                mgr = None
+            setattr(self, attr_name, mgr)
+            self.detachment_managers[attr_name] = mgr
+
+        self.emperors_children_detachments = self.emperors_children
+        if self.emperors_children_detachments is not None:
+            self.detachment_managers["emperors_children_detachments"] = self.emperors_children_detachments
+
+    def get_detachment_manager_for_faction(self, faction_id: str):
+        try:
+            from .detachment_registry import DETACHMENT_MANAGER_BY_FACTION_ID
+        except Exception:
+            return None
+        fid = str(faction_id or "").strip().upper()
+        if not fid:
+            return None
+        attr = DETACHMENT_MANAGER_BY_FACTION_ID.get(fid)
+        if not attr:
+            return None
+        return getattr(self, attr, None)
     
     def add_unit(self, unit: Unit) -> bool:
         if not self.faction_keyword:
@@ -784,7 +816,22 @@ class Army:
             pass
         try:
             if getattr(self, "detachment_type", None) and getattr(enhancement, "detachment", ""):
-                if self.detachment_type != enhancement.detachment:
+                mgr = self.get_detachment_manager_for_faction(getattr(enhancement, "faction_id", "") or self.faction_id)
+                if mgr is not None:
+                    try:
+                        if not mgr.detachment_matches(enhancement.detachment):
+                            raise ArmyValidationError(
+                                f"Enhancement '{enhancement.name}' is for detachment '{enhancement.detachment}', "
+                                f"but army detachment is '{self.detachment_type}'."
+                            )
+                    except ArmyValidationError:
+                        raise
+                    except Exception:
+                        raise ArmyValidationError(
+                            f"Enhancement '{enhancement.name}' is for detachment '{enhancement.detachment}', "
+                            f"but army detachment is '{self.detachment_type}'."
+                        )
+                elif self.detachment_type != enhancement.detachment:
                     raise ArmyValidationError(
                         f"Enhancement '{enhancement.name}' is for detachment '{enhancement.detachment}', "
                         f"but army detachment is '{self.detachment_type}'."
@@ -938,67 +985,11 @@ class Army:
                         f"{pact.get('name', 'Pact')}: armies cannot select '{pact.get('forbidden', '').strip()}' as their Army Faction."
                     )
 
-            # Emperor's Children: Carnival of Excess detachment restrictions.
-            detachment = (getattr(self, "detachment_type", "") or "").strip()
-            if faction_id == "EC" and self._detachment_matches_pact(detachment, "Carnival of Excess"):
-                def _has_keyword(unit, keyword: str) -> bool:
-                    if unit is None:
-                        return False
-                    try:
-                        return bool(unit.has_any_keyword(keyword))
-                    except Exception:
-                        pass
-                    kw = (keyword or "").strip().lower()
-                    if not kw:
-                        return False
-                    try:
-                        if kw in [k.lower() for k in (getattr(unit, "keywords", []) or [])]:
-                            return True
-                    except Exception:
-                        pass
-                    try:
-                        if kw in [k.lower() for k in (getattr(unit, "faction_keywords", []) or [])]:
-                            return True
-                    except Exception:
-                        pass
-                    return False
-
-                points_limit = int(getattr(self, "points_limit", 0) or 0)
-                if points_limit <= 1000:
-                    cap = 500
-                    size_label = "Incursion"
-                elif points_limit <= 2000:
-                    cap = 1000
-                    size_label = "Strike Force"
-                else:
-                    cap = 1500
-                    size_label = "Onslaught"
-
-                loe_units = [u for u in list(getattr(self, "units", []) or []) if _has_keyword(u, "LEGIONS OF EXCESS")]
-                loe_points = 0
-                for u in loe_units:
-                    try:
-                        loe_points += int(u.get_unit_cost() or 0)
-                    except Exception:
-                        continue
-                if loe_points > cap:
-                    raise ArmyValidationError(
-                        f"Carnival of Excess: total LEGIONS OF EXCESS points ({loe_points}) exceed {size_label} cap of {cap}."
-                    )
-
-                warlord = getattr(self, "warlord", None)
-                if warlord is None:
-                    for u in list(getattr(self, "units", []) or []):
-                        try:
-                            if getattr(u, "is_warlord", False):
-                                warlord = u
-                                break
-                        except Exception:
-                            continue
-                if warlord is not None and _has_keyword(warlord, "LEGIONS OF EXCESS"):
-                    raise ArmyValidationError(
-                        "Carnival of Excess: LEGIONS OF EXCESS units cannot be your WARLORD."
-                    )
+            ec_mgr = getattr(self, "emperors_children", None)
+            if ec_mgr is not None:
+                for msg in list(ec_mgr.validate_detachment_rules() or []):
+                    if msg:
+                        raise ArmyValidationError(str(msg))
         except ArmyValidationError:
             raise
         except Exception:

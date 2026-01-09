@@ -2230,46 +2230,46 @@ class Game:
             army = None
         if army is None:
             return
-        det = (getattr(army, "detachment_type", "") or "").strip().lower()
-        if det == "berzerker warband":
-            # Relentless Rage applies only to WORLD EATERS units
+        we_mgr = getattr(army, "world_eaters_detachments", None)
+        if we_mgr is not None and getattr(we_mgr, "relentless_rage_applies", None):
             try:
-                if not unit.has_any_keyword("WORLD EATERS"):
-                    return
+                applies = bool(we_mgr.relentless_rage_applies(unit))
             except Exception:
-                if (getattr(army, "faction_id", "") or "").strip().upper() != "WE":
-                    return
-            sr = getattr(unit, "special_rules", None)
-            if not isinstance(sr, dict):
-                sr = {}
-            sr["relentless_rage_melee_attacks_bonus"] = 1
-            sr["relentless_rage_melee_strength_bonus"] = 2
-            sr["relentless_rage_expires_phase"] = "FIGHT_PHASE"
-            unit.special_rules = sr
-            return
+                applies = False
+            if applies:
+                # Relentless Rage applies only to WORLD EATERS units
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["relentless_rage_melee_attacks_bonus"] = 1
+                sr["relentless_rage_melee_strength_bonus"] = 2
+                sr["relentless_rage_expires_phase"] = "FIGHT_PHASE"
+                unit.special_rules = sr
+                return
 
-        if det == "legion of excess":
-            # Seductive Gambit applies only to LEGIONES DAEMONICA SLAANESH units.
+        cd_mgr = getattr(army, "chaos_daemons_detachments", None)
+        if cd_mgr is not None and getattr(cd_mgr, "seductive_gambit_applies", None):
             try:
-                if not unit.has_any_keyword("SLAANESH"):
+                applies = bool(cd_mgr.seductive_gambit_applies(unit))
+            except Exception:
+                applies = False
+            if applies:
+                # Seductive Gambit applies only to LEGIONES DAEMONICA SLAANESH units.
+                try:
+                    player = unit.get_parent_army().player
+                except Exception:
+                    player = None
+                if player is None:
                     return
-            except Exception:
-                return
-            try:
-                player = unit.get_parent_army().player
-            except Exception:
-                player = None
-            if player is None:
-                return
-            ctx = {"unit": getattr(unit, "name", "") or "", "ability_name": "Seductive Gambit"}
-            if not player._should_use_optional_ability("SEDUCTIVE_GAMBIT", ctx):
-                return
-            sr = getattr(unit, "special_rules", None)
-            if not isinstance(sr, dict):
-                sr = {}
-            sr["seductive_gambit_active"] = True
-            sr["seductive_gambit_expires_phase"] = "FIGHT_PHASE"
-            unit.special_rules = sr
+                ctx = {"unit": getattr(unit, "name", "") or "", "ability_name": "Seductive Gambit"}
+                if not player._should_use_optional_ability("SEDUCTIVE_GAMBIT", ctx):
+                    return
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["seductive_gambit_active"] = True
+                sr["seductive_gambit_expires_phase"] = "FIGHT_PHASE"
+                unit.special_rules = sr
 
     def _on_model_destroyed_rules(self, attacker_model=None, attacker_unit=None, target_model=None, target_unit=None, **_kwargs) -> None:
         # Generic partial support for "gain CP when this model destroys an enemy KEYWORD unit/model".

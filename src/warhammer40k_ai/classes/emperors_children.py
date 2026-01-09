@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import re
 from typing import Optional
 
 from ..utility.aura_utils import unit_within_range_of_unit
+from .detachment_manager import DetachmentManagerBase
 
 
-class EmperorsChildrenDetachmentManager:
+class EmperorsChildrenDetachmentManager(DetachmentManagerBase):
     """
     Emperor's Children detachment rule helpers.
 
@@ -16,8 +16,10 @@ class EmperorsChildrenDetachmentManager:
     - Court of the Phoenician: Master of the Pageant CP reduction usage
     """
 
+    faction_id = "EC"
+
     def __init__(self, army=None):
-        self.army = army
+        super().__init__(army)
         self.pact_points: int = 0
         self.pledge_target: int = 0
         self.pledge_round: int = 0
@@ -32,32 +34,8 @@ class EmperorsChildrenDetachmentManager:
         self.master_of_pageant_used_round: int = 0
         self.unbound_arrogance_used_round: int = 0
 
-    def _norm(self, text: str) -> str:
-        t = re.sub(r"[^a-z0-9 ]+", " ", str(text or "").lower())
-        return re.sub(r"\s+", " ", t).strip()
-
-    def _detachment_type_matches(self, detachment_name: str) -> bool:
-        try:
-            det = self._norm(getattr(self.army, "detachment_type", "") or "")
-        except Exception:
-            det = ""
-        target = self._norm(detachment_name)
-        if not det or not target:
-            return False
-        if det == target:
-            return True
-        if det.endswith("s") and det[:-1] == target:
-            return True
-        if target.endswith("s") and target[:-1] == det:
-            return True
-        return det in target or target in det
-
     def is_ec_army(self) -> bool:
-        try:
-            fid = str(getattr(self.army, "faction_id", "") or "").strip().upper()
-        except Exception:
-            fid = ""
-        return fid == "EC"
+        return self._army_faction_matches(self.faction_id)
 
     def is_emperors_children_unit(self, unit) -> bool:
         if unit is None:
@@ -78,25 +56,25 @@ class EmperorsChildrenDetachmentManager:
             return False
 
     def is_mercurial_host(self) -> bool:
-        return self._detachment_type_matches("Mercurial Host")
+        return self.detachment_matches("Mercurial Host")
 
     def is_peerless_bladesmen(self) -> bool:
-        return self._detachment_type_matches("Peerless Bladesmen")
+        return self.detachment_matches("Peerless Bladesmen")
 
     def is_rapid_evisceration(self) -> bool:
-        return self._detachment_type_matches("Rapid Evisceration")
+        return self.detachment_matches("Rapid Evisceration")
 
     def is_carnival_of_excess(self) -> bool:
-        return self._detachment_type_matches("Carnival of Excess")
+        return self.detachment_matches("Carnival of Excess")
 
     def is_coterie_of_conceited(self) -> bool:
-        return self._detachment_type_matches("Coterie of the Conceited")
+        return self.detachment_matches("Coterie of the Conceited")
 
     def is_slaaneshs_chosen(self) -> bool:
-        return self._detachment_type_matches("Slaanesh's Chosen")
+        return self.detachment_matches("Slaanesh's Chosen")
 
     def is_court_of_the_phoenician(self) -> bool:
-        return self._detachment_type_matches("Court of the Phoenician")
+        return self.detachment_matches("Court of the Phoenician")
 
     def _battle_round(self, game) -> int:
         try:
@@ -162,6 +140,65 @@ class EmperorsChildrenDetachmentManager:
     def warlord_on_battlefield(self) -> bool:
         warlord = self._get_warlord_unit()
         return self._unit_on_battlefield(warlord)
+
+    def validate_detachment_rules(self) -> list[str]:
+        errors: list[str] = []
+        army = self.army
+        if army is None:
+            return errors
+        if not self.is_carnival_of_excess():
+            return errors
+
+        def _has_keyword(unit, keyword: str) -> bool:
+            if unit is None:
+                return False
+            try:
+                return bool(unit.has_any_keyword(keyword))
+            except Exception:
+                pass
+            kw = (keyword or "").strip().lower()
+            if not kw:
+                return False
+            try:
+                if kw in [k.lower() for k in (getattr(unit, "keywords", []) or [])]:
+                    return True
+            except Exception:
+                pass
+            try:
+                if kw in [k.lower() for k in (getattr(unit, "faction_keywords", []) or [])]:
+                    return True
+            except Exception:
+                pass
+            return False
+
+        points_limit = int(getattr(army, "points_limit", 0) or 0)
+        if points_limit <= 1000:
+            cap = 500
+            size_label = "Incursion"
+        elif points_limit <= 2000:
+            cap = 1000
+            size_label = "Strike Force"
+        else:
+            cap = 1500
+            size_label = "Onslaught"
+
+        loe_units = [u for u in list(getattr(army, "units", []) or []) if _has_keyword(u, "LEGIONS OF EXCESS")]
+        loe_points = 0
+        for u in loe_units:
+            try:
+                loe_points += int(u.get_unit_cost() or 0)
+            except Exception:
+                continue
+        if loe_points > cap:
+            errors.append(
+                f"Carnival of Excess: total LEGIONS OF EXCESS points ({loe_points}) exceed {size_label} cap of {cap}."
+            )
+
+        warlord = self._get_warlord_unit()
+        if warlord is not None and _has_keyword(warlord, "LEGIONS OF EXCESS"):
+            errors.append("Carnival of Excess: LEGIONS OF EXCESS units cannot be your WARLORD.")
+
+        return errors
 
     def on_battle_round_start(self, game) -> None:
         br = self._battle_round(game)
@@ -337,6 +374,8 @@ class EmperorsChildrenDetachmentManager:
         return True
 
     def is_favoured_champions(self, unit) -> bool:
+        if not self.is_slaaneshs_chosen():
+            return False
         if not unit or not self.favoured_champions_unit_id:
             return False
         try:
@@ -349,6 +388,8 @@ class EmperorsChildrenDetachmentManager:
             return False
 
     def active_pact_thresholds(self) -> list[str]:
+        if not self.is_coterie_of_conceited():
+            return []
         pts = int(self.pact_points or 0)
         thresholds = []
         if pts >= 1:
@@ -362,6 +403,8 @@ class EmperorsChildrenDetachmentManager:
         return thresholds
 
     def pact_points_at_least(self, value: int) -> bool:
+        if not self.is_coterie_of_conceited():
+            return False
         try:
             return int(self.pact_points or 0) >= int(value)
         except Exception:

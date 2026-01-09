@@ -33,10 +33,13 @@ class TestWorldEatersEnhancements(unittest.TestCase):
         return parent.profiles["default"]
 
     def test_berzerker_glaive_melee_attacks_and_damage(self):
+        from warhammer40k_ai.classes.army import Army
         from warhammer40k_ai.classes.enhancement import Enhancement
         from warhammer40k_ai.classes.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
 
+        army = Army("World Eaters", "Berzerker Warband")
+        army.faction_id = "WE"
         unit = SimpleNamespace(
             special_rules={},
             models=[],
@@ -44,7 +47,8 @@ class TestWorldEatersEnhancements(unittest.TestCase):
             abilities=[],
             round_state=SimpleNamespace(remained_stationary_this_round=False, charged_this_round=False),
         )
-        unit.get_parent_army = lambda: None
+        unit.get_parent_army = lambda: army
+        army.units = [unit]
 
         Enhancement(
             id="000008432002",
@@ -121,10 +125,13 @@ class TestWorldEatersEnhancements(unittest.TestCase):
         self.assertEqual(target_model.wounds, before - 2)
 
     def test_berzerker_glaive_excludes_extra_attacks(self):
+        from warhammer40k_ai.classes.army import Army
         from warhammer40k_ai.classes.enhancement import Enhancement
         from warhammer40k_ai.classes.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
 
+        army = Army("World Eaters", "Berzerker Warband")
+        army.faction_id = "WE"
         unit = SimpleNamespace(
             special_rules={},
             models=[],
@@ -132,7 +139,8 @@ class TestWorldEatersEnhancements(unittest.TestCase):
             abilities=[],
             round_state=SimpleNamespace(remained_stationary_this_round=False, charged_this_round=False),
         )
-        unit.get_parent_army = lambda: None
+        unit.get_parent_army = lambda: army
+        army.units = [unit]
 
         Enhancement(
             id="000008432002",
@@ -209,17 +217,21 @@ class TestWorldEatersEnhancements(unittest.TestCase):
         self.assertEqual(target_model.wounds, before - 1)
 
     def test_battle_lust_reroll_and_bonus(self):
+        from warhammer40k_ai.classes.army import Army
         from warhammer40k_ai.classes.enhancement import Enhancement
         from warhammer40k_ai.classes.unit import Unit
         from warhammer40k_ai.classes.blessings_of_khorne import BlessingsOfKhorneManager
         from warhammer40k_ai.classes.game import Game, Battlefield
 
+        army = Army("World Eaters", "Berzerker Warband")
+        army.faction_id = "WE"
         unit = SimpleNamespace(
             special_rules={},
             possible_abilities=[],
             abilities=[],
             enhancement=None,
         )
+        unit.get_parent_army = lambda: army
         Enhancement(
             id="000008432005",
             name="Battle-lust",
@@ -234,20 +246,22 @@ class TestWorldEatersEnhancements(unittest.TestCase):
         battlefield = Battlefield(width=44, height=30)
         game = Game(battlefield, players=[])
         player = SimpleNamespace(game=game)
-        army = SimpleNamespace(player=player)
+        army.player = player
         mgr = BlessingsOfKhorneManager()
         mgr.on_battle_round_start(1)
         mgr.active_blessing_keys.add("UNBRIDLED_BLOODLUST")
         army.blessings_of_khorne = mgr
-        unit.get_parent_army = lambda: army
 
         modified = game._apply_charge_modifiers(unit, 6)
         self.assertEqual(int(modified), 7)
 
     def test_favoured_of_khorne_rerolls_available(self):
+        from warhammer40k_ai.classes.army import Army
         from warhammer40k_ai.classes.enhancement import Enhancement
         from warhammer40k_ai.classes.blessings_of_khorne import BlessingsOfKhorneManager
 
+        army = Army("World Eaters", "Berzerker Warband")
+        army.faction_id = "WE"
         unit = SimpleNamespace(
             special_rules={},
             enhancement=None,
@@ -255,6 +269,8 @@ class TestWorldEatersEnhancements(unittest.TestCase):
             reserve_status="deployed",
         )
         unit.is_alive = lambda: True
+        unit.get_parent_army = lambda: army
+        army.units = [unit]
 
         Enhancement(
             id="000008432004",
@@ -266,7 +282,6 @@ class TestWorldEatersEnhancements(unittest.TestCase):
         ).apply_to_unit(unit)
         unit.enhancement = SimpleNamespace(name="Favoured of Khorne")
 
-        army = SimpleNamespace(units=[unit])
         mgr = BlessingsOfKhorneManager()
         self.assertEqual(int(mgr.favoured_of_khorne_rerolls_for_army(army)), 2)
 

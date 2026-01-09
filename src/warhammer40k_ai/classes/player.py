@@ -276,6 +276,13 @@ class Player:
         if target_unit is None:
             return 0
         try:
+            army = self.get_army()
+        except Exception:
+            army = None
+        we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+        if we_mgr is None or not getattr(we_mgr, "is_berzerker_warband", lambda: False)():
+            return 0
+        try:
             if not target_unit.has_any_keyword("WORLD EATERS"):
                 return 0
         except Exception:
@@ -355,6 +362,13 @@ class Player:
         Once per battle round, you can target the bearer's unit with Command Re-roll for 0CP.
         """
         if stratagem is None or target_unit is None:
+            return 0
+        try:
+            army = self.get_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "aeldari_detachments", None) if army is not None else None
+        if mgr is None or not getattr(mgr, "is_warhost_detachment", lambda: False)():
             return 0
         try:
             name = str(getattr(stratagem, "name", "") or "").strip().lower()

@@ -1781,8 +1781,8 @@ class WargearProfile:
             if "reroll" not in hit_result:
                 is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
                 if is_melee:
-                    sr = getattr(attacker.parent_unit, "special_rules", None)
-                    if isinstance(sr, dict) and sr.get("seductive_gambit_active"):
+                    unit = attacker.parent_unit
+                    if hasattr(unit, "_seductive_gambit_active") and unit._seductive_gambit_active():
                         # Determine success at this stage (before auto-hit/miss shortcuts below).
                         try:
                             success = (dice_roll != 1) and (self.skill > 0) and (dice_roll >= final_needed)
@@ -2462,8 +2462,8 @@ class WargearProfile:
             if dice_roll == 1 and "reroll" not in wound_result:
                 is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
                 if is_melee:
-                    sr = getattr(attacker.parent_unit, "special_rules", None)
-                    if isinstance(sr, dict) and sr.get("seductive_gambit_active"):
+                    unit = attacker.parent_unit
+                    if hasattr(unit, "_seductive_gambit_active") and unit._seductive_gambit_active():
                         rr = _reroll_wound()
                         wound_result.setdefault("special_effects", []).append("Seductive Gambit: re-roll Wound roll of 1")
                         wound_result["reroll_of_one"] = 1

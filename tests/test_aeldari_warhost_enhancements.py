@@ -41,10 +41,13 @@ class TestAeldariWarhostEnhancements(unittest.TestCase):
         return parent.profiles["default"]
 
     def test_psychic_destroyer_adds_damage(self):
+        from warhammer40k_ai.classes.army import Army
         from warhammer40k_ai.classes.enhancement import Enhancement
         from warhammer40k_ai.classes.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
 
+        army = Army("Aeldari", "Warhost")
+        army.faction_id = "AE"
         unit = SimpleNamespace(
             special_rules={},
             models=[],
@@ -52,6 +55,8 @@ class TestAeldariWarhostEnhancements(unittest.TestCase):
             abilities=[],
             round_state=SimpleNamespace(remained_stationary_this_round=False, charged_this_round=False),
         )
+        unit.get_parent_army = lambda: army
+        army.units = [unit]
         Enhancement(
             id="000009899005",
             name="Psychic Destroyer",
@@ -124,6 +129,8 @@ class TestAeldariWarhostEnhancements(unittest.TestCase):
         )
         unit.is_alive = lambda: True
         unit.get_attached_unit_members = lambda: [unit]
+        unit.get_parent_army = lambda: army
+        army.units = [unit]
 
         Enhancement(
             id="000009899004",
@@ -165,11 +172,11 @@ class TestAeldariWarhostEnhancements(unittest.TestCase):
             reserve_status="deployed",
         )
         unit.is_alive = lambda: True
-        army = SimpleNamespace(
-            units=[unit],
-            faction_id="AE",
-            player=SimpleNamespace(game=None),
-        )
+        from warhammer40k_ai.classes.army import Army
+
+        army = Army("Aeldari", "Warhost")
+        army.faction_id = "AE"
+        army.units = [unit]
 
         mgr = BattleFocusManager(army)
         game = SimpleNamespace(
@@ -179,7 +186,7 @@ class TestAeldariWarhostEnhancements(unittest.TestCase):
         )
 
         mgr.on_battle_round_start(1, game=game)
-        self.assertEqual(int(mgr.tokens), 5)
+        self.assertEqual(int(mgr.tokens), 6)
 
     def test_phoenix_gem_returns_at_phase_end(self):
         from warhammer40k_ai.classes.army import Army

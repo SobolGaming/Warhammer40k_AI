@@ -85,7 +85,24 @@ class Enhancement:
         except Exception:
             enh_id = ""
 
+        try:
+            army = unit.get_parent_army()
+        except Exception:
+            army = None
+        we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+        ae_mgr = getattr(army, "aeldari_detachments", None) if army is not None else None
+        try:
+            is_berzerker_warband = bool(we_mgr and we_mgr.is_berzerker_warband())
+        except Exception:
+            is_berzerker_warband = False
+        try:
+            is_warhost = bool(ae_mgr and ae_mgr.is_warhost_detachment())
+        except Exception:
+            is_warhost = False
+
         if name == "berzerker glaive" or enh_id == "000008432002":
+            if not is_berzerker_warband:
+                return
             unit.special_rules["enhancement_melee_attacks_bonus_no_extra_attacks"] = int(
                 unit.special_rules.get("enhancement_melee_attacks_bonus_no_extra_attacks", 0) or 0
             ) + 1
@@ -94,24 +111,36 @@ class Enhancement:
             ) + 1
 
         if name == "battle-lust" or enh_id == "000008432005":
+            if not is_berzerker_warband:
+                return
             unit.special_rules["enhancement_charge_reroll"] = True
             unit.special_rules["enhancement_battle_lust_bonus_if_unbridled"] = 1
 
         if name == "favoured of khorne" or enh_id == "000008432004":
+            if not is_berzerker_warband:
+                return
             unit.special_rules["enhancement_favoured_of_khorne_rerolls"] = 2
 
         if name == "gift of foresight" and enh_id == "000009899004":
+            if not is_warhost:
+                return
             unit.special_rules["enhancement_free_command_reroll_once_per_battle_round"] = True
 
         if name == "phoenix gem" or enh_id == "000009899002":
+            if not is_warhost:
+                return
             unit.special_rules["enhancement_phoenix_gem"] = True
 
         if name == "psychic destroyer" or enh_id == "000009899005":
+            if not is_warhost:
+                return
             unit.special_rules["enhancement_psychic_destroyer_damage_bonus"] = int(
                 unit.special_rules.get("enhancement_psychic_destroyer_damage_bonus", 0) or 0
             ) + 1
 
         if name == "timeless strategist" or enh_id == "000009899003":
+            if not is_warhost:
+                return
             unit.special_rules["enhancement_timeless_strategist_battle_focus_bonus"] = int(
                 unit.special_rules.get("enhancement_timeless_strategist_battle_focus_bonus", 0) or 0
             ) + 1

@@ -1,27 +1,26 @@
+
 """
 Generate docs/ABILITY_SUPPORT_MATRIX.md from Wahapedia JSON.
 
-This mirrors the high-level structure of STRATAGEM_SUPPORT_MATRIX.md:
-- Core abilities (global Abilities.json entries)
-- Faction abilities (Abilities.json entries, grouped per faction)
-- Detachment abilities (Detachment_abilities.json, grouped per faction -> detachment)
-- Datasheet-sourced abilities (Datasheets_abilities.json rows without ability_id),
-  grouped by Datasheets_abilities.type ("Datasheet", "Wargear", "Wargear profile", etc.)
+Output structure:
+- Collapsible Core section (core abilities + core stratagems)
+- Collapsible per-faction sections:
+  * Army rules
+  * Mustering restrictions
+  * Detachments (each collapsible; abilities + restrictions + enhancements + stratagems)
+  * Datasheet abilities (per faction)
 
-Support status is inferred from currently-implemented engine mechanics (pattern-based).
-
-Exclusions:
-- Detachments with `type == "Boarding Actions"` (from `wahapedia_data/Detachments.json`) are excluded from reporting
-  for Detachment abilities.
+Support status is derived from code (managers, explicit support lists, and pattern-based rules).
 """
 
 from __future__ import annotations
 
+import html
 import json
 import os
 import re
-from dataclasses import dataclass
-from typing import Any, Dict, List, Tuple
+import sys
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -29,63 +28,292 @@ WAHA_DIR = os.path.join(ROOT, "wahapedia_data")
 DOCS_DIR = os.path.join(ROOT, "docs")
 OUT_PATH = os.path.join(DOCS_DIR, "ABILITY_SUPPORT_MATRIX.md")
 
+SRC_DIR = os.path.join(ROOT, "src")
+if SRC_DIR not in sys.path:
+    sys.path.insert(0, SRC_DIR)
+
+from warhammer40k_ai.utility.faction_rule_metadata import FACTION_RULE_METADATA
+from warhammer40k_ai.classes.army import SUPPORTED_FACTION_IDS
+from warhammer40k_ai.classes.stratagems import IMPLEMENTED_STRATAGEM_NAMES
+from warhammer40k_ai.classes.enhancement_effects import classify_enhancement_support
+
+
+STATUS_COLORS = {
+    "supported": "#e6f4ea",
+    "implemented": "#e6f4ea",
+    "partial": "#fff4cc",
+    "not implemented": "#fdecea",
+}
+
 
 def _read_json(path: str) -> Any:
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
-def _escape_md(text: str) -> str:
-    return (text or "").replace("|", r"\|").strip()
-
-
 def _norm(text: str) -> str:
-    return (text or "").strip().lower()
+    t = str(text or "").lower()
+    t = t.replace("\u2019", "'")
+    t = re.sub(r"[^a-z0-9]+", " ", t)
+    return re.sub(r"\s+", " ", t).strip()
 
 
-def _strip_html_fast(text: str) -> str:
-    """
-    We keep this intentionally simple:
-    - Remove tags
-    - Collapse whitespace
-    This is *only* used for pattern matching, not for rendering.
-    """
+def _strip_html(text: str) -> str:
     if not text:
         return ""
-    # Remove tags
-    text = re.sub(r"<[^>]+>", " ", text)
-    # Normalize special apostrophe from Wahapedia
+    text = html.unescape(text)
     text = text.replace("\u2019", "'")
-    # Collapse whitespace
-    return re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"</li>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"<li[^>]*>", "- ", text, flags=re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
 
 
-@dataclass(frozen=True)
-class AbilityEntry:
-    id: str
-    name: str
-    faction_id: str
-    description: str
-    legend: str
+def _ascii_text(text: str) -> str:
+    t = str(text or "")
+    t = t.replace("\u2019", "'").replace("\u2013", "-").replace("\u2014", "-").replace("\u00a0", " ")
+    t = t.encode("ascii", "ignore").decode("ascii")
+    return t
 
 
-@dataclass(frozen=True)
-class DetachmentAbilityEntry:
-    id: str
-    faction_id: str
-    detachment: str
-    detachment_id: str
-    name: str
-    description: str
-    legend: str
+def _escape(text: str) -> str:
+    return html.escape(_ascii_text(text), quote=True)
 
 
-@dataclass(frozen=True)
-class DatasheetInfo:
-    id: str
-    name: str
-    faction_id: str
+def _status_color(status: str) -> str:
+    key = _norm(status)
+    return STATUS_COLORS.get(key, "#fdecea")
 
+
+def _status_is_supported(status: str) -> bool:
+    return _norm(status) in ("supported", "implemented")
+
+
+def _format_units(units: Sequence[str]) -> str:
+    clean = sorted({u for u in units if u}, key=lambda s: s.lower())
+    if not clean:
+        return "-"
+    if len(clean) > 4:
+        body = "<br/>".join(_escape(u) for u in clean)
+        return f"<details><summary>{len(clean)} units</summary>{body}</details>"
+    return ", ".join(_escape(u) for u in clean)
+
+
+def _details(summary: str, body: str) -> str:
+    return f"<details><summary>{_escape(summary)}</summary>{body}</details>"
+
+
+def _desc_block(rules_text: str, engine_text: str) -> str:
+    rules = _escape(rules_text or "-")
+    engine = _escape(engine_text or "-")
+    body = f"<strong>Rules:</strong> {rules}<br/><strong>Engine:</strong> {engine}"
+    return _details("Description", body)
+
+def _ability_support_overrides() -> Dict[str, Tuple[str, str]]:
+    return {
+        "acts of faith": ("Supported", "Miracle dice pool with per-phase Act usage (ActsOfFaithManager)."),
+        "martial ka tah": ("Supported", "Fight-phase Ka'tah selection with Lethal/Sustained hooks."),
+        "doctrina imperatives": ("Supported", "Round-based imperatives with WS/BS/AP/heavy/assault modifiers."),
+        "voice of command": ("Supported", "Orders issued in Command phase with stat modifiers."),
+        "gate of infinity": ("Supported", "Teleporting eligible units with placement checks."),
+        "assigned agents": ("Supported", "Allied unit limits/validation for Imperial Agents."),
+        "code chivalric": ("Supported", "Deed/Quality tracking with on-roll effects."),
+        "bondsman": ("Supported", "Bondsman ability effects applied to Armigers."),
+        "super heavy walker": ("Partial", "Terrain traversal handling only."),
+        "freeblades": ("Supported", "Imperial Knights ally and detachment restrictions enforced."),
+        "battle focus": ("Supported", "Token system + maneuvers (BattleFocusManager)."),
+        "disparate paths": ("Supported", "Allies validation for Harlequins/Ynnari."),
+        "power from pain": ("Partial", "Pain tokens and select abilities only."),
+        "corsairs and travelling players": ("Supported", "Corsairs/Travelling Players ally limits."),
+        "cult ambush": ("Supported", "Resurgence points, ambush markers, reinforcements."),
+        "prioritised efficiency": ("Supported", "Yield points + mode tracking with objective checks."),
+        "reanimation protocols": ("Supported", "Command-phase reanimation for Necron units."),
+        "waaagh": ("Supported", "Once-per-battle Waaagh effects on melee/advance/charge/ward."),
+        "for the greater good": ("Supported", "Observer/Guided targeting with markerlight bonuses."),
+        "synapse": ("Supported", "Synapse aura checks via distance rules."),
+        "shadow in the warp": ("Supported", "Once-per-battle armywide Battle-shock trigger."),
+        "the shadow of chaos": ("Supported", "Shadow zones + manifestations/terror handling."),
+        "daemonic pact": ("Supported", "Allies validation for Chaos Daemons."),
+        "harbingers of dread": ("Supported", "Dread ability selection and aura checks."),
+        "dreadblades": ("Supported", "Allies validation and model caps for Chaos Knights."),
+        "dark pacts": ("Supported", "Dark Pacts with lethal/sustained hooks."),
+        "cult of the dark gods": ("Supported", "Cult allies caps and restrictions."),
+        "nurgle s gift aura": ("Supported", "Contagion range + plague effects."),
+        "pact of decay": ("Supported", "Army faction restrictions for Pact of Decay."),
+        "thrill seekers": ("Supported", "EC rule hooks for critical hits and speed bonuses."),
+        "pact of excess": ("Supported", "Army faction restrictions for Pact of Excess."),
+        "cabal of sorcerers": ("Supported", "Cabal rituals and warp charge checks."),
+        "pact of sorcery": ("Supported", "Army faction restrictions for Pact of Sorcery."),
+        "blessings of khorne": ("Supported", "Blessings dice engine + effects."),
+        "pact of blood": ("Supported", "Army faction restrictions for Pact of Blood."),
+        "oath of moment": ("Supported", "Target selection + hit/wound bonuses."),
+        "templar vows": ("Supported", "Vow selection with combat/objective effects."),
+        "space marine chapters": ("Supported", "Chapter keyword restrictions and unit bans."),
+        "deathwatch": ("Supported", "Deathwatch-only chapter restrictions."),
+        "leader": ("Supported", "Attached units, wound allocation, and detachment of leaders."),
+        "deep strike": ("Supported", "Reserves placement rule support."),
+        "feel no pain": ("Supported", "Feel No Pain roll handling in damage resolution."),
+        "fights first": ("Supported", "Fight phase sequencing adjustments."),
+        "fight on death": ("Supported", "Death-triggered fight resolution."),
+        "shoot on death": ("Supported", "Death-triggered shooting resolution."),
+        "firing deck": ("Supported", "Transport fire deck shooting support."),
+        "infiltrators": ("Supported", "Forward deploy placement rules."),
+        "lone operative": ("Supported", "Targeting restriction at range."),
+        "scouts": ("Supported", "Scout move pre-game."),
+        "stealth": ("Supported", "Hit modifiers for attackers."),
+        "deadly demise": ("Supported", "Explosion damage on destruction."),
+        "hover": ("Not implemented", "No hover-specific handling."),
+    }
+
+
+def _ability_patterns() -> List[Tuple[str, str, str]]:
+    return [
+        ("Deep Strike", "Supported", r"\bdeep strike\b"),
+        ("Infiltrators", "Supported", r"\binfiltrator"),
+        ("Scouts", "Supported", r"\bscouts?\b"),
+        ("Stealth", "Supported", r"\bstealth\b"),
+        ("Lone Operative", "Supported", r"\blone operative\b"),
+        ("Deadly Demise", "Supported", r"\bdeadly demise\b"),
+        ("Feel No Pain", "Supported", r"\bfeel no pain\b"),
+        ("Fights First", "Supported", r"\bfights first\b"),
+        ("Fight on Death", "Supported", r"\bfight(s)? on death\b"),
+        ("Shoot on Death", "Supported", r"\bshoot(s)? on death\b"),
+        ("Advance+Shoot", "Supported", r"\beligible to shoot\b.*\badvance(d)?\b"),
+        ("Fall Back+Shoot", "Supported", r"\beligible to shoot\b.*\bfell back\b"),
+        ("Advance+Charge", "Supported", r"\beligible to declare a charge\b.*\badvance(d)?\b"),
+        ("Firing Deck", "Supported", r"\bfiring deck\b"),
+        ("Plunging Fire", "Supported", r"\bplunging fire\b"),
+    ]
+
+
+def _classify_ability(name: str, description: str) -> Tuple[str, str]:
+    overrides = _ability_support_overrides()
+    key = _norm(name)
+    if key in overrides:
+        return overrides[key]
+
+    text = _norm(_strip_html(f"{name} {description}"))
+    matches: List[Tuple[str, str]] = []
+    for label, status, rx in _ability_patterns():
+        if re.search(rx, text, flags=re.IGNORECASE):
+            matches.append((label, status))
+    if not matches:
+        return ("Not implemented", "")
+
+    status = "Supported" if all(s == "Supported" for _, s in matches) else "Partial"
+    notes = ", ".join(sorted({label for label, _ in matches}, key=str.lower))
+
+    extra_markers = [
+        " but ",
+        " instead ",
+        " unless ",
+        " except ",
+        " however ",
+        " only ",
+        " while ",
+        " after ",
+        " before ",
+        " until ",
+        " at the start",
+        " start of",
+        " each time",
+        " choose ",
+        " select ",
+        " one of",
+        " following",
+        ":",
+    ]
+    if status == "Supported" and any(m in f" {text} " for m in extra_markers):
+        status = "Partial"
+        notes = f"{notes} (extra conditions not fully modeled)"
+    return (status, notes)
+
+def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str, str]:
+    explicit = {
+        "000008432002": "Berzerker Glaive: +1A/+1D to bearer melee weapons (excluding Extra Attacks).",
+        "000008432003": "Helm of Brazen Ire: reduce damage by 1 (min 1).",
+        "000008432004": "Favoured of Khorne: Blessings rerolls while bearer on battlefield.",
+        "000008432005": "Battle-lust: re-roll Charge; +1 Charge with Unbridled Bloodlust.",
+        "000009899002": "Phoenix Gem: return on 2+ at end of phase after first destruction.",
+        "000009899003": "Timeless Strategist: +1 Battle Focus token if bearer on battlefield.",
+        "000009899004": "Gift of Foresight: Command Re-roll for 0CP once per battle round.",
+        "000009899005": "Psychic Destroyer: +1 Damage to bearer ranged Psychic weapons.",
+    }
+    if enh_id in explicit:
+        return ("Supported", explicit[enh_id])
+
+    status, notes = classify_enhancement_support(description)
+    if status == "Supported":
+        return (status, notes)
+    return (status, notes)
+
+
+def _stratagem_support(name: str) -> Tuple[str, str, str]:
+    name_u = (name or "").strip().upper()
+    notes = {
+        "COMMAND RE-ROLL": "Queued on roll; executes reroll callback; once-per-phase rule enforced.",
+        "COUNTER-OFFENSIVE": "Fight phase: select a unit to fight next after enemy unit fights.",
+        "EPIC CHALLENGE": "Fight phase: selected CHARACTER gains Precision for melee attacks.",
+        "FIRE OVERWATCH": "Queued on enemy movement; resolves shooting on 6s to hit.",
+        "GO TO GROUND": "Shooting phase: INFANTRY gains cover + 6++ until end of phase.",
+        "GRENADE": "Shooting phase: 6D6 vs 4+ for mortal wounds within 8\".",
+        "HEROIC INTERVENTION": "Charge phase: select unit to charge after enemy charge ends.",
+        "INSANE BRAVERY": "Command phase: auto-pass Battle-shock once per battle.",
+        "NEW ORDERS": "Command phase: discard a Secondary and draw a new one.",
+        "RAPID INGRESS": "Movement phase: place a reserves unit at end of opponent move.",
+        "SMOKESCREEN": "Shooting phase: SMOKE unit gains cover + Stealth.",
+        "TANK SHOCK": "Charge phase: roll vs Toughness to deal mortals (max 6).",
+        "APOPLECTIC FRENZY": "Advance and Charge for a BERZERKERS unit; Berzerker Warband only.",
+        "BLOOD OFFERING": "Sticky objective on unit destruction; Berzerker Warband only.",
+        "UNBOUND ARROGANCE": "Coterie of the Conceited pledge increases by 1 (once per battle round).",
+    }
+
+    if name_u in IMPLEMENTED_STRATAGEM_NAMES:
+        return ("Implemented", notes.get(name_u, "Implemented in engine."), name_u)
+    return ("Not implemented", "No effect logic currently wired.", name_u)
+
+
+def _extract_restrictions(desc_html: str) -> List[str]:
+    if not desc_html:
+        return []
+    text = desc_html
+    if "RESTRICTIONS" not in text.upper():
+        return []
+
+    m = re.search(r"RESTRICTIONS</span>(.*?)</ul>", text, flags=re.IGNORECASE | re.DOTALL)
+    if m:
+        block = m.group(1)
+        items = re.findall(r"<li[^>]*>(.*?)</li>", block, flags=re.IGNORECASE | re.DOTALL)
+        out = []
+        for item in items:
+            clean = _strip_html(item)
+            if clean:
+                out.append(clean)
+        return out
+
+    # Fallback: strip tags, take lines after RESTRICTIONS
+    clean_text = _strip_html(text)
+    upper = clean_text.upper()
+    idx = upper.find("RESTRICTIONS")
+    if idx == -1:
+        return []
+    after = clean_text[idx + len("RESTRICTIONS") :]
+    parts = [p.strip(" -") for p in after.split("\n") if p.strip()]
+    return parts
+
+
+def _row(cells: Sequence[str], status: str) -> str:
+    color = _status_color(status)
+    tds = "".join(f"<td>{c}</td>" for c in cells)
+    return f"<tr style=\"background-color:{color}\">{tds}</tr>"
+
+
+def _table(headers: Sequence[str], rows: Sequence[Tuple[Sequence[str], str]]) -> str:
+    ths = "".join(f"<th>{_escape(h)}</th>" for h in headers)
+    body = "".join(_row(cells, status) for cells, status in rows)
+    return f"<table><thead><tr>{ths}</tr></thead><tbody>{body}</tbody></table>"
 
 def _load_factions() -> Dict[str, Dict[str, str]]:
     path = os.path.join(WAHA_DIR, "Factions.json")
@@ -97,513 +325,499 @@ def _load_factions() -> Dict[str, Dict[str, str]]:
         fid = item.get("id", "") or ""
         if not fid:
             continue
-        out[fid] = {"name": item.get("name", "") or fid, "link": item.get("link", "") or ""}
+        out[fid] = {
+            "name": item.get("name", "") or fid,
+            "link": item.get("link", "") or "",
+        }
     return out
 
 
-def _load_datasheets() -> Dict[str, DatasheetInfo]:
-    path = os.path.join(WAHA_DIR, "Datasheets.json")
+def _load_detachments() -> Dict[str, dict]:
+    path = os.path.join(WAHA_DIR, "Detachments.json")
     raw = _read_json(path)
-    out: Dict[str, DatasheetInfo] = {}
+    out = {}
+    for d in raw:
+        did = (d.get("id") or "").strip()
+        if not did:
+            continue
+        out[did] = d
+    return out
+
+
+def _detachment_is_boarding(det: dict) -> bool:
+    return str(det.get("type", "") or "").strip().lower() == "boarding actions"
+
+
+def _build_datasheet_map() -> Dict[str, dict]:
+    raw = _read_json(os.path.join(WAHA_DIR, "Datasheets.json"))
+    out = {}
     for ds in raw:
         did = ds.get("id", "") or ""
         if not did:
             continue
-        out[did] = DatasheetInfo(
-            id=did,
-            name=ds.get("name", "") or did,
-            faction_id=ds.get("faction_id", "") or "",
-        )
+        out[did] = ds
     return out
 
 
-def _load_abilities() -> List[AbilityEntry]:
-    path = os.path.join(WAHA_DIR, "Abilities.json")
-    raw = _read_json(path)
-    out: List[AbilityEntry] = []
-    for a in raw:
-        out.append(
-            AbilityEntry(
-                id=a.get("id", "") or "",
-                name=a.get("name", "") or "",
-                faction_id=a.get("faction_id", "") or "",
-                description=a.get("description", "") or "",
-                legend=a.get("legend", "") or "",
-            )
-        )
-    return out
-
-
-def _load_detachment_abilities() -> List[DetachmentAbilityEntry]:
-    path = os.path.join(WAHA_DIR, "Detachment_abilities.json")
-    raw = _read_json(path)
-    out: List[DetachmentAbilityEntry] = []
-    for a in raw:
-        out.append(
-            DetachmentAbilityEntry(
-                id=a.get("id", "") or "",
-                faction_id=a.get("faction_id", "") or "",
-                detachment=a.get("detachment", "") or "",
-                detachment_id=a.get("detachment_id", "") or "",
-                name=a.get("name", "") or "",
-                description=a.get("description", "") or "",
-                legend=a.get("legend", "") or "",
-            )
-        )
-    return out
-
-
-def _load_boarding_actions_detachment_ids() -> set[str]:
-    path = os.path.join(WAHA_DIR, "Detachments.json")
-    if not os.path.exists(path):
-        return set()
-    raw = _read_json(path)
-    ids: set[str] = set()
-    for d in raw:
-        try:
-            if (d.get("type") or "").strip().lower() != "boarding actions":
-                continue
-            did = (d.get("id") or "").strip()
-            if did:
-                ids.add(did)
-        except Exception:
+def _ability_entry_by_name(abilities: List[dict], name: str, faction_id: Optional[str] = None) -> Optional[dict]:
+    target = _norm(name)
+    best = None
+    for a in abilities:
+        if _norm(a.get("name", "")) != target:
             continue
-    return ids
+        if faction_id and str(a.get("faction_id", "") or "").strip().upper() != faction_id:
+            continue
+        best = a
+        break
+    if best is not None:
+        return best
+    # Fallback without faction match
+    for a in abilities:
+        if _norm(a.get("name", "")) == target:
+            return a
+    return None
 
 
-def _load_datasheets_abilities_rows() -> List[dict]:
-    path = os.path.join(WAHA_DIR, "Datasheets_abilities.json")
-    return _read_json(path)
-
-
-def _load_datasheets_detachment_abilities_rows() -> List[dict]:
-    path = os.path.join(WAHA_DIR, "Datasheets_detachment_abilities.json")
-    return _read_json(path)
-
-
-def _ability_patterns() -> List[Tuple[str, str, str]]:
-    """
-    Returns list of (label, status, regex) where status is Supported/Partial.
-    These are intentionally conservative, matching existing engine behavior.
-    """
-    return [
-        ("Dark Pacts", "Supported", r"\bdark pacts\b"),
-        ("Supreme Commander (must be Warlord)", "Supported", r"\bsupreme commander\b"),
-        ("Pact of Blood (WE): disallow Blood Legions Army Faction", "Supported", r"\bpact of blood\b"),
-        ("Nurgle's Gift (Aura): baseline Contagion Range debuff (-1 Toughness to enemies within 3/6/9\")", "Partial", r"\bnurgle\u2019s gift\b|\bnurgle's gift\b"),
-        ("Blessings of Khorne (World Eaters)", "Supported", r"\bblessings of khorne\b"),
-        ("Favoured of Khorne (Blessings rerolls)", "Supported", r"\bfavoured of khorne\b|\bfavored of khorne\b"),
-        ("Idol of the Blessed Blood (Blessings +1D6)", "Supported", r"\bidol of (?:the )?blessed blood\b"),
-        ("Reborn in Blood (Angron)", "Supported", r"\breborn in blood\b"),
-        ("Martial Ka'tah (Adeptus Custodes)", "Supported", r"\bmartial ka.?tah\b"),
-        ("Deep Strike", "Supported", r"\bdeep strike\b"),
-        ("Infiltrators", "Supported", r"\binfiltrator"),
-        ("Scouts", "Supported", r"\bscouts?\b"),
-        ("Stealth", "Supported", r"\bstealth\b"),
-        ("Lone Operative", "Supported", r"\blone operative\b"),
-        ("Deadly Demise", "Supported", r"\bdeadly demise\b"),
-        ("Feel No Pain", "Supported", r"\bfeel no pain\b"),
-        ("Fights First", "Supported", r"\bfights first\b"),
-        ("Fight on Death", "Supported", r"\bfight(s)? on death\b"),
-        ("Shoot on Death", "Supported", r"\bshoot(s)? on death\b"),
-        ("Redeploy", "Supported", r"\bredeploy\b|\bremove (this|that) unit from the battlefield\b"),
-        ("Advance+Shoot (exact wording)", "Supported", r"\beligible to shoot\b.*\badvance(d)?\b"),
-        ("Fall Back+Shoot (exact wording)", "Supported", r"\beligible to shoot\b.*\bfell back\b"),
-        ("Advance+Charge (exact wording)", "Supported", r"\beligible to declare a charge\b.*\badvance(d)?\b"),
-        ("Firing Deck", "Supported", r"\bfiring deck\b"),
-        ("Gain CP on destroy (partial)", "Partial", r"\bgain (?:\d+|one)\s*command point|\bgain\s*cp\b"),
-        ("Heal on destroy (partial)", "Partial", r"\bregain\b.*\bwounds?\b"),
-        ("Plunging Fire", "Supported", r"\bplunging fire\b"),
-    ]
-
-
-def _classify_support(name: str, description: str) -> Tuple[str, str]:
-    """
-    Returns (status, notes) where status is Supported/Partial/Not implemented.
-    """
-    # Hard-coded known partials (core ability)
-    name_u = (name or "").strip().upper()
-    name_u = name_u.replace("\u2019", "'").replace("ƒ?T", "'")
-    explicit_supported = {
-        "ADVANCE+SHOOT",
-        "BATTLE FOCUS",
-        "BLESSINGS OF KHORNE",
-        "DARK PACTS",
-        "DEADLY DEMISE",
-        "DEEP STRIKE",
-        "DISPARATE PATHS",
-        "FAVOURED OF KHORNE",
-        "FAVORED OF KHORNE",
-        "FEEL NO PAIN",
-        "FIGHT ON DEATH",
-        "FIGHTS FIRST",
-        "FIRING DECK",
-        "FIRST PRINCE OF CHAOS",
-        "IDOL OF THE BLESSED BLOOD",
-        "INFILTRATORS",
-        "LONE OPERATIVE",
-        "PACT OF BLOOD",
-        "PACT OF DECAY",
-        "PACT OF EXCESS",
-        "PACT OF SORCERY",
-        "MARTIAL GRACE",
-        "MARTIAL KA'TAH",
-        "PLUNGING FIRE",
-        "QUICKSILVER GRACE",
-        "REBORN IN BLOOD",
-        "REDEPLOY",
-        "RELENTLESS RAGE",
-        "EXQUISITE SWORDSMANSHIP",
-        "MECHANISED MURDER",
-        "DAEMONIC EMPOWERMENT",
-        "PLEDGES TO THE DARK PRINCE",
-        "INTERNAL RIVALRIES",
-        "SENSATIONAL PERFORMANCE",
-        "MASTER OF THE PAGEANT",
-        "SCOUTS",
-        "SEDUCTIVE GAMBIT",
-        "SHOOT ON DEATH",
-        "STEALTH",
-        "SUPREME COMMANDER",
-        "THRILL SEEKERS",
-        "WARP RIFTS",
-    }
-    if name_u in explicit_supported:
-        return ("Supported", name)
-    if name_u == "LEADER":
-        return (
-            "Supported",
-            "Attached Units supported: attachment eligibility + limits, bodyguard-first wound allocation, Precision allocation into visible CHARACTERS, characteristic delegation (Toughness/Leadership), separation deferred until end of attack sequence, and attached leaders do not double-count for deployment/objectives/reserves.",
-        )
-    # World Eaters: Blood Tithe is a Khorne Daemonkin detachment mechanic. We have not implemented it yet,
-    # and we do not want it to be falsely marked as Supported due to shared phrasing with Blessings/other mechanics.
-    if name_u == "BLOOD TITHE":
-        return ("Not implemented", "World Eaters - Khorne Daemonkin detachment mechanic; not implemented yet.")
-
-    text = _norm(_strip_html_fast(f"{name} {description}"))
-    matches: List[Tuple[str, str]] = []
-    for label, status, rx in _ability_patterns():
-        if re.search(rx, text, flags=re.IGNORECASE):
-            matches.append((label, status))
-
-    if not matches:
-        return ("Not implemented", "")
-
-    # If any partial match triggers, mark Partial; otherwise Supported
-    status = "Supported" if all(s == "Supported" for _, s in matches) else "Partial"
-    notes = ", ".join(sorted({label for label, _ in matches}, key=str.lower))
-
-    # Conservative downgrade: if the rule text contains extra clauses beyond the matched mechanic,
-    # treat it as Partial unless it's explicitly supported.
-    if status == "Supported" and name_u not in explicit_supported and name_u != "LEADER":
-        extra_markers = [
-            " but ",
-            " instead ",
-            " unless ",
-            " except ",
-            " however ",
-            " only ",
-            " while ",
-            " after ",
-            " before ",
-            " until ",
-            " at the start",
-            " start of",
-            " each time",
-            " choose ",
-            " select ",
-            " one of",
-            " following",
-            ":",
-        ]
-        if any(m in f" {text} " for m in extra_markers):
-            status = "Partial"
-            notes = f"{notes} (extra conditions not fully modeled)"
-    return (status, notes)
-
-
-def _write_md(
-    abilities: List[AbilityEntry],
-    detachment_abilities: List[DetachmentAbilityEntry],
-    ds_map: Dict[str, DatasheetInfo],
-    factions: Dict[str, Dict[str, str]],
+def _collect_units_for_ability(
+    ability_id: str,
     ds_abilities_rows: List[dict],
-    ds_detachment_rows: List[dict],
-) -> None:
-    os.makedirs(DOCS_DIR, exist_ok=True)
-
-    # ---- Build reference counts for Abilities.json abilities (via Datasheets_abilities ability_id) ----
-    # We track:
-    # - totals by (ability_id, type) for Core/global summary tables
-    # - per-faction counts by (ability_id, type, faction_id) for faction sections
-    ability_refs_rows: Dict[Tuple[str, str], int] = {}  # (ability_id, type) -> count (all factions)
-    ability_refs_datasheets: Dict[Tuple[str, str], set] = {}
-    ability_refs_rows_by_faction: Dict[Tuple[str, str, str], int] = {}  # (ability_id, type, faction_id) -> count
-    ability_refs_datasheets_by_faction: Dict[Tuple[str, str, str], set] = {}
+    ds_map: Dict[str, dict],
+    faction_id: Optional[str] = None,
+) -> List[str]:
+    names = []
     for r in ds_abilities_rows:
-        aid = (r.get("ability_id") or "").strip()
-        typ = (r.get("type") or "").strip()
-        dsid = (r.get("datasheet_id") or "").strip()
-        if not aid:
+        if str(r.get("ability_id", "") or "").strip() != ability_id:
             continue
-        fid = (ds_map.get(dsid).faction_id if dsid in ds_map else "") or "Unknown"
-        key = (aid, typ)
-        ability_refs_rows[key] = ability_refs_rows.get(key, 0) + 1
-        ability_refs_datasheets.setdefault(key, set()).add(dsid)
-        kf = (aid, typ, fid)
-        ability_refs_rows_by_faction[kf] = ability_refs_rows_by_faction.get(kf, 0) + 1
-        ability_refs_datasheets_by_faction.setdefault(kf, set()).add(dsid)
-
-    # ---- Core abilities (Abilities.json with faction_id == "") ----
-    core_abilities = [a for a in abilities if not (a.faction_id or "").strip()]
-    # de-dup core by id (Abilities.json may include duplicates; we keep first)
-    core_by_id: Dict[str, AbilityEntry] = {}
-    for a in core_abilities:
-        core_by_id.setdefault(a.id, a)
-    core_list = list(core_by_id.values())
-
-    # ---- Faction abilities (Abilities.json with faction_id != "") ----
-    faction_abilities = [a for a in abilities if (a.faction_id or "").strip()]
-    by_faction: Dict[str, List[AbilityEntry]] = {}
-    for a in faction_abilities:
-        by_faction.setdefault(a.faction_id, []).append(a)
-
-    # ---- Detachment abilities refs (Datasheets_detachment_abilities) ----
-    det_refs_rows: Dict[str, int] = {}
-    det_refs_datasheets: Dict[str, set] = {}
-    for r in ds_detachment_rows:
-        did = (r.get("detachment_ability_id") or "").strip()
-        dsid = (r.get("datasheet_id") or "").strip()
-        if not did:
-            continue
-        det_refs_rows[did] = det_refs_rows.get(did, 0) + 1
-        det_refs_datasheets.setdefault(did, set()).add(dsid)
-
-    det_by_faction: Dict[str, Dict[str, List[DetachmentAbilityEntry]]] = {}
-    for da in detachment_abilities:
-        det_by_faction.setdefault(da.faction_id, {}).setdefault(da.detachment or "General", []).append(da)
-
-    # ---- Datasheet-sourced abilities (Datasheets_abilities rows without ability_id) ----
-    # Group by (type -> faction -> ability_name) with occurrence counts.
-    custom_index: Dict[str, Dict[str, Dict[str, Dict[str, Any]]]] = {}
-    for r in ds_abilities_rows:
-        aid = (r.get("ability_id") or "").strip()
-        if aid:
-            continue
-        typ = (r.get("type") or "").strip() or "Unknown"
-        name = (r.get("name") or "").strip() or "(Unnamed)"
-        dsid = (r.get("datasheet_id") or "").strip()
+        dsid = str(r.get("datasheet_id", "") or "").strip()
         ds = ds_map.get(dsid)
-        fid = (ds.faction_id if ds else "") or "Unknown"
-        bucket = custom_index.setdefault(typ, {}).setdefault(fid, {}).setdefault(
-            name,
-            {
-                "rows": 0,
-                "datasheets": set(),
-                "descriptions": [],  # keep a few samples for classification/notes
-            },
-        )
-        bucket["rows"] += 1
-        if dsid:
-            bucket["datasheets"].add(dsid)
-        desc = (r.get("description") or "").strip()
-        if desc and len(bucket["descriptions"]) < 3:
-            bucket["descriptions"].append(desc)
+        if not ds:
+            continue
+        fid = str(ds.get("faction_id", "") or "").strip().upper()
+        if fid not in SUPPORTED_FACTION_IDS:
+            continue
+        if faction_id and fid != str(faction_id or "").strip().upper():
+            continue
+        names.append(ds.get("name", dsid))
+    return names
 
-    # ---- Summary stats ----
-    ds_types_count: Dict[str, int] = {}
-    for r in ds_abilities_rows:
-        t = (r.get("type") or "").strip() or "Unknown"
-        ds_types_count[t] = ds_types_count.get(t, 0) + 1
 
-    # ---- Helpers for output ----
-    def faction_name(fid: str) -> str:
-        return (factions.get(fid) or {}).get("name") or fid or "Unknown"
+def _collect_units_for_detachment_ability(ability_id: str, ds_det_rows: List[dict], ds_map: Dict[str, dict]) -> List[str]:
+    names = []
+    for r in ds_det_rows:
+        if str(r.get("detachment_ability_id", "") or "").strip() != ability_id:
+            continue
+        dsid = str(r.get("datasheet_id", "") or "").strip()
+        ds = ds_map.get(dsid)
+        if not ds:
+            continue
+        fid = str(ds.get("faction_id", "") or "").strip().upper()
+        if fid not in SUPPORTED_FACTION_IDS:
+            continue
+        names.append(ds.get("name", dsid))
+    return names
 
-    def faction_link(fid: str) -> str:
-        return (factions.get(fid) or {}).get("link") or ""
 
-    # ---- Write markdown ----
+def _summarize_section_count(items: Iterable[Tuple[str, str]]) -> Tuple[int, int]:
+    total = 0
+    supported = 0
+    for status, _name in items:
+        total += 1
+        if _status_is_supported(status):
+            supported += 1
+    return supported, total
+
+
+def _summary_color(supported: int, total: int) -> str:
+    if total <= 0:
+        return STATUS_COLORS["not implemented"]
+    if supported <= 0:
+        return STATUS_COLORS["not implemented"]
+    if supported >= total:
+        return STATUS_COLORS["supported"]
+    return STATUS_COLORS["partial"]
+
+
+def _summary_span(title: str, supported: int, total: int) -> str:
+    color = _summary_color(supported, total)
+    label = f"{_escape(title)} ({supported} out of {total} abilities supported)"
+    return f"<span style=\"background-color:{color}; padding:2px 6px; display:block;\">{label}</span>"
+
+
+def _details_raw(summary_html: str, body: str) -> str:
+    return f"<details><summary>{summary_html}</summary>\n{body}\n</details>"
+
+
+def _engine_notes(status: str, notes: str) -> str:
+    if notes:
+        return notes
+    key = _norm(status)
+    if key in ("supported", "implemented"):
+        return "Implemented in engine."
+    if key == "partial":
+        return "Partially implemented in engine."
+    return "No effect logic wired."
+
+
+def _build_matrix() -> str:
+    abilities = _read_json(os.path.join(WAHA_DIR, "Abilities.json"))
+    det_abilities_rows = _read_json(os.path.join(WAHA_DIR, "Detachment_abilities.json"))
+    ds_abilities_rows = _read_json(os.path.join(WAHA_DIR, "Datasheets_abilities.json"))
+    ds_det_rows = _read_json(os.path.join(WAHA_DIR, "Datasheets_detachment_abilities.json"))
+    enhancements = _read_json(os.path.join(WAHA_DIR, "Enhancements.json"))
+    stratagems = _read_json(os.path.join(WAHA_DIR, "Stratagems.json"))
+    detachments = _load_detachments()
+    ds_map = _build_datasheet_map()
+
+    abilities_by_id = {str(a.get("id", "") or ""): a for a in abilities if a.get("id")}
+
+    det_abilities_by_det: Dict[str, List[dict]] = {}
+    for row in det_abilities_rows:
+        det_id = str(row.get("detachment_id", "") or "").strip()
+        if not det_id:
+            continue
+        det_abilities_by_det.setdefault(det_id, []).append(row)
+
+    enh_by_det: Dict[str, List[dict]] = {}
+    for row in enhancements:
+        det_id = str(row.get("detachment_id", "") or "").strip()
+        if not det_id:
+            continue
+        enh_by_det.setdefault(det_id, []).append(row)
+
+    strats_by_det: Dict[str, List[dict]] = {}
+    for row in stratagems:
+        det_id = str(row.get("detachment_id", "") or "").strip()
+        if not det_id:
+            continue
+        ttype = (row.get("type", "") or "").strip().lower()
+        if "boarding" in ttype or "challenger" in ttype:
+            continue
+        strats_by_det.setdefault(det_id, []).append(row)
+
+    datasheet_abilities_by_faction: Dict[str, set[str]] = {}
+    for row in ds_abilities_rows:
+        ability_id = str(row.get("ability_id", "") or "").strip()
+        if not ability_id:
+            continue
+        dsid = str(row.get("datasheet_id", "") or "").strip()
+        ds = ds_map.get(dsid)
+        if not ds:
+            continue
+        fid = str(ds.get("faction_id", "") or "").strip().upper()
+        if fid not in SUPPORTED_FACTION_IDS:
+            continue
+        datasheet_abilities_by_faction.setdefault(fid, set()).add(ability_id)
+
     lines: List[str] = []
     lines.append("# Ability support matrix (Wahapedia)")
     lines.append("")
-    lines.append(
-        "Generated from `wahapedia_data/Abilities.json`, `wahapedia_data/Datasheets_abilities.json`, "
-        "`wahapedia_data/Detachment_abilities.json`, and `wahapedia_data/Datasheets_detachment_abilities.json` "
-        "(faction names/links from `wahapedia_data/Factions.json`)."
-    )
-    lines.append("")
-    lines.append("**Definition of status**")
-    lines.append("- **Supported**: the engine recognizes and applies this mechanic (typically pattern-based).")
-    lines.append("- **Partial**: some support exists, but key restrictions/timing/text are not fully matched.")
-    lines.append("- **Not implemented**: no gameplay effect logic wired yet.")
-    lines.append("")
-    lines.append("## Summary")
-    lines.append("")
-    lines.append(f"- Abilities.json rows: {len(abilities)} (core: {len(core_list)}, faction-specific: {len(faction_abilities)})")
-    lines.append(f"- Detachment_abilities.json rows: {len(detachment_abilities)}")
-    lines.append(f"- Datasheets_abilities.json rows: {len(ds_abilities_rows)}")
-    lines.append("")
-    lines.append("### Datasheet ability row types (from `Datasheets_abilities.json`)")
-    lines.append("")
-    lines.append("| Type | Rows |")
-    lines.append("|---|---:|")
-    for t, n in sorted(ds_types_count.items(), key=lambda kv: (-kv[1], kv[0].lower())):
-        lines.append(f"| {_escape_md(t)} | {n} |")
-    lines.append("")
-    lines.append("## Recognized mechanics (pattern-based)")
-    lines.append("")
-    lines.append("These mechanics are currently recognized by searching ability names/descriptions for text patterns:")
-    lines.append("")
-    for label, status, _ in _ability_patterns():
-        lines.append(f"- {label} ({status})")
+    lines.append("Generated from `wahapedia_data/*.json` using `scripts/generate_ability_support_matrix.py`.")
     lines.append("")
 
-    # ---- Core abilities ----
-    lines.append("## Core Abilities")
-    lines.append("")
-    lines.append("| Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |")
-    lines.append("|---|---:|---:|---:|---|---|")
-    for a in sorted(core_list, key=lambda x: (_norm(x.name), x.id)):
-        status, notes = _classify_support(a.name, a.description)
-        ref_rows = ability_refs_rows.get((a.id, "Core"), 0)
-        ref_ds = len(ability_refs_datasheets.get((a.id, "Core"), set()))
-        # Keep the matrix focused on abilities that are actually referenced by datasheets.
-        if ref_rows == 0 and ref_ds == 0:
-            continue
-        lines.append(
-            f"| {_escape_md(a.name)} | `{_escape_md(a.id)}` | {ref_rows} | {ref_ds} | **{status}** | {_escape_md(notes)} |"
-        )
-    lines.append("")
-
-    # ---- Faction abilities ----
-    lines.append("## Faction Abilities")
-    lines.append("")
-    for fid in sorted(by_faction.keys(), key=lambda x: faction_name(x).lower()):
-        fname = faction_name(fid)
-        flink = faction_link(fid)
-        header = f"### {fname} (`{fid}`)"
-        if flink:
-            header += f" - `{_escape_md(flink)}`"
-        lines.append(header)
-        lines.append("")
-        lines.append("| Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |")
-        lines.append("|---|---:|---:|---:|---|---|")
-        # Deduplicate by (id, name) within faction
-        seen = set()
-        items = []
-        for a in by_faction[fid]:
-            k = (a.id, a.name)
-            if k in seen:
-                continue
-            seen.add(k)
-            items.append(a)
-        for a in sorted(items, key=lambda x: (_norm(x.name), x.id)):
-            status, notes = _classify_support(a.name, a.description)
-            ref_rows = ability_refs_rows_by_faction.get((a.id, "Faction", fid), 0)
-            ref_ds = len(ability_refs_datasheets_by_faction.get((a.id, "Faction", fid), set()))
-            # Keep the matrix focused on abilities that are actually referenced by datasheets.
-            if ref_rows == 0 and ref_ds == 0:
-                continue
-            lines.append(
-                f"| {_escape_md(a.name)} | `{_escape_md(a.id)}` | {ref_rows} | {ref_ds} | **{status}** | {_escape_md(notes)} |"
+    # ---------------- Core section ----------------
+    core_abilities = [a for a in abilities if not a.get("faction_id")]
+    core_abilities.sort(key=lambda a: _norm(a.get("name", "")))
+    core_rows = []
+    core_items: List[Tuple[str, str]] = []
+    for ab in core_abilities:
+        name = ab.get("name", "") or ""
+        desc = ab.get("description", "") or ""
+        status, notes = _classify_ability(name, desc)
+        core_items.append((status, name))
+        core_rows.append(
+            (
+                [
+                    _escape(name),
+                    _escape(status),
+                    _desc_block(_strip_html(desc), _engine_notes(status, notes)),
+                ],
+                status,
             )
-        lines.append("")
+        )
+    core_table = _table(["Ability", "Supported", "Description"], core_rows)
 
-    # ---- Detachment abilities ----
-    lines.append("## Detachment Abilities")
-    lines.append("")
-    for fid in sorted(det_by_faction.keys(), key=lambda x: faction_name(x).lower()):
-        fname = faction_name(fid)
-        flink = faction_link(fid)
-        header = f"### {fname} (`{fid}`)"
-        if flink:
-            header += f" - `{_escape_md(flink)}`"
-        lines.append(header)
-        lines.append("")
-        for det_name in sorted(det_by_faction[fid].keys(), key=lambda s: (s or "").lower()):
-            lines.append(f"#### {det_name}")
-            lines.append("")
-            lines.append("| Ability | ID | Datasheet refs (rows) | Datasheets | Status | Notes |")
-            lines.append("|---|---:|---:|---:|---|---|")
-            for da in sorted(det_by_faction[fid][det_name], key=lambda x: (_norm(x.name), x.id)):
-                status, notes = _classify_support(da.name, da.description)
-                ref_rows = det_refs_rows.get(da.id, 0)
-                ref_ds = len(det_refs_datasheets.get(da.id, set()))
-                # Keep the matrix focused on detachment abilities that are actually referenced by datasheets.
-                # (This also drops Wahapedia artefacts like "KEYWORDS" rows that are not linked to datasheets.)
-                if ref_rows == 0 and ref_ds == 0:
-                    continue
-                lines.append(
-                    f"| {_escape_md(da.name)} | `{_escape_md(da.id)}` | {ref_rows} | {ref_ds} | **{status}** | {_escape_md(notes)} |"
-                )
-            lines.append("")
+    core_strats = []
+    for s in stratagems:
+        if (s.get("faction_id") or "").strip():
+            continue
+        ttype = (s.get("type", "") or "").strip().lower()
+        if "core" not in ttype:
+            continue
+        if "boarding" in ttype or "challenger" in ttype:
+            continue
+        core_strats.append(s)
 
-    # ---- Datasheet-sourced abilities (no ability_id) ----
-    lines.append("## Datasheet-sourced Abilities (no `ability_id`)")
-    lines.append("")
-    lines.append(
-        "These come directly from `Datasheets_abilities.json` rows where `ability_id` is empty (per-datasheet named rules). "
-        "They are grouped by the row `type` field (e.g. Datasheet/Wargear/Wargear profile/Special/etc.)."
+    def _id_key(entry: dict) -> int:
+        try:
+            return int((entry.get("id") or "0").strip())
+        except Exception:
+            return 0
+
+    by_name: Dict[str, dict] = {}
+    for entry in core_strats:
+        name_key = _norm(entry.get("name", ""))
+        if not name_key:
+            continue
+        prev = by_name.get(name_key)
+        if prev is None or _id_key(entry) > _id_key(prev):
+            by_name[name_key] = entry
+    core_strats = list(by_name.values())
+    core_strats.sort(key=lambda e: _norm(e.get("name", "")))
+
+    core_strat_rows = []
+    for s in core_strats:
+        status, notes, _ = _stratagem_support(s.get("name", ""))
+        core_strat_rows.append(
+            (
+                [
+                    _escape(s.get("name", "")),
+                    f"<code>{_escape(s.get('id', ''))}</code>",
+                    _escape(s.get("type", "")),
+                    _escape(s.get("cp_cost", "")),
+                    _escape(s.get("turn", "")),
+                    _escape(s.get("phase", "")),
+                    _escape(status),
+                    _escape(notes),
+                ],
+                status,
+            )
+        )
+    core_strat_table = _table(
+        ["Stratagem", "ID", "Type", "CP", "Turn", "Phase", "Status", "Notes"],
+        core_strat_rows,
     )
+
+    core_supported, core_total = _summarize_section_count(core_items)
+    core_body = "\n".join(
+        [
+            "### Core Abilities",
+            core_table,
+            "",
+            "### Core Stratagems",
+            core_strat_table,
+        ]
+    )
+    lines.append(_details_raw(_summary_span("Core", core_supported, core_total), core_body))
     lines.append("")
 
-    for typ in sorted(custom_index.keys(), key=lambda s: s.lower()):
-        lines.append(f"### {typ}")
-        lines.append("")
-        for fid in sorted(custom_index[typ].keys(), key=lambda x: faction_name(x).lower()):
-            fname = faction_name(fid)
-            lines.append(f"#### {fname} (`{fid}`)")
-            lines.append("")
-            lines.append("| Ability | Occurrences (rows) | Datasheets | Status | Notes |")
-            lines.append("|---|---:|---:|---|---|")
-            items = custom_index[typ][fid]
+    # ---------------- Faction sections ----------------
+    for faction_id, meta in FACTION_RULE_METADATA.items():
+        if faction_id not in SUPPORTED_FACTION_IDS:
+            continue
+        faction_name = str(meta.get("faction_name", "") or faction_id)
+        faction_items: List[Tuple[str, str]] = []
+        faction_body: List[str] = []
 
-            def _row_sort(kv: Tuple[str, Dict[str, Any]]) -> Tuple[int, str]:
-                name, meta = kv
-                return (-int(meta.get("rows", 0)), _norm(name))
-
-            for name, meta in sorted(items.items(), key=_row_sort):
-                # Use up to 3 description samples for classification matching
-                sample_desc = " ".join(meta.get("descriptions") or [])
-                status, notes = _classify_support(name, sample_desc)
-                lines.append(
-                    f"| {_escape_md(name)} | {int(meta.get('rows', 0))} | {len(meta.get('datasheets', set()))} | **{status}** | {_escape_md(notes)} |"
+        # Army rules
+        army_rule_rows = []
+        for rule_name in list(meta.get("army_rules", []) or []):
+            entry = _ability_entry_by_name(abilities, rule_name, faction_id=faction_id)
+            desc = entry.get("description", "") if entry else ""
+            status, notes = _classify_ability(rule_name, desc)
+            faction_items.append((status, rule_name))
+            army_rule_rows.append(
+                (
+                    [
+                        _escape(rule_name),
+                        _escape(status),
+                        _desc_block(_strip_html(desc), _engine_notes(status, notes)),
+                    ],
+                    status,
                 )
-            lines.append("")
+            )
+        if army_rule_rows:
+            faction_body.append("### Army Rules")
+            faction_body.append(_table(["Army Rule", "Supported", "Description"], army_rule_rows))
+            faction_body.append("")
 
+        # Mustering restrictions
+        restriction_rows = []
+        for restriction in list(meta.get("restrictions", []) or []):
+            status, notes = _classify_ability(restriction, "")
+            faction_items.append((status, restriction))
+            restriction_rows.append(
+                (
+                    [
+                        _escape(restriction),
+                        _escape(status),
+                        _desc_block(_strip_html(restriction), _engine_notes(status, notes)),
+                    ],
+                    status,
+                )
+            )
+        if restriction_rows:
+            faction_body.append("### Mustering Restrictions")
+            faction_body.append(_table(["Restriction", "Supported", "Description"], restriction_rows))
+            faction_body.append("")
+
+        # Detachments
+        dets = [
+            d for d in detachments.values()
+            if str(d.get("faction_id", "") or "").strip().upper() == faction_id
+            and not _detachment_is_boarding(d)
+        ]
+        dets.sort(key=lambda d: _norm(d.get("name", "")))
+        if dets:
+            faction_body.append("### Detachments")
+            for det in dets:
+                det_name = str(det.get("name", "") or "Detachment")
+                det_id = str(det.get("id", "") or "").strip()
+                det_body: List[str] = []
+
+                # Detachment abilities
+                det_ability_rows = []
+                det_restrictions: List[str] = []
+                for ability in det_abilities_by_det.get(det_id, []):
+                    name = ability.get("name", "") or ""
+                    desc = ability.get("description", "") or ""
+                    status, notes = _classify_ability(name, desc)
+                    faction_items.append((status, name))
+                    det_ability_rows.append(
+                        (
+                            [
+                                _escape(name),
+                                _escape(status),
+                                _desc_block(_strip_html(desc), _engine_notes(status, notes)),
+                            ],
+                            status,
+                        )
+                    )
+                    det_restrictions.extend(_extract_restrictions(desc))
+                if det_ability_rows:
+                    det_body.append("**Detachment Abilities**")
+                    det_body.append(_table(["Ability", "Supported", "Description"], det_ability_rows))
+                    det_body.append("")
+
+                det_restrictions = sorted({r for r in det_restrictions if r}, key=str.lower)
+                if det_restrictions:
+                    det_restriction_rows = []
+                    for restriction in det_restrictions:
+                        status, notes = _classify_ability(restriction, "")
+                        faction_items.append((status, restriction))
+                        det_restriction_rows.append(
+                            (
+                                [
+                                    _escape(restriction),
+                                    _escape(status),
+                                    _desc_block(_strip_html(restriction), _engine_notes(status, notes)),
+                                ],
+                                status,
+                            )
+                        )
+                    det_body.append("**Detachment Restrictions**")
+                    det_body.append(_table(["Restriction", "Supported", "Description"], det_restriction_rows))
+                    det_body.append("")
+
+                # Enhancements
+                det_enh = enh_by_det.get(det_id, [])
+                if det_enh:
+                    enh_rows = []
+                    for enh in det_enh:
+                        name = enh.get("name", "") or ""
+                        desc = enh.get("description", "") or ""
+                        enh_id = str(enh.get("id", "") or "")
+                        status, notes = _enhancement_support(name, enh_id, desc)
+                        enh_rows.append(
+                            (
+                                [
+                                    _escape(name),
+                                    _escape(status),
+                                    _desc_block(_strip_html(desc), _engine_notes(status, notes)),
+                                ],
+                                status,
+                            )
+                        )
+                    det_body.append("**Enhancements**")
+                    det_body.append(_table(["Enhancement", "Supported", "Description"], enh_rows))
+                    det_body.append("")
+
+                # Stratagems
+                det_strats = strats_by_det.get(det_id, [])
+                if det_strats:
+                    det_strats.sort(key=lambda s: _norm(s.get("name", "")))
+                    strat_rows = []
+                    for s in det_strats:
+                        status, notes, _ = _stratagem_support(s.get("name", ""))
+                        strat_rows.append(
+                            (
+                                [
+                                    _escape(s.get("name", "")),
+                                    f"<code>{_escape(s.get('id', ''))}</code>",
+                                    _escape(s.get("type", "")),
+                                    _escape(s.get("cp_cost", "")),
+                                    _escape(s.get("turn", "")),
+                                    _escape(s.get("phase", "")),
+                                    _escape(status),
+                                    _escape(notes),
+                                ],
+                                status,
+                            )
+                        )
+                    det_body.append("**Stratagems**")
+                    det_body.append(
+                        _table(
+                            ["Stratagem", "ID", "Type", "CP", "Turn", "Phase", "Status", "Notes"],
+                            strat_rows,
+                        )
+                    )
+                    det_body.append("")
+
+                if not det_body:
+                    det_body.append("_No detachment data available._")
+                faction_body.append(_details_raw(_escape(det_name), "\n".join(det_body)))
+                faction_body.append("")
+
+        # Datasheet abilities
+        ds_ability_rows = []
+        ability_ids = sorted(
+            datasheet_abilities_by_faction.get(faction_id, set()),
+            key=lambda a: _norm(abilities_by_id.get(a, {}).get("name", a)),
+        )
+        for ability_id in ability_ids:
+            entry = abilities_by_id.get(ability_id)
+            if not entry:
+                continue
+            name = entry.get("name", "") or ""
+            if not name:
+                continue
+            desc = entry.get("description", "") or ""
+            status, notes = _classify_ability(name, desc)
+            faction_items.append((status, name))
+            if not _status_is_supported(status):
+                continue
+            units = _collect_units_for_ability(ability_id, ds_abilities_rows, ds_map, faction_id=faction_id)
+            ds_ability_rows.append(
+                (
+                    [
+                        _escape(name),
+                        _escape(status),
+                        _format_units(units),
+                        _desc_block(_strip_html(desc), _engine_notes(status, notes)),
+                    ],
+                    status,
+                )
+            )
+        if ds_ability_rows:
+            faction_body.append("### Datasheet Abilities")
+            faction_body.append(_table(["Ability", "Supported", "Units", "Description"], ds_ability_rows))
+            faction_body.append("")
+
+        supported, total = _summarize_section_count(faction_items)
+        faction_section = _details_raw(_summary_span(faction_name, supported, total), "\n".join(faction_body))
+        lines.append(faction_section)
+        lines.append("")
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def main() -> int:
+    os.makedirs(DOCS_DIR, exist_ok=True)
+    content = _build_matrix()
     with open(OUT_PATH, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines).rstrip() + "\n")
-
-
-def main() -> None:
-    if not os.path.exists(WAHA_DIR):
-        raise SystemExit(f"wahapedia_data dir not found at: {WAHA_DIR}")
-
-    factions = _load_factions()
-    ds_map = _load_datasheets()
-    abilities = _load_abilities()
-    detachment_abilities = _load_detachment_abilities()
-    ds_abilities_rows = _load_datasheets_abilities_rows()
-    ds_detachment_rows = _load_datasheets_detachment_abilities_rows()
-
-    # Exclude Boarding Actions detachments entirely from detachment-ability reporting.
-    ba_ids = _load_boarding_actions_detachment_ids()
-    if ba_ids:
-        detachment_abilities = [a for a in detachment_abilities if (a.detachment_id or "").strip() not in ba_ids]
-        allowed_det_ability_ids = {a.id for a in detachment_abilities}
-        ds_detachment_rows = [r for r in ds_detachment_rows if (r.get("detachment_ability_id") or "").strip() in allowed_det_ability_ids]
-
-    _write_md(
-        abilities=abilities,
-        detachment_abilities=detachment_abilities,
-        ds_map=ds_map,
-        factions=factions,
-        ds_abilities_rows=ds_abilities_rows,
-        ds_detachment_rows=ds_detachment_rows,
-    )
+        f.write(content)
     print(f"Wrote {OUT_PATH}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

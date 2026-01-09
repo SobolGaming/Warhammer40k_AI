@@ -148,6 +148,17 @@ class Stratagem:
         if getattr(army, "faction_id", None) and army.faction_id != self.faction_id:
             return False
         if self.detachment:
+            mgr = None
+            try:
+                if hasattr(army, "get_detachment_manager_for_faction"):
+                    mgr = army.get_detachment_manager_for_faction(self.faction_id)
+            except Exception:
+                mgr = None
+            if mgr is not None:
+                try:
+                    return bool(mgr.detachment_matches(self.detachment))
+                except Exception:
+                    return False
             # Must match detachment name exactly (source data string)
             return getattr(army, "detachment_type", "") == self.detachment
         return True
@@ -1360,6 +1371,13 @@ class StratagemManager:
             owner = unit.get_parent_army().player
             if owner is not self.player:
                 return
+            try:
+                army = unit.get_parent_army()
+            except Exception:
+                army = None
+            we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+            if we_mgr is None or not getattr(we_mgr, "is_berzerker_warband", lambda: False)():
+                return
             # Timing: your Movement phase
             if (self._current_phase_name or "").strip().lower() != "movement phase":
                 return
@@ -1526,6 +1544,13 @@ class StratagemManager:
                 if unit.get_parent_army().player is not self.player:
                     return
             except Exception:
+                return
+            try:
+                army = unit.get_parent_army()
+            except Exception:
+                army = None
+            we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+            if we_mgr is None or not getattr(we_mgr, "is_berzerker_warband", lambda: False)():
                 return
             try:
                 if not unit.has_any_keyword("WORLD EATERS"):
@@ -2565,6 +2590,13 @@ class StratagemManager:
             if unit is None:
                 print("❌ Apoplectic Frenzy: no target unit provided")
                 return False
+            try:
+                army = unit.get_parent_army()
+            except Exception:
+                army = None
+            we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+            if we_mgr is None or not getattr(we_mgr, "is_berzerker_warband", lambda: False)():
+                return False
             # Timing: your Movement phase, just after selecting to Advance.
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "movement phase":
@@ -2622,6 +2654,13 @@ class StratagemManager:
                         break
             if unit is None:
                 print("❌ Blood Offering: no target unit provided")
+                return False
+            try:
+                army = unit.get_parent_army()
+            except Exception:
+                army = None
+            we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+            if we_mgr is None or not getattr(we_mgr, "is_berzerker_warband", lambda: False)():
                 return False
             # Choose objective marker
             if objective is None:

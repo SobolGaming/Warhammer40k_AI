@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from typing import Optional
 
 from ..utility.ability_support import ABILITY_BATTLE_FOCUS, army_has_ability_id
@@ -35,28 +34,15 @@ class BattleFocusManager:
             return False
         return army_has_ability_id(army, ABILITY_BATTLE_FOCUS)
 
-    def _detachment_type_matches(self, detachment_name: str) -> bool:
-        def _norm(text: str) -> str:
-            t = re.sub(r"[^a-z0-9 ]+", " ", str(text or "").lower())
-            return re.sub(r"\s+", " ", t).strip()
-
-        try:
-            det = _norm(getattr(self.army, "detachment_type", "") or "")
-        except Exception:
-            det = ""
-        target = _norm(detachment_name)
-        if not det or not target:
-            return False
-        if det == target:
-            return True
-        if det.endswith("s") and det[:-1] == target:
-            return True
-        if target.endswith("s") and target[:-1] == det:
-            return True
-        return det in target or target in det
-
     def is_warhost_detachment(self) -> bool:
-        return self._detachment_type_matches("Warhost")
+        army = self.army
+        mgr = getattr(army, "aeldari_detachments", None) if army is not None else None
+        if mgr is None:
+            return False
+        try:
+            return bool(mgr.is_warhost_detachment())
+        except Exception:
+            return False
 
     def _unit_has_battle_focus(self, unit) -> bool:
         if unit is None:
@@ -149,6 +135,8 @@ class BattleFocusManager:
     def _bonus_tokens_from_timeless_strategist(self, game) -> int:
         army = self.army
         if army is None:
+            return 0
+        if not self.is_warhost_detachment():
             return 0
         bonus = 0
         for u in list(getattr(army, "units", []) or []):

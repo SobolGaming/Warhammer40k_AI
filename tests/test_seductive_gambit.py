@@ -42,10 +42,15 @@ class TestSeductiveGambit(unittest.TestCase):
         self.assertEqual(unit.special_rules.get("seductive_gambit_expires_phase"), "FIGHT_PHASE")
 
     def test_seductive_gambit_disables_fight_first(self):
+        from warhammer40k_ai.classes.army import Army
+
         unit = Unit.__new__(Unit)
         unit.special_rules = {"seductive_gambit_active": True}
         unit.round_state = SimpleNamespace(charged_this_round=True)
         unit.has_fight_first = lambda: True
+        army = Army("Chaos Daemons", detachment_type="Legion of Excess")
+        army.faction_id = "CD"
+        unit.get_parent_army = lambda: army
         self.assertFalse(Unit.should_fight_first(unit))
 
 

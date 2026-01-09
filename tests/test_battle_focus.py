@@ -2,6 +2,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from warhammer40k_ai.classes.army import Army
 
 class _DummyPlayer:
     def __init__(self, name="Player"):
@@ -10,13 +11,11 @@ class _DummyPlayer:
         self.game = None
 
 
-class _DummyArmy:
+class _DummyArmy(Army):
     def __init__(self, units, *, faction_id="AE", faction="Aeldari", points_limit=2000, detachment_type="Other Detachment"):
-        self.units = list(units or [])
+        super().__init__(faction, detachment_type, points_limit)
         self.faction_id = faction_id
-        self.faction = faction
-        self.points_limit = points_limit
-        self.detachment_type = detachment_type
+        self.units = list(units or [])
         self.player = _DummyPlayer()
         self.player.game = None
 

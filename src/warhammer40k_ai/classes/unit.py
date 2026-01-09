@@ -1930,6 +1930,13 @@ class Unit:
         try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("enhancement_phoenix_gem", False):
+                try:
+                    army = self.get_parent_army()
+                except Exception:
+                    army = None
+                mgr = getattr(army, "aeldari_detachments", None) if army is not None else None
+                if mgr is None or not getattr(mgr, "is_warhost_detachment", lambda: False)():
+                    return
                 if not getattr(model, "has_used_once_per_battle", lambda _k: False)("phoenix_gem"):
                     game = self.get_parent_army().player.game
                     phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
@@ -3953,27 +3960,6 @@ class Unit:
                 return True
         return False
 
-    def _detachment_type_matches(self, detachment_name: str) -> bool:
-        def _norm(text: str) -> str:
-            t = re.sub(r"[^a-z0-9 ]+", " ", str(text or "").lower())
-            return re.sub(r"\s+", " ", t).strip()
-
-        try:
-            army = self.get_parent_army()
-            det = _norm(getattr(army, "detachment_type", "") or "")
-        except Exception:
-            det = ""
-        target = _norm(detachment_name)
-        if not det or not target:
-            return False
-        if det == target:
-            return True
-        if det.endswith("s") and det[:-1] == target:
-            return True
-        if target.endswith("s") and target[:-1] == det:
-            return True
-        return det in target or target in det
-
     def has_thrill_seekers(self) -> bool:
         for ab in (list(getattr(self, "possible_abilities", []) or []) + list(getattr(self, "abilities", []) or [])):
             try:
@@ -3988,25 +3974,56 @@ class Unit:
         return False
 
     def _is_shadow_legion_detachment(self) -> bool:
-        return self._detachment_type_matches("Shadow Legion")
-
-    def _is_legion_of_excess_detachment(self) -> bool:
-        return self._detachment_type_matches("Legion of Excess")
-
-    def _is_daemonic_incursion_detachment(self) -> bool:
-        return self._detachment_type_matches("Daemonic Incursion")
-
-    def _first_prince_of_chaos_active(self) -> bool:
-        if not self._is_shadow_legion_detachment():
-            return False
         try:
             army = self.get_parent_army()
-            fid = str(getattr(army, "faction_id", "") or "").strip().upper()
-            if fid and fid != "CD":
-                return False
         except Exception:
-            pass
-        return True
+            army = None
+        mgr = getattr(army, "chaos_daemons_detachments", None) if army is not None else None
+        if mgr is not None:
+            try:
+                return bool(mgr.is_shadow_legion_detachment())
+            except Exception:
+                return False
+        return False
+
+    def _is_legion_of_excess_detachment(self) -> bool:
+        try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "chaos_daemons_detachments", None) if army is not None else None
+        if mgr is not None:
+            try:
+                return bool(mgr.is_legion_of_excess_detachment())
+            except Exception:
+                return False
+        return False
+
+    def _is_daemonic_incursion_detachment(self) -> bool:
+        try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "chaos_daemons_detachments", None) if army is not None else None
+        if mgr is not None:
+            try:
+                return bool(mgr.is_daemonic_incursion_detachment())
+            except Exception:
+                return False
+        return False
+
+    def _first_prince_of_chaos_active(self) -> bool:
+        try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "chaos_daemons_detachments", None) if army is not None else None
+        if mgr is not None:
+            try:
+                return bool(mgr.first_prince_of_chaos_active())
+            except Exception:
+                return False
+        return False
 
     def _first_prince_has_god_keyword(self, keyword: str) -> bool:
         kw = str(keyword or "").strip()
@@ -9453,6 +9470,13 @@ class Unit:
         return found
 
     def _seductive_gambit_active(self) -> bool:
+        try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "chaos_daemons_detachments", None) if army is not None else None
+        if mgr is None or not getattr(mgr, "is_legion_of_excess_detachment", lambda: False)():
+            return False
         try:
             sr = getattr(self, "special_rules", None)
             return isinstance(sr, dict) and bool(sr.get("seductive_gambit_active"))

@@ -4,31 +4,6 @@ from typing import Optional
 
 from ..utility.ability_support import ABILITY_OATH_OF_MOMENT, army_has_ability_id
 
-CODEX_SPACE_MARINES_DETACHMENTS = {
-    "gladius task force",
-    "anvil siege force",
-    "ironstorm spearhead",
-    "firestorm assault force",
-    "stormlance task force",
-    "vanguard spearhead",
-    "1st company task force",
-    "boarding strike",
-    "pilum strike team",
-    "terminator assault",
-}
-
-DIVERGENT_CHAPTER_KEYWORDS = {
-    "black templars",
-    "blood angels",
-    "dark angels",
-    "deathwatch",
-    "space wolves",
-}
-
-
-def _norm(text: str) -> str:
-    return (text or "").strip().lower()
-
 
 class OathOfMomentManager:
     """
@@ -84,24 +59,23 @@ class OathOfMomentManager:
     def _army_is_codex_detachment(self) -> bool:
         if self.army is None:
             return False
-        try:
-            det = _norm(getattr(self.army, "detachment_type", "") or "")
-        except Exception:
-            det = ""
-        if not det:
-            return False
-        return det in CODEX_SPACE_MARINES_DETACHMENTS
+        mgr = getattr(self.army, "space_marines_detachments", None)
+        if mgr is not None:
+            try:
+                return bool(mgr.is_codex_detachment())
+            except Exception:
+                return False
+        return False
 
     def _army_has_divergent_chapter_keywords(self) -> bool:
         if self.army is None:
             return False
-        for unit in list(getattr(self.army, "units", []) or []):
-            for kw in DIVERGENT_CHAPTER_KEYWORDS:
-                try:
-                    if unit.has_any_keyword(kw):
-                        return True
-                except Exception:
-                    continue
+        mgr = getattr(self.army, "space_marines_detachments", None)
+        if mgr is not None:
+            try:
+                return bool(mgr.has_divergent_chapter_keywords())
+            except Exception:
+                return False
         return False
 
     def wound_bonus_enabled(self) -> bool:

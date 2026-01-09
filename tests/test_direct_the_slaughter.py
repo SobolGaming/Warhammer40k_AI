@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 class TestDirectTheSlaughter(unittest.TestCase):
     def _mk_player_with_dts(self, *, battle_round: int = 1):
+        from warhammer40k_ai.classes.army import Army
         from warhammer40k_ai.classes.player import Player, PlayerType
         from warhammer40k_ai.classes.ability import Ability
 
@@ -24,20 +25,15 @@ class TestDirectTheSlaughter(unittest.TestCase):
             def is_alive(self):
                 return True
 
-        class _Army:
-            def __init__(self, units):
-                self.units = list(units)
-                self.player = None
-
-            def set_player(self, p):
-                self.player = p
-
         class _TargetUnit:
             def has_any_keyword(self, kw: str) -> bool:
                 return str(kw).strip().lower() == "world eaters"
 
         # Build player/game wiring
-        army = _Army([_Unit(has_dts=True)])
+        army = Army("World Eaters", "Berzerker Warband")
+        army.faction_id = "WE"
+        dts_unit = _Unit(has_dts=True)
+        army.units = [dts_unit]
         p = Player("P1", player_type=PlayerType.HUMAN, army=army)
         game = SimpleNamespace(turn=battle_round, map=SimpleNamespace())
         p.set_game(game)
@@ -104,5 +100,4 @@ class TestDirectTheSlaughter(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
 
