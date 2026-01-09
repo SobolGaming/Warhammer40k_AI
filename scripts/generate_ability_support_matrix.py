@@ -75,7 +75,6 @@ def _strip_html(text: str) -> str:
 def _ascii_text(text: str) -> str:
     t = str(text or "")
     t = t.replace("\u2019", "'").replace("\u2013", "-").replace("\u2014", "-").replace("\u00a0", " ")
-    t = t.encode("ascii", "ignore").decode("ascii")
     return t
 
 
@@ -178,6 +177,7 @@ def _ability_support_overrides() -> Dict[str, Tuple[str, str]]:
         "templar vows": ("Supported", "Vow selection with combat/objective effects."),
         "space marine chapters": ("Supported", "Chapter keyword restrictions and unit bans."),
         "deathwatch": ("Supported", "Deathwatch-only chapter restrictions."),
+        "supreme commander": ("Supported", "If any SUPREME COMMANDER unit is in the army, one must be the Warlord."),
         "leader": ("Supported", "Attach Leaders during battle formations; protect Characters until Bodyguard is gone."),
         "deep strike": ("Supported", "Reserves placement in Reinforcements step; enforces >9\" distance."),
         "feel no pain": ("Supported", "Post-damage roll to ignore wounds, including mortals."),
@@ -472,8 +472,12 @@ def _summary_color(supported: int, total: int) -> str:
 
 
 def _summary_span(title: str, supported: int, total: int) -> str:
+    return _summary_span_with_label(title, supported, total, "abilities")
+
+
+def _summary_span_with_label(title: str, supported: int, total: int, label: str) -> str:
     color = _summary_color(supported, total)
-    label = f"{_escape(title)} ({supported} out of {total} abilities supported)"
+    label = f"{_escape(title)} ({supported} out of {total} {label} supported)"
     return f"<span style=\"background-color:{color}; padding:2px 6px; display:block;\">{label}</span>"
 
 
@@ -913,8 +917,10 @@ def _build_matrix() -> str:
     core_strats.sort(key=lambda e: _norm(e.get("name", "")))
 
     core_strat_rows = []
+    core_strat_items: List[Tuple[str, str]] = []
     for s in core_strats:
         status, notes, _ = _stratagem_support(s.get("name", ""))
+        core_strat_items.append((status, s.get("name", "") or ""))
         core_strat_rows.append(
             (
                 [
@@ -940,12 +946,24 @@ def _build_matrix() -> str:
         [
             "### Core Abilities",
             core_table,
-            "",
+        ]
+    )
+    lines.append(_details_raw(_summary_span("Core", core_supported, core_total), core_body))
+    lines.append("")
+
+    core_strat_supported, core_strat_total = _summarize_section_count(core_strat_items)
+    core_strat_body = "\n".join(
+        [
             "### Core Stratagems",
             core_strat_table,
         ]
     )
-    lines.append(_details_raw(_summary_span("Core", core_supported, core_total), core_body))
+    lines.append(
+        _details_raw(
+            _summary_span_with_label("Core Stratagems", core_strat_supported, core_strat_total, "stratagems"),
+            core_strat_body,
+        )
+    )
     lines.append("")
 
     # ---------------- Faction summary + files ----------------
@@ -983,7 +1001,7 @@ def _build_matrix() -> str:
                     _escape(faction_name),
                     _escape(_summary_icon(supported, total)),
                     _escape(f"{supported} out of {total}"),
-                    f"[View]({rel_path})",
+                    f"<a href=\"{_escape(rel_path)}\">View</a>",
                 ],
                 status,
             )
