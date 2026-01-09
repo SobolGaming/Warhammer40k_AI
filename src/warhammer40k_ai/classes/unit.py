@@ -3167,12 +3167,7 @@ class Unit:
         return self.has_keyword("Imperium") and self.has_keyword("Primarch")
 
     def has_super_heavy_walker(self) -> bool:
-        """True if this unit has the Super-heavy Walker ability (Chaos Knights only)."""
-        try:
-            if not self.has_any_keyword("CHAOS KNIGHTS"):
-                return False
-        except Exception:
-            return False
+        """True if this unit has the Super-heavy Walker ability."""
         try:
             found, _ = self._find_ability_with_patterns(["super-heavy walker"])
             return bool(found)
@@ -3703,6 +3698,12 @@ class Unit:
                 return True
         except Exception:
             pass
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("bondsman_reroll_advance"):
+                return True
+        except Exception:
+            pass
         def _texts() -> list[str]:
             items: list[str] = []
             for ab in (list(getattr(self, "possible_abilities", []) or []) + list(getattr(self, "abilities", []) or [])):
@@ -3747,6 +3748,12 @@ class Unit:
         try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("pain_reroll_charge"):
+                return True
+        except Exception:
+            pass
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("bondsman_reroll_charge"):
                 return True
         except Exception:
             pass
@@ -4019,6 +4026,18 @@ class Unit:
                     append_dice(pn, f"Advance roll: {advance_roll} for {self.name}")
             except Exception:
                 pass
+            # Apply static advance bonuses (e.g., Code Chivalric).
+            try:
+                sr = getattr(self, "special_rules", None)
+                bonus = int(sr.get("code_chivalric_advance_bonus", 0) or 0) if isinstance(sr, dict) else 0
+            except Exception:
+                bonus = 0
+            if bonus:
+                advance_roll += bonus
+                try:
+                    print(f"⚔️ {self.name} advance bonus: +{bonus}\" (Code Chivalric)")
+                except Exception:
+                    pass
             # Provide reroll callback (may be used by rules/stratagems)
             try:
                 _player = getattr(self.get_parent_army(), 'player', None)
@@ -4292,6 +4311,18 @@ class Unit:
                         if bool(provider(player=_player, unit=self, roll_type="advance", value=advance_roll, dice=None)):
                             advance_roll = _reroll()
                             reroll_used = True
+                    # Apply static advance bonuses (e.g., Code Chivalric).
+                    try:
+                        sr = getattr(self, "special_rules", None)
+                        bonus = int(sr.get("code_chivalric_advance_bonus", 0) or 0) if isinstance(sr, dict) else 0
+                    except Exception:
+                        bonus = 0
+                    if bonus:
+                        advance_roll += bonus
+                        try:
+                            print(f"⚔️ {self.name} advance bonus: +{bonus}\" (Code Chivalric)")
+                        except Exception:
+                            pass
                     # Publish roll event (best-effort)
                     if _game is not None and hasattr(_game, "event_system"):
                         from ..utility.reroll_tracker import prepare_reroll_event
@@ -5255,6 +5286,13 @@ class Unit:
                         return True
         except Exception:
             pass
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("bondsman_assault_ranged"):
+                if getattr(profile, "parent_wargear", None) is not None and profile.parent_wargear.is_ranged():
+                    return True
+        except Exception:
+            pass
         # Check for Assault weapons
         if profile.is_assault():
             return True
@@ -5291,6 +5329,12 @@ class Unit:
         Returns:
             bool: True if the unit can charge after advancing
         """
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("bondsman_charge_after_advance"):
+                return True
+        except Exception:
+            pass
         has_ability = self.has_advance_and_charge()
         #print(f"🔍 {self.name} can_charge_after_advance check: {has_ability}")
         return has_ability

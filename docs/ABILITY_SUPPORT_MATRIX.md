@@ -186,9 +186,11 @@ These mechanics are currently recognized by searching ability names/descriptions
 
 | Ability | Ability ID | Datasheet refs (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---:|---|---|
-| Code Chivalric | `000008458` | 21 | 21 | **Not implemented** |  |
+| Bondsman | `000008459` | 0 | 0 | **Supported** | Command phase Armiger selection; applies Bondsman effects. |
+| Code Chivalric | `000008458` | 21 | 21 | **Supported** | Deed/Quality selection, rerolls, Honoured CP. |
+| Freeblades | `000008461` | 0 | 0 | **Supported** | List-building restrictions for Imperial Knights allies. |
 | Doctrina Imperatives | `000008382` | 5 | 5 | **Supported** | Battle-round selection; BS/WS improve, Heavy/Assault, AP bonus, melee -1 to hit. |
-| Super-heavy Walker | `000008460` | 18 | 18 | **Not implemented** |  |
+| Super-heavy Walker | `000008460` | 18 | 18 | **Supported** | Move through models/terrain; battleshock on tall terrain. |
 
 ### Leagues of Votann (`LoV`) - `https://wahapedia.ru/wh40k10ed/factions/leagues-of-votann`
 
@@ -2695,32 +2697,32 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Ability | Occurrences (rows) | Datasheets | Status | Notes |
 |---|---:|---:|---|---|
 | Ion Aegis (Aura) | 2 | 2 | **Not implemented** |  |
-| Acheron’s Duty (Bondsman) | 1 | 1 | **Not implemented** |  |
+| Acheron’s Duty (Bondsman) | 1 | 1 | **Supported** | Battle-shock in Engagement Range at Fight phase start. |
 | Aggressive Assault | 1 | 1 | **Not implemented** |  |
-| Atrapos’ Duty (Bondsman) | 1 | 1 | **Not implemented** |  |
+| Atrapos’ Duty (Bondsman) | 1 | 1 | **Supported** | Re-roll Hit/Wound vs TITANIC/TOWERING. |
 | Bastion of Firepower | 1 | 1 | **Not implemented** |  |
-| Castigator’s Duty (Bondsman) | 1 | 1 | **Not implemented** |  |
+| Castigator’s Duty (Bondsman) | 1 | 1 | **Supported** | Sustained Hits 1 + AP bonus (ranged). |
 | Chainbreaker | 1 | 1 | **Not implemented** |  |
 | Control Edict | 1 | 1 | **Not implemented** |  |
-| Crusader’s Duty (Bondsman) | 1 | 1 | **Not implemented** |  |
+| Crusader’s Duty (Bondsman) | 1 | 1 | **Supported** | +1 to ranged Hit rolls. |
 | Data-spike | 1 | 1 | **Not implemented** |  |
 | Defend the Divine Work | 1 | 1 | **Not implemented** |  |
-| Defender’s Duty (Bondsman) | 1 | 1 | **Not implemented** |  |
-| Errant’s Duty (Bondsman) | 1 | 1 | **Not implemented** |  |
+| Defender’s Duty (Bondsman) | 1 | 1 | **Supported** | -1 Damage on allocated attacks. |
+| Errant’s Duty (Bondsman) | 1 | 1 | **Supported** | Re-roll Advance; Assault (ranged). |
 | Exemplar of the Code | 1 | 1 | **Not implemented** |  |
-| Gallant’s Duty (Bondsman) | 1 | 1 | **Not implemented** |  |
+| Gallant’s Duty (Bondsman) | 1 | 1 | **Supported** | Re-roll Charge; re-roll melee Hit. |
 | Galvanic Field | 1 | 1 | **Not implemented** |  |
 | Grav-pinned | 1 | 1 | **Not implemented** |  |
 | Impetuous Glory | 1 | 1 | **Not implemented** |  |
-| Lancer’s Duty (Bondsman) | 1 | 1 | **Partial** | Advance+Charge (exact wording) (extra conditions not fully modeled) |
+| Lancer’s Duty (Bondsman) | 1 | 1 | **Supported** | Advance+Charge. |
 | Legendary Freeblade | 1 | 1 | **Not implemented** |  |
 | Lord of the Machine Cult | 1 | 1 | **Partial** | Feel No Pain (extra conditions not fully modeled) |
 | Macro-extinction Protocols | 1 | 1 | **Not implemented** |  |
-| Magaera’s Duty (Bondsman) | 1 | 1 | **Not implemented** |  |
+| Magaera’s Duty (Bondsman) | 1 | 1 | **Supported** | +1S/AP vs closest eligible target (ranged). |
 | Martial Pride | 1 | 1 | **Not implemented** |  |
-| Mentor (Bondsman) | 1 | 1 | **Not implemented** |  |
+| Mentor (Bondsman) | 1 | 1 | **Partial** | Re-roll Wound vs quarry (requires quarry selection). |
 | Objective Scouted | 1 | 1 | **Not implemented** |  |
-| Paladin’s Duty (Bondsman) | 1 | 1 | **Not implemented** |  |
+| Paladin’s Duty (Bondsman) | 1 | 1 | **Supported** | Lethal Hits; Lance (melee). |
 | Protection Protocols | 1 | 1 | **Not implemented** |  |
 | Punishing Salvoes | 1 | 1 | **Not implemented** |  |
 | Rad-saturation (Aura) | 1 | 1 | **Not implemented** |  |
@@ -2731,13 +2733,13 @@ These come directly from `Datasheets_abilities.json` rows where `ability_id` is 
 | Servo-skull Uplink | 1 | 1 | **Not implemented** |  |
 | Shock Charge | 1 | 1 | **Not implemented** |  |
 | Storm of Bolts | 1 | 1 | **Not implemented** |  |
-| Styrix’s Duty (Bondsman) | 1 | 1 | **Not implemented** |  |
+| Styrix’s Duty (Bondsman) | 1 | 1 | **Supported** | Battle-shock on unit hit (shoot/fight). |
 | Sunderer of Fortresses | 1 | 1 | **Not implemented** |  |
 | Suppression Protocols | 1 | 1 | **Not implemented** |  |
 | Thin Their Ranks | 1 | 1 | **Not implemented** |  |
 | Thundershock | 1 | 1 | **Not implemented** |  |
 | Titan Hunter | 1 | 1 | **Not implemented** |  |
-| Warden’s Duty (Bondsman) | 1 | 1 | **Not implemented** |  |
+| Warden’s Duty (Bondsman) | 1 | 1 | **Supported** | Sustained Hits 1; Ignores Cover (ranged). |
 
 #### Leagues of Votann (`LoV`)
 

@@ -86,6 +86,9 @@ SUPPORTED_ARMY_RULES = {
     "GATE OF INFINITY",
     "ASSIGNED AGENTS",
     "KILL TEAM",
+    "CODE CHIVALRIC",
+    "BONDSMAN",
+    "FREEBLADES",
 }
 SUPPORTED_DETACHMENT_RULES = {
     "MARTIAL GRACE",
@@ -768,6 +771,8 @@ class GameView:
         self._blessings_flow_active = False
         self._battle_focus_flow_active = False
         self._oath_of_moment_flow_active = False
+        self._code_chivalric_flow_active = False
+        self._bondsman_flow_active = False
         self._dark_pacts_flow_active = False
         self._martial_katah_flow_active = False
         self._cabal_flow_active = False
@@ -804,6 +809,10 @@ class GameView:
         self._pending_harbingers_queue = []
         # Adeptus Mechanicus: Doctrina Imperatives selection queue
         self._pending_doctrina_queue = []
+        # Imperial Knights: Code Chivalric selection queue
+        self._pending_code_chivalric_queue = []
+        # Imperial Knights: Bondsman selection queue
+        self._pending_bondsman_queue = []
         # Chaos Space Marines: Dark Pacts selection queue
         self._pending_dark_pacts_queue = []
         # Astra Militarum: Voice of Command prompt queue
@@ -828,6 +837,10 @@ class GameView:
                 self.game.event_system.subscribe("phase_start", self._on_phase_start_optional_ability_prompts)
                 # Oath of Moment target selection (start of Command phase)
                 self.game.event_system.subscribe("oath_of_moment_prompt", self._on_oath_of_moment_prompt)
+                # Imperial Knights: Code Chivalric selection (setup)
+                self.game.event_system.subscribe("code_chivalric_prompt", self._on_code_chivalric_prompt)
+                # Imperial Knights: Bondsman selection (Command phase)
+                self.game.event_system.subscribe("bondsman_prompt", self._on_bondsman_prompt)
                 # Tyranids: Shadow in the Warp prompt (either Command phase)
                 self.game.event_system.subscribe("shadow_in_the_warp_prompt", self._on_shadow_in_the_warp_prompt)
                 # Orks: Waaagh! prompt (start of Command phase)
@@ -1855,6 +1868,321 @@ class GameView:
             self.dialog_manager.open(dlg, modal=True)
         except Exception:
             self._oath_of_moment_flow_active = False
+
+    def _on_code_chivalric_prompt(self, player=None, game=None, **_kwargs):
+        if player is None:
+            return
+        try:
+            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+        except Exception:
+            is_human = False
+        if not is_human:
+            return
+        game = game or self.game
+        if game is None:
+            return
+        try:
+            army = player.get_army()
+        except Exception:
+            army = None
+        if army is None:
+            return
+        mgr = getattr(army, "code_chivalric", None)
+        if mgr is None or not getattr(mgr, "_army_has_code_chivalric", lambda: False)():
+            return
+        if getattr(mgr, "selected_deed_key", None) and getattr(mgr, "selected_quality_key", None):
+            return
+        if bool(getattr(self, "_code_chivalric_flow_active", False)):
+            return
+        self._pending_code_chivalric_queue.append(player)
+        self._open_next_code_chivalric_prompt(game)
+
+    def _open_next_code_chivalric_prompt(self, game=None) -> None:
+        if getattr(self, "_code_chivalric_flow_active", False):
+            return
+        if not self._pending_code_chivalric_queue:
+            return
+        player = self._pending_code_chivalric_queue.pop(0)
+        try:
+            army = player.get_army()
+        except Exception:
+            army = None
+        if army is None:
+            self._open_next_code_chivalric_prompt(game)
+            return
+        mgr = getattr(army, "code_chivalric", None)
+        if mgr is None or not getattr(mgr, "_army_has_code_chivalric", lambda: False)():
+            self._open_next_code_chivalric_prompt(game)
+            return
+
+        if not hasattr(self, "code_chivalric_dialog") or self.code_chivalric_dialog is None:
+            try:
+                from .dialogs import CodeChivalricDialog
+                sw, sh = self.screen.get_size()
+                self.code_chivalric_dialog = CodeChivalricDialog(sw, sh)
+            except Exception:
+                self.code_chivalric_dialog = None
+        if self.code_chivalric_dialog is None:
+            try:
+                mgr.roll_deed(game=game, player=player)
+                mgr.roll_quality()
+            except Exception:
+                pass
+            self._open_next_code_chivalric_prompt(game)
+            return
+
+        from ..utility.event_bus import append_action
+        from ..classes.code_chivalric import CODE_CHIVALRIC_DEEDS, CODE_CHIVALRIC_QUALITIES, DEED_LAY_LOW
+
+        try:
+            roll_option = SimpleNamespace(
+                key="ROLL",
+                name="Roll D6 (random)",
+                summary="Randomly select one option.",
+            )
+        except Exception:
+            roll_option = None
+
+        dlg = self.code_chivalric_dialog
+        self._code_chivalric_flow_active = True
+
+        def _finish():
+            self._code_chivalric_flow_active = False
+            self._open_next_code_chivalric_prompt(game)
+
+        def _prompt_character_target():
+            try:
+                options = list(mgr.get_eligible_character_models(game=game, player=player) or [])
+            except Exception:
+                options = []
+            if not options:
+                _finish()
+                return
+            try:
+                choices = []
+                for model in options:
+                    unit_name = getattr(getattr(model, "parent_unit", None), "name", "")
+                    label = f"{getattr(model, 'name', '')} ({unit_name})" if unit_name else str(getattr(model, "name", ""))
+                    choices.append(SimpleNamespace(name=label, model=model))
+            except Exception:
+                choices = [SimpleNamespace(name=str(getattr(m, "name", "")), model=m) for m in options]
+
+            try:
+                from .dialogs import QuarrySelectionDialog
+            except Exception:
+                mgr.set_deed_target_model(options[0])
+                _finish()
+                return
+
+            if not hasattr(self, "code_chivalric_target_dialog") or self.code_chivalric_target_dialog is None:
+                self.code_chivalric_target_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+            tdlg = self.code_chivalric_target_dialog
+
+            def _done(choice):
+                try:
+                    model = getattr(choice, "model", None)
+                    if model is not None:
+                        mgr.set_deed_target_model(model)
+                finally:
+                    _finish()
+
+            def _cancel():
+                try:
+                    mgr.set_deed_target_model(getattr(choices[0], "model", None))
+                finally:
+                    _finish()
+
+            tdlg.show(
+                title=f"Code Chivalric - {getattr(player, 'name', 'Player')}",
+                header="Choose an enemy CHARACTER model as your Oath target.",
+                subtitle="Lay Low the Tyrant",
+                choices=choices,
+                on_confirm=_done,
+                on_cancel=_cancel,
+            )
+            try:
+                self.dialog_manager.open(tdlg, modal=True)
+            except Exception:
+                _cancel()
+
+        def _choose_quality():
+            options = list(CODE_CHIVALRIC_QUALITIES)
+            if roll_option is not None:
+                options = [roll_option] + options
+
+            def _on_quality(choice):
+                try:
+                    key = getattr(choice, "key", "")
+                except Exception:
+                    key = ""
+                try:
+                    if str(key).strip().upper() == "ROLL":
+                        res = mgr.roll_quality()
+                        quality = res.get("quality", None)
+                        if quality is not None:
+                            append_action(player.name, f"Code Chivalric Quality: {quality.name} (rolled {res.get('roll')})")
+                    else:
+                        mgr.select_quality(choice, random=False)
+                        append_action(player.name, f"Code Chivalric Quality: {choice.name}")
+                except Exception:
+                    pass
+                if mgr.deed_requires_character_target() and not getattr(mgr, "deed_target_model_id", None):
+                    _prompt_character_target()
+                    return
+                _finish()
+
+            dlg.show(
+                title="Code Chivalric - Quality",
+                header="Choose a Quality for this battle.",
+                options=options,
+                on_confirm=_on_quality,
+            )
+            try:
+                self.dialog_manager.open(dlg, modal=True)
+            except Exception:
+                _finish()
+
+        def _choose_deed():
+            if getattr(mgr, "selected_deed_key", None):
+                _choose_quality()
+                return
+            options = list(CODE_CHIVALRIC_DEEDS)
+            if roll_option is not None:
+                options = [roll_option] + options
+
+            def _on_deed(choice):
+                try:
+                    key = getattr(choice, "key", "")
+                except Exception:
+                    key = ""
+                try:
+                    if str(key).strip().upper() == "ROLL":
+                        res = mgr.roll_deed(game=game, player=player)
+                        deed = res.get("deed", None)
+                        if deed is not None:
+                            append_action(player.name, f"Code Chivalric Deed: {deed.name} (rolled {res.get('roll')})")
+                    else:
+                        mgr.select_deed(choice, random=False, game=game, player=player)
+                        append_action(player.name, f"Code Chivalric Deed: {choice.name}")
+                except Exception:
+                    pass
+                _choose_quality()
+
+            dlg.show(
+                title="Code Chivalric - Deed",
+                header="Choose a Deed for this battle.",
+                options=options,
+                on_confirm=_on_deed,
+            )
+            try:
+                self.dialog_manager.open(dlg, modal=True)
+            except Exception:
+                _finish()
+
+        if getattr(mgr, "selected_deed_key", None) == DEED_LAY_LOW.key and getattr(mgr, "selected_quality_key", None):
+            if not getattr(mgr, "deed_target_model_id", None):
+                _prompt_character_target()
+                return
+            _finish()
+            return
+
+        _choose_deed()
+
+    def _on_bondsman_prompt(self, player=None, game=None, **_kwargs):
+        if player is None:
+            return
+        try:
+            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+        except Exception:
+            is_human = False
+        if not is_human:
+            return
+        game = game or self.game
+        if game is None:
+            return
+        try:
+            army = player.get_army()
+        except Exception:
+            army = None
+        if army is None:
+            return
+        mgr = getattr(army, "bondsman", None)
+        if mgr is None or not getattr(mgr, "_army_has_bondsman", lambda: False)():
+            return
+        if bool(getattr(self, "_bondsman_flow_active", False)):
+            return
+        try:
+            sources = list(mgr.get_bondsman_sources())
+        except Exception:
+            sources = []
+        if not sources:
+            return
+        self._pending_bondsman_queue = list(sources)
+        self._open_next_bondsman_prompt(game, player)
+
+    def _open_next_bondsman_prompt(self, game, player):
+        if not self._pending_bondsman_queue:
+            self._bondsman_flow_active = False
+            return
+        self._bondsman_flow_active = True
+        source_unit = self._pending_bondsman_queue.pop(0)
+        try:
+            mgr = getattr(player.get_army(), "bondsman", None)
+        except Exception:
+            mgr = None
+        if mgr is None:
+            self._open_next_bondsman_prompt(game, player)
+            return
+        try:
+            targets = list(mgr.get_eligible_armigers(source_unit, game_map=getattr(game, "map", None)) or [])
+        except Exception:
+            targets = []
+        if not targets:
+            self._open_next_bondsman_prompt(game, player)
+            return
+        try:
+            from .dialogs import QuarrySelectionDialog
+        except Exception:
+            mgr.apply_bondsman_effects(source_unit, targets[0])
+            self._open_next_bondsman_prompt(game, player)
+            return
+        if not hasattr(self, "bondsman_dialog") or self.bondsman_dialog is None:
+            self.bondsman_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+        dlg = self.bondsman_dialog
+        ability_names = []
+        try:
+            ability_names = list(mgr.get_bondsman_ability_names(source_unit))
+        except Exception:
+            ability_names = []
+        subtitle = ", ".join(ability_names) if ability_names else "Bondsman ability"
+
+        def _done(choice):
+            try:
+                mgr.apply_bondsman_effects(source_unit, choice)
+            except Exception:
+                pass
+            try:
+                from ..utility.event_bus import append_action
+                append_action(player.name, f"Bondsman: {source_unit.name} -> {getattr(choice, 'name', '')}")
+            except Exception:
+                pass
+            self._open_next_bondsman_prompt(game, player)
+
+        def _cancel():
+            self._open_next_bondsman_prompt(game, player)
+
+        dlg.show(
+            title=f"Bondsman - {getattr(source_unit, 'name', 'Unit')}",
+            header=f"Select an ARMIGER within 12\" of {getattr(source_unit, 'name', 'this model')}.",
+            subtitle=subtitle,
+            choices=targets,
+            on_confirm=_done,
+            on_cancel=_cancel,
+        )
+        try:
+            self.dialog_manager.open(dlg, modal=True)
+        except Exception:
+            _cancel()
 
     def _on_shadow_in_the_warp_prompt(self, player=None, game=None, **_kwargs):
         if player is None:

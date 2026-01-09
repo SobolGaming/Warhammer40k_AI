@@ -339,6 +339,14 @@ class FightPhaseManager:
         print(f"⚔️ {fighting_unit.name} will fight with target declarations:")
         for target_unit, models in target_declarations.items():
             print(f"  {len(models)} models attacking {target_unit.name}")
+
+        try:
+            fighting_unit.round_state.last_fight_targets = list(target_declarations.keys())
+        except Exception:
+            try:
+                setattr(fighting_unit, "_last_fight_targets", list(target_declarations.keys()))
+            except Exception:
+                pass
         
         # Execute the complete fight sequence
         ui_callback = getattr(self, 'on_movement_required', None)

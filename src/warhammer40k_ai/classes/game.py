@@ -183,6 +183,13 @@ class Game:
         # Dark Pacts trigger windows
         self.event_system.subscribe("shooting_targets_selected", self._on_shooting_targets_selected_dark_pacts)
         self.event_system.subscribe("fight_unit_selected", self._on_fight_unit_selected_dark_pacts)
+        # Imperial Knights: Code Chivalric reroll windows
+        self.event_system.subscribe("shooting_targets_selected", self._on_shooting_targets_selected_code_chivalric)
+        self.event_system.subscribe("fight_unit_selected", self._on_fight_unit_selected_code_chivalric)
+        self.event_system.subscribe("unit_shooting_resolved", self._on_unit_shooting_resolved_code_chivalric)
+        self.event_system.subscribe("fight_sequence_complete", self._on_fight_sequence_complete_code_chivalric)
+        self.event_system.subscribe("model_destroyed", self._on_model_destroyed_code_chivalric)
+        self.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_code_chivalric)
         # Adeptus Custodes: Martial Ka'tah selection on fight activation
         self.event_system.subscribe("fight_unit_selected", self._on_fight_unit_selected_martial_katah)
         # Drukhari: Power from Pain trigger windows
@@ -190,6 +197,10 @@ class Game:
         self.event_system.subscribe("fight_unit_selected", self._on_fight_unit_selected_power_from_pain)
         self.event_system.subscribe("unit_move_started", self._on_unit_move_started_power_from_pain)
         self.event_system.subscribe("charge_declared", self._on_charge_declared_power_from_pain)
+        # Imperial Knights: Bondsman ongoing effects
+        self.event_system.subscribe("phase_start", self._on_phase_start_bondsman)
+        self.event_system.subscribe("unit_shooting_resolved", self._on_unit_shooting_resolved_bondsman)
+        self.event_system.subscribe("fight_sequence_complete", self._on_fight_sequence_complete_bondsman)
         # Thousand Sons: Cabal of Sorcerers reset at Shooting phase start
         self.event_system.subscribe("phase_start", self._on_phase_start_cabal_of_sorcerers)
         # T'au Empire: For the Greater Good selection at Shooting phase start
@@ -889,6 +900,21 @@ class Game:
         except Exception:
             return
 
+    def _on_shooting_targets_selected_code_chivalric(self, attacking_unit=None, **_kwargs) -> None:
+        if attacking_unit is None:
+            return
+        try:
+            army = attacking_unit.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "code_chivalric", None) if army is not None else None
+        if mgr is None:
+            return
+        try:
+            mgr.on_unit_selected_to_shoot(attacking_unit)
+        except Exception:
+            return
+
     def _on_fight_unit_selected_dark_pacts(self, unit=None, **_kwargs) -> None:
         if unit is None:
             return
@@ -922,6 +948,84 @@ class Game:
                 pass
         try:
             unit.maybe_trigger_dark_pacts(self, phase_name=phase_name, trigger="fight")
+        except Exception:
+            return
+
+    def _on_fight_unit_selected_code_chivalric(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        try:
+            army = unit.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "code_chivalric", None) if army is not None else None
+        if mgr is None:
+            return
+        try:
+            mgr.on_unit_selected_to_fight(unit)
+        except Exception:
+            return
+
+    def _on_unit_shooting_resolved_code_chivalric(self, attacker_unit=None, **_kwargs) -> None:
+        if attacker_unit is None:
+            return
+        try:
+            army = attacker_unit.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "code_chivalric", None) if army is not None else None
+        if mgr is None:
+            return
+        try:
+            mgr.on_unit_shooting_resolved(attacker_unit)
+        except Exception:
+            return
+
+    def _on_fight_sequence_complete_code_chivalric(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        try:
+            army = unit.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "code_chivalric", None) if army is not None else None
+        if mgr is None:
+            return
+        try:
+            mgr.on_fight_sequence_complete(unit)
+        except Exception:
+            return
+
+    def _on_model_destroyed_code_chivalric(self, target_model=None, **_kwargs) -> None:
+        if target_model is None:
+            return
+        for player in list(getattr(self, "players", []) or []):
+            army = getattr(player, "get_army", lambda: None)()
+            mgr = getattr(army, "code_chivalric", None) if army is not None else None
+            if mgr is None:
+                continue
+            try:
+                mgr.on_model_destroyed(target_model)
+            except Exception:
+                continue
+
+    def _on_unit_destroyed_code_chivalric(self, unit=None, destroyed_by_unit=None, **_kwargs) -> None:
+        if unit is None or destroyed_by_unit is None:
+            return
+        try:
+            if unit.get_parent_army() == destroyed_by_unit.get_parent_army():
+                return
+        except Exception:
+            return
+        try:
+            army = destroyed_by_unit.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "code_chivalric", None) if army is not None else None
+        if mgr is None:
+            return
+        try:
+            mgr.record_enemy_unit_destroyed()
         except Exception:
             return
 
@@ -1058,6 +1162,53 @@ class Game:
                 pass
         try:
             mgr.maybe_empower_unit_for_trigger(unit, trigger="fight", game=self)
+        except Exception:
+            return
+
+    def _on_phase_start_bondsman(self, player=None, phase=None, **_kwargs) -> None:
+        try:
+            pname = str(getattr(phase, "name", "") or "").strip().upper()
+        except Exception:
+            pname = ""
+        if pname != "FIGHT_PHASE":
+            return
+        for p in list(getattr(self, "players", []) or []):
+            army = getattr(p, "get_army", lambda: None)()
+            mgr = getattr(army, "bondsman", None) if army is not None else None
+            if mgr is None:
+                continue
+            try:
+                mgr.on_fight_phase_start(game=self)
+            except Exception:
+                continue
+
+    def _on_unit_shooting_resolved_bondsman(self, attacker_unit=None, hits_by_target=None, **_kwargs) -> None:
+        if attacker_unit is None:
+            return
+        try:
+            army = attacker_unit.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "bondsman", None) if army is not None else None
+        if mgr is None:
+            return
+        try:
+            mgr.on_unit_shooting_resolved(attacker_unit, hits_by_target, game=self)
+        except Exception:
+            return
+
+    def _on_fight_sequence_complete_bondsman(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        try:
+            army = unit.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "bondsman", None) if army is not None else None
+        if mgr is None:
+            return
+        try:
+            mgr.on_fight_sequence_complete(unit, game=self)
         except Exception:
             return
 
@@ -3536,6 +3687,18 @@ class Game:
         except Exception:
             pass
 
+        # Imperial Knights: Bondsman selection at the start of your Command phase.
+        try:
+            current_player = self.get_current_player()
+            army = getattr(current_player, "get_army", lambda: None)()
+            mgr = getattr(army, "bondsman", None) if army is not None else None
+            if mgr is not None:
+                mgr.on_command_phase_start(game=self, player=current_player)
+                if getattr(self, "event_system", None) is not None:
+                    self.event_system.publish("bondsman_prompt", player=current_player, game=self)
+        except Exception:
+            pass
+
         # Orks: Waaagh! (expires at your next Command phase; prompt to call).
         try:
             current_player = self.get_current_player()
@@ -4212,6 +4375,17 @@ class Game:
         except Exception:
             pass
 
+        # Imperial Knights: Code Chivalric deed completion at end of turn.
+        try:
+            for p in list(getattr(self, "players", []) or []):
+                army = getattr(p, "get_army", lambda: None)()
+                mgr = getattr(army, "code_chivalric", None) if army is not None else None
+                if mgr is None:
+                    continue
+                mgr.check_end_of_turn(game=self, turn_ending_player=turn_ending_player)
+        except Exception:
+            pass
+
         # b) Allow voluntary discard for current player to gain 1CP (UI/AI should call explicitly). Here we do nothing automatically.
 
         # c) If deck runs out, player cannot generate additional secondaries (handled by deck empty check during draws)
@@ -4243,6 +4417,17 @@ class Game:
                     )
                     if added:
                         print(f"🎯 {player.name} scored {added} VP (end of battle round) from Primary: {player.primary_mission.name}")
+
+        # Imperial Knights: Code Chivalric deed completion at end of battle round.
+        try:
+            for p in list(getattr(self, "players", []) or []):
+                army = getattr(p, "get_army", lambda: None)()
+                mgr = getattr(army, "code_chivalric", None) if army is not None else None
+                if mgr is None:
+                    continue
+                mgr.check_end_of_battle_round(game=self, battle_round=self.turn)
+        except Exception:
+            pass
 
         # Chapter Approved: any units still in reserves at the end of battle round 3 are destroyed.
         # `self.turn` is the current battle round number when this hook is invoked.
@@ -5449,6 +5634,14 @@ class Game:
                     print(f"⚔️ Battle-lust: +{battle_lust_bonus} to charge roll (Unbridled Bloodlust active)")
         except Exception:
             pass
+        try:
+            sr = getattr(charging_unit, "special_rules", None)
+            bonus = int(sr.get("code_chivalric_charge_bonus", 0) or 0) if isinstance(sr, dict) else 0
+            if bonus:
+                modified_roll += bonus
+                print(f"⚔️ Code Chivalric: +{bonus} to charge roll")
+        except Exception:
+            pass
 
         # For now, just return the modified roll
         return modified_roll
@@ -6273,6 +6466,25 @@ class Game:
         
         # Mission objectives will be placed during CREATE_BATTLEFIELD phase
         print("✅ Mission framework configured")
+
+        # Imperial Knights: Code Chivalric selection (end of Read Mission Objectives step).
+        try:
+            for player in list(getattr(self, "players", []) or []):
+                if player is None:
+                    continue
+                army = getattr(player, "get_army", lambda: None)()
+                mgr = getattr(army, "code_chivalric", None) if army is not None else None
+                if mgr is None:
+                    continue
+                mgr.on_read_mission_objectives(game=self, player=player)
+                try:
+                    is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                except Exception:
+                    is_human = False
+                if is_human and getattr(self, "event_system", None) is not None:
+                    self.event_system.publish("code_chivalric_prompt", player=player, game=self)
+        except Exception:
+            pass
     
     def execute_create_battlefield_phase(self, mission_name: str = None) -> None:
         """Phase 3: Create Battlefield - Set up map, terrain, deployment zones, and objectives."""

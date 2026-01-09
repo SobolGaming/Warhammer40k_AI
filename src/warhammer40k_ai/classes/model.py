@@ -209,6 +209,51 @@ class Model:
         except Exception:
             return False
 
+    # ---------------- Code Chivalric helpers ----------------
+
+    def grant_code_chivalric_rerolls(self) -> None:
+        if not isinstance(getattr(self, "_temporary_effects", None), dict):
+            self._temporary_effects = {}
+        self._temporary_effects["code_chivalric_rerolls"] = {
+            "hit_remaining": 1,
+            "wound_remaining": 1,
+        }
+
+    def clear_code_chivalric_rerolls(self) -> None:
+        try:
+            eff = getattr(self, "_temporary_effects", None)
+            if isinstance(eff, dict):
+                eff.pop("code_chivalric_rerolls", None)
+        except Exception:
+            pass
+
+    def can_use_code_chivalric_reroll(self, kind: str) -> bool:
+        eff = getattr(self, "_temporary_effects", {}) or {}
+        data = eff.get("code_chivalric_rerolls", {})
+        if not isinstance(data, dict):
+            return False
+        key = "hit_remaining" if str(kind or "").strip().lower() == "hit" else "wound_remaining"
+        try:
+            return int(data.get(key, 0) or 0) > 0
+        except Exception:
+            return False
+
+    def consume_code_chivalric_reroll(self, kind: str) -> bool:
+        eff = getattr(self, "_temporary_effects", {}) or {}
+        data = eff.get("code_chivalric_rerolls", {})
+        if not isinstance(data, dict):
+            return False
+        key = "hit_remaining" if str(kind or "").strip().lower() == "hit" else "wound_remaining"
+        try:
+            remaining = int(data.get(key, 0) or 0)
+        except Exception:
+            remaining = 0
+        if remaining <= 0:
+            return False
+        data[key] = remaining - 1
+        eff["code_chivalric_rerolls"] = data
+        return True
+
     def on_phase_end(self, phase) -> None:
         """Clear temporary effects that expire at end of the provided phase."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

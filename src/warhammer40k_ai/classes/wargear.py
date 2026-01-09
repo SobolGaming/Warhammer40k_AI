@@ -361,6 +361,79 @@ class WargearProfile:
             return 0
         return int(bonus)
 
+    def _bondsman_magaera_bonus_applies(self, attacker: 'Model', target: 'Unit') -> bool:
+        if attacker is None or target is None:
+            return False
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+        except Exception:
+            unit = None
+        if unit is None:
+            return False
+        try:
+            sr = getattr(unit, "special_rules", None)
+        except Exception:
+            sr = None
+        if not isinstance(sr, dict) or not sr.get("bondsman_magaera_bonus"):
+            return False
+        try:
+            if not (self.parent_wargear and self.parent_wargear.is_ranged()):
+                return False
+        except Exception:
+            return False
+        game_map = self._get_game_map_from_model(attacker)
+        if game_map is None:
+            return False
+        try:
+            enemies = list(game_map.get_enemy_units(unit) or [])
+        except Exception:
+            enemies = []
+        if not enemies:
+            return False
+        try:
+            target_root = target.get_attached_unit_root()
+        except Exception:
+            target_root = target
+        target_id = getattr(target_root, "_id", None)
+        closest = None
+        target_dist = None
+        seen = set()
+        for enemy in enemies:
+            try:
+                root = enemy.get_attached_unit_root()
+            except Exception:
+                root = enemy
+            if root is None:
+                continue
+            try:
+                rid = getattr(root, "_id", None) or id(root)
+            except Exception:
+                rid = id(root)
+            if rid in seen:
+                continue
+            seen.add(rid)
+            try:
+                if hasattr(root, "is_alive") and callable(root.is_alive) and not root.is_alive():
+                    continue
+            except Exception:
+                pass
+            try:
+                if hasattr(root, "deployed") and not bool(getattr(root, "deployed", True)):
+                    continue
+            except Exception:
+                pass
+            try:
+                dist = float(game_map.get_distance_between_units(unit, root))
+            except Exception:
+                continue
+            if target_root is root or (target_id and target_id == getattr(root, "_id", None)):
+                target_dist = dist
+            if closest is None or dist < closest:
+                closest = dist
+        if closest is None or target_dist is None:
+            return False
+        return target_dist <= closest + 1e-6
+
     def get_effective_ap(self, attacker: 'Model', target: 'Unit') -> int:
         """Return AP after applying global modifiers like Plunging Fire."""
         from ..utility.modifiers import apply_characteristic_caps
@@ -387,6 +460,16 @@ class WargearProfile:
                 game = getattr(getattr(army, "player", None), "game", None)
                 game_map = getattr(game, "map", None) if game is not None else None
                 if mgr.conqueror_ap_bonus_applies(unit, game=game, game_map=game_map):
+                    ap_val -= 1
+        except Exception:
+            pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_ranged():
+                sr = getattr(attacker.parent_unit, "special_rules", None)
+                bonus = int(sr.get("bondsman_ap_bonus_ranged", 0) or 0) if isinstance(sr, dict) else 0
+                if bonus:
+                    ap_val -= bonus
+                if self._bondsman_magaera_bonus_applies(attacker, target):
                     ap_val -= 1
         except Exception:
             pass
@@ -1228,6 +1311,22 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Bondsman: Crusader's Duty (+1 to hit for ranged attacks) and Warden's Duty (ignores cover).
+        try:
+            unit = attacker.parent_unit
+            sr = getattr(unit, "special_rules", None)
+            if isinstance(sr, dict):
+                is_ranged = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_ranged())
+                if is_ranged and sr.get("bondsman_ranged_hit_bonus"):
+                    bonus = int(sr.get("bondsman_ranged_hit_bonus", 0) or 0)
+                    if bonus:
+                        dice_modifier += bonus
+                        hit_result['modifiers'].append("+1 to hit from Bondsman (Crusader's Duty)")
+                if is_ranged and sr.get("bondsman_ignores_cover_ranged"):
+                    attack_instance["ignores_cover"] = True
+        except Exception:
+            pass
+
         # Damaged profile: subtract N from the Hit roll (stored as negative modifier).
         try:
             dm = int(getattr(attacker.parent_unit, "special_rules", {}).get("damaged_hit_roll_modifier", 0) or 0)
@@ -1428,6 +1527,151 @@ class WargearProfile:
                     if do_reroll:
                         rr = _reroll_hit()
                         hit_result.setdefault("special_effects", []).append("Oath of Moment: re-roll Hit roll")
+                        hit_result["reroll"] = rr
+                        dice_roll = rr
+                        reroll_used = True
+        except Exception:
+            pass
+
+        # Bondsman: Atrapos's Duty re-roll Hit rolls vs TITANIC/TOWERING targets.
+        try:
+            if "reroll" not in hit_result:
+                unit = attacker.parent_unit
+                sr = getattr(unit, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("bondsman_reroll_hit_wound_vs_titanic"):
+                    try:
+                        is_big = bool(getattr(target, "is_titanic", False) or getattr(target, "is_towering", False))
+                    except Exception:
+                        is_big = False
+                    if is_big:
+                        try:
+                            success = (dice_roll != 1) and (self.skill > 0) and (dice_roll >= final_needed)
+                        except Exception:
+                            success = False
+                        do_reroll = False
+                        try:
+                            army = unit.get_parent_army()
+                            game = army.player.game
+                            player = army.player
+                            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                            provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                        except Exception:
+                            is_human = False
+                            provider = None
+                            player = None
+                        if is_human and callable(provider):
+                            try:
+                                do_reroll = bool(provider(
+                                    player=player,
+                                    unit=unit,
+                                    roll_type="hit",
+                                    value=dice_roll,
+                                    dice=None,
+                                    needed=final_needed,
+                                    success=success,
+                                    reason="Bondsman (Atrapos's Duty)",
+                                ))
+                            except Exception:
+                                do_reroll = False
+                        else:
+                            do_reroll = (not success)
+                        if do_reroll:
+                            rr = _reroll_hit()
+                            hit_result.setdefault("special_effects", []).append("Bondsman: re-roll Hit roll (Atrapos's Duty)")
+                            hit_result["reroll"] = rr
+                            dice_roll = rr
+                            reroll_used = True
+        except Exception:
+            pass
+
+        # Bondsman: Gallant's Duty re-roll Hit rolls in melee (optional).
+        try:
+            if "reroll" not in hit_result:
+                is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+                if is_melee:
+                    unit = attacker.parent_unit
+                    sr = getattr(unit, "special_rules", None)
+                    if isinstance(sr, dict) and sr.get("bondsman_reroll_hit_melee"):
+                        try:
+                            success = (dice_roll != 1) and (self.skill > 0) and (dice_roll >= final_needed)
+                        except Exception:
+                            success = False
+                        do_reroll = False
+                        try:
+                            army = unit.get_parent_army()
+                            game = army.player.game
+                            player = army.player
+                            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                            provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                        except Exception:
+                            is_human = False
+                            provider = None
+                            player = None
+                        if is_human and callable(provider):
+                            try:
+                                do_reroll = bool(provider(
+                                    player=player,
+                                    unit=unit,
+                                    roll_type="hit",
+                                    value=dice_roll,
+                                    dice=None,
+                                    needed=final_needed,
+                                    success=success,
+                                    reason="Bondsman (Gallant's Duty)",
+                                ))
+                            except Exception:
+                                do_reroll = False
+                        else:
+                            do_reroll = (not success)
+                        if do_reroll:
+                            rr = _reroll_hit()
+                            hit_result.setdefault("special_effects", []).append("Bondsman: re-roll Hit roll (Gallant's Duty)")
+                            hit_result["reroll"] = rr
+                            dice_roll = rr
+                            reroll_used = True
+        except Exception:
+            pass
+
+        # Code Chivalric: Martial Valour re-roll Hit roll (one per selection).
+        try:
+            if "reroll" not in hit_result:
+                unit = attacker.parent_unit
+                army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "code_chivalric", None) if army is not None else None
+                if mgr is not None and mgr.can_use_reroll(attacker, kind="hit"):
+                    try:
+                        success = (dice_roll != 1) and (self.skill > 0) and (dice_roll >= final_needed)
+                    except Exception:
+                        success = False
+                    do_reroll = False
+                    try:
+                        game = army.player.game
+                        player = army.player
+                        is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                        provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                    except Exception:
+                        is_human = False
+                        provider = None
+                        player = None
+                    if is_human and callable(provider):
+                        try:
+                            do_reroll = bool(provider(
+                                player=player,
+                                unit=unit,
+                                roll_type="hit",
+                                value=dice_roll,
+                                dice=None,
+                                needed=final_needed,
+                                success=success,
+                                reason="Code Chivalric",
+                            ))
+                        except Exception:
+                            do_reroll = False
+                    else:
+                        do_reroll = (not success)
+                    if do_reroll and attacker.consume_code_chivalric_reroll("hit"):
+                        rr = _reroll_hit()
+                        hit_result.setdefault("special_effects", []).append("Code Chivalric: re-roll Hit roll")
                         hit_result["reroll"] = rr
                         dice_roll = rr
                         reroll_used = True
@@ -1674,6 +1918,25 @@ class WargearProfile:
             dark_pacts_lethal = dark_pacts_choice == "LETHAL HITS"
             dark_pacts_sustained = bool(dark_pacts_choice and dark_pacts_choice.startswith("SUSTAINED"))
 
+            bondsman_lethal = False
+            bondsman_sustained = False
+            bondsman_sustained_ranged = False
+            try:
+                unit = getattr(attacker, "parent_unit", None)
+                sr = getattr(unit, "special_rules", None)
+                if isinstance(sr, dict):
+                    bondsman_lethal = bool(sr.get("bondsman_lethal_hits"))
+                    bondsman_sustained = bool(sr.get("bondsman_sustained_hits"))
+                    bondsman_sustained_ranged = bool(sr.get("bondsman_sustained_hits_ranged"))
+                    if bondsman_sustained_ranged:
+                        bondsman_sustained_ranged = bool(
+                            getattr(self.parent_wargear, "is_ranged", lambda: False)()
+                        )
+            except Exception:
+                bondsman_lethal = False
+                bondsman_sustained = False
+                bondsman_sustained_ranged = False
+
             martial_katah_lethal = False
             martial_katah_sustained = False
             try:
@@ -1693,11 +1956,11 @@ class WargearProfile:
                 martial_katah_lethal = False
                 martial_katah_sustained = False
 
-            if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal or martial_katah_lethal:
+            if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal or martial_katah_lethal or bondsman_lethal:
                 hit_result['special_effects'].append("Lethal Hits")
                 attack_instance['lethal_hit'] = True
             # For Sustained Hits, do not override an existing Sustained Hits X on the weapon.
-            if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained:
+            if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged:
                 # Support Sustained Hits X / Sustained Hits D3 / etc. Roll per critical hit.
                 if self.is_sustained_hits():
                     try:
@@ -1716,6 +1979,8 @@ class WargearProfile:
                         label += " [Dark Pacts]"
                     elif martial_katah_sustained:
                         label += " [Martial Ka'tah]"
+                    elif bondsman_sustained or bondsman_sustained_ranged:
+                        label += " [Bondsman]"
                     hit_result['special_effects'].append(label)
                     attack_instance['sustained_hit'] = 1
             return hit_result
@@ -1795,6 +2060,14 @@ class WargearProfile:
                     wound_result.setdefault("modifiers", []).append(f"+{s_bonus}S from Power from Pain (melee)")
         except Exception:
             pass
+        # Bondsman: Magaera's Duty (+1S vs closest target for ranged attacks).
+        try:
+            if self._bondsman_magaera_bonus_applies(attacker, target):
+                if isinstance(strength, int):
+                    strength = strength + 1
+                    wound_result.setdefault("modifiers", []).append("+1S from Bondsman (Magaera's Duty)")
+        except Exception:
+            pass
 
         # Attached units can still be valid targets even if bodyguard models are gone (leaders remain)
         try:
@@ -1845,11 +2118,21 @@ class WargearProfile:
                 is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
             except Exception:
                 is_melee = False
-            if is_melee and self.is_lance():
+            bondsman_lance = False
+            try:
+                sr = getattr(attacker.parent_unit, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("bondsman_lance"):
+                    bondsman_lance = True
+            except Exception:
+                bondsman_lance = False
+            if is_melee and (self.is_lance() or bondsman_lance):
                 charged = bool(getattr(attacker.parent_unit.round_state, "charged_this_round", False))
                 if charged:
                     dice_modifier += 1
-                    wound_result['modifiers'].append("+1 to wound from Lance (charged)")
+                    if bondsman_lance and not self.is_lance():
+                        wound_result['modifiers'].append("+1 to wound from Lance (Bondsman)")
+                    else:
+                        wound_result['modifiers'].append("+1 to wound from Lance (charged)")
         except Exception:
             pass
 
@@ -2006,6 +2289,227 @@ class WargearProfile:
                         rr = _reroll_wound()
                         wound_result.setdefault("special_effects", []).append("Seductive Gambit: re-roll Wound roll of 1")
                         wound_result["reroll_of_one"] = 1
+                        wound_result["reroll"] = rr
+                        dice_roll = rr
+                        reroll_used = True
+        except Exception:
+            pass
+
+        # Bondsman: Atrapos's Duty re-roll Wound rolls vs TITANIC/TOWERING targets.
+        try:
+            if "reroll" not in wound_result:
+                unit = attacker.parent_unit
+                sr = getattr(unit, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("bondsman_reroll_hit_wound_vs_titanic"):
+                    try:
+                        is_big = bool(getattr(target, "is_titanic", False) or getattr(target, "is_towering", False))
+                    except Exception:
+                        is_big = False
+                    if is_big:
+                        needed = 0
+                        try:
+                            s_val = strength
+                            t_val = target_toughness
+                            if isinstance(s_val, int) and isinstance(t_val, int):
+                                if s_val >= 2 * t_val:
+                                    needed = 2
+                                elif s_val > t_val:
+                                    needed = 3
+                                elif s_val == t_val:
+                                    needed = 4
+                                elif s_val * 2 <= t_val:
+                                    needed = 6
+                                else:
+                                    needed = 5
+                        except Exception:
+                            needed = 0
+                        final_needed = needed
+                        try:
+                            final_needed = int(min(max(int(final_needed) - int(dice_modifier), 2), 6))
+                        except Exception:
+                            pass
+                        try:
+                            success = (dice_roll != 1) and (bool(final_needed) and dice_roll >= int(final_needed))
+                        except Exception:
+                            success = False
+                        do_reroll = False
+                        try:
+                            army = unit.get_parent_army()
+                            game = army.player.game
+                            player = army.player
+                            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                            provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                        except Exception:
+                            is_human = False
+                            provider = None
+                            player = None
+                        if is_human and callable(provider):
+                            try:
+                                do_reroll = bool(provider(
+                                    player=player,
+                                    unit=unit,
+                                    roll_type="wound",
+                                    value=dice_roll,
+                                    dice=None,
+                                    needed=final_needed,
+                                    success=success,
+                                    reason="Bondsman (Atrapos's Duty)",
+                                ))
+                            except Exception:
+                                do_reroll = False
+                        else:
+                            do_reroll = (not success)
+                        if do_reroll:
+                            rr = _reroll_wound()
+                            wound_result.setdefault("special_effects", []).append("Bondsman: re-roll Wound roll (Atrapos's Duty)")
+                            wound_result["reroll"] = rr
+                            dice_roll = rr
+                            reroll_used = True
+        except Exception:
+            pass
+
+        # Bondsman: Mentor re-roll Wound rolls vs this model's quarry.
+        try:
+            if "reroll" not in wound_result:
+                unit = attacker.parent_unit
+                sr = getattr(unit, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("bondsman_reroll_wound_vs_quarry"):
+                    quarry_ids = getattr(unit, "_bondsman_quarry_ids", None)
+                    if not quarry_ids:
+                        quarry_ids = getattr(unit, "_monarch_of_the_hunt_quarry_ids", None)
+                    if quarry_ids:
+                        try:
+                            tid = getattr(target, "_id", None)
+                            rid = getattr(target.get_attached_unit_root(), "_id", None)
+                        except Exception:
+                            tid = getattr(target, "_id", None)
+                            rid = None
+                        is_quarry = (tid in quarry_ids) or (rid in quarry_ids)
+                        if is_quarry:
+                            needed = 0
+                            try:
+                                s_val = strength
+                                t_val = target_toughness
+                                if isinstance(s_val, int) and isinstance(t_val, int):
+                                    if s_val >= 2 * t_val:
+                                        needed = 2
+                                    elif s_val > t_val:
+                                        needed = 3
+                                    elif s_val == t_val:
+                                        needed = 4
+                                    elif s_val * 2 <= t_val:
+                                        needed = 6
+                                    else:
+                                        needed = 5
+                            except Exception:
+                                needed = 0
+                            final_needed = needed
+                            try:
+                                final_needed = int(min(max(int(final_needed) - int(dice_modifier), 2), 6))
+                            except Exception:
+                                pass
+                            try:
+                                success = (dice_roll != 1) and (bool(final_needed) and dice_roll >= int(final_needed))
+                            except Exception:
+                                success = False
+                            do_reroll = False
+                            try:
+                                army = unit.get_parent_army()
+                                game = army.player.game
+                                player = army.player
+                                is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                                provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                            except Exception:
+                                is_human = False
+                                provider = None
+                                player = None
+                            if is_human and callable(provider):
+                                try:
+                                    do_reroll = bool(provider(
+                                        player=player,
+                                        unit=unit,
+                                        roll_type="wound",
+                                        value=dice_roll,
+                                        dice=None,
+                                        needed=final_needed,
+                                        success=success,
+                                        reason="Bondsman (Mentor)",
+                                    ))
+                                except Exception:
+                                    do_reroll = False
+                            else:
+                                do_reroll = (not success)
+                            if do_reroll:
+                                rr = _reroll_wound()
+                                wound_result.setdefault("special_effects", []).append("Bondsman: re-roll Wound roll (Mentor)")
+                                wound_result["reroll"] = rr
+                                dice_roll = rr
+                                reroll_used = True
+        except Exception:
+            pass
+
+        # Code Chivalric: Martial Valour re-roll Wound roll (one per selection).
+        try:
+            if "reroll" not in wound_result:
+                unit = attacker.parent_unit
+                army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "code_chivalric", None) if army is not None else None
+                if mgr is not None and mgr.can_use_reroll(attacker, kind="wound"):
+                    needed = 0
+                    try:
+                        s_val = strength
+                        t_val = target_toughness
+                        if isinstance(s_val, int) and isinstance(t_val, int):
+                            if s_val >= 2 * t_val:
+                                needed = 2
+                            elif s_val > t_val:
+                                needed = 3
+                            elif s_val == t_val:
+                                needed = 4
+                            elif s_val * 2 <= t_val:
+                                needed = 6
+                            else:
+                                needed = 5
+                    except Exception:
+                        needed = 0
+                    final_needed = needed
+                    try:
+                        final_needed = int(min(max(int(final_needed) - int(dice_modifier), 2), 6))
+                    except Exception:
+                        pass
+                    try:
+                        success = (dice_roll != 1) and (bool(final_needed) and dice_roll >= int(final_needed))
+                    except Exception:
+                        success = False
+                    do_reroll = False
+                    try:
+                        game = army.player.game
+                        player = army.player
+                        is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                        provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                    except Exception:
+                        is_human = False
+                        provider = None
+                        player = None
+                    if is_human and callable(provider):
+                        try:
+                            do_reroll = bool(provider(
+                                player=player,
+                                unit=unit,
+                                roll_type="wound",
+                                value=dice_roll,
+                                dice=None,
+                                needed=final_needed,
+                                success=success,
+                                reason="Code Chivalric",
+                            ))
+                        except Exception:
+                            do_reroll = False
+                    else:
+                        do_reroll = (not success)
+                    if do_reroll and attacker.consume_code_chivalric_reroll("wound"):
+                        rr = _reroll_wound()
+                        wound_result.setdefault("special_effects", []).append("Code Chivalric: re-roll Wound roll")
                         wound_result["reroll"] = rr
                         dice_roll = rr
                         reroll_used = True
@@ -2649,6 +3153,14 @@ class WargearProfile:
                 damage_mods.append(Modifier(ModifierOp.SUB, int(red), source="enhancement:reduce_damage_taken"))
         except Exception:
             pass
+        # Bondsman: Defender's Duty reduces damage by 1.
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            red = int(getattr(t_unit, "special_rules", {}).get("bondsman_damage_reduction", 0) or 0)
+            if red:
+                damage_mods.append(Modifier(ModifierOp.SUB, int(red), source="bondsman:reduce_damage_taken"))
+        except Exception:
+            pass
 
         # Apply modifiers unless these are "mortal wounds in addition" (not currently used, but Core Rules require it).
         if attack_instance.get("mortal_wound", False) and attack_instance.get("mortal_wound_in_addition", False):
@@ -2670,6 +3182,12 @@ class WargearProfile:
             red = int(getattr(getattr(target_model, "parent_unit", None), "special_rules", {}).get("enhancement_reduce_damage_taken", 0) or 0)
             if red and any(m.op == ModifierOp.SUB for m in damage_mods):
                 damage_result['special_effects'].append(f"Enhancement -{red}D taken")
+        except Exception:
+            pass
+        try:
+            red = int(getattr(getattr(target_model, "parent_unit", None), "special_rules", {}).get("bondsman_damage_reduction", 0) or 0)
+            if red and any(m.op == ModifierOp.SUB and "bondsman" in str(getattr(m, "source", "")) for m in damage_mods):
+                damage_result['special_effects'].append(f"Bondsman -{red}D taken")
         except Exception:
             pass
         

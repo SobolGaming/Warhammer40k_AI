@@ -285,6 +285,20 @@ class Army:
         except Exception:
             self.harbingers_of_dread = None
 
+        # Imperial Knights: Code Chivalric (safe to attach, no-op if not applicable).
+        try:
+            from .code_chivalric import CodeChivalricManager
+            self.code_chivalric = CodeChivalricManager(self)
+        except Exception:
+            self.code_chivalric = None
+
+        # Imperial Knights: Bondsman (safe to attach, no-op if not applicable).
+        try:
+            from .bondsman import BondsmanManager
+            self.bondsman = BondsmanManager(self)
+        except Exception:
+            self.bondsman = None
+
         # Thousand Sons: Cabal of Sorcerers (safe to attach, no-op if not applicable).
         try:
             from .cabal_of_sorcerers import CabalOfSorcerersManager
@@ -1145,6 +1159,66 @@ class Army:
                 f"Dreadblades: too many WAR DOG models included ({war_dog_models}); maximum is 3."
             )
 
+    def _validate_freeblades(self) -> None:
+        fid = str(getattr(self, "faction_id", "") or "").strip().upper()
+        if fid == "QI":
+            return
+
+        def _has_keyword(unit, keyword: str) -> bool:
+            if unit is None:
+                return False
+            try:
+                return bool(unit.has_any_keyword(keyword))
+            except Exception:
+                return False
+
+        imperial_knight_units = [
+            u for u in list(getattr(self, "units", []) or [])
+            if _has_keyword(u, "IMPERIAL KNIGHTS")
+        ]
+        if not imperial_knight_units:
+            return
+
+        for unit in list(getattr(self, "units", []) or []):
+            if not _has_keyword(unit, "IMPERIUM"):
+                raise ArmyValidationError(
+                    "Freeblades: all models in the army must have the IMPERIUM keyword to include Imperial Knights allies."
+                )
+
+        titanic_models = 0
+        armiger_models = 0
+
+        for unit in imperial_knight_units:
+            if getattr(unit, "is_warlord", False):
+                raise ArmyValidationError(
+                    f"Freeblades: Imperial Knights unit '{getattr(unit, 'name', 'Unknown')}' cannot be your Warlord."
+                )
+            if getattr(unit, "enhancement", None) is not None:
+                raise ArmyValidationError(
+                    f"Freeblades: Imperial Knights unit '{getattr(unit, 'name', 'Unknown')}' cannot take Enhancements."
+                )
+
+            model_count = len(getattr(unit, "models", []) or [])
+            if _has_keyword(unit, "TITANIC"):
+                titanic_models += model_count
+            elif _has_keyword(unit, "ARMIGER"):
+                armiger_models += model_count
+            else:
+                raise ArmyValidationError(
+                    f"Freeblades: Imperial Knights unit '{getattr(unit, 'name', 'Unknown')}' is neither TITANIC nor ARMIGER."
+                )
+
+        if titanic_models and armiger_models:
+            raise ArmyValidationError("Freeblades: cannot include both TITANIC and ARMIGER models.")
+        if titanic_models > 1:
+            raise ArmyValidationError(
+                f"Freeblades: too many TITANIC models included ({titanic_models}); maximum is 1."
+            )
+        if armiger_models > 3:
+            raise ArmyValidationError(
+                f"Freeblades: too many ARMIGER models included ({armiger_models}); maximum is 3."
+            )
+
     def _cult_of_dark_gods_points_cap(self) -> int:
         try:
             limit = int(self.points_limit or 0)
@@ -1206,6 +1280,8 @@ class Army:
             )
 
     def validate_allies(self):
+        # Imperial Knights: Freeblades.
+        self._validate_freeblades()
         # Imperial Agents: Assigned Agents.
         self._validate_assigned_agents()
         # Drukhari: Corsairs and Travelling Players.
@@ -1616,6 +1692,9 @@ class Army:
             except Exception:
                 game = None
             mgr.on_battle_round_start(int(battle_round), game=game)
+        mgr = getattr(self, "code_chivalric", None)
+        if mgr is not None:
+            mgr.on_battle_round_start(int(battle_round))
         mgr = getattr(self, "voice_of_command", None)
         if mgr is not None:
             try:
