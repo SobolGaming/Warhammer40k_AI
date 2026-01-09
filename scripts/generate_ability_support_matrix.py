@@ -111,60 +111,73 @@ def _desc_block(rules_text: str, engine_text: str) -> str:
     body = f"<strong>Rules:</strong> {rules}<br/><strong>Engine:</strong> {engine}"
     return _details("Description", body)
 
+def _engine_block(engine_text: str) -> str:
+    engine = _escape(engine_text or "-")
+    body = f"<strong>Engine:</strong> {engine}"
+    return _details("Description", body)
+
 def _ability_support_overrides() -> Dict[str, Tuple[str, str]]:
     return {
-        "acts of faith": ("Supported", "Miracle dice pool with per-phase Act usage (ActsOfFaithManager)."),
-        "martial ka tah": ("Supported", "Fight-phase Ka'tah selection with Lethal/Sustained hooks."),
+        "acts of faith": ("Supported", "Miracle dice pool with per-phase Act usage and substitution tracking."),
+        "martial ka tah": ("Supported", "Fight-phase Ka'tah selection with Lethal/Sustained hit hooks."),
         "doctrina imperatives": ("Supported", "Round-based imperatives with WS/BS/AP/heavy/assault modifiers."),
-        "voice of command": ("Supported", "Orders issued in Command phase with stat modifiers."),
-        "gate of infinity": ("Supported", "Teleporting eligible units with placement checks."),
-        "assigned agents": ("Supported", "Allied unit limits/validation for Imperial Agents."),
+        "voice of command": ("Supported", "Order issuing in Command phase with stat modifiers."),
+        "gate of infinity": ("Supported", "Teleport eligible units with placement validation."),
+        "assigned agents": ("Supported", "Imperial Agents ally caps enforced by battle size."),
         "code chivalric": ("Supported", "Deed/Quality tracking with on-roll effects."),
-        "bondsman": ("Supported", "Bondsman ability effects applied to Armigers."),
+        "bondsman": ("Supported", "Bondsman buffs applied to Armiger units."),
         "super heavy walker": ("Partial", "Terrain traversal handling only."),
         "freeblades": ("Supported", "Imperial Knights ally and detachment restrictions enforced."),
-        "battle focus": ("Supported", "Token system + maneuvers (BattleFocusManager)."),
-        "disparate paths": ("Supported", "Allies validation for Harlequins/Ynnari."),
-        "power from pain": ("Partial", "Pain tokens and select abilities only."),
-        "corsairs and travelling players": ("Supported", "Corsairs/Travelling Players ally limits."),
+        "battle focus": ("Supported", "Token system + maneuver selection with per-phase limits."),
+        "disparate paths": ("Supported", "Harlequin/Ynnari ally validation in mustering."),
+        "power from pain": ("Partial", "Pain token engine with partial ability coverage."),
+        "corsairs and travelling players": ("Supported", "Corsairs/Travelling Players ally limits enforced."),
         "cult ambush": ("Supported", "Resurgence points, ambush markers, reinforcements."),
         "prioritised efficiency": ("Supported", "Yield points + mode tracking with objective checks."),
-        "reanimation protocols": ("Supported", "Command-phase reanimation for Necron units."),
-        "waaagh": ("Supported", "Once-per-battle Waaagh effects on melee/advance/charge/ward."),
+        "reanimation protocols": ("Supported", "Command-phase reanimation sequencing for Necrons."),
+        "waaagh": ("Supported", "Once-per-battle Waaagh effects tracked and applied."),
         "for the greater good": ("Supported", "Observer/Guided targeting with markerlight bonuses."),
         "synapse": ("Supported", "Synapse aura checks via distance rules."),
         "shadow in the warp": ("Supported", "Once-per-battle armywide Battle-shock trigger."),
         "the shadow of chaos": ("Supported", "Shadow zones + manifestations/terror handling."),
-        "daemonic pact": ("Supported", "Allies validation for Chaos Daemons."),
+        "daemonic pact": ("Supported", "Chaos Daemon ally validation with caps and keyword rules."),
         "harbingers of dread": ("Supported", "Dread ability selection and aura checks."),
-        "dreadblades": ("Supported", "Allies validation and model caps for Chaos Knights."),
-        "dark pacts": ("Supported", "Dark Pacts with lethal/sustained hooks."),
-        "cult of the dark gods": ("Supported", "Cult allies caps and restrictions."),
+        "dreadblades": ("Supported", "Chaos Knights ally validation and model caps."),
+        "dark pacts": ("Supported", "Dark Pacts selection with lethal/sustained hooks."),
+        "cult of the dark gods": ("Supported", "Cult ally points caps and keyword adjustments."),
         "nurgle s gift aura": ("Supported", "Contagion range + plague effects."),
-        "pact of decay": ("Supported", "Army faction restrictions for Pact of Decay."),
-        "thrill seekers": ("Supported", "EC rule hooks for critical hits and speed bonuses."),
-        "pact of excess": ("Supported", "Army faction restrictions for Pact of Excess."),
+        "pact of decay": ("Supported", "Army faction restriction enforced during validation."),
+        "thrill seekers": ("Supported", "EC core rule hooks for crits and movement bonuses."),
+        "pact of excess": ("Supported", "Army faction restriction enforced during validation."),
         "cabal of sorcerers": ("Supported", "Cabal rituals and warp charge checks."),
-        "pact of sorcery": ("Supported", "Army faction restrictions for Pact of Sorcery."),
+        "pact of sorcery": ("Supported", "Army faction restriction enforced during validation."),
         "blessings of khorne": ("Supported", "Blessings dice engine + effects."),
-        "pact of blood": ("Supported", "Army faction restrictions for Pact of Blood."),
+        "pact of blood": ("Supported", "Army faction restriction enforced during validation."),
         "oath of moment": ("Supported", "Target selection + hit/wound bonuses."),
         "templar vows": ("Supported", "Vow selection with combat/objective effects."),
         "space marine chapters": ("Supported", "Chapter keyword restrictions and unit bans."),
         "deathwatch": ("Supported", "Deathwatch-only chapter restrictions."),
-        "leader": ("Supported", "Attached units, wound allocation, and detachment of leaders."),
-        "deep strike": ("Supported", "Reserves placement rule support."),
-        "feel no pain": ("Supported", "Feel No Pain roll handling in damage resolution."),
-        "fights first": ("Supported", "Fight phase sequencing adjustments."),
-        "fight on death": ("Supported", "Death-triggered fight resolution."),
-        "shoot on death": ("Supported", "Death-triggered shooting resolution."),
-        "firing deck": ("Supported", "Transport fire deck shooting support."),
-        "infiltrators": ("Supported", "Forward deploy placement rules."),
-        "lone operative": ("Supported", "Targeting restriction at range."),
-        "scouts": ("Supported", "Scout move pre-game."),
-        "stealth": ("Supported", "Hit modifiers for attackers."),
-        "deadly demise": ("Supported", "Explosion damage on destruction."),
+        "leader": ("Supported", "Attach Leaders during battle formations; protect Characters until Bodyguard is gone."),
+        "deep strike": ("Supported", "Reserves placement in Reinforcements step; enforces >9\" distance."),
+        "feel no pain": ("Supported", "Post-damage roll to ignore wounds, including mortals."),
+        "fights first": ("Supported", "Fight phase sequencing uses Fights First step."),
+        "fight on death": ("Supported", "Destroyed units can fight after attacker resolves."),
+        "shoot on death": ("Supported", "Destroyed units can shoot after attacker resolves."),
+        "firing deck": ("Supported", "Transports fire with selected embarked weapons; marks passengers as shot."),
+        "infiltrators": ("Supported", "Forward deploy placement >9\" from enemy zone/models."),
+        "lone operative": ("Supported", "Ranged targeting blocked beyond 12\" when not Attached."),
+        "scouts": ("Supported", "Pre-game Scout move, including transport use when applicable."),
+        "stealth": ("Supported", "Apply -1 to hit vs ranged attacks."),
+        "deadly demise": ("Supported", "On destruction, roll 6+ to deal mortals within 6\"."),
         "hover": ("Not implemented", "No hover-specific handling."),
+        "quicksilver grace": ("Supported", "Mercurial Host: reroll Advance rolls for eligible units."),
+        "exquisite swordsmanship": ("Supported", "Peerless Bladesmen: on charge choose Lethal or Sustained for melee."),
+        "mechanised murder": ("Supported", "Rapid Evisceration: reroll Hit/Wound rolls of 1 for eligible units."),
+        "daemonic empowerment": ("Supported", "Carnival of Excess: empowered units gain Sustained Hits."),
+        "pledges to the dark prince": ("Supported", "Coterie pledges tracked per round; pact points unlock bonuses."),
+        "internal rivalries": ("Supported", "Slaanesh's Chosen: ignore negative Move/Advance/Charge; Favoured reroll Wounds."),
+        "sensational performance": ("Supported", "Court of the Phoenician: optional +1 S/AP on charge."),
+        "master of the pageant": ("Supported", "Court of the Phoenician: once per round -1 CP stratagem cost."),
     }
 
 
@@ -307,7 +320,7 @@ def _extract_restrictions(desc_html: str) -> List[str]:
 def _row(cells: Sequence[str], status: str) -> str:
     color = _status_color(status)
     tds = "".join(f"<td>{c}</td>" for c in cells)
-    return f"<tr style=\"background-color:{color}\">{tds}</tr>"
+    return f"<tr bgcolor=\"{color}\">{tds}</tr>"
 
 
 def _table(headers: Sequence[str], rows: Sequence[Tuple[Sequence[str], str]]) -> str:
@@ -458,6 +471,59 @@ def _engine_notes(status: str, notes: str) -> str:
     return "No effect logic wired."
 
 
+def _restriction_rule_and_engine(name: str, abilities: List[dict], faction_id: Optional[str]) -> Tuple[str, str]:
+    key = _norm(name)
+    ability = _ability_entry_by_name(abilities, name, faction_id=faction_id)
+    desc = _strip_html(ability.get("description", "")) if ability else ""
+    pact_match = re.search(r"cannot select\s+(.+?)\s+as your army faction", desc, flags=re.IGNORECASE)
+    if pact_match:
+        forbidden = pact_match.group(1).strip().strip(".")
+        return (
+            f"Army Faction cannot be {forbidden}.",
+            "Validated in army detachment restrictions.",
+        )
+    rules = {
+        "freeblades": (
+            "Imperial Knights allies only; army must be IMPERIUM; allied Knights cannot be Warlord or take Enhancements; "
+            "max 1 TITANIC or 3 ARMIGER, and cannot mix both.",
+            "Validated in Army._validate_freeblades.",
+        ),
+        "disparate paths": (
+            "Allows base faction plus HARLEQUINS/YNNARI; other faction keywords are rejected.",
+            "Validated in Army.validate_allies.",
+        ),
+        "corsairs and travelling players": (
+            "Allows DRUKHARI plus HARLEQUINS/ANHRATHE; allied units cannot be Warlord or take Enhancements; "
+            "points cap enforced by battle size.",
+            "Validated in Army._validate_corsairs_and_travelling_players.",
+        ),
+        "daemonic pact": (
+            "LEGIONES DAEMONICA allies allowed only in CSM/Chaos Knights; allies cannot be Warlord or take Enhancements; "
+            "points cap enforced and god non-Battleline cannot exceed Battleline.",
+            "Validated in Army._validate_daemonic_pact.",
+        ),
+        "dreadblades": (
+            "Chaos Knights allies: only TITANIC or WAR DOG; cannot mix; max 1 TITANIC or 3 WAR DOG.",
+            "Validated in Army.validate_dreadblades.",
+        ),
+        "cult of the dark gods": (
+            "Cult ally points cap enforced; cult units forced to Heretic Astartes keywords.",
+            "Validated in Army.validate_cult_of_dark_gods.",
+        ),
+        "space marine chapters": (
+            "All Adeptus Astartes units must share a single Chapter keyword; mixed chapters disallowed.",
+            "Validated in Army.validate_space_marine_chapters.",
+        ),
+        "deathwatch": (
+            "Deathwatch armies cannot include non-Deathwatch Astartes or banned units; AoI Deathwatch excluded.",
+            "Validated in Army.validate_space_marine_chapters.",
+        ),
+    }
+    if key in rules:
+        return rules[key]
+    return (desc or name, "Validated in army restrictions.")
+
+
 def _build_matrix() -> str:
     abilities = _read_json(os.path.join(WAHA_DIR, "Abilities.json"))
     det_abilities_rows = _read_json(os.path.join(WAHA_DIR, "Detachment_abilities.json"))
@@ -513,6 +579,14 @@ def _build_matrix() -> str:
     lines.append("")
     lines.append("Generated from `wahapedia_data/*.json` using `scripts/generate_ability_support_matrix.py`.")
     lines.append("")
+    lines.append("## Legend")
+    legend_rows = [
+        (["Green", "Implemented in engine."], "Supported"),
+        (["Yellow", "Partially implemented in engine."], "Partial"),
+        (["Red", "Not implemented."], "Not implemented"),
+    ]
+    lines.append(_table(["Color", "Meaning"], legend_rows))
+    lines.append("")
 
     # ---------------- Core section ----------------
     core_abilities = [a for a in abilities if not a.get("faction_id")]
@@ -528,13 +602,12 @@ def _build_matrix() -> str:
             (
                 [
                     _escape(name),
-                    _escape(status),
-                    _desc_block(_strip_html(desc), _engine_notes(status, notes)),
+                    _engine_block(_engine_notes(status, notes)),
                 ],
                 status,
             )
         )
-    core_table = _table(["Ability", "Supported", "Description"], core_rows)
+    core_table = _table(["Ability", "Description"], core_rows)
 
     core_strats = []
     for s in stratagems:
@@ -576,14 +649,13 @@ def _build_matrix() -> str:
                     _escape(s.get("cp_cost", "")),
                     _escape(s.get("turn", "")),
                     _escape(s.get("phase", "")),
-                    _escape(status),
                     _escape(notes),
                 ],
                 status,
             )
         )
     core_strat_table = _table(
-        ["Stratagem", "ID", "Type", "CP", "Turn", "Phase", "Status", "Notes"],
+        ["Stratagem", "ID", "Type", "CP", "Turn", "Phase", "Notes"],
         core_strat_rows,
     )
 
@@ -619,7 +691,6 @@ def _build_matrix() -> str:
                 (
                     [
                         _escape(rule_name),
-                        _escape(status),
                         _desc_block(_strip_html(desc), _engine_notes(status, notes)),
                     ],
                     status,
@@ -627,27 +698,27 @@ def _build_matrix() -> str:
             )
         if army_rule_rows:
             faction_body.append("### Army Rules")
-            faction_body.append(_table(["Army Rule", "Supported", "Description"], army_rule_rows))
+            faction_body.append(_table(["Army Rule", "Description"], army_rule_rows))
             faction_body.append("")
 
         # Mustering restrictions
         restriction_rows = []
         for restriction in list(meta.get("restrictions", []) or []):
             status, notes = _classify_ability(restriction, "")
+            rules_text, engine_text = _restriction_rule_and_engine(restriction, abilities, faction_id)
             faction_items.append((status, restriction))
             restriction_rows.append(
                 (
                     [
                         _escape(restriction),
-                        _escape(status),
-                        _desc_block(_strip_html(restriction), _engine_notes(status, notes)),
+                        _desc_block(rules_text, engine_text or _engine_notes(status, notes)),
                     ],
                     status,
                 )
             )
         if restriction_rows:
             faction_body.append("### Mustering Restrictions")
-            faction_body.append(_table(["Restriction", "Supported", "Description"], restriction_rows))
+            faction_body.append(_table(["Restriction", "Description"], restriction_rows))
             faction_body.append("")
 
         # Detachments
@@ -676,7 +747,6 @@ def _build_matrix() -> str:
                         (
                             [
                                 _escape(name),
-                                _escape(status),
                                 _desc_block(_strip_html(desc), _engine_notes(status, notes)),
                             ],
                             status,
@@ -685,7 +755,7 @@ def _build_matrix() -> str:
                     det_restrictions.extend(_extract_restrictions(desc))
                 if det_ability_rows:
                     det_body.append("**Detachment Abilities**")
-                    det_body.append(_table(["Ability", "Supported", "Description"], det_ability_rows))
+                    det_body.append(_table(["Ability", "Description"], det_ability_rows))
                     det_body.append("")
 
                 det_restrictions = sorted({r for r in det_restrictions if r}, key=str.lower)
@@ -693,19 +763,19 @@ def _build_matrix() -> str:
                     det_restriction_rows = []
                     for restriction in det_restrictions:
                         status, notes = _classify_ability(restriction, "")
+                        rules_text, engine_text = _restriction_rule_and_engine(restriction, abilities, faction_id)
                         faction_items.append((status, restriction))
                         det_restriction_rows.append(
                             (
                                 [
                                     _escape(restriction),
-                                    _escape(status),
-                                    _desc_block(_strip_html(restriction), _engine_notes(status, notes)),
+                                    _desc_block(rules_text, engine_text or _engine_notes(status, notes)),
                                 ],
                                 status,
                             )
                         )
                     det_body.append("**Detachment Restrictions**")
-                    det_body.append(_table(["Restriction", "Supported", "Description"], det_restriction_rows))
+                    det_body.append(_table(["Restriction", "Description"], det_restriction_rows))
                     det_body.append("")
 
                 # Enhancements
@@ -721,14 +791,13 @@ def _build_matrix() -> str:
                             (
                                 [
                                     _escape(name),
-                                    _escape(status),
                                     _desc_block(_strip_html(desc), _engine_notes(status, notes)),
                                 ],
                                 status,
                             )
                         )
                     det_body.append("**Enhancements**")
-                    det_body.append(_table(["Enhancement", "Supported", "Description"], enh_rows))
+                    det_body.append(_table(["Enhancement", "Description"], enh_rows))
                     det_body.append("")
 
                 # Stratagems
@@ -747,7 +816,6 @@ def _build_matrix() -> str:
                                     _escape(s.get("cp_cost", "")),
                                     _escape(s.get("turn", "")),
                                     _escape(s.get("phase", "")),
-                                    _escape(status),
                                     _escape(notes),
                                 ],
                                 status,
@@ -756,7 +824,7 @@ def _build_matrix() -> str:
                     det_body.append("**Stratagems**")
                     det_body.append(
                         _table(
-                            ["Stratagem", "ID", "Type", "CP", "Turn", "Phase", "Status", "Notes"],
+                            ["Stratagem", "ID", "Type", "CP", "Turn", "Phase", "Notes"],
                             strat_rows,
                         )
                     )
@@ -783,14 +851,11 @@ def _build_matrix() -> str:
             desc = entry.get("description", "") or ""
             status, notes = _classify_ability(name, desc)
             faction_items.append((status, name))
-            if not _status_is_supported(status):
-                continue
             units = _collect_units_for_ability(ability_id, ds_abilities_rows, ds_map, faction_id=faction_id)
             ds_ability_rows.append(
                 (
                     [
                         _escape(name),
-                        _escape(status),
                         _format_units(units),
                         _desc_block(_strip_html(desc), _engine_notes(status, notes)),
                     ],
@@ -799,7 +864,7 @@ def _build_matrix() -> str:
             )
         if ds_ability_rows:
             faction_body.append("### Datasheet Abilities")
-            faction_body.append(_table(["Ability", "Supported", "Units", "Description"], ds_ability_rows))
+            faction_body.append(_table(["Ability", "Units", "Description"], ds_ability_rows))
             faction_body.append("")
 
         supported, total = _summarize_section_count(faction_items)

@@ -25,7 +25,7 @@ pip3 install -e .
 ```bash
 mkdir wahapedia_data
 cd scripts
-python3 -m get_datasheets -f -c -o ../wahapedia_data -s ../wahapedia_data
+python3 -m get_wahapedia_data -f -c -o ../wahapedia_data -s ../wahapedia_data
 cd ..
 ```
 
