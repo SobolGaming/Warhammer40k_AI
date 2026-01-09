@@ -86,6 +86,14 @@ def _status_color(status: str) -> str:
     key = _norm(status)
     return STATUS_COLORS.get(key, "#fdecea")
 
+def _status_icon(status: str) -> str:
+    key = _norm(status)
+    if key in ("supported", "implemented"):
+        return ":green_square:"
+    if key == "partial":
+        return ":yellow_square:"
+    return ":red_square:"
+
 
 def _status_is_supported(status: str) -> bool:
     return _norm(status) in ("supported", "implemented")
@@ -581,11 +589,11 @@ def _build_matrix() -> str:
     lines.append("")
     lines.append("## Legend")
     legend_rows = [
-        (["Green", "Implemented in engine."], "Supported"),
-        (["Yellow", "Partially implemented in engine."], "Partial"),
-        (["Red", "Not implemented."], "Not implemented"),
+        ([_escape(_status_icon("supported")), "Implemented in engine."], "Supported"),
+        ([_escape(_status_icon("partial")), "Partially implemented in engine."], "Partial"),
+        ([_escape(_status_icon("not implemented")), "Not implemented."], "Not implemented"),
     ]
-    lines.append(_table(["Color", "Meaning"], legend_rows))
+    lines.append(_table(["Status", "Meaning"], legend_rows))
     lines.append("")
 
     # ---------------- Core section ----------------
@@ -601,13 +609,14 @@ def _build_matrix() -> str:
         core_rows.append(
             (
                 [
+                    _escape(_status_icon(status)),
                     _escape(name),
                     _engine_block(_engine_notes(status, notes)),
                 ],
                 status,
             )
         )
-    core_table = _table(["Ability", "Description"], core_rows)
+    core_table = _table(["Status", "Ability", "Description"], core_rows)
 
     core_strats = []
     for s in stratagems:
@@ -643,6 +652,7 @@ def _build_matrix() -> str:
         core_strat_rows.append(
             (
                 [
+                    _escape(_status_icon(status)),
                     _escape(s.get("name", "")),
                     f"<code>{_escape(s.get('id', ''))}</code>",
                     _escape(s.get("type", "")),
@@ -655,7 +665,7 @@ def _build_matrix() -> str:
             )
         )
     core_strat_table = _table(
-        ["Stratagem", "ID", "Type", "CP", "Turn", "Phase", "Notes"],
+        ["Status", "Stratagem", "ID", "Type", "CP", "Turn", "Phase", "Notes"],
         core_strat_rows,
     )
 
@@ -690,6 +700,7 @@ def _build_matrix() -> str:
             army_rule_rows.append(
                 (
                     [
+                        _escape(_status_icon(status)),
                         _escape(rule_name),
                         _desc_block(_strip_html(desc), _engine_notes(status, notes)),
                     ],
@@ -698,7 +709,7 @@ def _build_matrix() -> str:
             )
         if army_rule_rows:
             faction_body.append("### Army Rules")
-            faction_body.append(_table(["Army Rule", "Description"], army_rule_rows))
+            faction_body.append(_table(["Status", "Army Rule", "Description"], army_rule_rows))
             faction_body.append("")
 
         # Mustering restrictions
@@ -710,6 +721,7 @@ def _build_matrix() -> str:
             restriction_rows.append(
                 (
                     [
+                        _escape(_status_icon(status)),
                         _escape(restriction),
                         _desc_block(rules_text, engine_text or _engine_notes(status, notes)),
                     ],
@@ -718,7 +730,7 @@ def _build_matrix() -> str:
             )
         if restriction_rows:
             faction_body.append("### Mustering Restrictions")
-            faction_body.append(_table(["Restriction", "Description"], restriction_rows))
+            faction_body.append(_table(["Status", "Restriction", "Description"], restriction_rows))
             faction_body.append("")
 
         # Detachments
@@ -746,6 +758,7 @@ def _build_matrix() -> str:
                     det_ability_rows.append(
                         (
                             [
+                                _escape(_status_icon(status)),
                                 _escape(name),
                                 _desc_block(_strip_html(desc), _engine_notes(status, notes)),
                             ],
@@ -755,7 +768,7 @@ def _build_matrix() -> str:
                     det_restrictions.extend(_extract_restrictions(desc))
                 if det_ability_rows:
                     det_body.append("**Detachment Abilities**")
-                    det_body.append(_table(["Ability", "Description"], det_ability_rows))
+                    det_body.append(_table(["Status", "Ability", "Description"], det_ability_rows))
                     det_body.append("")
 
                 det_restrictions = sorted({r for r in det_restrictions if r}, key=str.lower)
@@ -768,6 +781,7 @@ def _build_matrix() -> str:
                         det_restriction_rows.append(
                             (
                                 [
+                                    _escape(_status_icon(status)),
                                     _escape(restriction),
                                     _desc_block(rules_text, engine_text or _engine_notes(status, notes)),
                                 ],
@@ -775,7 +789,7 @@ def _build_matrix() -> str:
                             )
                         )
                     det_body.append("**Detachment Restrictions**")
-                    det_body.append(_table(["Restriction", "Description"], det_restriction_rows))
+                    det_body.append(_table(["Status", "Restriction", "Description"], det_restriction_rows))
                     det_body.append("")
 
                 # Enhancements
@@ -790,6 +804,7 @@ def _build_matrix() -> str:
                         enh_rows.append(
                             (
                                 [
+                                    _escape(_status_icon(status)),
                                     _escape(name),
                                     _desc_block(_strip_html(desc), _engine_notes(status, notes)),
                                 ],
@@ -797,7 +812,7 @@ def _build_matrix() -> str:
                             )
                         )
                     det_body.append("**Enhancements**")
-                    det_body.append(_table(["Enhancement", "Description"], enh_rows))
+                    det_body.append(_table(["Status", "Enhancement", "Description"], enh_rows))
                     det_body.append("")
 
                 # Stratagems
@@ -810,6 +825,7 @@ def _build_matrix() -> str:
                         strat_rows.append(
                             (
                                 [
+                                    _escape(_status_icon(status)),
                                     _escape(s.get("name", "")),
                                     f"<code>{_escape(s.get('id', ''))}</code>",
                                     _escape(s.get("type", "")),
@@ -824,7 +840,7 @@ def _build_matrix() -> str:
                     det_body.append("**Stratagems**")
                     det_body.append(
                         _table(
-                            ["Stratagem", "ID", "Type", "CP", "Turn", "Phase", "Notes"],
+                            ["Status", "Stratagem", "ID", "Type", "CP", "Turn", "Phase", "Notes"],
                             strat_rows,
                         )
                     )
@@ -855,6 +871,7 @@ def _build_matrix() -> str:
             ds_ability_rows.append(
                 (
                     [
+                        _escape(_status_icon(status)),
                         _escape(name),
                         _format_units(units),
                         _desc_block(_strip_html(desc), _engine_notes(status, notes)),
@@ -864,7 +881,7 @@ def _build_matrix() -> str:
             )
         if ds_ability_rows:
             faction_body.append("### Datasheet Abilities")
-            faction_body.append(_table(["Ability", "Units", "Description"], ds_ability_rows))
+            faction_body.append(_table(["Status", "Ability", "Units", "Description"], ds_ability_rows))
             faction_body.append("")
 
         supported, total = _summarize_section_count(faction_items)
