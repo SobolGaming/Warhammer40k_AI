@@ -27,6 +27,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 WAHA_DIR = os.path.join(ROOT, "wahapedia_data")
 DOCS_DIR = os.path.join(ROOT, "docs")
 OUT_PATH = os.path.join(DOCS_DIR, "ABILITY_SUPPORT_MATRIX.md")
+FACTION_DOCS_DIR = os.path.join(DOCS_DIR, "factions")
 
 SRC_DIR = os.path.join(ROOT, "src")
 if SRC_DIR not in sys.path:
@@ -93,6 +94,18 @@ def _status_icon(status: str) -> str:
     if key == "partial":
         return ":yellow_square:"
     return ":red_square:"
+
+
+def _summary_status(supported: int, total: int) -> str:
+    if total <= 0 or supported <= 0:
+        return "Not implemented"
+    if supported >= total:
+        return "Supported"
+    return "Partial"
+
+
+def _summary_icon(supported: int, total: int) -> str:
+    return _status_icon(_summary_status(supported, total))
 
 
 def _status_is_supported(status: str) -> bool:
@@ -479,6 +492,12 @@ def _engine_notes(status: str, notes: str) -> str:
     return "No effect logic wired."
 
 
+def _slugify(name: str) -> str:
+    txt = _ascii_text(name)
+    txt = re.sub(r"[^a-zA-Z0-9]+", "_", txt).strip("_").lower()
+    return txt or "faction"
+
+
 def _restriction_rule_and_engine(name: str, abilities: List[dict], faction_id: Optional[str]) -> Tuple[str, str]:
     key = _norm(name)
     ability = _ability_entry_by_name(abilities, name, faction_id=faction_id)
@@ -530,6 +549,238 @@ def _restriction_rule_and_engine(name: str, abilities: List[dict], faction_id: O
     if key in rules:
         return rules[key]
     return (desc or name, "Validated in army restrictions.")
+
+
+def _build_faction_content(
+    *,
+    faction_id: str,
+    meta: dict,
+    abilities: List[dict],
+    det_abilities_by_det: Dict[str, List[dict]],
+    enhancements: List[dict],
+    stratagems: List[dict],
+    detachments: Dict[str, dict],
+    ds_abilities_rows: List[dict],
+    datasheet_abilities_by_faction: Dict[str, Dict[Tuple[str, ...], dict]],
+) -> Tuple[str, int, int]:
+    faction_name = str(meta.get("faction_name", "") or faction_id)
+    faction_items: List[Tuple[str, str]] = []
+    faction_body: List[str] = []
+
+    # Army rules
+    army_rule_rows = []
+    for rule_name in list(meta.get("army_rules", []) or []):
+        entry = _ability_entry_by_name(abilities, rule_name, faction_id=faction_id)
+        desc = entry.get("description", "") if entry else ""
+        status, notes = _classify_ability(rule_name, desc)
+        faction_items.append((status, rule_name))
+        army_rule_rows.append(
+            (
+                [
+                    _escape(_status_icon(status)),
+                    _escape(rule_name),
+                    _desc_block(_strip_html(desc), _engine_notes(status, notes)),
+                ],
+                status,
+            )
+        )
+    if army_rule_rows:
+        faction_body.append("## Army Rules")
+        faction_body.append(_table(["Status", "Army Rule", "Description"], army_rule_rows))
+        faction_body.append("")
+
+    # Mustering restrictions
+    restriction_rows = []
+    for restriction in list(meta.get("restrictions", []) or []):
+        status, notes = _classify_ability(restriction, "")
+        rules_text, engine_text = _restriction_rule_and_engine(restriction, abilities, faction_id)
+        faction_items.append((status, restriction))
+        restriction_rows.append(
+            (
+                [
+                    _escape(_status_icon(status)),
+                    _escape(restriction),
+                    _desc_block(rules_text, engine_text or _engine_notes(status, notes)),
+                ],
+                status,
+            )
+        )
+    if restriction_rows:
+        faction_body.append("## Mustering Restrictions")
+        faction_body.append(_table(["Status", "Restriction", "Description"], restriction_rows))
+        faction_body.append("")
+
+    # Detachments
+    dets = [
+        d for d in detachments.values()
+        if str(d.get("faction_id", "") or "").strip().upper() == faction_id
+        and not _detachment_is_boarding(d)
+    ]
+    dets.sort(key=lambda d: _norm(d.get("name", "")))
+    if dets:
+        faction_body.append("## Detachments")
+        for det in dets:
+            det_name = str(det.get("name", "") or "Detachment")
+            det_id = str(det.get("id", "") or "").strip()
+            det_body: List[str] = []
+
+            # Detachment abilities
+            det_ability_rows = []
+            det_restrictions: List[str] = []
+            for ability in det_abilities_by_det.get(det_id, []):
+                name = ability.get("name", "") or ""
+                desc = ability.get("description", "") or ""
+                status, notes = _classify_ability(name, desc)
+                faction_items.append((status, name))
+                det_ability_rows.append(
+                    (
+                        [
+                            _escape(_status_icon(status)),
+                            _escape(name),
+                            _desc_block(_strip_html(desc), _engine_notes(status, notes)),
+                        ],
+                        status,
+                    )
+                )
+                det_restrictions.extend(_extract_restrictions(desc))
+            if det_ability_rows:
+                det_body.append("**Detachment Abilities**")
+                det_body.append(_table(["Status", "Ability", "Description"], det_ability_rows))
+                det_body.append("")
+
+            det_restrictions = sorted({r for r in det_restrictions if r}, key=str.lower)
+            if det_restrictions:
+                det_restriction_rows = []
+                for restriction in det_restrictions:
+                    status, notes = _classify_ability(restriction, "")
+                    rules_text, engine_text = _restriction_rule_and_engine(restriction, abilities, faction_id)
+                    faction_items.append((status, restriction))
+                    det_restriction_rows.append(
+                        (
+                            [
+                                _escape(_status_icon(status)),
+                                _escape(restriction),
+                                _desc_block(rules_text, engine_text or _engine_notes(status, notes)),
+                            ],
+                            status,
+                        )
+                    )
+                det_body.append("**Detachment Restrictions**")
+                det_body.append(_table(["Status", "Restriction", "Description"], det_restriction_rows))
+                det_body.append("")
+
+            # Enhancements
+            det_enh = [e for e in enhancements if str(e.get("detachment_id", "") or "").strip() == det_id]
+            if det_enh:
+                enh_rows = []
+                for enh in det_enh:
+                    name = enh.get("name", "") or ""
+                    desc = enh.get("description", "") or ""
+                    enh_id = str(enh.get("id", "") or "")
+                    status, notes = _enhancement_support(name, enh_id, desc)
+                    enh_rows.append(
+                        (
+                            [
+                                _escape(_status_icon(status)),
+                                _escape(name),
+                                _desc_block(_strip_html(desc), _engine_notes(status, notes)),
+                            ],
+                            status,
+                        )
+                    )
+                det_body.append("**Enhancements**")
+                det_body.append(_table(["Status", "Enhancement", "Description"], enh_rows))
+                det_body.append("")
+
+            # Stratagems
+            det_strats = []
+            for s in stratagems:
+                if str(s.get("detachment_id", "") or "").strip() != det_id:
+                    continue
+                ttype = (s.get("type", "") or "").strip().lower()
+                if "boarding" in ttype or "challenger" in ttype:
+                    continue
+                det_strats.append(s)
+            if det_strats:
+                det_strats.sort(key=lambda s: _norm(s.get("name", "")))
+                strat_rows = []
+                for s in det_strats:
+                    status, notes, _ = _stratagem_support(s.get("name", ""))
+                    strat_rows.append(
+                        (
+                            [
+                                _escape(_status_icon(status)),
+                                _escape(s.get("name", "")),
+                                f"<code>{_escape(s.get('id', ''))}</code>",
+                                _escape(s.get("type", "")),
+                                _escape(s.get("cp_cost", "")),
+                                _escape(s.get("turn", "")),
+                                _escape(s.get("phase", "")),
+                                _escape(notes),
+                            ],
+                            status,
+                        )
+                    )
+                det_body.append("**Stratagems**")
+                det_body.append(
+                    _table(
+                        ["Status", "Stratagem", "ID", "Type", "CP", "Turn", "Phase", "Notes"],
+                        strat_rows,
+                    )
+                )
+                det_body.append("")
+
+            if not det_body:
+                det_body.append("_No detachment data available._")
+            faction_body.append(_details_raw(_escape(det_name), "\n".join(det_body)))
+            faction_body.append("")
+
+    # Datasheet abilities
+    ds_ability_rows = []
+    ability_entries = list(datasheet_abilities_by_faction.get(faction_id, {}).values())
+    ability_entries.sort(key=lambda e: (_norm(e.get("name", "")), _norm(_strip_html(e.get("description", "")))))
+    for entry in ability_entries:
+        name = entry.get("name", "") or ""
+        desc = entry.get("description", "") or ""
+        status, notes = _classify_ability(name, desc)
+        faction_items.append((status, name))
+        units = sorted({u for u in (entry.get("units") or set()) if u}, key=lambda s: s.lower())
+        ds_ability_rows.append(
+            (
+                [
+                    _escape(_status_icon(status)),
+                    _escape(name),
+                    _format_units(units),
+                    _desc_block(_strip_html(desc), _engine_notes(status, notes)),
+                ],
+                status,
+            )
+        )
+    if ds_ability_rows:
+        faction_body.append("## Datasheet Abilities")
+        faction_body.append(_table(["Status", "Ability", "Units", "Description"], ds_ability_rows))
+        faction_body.append("")
+
+    supported, total = _summarize_section_count(faction_items)
+    header = [
+        f"# {faction_name} Ability Support",
+        "",
+        "Generated from `wahapedia_data/*.json` using `scripts/generate_ability_support_matrix.py`.",
+        "",
+        f"Back to [Ability Support Matrix](../ABILITY_SUPPORT_MATRIX.md).",
+        "",
+        "## Legend",
+        _table(
+            ["Status", "Meaning"],
+            [
+                ([_escape(_status_icon("supported")), "Implemented in engine."], "Supported"),
+                ([_escape(_status_icon("partial")), "Partially implemented in engine."], "Partial"),
+                ([_escape(_status_icon("not implemented")), "Not implemented."], "Not implemented"),
+            ],
+        ),
+        "",
+    ]
+    return "\n".join(header + faction_body).rstrip() + "\n", supported, total
 
 
 def _build_matrix() -> str:
@@ -697,205 +948,48 @@ def _build_matrix() -> str:
     lines.append(_details_raw(_summary_span("Core", core_supported, core_total), core_body))
     lines.append("")
 
-    # ---------------- Faction sections ----------------
+    # ---------------- Faction summary + files ----------------
+    os.makedirs(FACTION_DOCS_DIR, exist_ok=True)
+    summary_rows = []
+    summary_entries = []
     for faction_id, meta in FACTION_RULE_METADATA.items():
         if faction_id not in SUPPORTED_FACTION_IDS:
             continue
         faction_name = str(meta.get("faction_name", "") or faction_id)
-        faction_items: List[Tuple[str, str]] = []
-        faction_body: List[str] = []
+        content, supported, total = _build_faction_content(
+            faction_id=faction_id,
+            meta=meta,
+            abilities=abilities,
+            det_abilities_by_det=det_abilities_by_det,
+            enhancements=enhancements,
+            stratagems=stratagems,
+            detachments=detachments,
+            ds_abilities_rows=ds_abilities_rows,
+            datasheet_abilities_by_faction=datasheet_abilities_by_faction,
+        )
+        slug = _slugify(faction_name)
+        rel_path = f"factions/{slug}.md"
+        out_path = os.path.join(FACTION_DOCS_DIR, f"{slug}.md")
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        summary_entries.append((faction_name, supported, total, rel_path))
 
-        # Army rules
-        army_rule_rows = []
-        for rule_name in list(meta.get("army_rules", []) or []):
-            entry = _ability_entry_by_name(abilities, rule_name, faction_id=faction_id)
-            desc = entry.get("description", "") if entry else ""
-            status, notes = _classify_ability(rule_name, desc)
-            faction_items.append((status, rule_name))
-            army_rule_rows.append(
-                (
-                    [
-                        _escape(_status_icon(status)),
-                        _escape(rule_name),
-                        _desc_block(_strip_html(desc), _engine_notes(status, notes)),
-                    ],
-                    status,
-                )
+    summary_entries.sort(key=lambda t: t[0].lower())
+    for faction_name, supported, total, rel_path in summary_entries:
+        status = _summary_status(supported, total)
+        summary_rows.append(
+            (
+                [
+                    _escape(faction_name),
+                    _escape(_summary_icon(supported, total)),
+                    _escape(f"{supported} out of {total}"),
+                    f"[View]({rel_path})",
+                ],
+                status,
             )
-        if army_rule_rows:
-            faction_body.append("### Army Rules")
-            faction_body.append(_table(["Status", "Army Rule", "Description"], army_rule_rows))
-            faction_body.append("")
-
-        # Mustering restrictions
-        restriction_rows = []
-        for restriction in list(meta.get("restrictions", []) or []):
-            status, notes = _classify_ability(restriction, "")
-            rules_text, engine_text = _restriction_rule_and_engine(restriction, abilities, faction_id)
-            faction_items.append((status, restriction))
-            restriction_rows.append(
-                (
-                    [
-                        _escape(_status_icon(status)),
-                        _escape(restriction),
-                        _desc_block(rules_text, engine_text or _engine_notes(status, notes)),
-                    ],
-                    status,
-                )
-            )
-        if restriction_rows:
-            faction_body.append("### Mustering Restrictions")
-            faction_body.append(_table(["Status", "Restriction", "Description"], restriction_rows))
-            faction_body.append("")
-
-        # Detachments
-        dets = [
-            d for d in detachments.values()
-            if str(d.get("faction_id", "") or "").strip().upper() == faction_id
-            and not _detachment_is_boarding(d)
-        ]
-        dets.sort(key=lambda d: _norm(d.get("name", "")))
-        if dets:
-            faction_body.append("### Detachments")
-            for det in dets:
-                det_name = str(det.get("name", "") or "Detachment")
-                det_id = str(det.get("id", "") or "").strip()
-                det_body: List[str] = []
-
-                # Detachment abilities
-                det_ability_rows = []
-                det_restrictions: List[str] = []
-                for ability in det_abilities_by_det.get(det_id, []):
-                    name = ability.get("name", "") or ""
-                    desc = ability.get("description", "") or ""
-                    status, notes = _classify_ability(name, desc)
-                    faction_items.append((status, name))
-                    det_ability_rows.append(
-                        (
-                            [
-                                _escape(_status_icon(status)),
-                                _escape(name),
-                                _desc_block(_strip_html(desc), _engine_notes(status, notes)),
-                            ],
-                            status,
-                        )
-                    )
-                    det_restrictions.extend(_extract_restrictions(desc))
-                if det_ability_rows:
-                    det_body.append("**Detachment Abilities**")
-                    det_body.append(_table(["Status", "Ability", "Description"], det_ability_rows))
-                    det_body.append("")
-
-                det_restrictions = sorted({r for r in det_restrictions if r}, key=str.lower)
-                if det_restrictions:
-                    det_restriction_rows = []
-                    for restriction in det_restrictions:
-                        status, notes = _classify_ability(restriction, "")
-                        rules_text, engine_text = _restriction_rule_and_engine(restriction, abilities, faction_id)
-                        faction_items.append((status, restriction))
-                        det_restriction_rows.append(
-                            (
-                                [
-                                    _escape(_status_icon(status)),
-                                    _escape(restriction),
-                                    _desc_block(rules_text, engine_text or _engine_notes(status, notes)),
-                                ],
-                                status,
-                            )
-                        )
-                    det_body.append("**Detachment Restrictions**")
-                    det_body.append(_table(["Status", "Restriction", "Description"], det_restriction_rows))
-                    det_body.append("")
-
-                # Enhancements
-                det_enh = enh_by_det.get(det_id, [])
-                if det_enh:
-                    enh_rows = []
-                    for enh in det_enh:
-                        name = enh.get("name", "") or ""
-                        desc = enh.get("description", "") or ""
-                        enh_id = str(enh.get("id", "") or "")
-                        status, notes = _enhancement_support(name, enh_id, desc)
-                        enh_rows.append(
-                            (
-                                [
-                                    _escape(_status_icon(status)),
-                                    _escape(name),
-                                    _desc_block(_strip_html(desc), _engine_notes(status, notes)),
-                                ],
-                                status,
-                            )
-                        )
-                    det_body.append("**Enhancements**")
-                    det_body.append(_table(["Status", "Enhancement", "Description"], enh_rows))
-                    det_body.append("")
-
-                # Stratagems
-                det_strats = strats_by_det.get(det_id, [])
-                if det_strats:
-                    det_strats.sort(key=lambda s: _norm(s.get("name", "")))
-                    strat_rows = []
-                    for s in det_strats:
-                        status, notes, _ = _stratagem_support(s.get("name", ""))
-                        strat_rows.append(
-                            (
-                                [
-                                    _escape(_status_icon(status)),
-                                    _escape(s.get("name", "")),
-                                    f"<code>{_escape(s.get('id', ''))}</code>",
-                                    _escape(s.get("type", "")),
-                                    _escape(s.get("cp_cost", "")),
-                                    _escape(s.get("turn", "")),
-                                    _escape(s.get("phase", "")),
-                                    _escape(notes),
-                                ],
-                                status,
-                            )
-                        )
-                    det_body.append("**Stratagems**")
-                    det_body.append(
-                        _table(
-                            ["Status", "Stratagem", "ID", "Type", "CP", "Turn", "Phase", "Notes"],
-                            strat_rows,
-                        )
-                    )
-                    det_body.append("")
-
-                if not det_body:
-                    det_body.append("_No detachment data available._")
-                faction_body.append(_details_raw(_escape(det_name), "\n".join(det_body)))
-                faction_body.append("")
-
-        # Datasheet abilities
-        ds_ability_rows = []
-        ability_entries = list(datasheet_abilities_by_faction.get(faction_id, {}).values())
-        ability_entries.sort(key=lambda e: (_norm(e.get("name", "")), _norm(_strip_html(e.get("description", "")))))
-        for entry in ability_entries:
-            name = entry.get("name", "") or ""
-            desc = entry.get("description", "") or ""
-            status, notes = _classify_ability(name, desc)
-            faction_items.append((status, name))
-            units = sorted({u for u in (entry.get("units") or set()) if u}, key=lambda s: s.lower())
-            ds_ability_rows.append(
-                (
-                    [
-                        _escape(_status_icon(status)),
-                        _escape(name),
-                        _format_units(units),
-                        _desc_block(_strip_html(desc), _engine_notes(status, notes)),
-                    ],
-                    status,
-                )
-            )
-        if ds_ability_rows:
-            faction_body.append("### Datasheet Abilities")
-            faction_body.append(_table(["Status", "Ability", "Units", "Description"], ds_ability_rows))
-            faction_body.append("")
-
-        supported, total = _summarize_section_count(faction_items)
-        faction_section = _details_raw(_summary_span(faction_name, supported, total), "\n".join(faction_body))
-        lines.append(faction_section)
-        lines.append("")
+        )
+    lines.append("## Factions")
+    lines.append(_table(["Faction", "Status", "Supported", "Link"], summary_rows))
 
     return "\n".join(lines).rstrip() + "\n"
 
