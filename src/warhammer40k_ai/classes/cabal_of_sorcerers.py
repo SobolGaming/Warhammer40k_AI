@@ -532,6 +532,15 @@ class CabalOfSorcerersManager:
                         game_map=game_map,
                         is_psychic_attack=True,
                     )
+                except TypeError:
+                    try:
+                        caster_unit._apply_mortal_wounds_to_unit(
+                            caster_unit,
+                            int(mw or 0),
+                            game_map=game_map,
+                        )
+                    except Exception:
+                        pass
                 except Exception:
                     pass
                 try:
@@ -600,6 +609,15 @@ class CabalOfSorcerersManager:
                     game_map=game_map,
                     is_psychic_attack=True,
                 )
+            except TypeError:
+                try:
+                    target_unit._apply_mortal_wounds_to_unit(
+                        target_unit,
+                        int(dmg or 0),
+                        game_map=game_map,
+                    )
+                except Exception:
+                    pass
             except Exception:
                 pass
             result["target_mortal_wounds"] = int(dmg or 0)
