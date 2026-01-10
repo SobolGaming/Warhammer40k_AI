@@ -81,6 +81,32 @@ class TemplarVowsManager:
                 return True
         except Exception:
             pass
+        try:
+            if not hasattr(self.army, "space_marines_detachments"):
+                faction = str(getattr(self.army, "faction", "") or "").strip()
+                detachment = str(getattr(self.army, "detachment_type", "") or "").strip()
+                if not faction and not detachment:
+                    try:
+                        from .space_marines_detachments import CHAPTER_KEYWORD_MAP
+                        other_chapters = {kw for kw in CHAPTER_KEYWORD_MAP.values() if kw != "BLACK TEMPLARS"}
+                    except Exception:
+                        other_chapters = {"BLOOD ANGELS", "DARK ANGELS", "DEATHWATCH", "SPACE WOLVES"}
+                    units = list(getattr(self.army, "units", []) or [])
+                    has_other_chapter = False
+                    for unit in units:
+                        for kw in other_chapters:
+                            try:
+                                if unit.has_any_keyword(kw):
+                                    has_other_chapter = True
+                                    break
+                            except Exception:
+                                continue
+                        if has_other_chapter:
+                            break
+                    if not has_other_chapter:
+                        return True
+        except Exception:
+            pass
         return False
 
     def _unit_is_adeptus_astartes(self, unit) -> bool:

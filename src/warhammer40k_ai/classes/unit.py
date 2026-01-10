@@ -537,10 +537,15 @@ class Unit:
         """
         if getattr(self, "special_rules", None) is None:
             self.special_rules = {}
+        try:
+            if "armor_save_bonus_vs_damage_characteristic" in self.special_rules:
+                del self.special_rules["armor_save_bonus_vs_damage_characteristic"]
+        except Exception:
+            pass
 
         # Collect all rules text from unit abilities.
         entries = []
-        for a in getattr(self, "possible_abilities", []) or []:
+        for a in self._iter_active_possible_abilities():
             if isinstance(a, str):
                 entries.append(a)
             else:
@@ -3143,6 +3148,23 @@ class Unit:
         if self not in current:
             current.append(self)
         bodyguard.attached_leaders = current
+        # Attachment status affects leading-only abilities; refresh caches/rules.
+        try:
+            self._invalidate_ability_cache()
+        except Exception:
+            pass
+        try:
+            bodyguard._invalidate_ability_cache()
+        except Exception:
+            pass
+        try:
+            self._parse_against_attack_characteristic_defensive_rules()
+        except Exception:
+            pass
+        try:
+            bodyguard._parse_against_attack_characteristic_defensive_rules()
+        except Exception:
+            pass
 
     def detach_from_unit(self) -> None:
         """Detach this Leader from its Bodyguard unit."""
@@ -3159,6 +3181,25 @@ class Unit:
         except Exception:
             pass
         self.attached_to = None
+        # Attachment status affects leading-only abilities; refresh caches/rules.
+        try:
+            self._invalidate_ability_cache()
+        except Exception:
+            pass
+        try:
+            if bodyguard is not None:
+                bodyguard._invalidate_ability_cache()
+        except Exception:
+            pass
+        try:
+            self._parse_against_attack_characteristic_defensive_rules()
+        except Exception:
+            pass
+        try:
+            if bodyguard is not None:
+                bodyguard._parse_against_attack_characteristic_defensive_rules()
+        except Exception:
+            pass
 
     @property
     def is_supreme_commander(self) -> bool:
@@ -3753,6 +3794,328 @@ class Unit:
         return True
 
     # ---------------- Ability helpers (best-effort parsing) ----------------
+    _LEADING_ABILITY_PREFIX_RE = re.compile(r"^\W*while this model is leading a unit\b", re.IGNORECASE)
+    _NOT_LEADING_ABILITY_RE = re.compile(r"\bif this model is not leading a unit\b", re.IGNORECASE)
+
+    def _ability_requires_leading(self, ability) -> bool:
+        """Return True if the ability text is gated by 'While this model is leading a unit'."""
+        desc = ""
+        try:
+            if isinstance(ability, str):
+                desc = ability
+            else:
+                desc = getattr(ability, "description", "") or ""
+        except Exception:
+            desc = ""
+        text = self._normalize_rules_text(desc)
+        if not text:
+            return False
+        return bool(self._LEADING_ABILITY_PREFIX_RE.match(text))
+
+    def _ability_requires_not_leading(self, ability) -> bool:
+        """Return True if the ability text requires the model to NOT be leading a unit."""
+        desc = ""
+        try:
+            if isinstance(ability, str):
+                desc = ability
+            else:
+                desc = getattr(ability, "description", "") or ""
+        except Exception:
+            desc = ""
+        text = self._normalize_rules_text(desc)
+        if not text:
+            return False
+        return bool(self._NOT_LEADING_ABILITY_RE.search(text))
+
+    def _ability_is_active(self, ability) -> bool:
+        """Return True if the ability is currently active for this unit."""
+        if not self._ability_requires_leading(ability):
+            if self._ability_requires_not_leading(ability):
+                return not bool(getattr(self, "is_attached_leader", False))
+            return True
+        return bool(getattr(self, "is_attached_leader", False))
+
+    def _iter_active_possible_abilities(self):
+        """Yield unit-level abilities that are currently active for this unit."""
+        for ab in (getattr(self, "possible_abilities", []) or []):
+            try:
+                if not self._ability_is_active(ab):
+                    continue
+            except Exception:
+                continue
+            yield ab
+
+    def _iter_active_abilities(self):
+        """Yield unit + model abilities that are currently active for this unit."""
+        for ab in self._iter_active_possible_abilities():
+            yield ab
+        for ab in (list(getattr(self, "abilities", []) or []) or []):
+            try:
+                if not self._ability_is_active(ab):
+                    continue
+            except Exception:
+                continue
+            yield ab
+
+    def _iter_active_ability_texts(self):
+        """Yield name/description strings for active abilities (used by text scanners)."""
+        for ab in self._iter_active_abilities():
+            try:
+                if isinstance(ab, str):
+                    if ab:
+                        yield ab
+                    continue
+                nm = str(getattr(ab, "name", "") or "")
+                ds = str(getattr(ab, "description", "") or "")
+                if nm:
+                    yield nm
+                if ds:
+                    yield ds
+            except Exception:
+                continue
+
+    def _iter_attached_leader_leading_abilities(self):
+        """Yield (ability, leader_unit) for attached leaders with leading-only abilities."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is not self:
+            for item in root._iter_attached_leader_leading_abilities():
+                yield item
+            return
+        leaders = list(getattr(root, "attached_leaders", []) or [])
+        for leader in leaders:
+            if leader is None:
+                continue
+            try:
+                abilities = list(getattr(leader, "possible_abilities", []) or [])
+            except Exception:
+                abilities = []
+            for ab in abilities:
+                try:
+                    if not leader._ability_requires_leading(ab):
+                        continue
+                    if not leader._ability_is_active(ab):
+                        continue
+                except Exception:
+                    continue
+                yield ab, leader
+
+    def _iter_attached_leader_ability_texts(self):
+        """Yield name/description strings for attached leader leading abilities."""
+        for ab, _leader in self._iter_attached_leader_leading_abilities():
+            try:
+                if isinstance(ab, str):
+                    if ab:
+                        yield ab
+                    continue
+                nm = str(getattr(ab, "name", "") or "")
+                ds = str(getattr(ab, "description", "") or "")
+                if nm:
+                    yield nm
+                if ds:
+                    yield ds
+            except Exception:
+                continue
+
+    def _iter_reroll_scan_texts(self):
+        """Yield ability texts for reroll detection, with a stub-safe fallback."""
+        iter_active = getattr(self, "_iter_active_ability_texts", None)
+        if callable(iter_active):
+            for t in iter_active():
+                yield t
+        else:
+            for ab in (getattr(self, "possible_abilities", []) or []):
+                try:
+                    if isinstance(ab, str):
+                        if ab:
+                            yield ab
+                        continue
+                    nm = str(getattr(ab, "name", "") or "")
+                    ds = str(getattr(ab, "description", "") or "")
+                    if nm:
+                        yield nm
+                    if ds:
+                        yield ds
+                except Exception:
+                    continue
+            for ab in (getattr(self, "abilities", []) or []):
+                try:
+                    if isinstance(ab, str):
+                        if ab:
+                            yield ab
+                        continue
+                    nm = str(getattr(ab, "name", "") or "")
+                    ds = str(getattr(ab, "description", "") or "")
+                    if nm:
+                        yield nm
+                    if ds:
+                        yield ds
+                except Exception:
+                    continue
+        iter_leader = getattr(self, "_iter_attached_leader_ability_texts", None)
+        if callable(iter_leader):
+            for t in iter_leader():
+                yield t
+
+    def get_leading_attack_roll_modifiers(self, attack_type: str) -> dict:
+        """
+        Return leading-only attack roll modifiers from attached leaders for the attached unit.
+
+        Supports strict patterns:
+        - add N to Hit/Wound rolls for melee/ranged/any attacks
+        - re-roll Hit/Wound rolls of 1 for melee/ranged/any attacks
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        atype = str(attack_type or "").strip().lower()
+        if atype not in ("melee", "ranged"):
+            atype = "any"
+        cache_key = f"leading_attack_roll_mods:{atype}"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        mods = {
+            "hit": 0,
+            "wound": 0,
+            "reroll_hit_ones": False,
+            "reroll_wound_ones": False,
+            "hit_reasons": (),
+            "wound_reasons": (),
+            "reroll_hit_reasons": (),
+            "reroll_wound_reasons": (),
+        }
+
+        hit_reasons: list[str] = []
+        wound_reasons: list[str] = []
+        reroll_hit_reasons: list[str] = []
+        reroll_wound_reasons: list[str] = []
+        seen_names: set[str] = set()
+
+        hit_re = re.compile(
+            r"each time a model in that unit makes (?:a|an) (?P<atype>melee|ranged) attack, add (?P<val>\\d+) to the hit roll",
+            re.IGNORECASE,
+        )
+        hit_any_re = re.compile(
+            r"each time a model in that unit makes (?:a|an) attack, add (?P<val>\\d+) to the hit roll",
+            re.IGNORECASE,
+        )
+        wound_re = re.compile(
+            r"each time a model in that unit makes (?:a|an) (?P<atype>melee|ranged) attack, add (?P<val>\\d+) to the wound roll",
+            re.IGNORECASE,
+        )
+        wound_any_re = re.compile(
+            r"each time a model in that unit makes (?:a|an) attack, add (?P<val>\\d+) to the wound roll",
+            re.IGNORECASE,
+        )
+        reroll_hit_re = re.compile(
+            r"each time a model in that unit makes (?:a|an) (?P<atype>melee|ranged) attack, (?:you can )?re-?roll (?:a|any)?\\s*hit roll(?:s)? of 1",
+            re.IGNORECASE,
+        )
+        reroll_hit_any_re = re.compile(
+            r"each time a model in that unit makes (?:a|an) attack, (?:you can )?re-?roll (?:a|any)?\\s*hit roll(?:s)? of 1",
+            re.IGNORECASE,
+        )
+        reroll_wound_re = re.compile(
+            r"each time a model in that unit makes (?:a|an) (?P<atype>melee|ranged) attack, (?:you can )?re-?roll (?:a|any)?\\s*wound roll(?:s)? of 1",
+            re.IGNORECASE,
+        )
+        reroll_wound_any_re = re.compile(
+            r"each time a model in that unit makes (?:a|an) attack, (?:you can )?re-?roll (?:a|any)?\\s*wound roll(?:s)? of 1",
+            re.IGNORECASE,
+        )
+
+        for ab, leader in root._iter_attached_leader_leading_abilities():
+            try:
+                name = str(getattr(ab, "name", "") or "Leading ability").replace("’", "'")
+                name_key = name.strip().lower()
+                if name_key and name_key != "leading ability" and name_key in seen_names:
+                    continue
+                if name_key and name_key != "leading ability":
+                    seen_names.add(name_key)
+                desc = str(getattr(ab, "description", "") or "")
+            except Exception:
+                name = "Leading ability"
+                desc = ""
+            text = self._normalize_rules_text(desc)
+            if not text:
+                continue
+            try:
+                rest = self._LEADING_ABILITY_PREFIX_RE.sub("", text, count=1).strip(" ,:;-")
+            except Exception:
+                rest = text
+            if not rest:
+                continue
+            for sentence in re.split(r"[.;]", rest):
+                s = (sentence or "").strip()
+                if not s:
+                    continue
+                sl = s.lower()
+                if " if " in f" {sl} " or " unless " in f" {sl} " or " while " in f" {sl} " or " when " in f" {sl} ":
+                    continue
+
+                m = hit_re.search(sl)
+                if m:
+                    if atype == "any" or m.group("atype").lower() == atype:
+                        val = int(m.group("val"))
+                        mods["hit"] += val
+                        hit_reasons.append(f"+{val} to hit from {name}")
+                    continue
+                m = hit_any_re.search(sl)
+                if m:
+                    val = int(m.group("val"))
+                    mods["hit"] += val
+                    hit_reasons.append(f"+{val} to hit from {name}")
+                    continue
+
+                m = wound_re.search(sl)
+                if m:
+                    if atype == "any" or m.group("atype").lower() == atype:
+                        val = int(m.group("val"))
+                        mods["wound"] += val
+                        wound_reasons.append(f"+{val} to wound from {name}")
+                    continue
+                m = wound_any_re.search(sl)
+                if m:
+                    val = int(m.group("val"))
+                    mods["wound"] += val
+                    wound_reasons.append(f"+{val} to wound from {name}")
+                    continue
+
+                m = reroll_hit_re.search(sl)
+                if m:
+                    if atype == "any" or m.group("atype").lower() == atype:
+                        mods["reroll_hit_ones"] = True
+                        reroll_hit_reasons.append(f"Leading: re-roll Hit rolls of 1 from {name}")
+                    continue
+                if reroll_hit_any_re.search(sl):
+                    mods["reroll_hit_ones"] = True
+                    reroll_hit_reasons.append(f"Leading: re-roll Hit rolls of 1 from {name}")
+                    continue
+
+                m = reroll_wound_re.search(sl)
+                if m:
+                    if atype == "any" or m.group("atype").lower() == atype:
+                        mods["reroll_wound_ones"] = True
+                        reroll_wound_reasons.append(f"Leading: re-roll Wound rolls of 1 from {name}")
+                    continue
+                if reroll_wound_any_re.search(sl):
+                    mods["reroll_wound_ones"] = True
+                    reroll_wound_reasons.append(f"Leading: re-roll Wound rolls of 1 from {name}")
+                    continue
+
+        mods["hit_reasons"] = tuple(hit_reasons)
+        mods["wound_reasons"] = tuple(wound_reasons)
+        mods["reroll_hit_reasons"] = tuple(reroll_hit_reasons)
+        mods["reroll_wound_reasons"] = tuple(reroll_wound_reasons)
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = mods
+        return mods
 
     def can_reroll_advance_roll(self) -> bool:
         """
@@ -3787,24 +4150,7 @@ class Unit:
                 return True
         except Exception:
             pass
-        def _texts() -> list[str]:
-            items: list[str] = []
-            for ab in (list(getattr(self, "possible_abilities", []) or []) + list(getattr(self, "abilities", []) or [])):
-                try:
-                    if isinstance(ab, str):
-                        items.append(ab)
-                        continue
-                    nm = str(getattr(ab, "name", "") or "")
-                    ds = str(getattr(ab, "description", "") or "")
-                    if nm:
-                        items.append(nm)
-                    if ds:
-                        items.append(ds)
-                except Exception:
-                    continue
-            return items
-
-        for t in _texts():
+        for t in Unit._iter_reroll_scan_texts(self):
             s = str(t or "").lower()
             if ("re-roll" in s or "reroll" in s) and "advance" in s:
                 return True
@@ -3950,31 +4296,14 @@ class Unit:
         except Exception:
             pass
 
-        def _texts() -> list[str]:
-            items: list[str] = []
-            for ab in (list(getattr(self, "possible_abilities", []) or []) + list(getattr(self, "abilities", []) or [])):
-                try:
-                    if isinstance(ab, str):
-                        items.append(ab)
-                        continue
-                    nm = str(getattr(ab, "name", "") or "")
-                    ds = str(getattr(ab, "description", "") or "")
-                    if nm:
-                        items.append(nm)
-                    if ds:
-                        items.append(ds)
-                except Exception:
-                    continue
-            return items
-
-        for t in _texts():
+        for t in Unit._iter_reroll_scan_texts(self):
             s = str(t or "").lower()
             if ("re-roll" in s or "reroll" in s) and "charge" in s:
                 return True
         return False
 
     def has_thrill_seekers(self) -> bool:
-        for ab in (list(getattr(self, "possible_abilities", []) or []) + list(getattr(self, "abilities", []) or [])):
+        for ab in self._iter_active_abilities():
             try:
                 if isinstance(ab, str):
                     nm = ab
@@ -4071,7 +4400,7 @@ class Unit:
         return self._is_belakor()
 
     def has_dark_pacts(self) -> bool:
-        for ab in (list(getattr(self, "possible_abilities", []) or []) + list(getattr(self, "abilities", []) or [])):
+        for ab in self._iter_active_abilities():
             try:
                 if isinstance(ab, str):
                     nm = ab
@@ -4084,7 +4413,7 @@ class Unit:
         return False
 
     def has_cabal_of_sorcerers(self) -> bool:
-        for ab in (list(getattr(self, "possible_abilities", []) or []) + list(getattr(self, "abilities", []) or [])):
+        for ab in self._iter_active_abilities():
             try:
                 if isinstance(ab, str):
                     nm = ab
@@ -4105,7 +4434,7 @@ class Unit:
 
         patterns = ("martial ka'tah", "martial katah")
         found = False
-        for ab in (list(getattr(self, "possible_abilities", []) or []) + list(getattr(self, "abilities", []) or [])):
+        for ab in self._iter_active_abilities():
             try:
                 if isinstance(ab, str):
                     name = ab
@@ -9071,7 +9400,7 @@ class Unit:
                         return True, None
         
         # Check unit-level abilities (possible_abilities)
-        for ability in self.possible_abilities:
+        for ability in self._iter_active_possible_abilities():
             if isinstance(ability, str):
                 for pattern in patterns:
                     if pattern.lower() in ability.lower():
@@ -9122,6 +9451,11 @@ class Unit:
         
         # Check model-level abilities
         for ability in self.abilities:
+            try:
+                if not self._ability_is_active(ability):
+                    continue
+            except Exception:
+                pass
             if isinstance(ability, str):
                 for pattern in patterns:
                     if pattern.lower() in ability.lower():
@@ -9295,10 +9629,15 @@ class Unit:
         for model in getattr(self, 'models', []):
             for ability in getattr(model, 'abilities', []):
                 if ability and hasattr(ability, 'description'):
+                    try:
+                        if not self._ability_is_active(ability):
+                            continue
+                    except Exception:
+                        pass
                     abilities_to_check.append(ability.description)
 
         # Also include unit-level possible_abilities if present
-        for ability in getattr(self, 'possible_abilities', []):
+        for ability in self._iter_active_possible_abilities():
             if ability and hasattr(ability, 'description'):
                 abilities_to_check.append(ability.description)
 
@@ -9466,14 +9805,21 @@ class Unit:
         if 'fight_first' in getattr(self, '_ability_cache', {}):
             return self._ability_cache['fight_first']
         
-        found, _ = self._find_ability_with_patterns([
+        patterns = [
             "fight first", 
             "fights first", 
             "combat reflexes",
             "lightning reflexes",
             "swift strike",
             "martial prowess"
-        ])
+        ]
+        found, _ = self._find_ability_with_patterns(patterns)
+        if not found:
+            for t in self._iter_attached_leader_ability_texts():
+                s = str(t or "").lower()
+                if any(p in s for p in patterns):
+                    found = True
+                    break
         
         # Cache the result
         if not hasattr(self, '_ability_cache'):
@@ -9577,7 +9923,7 @@ class Unit:
     def _iter_ability_entries_for_rules(self, model: Optional['Model'] = None):
         """Yield (name, description) pairs for unit/model abilities."""
         # Unit-level abilities
-        for a in getattr(self, "possible_abilities", []) or []:
+        for a in self._iter_active_possible_abilities():
             if isinstance(a, str):
                 yield a, a
             else:
@@ -9588,9 +9934,11 @@ class Unit:
             try:
                 for a in getattr(model, "abilities", {}).values():
                     if isinstance(a, str):
-                        yield a, a
+                        if self._ability_is_active(a):
+                            yield a, a
                     else:
-                        yield getattr(a, "name", "") or "", getattr(a, "description", "") or ""
+                        if self._ability_is_active(a):
+                            yield getattr(a, "name", "") or "", getattr(a, "description", "") or ""
             except Exception:
                 pass
 
@@ -9884,7 +10232,7 @@ class Unit:
                         raise ValueError(f"{pattern} ability found in keyword '{keyword}' but could not extract dice value for unit '{self.name}'")
         
         # Check unit-level abilities (possible_abilities)
-        for ability in self.possible_abilities:
+        for ability in self._iter_active_possible_abilities():
             if isinstance(ability, str):
                 for pattern in patterns:
                     if pattern.lower() in ability.lower():
@@ -9934,6 +10282,11 @@ class Unit:
         
         # Check model-level abilities
         for ability in self.abilities:
+            try:
+                if not self._ability_is_active(ability):
+                    continue
+            except Exception:
+                pass
             if isinstance(ability, str):
                 for pattern in patterns:
                     if pattern.lower() in ability.lower():
@@ -10209,7 +10562,7 @@ class Unit:
             return True
         
         # Check for special abilities that allow movement after arriving from reserves
-        for ability in self.possible_abilities:
+        for ability in self._iter_active_possible_abilities():
             if hasattr(ability, 'name') and ability.name:
                 if "can move after" in ability.name.lower() or "move after arriving" in ability.name.lower():
                     return True
@@ -10226,7 +10579,7 @@ class Unit:
         
         # Units arriving from reserves cannot advance unless they have special rules
         # Check for special abilities that allow advancing after arriving from reserves
-        for ability in self.possible_abilities:
+        for ability in self._iter_active_possible_abilities():
             if hasattr(ability, 'name') and ability.name:
                 if "can advance after" in ability.name.lower() or "advance after arriving" in ability.name.lower():
                     return True
@@ -10250,7 +10603,7 @@ class Unit:
         
         # Units arriving from reserves CAN charge by default (this is the normal rule)
         # Only special restrictions would prevent charging
-        for ability in self.possible_abilities:
+        for ability in self._iter_active_possible_abilities():
             if hasattr(ability, 'name') and ability.name:
                 if ("cannot charge after" in ability.name.lower() or 
                     "no charge after arriving" in ability.name.lower()):

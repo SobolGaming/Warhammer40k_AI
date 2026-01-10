@@ -1372,6 +1372,21 @@ class WargearProfile:
         if getattr(aura_mods, "hit", 0):
             dice_modifier += int(aura_mods.hit)
             hit_result['modifiers'].extend(list(getattr(aura_mods, "hit_reasons", ()) or ()))
+
+        # Attached leader leading bonuses (e.g., Drill Boss)
+        lead_mods = None
+        try:
+            unit = attacker.parent_unit
+            root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+            is_melee = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_melee())
+            attack_type = "melee" if is_melee else "ranged"
+            lead_mods = root.get_leading_attack_roll_modifiers(attack_type)
+            if isinstance(lead_mods, dict) and int(lead_mods.get("hit", 0) or 0):
+                bonus = int(lead_mods.get("hit", 0) or 0)
+                dice_modifier += bonus
+                hit_result['modifiers'].extend(list(lead_mods.get("hit_reasons", ()) or ()))
+        except Exception:
+            lead_mods = None
         
         dice_modifier = min(max(dice_modifier, -1), 1)  # modifications are capped between -1 and 1
         final_needed = base_skill - dice_modifier  # Note: negative dice_modifier makes it harder (higher final_needed)
@@ -1430,6 +1445,20 @@ class WargearProfile:
                 hit_result["reroll"] = rr
                 dice_roll = rr
                 reroll_used = True
+        except Exception:
+            pass
+
+        # Leading abilities: re-roll Hit rolls of 1
+        try:
+            if dice_roll == 1 and "reroll" not in hit_result:
+                if isinstance(lead_mods, dict) and bool(lead_mods.get("reroll_hit_ones", False)):
+                    rr = _reroll_hit()
+                    hit_result.setdefault("special_effects", []).append("Leading: re-roll Hit rolls of 1")
+                    hit_result.setdefault("special_effects", []).extend(list(lead_mods.get("reroll_hit_reasons", ()) or ()))
+                    hit_result["reroll_of_one"] = 1
+                    hit_result["reroll"] = rr
+                    dice_roll = rr
+                    reroll_used = True
         except Exception:
             pass
 
@@ -2351,6 +2380,21 @@ class WargearProfile:
             dice_modifier += int(aura_mods.wound)
             wound_result['modifiers'].extend(list(getattr(aura_mods, "wound_reasons", ()) or ()))
 
+        # Attached leader leading bonuses (e.g., leading melee/ranged wound buffs)
+        lead_mods = None
+        try:
+            unit = attacker.parent_unit
+            root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+            is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+            attack_type = "melee" if is_melee else "ranged"
+            lead_mods = root.get_leading_attack_roll_modifiers(attack_type)
+            if isinstance(lead_mods, dict) and int(lead_mods.get("wound", 0) or 0):
+                bonus = int(lead_mods.get("wound", 0) or 0)
+                dice_modifier += bonus
+                wound_result['modifiers'].extend(list(lead_mods.get("wound_reasons", ()) or ()))
+        except Exception:
+            lead_mods = None
+
         # First Prince of Chaos (Shadow Legion Nurgle): -1 to wound if Strength > Toughness.
         try:
             if hasattr(target, "has_first_prince_nurgle_defense") and target.has_first_prince_nurgle_defense():
@@ -2422,6 +2466,20 @@ class WargearProfile:
                 wound_result["reroll"] = rr
                 dice_roll = rr
                 reroll_used = True
+        except Exception:
+            pass
+
+        # Leading abilities: re-roll Wound rolls of 1
+        try:
+            if dice_roll == 1 and "reroll" not in wound_result:
+                if isinstance(lead_mods, dict) and bool(lead_mods.get("reroll_wound_ones", False)):
+                    rr = _reroll_wound()
+                    wound_result.setdefault("special_effects", []).append("Leading: re-roll Wound rolls of 1")
+                    wound_result.setdefault("special_effects", []).extend(list(lead_mods.get("reroll_wound_reasons", ()) or ()))
+                    wound_result["reroll_of_one"] = 1
+                    wound_result["reroll"] = rr
+                    dice_roll = rr
+                    reroll_used = True
         except Exception:
             pass
 
@@ -3516,10 +3574,20 @@ class WargearProfile:
         
         # Apply the final damage
         result['damage_applied'] = final_damage
-        target_model.wounds -= final_damage
+        target_has_wounds = hasattr(target_model, "wounds")
+        if target_has_wounds:
+            try:
+                target_model.wounds -= final_damage
+            except Exception:
+                pass
         
         # Handle model death
-        if not target_model.is_alive:
+        try:
+            alive_attr = getattr(target_model, "is_alive", True)
+            alive = alive_attr() if callable(alive_attr) else bool(alive_attr)
+        except Exception:
+            alive = True
+        if not alive:
             # Publish destruction event with attacker/target context (best-effort).
             # This is the primary hook for "on kill" abilities like Trophy Taker.
             try:
@@ -3545,13 +3613,25 @@ class WargearProfile:
             except Exception:
                 pass
 
-            target_model.die(game_map=game_map)
+            try:
+                if hasattr(target_model, "die"):
+                    target_model.die(game_map=game_map)
+            except Exception:
+                pass
             # Calculate excess damage (10th edition: excess damage is lost)
-            if is_mortal and abs(target_model.wounds) > 0:
-                result['excess_damage'] = abs(target_model.wounds)
+            if is_mortal and target_has_wounds:
+                try:
+                    if abs(target_model.wounds) > 0:
+                        result['excess_damage'] = abs(target_model.wounds)
+                except Exception:
+                    pass
         
         # Check for damaged profile
-        target_model._check_damaged_profile()
+        try:
+            if hasattr(target_model, "_check_damaged_profile"):
+                target_model._check_damaged_profile()
+        except Exception:
+            pass
         
         return result
 

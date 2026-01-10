@@ -47,7 +47,14 @@ def _norm_name(s: str) -> str:
 
 
 def _iter_possible_abilities(unit) -> Iterable[object]:
+    is_active = getattr(unit, "_ability_is_active", None)
     for ab in (getattr(unit, "possible_abilities", []) or []):
+        if callable(is_active):
+            try:
+                if not is_active(ab):
+                    continue
+            except Exception:
+                continue
         yield ab
 
 
