@@ -199,11 +199,11 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <td bgcolor="#d4edda">Allows allocating a successful wound to a visible CHARACTER in an Attached unit.</td>
 </tr>
 <tr>
-<td bgcolor="#fff3cd"><code>psychic</code></td>
-<td bgcolor="#fff3cd"><b>🟨 Partial</b></td>
-<td bgcolor="#fff3cd">337</td>
-<td bgcolor="#fff3cd">PSYCHIC<br/>psychic</td>
-<td bgcolor="#fff3cd">Used for conditional FNP parsing (e.g. 'against psychic attacks'); no other special handling.</td>
+<td bgcolor="#d4edda"><code>psychic</code></td>
+<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
+<td bgcolor="#d4edda">337</td>
+<td bgcolor="#d4edda">PSYCHIC<br/>psychic</td>
+<td bgcolor="#d4edda">Tags Psychic attacks; conditional defenses (FNP/Invulnerable) check this keyword.</td>
 </tr>
 <tr>
 <td bgcolor="#f8d7da"><code>psychic assassin</code></td>

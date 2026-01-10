@@ -156,11 +156,11 @@ def _keyword_support(canon: str, examples: Set[str]) -> Tuple[str, str]:
         "lance": "If the bearer charged this turn, +1 to wound rolls for this weapon.",
         "twin-linked": "Re-roll failed wound rolls for attacks made with this weapon.",
         "precision": "Allows allocating a successful wound to a visible CHARACTER in an Attached unit.",
+        "psychic": "Tags Psychic attacks; conditional defenses (FNP/Invulnerable) check this keyword.",
     }
 
     # Partials: some related logic exists but full 10e rules not fully enforced.
     partial_notes: Dict[str, str] = {
-        "psychic": "Used for conditional FNP parsing (e.g. 'against psychic attacks'); no other special handling.",
         "feel no pain": "Supported as a defensive mechanic, but this list is extracted from weapon keywords; treat as informational.",
     }
 
