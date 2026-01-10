@@ -2156,6 +2156,39 @@ def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float],
                         # If intersection fails, be conservative and reject
                         return 'Error during wall intersection check'
             return None
+
+        def _vertical_clearance_issue(model: 'Model', base_geom, floor_ref: dict) -> Optional[str]:
+            if base_geom is None:
+                return None
+            current_elev = float(floor_ref.get('elevation', 0.0) or 0.0)
+            current_top = current_elev + float(floor_ref.get('thickness', RUINS_FLOOR_THICKNESS) or RUINS_FLOOR_THICKNESS)
+            nearest_upper_floor = None
+            min_elev = float('inf')
+            for fl in floors:
+                elev = float(fl.get('elevation', 0.0) or 0.0)
+                if elev <= current_elev:
+                    continue
+                fl_poly = fl.get('polygon')
+                if fl_poly is None:
+                    continue
+                try:
+                    overlaps_xy = base_geom.intersects(fl_poly)
+                except Exception:
+                    overlaps_xy = False
+                if not overlaps_xy:
+                    continue
+                if elev < min_elev:
+                    min_elev = elev
+                    nearest_upper_floor = fl
+            if nearest_upper_floor is None:
+                return None
+            next_bottom = float(nearest_upper_floor.get('elevation', 0.0) or 0.0)
+            vertical_gap = max(0.0, next_bottom - current_top)
+            safety_buffer = 0.10
+            model_height = getattr(model.model_base, 'model_height', 2.0)
+            if model_height >= max(0.0, vertical_gap - safety_buffer):
+                return f'Model height {model_height:.2f}" exceeds available vertical gap {vertical_gap:.2f}" under next floor'
+            return None
         
         # Ground floor (level 0) - allowed anywhere the base does not overlap walls,
         # with vertical clearance check if an upper floor exists directly overhead at this XY.
@@ -2285,6 +2318,13 @@ def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float],
                         'reason': f'Model base would overhang floor on level {floor_level}',
                         'floor_level': floor_level
                     }
+                clearance_issue = _vertical_clearance_issue(moving_model, base_geom, current_floor)
+                if clearance_issue:
+                    return {
+                        'valid': False,
+                        'reason': clearance_issue,
+                        'floor_level': floor_level
+                    }
             else:
                 # Deployment-time check for all models (positions assumed to be already set on models)
                 try:
@@ -2308,6 +2348,13 @@ def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float],
                             return {
                                 'valid': False,
                                 'reason': f'Model base would overhang floor on level {floor_level}',
+                                'floor_level': floor_level
+                            }
+                        clearance_issue = _vertical_clearance_issue(model, base_geom, current_floor)
+                        if clearance_issue:
+                            return {
+                                'valid': False,
+                                'reason': clearance_issue,
                                 'floor_level': floor_level
                             }
 
