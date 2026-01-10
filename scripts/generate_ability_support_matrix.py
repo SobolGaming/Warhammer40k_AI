@@ -46,6 +46,9 @@ STATUS_COLORS = {
     "not implemented": "#fdecea",
 }
 
+ABILITY_SUPPORT_BY_ID: Dict[str, Tuple[str, str]] = {}
+ABILITY_SUPPORT_BY_NAME_FACTION: Dict[Tuple[str, str], Tuple[str, str]] = {}
+
 
 def _read_json(path: str) -> Any:
     with open(path, "r", encoding="utf-8") as f:
@@ -136,133 +139,227 @@ def _engine_block(engine_text: str) -> str:
     body = f"<strong>Engine:</strong> {engine}"
     return _details("Description", body)
 
-def _ability_support_overrides() -> Dict[str, Tuple[str, str]]:
-    return {
-        "acts of faith": ("Supported", "Miracle dice pool with per-phase Act usage and substitution tracking."),
-        "martial ka tah": ("Supported", "Fight-phase Ka'tah selection with Lethal/Sustained hit hooks."),
-        "doctrina imperatives": ("Supported", "Round-based imperatives with WS/BS/AP/heavy/assault modifiers."),
-        "voice of command": ("Supported", "Order issuing in Command phase with stat modifiers."),
-        "gate of infinity": ("Supported", "Teleport eligible units with placement validation."),
-        "assigned agents": ("Supported", "Imperial Agents ally caps enforced by battle size."),
-        "code chivalric": ("Supported", "Deed/Quality tracking with on-roll effects."),
-        "bondsman": ("Supported", "Bondsman buffs applied to Armiger units."),
-        "super heavy walker": ("Partial", "Terrain traversal handling only."),
-        "freeblades": ("Supported", "Imperial Knights ally and detachment restrictions enforced."),
-        "battle focus": ("Supported", "Token system + maneuver selection with per-phase limits."),
-        "disparate paths": ("Supported", "Harlequin/Ynnari ally validation in mustering."),
-        "power from pain": ("Partial", "Pain token engine with partial ability coverage."),
-        "corsairs and travelling players": ("Supported", "Corsairs/Travelling Players ally limits enforced."),
-        "cult ambush": ("Supported", "Resurgence points, ambush markers, reinforcements."),
-        "prioritised efficiency": ("Supported", "Yield points + mode tracking with objective checks."),
-        "reanimation protocols": ("Supported", "Command-phase reanimation sequencing for Necrons."),
-        "waaagh": ("Supported", "Once-per-battle Waaagh effects tracked and applied."),
-        "for the greater good": ("Supported", "Observer/Guided targeting with markerlight bonuses."),
-        "synapse": ("Supported", "Synapse aura checks via distance rules."),
-        "shadow in the warp": ("Supported", "Once-per-battle armywide Battle-shock trigger."),
-        "the shadow of chaos": ("Supported", "Shadow zones + manifestations/terror handling."),
-        "daemonic pact": ("Supported", "Chaos Daemon ally validation with caps and keyword rules."),
-        "harbingers of dread": ("Supported", "Dread ability selection and aura checks."),
-        "dreadblades": ("Supported", "Chaos Knights ally validation and model caps."),
-        "dark pacts": ("Supported", "Dark Pacts selection with lethal/sustained hooks."),
-        "cult of the dark gods": ("Supported", "Cult ally points caps and keyword adjustments."),
-        "nurgle s gift aura": ("Supported", "Contagion range + plague effects."),
-        "pact of decay": ("Supported", "Army faction restriction enforced during validation."),
-        "thrill seekers": ("Supported", "EC core rule hooks for crits and movement bonuses."),
-        "pact of excess": ("Supported", "Army faction restriction enforced during validation."),
-        "cabal of sorcerers": ("Supported", "Cabal rituals and warp charge checks."),
-        "pact of sorcery": ("Supported", "Army faction restriction enforced during validation."),
-        "blessings of khorne": ("Supported", "Blessings dice engine + effects."),
-        "pact of blood": ("Supported", "Army faction restriction enforced during validation."),
-        "oath of moment": ("Supported", "Target selection + hit/wound bonuses."),
-        "templar vows": ("Supported", "Vow selection with combat/objective effects."),
-        "space marine chapters": ("Supported", "Chapter keyword restrictions and unit bans."),
-        "deathwatch": ("Supported", "Deathwatch-only chapter restrictions."),
-        "supreme commander": ("Supported", "If any SUPREME COMMANDER unit is in the army, one must be the Warlord."),
-        "leader": ("Supported", "Attach Leaders during battle formations; protect Characters until Bodyguard is gone."),
-        "deep strike": ("Supported", "Reserves placement in Reinforcements step; enforces >9\" distance."),
-        "feel no pain": ("Supported", "Post-damage roll to ignore wounds, including mortals."),
-        "fights first": ("Supported", "Fight phase sequencing uses Fights First step."),
-        "fight on death": ("Supported", "Destroyed units can fight after attacker resolves."),
-        "shoot on death": ("Supported", "Destroyed units can shoot after attacker resolves."),
-        "firing deck": ("Supported", "Transports fire with selected embarked weapons; marks passengers as shot."),
-        "infiltrators": ("Supported", "Forward deploy placement >9\" from enemy zone/models."),
-        "lone operative": ("Supported", "Ranged targeting blocked beyond 12\" when not Attached."),
-        "scouts": ("Supported", "Pre-game Scout move, including transport use when applicable."),
-        "stealth": ("Supported", "Apply -1 to hit vs ranged attacks."),
-        "deadly demise": ("Supported", "On destruction, roll 6+ to deal mortals within 6\"."),
-        "hover": ("Not implemented", "No hover-specific handling."),
-        "quicksilver grace": ("Supported", "Mercurial Host: reroll Advance rolls for eligible units."),
-        "exquisite swordsmanship": ("Supported", "Peerless Bladesmen: on charge choose Lethal or Sustained for melee."),
-        "mechanised murder": ("Supported", "Rapid Evisceration: reroll Hit/Wound rolls of 1 for eligible units."),
-        "daemonic empowerment": ("Supported", "Carnival of Excess: empowered units gain Sustained Hits."),
-        "pledges to the dark prince": ("Supported", "Coterie pledges tracked per round; pact points unlock bonuses."),
-        "internal rivalries": ("Supported", "Slaanesh's Chosen: ignore negative Move/Advance/Charge; Favoured reroll Wounds."),
-        "sensational performance": ("Supported", "Court of the Phoenician: optional +1 S/AP on charge."),
-        "master of the pageant": ("Supported", "Court of the Phoenician: once per round -1 CP stratagem cost."),
+def _ability_id_support_by_name() -> Dict[str, Tuple[str, str]]:
+    raw = {
+        "Acts of Faith": ("Supported", "Miracle dice pool with per-phase Act usage and substitution tracking."),
+        "Martial Ka'tah": ("Supported", "Fight-phase Ka'tah selection with Lethal/Sustained hit hooks."),
+        "Doctrina Imperatives": ("Supported", "Round-based imperatives with WS/BS/AP/heavy/assault modifiers."),
+        "Voice of Command": ("Supported", "Order issuing in Command phase with stat modifiers."),
+        "Gate of Infinity": ("Supported", "Teleport eligible units with placement validation."),
+        "Assigned Agents": ("Supported", "Imperial Agents ally caps enforced by battle size."),
+        "Code Chivalric": ("Supported", "Deed/Quality tracking with on-roll effects."),
+        "Bondsman": ("Supported", "Bondsman buffs applied to Armiger units."),
+        "Super-heavy Walker": ("Partial", "Terrain traversal handling only."),
+        "Battle Focus": ("Supported", "Token system + maneuver selection with per-phase limits."),
+        "Power from Pain": ("Partial", "Pain token engine with partial ability coverage."),
+        "Cult Ambush": ("Supported", "Resurgence points, ambush markers, reinforcements."),
+        "Prioritised Efficiency": ("Supported", "Yield points + mode tracking with objective checks."),
+        "Reanimation Protocols": ("Supported", "Command-phase reanimation sequencing for Necrons."),
+        "Waaagh!": ("Supported", "Once-per-battle Waaagh effects tracked and applied."),
+        "For the Greater Good": ("Supported", "Observer/Guided targeting with markerlight bonuses."),
+        "Synapse": ("Supported", "Synapse aura checks via distance rules."),
+        "Shadow in the Warp": ("Supported", "Once-per-battle armywide Battle-shock trigger."),
+        "The Shadow of Chaos": ("Supported", "Shadow zones + manifestations/terror handling."),
+        "Harbingers of Dread": ("Supported", "Dread ability selection and aura checks."),
+        "Dark Pacts": ("Supported", "Dark Pacts selection with lethal/sustained hooks."),
+        "Nurgle's Gift (Aura)": ("Supported", "Contagion range + plague effects."),
+        "Thrill Seekers": ("Supported", "EC core rule hooks for crits and movement bonuses."),
+        "Pact of Decay": ("Supported", "Army faction restriction enforced during validation."),
+        "Pact of Excess": ("Supported", "Army faction restriction enforced during validation."),
+        "Pact of Sorcery": ("Supported", "Army faction restriction enforced during validation."),
+        "Pact of Blood": ("Supported", "Army faction restriction enforced during validation."),
+        "Cabal of Sorcerers": ("Supported", "Cabal rituals and warp charge checks."),
+        "Blessings of Khorne": ("Supported", "Blessings dice engine + effects."),
+        "Oath of Moment": ("Supported", "Target selection + hit/wound bonuses."),
+        "Templar Vows": ("Supported", "Vow selection with combat/objective effects."),
+        "Leader": ("Supported", "Attach Leaders during battle formations; protect Characters until Bodyguard is gone."),
+        "Deep Strike": ("Supported", "Reserves placement in Reinforcements step; enforces >9\" distance."),
+        "Feel No Pain": ("Supported", "Post-damage roll to ignore wounds, including mortals."),
+        "Fights First": ("Supported", "Fight phase sequencing uses Fights First step."),
+        "Fight on Death": ("Supported", "Destroyed units can fight after attacker resolves."),
+        "Shoot on Death": ("Supported", "Destroyed units can shoot after attacker resolves."),
+        "Firing Deck": ("Supported", "Transports fire with selected embarked weapons; marks passengers as shot."),
+        "Infiltrators": ("Supported", "Forward deploy placement >9\" from enemy zone/models."),
+        "Lone Operative": ("Supported", "Ranged targeting blocked beyond 12\" when not Attached."),
+        "Scouts": ("Supported", "Pre-game Scout move, including transport use when applicable."),
+        "Stealth": ("Supported", "Apply -1 to hit vs ranged attacks."),
+        "Deadly Demise": ("Supported", "On destruction, roll 6+ to deal mortals within 6\"."),
+        "Plunging Fire": ("Supported", "Extra AP vs targets below attacker elevation."),
+        "Hover": ("Not implemented", "No hover-specific handling."),
     }
+    return {_norm(name): val for name, val in raw.items()}
 
 
-def _ability_patterns() -> List[Tuple[str, str, str]]:
-    return [
-        ("Deep Strike", "Supported", r"\bdeep strike\b"),
-        ("Infiltrators", "Supported", r"\binfiltrator"),
-        ("Scouts", "Supported", r"\bscouts?\b"),
-        ("Stealth", "Supported", r"\bstealth\b"),
-        ("Lone Operative", "Supported", r"\blone operative\b"),
-        ("Deadly Demise", "Supported", r"\bdeadly demise\b"),
-        ("Feel No Pain", "Supported", r"\bfeel no pain\b"),
-        ("Fights First", "Supported", r"\bfights first\b"),
-        ("Fight on Death", "Supported", r"\bfight(s)? on death\b"),
-        ("Shoot on Death", "Supported", r"\bshoot(s)? on death\b"),
-        ("Advance+Shoot", "Supported", r"\beligible to shoot\b.*\badvance(d)?\b"),
-        ("Fall Back+Shoot", "Supported", r"\beligible to shoot\b.*\bfell back\b"),
-        ("Advance+Charge", "Supported", r"\beligible to declare a charge\b.*\badvance(d)?\b"),
-        ("Firing Deck", "Supported", r"\bfiring deck\b"),
-        ("Plunging Fire", "Supported", r"\bplunging fire\b"),
-    ]
+def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
+    raw = {
+        "Quicksilver Grace": ("Supported", "Mercurial Host: reroll Advance rolls for eligible units."),
+        "Exquisite Swordsmanship": ("Supported", "Peerless Bladesmen: on charge choose Lethal or Sustained for melee."),
+        "Mechanised Murder": ("Supported", "Rapid Evisceration: reroll Hit/Wound rolls of 1 for eligible units."),
+        "Daemonic Empowerment": ("Supported", "Carnival of Excess: empowered units gain Sustained Hits."),
+        "Pledges to the Dark Prince": ("Supported", "Coterie pledges tracked per round; pact points unlock bonuses."),
+        "Internal Rivalries": ("Supported", "Slaanesh's Chosen: ignore negative Move/Advance/Charge; Favoured reroll Wounds."),
+        "Sensational Performance": ("Supported", "Court of the Phoenician: optional +1 S/AP on charge."),
+        "Master of the Pageant": ("Supported", "Court of the Phoenician: once per round -1 CP stratagem cost."),
+    }
+    return {_norm(name): val for name, val in raw.items()}
 
 
-def _classify_ability(name: str, description: str) -> Tuple[str, str]:
-    overrides = _ability_support_overrides()
-    key = _norm(name)
+def _restriction_support_by_name() -> Dict[str, Tuple[str, str]]:
+    raw = {
+        "Freeblades": ("Supported", "Imperial Knights ally and detachment restrictions enforced."),
+        "Disparate Paths": ("Supported", "Harlequin/Ynnari ally validation in mustering."),
+        "Corsairs and Travelling Players": ("Supported", "Corsairs/Travelling Players ally limits enforced."),
+        "Daemonic Pact": ("Supported", "Chaos Daemon ally validation with caps and keyword rules."),
+        "Dreadblades": ("Supported", "Chaos Knights ally validation and model caps."),
+        "Cult of the Dark Gods": ("Supported", "Cult ally points caps and keyword adjustments."),
+        "Pact of Decay": ("Supported", "Army faction restriction enforced during validation."),
+        "Pact of Excess": ("Supported", "Army faction restriction enforced during validation."),
+        "Pact of Sorcery": ("Supported", "Army faction restriction enforced during validation."),
+        "Pact of Blood": ("Supported", "Army faction restriction enforced during validation."),
+        "Space Marine Chapters": ("Supported", "Chapter keyword restrictions and unit bans."),
+        "Deathwatch": ("Supported", "Deathwatch-only chapter restrictions."),
+    }
+    return {_norm(name): val for name, val in raw.items()}
+
+
+def _datasheet_ability_support_global() -> Dict[str, Tuple[str, str]]:
+    raw = {
+        "Supreme Commander": ("Supported", "If any SUPREME COMMANDER unit is in the army, one must be the Warlord."),
+        "One Shot": ("Supported", "Weapon-level one-shot tracking enforced per model."),
+        "Super-heavy Walker": ("Partial", "Terrain traversal handling only."),
+    }
+    return {_norm(name): val for name, val in raw.items()}
+
+
+def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[str, str]]:
+    raw = {
+        ("WE", "Reborn in Blood"): ("Partial", "Revive + reserves placement; next Movement phase-only not enforced."),
+        ("WE", "Lord of Murder"): ("Supported", "Conditional Lone Operative within 3\" of friendly WORLD EATERS INFANTRY."),
+        ("WE", "Beacons of Rage (Aura)"): ("Supported", "+1 hit (melee) and +1 wound vs Below Half-strength; excludes Monster/Vehicle."),
+        ("WE", "Fire Riders"): ("Partial", "Deep Strike detected; movement/leading-only clauses not enforced."),
+        ("WE", "Forwards, for Blood!"): ("Partial", "Advance reroll detected; Blood Surge reroll/leading-only clauses not enforced."),
+        ("WE", "Bloody Fury"): ("Partial", "Charge reroll detected; closest-target/ranged reroll clauses not enforced."),
+        ("WE", "To Slake its Rage"): ("Supported", "Advance-and-charge eligibility."),
+        ("WE", "Idol of Blessed Blood"): ("Supported", "Adds an extra Blessings die for each on-battlefield model with this ability."),
+        ("WE", "Murderlust"): ("Supported", "Advance-and-charge eligibility."),
+        ("WE", "Collar of Khorne"): ("Supported", "Feel No Pain 3+ against Psychic attacks."),
+        ("WE", "Possessed Lord"): ("Supported", "Once-per-battle Fight phase: +3 Attacks and Devastating Wounds."),
+        ("WE", "Lord of the Eightbound"): ("Partial", "Deep Strike/Scouts 6\" detected; attachment requirement not enforced."),
+        ("WE", "Rage Embodied (Aura)"): ("Supported", "+1 melee Attacks aura within 6\" for BLOOD LEGIONS."),
+        ("WE", "Daemon Lord of Khorne (Aura)"): ("Supported", "+1 to hit in melee aura within 6\" for BLOOD LEGIONS."),
+        ("CD", "Monarch of the Hunt"): ("Supported", "Quarry selection + melee reroll hooks vs quarry."),
+    }
+    out: Dict[Tuple[str, str], Tuple[str, str]] = {}
+    for (fid, name), val in raw.items():
+        out[(str(fid or "").strip().upper(), _norm(name))] = val
+    return out
+
+
+def _datasheet_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[str, str]]:
+    """
+    Explicit full-datasheet support overrides.
+    Use this only when abilities, wargear, points, keywords, damaged profiles,
+    and other special sections are all confirmed supported.
+    """
+    raw: Dict[Tuple[str, str], Tuple[str, str]] = {
+        # ("WE", "Angron"): ("Supported", "Full datasheet support verified."),
+    }
+    out: Dict[Tuple[str, str], Tuple[str, str]] = {}
+    for (fid, name), val in raw.items():
+        out[(str(fid or "").strip().upper(), _norm(name))] = val
+    return out
+
+def _seed_ability_support_maps(abilities: List[dict], det_abilities_rows: List[dict]) -> None:
+    global ABILITY_SUPPORT_BY_ID, ABILITY_SUPPORT_BY_NAME_FACTION
+    ABILITY_SUPPORT_BY_ID = {}
+    ABILITY_SUPPORT_BY_NAME_FACTION = {}
+
+    name_to_ids: Dict[str, List[str]] = {}
+    for ab in abilities:
+        ab_id = str(ab.get("id", "") or "").strip()
+        if not ab_id:
+            continue
+        name_norm = _norm(ab.get("name", "") or "")
+        if not name_norm:
+            continue
+        name_to_ids.setdefault(name_norm, []).append(ab_id)
+    for name_norm, val in _ability_id_support_by_name().items():
+        for ab_id in name_to_ids.get(name_norm, []):
+            ABILITY_SUPPORT_BY_ID[ab_id] = val
+
+    det_name_to_ids: Dict[str, List[str]] = {}
+    for row in det_abilities_rows:
+        det_id = str(row.get("id", "") or "").strip()
+        if not det_id:
+            continue
+        name_norm = _norm(row.get("name", "") or "")
+        if not name_norm:
+            continue
+        det_name_to_ids.setdefault(name_norm, []).append(det_id)
+    for name_norm, val in _detachment_ability_support_by_name().items():
+        for det_id in det_name_to_ids.get(name_norm, []):
+            ABILITY_SUPPORT_BY_ID[det_id] = val
+
+    restriction_support = _restriction_support_by_name()
+    for fid, meta in FACTION_RULE_METADATA.items():
+        fid_norm = str(fid or "").strip().upper()
+        for restriction in list(meta.get("restrictions", []) or []):
+            key = _norm(restriction)
+            if key in restriction_support:
+                ABILITY_SUPPORT_BY_NAME_FACTION[(fid_norm, key)] = restriction_support[key]
+
+    for name_norm, val in _datasheet_ability_support_global().items():
+        for fid in SUPPORTED_FACTION_IDS:
+            fid_norm = str(fid or "").strip().upper()
+            ABILITY_SUPPORT_BY_NAME_FACTION[(fid_norm, name_norm)] = val
+
+    for key, val in _datasheet_ability_support_by_name_faction().items():
+        ABILITY_SUPPORT_BY_NAME_FACTION[key] = val
+
+
+def _classify_ability(name: str, description: str, *, ability_id: str = "", faction_id: str = "") -> Tuple[str, str]:
+    ab_id = str(ability_id or "").strip()
+    if ab_id:
+        return ABILITY_SUPPORT_BY_ID.get(ab_id, ("Not implemented", ""))
+
+    fid = str(faction_id or "").strip().upper()
+    name_norm = _norm(name)
+    if name_norm and (fid, name_norm) in ABILITY_SUPPORT_BY_NAME_FACTION:
+        return ABILITY_SUPPORT_BY_NAME_FACTION[(fid, name_norm)]
+    return ("Not implemented", "")
+
+
+def _datasheet_support_status(
+    *,
+    faction_id: str,
+    datasheet_name: str,
+    ability_statuses: Sequence[str],
+    overrides: Dict[Tuple[str, str], Tuple[str, str]],
+) -> Tuple[str, str]:
+    fid = str(faction_id or "").strip().upper()
+    key = (fid, _norm(datasheet_name))
     if key in overrides:
         return overrides[key]
 
-    text = _norm(_strip_html(f"{name} {description}"))
-    matches: List[Tuple[str, str]] = []
-    for label, status, rx in _ability_patterns():
-        if re.search(rx, text, flags=re.IGNORECASE):
-            matches.append((label, status))
-    if not matches:
-        return ("Not implemented", "")
+    total = len(list(ability_statuses or []))
+    supported = sum(1 for s in ability_statuses if _status_is_supported(s))
+    partial = sum(1 for s in ability_statuses if _norm(s) == "partial")
+    not_impl = total - supported - partial
 
-    status = "Supported" if all(s == "Supported" for _, s in matches) else "Partial"
-    notes = ", ".join(sorted({label for label, _ in matches}, key=str.lower))
+    base_note = (
+        "Wargear/points/keywords/damaged profiles/other sections (e.g., Orders) not audited."
+    )
 
-    extra_markers = [
-        " but ",
-        " instead ",
-        " unless ",
-        " except ",
-        " however ",
-        " only ",
-        " while ",
-        " after ",
-        " before ",
-        " until ",
-        " at the start",
-        " start of",
-        " each time",
-        " choose ",
-        " select ",
-        " one of",
-        " following",
-        ":",
-    ]
-    if status == "Supported" and any(m in f" {text} " for m in extra_markers):
-        status = "Partial"
-        notes = f"{notes} (extra conditions not fully modeled)"
-    return (status, notes)
+    if total == 0:
+        return ("Not implemented", f"No datasheet abilities detected. {base_note}")
+    if not_impl == total:
+        return ("Not implemented", f"Abilities not implemented ({not_impl}/{total}). {base_note}")
+    if supported == total and partial == 0:
+        return ("Partial", f"Abilities supported ({supported}/{total}). {base_note}")
+    return (
+        "Partial",
+        f"Abilities: {supported} supported, {partial} partial, {not_impl} not implemented. {base_note}",
+    )
 
 def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str, str]:
     explicit = {
@@ -566,6 +663,9 @@ def _build_faction_content(
     detachments: Dict[str, dict],
     ds_abilities_rows: List[dict],
     datasheet_abilities_by_faction: Dict[str, Dict[Tuple[str, ...], dict]],
+    datasheet_abilities_by_datasheet: Dict[str, Dict[Tuple[str, ...], dict]],
+    datasheets_by_faction: Dict[str, List[dict]],
+    datasheet_support_overrides: Dict[Tuple[str, str], Tuple[str, str]],
 ) -> Tuple[str, int, int]:
     faction_name = str(meta.get("faction_name", "") or faction_id)
     faction_items: List[Tuple[str, str]] = []
@@ -576,7 +676,8 @@ def _build_faction_content(
     for rule_name in list(meta.get("army_rules", []) or []):
         entry = _ability_entry_by_name(abilities, rule_name, faction_id=faction_id)
         desc = entry.get("description", "") if entry else ""
-        status, notes = _classify_ability(rule_name, desc)
+        ability_id = str(entry.get("id", "") or "") if entry else ""
+        status, notes = _classify_ability(rule_name, desc, ability_id=ability_id, faction_id=faction_id)
         faction_items.append((status, rule_name))
         army_rule_rows.append(
             (
@@ -596,7 +697,7 @@ def _build_faction_content(
     # Mustering restrictions
     restriction_rows = []
     for restriction in list(meta.get("restrictions", []) or []):
-        status, notes = _classify_ability(restriction, "")
+        status, notes = _classify_ability(restriction, "", faction_id=faction_id)
         rules_text, engine_text = _restriction_rule_and_engine(restriction, abilities, faction_id)
         faction_items.append((status, restriction))
         restriction_rows.append(
@@ -634,7 +735,8 @@ def _build_faction_content(
             for ability in det_abilities_by_det.get(det_id, []):
                 name = ability.get("name", "") or ""
                 desc = ability.get("description", "") or ""
-                status, notes = _classify_ability(name, desc)
+                ability_id = str(ability.get("id", "") or "")
+                status, notes = _classify_ability(name, desc, ability_id=ability_id, faction_id=faction_id)
                 faction_items.append((status, name))
                 det_ability_rows.append(
                     (
@@ -656,7 +758,7 @@ def _build_faction_content(
             if det_restrictions:
                 det_restriction_rows = []
                 for restriction in det_restrictions:
-                    status, notes = _classify_ability(restriction, "")
+                    status, notes = _classify_ability(restriction, "", faction_id=faction_id)
                     rules_text, engine_text = _restriction_rule_and_engine(restriction, abilities, faction_id)
                     faction_items.append((status, restriction))
                     det_restriction_rows.append(
@@ -746,7 +848,8 @@ def _build_faction_content(
     for entry in ability_entries:
         name = entry.get("name", "") or ""
         desc = entry.get("description", "") or ""
-        status, notes = _classify_ability(name, desc)
+        ability_id = str(entry.get("ability_id", "") or "")
+        status, notes = _classify_ability(name, desc, ability_id=ability_id, faction_id=faction_id)
         faction_items.append((status, name))
         units = sorted({u for u in (entry.get("units") or set()) if u}, key=lambda s: s.lower())
         ds_ability_rows.append(
@@ -763,6 +866,43 @@ def _build_faction_content(
     if ds_ability_rows:
         faction_body.append("## Datasheet Abilities")
         faction_body.append(_table(["Status", "Ability", "Units", "Description"], ds_ability_rows))
+        faction_body.append("")
+
+    # Datasheet support summary
+    ds_units = list(datasheets_by_faction.get(faction_id, []) or [])
+    if ds_units:
+        ds_units.sort(key=lambda d: (_norm(d.get("name", "")), str(d.get("id", "") or "")))
+        ds_rows = []
+        for ds in ds_units:
+            dsid = str(ds.get("id", "") or "").strip()
+            name = str(ds.get("name", "") or dsid)
+            ability_entries = list(datasheet_abilities_by_datasheet.get(dsid, {}).values())
+            ability_statuses: List[str] = []
+            for entry in ability_entries:
+                ab_name = entry.get("name", "") or ""
+                ab_desc = entry.get("description", "") or ""
+                ab_id = str(entry.get("ability_id", "") or "")
+                ab_status, _ab_notes = _classify_ability(ab_name, ab_desc, ability_id=ab_id, faction_id=faction_id)
+                ability_statuses.append(ab_status)
+
+            status, note = _datasheet_support_status(
+                faction_id=faction_id,
+                datasheet_name=name,
+                ability_statuses=ability_statuses,
+                overrides=datasheet_support_overrides,
+            )
+            ds_rows.append(
+                (
+                    [
+                        _escape(_status_icon(status)),
+                        _escape(name),
+                        _escape(note),
+                    ],
+                    status,
+                )
+            )
+        faction_body.append("## Datasheets")
+        faction_body.append(_table(["Status", "Unit", "Notes"], ds_rows))
         faction_body.append("")
 
     supported, total = _summarize_section_count(faction_items)
@@ -797,6 +937,8 @@ def _build_matrix() -> str:
     detachments = _load_detachments()
     ds_map = _build_datasheet_map()
 
+    _seed_ability_support_maps(abilities, det_abilities_rows)
+
     abilities_by_id = {str(a.get("id", "") or ""): a for a in abilities if a.get("id")}
 
     det_abilities_by_det: Dict[str, List[dict]] = {}
@@ -824,6 +966,7 @@ def _build_matrix() -> str:
         strats_by_det.setdefault(det_id, []).append(row)
 
     datasheet_abilities_by_faction: Dict[str, Dict[Tuple[str, ...], dict]] = {}
+    datasheet_abilities_by_datasheet: Dict[str, Dict[Tuple[str, ...], dict]] = {}
     for row in ds_abilities_rows:
         dsid = str(row.get("datasheet_id", "") or "").strip()
         ds = ds_map.get(dsid)
@@ -849,8 +992,21 @@ def _build_matrix() -> str:
 
         bucket = datasheet_abilities_by_faction.setdefault(fid, {})
         if key not in bucket:
-            bucket[key] = {"name": name, "description": desc, "units": set()}
+            bucket[key] = {"name": name, "description": desc, "ability_id": ability_id, "units": set()}
         bucket[key]["units"].add(ds.get("name", dsid))
+
+        ds_bucket = datasheet_abilities_by_datasheet.setdefault(dsid, {})
+        if key not in ds_bucket:
+            ds_bucket[key] = {"name": name, "description": desc, "ability_id": ability_id}
+
+    datasheets_by_faction: Dict[str, List[dict]] = {}
+    for ds in ds_map.values():
+        fid = str(ds.get("faction_id", "") or "").strip().upper()
+        if fid not in SUPPORTED_FACTION_IDS:
+            continue
+        datasheets_by_faction.setdefault(fid, []).append(ds)
+
+    datasheet_support_overrides = _datasheet_support_by_name_faction()
 
     lines: List[str] = []
     lines.append("# Ability support matrix (Wahapedia)")
@@ -874,7 +1030,8 @@ def _build_matrix() -> str:
     for ab in core_abilities:
         name = ab.get("name", "") or ""
         desc = ab.get("description", "") or ""
-        status, notes = _classify_ability(name, desc)
+        ability_id = str(ab.get("id", "") or "")
+        status, notes = _classify_ability(name, desc, ability_id=ability_id, faction_id="")
         core_items.append((status, name))
         core_rows.append(
             (
@@ -980,11 +1137,14 @@ def _build_matrix() -> str:
             abilities=abilities,
             det_abilities_by_det=det_abilities_by_det,
             enhancements=enhancements,
-            stratagems=stratagems,
-            detachments=detachments,
-            ds_abilities_rows=ds_abilities_rows,
-            datasheet_abilities_by_faction=datasheet_abilities_by_faction,
-        )
+              stratagems=stratagems,
+              detachments=detachments,
+              ds_abilities_rows=ds_abilities_rows,
+              datasheet_abilities_by_faction=datasheet_abilities_by_faction,
+              datasheet_abilities_by_datasheet=datasheet_abilities_by_datasheet,
+              datasheets_by_faction=datasheets_by_faction,
+              datasheet_support_overrides=datasheet_support_overrides,
+          )
         slug = _slugify(faction_name)
         rel_path = f"factions/{slug}.md"
         out_path = os.path.join(FACTION_DOCS_DIR, f"{slug}.md")

@@ -4378,13 +4378,13 @@ class GameView:
         except Exception:
             rerolls_allowed = 0
 
-        # Idol of the Blessed Blood (+1D6 per such model on battlefield) - start-of-battle-round only.
+        # Idol of Blessed Blood (+1D6 per such model on battlefield) - start-of-battle-round only.
         idol_bonus = 0
         try:
             for u in list(getattr(army, "units", []) or []):
                 if not (getattr(u, "deployed", False) and u.is_alive() and getattr(u, "reserve_status", "deployed") == "deployed"):
                     continue
-                found, _ = u._find_ability_with_patterns(["idol of the blessed blood"])
+                found, _ = u._find_ability_with_patterns(["idol of blessed blood", "idol of the blessed blood"])
                 if found:
                     idol_bonus += 1
         except Exception:
