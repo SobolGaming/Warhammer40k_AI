@@ -1005,7 +1005,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("WE", "Rage Embodied (Aura)"): ("Supported", "+1 melee Attacks aura within 6\" for BLOOD LEGIONS."),
         ("WE", "Daemon Lord of Khorne (Aura)"): ("Supported", "+1 to hit in melee aura within 6\" for BLOOD LEGIONS."),
         ("SM", "Tempormortis"): ("Supported", "Fights First while leading a unit."),
-        ("SM", "Pack Leader"): ("Not implemented", "Warlord/Enhancement restriction not enforced."),
+        ("SM", "Pack Leader"): ("Supported", "Unit cannot be your Warlord or be given Enhancements."),
     }
     out: Dict[Tuple[str, str], Tuple[str, str]] = {}
     for (fid, name), val in raw.items():
@@ -1097,7 +1097,13 @@ def _classify_ability(
 ) -> Tuple[str, str]:
     ab_id = str(ability_id or "").strip()
     if ab_id:
-        return ABILITY_SUPPORT_BY_ID.get(ab_id, ("Not implemented", ""))
+        mapped = ABILITY_SUPPORT_BY_ID.get(ab_id)
+        if mapped:
+            return mapped
+
+    desc_support = _warlord_enhancement_restriction_support(description)
+    if desc_support:
+        return desc_support
 
     fid = str(faction_id or "").strip().upper()
     name_norm = _norm(name)
@@ -1112,6 +1118,22 @@ def _classify_ability(
     if name_norm and (fid, name_norm) in ABILITY_SUPPORT_BY_NAME_FACTION:
         return ABILITY_SUPPORT_BY_NAME_FACTION[(fid, name_norm)]
     return ("Not implemented", "")
+
+
+def _warlord_enhancement_restriction_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    low = text.lower()
+    warlord_re = re.compile(r"\b(?:cannot be your|none of these models can be your)\s+warlord\b", re.IGNORECASE)
+    enh_re = re.compile(r"\bcannot be given\s+(?:an?\s+)?enhancements?\b", re.IGNORECASE)
+    if not (warlord_re.search(low) and enh_re.search(low)):
+        return None
+    return ("Supported", "Unit cannot be your Warlord or be given Enhancements.")
 
 
 def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str, str]:

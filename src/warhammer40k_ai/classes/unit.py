@@ -158,6 +158,12 @@ class Unit:
         except Exception:
             # Defensive: never block unit construction due to unsupported/unknown text patterns.
             pass
+        # Parse unit-level mustering restrictions encoded on datasheet abilities.
+        try:
+            self._parse_warlord_enhancement_restrictions()
+        except Exception:
+            # Defensive: never block unit construction due to unsupported/unknown text patterns.
+            pass
 
     def _add_stat_additive(self, key: str, delta: int) -> None:
         """Apply an additive stat delta, tracking it for later removal (damaged profiles)."""
@@ -573,6 +579,62 @@ class Unit:
                     spec = {}
                 spec[int(dmg)] = int(spec.get(int(dmg), 0)) + int(bonus)
                 self.special_rules["armor_save_bonus_vs_damage_characteristic"] = spec
+
+    _CANNOT_BE_WARLORD_RE = re.compile(r"\bcannot be your\s+warlord\b", re.IGNORECASE)
+    _CANNOT_BE_GIVEN_ENHANCEMENTS_RE = re.compile(r"\bcannot be given\s+(?:an?\s+)?enhancements?\b", re.IGNORECASE)
+
+    def _parse_warlord_enhancement_restrictions(self) -> None:
+        """Parse datasheet abilities that forbid Warlord selection or Enhancements."""
+        if getattr(self, "special_rules", None) is None:
+            self.special_rules = {}
+
+        found_warlord = False
+        found_enhancements = False
+
+        def _scan(text: str) -> None:
+            nonlocal found_warlord, found_enhancements
+            if not text or (found_warlord and found_enhancements):
+                return
+            normalized = self._normalize_rules_text(text)
+            if not normalized:
+                return
+            if not found_warlord and self._CANNOT_BE_WARLORD_RE.search(normalized):
+                found_warlord = True
+            if not found_enhancements and self._CANNOT_BE_GIVEN_ENHANCEMENTS_RE.search(normalized):
+                found_enhancements = True
+
+        # Unit-level abilities
+        for ab in list(getattr(self, "possible_abilities", []) or []):
+            try:
+                desc = ab if isinstance(ab, str) else (getattr(ab, "description", "") or getattr(ab, "name", ""))
+            except Exception:
+                desc = ""
+            _scan(desc)
+            if found_warlord and found_enhancements:
+                break
+
+        # Model-level abilities
+        if not (found_warlord and found_enhancements):
+            for model in list(getattr(self, "models", []) or []):
+                try:
+                    abilities = getattr(model, "abilities", {}) or {}
+                except Exception:
+                    abilities = {}
+                for ab in abilities.values():
+                    try:
+                        desc = ab if isinstance(ab, str) else (getattr(ab, "description", "") or getattr(ab, "name", ""))
+                    except Exception:
+                        desc = ""
+                    _scan(desc)
+                    if found_warlord and found_enhancements:
+                        break
+                if found_warlord and found_enhancements:
+                    break
+
+        if found_warlord:
+            self.special_rules["cannot_be_warlord"] = True
+        if found_enhancements:
+            self.special_rules["cannot_be_given_enhancements"] = True
 
     def _parse_attribute(self, attribute_value: str) -> int:
         # Remove " and + from the attribute value
