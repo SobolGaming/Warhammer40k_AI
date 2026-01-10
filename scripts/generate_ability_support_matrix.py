@@ -37,6 +37,7 @@ from warhammer40k_ai.utility.faction_rule_metadata import FACTION_RULE_METADATA
 from warhammer40k_ai.classes.army import SUPPORTED_FACTION_IDS
 from warhammer40k_ai.classes.stratagems import IMPLEMENTED_STRATAGEM_NAMES
 from warhammer40k_ai.classes.enhancement_effects import classify_enhancement_support
+from warhammer40k_ai.classes.wargear import parse_alternate_3
 
 
 STATUS_COLORS = {
@@ -48,6 +49,8 @@ STATUS_COLORS = {
 
 ABILITY_SUPPORT_BY_ID: Dict[str, Tuple[str, str]] = {}
 ABILITY_SUPPORT_BY_NAME_FACTION: Dict[Tuple[str, str], Tuple[str, str]] = {}
+OPTION_SUPPORT_CACHE: Dict[str, Tuple[str, str]] = {}
+WARGEAR_KEYWORD_SUPPORT_CACHE: Dict[Tuple[str, Tuple[str, ...]], Tuple[str, str]] = {}
 
 
 def _read_json(path: str) -> Any:
@@ -67,6 +70,7 @@ def _strip_html(text: str) -> str:
         return ""
     text = html.unescape(text)
     text = text.replace("\u2019", "'")
+    text = text.replace("\u0192?T", "'")
     text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
     text = re.sub(r"</li>", "\n", text, flags=re.IGNORECASE)
     text = re.sub(r"<li[^>]*>", "- ", text, flags=re.IGNORECASE)
@@ -78,6 +82,7 @@ def _strip_html(text: str) -> str:
 def _ascii_text(text: str) -> str:
     t = str(text or "")
     t = t.replace("\u2019", "'").replace("\u2013", "-").replace("\u2014", "-").replace("\u00a0", " ")
+    t = t.replace("\u0192?T", "'")
     return t
 
 
@@ -138,6 +143,649 @@ def _engine_block(engine_text: str) -> str:
     engine = _escape(engine_text or "-")
     body = f"<strong>Engine:</strong> {engine}"
     return _details("Description", body)
+
+
+def _normalize_token(token: str) -> str:
+    t = _strip_html(token).lower().strip()
+    t = re.sub(r"\s+", " ", t)
+    return t.strip(" .;")
+
+
+def _canonical_keyword(token: str) -> str:
+    t = _normalize_token(token)
+    if not t:
+        return ""
+    if t.startswith("anti-"):
+        return "anti"
+    if t.startswith("rapid fire"):
+        return "rapid fire"
+    if t.startswith("sustained hits"):
+        return "sustained hits"
+    if t.startswith("melta"):
+        return "melta"
+    if t.startswith("feel no pain"):
+        return "feel no pain"
+    return t
+
+
+def _keyword_support(canon: str, examples: Sequence[str]) -> Tuple[str, str]:
+    c = canon.lower().strip()
+
+    supported_notes: Dict[str, str] = {
+        "assault": "Shooting after Advance is allowed for Assault profiles.",
+        "blast": "Adds attacks based on target unit size.",
+        "devastating wounds": "Critical wounds become mortal wounds.",
+        "hazardous": "Hazardous test after attacking; on 1 suffer mortal wounds.",
+        "heavy": "+1 to hit if the firing unit Remained Stationary.",
+        "ignores cover": "Cancels Benefit of Cover from terrain and Indirect Fire.",
+        "indirect fire": "No-LOS penalties and grants target Benefit of Cover (unless Ignores Cover).",
+        "lethal hits": "Critical hits auto-wound.",
+        "plunging fire": "AP improves by 1 when plunging fire conditions are met.",
+        "rapid fire": "Adds attacks at half range (supports dice values like D3/D6+X).",
+        "sustained hits": "Critical hits generate extra hits (supports dice values like D3/D6+X).",
+        "torrent": "Auto-hits (also works under Overwatch restriction).",
+        "anti": "Critical wound threshold vs matching target keyword (e.g. Anti-Infantry 4+).",
+        "melta": "Adds damage at half range (supports dice values like D3/D6+X).",
+        "extra attacks": "Melee selection supports 1 primary weapon plus all [EXTRA ATTACKS] weapons.",
+        "one shot": "Each model can use a ONE SHOT weapon once per battle.",
+        "pistol": "Engaged shooting + pistol-vs-other-ranged choice enforced.",
+        "lance": "If the bearer charged this turn, +1 to wound rolls for this weapon.",
+        "twin-linked": "Re-roll failed wound rolls for attacks made with this weapon.",
+    }
+
+    partial_notes: Dict[str, str] = {
+        "psychic": "Used for conditional FNP parsing; no other special handling.",
+        "feel no pain": "Supported as a defensive mechanic, but treated as informational here.",
+    }
+
+    if c in supported_notes:
+        if c == "anti":
+            for ex in examples:
+                t = _normalize_token(ex)
+                if t.startswith("anti-"):
+                    m = re.match(r"^anti-[a-z0-9\- ]+\s+\d\+?$", t)
+                    if not m:
+                        return ("Partial", "Anti is implemented, but some formatting may not parse.")
+        return ("Supported", supported_notes[c])
+
+    if c in partial_notes:
+        return ("Partial", partial_notes[c])
+
+    return ("Not implemented", "No explicit gameplay effect wired for this keyword.")
+
+
+def _support_for_option_desc(desc: str) -> Tuple[str, str]:
+    if desc in OPTION_SUPPORT_CACHE:
+        return OPTION_SUPPORT_CACHE[desc]
+
+    dummy_unit = type("DummyUnit", (), {"models": [object() for _ in range(10)]})()
+    dl = _strip_html(desc).lower()
+    dl = re.sub(r"\s+", " ", dl).strip()
+
+    if "can only be equipped with two ranged weapons if one of them is a pistol" in dl:
+        result = ("Supported", "Constraint-only line: enforced (2 ranged requires 1 Pistol).")
+        OPTION_SUPPORT_CACHE[desc] = result
+        return result
+    if "can only be equipped with two ranged weapons if one of them is a cyclone missile launcher" in dl:
+        result = ("Supported", "Constraint-only line: enforced (Cyclone + Storm bolter/Combi-weapon).")
+        OPTION_SUPPORT_CACHE[desc] = result
+        return result
+    if re.search(r"each model cannot be equipped with more than \d+ ranged weapons", dl):
+        result = ("Supported", "Constraint-only line: enforced (max ranged weapons).")
+        OPTION_SUPPORT_CACHE[desc] = result
+        return result
+    if re.search(r"(?:no model|this model) can(?:not)? be equipped with both .+ and .+", dl):
+        result = ("Supported", "Constraint-only line: enforced (mutual exclusion).")
+        OPTION_SUPPORT_CACHE[desc] = result
+        return result
+    if re.search(r"cannot be equipped with more than \d+ [\w\s\-']+", dl):
+        result = ("Supported", "Constraint-only line: enforced (max weapon counts).")
+        OPTION_SUPPORT_CACHE[desc] = result
+        return result
+    if "a model can only take one of these options" in dl or "cannot be equipped with more than one of these wargear options" in dl:
+        result = ("Supported", "Constraint-only line: enforced (model option mutex).")
+        OPTION_SUPPORT_CACHE[desc] = result
+        return result
+    if dl.startswith("*"):
+        if "these options cannot be taken on the same model" in dl:
+            result = ("Supported", "Footnote: enforced (per-model option mutex).")
+            OPTION_SUPPORT_CACHE[desc] = result
+            return result
+        if "cannot have duplicates of these pieces of wargear" in dl:
+            result = ("Supported", "Footnote: enforced (no duplicates in choice list).")
+            OPTION_SUPPORT_CACHE[desc] = result
+            return result
+        if "cannot be replaced" in dl:
+            result = ("Supported", "Footnote: enforced (replacement lock).")
+            OPTION_SUPPORT_CACHE[desc] = result
+            return result
+        if "this weapon cannot be replaced" in dl:
+            result = ("Supported", "Footnote: enforced (replacement lock for selected item).")
+            OPTION_SUPPORT_CACHE[desc] = result
+            return result
+        if "helbrute fist cannot then be replaced" in dl:
+            result = ("Supported", "Footnote: enforced (replacement lock).")
+            OPTION_SUPPORT_CACHE[desc] = result
+            return result
+        if "to a maximum of" in dl:
+            result = ("Supported", "Footnote: enforced (max-per-models ratio).")
+            OPTION_SUPPORT_CACHE[desc] = result
+            return result
+        if "maximum 1 per model" in dl or "maximum one per model" in dl:
+            result = ("Supported", "Footnote: enforced (max 1 per model).")
+            OPTION_SUPPORT_CACHE[desc] = result
+            return result
+        if "you cannot select the same weapon" in dl or "you cannot select the same option" in dl:
+            result = ("Supported", "Footnote: enforced (unit selection caps).")
+            OPTION_SUPPORT_CACHE[desc] = result
+            return result
+        if "you cannot select both of these options for the same model" in dl:
+            result = ("Supported", "Footnote: enforced (per-model option mutex).")
+            OPTION_SUPPORT_CACHE[desc] = result
+            return result
+        if "the rules for a watcher in the dark can be found" in dl:
+            result = ("Supported", "Informational footnote (no gameplay enforcement needed).")
+            OPTION_SUPPORT_CACHE[desc] = result
+            return result
+        if "designer" in dl and "note" in dl:
+            result = ("Supported", "Designer note (no gameplay enforcement needed).")
+            OPTION_SUPPORT_CACHE[desc] = result
+            return result
+    if "this weapon cannot be replaced" in dl:
+        result = ("Supported", "Footnote: enforced (replacement lock).")
+        OPTION_SUPPORT_CACHE[desc] = result
+        return result
+
+    try:
+        parsed = parse_alternate_3([desc], dummy_unit)
+    except Exception:
+        result = ("Not implemented", "Parser raised while interpreting this option text.")
+        OPTION_SUPPORT_CACHE[desc] = result
+        return result
+    if not parsed:
+        result = ("Not implemented", "Parser could not interpret this option text.")
+        OPTION_SUPPORT_CACHE[desc] = result
+        return result
+
+    hard_conditional_markers = (
+        "excluding ",
+        "maximum of",
+    )
+
+    for opt in parsed:
+        conds = " | ".join(getattr(opt, "conditionals", []) or []).lower()
+        if any(m in conds for m in hard_conditional_markers):
+            result = ("Partial", "Parsed, but has constraints not fully enforced.")
+            OPTION_SUPPORT_CACHE[desc] = result
+            return result
+
+        item_max = getattr(getattr(opt, "item_quantity", None), "max", 1)
+        if item_max and int(item_max) > 1:
+            if "item_limit is equal to number of equipped" not in conds:
+                result = ("Partial", "Parsed, but allows selecting multiple items (needs stronger enforcement).")
+                OPTION_SUPPORT_CACHE[desc] = result
+                return result
+
+        choices = list(getattr(opt, "wargear_to", []) or [])
+        if len(choices) > 1:
+            seen = set()
+            for choice in choices:
+                key = tuple(sorted((int(qty), (str(nm or "").lower().strip())) for qty, nm in (choice or []) if nm))
+                if key in seen:
+                    result = ("Partial", "Parsed, but contains duplicate identical choices.")
+                    OPTION_SUPPORT_CACHE[desc] = result
+                    return result
+                seen.add(key)
+
+    result = ("Supported", "Parsed and selectable with current mechanisms (best-effort).")
+    OPTION_SUPPORT_CACHE[desc] = result
+    return result
+
+
+def _damaged_profile_pattern_key(desc: str) -> str:
+    t = _strip_html(desc)
+    t = t.replace("\u2019", "'").replace("\u0192?T", "'")
+    t = re.sub(r"\s+", " ", t).strip()
+    parts: List[str] = []
+
+    rx_hit_minus = re.compile(r"subtract\s+(\d+)\s+from\s+the\s+hit\s+roll", re.IGNORECASE)
+    rx_oc_minus = re.compile(
+        r"subtract\s+(\d+)\s+from\s+(?:this\s+(?:model|unit)'?s|its)\s+objective\s+control\s+characteristic",
+        re.IGNORECASE,
+    )
+    rx_half_attacks = re.compile(
+        r"halve\s+the\s+attacks\s+characteristic|attacks\s+characteristics\s+of\s+all\s+of\s+its\s+weapons\s+are\s+halved",
+        re.IGNORECASE,
+    )
+    rx_add_attacks_melee = re.compile(
+        r"add\s+(\d+)\s+to\s+the\s+attacks\s+characteristic\s+of\s+this\s+model'?s\s+melee\s+weapons",
+        re.IGNORECASE,
+    )
+    rx_add_attacks_weapon = re.compile(
+        r"add\s+(\d+)\s+to\s+the\s+attacks\s+characteristic\s+of\s+this\s+model'?s\s+([a-z0-9 \-']+)",
+        re.IGNORECASE,
+    )
+    rx_relics_limit = re.compile(r"relics\s+of\s+the\s+matriarchs.*only\s+select\s+one\s+ability", re.IGNORECASE)
+
+    if rx_hit_minus.search(t):
+        parts.append("Hit roll -N")
+    if rx_oc_minus.search(t):
+        parts.append("OC -N")
+    if rx_half_attacks.search(t):
+        parts.append("Halve Attacks")
+    if rx_add_attacks_melee.search(t):
+        parts.append("Melee Attacks +N")
+    else:
+        m = rx_add_attacks_weapon.search(t)
+        if m and "melee weapons" not in t.lower():
+            wname = (m.group(2) or "").strip().lower()
+            if wname and wname not in ("weapons", "weapon"):
+                parts.append("Specific weapon Attacks +N")
+    if rx_relics_limit.search(t):
+        parts.append("Limit Relics of the Matriarchs choices")
+    if not parts:
+        return "Other / unclassified"
+    return " + ".join(parts)
+
+
+def _damaged_profile_support_for_key(key: str) -> Tuple[str, str]:
+    supported = {
+        "Hit roll -N": "Applies a damaged-profile to-hit modifier (-N) with normal +/-1 cap handling.",
+        "OC -N": "Applies an additive Objective Control penalty while damaged.",
+        "Halve Attacks": "Halves weapon attacks while damaged (round up).",
+        "Hit roll -N + OC -N": "Applies both -N to hit and OC penalty.",
+        "Hit roll -N + Halve Attacks": "Applies both -N to hit and halved attacks.",
+        "Hit roll -N + OC -N + Halve Attacks": "Applies all three effects while damaged.",
+        "Melee Attacks +N": "Adds +N attacks for melee weapons while damaged.",
+        "Specific weapon Attacks +N": "Adds +N attacks for a named weapon while damaged (best-effort match).",
+    }
+    if key in supported:
+        return ("Supported", supported[key])
+    if "Limit Relics of the Matriarchs choices" in key:
+        return ("Partial", "Flag stored, but no gameplay/UI consumption yet.")
+    if key == "Other / unclassified":
+        return ("Not implemented", "No parser/engine effect wired for this damaged profile text.")
+    return ("Partial", "Some damaged-profile text is recognized, but not all effects are implemented.")
+
+
+def _points_support(entries: Sequence[dict]) -> Tuple[str, str]:
+    if not entries:
+        return ("Not implemented", "No points data.")
+
+    base: Dict[int, int] = {}
+    addons: Dict[str, int] = {}
+    unparsed = 0
+    range_lines = 0
+
+    for entry in entries:
+        desc = str(entry.get("description", "") or "").strip()
+        cost_raw = str(entry.get("cost", "") or "").strip()
+        if not desc and not cost_raw:
+            continue
+        if re.search(r"\d+\s*[-\u2013]\s*\d+", desc) or "to a maximum" in desc.lower():
+            range_lines += 1
+
+        nums = re.findall(r"\b\d+\b", desc)
+        if nums:
+            try:
+                if len(nums) == 1:
+                    n = int(nums[0])
+                else:
+                    n = sum(int(x) for x in nums)
+                base[n] = int(cost_raw.replace("+", "").strip())
+                continue
+            except Exception:
+                pass
+
+        m = re.match(r"^\+?\s*(\d+)\s*$", cost_raw)
+        if m and desc:
+            addons[desc.lower()] = int(m.group(1))
+            continue
+
+        unparsed += 1
+
+    if not base:
+        return ("Not implemented", "No base points parsed.")
+    if unparsed or range_lines:
+        bits = []
+        if unparsed:
+            bits.append(f"{unparsed} unparsed line(s)")
+        if range_lines:
+            bits.append(f"{range_lines} range line(s)")
+        return ("Partial", ", ".join(bits))
+
+    return ("Supported", f"{len(base)} cost bucket(s)")
+
+
+def _keywords_support(entries: Sequence[dict]) -> Tuple[str, str]:
+    if not entries:
+        return ("Not implemented", "No keywords data.")
+
+    keywords = []
+    faction_keywords = []
+    for row in entries:
+        kw = str(row.get("keyword", "") or "").strip()
+        if not kw:
+            continue
+        is_faction = str(row.get("is_faction_keyword", "") or "").strip().lower() == "true"
+        if is_faction:
+            faction_keywords.append(kw)
+        else:
+            keywords.append(kw)
+
+    if not keywords and not faction_keywords:
+        return ("Not implemented", "No keywords detected.")
+    if not keywords:
+        return ("Partial", "Missing non-faction keywords.")
+    if not faction_keywords:
+        return ("Partial", "Missing faction keywords.")
+    return ("Supported", f"{len(keywords)} keywords, {len(faction_keywords)} faction keyword(s)")
+
+
+def _parse_attribute_value(value: str) -> Optional[int]:
+    if value is None:
+        return None
+    s = str(value).replace("\"", "").replace("+", "").replace("*", "").strip()
+    if not s:
+        return None
+    if "-" in s:
+        return None
+    try:
+        return int(s)
+    except Exception:
+        return None
+
+
+def _base_size_parseable(value: str) -> bool:
+    if value is None:
+        return False
+    s = str(value).strip().lower()
+    if not s:
+        return False
+    if "use model" in s or "no official base size" in s:
+        return True
+    if "flying base" in s:
+        s = s.replace("flying base", "").strip()
+    if "x" in s:
+        return True
+    return bool(re.search(r"\d+\s*mm", s))
+
+
+def _models_support(entries: Sequence[dict]) -> Tuple[str, str]:
+    if not entries:
+        return ("Not implemented", "No model profiles.")
+
+    missing = 0
+    invalid = 0
+    for row in entries:
+        for field in ("M", "T", "Sv", "W", "Ld", "OC"):
+            if not str(row.get(field, "") or "").strip():
+                missing += 1
+                continue
+            if _parse_attribute_value(row.get(field)) is None:
+                invalid += 1
+        if not _base_size_parseable(row.get("base_size")):
+            missing += 1
+
+    if missing or invalid:
+        bits = []
+        if missing:
+            bits.append(f"{missing} missing field(s)")
+        if invalid:
+            bits.append(f"{invalid} invalid field(s)")
+        return ("Partial", ", ".join(bits))
+    return ("Supported", f"{len(entries)} model profile(s)")
+
+
+def _unit_composition_support(entries: Sequence[dict]) -> Tuple[str, str]:
+    if not entries:
+        return ("Not implemented", "No unit composition.")
+
+    def _split_top_level_commas(text: str) -> List[str]:
+        parts: List[str] = []
+        buf: List[str] = []
+        depth = 0
+        for ch in text:
+            if ch == "(":
+                depth += 1
+            elif ch == ")" and depth > 0:
+                depth -= 1
+            if ch == "," and depth == 0:
+                seg = "".join(buf).strip()
+                if seg:
+                    parts.append(seg)
+                buf = []
+            else:
+                buf.append(ch)
+        tail = "".join(buf).strip()
+        if tail:
+            parts.append(tail)
+        return parts
+
+    def _split_top_level_and(text: str) -> List[str]:
+        parts: List[str] = []
+        buf: List[str] = []
+        depth = 0
+        i = 0
+        while i < len(text):
+            ch = text[i]
+            if ch == "(":
+                depth += 1
+            elif ch == ")" and depth > 0:
+                depth -= 1
+            if depth == 0 and text[i : i + 5].lower() == " and ":
+                nxt = text[i + 5 : i + 15].lstrip()
+                if nxt and re.match(r"^\d", nxt):
+                    seg = "".join(buf).strip()
+                    if seg:
+                        parts.append(seg)
+                    buf = []
+                    i += 5
+                    continue
+            buf.append(ch)
+            i += 1
+        tail = "".join(buf).strip()
+        if tail:
+            parts.append(tail)
+        return parts
+
+    parsed = 0
+    unparsed = 0
+    for row in entries:
+        desc = str(row.get("description", "") or "").strip()
+        if not desc:
+            continue
+        dlow = desc.strip().rstrip(".").lower()
+        if dlow.startswith("this unit can contain a maximum of "):
+            continue
+        if dlow.endswith("models maximum"):
+            continue
+
+        segments = []
+        for seg in _split_top_level_commas(desc):
+            segments.extend(_split_top_level_and(seg))
+
+        for seg in segments:
+            seg = seg.strip().rstrip(".")
+            if not seg:
+                continue
+            m = re.match(r"^(?P<count>\d+(?:-\d+)?)\s+(?P<name>.+)$", seg)
+            if m:
+                parsed += 1
+            else:
+                unparsed += 1
+
+    if parsed == 0:
+        return ("Not implemented", "No parsable composition entries.")
+    if unparsed:
+        return ("Partial", f"{unparsed} unparsed line(s)")
+    return ("Supported", f"{parsed} composition line(s)")
+
+
+def _transport_support(text: str) -> Tuple[str, str]:
+    t = _strip_html(text)
+    if not t:
+        return ("Supported", "No transport rules.")
+    patterns = [
+        r"transport\s+capacity\s+(?:of\s+)?(\d+)",
+        r"transport\s*capacity\s*[:\-]\s*(\d+)",
+        r"\btransport\s*\(?\s*(\d+)\s*\)?\b",
+    ]
+    for pat in patterns:
+        if re.search(pat, t, flags=re.IGNORECASE):
+            return ("Supported", "Transport capacity parsed.")
+    return ("Partial", "Transport rules present but capacity unparsed.")
+
+
+def _other_sections_support(
+    *,
+    unit_comp_entries: Sequence[dict],
+    model_entries: Sequence[dict],
+    transport_text: str,
+) -> Tuple[str, str]:
+    comp_status, comp_note = _unit_composition_support(unit_comp_entries)
+    model_status, model_note = _models_support(model_entries)
+    transport_status, transport_note = _transport_support(transport_text)
+
+    notes = []
+    for label, status, note in (
+        ("Unit composition", comp_status, comp_note),
+        ("Models", model_status, model_note),
+        ("Transport", transport_status, transport_note),
+    ):
+        if status != "Supported":
+            notes.append(f"{label}: {note}")
+
+    if comp_status == "Not implemented" or model_status == "Not implemented" or transport_status == "Not implemented":
+        return ("Not implemented", "; ".join(notes))
+    if comp_status == "Partial" or model_status == "Partial" or transport_status == "Partial":
+        return ("Partial", "; ".join(notes))
+    return ("Supported", "Core datasheet sections parsed.")
+
+
+def _abilities_support_summary(statuses: Sequence[str]) -> Tuple[str, str]:
+    total = len(list(statuses or []))
+    supported = sum(1 for s in statuses if _status_is_supported(s))
+    partial = sum(1 for s in statuses if _norm(s) == "partial")
+    not_impl = total - supported - partial
+
+    if total == 0:
+        return ("Not implemented", "No datasheet abilities.")
+    if supported == 0 and partial == 0:
+        return ("Not implemented", f"{not_impl}/{total} not implemented")
+    if supported == total and partial == 0:
+        return ("Supported", f"{supported}/{total} supported")
+    return ("Partial", f"{supported}/{total} supported, {partial} partial, {not_impl} not implemented")
+
+
+def _optional_wargear_support(entries: Sequence[dict]) -> Tuple[str, str]:
+    if not entries:
+        return ("Supported", "No optional wargear.")
+
+    statuses = []
+    for row in entries:
+        desc = str(row.get("description", "") or "")
+        status, _note = _support_for_option_desc(desc)
+        statuses.append(status)
+
+    total = len(statuses)
+    supported = sum(1 for s in statuses if _status_is_supported(s))
+    partial = sum(1 for s in statuses if _norm(s) == "partial")
+    not_impl = total - supported - partial
+
+    if supported == 0 and partial == 0:
+        return ("Not implemented", f"{not_impl}/{total} not implemented")
+    if supported == total and partial == 0:
+        return ("Supported", f"{supported}/{total} supported")
+    return ("Partial", f"{supported}/{total} supported, {partial} partial, {not_impl} not implemented")
+
+
+def _wargear_keywords_support(entries: Sequence[dict]) -> Tuple[str, str]:
+    if not entries:
+        return ("Supported", "No wargear keywords.")
+
+    examples_by_canon: Dict[str, set] = {}
+    for row in entries:
+        desc = str(row.get("description", "") or "")
+        if not desc:
+            continue
+        desc_text = _strip_html(desc)
+        parts = [p.strip() for p in re.split(r"\s*,\s*|\s*;\s*|\s+\.\s+", desc_text) if p.strip()]
+        for raw in parts:
+            canon = _canonical_keyword(raw)
+            if not canon:
+                continue
+            examples_by_canon.setdefault(canon, set()).add(raw)
+
+    if not examples_by_canon:
+        return ("Supported", "No wargear keywords.")
+
+    statuses: Dict[str, str] = {}
+    for canon, examples in examples_by_canon.items():
+        key = (canon, tuple(sorted(examples)))
+        if key in WARGEAR_KEYWORD_SUPPORT_CACHE:
+            status, _note = WARGEAR_KEYWORD_SUPPORT_CACHE[key]
+        else:
+            status, _note = _keyword_support(canon, list(examples))
+            WARGEAR_KEYWORD_SUPPORT_CACHE[key] = (status, _note)
+        statuses[canon] = status
+
+    total = len(statuses)
+    supported = sum(1 for s in statuses.values() if _status_is_supported(s))
+    partial = sum(1 for s in statuses.values() if _norm(s) == "partial")
+    not_impl = total - supported - partial
+
+    if supported == 0 and partial == 0:
+        return ("Not implemented", f"{not_impl}/{total} not implemented")
+    if supported == total and partial == 0:
+        return ("Supported", f"{supported}/{total} supported")
+
+    partial_names = sorted([k for k, v in statuses.items() if _norm(v) == "partial"])
+    not_impl_names = sorted([k for k, v in statuses.items() if _norm(v) == "not implemented"])
+    bits = [f"{supported}/{total} supported"]
+    if partial_names:
+        sample = ", ".join(partial_names[:3])
+        tail = "..." if len(partial_names) > 3 else ""
+        bits.append(f"partial: {sample}{tail}")
+    if not_impl_names:
+        sample = ", ".join(not_impl_names[:3])
+        tail = "..." if len(not_impl_names) > 3 else ""
+        bits.append(f"not implemented: {sample}{tail}")
+    return ("Partial", "; ".join(bits))
+
+
+def _datasheet_support_status(
+    *,
+    faction_id: str,
+    datasheet_name: str,
+    categories: Sequence[Tuple[str, str, str]],
+    overrides: Dict[Tuple[str, str], Tuple[str, str]],
+) -> Tuple[str, str]:
+    fid = str(faction_id or "").strip().upper()
+    key = (fid, _norm(datasheet_name))
+    if key in overrides:
+        return overrides[key]
+
+    statuses = [status for _label, status, _note in categories]
+    if all(_status_is_supported(s) for s in statuses):
+        overall = "Supported"
+    elif any(_norm(s) == "not implemented" for s in statuses):
+        overall = "Not implemented"
+    else:
+        overall = "Partial"
+
+    notes = []
+    for label, status, note in categories:
+        if _status_is_supported(status):
+            continue
+        if note:
+            notes.append(f"{label}: {note}")
+        else:
+            notes.append(f"{label}: {status}")
+
+    if not notes:
+        return (overall, "Fully supported.")
+    return (overall, "; ".join(notes))
 
 def _ability_id_support_by_name() -> Dict[str, Tuple[str, str]]:
     raw = {
@@ -328,38 +976,6 @@ def _classify_ability(name: str, description: str, *, ability_id: str = "", fact
         return ABILITY_SUPPORT_BY_NAME_FACTION[(fid, name_norm)]
     return ("Not implemented", "")
 
-
-def _datasheet_support_status(
-    *,
-    faction_id: str,
-    datasheet_name: str,
-    ability_statuses: Sequence[str],
-    overrides: Dict[Tuple[str, str], Tuple[str, str]],
-) -> Tuple[str, str]:
-    fid = str(faction_id or "").strip().upper()
-    key = (fid, _norm(datasheet_name))
-    if key in overrides:
-        return overrides[key]
-
-    total = len(list(ability_statuses or []))
-    supported = sum(1 for s in ability_statuses if _status_is_supported(s))
-    partial = sum(1 for s in ability_statuses if _norm(s) == "partial")
-    not_impl = total - supported - partial
-
-    base_note = (
-        "Wargear/points/keywords/damaged profiles/other sections (e.g., Orders) not audited."
-    )
-
-    if total == 0:
-        return ("Not implemented", f"No datasheet abilities detected. {base_note}")
-    if not_impl == total:
-        return ("Not implemented", f"Abilities not implemented ({not_impl}/{total}). {base_note}")
-    if supported == total and partial == 0:
-        return ("Partial", f"Abilities supported ({supported}/{total}). {base_note}")
-    return (
-        "Partial",
-        f"Abilities: {supported} supported, {partial} partial, {not_impl} not implemented. {base_note}",
-    )
 
 def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str, str]:
     explicit = {
@@ -665,6 +1281,12 @@ def _build_faction_content(
     datasheet_abilities_by_faction: Dict[str, Dict[Tuple[str, ...], dict]],
     datasheet_abilities_by_datasheet: Dict[str, Dict[Tuple[str, ...], dict]],
     datasheets_by_faction: Dict[str, List[dict]],
+    options_by_datasheet: Dict[str, List[dict]],
+    wargear_by_datasheet: Dict[str, List[dict]],
+    keywords_by_datasheet: Dict[str, List[dict]],
+    models_by_datasheet: Dict[str, List[dict]],
+    models_cost_by_datasheet: Dict[str, List[dict]],
+    unit_comp_by_datasheet: Dict[str, List[dict]],
     datasheet_support_overrides: Dict[Tuple[str, str], Tuple[str, str]],
 ) -> Tuple[str, int, int]:
     faction_name = str(meta.get("faction_name", "") or faction_id)
@@ -885,10 +1507,40 @@ def _build_faction_content(
                 ab_status, _ab_notes = _classify_ability(ab_name, ab_desc, ability_id=ab_id, faction_id=faction_id)
                 ability_statuses.append(ab_status)
 
+            ability_status, ability_note = _abilities_support_summary(ability_statuses)
+            options_status, options_note = _optional_wargear_support(options_by_datasheet.get(dsid, []))
+            wargear_kw_status, wargear_kw_note = _wargear_keywords_support(wargear_by_datasheet.get(dsid, []))
+            points_status, points_note = _points_support(models_cost_by_datasheet.get(dsid, []))
+            keywords_status, keywords_note = _keywords_support(keywords_by_datasheet.get(dsid, []))
+
+            damaged_w = str(ds.get("damaged_w", "") or "").strip()
+            damaged_desc = str(ds.get("damaged_description", "") or "").strip()
+            if damaged_w and damaged_desc:
+                key = _damaged_profile_pattern_key(damaged_desc)
+                damaged_status, damaged_note = _damaged_profile_support_for_key(key)
+            else:
+                damaged_status, damaged_note = ("Supported", "No damaged profile.")
+
+            other_status, other_note = _other_sections_support(
+                unit_comp_entries=unit_comp_by_datasheet.get(dsid, []),
+                model_entries=models_by_datasheet.get(dsid, []),
+                transport_text=str(ds.get("transport", "") or ""),
+            )
+
+            categories = [
+                ("Abilities", ability_status, ability_note),
+                ("Wargear options", options_status, options_note),
+                ("Wargear keywords", wargear_kw_status, wargear_kw_note),
+                ("Points", points_status, points_note),
+                ("Keywords", keywords_status, keywords_note),
+                ("Damaged profile", damaged_status, damaged_note),
+                ("Other sections", other_status, other_note),
+            ]
+
             status, note = _datasheet_support_status(
                 faction_id=faction_id,
                 datasheet_name=name,
-                ability_statuses=ability_statuses,
+                categories=categories,
                 overrides=datasheet_support_overrides,
             )
             ds_rows.append(
@@ -932,6 +1584,12 @@ def _build_matrix() -> str:
     det_abilities_rows = _read_json(os.path.join(WAHA_DIR, "Detachment_abilities.json"))
     ds_abilities_rows = _read_json(os.path.join(WAHA_DIR, "Datasheets_abilities.json"))
     ds_det_rows = _read_json(os.path.join(WAHA_DIR, "Datasheets_detachment_abilities.json"))
+    ds_options_rows = _read_json(os.path.join(WAHA_DIR, "Datasheets_options.json"))
+    ds_wargear_rows = _read_json(os.path.join(WAHA_DIR, "Datasheets_wargear.json"))
+    ds_keywords_rows = _read_json(os.path.join(WAHA_DIR, "Datasheets_keywords.json"))
+    ds_models_rows = _read_json(os.path.join(WAHA_DIR, "Datasheets_models.json"))
+    ds_models_cost_rows = _read_json(os.path.join(WAHA_DIR, "Datasheets_models_cost.json"))
+    ds_unit_comp_rows = _read_json(os.path.join(WAHA_DIR, "Datasheets_unit_composition.json"))
     enhancements = _read_json(os.path.join(WAHA_DIR, "Enhancements.json"))
     stratagems = _read_json(os.path.join(WAHA_DIR, "Stratagems.json"))
     detachments = _load_detachments()
@@ -964,6 +1622,48 @@ def _build_matrix() -> str:
         if "boarding" in ttype or "challenger" in ttype:
             continue
         strats_by_det.setdefault(det_id, []).append(row)
+
+    options_by_datasheet: Dict[str, List[dict]] = {}
+    for row in ds_options_rows:
+        dsid = str(row.get("datasheet_id", "") or "").strip()
+        if not dsid:
+            continue
+        options_by_datasheet.setdefault(dsid, []).append(row)
+
+    wargear_by_datasheet: Dict[str, List[dict]] = {}
+    for row in ds_wargear_rows:
+        dsid = str(row.get("datasheet_id", "") or "").strip()
+        if not dsid:
+            continue
+        wargear_by_datasheet.setdefault(dsid, []).append(row)
+
+    keywords_by_datasheet: Dict[str, List[dict]] = {}
+    for row in ds_keywords_rows:
+        dsid = str(row.get("datasheet_id", "") or "").strip()
+        if not dsid:
+            continue
+        keywords_by_datasheet.setdefault(dsid, []).append(row)
+
+    models_by_datasheet: Dict[str, List[dict]] = {}
+    for row in ds_models_rows:
+        dsid = str(row.get("datasheet_id", "") or "").strip()
+        if not dsid:
+            continue
+        models_by_datasheet.setdefault(dsid, []).append(row)
+
+    models_cost_by_datasheet: Dict[str, List[dict]] = {}
+    for row in ds_models_cost_rows:
+        dsid = str(row.get("datasheet_id", "") or "").strip()
+        if not dsid:
+            continue
+        models_cost_by_datasheet.setdefault(dsid, []).append(row)
+
+    unit_comp_by_datasheet: Dict[str, List[dict]] = {}
+    for row in ds_unit_comp_rows:
+        dsid = str(row.get("datasheet_id", "") or "").strip()
+        if not dsid:
+            continue
+        unit_comp_by_datasheet.setdefault(dsid, []).append(row)
 
     datasheet_abilities_by_faction: Dict[str, Dict[Tuple[str, ...], dict]] = {}
     datasheet_abilities_by_datasheet: Dict[str, Dict[Tuple[str, ...], dict]] = {}
@@ -1137,14 +1837,20 @@ def _build_matrix() -> str:
             abilities=abilities,
             det_abilities_by_det=det_abilities_by_det,
             enhancements=enhancements,
-              stratagems=stratagems,
-              detachments=detachments,
-              ds_abilities_rows=ds_abilities_rows,
-              datasheet_abilities_by_faction=datasheet_abilities_by_faction,
-              datasheet_abilities_by_datasheet=datasheet_abilities_by_datasheet,
-              datasheets_by_faction=datasheets_by_faction,
-              datasheet_support_overrides=datasheet_support_overrides,
-          )
+            stratagems=stratagems,
+            detachments=detachments,
+            ds_abilities_rows=ds_abilities_rows,
+            datasheet_abilities_by_faction=datasheet_abilities_by_faction,
+            datasheet_abilities_by_datasheet=datasheet_abilities_by_datasheet,
+            datasheets_by_faction=datasheets_by_faction,
+            options_by_datasheet=options_by_datasheet,
+            wargear_by_datasheet=wargear_by_datasheet,
+            keywords_by_datasheet=keywords_by_datasheet,
+            models_by_datasheet=models_by_datasheet,
+            models_cost_by_datasheet=models_cost_by_datasheet,
+            unit_comp_by_datasheet=unit_comp_by_datasheet,
+            datasheet_support_overrides=datasheet_support_overrides,
+        )
         slug = _slugify(faction_name)
         rel_path = f"factions/{slug}.md"
         out_path = os.path.join(FACTION_DOCS_DIR, f"{slug}.md")
@@ -1178,7 +1884,22 @@ def main() -> int:
     with open(OUT_PATH, "w", encoding="utf-8") as f:
         f.write(content)
     print(f"Wrote {OUT_PATH}")
+    _cleanup_audit_artifacts()
     return 0
+
+
+def _cleanup_audit_artifacts() -> None:
+    paths = [
+        os.path.join(DOCS_DIR, "ability_audit_worklist.tsv"),
+        os.path.join(DOCS_DIR, "ability_audit_worklist_we.tsv"),
+        os.path.join(DOCS_DIR, "ability_audit_we_details.txt"),
+    ]
+    for path in paths:
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except Exception:
+            continue
 
 
 if __name__ == "__main__":
