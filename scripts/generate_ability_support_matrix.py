@@ -49,6 +49,7 @@ STATUS_COLORS = {
 
 ABILITY_SUPPORT_BY_ID: Dict[str, Tuple[str, str]] = {}
 ABILITY_SUPPORT_BY_NAME_FACTION: Dict[Tuple[str, str], Tuple[str, str]] = {}
+ABILITY_SUPPORT_BY_NAME_FACTION_DS: Dict[Tuple[str, str, str], Tuple[str, str]] = {}
 OPTION_SUPPORT_CACHE: Dict[str, Tuple[str, str]] = {}
 WARGEAR_KEYWORD_SUPPORT_CACHE: Dict[Tuple[str, Tuple[str, ...]], Tuple[str, str]] = {}
 
@@ -945,7 +946,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("CSM", "Chosen Marauders"): ("Supported", "Shoot and charge after Advance/Fall Back."),
         ("CSM", "Hovering Death"): ("Supported", "Shoot and charge after Falling Back."),
         ("EC", "Daemonic Speed"): ("Supported", "Fights First."),
-        ("EC", "Duellist's Hubris"): ("Partial", "Fights First applied without 'not leading' restriction."),
+        ("EC", "Duellist's Hubris"): ("Supported", "Fights First when not leading a unit."),
         ("EC", "Lord of Excess"): ("Partial", "Lone Operative applied without 3\" Slaanesh Infantry proximity requirement."),
         ("EC", "LORD OF THE HOST"): ("Partial", "Infiltrators/Scouts 6\" detected; attachment restriction not enforced."),
         ("EC", "Lethal Obsession"): ("Partial", "Charge reroll always available; requires prior same-target shooting not enforced."),
@@ -976,6 +977,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("ORK", "Mekboy"): ("Partial", "Lone Operative applied without 3\" Vehicle proximity requirement."),
         ("ORK", "Super Runts"): ("Partial", "Scouts 9\" applied without leading restriction; hit/wound bonus not implemented."),
         ("ORK", "Tellyporta Tech"): ("Partial", "Deep Strike granted without leading restriction."),
+        ("ORK", "Drill Boss"): ("Supported", "Leading: +1 to hit for melee attacks in the unit."),
         ("TAU", "Advanced Armour"): ("Supported", "Feel No Pain 4+ against mortal wounds."),
         ("TAU", "Agile Combatant"): ("Supported", "Shoot after Falling Back."),
         ("TAU", "Battlesuit Support System"): ("Partial", "Shoot after Falling Back; wargear-only restriction and SMOKE loss not enforced."),
@@ -1001,10 +1003,25 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("WE", "Lord of the Eightbound"): ("Partial", "Deep Strike/Scouts 6\" detected; attachment requirement not enforced."),
         ("WE", "Rage Embodied (Aura)"): ("Supported", "+1 melee Attacks aura within 6\" for BLOOD LEGIONS."),
         ("WE", "Daemon Lord of Khorne (Aura)"): ("Supported", "+1 to hit in melee aura within 6\" for BLOOD LEGIONS."),
+        ("SM", "Tempormortis"): ("Supported", "Fights First while leading a unit."),
     }
     out: Dict[Tuple[str, str], Tuple[str, str]] = {}
     for (fid, name), val in raw.items():
         out[(str(fid or "").strip().upper(), _norm(name))] = val
+    return out
+
+
+def _datasheet_ability_support_by_name_faction_datasheet() -> Dict[Tuple[str, str, str], Tuple[str, str]]:
+    raw = {
+        ("CD", "Pack Leader", "000001104"): ("Supported", "Leading: re-roll Advance and Charge rolls for the unit."),
+        ("CD", "Pack Leader", "000004102"): ("Supported", "Leading: re-roll Advance and Charge rolls for the unit."),
+        ("SM", "Pack Leader", "000002802"): ("Not implemented", "Warlord/Enhancement restriction not enforced."),
+        ("SM", "Pack Leader", "000002803"): ("Not implemented", "Warlord/Enhancement restriction not enforced."),
+        ("SM", "Pack Leader", "000002804"): ("Not implemented", "Warlord/Enhancement restriction not enforced."),
+    }
+    out: Dict[Tuple[str, str, str], Tuple[str, str]] = {}
+    for (fid, name, dsid), val in raw.items():
+        out[(str(fid or "").strip().upper(), _norm(name), str(dsid or "").strip())] = val
     return out
 
 
@@ -1023,9 +1040,10 @@ def _datasheet_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[str, str
     return out
 
 def _seed_ability_support_maps(abilities: List[dict], det_abilities_rows: List[dict]) -> None:
-    global ABILITY_SUPPORT_BY_ID, ABILITY_SUPPORT_BY_NAME_FACTION
+    global ABILITY_SUPPORT_BY_ID, ABILITY_SUPPORT_BY_NAME_FACTION, ABILITY_SUPPORT_BY_NAME_FACTION_DS
     ABILITY_SUPPORT_BY_ID = {}
     ABILITY_SUPPORT_BY_NAME_FACTION = {}
+    ABILITY_SUPPORT_BY_NAME_FACTION_DS = {}
 
     name_to_ids: Dict[str, List[str]] = {}
     for ab in abilities:
@@ -1068,15 +1086,32 @@ def _seed_ability_support_maps(abilities: List[dict], det_abilities_rows: List[d
 
     for key, val in _datasheet_ability_support_by_name_faction().items():
         ABILITY_SUPPORT_BY_NAME_FACTION[key] = val
+    for key, val in _datasheet_ability_support_by_name_faction_datasheet().items():
+        ABILITY_SUPPORT_BY_NAME_FACTION_DS[key] = val
 
 
-def _classify_ability(name: str, description: str, *, ability_id: str = "", faction_id: str = "") -> Tuple[str, str]:
+def _classify_ability(
+    name: str,
+    description: str,
+    *,
+    ability_id: str = "",
+    faction_id: str = "",
+    datasheet_id: str = "",
+) -> Tuple[str, str]:
     ab_id = str(ability_id or "").strip()
     if ab_id:
         return ABILITY_SUPPORT_BY_ID.get(ab_id, ("Not implemented", ""))
 
     fid = str(faction_id or "").strip().upper()
     name_norm = _norm(name)
+    dsid = str(datasheet_id or "").strip()
+    if name_norm and dsid:
+        key = (fid, name_norm, dsid)
+        if key in ABILITY_SUPPORT_BY_NAME_FACTION_DS:
+            return ABILITY_SUPPORT_BY_NAME_FACTION_DS[key]
+        for k_fid, k_name, _k_ds in ABILITY_SUPPORT_BY_NAME_FACTION_DS.keys():
+            if k_fid == fid and k_name == name_norm:
+                return ("Not implemented", "")
     if name_norm and (fid, name_norm) in ABILITY_SUPPORT_BY_NAME_FACTION:
         return ABILITY_SUPPORT_BY_NAME_FACTION[(fid, name_norm)]
     return ("Not implemented", "")
@@ -1602,11 +1637,51 @@ def _build_faction_content(
     ds_ability_rows = []
     ability_entries = list(datasheet_abilities_by_faction.get(faction_id, {}).values())
     ability_entries.sort(key=lambda e: (_norm(e.get("name", "")), _norm(_strip_html(e.get("description", "")))))
+    name_variants: Dict[str, set[str]] = {}
+    for entry in ability_entries:
+        nm = _norm(entry.get("name", "") or "")
+        if not nm:
+            continue
+        desc_norm = _norm(_strip_html(entry.get("description", "")))
+        name_variants.setdefault(nm, set()).add(desc_norm)
+    ambiguous_names = {nm for nm, descs in name_variants.items() if len(descs) > 1}
     for entry in ability_entries:
         name = entry.get("name", "") or ""
         desc = entry.get("description", "") or ""
         ability_id = str(entry.get("ability_id", "") or "")
-        status, notes = _classify_ability(name, desc, ability_id=ability_id, faction_id=faction_id)
+        name_norm = _norm(name)
+        ds_ids = sorted({str(d or "").strip() for d in (entry.get("datasheet_ids") or set()) if str(d or "").strip()})
+        if name_norm and name_norm in ambiguous_names:
+            if len(ds_ids) == 1:
+                status, notes = _classify_ability(
+                    name,
+                    desc,
+                    ability_id=ability_id,
+                    faction_id=faction_id,
+                    datasheet_id=ds_ids[0],
+                )
+            elif ds_ids:
+                statuses = []
+                notes_list = []
+                for dsid in ds_ids:
+                    st, nt = _classify_ability(
+                        name,
+                        desc,
+                        ability_id=ability_id,
+                        faction_id=faction_id,
+                        datasheet_id=dsid,
+                    )
+                    statuses.append(st)
+                    notes_list.append(nt)
+                if len(set(statuses)) == 1:
+                    status = statuses[0]
+                    notes = next((n for n in notes_list if n), "")
+                else:
+                    status, notes = _abilities_support_summary(statuses)
+            else:
+                status, notes = _classify_ability(name, desc, ability_id=ability_id, faction_id=faction_id)
+        else:
+            status, notes = _classify_ability(name, desc, ability_id=ability_id, faction_id=faction_id)
         faction_items.append((status, name))
         units = sorted({u for u in (entry.get("units") or set()) if u}, key=lambda s: s.lower())
         ds_ability_rows.append(
@@ -1639,7 +1714,21 @@ def _build_faction_content(
                 ab_name = entry.get("name", "") or ""
                 ab_desc = entry.get("description", "") or ""
                 ab_id = str(entry.get("ability_id", "") or "")
-                ab_status, _ab_notes = _classify_ability(ab_name, ab_desc, ability_id=ab_id, faction_id=faction_id)
+                if _norm(ab_name) in ambiguous_names:
+                    ab_status, _ab_notes = _classify_ability(
+                        ab_name,
+                        ab_desc,
+                        ability_id=ab_id,
+                        faction_id=faction_id,
+                        datasheet_id=dsid,
+                    )
+                else:
+                    ab_status, _ab_notes = _classify_ability(
+                        ab_name,
+                        ab_desc,
+                        ability_id=ab_id,
+                        faction_id=faction_id,
+                    )
                 ability_statuses.append(ab_status)
 
             ability_status, ability_note = _abilities_support_summary(ability_statuses)
@@ -1828,8 +1917,15 @@ def _build_matrix() -> str:
 
         bucket = datasheet_abilities_by_faction.setdefault(fid, {})
         if key not in bucket:
-            bucket[key] = {"name": name, "description": desc, "ability_id": ability_id, "units": set()}
+            bucket[key] = {
+                "name": name,
+                "description": desc,
+                "ability_id": ability_id,
+                "units": set(),
+                "datasheet_ids": set(),
+            }
         bucket[key]["units"].add(ds.get("name", dsid))
+        bucket[key]["datasheet_ids"].add(dsid)
 
         ds_bucket = datasheet_abilities_by_datasheet.setdefault(dsid, {})
         if key not in ds_bucket:
