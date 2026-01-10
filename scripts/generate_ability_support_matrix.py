@@ -929,6 +929,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("AE", "Into the Foe"): ("Partial", "Charge-after-Advance applies to the transport; disembark timing/target unit requirement not enforced."),
         ("CD", "Bounding Leaps"): ("Supported", "Shoot after Falling Back."),
         ("CD", "Chosen Marauders"): ("Supported", "Shoot and charge after Advance/Fall Back."),
+        ("CD", "Brass Collar of Bloody Vengeance"): ("Supported", "Feel No Pain 3+ against Psychic attacks and mortal wounds."),
         ("CD", "Daemonic Lord"): ("Partial", "Lone Operative applied without 3\" Legiones Daemonica Infantry proximity requirement."),
         ("CD", "Daemon Lord of Khorne (Aura)"): ("Supported", "+1 to hit (melee) aura within 6\" for KHORNE LEGIONES DAEMONICA."),
         ("CD", "Shadow Form"): ("Supported", "Shadow Form selection each battle round with active effect tracking."),

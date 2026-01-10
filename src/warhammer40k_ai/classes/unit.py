@@ -2257,7 +2257,14 @@ class Unit:
         
         return units_within_range
 
-    def _apply_mortal_wounds_to_unit(self, target_unit: 'Unit', mortal_wound_amount: int, game_map: Optional['Map'] = None) -> int:
+    def _apply_mortal_wounds_to_unit(
+        self,
+        target_unit: 'Unit',
+        mortal_wound_amount: int,
+        game_map: Optional['Map'] = None,
+        *,
+        is_psychic_attack: bool = False,
+    ) -> int:
         """Apply mortal wounds to a unit, distributing them among models.
         
         Args:
@@ -2301,7 +2308,13 @@ class Unit:
                 break
             
             # Apply the mortal wound
-            target_model.take_damage(1, is_mortal=True, weapon_profile=None, game_map=game_map)
+            target_model.take_damage(
+                1,
+                is_mortal=True,
+                weapon_profile=None,
+                game_map=game_map,
+                is_psychic_attack=is_psychic_attack,
+            )
             
             # Check if the model was destroyed
             if not target_model.is_alive:
@@ -9908,9 +9921,10 @@ class Unit:
                 
                 # Only check description if ability name didn't match
                 if not ability_name_matched and hasattr(ability, 'description') and ability.description:
+                    desc_text = self._normalize_rules_text(ability.description)
                     for pattern in patterns:
-                        if pattern.lower() in ability.description.lower():
-                            match = re.search(value_pattern, ability.description.lower())
+                        if pattern.lower() in desc_text.lower():
+                            match = re.search(value_pattern, desc_text.lower())
                             if match:
                                 dice_value = int(match.group(1))
                                 condition = match.group(2).strip() if match.group(2) else None
@@ -9956,9 +9970,10 @@ class Unit:
                 
                 # Only check description if ability name didn't match
                 if not ability_name_matched and hasattr(ability, 'description') and ability.description:
+                    desc_text = self._normalize_rules_text(ability.description)
                     for pattern in patterns:
-                        if pattern.lower() in ability.description.lower():
-                            match = re.search(value_pattern, ability.description.lower())
+                        if pattern.lower() in desc_text.lower():
+                            match = re.search(value_pattern, desc_text.lower())
                             if match:
                                 dice_value = int(match.group(1))
                                 condition = match.group(2).strip() if match.group(2) else None

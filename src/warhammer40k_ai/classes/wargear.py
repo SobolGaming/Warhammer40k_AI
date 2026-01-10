@@ -1055,7 +1055,7 @@ class WargearProfile:
                 )
                 if chosen is None:
                     chosen = eligible[0]
-                chosen.take_damage(3, is_mortal=True, weapon_profile=None, game_map=game_map)
+                chosen.take_damage(3, is_mortal=True, weapon_profile=self, game_map=game_map)
         
         # Print comprehensive attack summary
         self._print_attack_summary(attack_result)

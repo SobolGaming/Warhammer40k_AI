@@ -300,6 +300,7 @@ class Model:
         weapon_profile: Optional['WargearProfile'] = None,
         game_map: Optional['Map'] = None,
         wounds_cannot_be_ignored: bool = False,
+        is_psychic_attack: bool = False,
     ) -> int:
         if not wounds_cannot_be_ignored:
             try:
@@ -314,7 +315,12 @@ class Model:
             fnp_abilities = []
         if fnp_abilities and not wounds_cannot_be_ignored:
             # Find the best applicable Feel No Pain ability (lowest dice value)
-            best_fnp = self._get_best_applicable_fnp(fnp_abilities, weapon_profile, is_mortal)
+            best_fnp = self._get_best_applicable_fnp(
+                fnp_abilities,
+                weapon_profile,
+                is_mortal,
+                is_psychic_attack=is_psychic_attack,
+            )
             
             if best_fnp:
                 fnp_value, fnp_condition = best_fnp
@@ -347,7 +353,14 @@ class Model:
         self._check_damaged_profile()
         return excess_damage
 
-    def _get_best_applicable_fnp(self, fnp_abilities: List[Tuple[int, Optional[str]]], weapon_profile: Optional['WargearProfile'], is_mortal: bool) -> Optional[Tuple[int, Optional[str]]]:
+    def _get_best_applicable_fnp(
+        self,
+        fnp_abilities: List[Tuple[int, Optional[str]]],
+        weapon_profile: Optional['WargearProfile'],
+        is_mortal: bool,
+        *,
+        is_psychic_attack: bool = False,
+    ) -> Optional[Tuple[int, Optional[str]]]:
         """Find the best applicable Feel No Pain ability (lowest dice value) for the current damage source.
         
         Args:
@@ -361,7 +374,12 @@ class Model:
         applicable_fnp = []
         
         for dice_value, condition in fnp_abilities:
-            if self._check_fnp_condition(condition, weapon_profile, is_mortal):
+            if self._check_fnp_condition(
+                condition,
+                weapon_profile,
+                is_mortal,
+                is_psychic_attack=is_psychic_attack,
+            ):
                 applicable_fnp.append((dice_value, condition))
         
         if not applicable_fnp:
@@ -370,7 +388,14 @@ class Model:
         # Return the FNP with the lowest dice value (best chance to save)
         return min(applicable_fnp, key=lambda x: x[0])
 
-    def _check_fnp_condition(self, condition: Optional[str], weapon_profile: Optional['WargearProfile'], is_mortal: bool) -> bool:
+    def _check_fnp_condition(
+        self,
+        condition: Optional[str],
+        weapon_profile: Optional['WargearProfile'],
+        is_mortal: bool,
+        *,
+        is_psychic_attack: bool = False,
+    ) -> bool:
         """Check if Feel No Pain condition is met for the current weapon profile.
         
         Args:
@@ -390,13 +415,16 @@ class Model:
         if "mortal wound" in condition and is_mortal:
             return True
         
-        # If no weapon profile provided, can only check mortal wounds
+        # Check for psychic attack conditions (weapon-based or flagged psychic source)
+        if "psychic" in condition:
+            if is_psychic_attack:
+                return True
+            if weapon_profile is not None and weapon_profile.is_psychic():
+                return True
+
+        # If no weapon profile provided, can only check mortal wounds or psychic flag
         if weapon_profile is None:
             return False
-        
-        # Check for psychic attack conditions
-        if "psychic" in condition and weapon_profile.is_psychic():
-            return True
         
         # Check for ranged attack conditions
         if "ranged" in condition and weapon_profile.parent_wargear and weapon_profile.parent_wargear.is_ranged():
