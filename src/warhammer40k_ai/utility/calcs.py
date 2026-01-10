@@ -26,7 +26,7 @@ ORIENTATIONS = [0, 90, 45, -45, 15, -15, 30, -30, 60, -60, 75, -75]  # Degrees
 from .constants import ENGAGEMENT_RANGE_HORIZONTAL, MM_TO_INCHES
 
 # Global caches for collision detection
-_terrain_cache = {}  # Cache for terrain blocking polygons by (game_map_id, unit_keywords)
+_terrain_cache = {}  # Cache for terrain blocking polygons by (game_map_id, unit_keywords, movement_type)
 _enemy_model_cache = {}  # Cache for enemy model shapes by (game_map_id, faction)
 _enemy_engagement_buffer_cache = {}  # Cache for buffered enemy shapes by (game_map_id, faction)
 
@@ -129,20 +129,72 @@ def counts_as_infantry_for_terrain(unit: 'Unit') -> bool:
     except Exception:
         return False
 
+def _can_breach_ruins_walls(unit: 'Unit') -> bool:
+    """Check if a unit can treat RUINS walls as breachable without move-type gating."""
+    try:
+        fn = getattr(unit, "can_move_through_ruins_walls", None)
+        if callable(fn):
+            return bool(fn())
+    except Exception:
+        pass
+    try:
+        if counts_as_infantry_for_terrain(unit):
+            return True
+    except Exception:
+        pass
+    try:
+        if getattr(unit, "is_beast", False):
+            return True
+    except Exception:
+        pass
+    try:
+        if getattr(unit, "is_imperium_primarch", False):
+            return True
+    except Exception:
+        pass
+    try:
+        if getattr(unit, "is_belisarius_cawl", False):
+            return True
+    except Exception:
+        pass
+    return False
+
+def _movement_type_tag(movement_type) -> Optional[str]:
+    if movement_type is None:
+        return None
+    try:
+        if hasattr(movement_type, "value"):
+            return str(movement_type.value)
+    except Exception:
+        pass
+    try:
+        return str(movement_type)
+    except Exception:
+        return None
+
+def _super_heavy_walker_active_for_move(unit: 'Unit', movement_type) -> bool:
+    mt = _movement_type_tag(movement_type)
+    if mt not in ("move", "advance", "fall_back"):
+        return False
+    try:
+        if unit is not None and hasattr(unit, "has_super_heavy_walker"):
+            return bool(unit.has_super_heavy_walker())
+    except Exception:
+        return False
+    return False
+
+def _ruins_wall_traversal_allowed(unit: 'Unit', movement_type=None) -> bool:
+    if _can_breach_ruins_walls(unit):
+        return True
+    if _super_heavy_walker_active_for_move(unit, movement_type):
+        return True
+    return False
+
 def can_traverse_freely(unit: 'Unit', terrain_feature: 'TerrainFeature') -> bool:
     """Check if a unit can freely traverse over terrain without vertical movement cost.
 
     This function determines if terrain should be ignored for pathfinding purposes.
     """
-    # Flying units can traverse any terrain freely
-    if unit.is_flying:
-        return True
-    try:
-        if unit is not None and hasattr(unit, "has_super_heavy_walker") and unit.has_super_heavy_walker():
-            return True
-    except Exception:
-        pass
-
     # Import at runtime to avoid circular import
     from ..classes.map import TerrainType, RuinsTerrain
 
@@ -150,9 +202,16 @@ def can_traverse_freely(unit: 'Unit', terrain_feature: 'TerrainFeature') -> bool
 
     # RUINS have special traversal rules
     if terrain_type == TerrainType.RUINS and isinstance(terrain_feature, RuinsTerrain):
-        # Infantry, Beasts, Imperium Primarch, and Belisarius Cawl can move through walls freely
-        return (counts_as_infantry_for_terrain(unit) or unit.is_beast or
-                unit.is_belisarius_cawl or unit.is_imperium_primarch)
+        return _can_breach_ruins_walls(unit)
+
+    # Flying units can traverse any other terrain freely
+    if unit.is_flying:
+        return True
+    try:
+        if unit is not None and hasattr(unit, "has_super_heavy_walker") and unit.has_super_heavy_walker():
+            return True
+    except Exception:
+        pass
 
     # For other terrain types, check height-based traversal rules
     # Most terrain ≤2" height can be traversed freely (Super-heavy Walker extends to 4")
@@ -163,20 +222,12 @@ def can_traverse_freely(unit: 'Unit', terrain_feature: 'TerrainFeature') -> bool
     # All other terrain types >2" can be traversed but require vertical movement cost
     return False
 
-def is_terrain_impassable(unit: 'Unit', terrain_feature: 'TerrainFeature') -> bool:
+def is_terrain_impassable(unit: 'Unit', terrain_feature: 'TerrainFeature',
+                          movement_type: Optional['MovementType'] = None) -> bool:
     """Check if terrain is completely impassable for a unit.
 
     This determines if terrain should be added to blocking collision trees.
     """
-    # Flying units can pass through any terrain
-    if unit.is_flying:
-        return False
-    try:
-        if unit is not None and hasattr(unit, "has_super_heavy_walker") and unit.has_super_heavy_walker():
-            return False
-    except Exception:
-        pass
-
     # Import at runtime to avoid circular import
     from ..classes.map import TerrainType, RuinsTerrain
 
@@ -184,9 +235,7 @@ def is_terrain_impassable(unit: 'Unit', terrain_feature: 'TerrainFeature') -> bo
 
     # Only RUINS walls are truly impassable for certain unit types
     if terrain_type == TerrainType.RUINS and isinstance(terrain_feature, RuinsTerrain):
-        # Non-Infantry/Beast units cannot move through RUINS walls
-        can_traverse_walls = (counts_as_infantry_for_terrain(unit) or unit.is_beast or
-                             unit.is_belisarius_cawl or unit.is_imperium_primarch)
+        can_traverse_walls = _ruins_wall_traversal_allowed(unit, movement_type)
 
         if not can_traverse_walls:
             # Core movement rule: terrain features ≤ 2" tall can be moved over "as if not there".
@@ -195,12 +244,19 @@ def is_terrain_impassable(unit: 'Unit', terrain_feature: 'TerrainFeature') -> bo
                 try:
                     z0 = float(wall.get("z_bottom", 0.0) or 0.0)
                     z1 = float(wall.get("z_top", 0.0) or 0.0)
-                    if (z1 - z0) > get_freely_climbable_range(unit):
+                    if (z1 - z0) > float(FREELY_CLIMBABLE_RANGE):
                         return True
                 except Exception:
                     # If wall metadata is missing, err on the side of blocking (legacy behavior)
                     return True
             return False
+        return False
+
+    # Flying units can pass through non-RUINS terrain
+    if unit.is_flying:
+        return False
+    if _super_heavy_walker_active_for_move(unit, movement_type):
+        return False
 
     # Check terrain-specific traversal rules
     traversal_rules = getattr(terrain_feature, 'traversal_rules', {})
@@ -213,7 +269,8 @@ def is_terrain_impassable(unit: 'Unit', terrain_feature: 'TerrainFeature') -> bo
     # All other terrain types are passable (may require vertical cost)
     return False
 
-def get_terrain_blocking_polygons(unit: 'Unit', terrain_feature: 'TerrainFeature') -> List:
+def get_terrain_blocking_polygons(unit: 'Unit', terrain_feature: 'TerrainFeature',
+                                  movement_type: Optional['MovementType'] = None) -> List:
     """Get list of polygons that block movement for a specific unit.
 
     Args:
@@ -226,22 +283,12 @@ def get_terrain_blocking_polygons(unit: 'Unit', terrain_feature: 'TerrainFeature
     # Import at runtime to avoid circular import
     from ..classes.map import TerrainType, RuinsTerrain
 
-    # Flying units are not blocked by any terrain
-    if unit.is_flying:
-        return []
-
     blocking_polygons = []
     terrain_type = terrain_feature.terrain_type
 
     # RUINS: only walls block movement for non-Infantry/Beast units
     if terrain_type == TerrainType.RUINS and isinstance(terrain_feature, RuinsTerrain):
-        can_traverse_walls = (counts_as_infantry_for_terrain(unit) or unit.is_beast or
-                             unit.is_belisarius_cawl or unit.is_imperium_primarch)
-        try:
-            if unit is not None and hasattr(unit, "has_super_heavy_walker") and unit.has_super_heavy_walker():
-                can_traverse_walls = True
-        except Exception:
-            pass
+        can_traverse_walls = _ruins_wall_traversal_allowed(unit, movement_type)
 
         if not can_traverse_walls:
             # Add wall polygons as blocking ONLY if wall segment height > 2".
@@ -249,7 +296,7 @@ def get_terrain_blocking_polygons(unit: 'Unit', terrain_feature: 'TerrainFeature
                 try:
                     z0 = float(wall.get("z_bottom", 0.0) or 0.0)
                     z1 = float(wall.get("z_top", 0.0) or 0.0)
-                    if (z1 - z0) <= get_freely_climbable_range(unit):
+                    if (z1 - z0) <= float(FREELY_CLIMBABLE_RANGE):
                         continue
                     poly = wall.get("polygon", None)
                     if poly is not None:
@@ -262,9 +309,12 @@ def get_terrain_blocking_polygons(unit: 'Unit', terrain_feature: 'TerrainFeature
                         continue
 
     # For other terrain types, check if they're impassable
-    elif is_terrain_impassable(unit, terrain_feature):
-        # Add the main footprint as blocking
-        blocking_polygons.append(terrain_feature.footprint)
+    else:
+        if unit.is_flying:
+            return []
+        if is_terrain_impassable(unit, terrain_feature, movement_type=movement_type):
+            # Add the main footprint as blocking
+            blocking_polygons.append(terrain_feature.footprint)
 
     return blocking_polygons
 
@@ -734,13 +784,15 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
             super_heavy = bool(moving_unit.has_super_heavy_walker())
     except Exception:
         super_heavy = False
-    terrain_cache_key = (id(game_map), unit_keywords, super_heavy)
+    terrain_cache_key = (id(game_map), unit_keywords, super_heavy, movement_type)
     if terrain_cache_key in _terrain_cache:
         all_blocking_terrain = _terrain_cache[terrain_cache_key]
     else:
         all_blocking_terrain = []
         for terrain_feature in game_map.terrain_features:
-            all_blocking_terrain.extend(get_terrain_blocking_polygons(moving_unit, terrain_feature))
+            all_blocking_terrain.extend(
+                get_terrain_blocking_polygons(moving_unit, terrain_feature, movement_type=movement_type)
+            )
         _terrain_cache[terrain_cache_key] = all_blocking_terrain
 
     # Apply spatial filtering to terrain for this move

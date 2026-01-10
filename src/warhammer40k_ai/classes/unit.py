@@ -3302,15 +3302,15 @@ class Unit:
         return found
     
     def can_move_through_ruins_walls(self) -> bool:
-        """Check if this unit can move through RUINS walls (not just on ground floor)."""
-        return (self.counts_as_infantry_for_terrain() or self.is_beast or 
-                self.is_imperium_primarch or self.is_belisarius_cawl or 
-                self.is_flying or self.has_super_heavy_walker())
+        """Check if this unit can move through RUINS walls via Breachable-style rules."""
+        return (self.counts_as_infantry_for_terrain() or self.is_beast or
+                self.is_imperium_primarch or self.is_belisarius_cawl)
     
     def can_access_upper_floors(self) -> bool:
         """Check if this unit can be placed on upper floors of RUINS."""
-        # Same rules as wall traversal for RUINS
-        return self.can_move_through_ruins_walls()
+        return (self.counts_as_infantry_for_terrain() or self.is_beast or
+                self.is_imperium_primarch or self.is_belisarius_cawl or
+                self.is_flying)
     
     def can_overhang_floor(self) -> bool:
         """Check if this unit's base can overhang floor edges on upper floors."""

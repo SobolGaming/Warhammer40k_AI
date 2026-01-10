@@ -748,7 +748,7 @@ class RuinsTerrain(TerrainFeature):
             "beast_can_pass_walls": True,
             "vehicle_can_pass_walls": False,
             "monster_can_pass_walls": False,
-            "flying_can_pass_walls": True,
+            "flying_can_pass_walls": False,
             "titanic_can_pass_walls": False,
         }
 
@@ -782,10 +782,6 @@ class RuinsTerrain(TerrainFeature):
 
     def can_unit_move_through(self, unit, position: Tuple[float, float, float]) -> bool:
         """Check if a unit can move through a specific position in the ruins."""
-        # Flying units can pass through anything
-        if getattr(unit, 'is_flying', False):
-            return True
-
         # Check wall collision
         if self.check_wall_collision(position):
             # Check if unit can pass through walls
@@ -799,6 +795,12 @@ class RuinsTerrain(TerrainFeature):
 
     def _get_unit_type(self, unit) -> str:
         """Get unit type string for traversal rule lookup."""
+        try:
+            fn = getattr(unit, "counts_as_infantry_for_terrain", None)
+            if callable(fn) and fn():
+                return "infantry"
+        except Exception:
+            pass
         if getattr(unit, 'is_infantry', False):
             return "infantry"
         elif getattr(unit, 'is_beast', False):
