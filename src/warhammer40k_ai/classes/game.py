@@ -6941,10 +6941,123 @@ class Game:
         self.deployment_turn_index = self.defender_index
         # Reset deployment special-rule trackers for a fresh setup sequence
         self.deployment_skip_turns = {}
-    
+
+    def _apply_hover_declarations(self) -> None:
+        """Declare Hover mode choices before Battle Formations steps."""
+        players = list(getattr(self, "players", []) or [])
+        if not players:
+            return
+
+        for player in players:
+            army = getattr(player, "get_army", lambda: None)()
+            if army is None:
+                continue
+            candidates = []
+            for unit in list(getattr(army, "units", []) or []):
+                try:
+                    if bool(getattr(unit, "hover_declared", False)):
+                        continue
+                except Exception:
+                    pass
+                try:
+                    if not bool(getattr(unit, "has_hover", lambda: False)()):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    if not bool(getattr(unit, "has_keyword", lambda *_a, **_k: False)("Aircraft")):
+                        continue
+                except Exception:
+                    continue
+                candidates.append(unit)
+
+            if not candidates:
+                continue
+
+            options = [str(getattr(u, "_id", "")) for u in candidates]
+            ctx = {
+                "player": getattr(player, "name", ""),
+                "units": [getattr(u, "name", "") for u in candidates],
+                "unit_ids": list(options),
+            }
+
+            selection = None
+            try:
+                chooser = getattr(player, "_choose_optional_value", None)
+                if callable(chooser):
+                    selection = chooser("HOVER_MODE", list(options), ctx)
+            except Exception:
+                selection = None
+
+            selected_ids: set[str] = set()
+            selected_names: set[str] = set()
+
+            if isinstance(selection, dict):
+                for key, value in selection.items():
+                    if not value:
+                        continue
+                    skey = str(key).strip()
+                    if skey in options:
+                        selected_ids.add(skey)
+                    else:
+                        selected_names.add(skey.lower())
+            elif isinstance(selection, (list, tuple, set)):
+                for item in selection:
+                    skey = str(item).strip()
+                    if skey in options:
+                        selected_ids.add(skey)
+                    else:
+                        selected_names.add(skey.lower())
+            elif isinstance(selection, str):
+                skey = selection.strip()
+                if skey in options:
+                    selected_ids.add(skey)
+                else:
+                    selected_names.add(skey.lower())
+            elif isinstance(selection, bool):
+                if selection:
+                    selected_ids.update(options)
+
+            if selection is None:
+                for unit in candidates:
+                    ctx_unit = {
+                        "player": getattr(player, "name", ""),
+                        "unit": getattr(unit, "name", ""),
+                        "unit_id": str(getattr(unit, "_id", "")),
+                    }
+                    try:
+                        should = bool(player._should_use_optional_ability(f"HOVER_MODE:{unit._id}", ctx_unit))
+                    except Exception:
+                        should = False
+                    if should:
+                        selected_ids.add(str(getattr(unit, "_id", "")))
+
+            for unit in candidates:
+                try:
+                    unit_id = str(getattr(unit, "_id", ""))
+                    unit_name = str(getattr(unit, "name", "") or "").lower()
+                except Exception:
+                    unit_id = ""
+                    unit_name = ""
+                try:
+                    if unit_id in selected_ids or (unit_name and unit_name in selected_names):
+                        unit.set_hover_mode(True)
+                except Exception:
+                    pass
+                try:
+                    unit.hover_declared = True
+                except Exception:
+                    pass
+
     def execute_declare_battle_formations_phase(self) -> None:
         """Phase 5: Declare Battle Formations - Attach leaders, embark in transports, allocate reserves."""
         print("📋 DECLARE BATTLE FORMATIONS: Validating formations...")
+
+        # Hover mode declarations must happen before any other formation steps.
+        try:
+            self._apply_hover_declarations()
+        except Exception:
+            pass
 
         # Validate leader attachment limits per army
         for p in list(getattr(self, "players", []) or []):

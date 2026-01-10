@@ -6,7 +6,18 @@ from ..utility.model_base import Base, BaseType
 from .wargear import Wargear, WargearOption, parse_option_string, parse_alternate_3
 from .ability import Ability
 from ..utility.range import Range
-from ..utility.calcs import get_dist, get_angle, convert_mm_to_inches, build_spatial_index, footprint_from_offsets, build_formation_templates, query_spatial_index
+from ..utility.calcs import (
+    get_dist,
+    get_angle,
+    convert_mm_to_inches,
+    build_spatial_index,
+    footprint_from_offsets,
+    build_formation_templates,
+    query_spatial_index,
+    measure_path_distance,
+    measure_direct_distance,
+    movement_segment_cost,
+)
 from ..utility.dice import get_roll, DiceCollection
 from .status_effects import StatusEffect, BattleShockEffect
 import uuid
@@ -130,6 +141,9 @@ class Unit:
         self.reserve_status = 'deployed'  # 'deployed', 'reserves', 'strategic_reserves'
         self.reserve_turn_deployed = None  # Turn when unit arrived from reserves
         self.arrived_from_reserves_this_turn = False  # Flag for movement/charge restrictions
+        # Hover mode (AIRCRAFT core ability)
+        self.hover_mode = False
+        self.hover_declared = False
 
         # Transport / embark state
         self.transport_rules_text: str = str(getattr(datasheet, "transport", "") or "")
@@ -3092,9 +3106,12 @@ class Unit:
         seen: set[str] = set()
         for u in members:
             try:
+                hover_active = bool(getattr(u, "hover_mode", False))
                 for k in (getattr(u, "keywords", []) or []):
                     ks = str(k)
                     lk = ks.lower()
+                    if hover_active and lk == "aircraft":
+                        continue
                     if lk in seen:
                         continue
                     seen.add(lk)
@@ -3287,6 +3304,8 @@ class Unit:
 
     @property
     def is_aircraft(self) -> bool:
+        if bool(getattr(self, "hover_mode", False)):
+            return False
         return self.has_keyword("Aircraft")
 
     @property
@@ -3352,6 +3371,60 @@ class Unit:
             return bool(found)
         except Exception:
             return False
+
+    def has_hover(self) -> bool:
+        """True if this unit has the Hover core ability."""
+        if 'hover' in getattr(self, '_ability_cache', {}):
+            return bool(self._ability_cache['hover'])
+        found = False
+        for ab in self._iter_active_abilities():
+            try:
+                name = str(getattr(ab, "name", "") or "").strip().lower()
+            except Exception:
+                name = ""
+            if name == "hover":
+                found = True
+                break
+        if not hasattr(self, '_ability_cache'):
+            self._ability_cache = {}
+        self._ability_cache['hover'] = bool(found)
+        return bool(found)
+
+    def set_hover_mode(self, enabled: bool) -> None:
+        """Enable/disable Hover mode (Move becomes 20", AIRCRAFT keyword removed for rules)."""
+        enabled = bool(enabled)
+        if bool(getattr(self, "hover_mode", False)) == enabled:
+            return
+        self.hover_mode = enabled
+        try:
+            self.remove_characteristic_modifiers_by_source("hover_mode")
+        except Exception:
+            pass
+        if enabled:
+            try:
+                from ..utility.modifiers import Modifier, ModifierOp
+                self.add_characteristic_modifier(
+                    "movement",
+                    Modifier(ModifierOp.SET, 20, source="hover_mode"),
+                )
+            except Exception:
+                pass
+
+    def has_flip_belt(self) -> bool:
+        """True if this unit has the Flip Belt ability (ignore vertical distance for certain moves)."""
+        if 'flip_belt' in getattr(self, '_ability_cache', {}):
+            return bool(self._ability_cache['flip_belt'])
+        found, _ = self._find_ability_with_patterns(["flip belt"])
+        if not hasattr(self, '_ability_cache'):
+            self._ability_cache = {}
+        self._ability_cache['flip_belt'] = bool(found)
+        return bool(found)
+
+    def must_start_in_reserves(self) -> bool:
+        """True if this unit must start the battle in Reserves (e.g., non-hover AIRCRAFT)."""
+        if bool(getattr(self, "hover_mode", False)):
+            return False
+        return bool(self.is_aircraft)
 
     def has_kill_team(self) -> bool:
         """Check if the unit has the Kill Team ability (Imperial Agents)."""
@@ -4929,11 +5002,15 @@ class Unit:
                 return False
             movement_range += advance_roll
 
-        # Calculate straight-line distance to destination
-        distance_to_destination = get_dist(
-            destination[0] - start_x,
-            destination[1] - start_y,
-            destination[2] - start_z
+        from ..utility.calcs import MovementType
+        movement_type = MovementType.ADVANCE if advance else MovementType.MOVE
+        # Calculate straight-line distance to destination (rules-aware)
+        distance_to_destination = measure_direct_distance(
+            (start_x, start_y, start_z),
+            (destination[0], destination[1], destination[2]),
+            self,
+            movement_type,
+            game_map,
         )
 
         # Check if destination is within movement range
@@ -4962,10 +5039,12 @@ class Unit:
             logging.debug(f"Model {model._id} {model.name} attempting to move from {model_start} to {model_destination}")
             
             # Calculate straight-line distance for this model
-            model_distance = get_dist(
-                model_destination[0] - model_start[0],
-                model_destination[1] - model_start[1],
-                model_destination[2] - model_start[2] if len(model_start) > 2 else 0
+            model_distance = measure_direct_distance(
+                (model_start[0], model_start[1], model_start[2] if len(model_start) > 2 else 0.0),
+                (model_destination[0], model_destination[1], model_destination[2] if len(model_destination) > 2 else 0.0),
+                self,
+                movement_type,
+                game_map,
             )
             
             # Check if this model can reach its destination
@@ -4981,7 +5060,7 @@ class Unit:
                 continue
             
             # Calculate path distance
-            path_distance = sum(get_dist(path[i][0] - path[i-1][0], path[i][1] - path[i-1][1]) for i in range(1, len(path)))
+            path_distance = measure_path_distance(path, self, movement_type, game_map)
             
             if path_distance > movement_range:
                 print(f"Model {model._id} path distance {path_distance:.1f}\" exceeds movement {movement_range}\"")
@@ -4992,10 +5071,7 @@ class Unit:
                 direction_to_destination = get_angle(model_destination[0] - model.model_base.x, model_destination[1] - model.model_base.y)
                 
                 for node in path[1:]:
-                    dx = node[0] - last_node[0]
-                    dy = node[1] - last_node[1]
-                    dz = node[2] - last_node[2] if len(node) > 2 else 0
-                    segment_distance = get_dist(dx, dy, dz)
+                    segment_distance = movement_segment_cost(last_node, node, self, movement_type)
                     
                     if distance_along_path + segment_distance > movement_range:
                         # Stop here, can't go further
@@ -5021,10 +5097,7 @@ class Unit:
                 distance_along_path = 0.0
                 
                 for node in path[1:]:
-                    dx = node[0] - last_node[0]
-                    dy = node[1] - last_node[1]
-                    dz = node[2] - last_node[2] if len(node) > 2 else 0
-                    segment_distance = get_dist(dx, dy, dz)
+                    segment_distance = movement_segment_cost(last_node, node, self, movement_type)
                     distance_along_path += segment_distance
                     last_node = (node[0], node[1], node[2] if len(node) > 2 else 0, direction_to_destination)
                     model.last_move_path.append(last_node)
@@ -5056,8 +5129,10 @@ class Unit:
         if self.models and self.models[0].is_alive:
             final_position = self.models[0].get_location()
             end_x, end_y = final_position[0], final_position[1]
+            end_z = final_position[2] if len(final_position) > 2 else start_z
         else:
             end_x, end_y = start_x, start_y  # Fallback to start position
+            end_z = start_z
         
         # Check for base overlaps with enemy models
         enemy_units = game_map.get_enemy_units(self)
@@ -5079,8 +5154,14 @@ class Unit:
                                 self.models[i].set_location(*original_pos)
                         return False
         
-        # Calculate actual distance the unit moved
-        unit_distance_moved = get_dist(end_x - start_x, end_y - start_y)
+        # Calculate actual distance the unit moved (rules-aware)
+        unit_distance_moved = measure_direct_distance(
+            (start_x, start_y, start_z),
+            (end_x, end_y, end_z),
+            self,
+            movement_type,
+            game_map,
+        )
         
         # Provide detailed feedback
         action_name = 'advanced' if advance else 'moved'
@@ -5147,11 +5228,14 @@ class Unit:
         
         # Store original model positions for potential rollback
         
-        # Calculate maximum charge distance available
-        max_charge_distance = get_dist(
-            destination[0] - start_x,
-            destination[1] - start_y,
-            destination[2] - start_z
+        from ..utility.calcs import MovementType
+        # Calculate maximum charge distance available (rules-aware)
+        max_charge_distance = measure_direct_distance(
+            (start_x, start_y, start_z),
+            (destination[0], destination[1], destination[2]),
+            self,
+            MovementType.CHARGE,
+            game_map,
         )
         
         # Find enemy models to charge towards
@@ -5182,11 +5266,13 @@ class Unit:
             model = self.models[0]
             model_start = model.get_location()
             
-            # Calculate straight-line distance to destination
-            model_distance = get_dist(
-                destination[0] - model_start[0],
-                destination[1] - model_start[1],
-                destination[2] - model_start[2] if len(model_start) > 2 else 0
+            # Calculate straight-line distance to destination (rules-aware)
+            model_distance = measure_direct_distance(
+                (model_start[0], model_start[1], model_start[2] if len(model_start) > 2 else 0.0),
+                (destination[0], destination[1], destination[2]),
+                self,
+                MovementType.CHARGE,
+                game_map,
             )
             
             # Check if within charge distance
@@ -5197,16 +5283,16 @@ class Unit:
             # Use charge-aware pathfinding for single model (can navigate around obstacles and into engagement range)
             from ..utility.calcs import get_charge_movement_path
 
-            pathfinding_result = get_charge_movement_path(model, destination[:2], max_charge_distance, game_map, target_unit)
+            pathfinding_result = get_charge_movement_path(model, destination, max_charge_distance, game_map, target_unit)
             
             if not pathfinding_result or not pathfinding_result.get('valid'):
                 print(f"❌ {self.name} cannot charge to destination - pathfinding failed (obstacles in way)")
                 return False
 
-            shortest_path = [(p[0], p[1], destination[2]) for p in pathfinding_result['path']]
+            shortest_path = pathfinding_result['path']
             
             # Calculate path distance
-            path_distance = sum(get_dist(shortest_path[i][0] - shortest_path[i-1][0], shortest_path[i][1] - shortest_path[i-1][1]) for i in range(1, len(shortest_path)))
+            path_distance = measure_path_distance(shortest_path, self, MovementType.CHARGE, game_map)
             
             # Check if path is within charge distance
             if path_distance > max_charge_distance:
@@ -5236,10 +5322,12 @@ class Unit:
                     model_start = model.get_location()
                     
                     # Calculate distance for this model
-                    model_distance = get_dist(
-                        model_destination[0] - model_start[0],
-                        model_destination[1] - model_start[1],
-                        model_destination[2] - model_start[2] if len(model_start) > 2 else 0
+                    model_distance = measure_direct_distance(
+                        (model_start[0], model_start[1], model_start[2] if len(model_start) > 2 else 0.0),
+                        (model_destination[0], model_destination[1], model_destination[2] if len(model_destination) > 2 else 0.0),
+                        self,
+                        MovementType.CHARGE,
+                        game_map,
                     )
                     
                     # Check if within charge distance
@@ -5250,13 +5338,13 @@ class Unit:
                     # Use charge-aware pathfinding for charge movement
                     from ..utility.calcs import get_charge_movement_path
 
-                    pathfinding_result = get_charge_movement_path(model, model_destination[:2], max_charge_distance, game_map, target_unit)
+                    pathfinding_result = get_charge_movement_path(model, model_destination, max_charge_distance, game_map, target_unit)
 
                     if pathfinding_result and pathfinding_result.get('valid'):
-                        shortest_path = [(p[0], p[1], model_destination[2]) for p in pathfinding_result['path']]
+                        shortest_path = pathfinding_result['path']
                         
                         # Calculate path distance
-                        path_distance = sum(get_dist(shortest_path[i][0] - shortest_path[i-1][0], shortest_path[i][1] - shortest_path[i-1][1]) for i in range(1, len(shortest_path)))
+                        path_distance = measure_path_distance(shortest_path, self, MovementType.CHARGE, game_map)
                         
                         if path_distance <= max_charge_distance:
                             # Move to destination
@@ -5414,11 +5502,19 @@ class Unit:
         if self.models and self.models[0].is_alive:
             final_position = self.models[0].get_location()
             end_x, end_y = final_position[0], final_position[1]
+            end_z = final_position[2] if len(final_position) > 2 else start_z
         else:
             end_x, end_y = start_x, start_y  # Fallback to start position
+            end_z = start_z
         
-        # Calculate actual distance the unit moved
-        unit_distance_moved = get_dist(end_x - start_x, end_y - start_y)
+        # Calculate actual distance the unit moved (rules-aware)
+        unit_distance_moved = measure_direct_distance(
+            (start_x, start_y, start_z),
+            (end_x, end_y, end_z),
+            self,
+            MovementType.CHARGE,
+            game_map,
+        )
         
         # Provide detailed feedback
         print(f"✅ {self.name} moved from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
@@ -5480,11 +5576,14 @@ class Unit:
         # Fall Back movement distance is the unit's Move characteristic
         movement_range = self.movement
         
-        # Calculate straight-line distance to destination
-        distance_to_destination = get_dist(
-            destination[0] - start_x,
-            destination[1] - start_y,
-            destination[2] - start_z
+        from ..utility.calcs import MovementType
+        # Calculate straight-line distance to destination (rules-aware)
+        distance_to_destination = measure_direct_distance(
+            (start_x, start_y, start_z),
+            (destination[0], destination[1], destination[2]),
+            self,
+            MovementType.FALL_BACK,
+            game_map,
         )
         
         # Check if destination is within movement range
@@ -5509,10 +5608,12 @@ class Unit:
             logging.debug(f"Model {model._id} {model.name} attempting to fall back from {model_start} to {model_destination}")
             
             # Calculate straight-line distance for this model
-            model_distance = get_dist(
-                model_destination[0] - model_start[0],
-                model_destination[1] - model_start[1],
-                model_destination[2] - model_start[2] if len(model_start) > 2 else 0
+            model_distance = measure_direct_distance(
+                (model_start[0], model_start[1], model_start[2] if len(model_start) > 2 else 0.0),
+                (model_destination[0], model_destination[1], model_destination[2] if len(model_destination) > 2 else 0.0),
+                self,
+                MovementType.FALL_BACK,
+                game_map,
             )
             
             # Check if this model can reach its destination
@@ -5525,7 +5626,7 @@ class Unit:
 
             pathfinding_result = get_movement_path_preview(
                 model,
-                model_destination[:2],
+                model_destination,
                 self.movement,
                 game_map,
                 movement_type=MovementType.FALL_BACK,
@@ -5536,10 +5637,10 @@ class Unit:
                 continue
 
             # Convert 2D path to 3D
-            shortest_path = [(p[0], p[1], model_destination[2]) for p in pathfinding_result['path']]
+            shortest_path = pathfinding_result['path']
             
             # Calculate path distance
-            path_distance = sum(get_dist(shortest_path[i][0] - shortest_path[i-1][0], shortest_path[i][1] - shortest_path[i-1][1]) for i in range(1, len(shortest_path)))
+            path_distance = measure_path_distance(shortest_path, self, MovementType.FALL_BACK, game_map)
             
             # Check for Desperate Escape Tests (models that move over enemy models)
             # Note: New pathfinding doesn't track enemy models moved over, so skip this for now
@@ -5566,10 +5667,7 @@ class Unit:
                 direction_to_destination = get_angle(model_destination[0] - model.model_base.x, model_destination[1] - model.model_base.y)
                 
                 for node in shortest_path[1:]:
-                    dx = node[0] - last_node[0]
-                    dy = node[1] - last_node[1]
-                    dz = node[2] - last_node[2] if len(node) > 2 else 0
-                    segment_distance = get_dist(dx, dy, dz)
+                    segment_distance = movement_segment_cost(last_node, node, self, MovementType.FALL_BACK)
                     
                     if distance_along_path + segment_distance > movement_range:
                         # Stop here, can't go further
@@ -5594,10 +5692,7 @@ class Unit:
                 distance_along_path = 0.0
                 
                 for node in shortest_path[1:]:
-                    dx = node[0] - last_node[0]
-                    dy = node[1] - last_node[1]
-                    dz = node[2] - last_node[2] if len(node) > 2 else 0
-                    segment_distance = get_dist(dx, dy, dz)
+                    segment_distance = movement_segment_cost(last_node, node, self, MovementType.FALL_BACK)
                     distance_along_path += segment_distance
                     last_node = (node[0], node[1], node[2] if len(node) > 2 else 0, direction_to_destination)
                     model.last_move_path.append(last_node)
@@ -5640,11 +5735,19 @@ class Unit:
         if self.models and self.models[0].is_alive:
             final_position = self.models[0].get_location()
             end_x, end_y = final_position[0], final_position[1]
+            end_z = final_position[2] if len(final_position) > 2 else start_z
         else:
             end_x, end_y = start_x, start_y  # Fallback to start position
+            end_z = start_z
         
-        # Calculate actual distance the unit moved
-        unit_distance_moved = get_dist(end_x - start_x, end_y - start_y)
+        # Calculate actual distance the unit moved (rules-aware)
+        unit_distance_moved = measure_direct_distance(
+            (start_x, start_y, start_z),
+            (end_x, end_y, end_z),
+            self,
+            MovementType.FALL_BACK,
+            game_map,
+        )
         
         # Provide detailed feedback
         print(f"✅ {self.name} fell back from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
@@ -6056,11 +6159,14 @@ class Unit:
         start_x, start_y = first_model_pos[0], first_model_pos[1]
         start_z = first_model_pos[2] if len(first_model_pos) > 2 else 0
         
-        # Calculate straight-line distance to destination
-        distance_to_destination = get_dist(
-            destination[0] - start_x,
-            destination[1] - start_y,
-            destination[2] - start_z
+        from ..utility.calcs import MovementType
+        # Calculate straight-line distance to destination (rules-aware)
+        distance_to_destination = measure_direct_distance(
+            (start_x, start_y, start_z),
+            (destination[0], destination[1], destination[2]),
+            self,
+            MovementType.SCOUT,
+            game_map,
         )
         
         # Check if destination is within scout distance
@@ -6101,10 +6207,12 @@ class Unit:
             logging.debug(f"Model {model._id} {model.name} attempting scout move from {model_start} to {model_destination}")
             
             # Calculate straight-line distance for this model
-            model_distance = get_dist(
-                model_destination[0] - model_start[0],
-                model_destination[1] - model_start[1],
-                model_destination[2] - model_start[2] if len(model_start) > 2 else 0
+            model_distance = measure_direct_distance(
+                (model_start[0], model_start[1], model_start[2] if len(model_start) > 2 else 0.0),
+                (model_destination[0], model_destination[1], model_destination[2] if len(model_destination) > 2 else 0.0),
+                self,
+                MovementType.SCOUT,
+                game_map,
             )
             
             # Check if this model can reach its destination
@@ -6133,7 +6241,7 @@ class Unit:
                 continue
             
             # Calculate path distance
-            path_distance = sum(get_dist(path[i][0] - path[i-1][0], path[i][1] - path[i-1][1]) for i in range(1, len(path)))
+            path_distance = measure_path_distance(path, self, MovementType.SCOUT, game_map)
             
             if path_distance > scout_distance:
                 print(f"Model {model._id} path distance {path_distance:.1f}\" exceeds scout distance {scout_distance}\"")
@@ -6144,10 +6252,7 @@ class Unit:
                 direction_to_destination = get_angle(model_destination[0] - model.model_base.x, model_destination[1] - model.model_base.y)
                 
                 for node in path[1:]:
-                    dx = node[0] - last_node[0]
-                    dy = node[1] - last_node[1]
-                    dz = node[2] - last_node[2] if len(node) > 2 else 0
-                    segment_distance = get_dist(dx, dy, dz)
+                    segment_distance = movement_segment_cost(last_node, node, self, MovementType.SCOUT)
                     
                     if distance_along_path + segment_distance > scout_distance:
                         # Stop here, can't go further
@@ -6172,10 +6277,7 @@ class Unit:
                 distance_along_path = 0.0
                 
                 for node in path[1:]:
-                    dx = node[0] - last_node[0]
-                    dy = node[1] - last_node[1]
-                    dz = node[2] - last_node[2] if len(node) > 2 else 0
-                    segment_distance = get_dist(dx, dy, dz)
+                    segment_distance = movement_segment_cost(last_node, node, self, MovementType.SCOUT)
                     distance_along_path += segment_distance
                     last_node = (node[0], node[1], node[2] if len(node) > 2 else 0, direction_to_destination)
                     model.last_move_path.append(last_node)
@@ -6233,11 +6335,19 @@ class Unit:
         if self.models and self.models[0].is_alive:
             final_position = self.models[0].get_location()
             end_x, end_y = final_position[0], final_position[1]
+            end_z = final_position[2] if len(final_position) > 2 else start_z
         else:
             end_x, end_y = start_x, start_y  # Fallback to start position
+            end_z = start_z
         
-        # Calculate actual distance the unit moved
-        unit_distance_moved = get_dist(end_x - start_x, end_y - start_y)
+        # Calculate actual distance the unit moved (rules-aware)
+        unit_distance_moved = measure_direct_distance(
+            (start_x, start_y, start_z),
+            (end_x, end_y, end_z),
+            self,
+            MovementType.SCOUT,
+            game_map,
+        )
         
         # Mark unit as having made a scout move
         self.scout_move_made = True

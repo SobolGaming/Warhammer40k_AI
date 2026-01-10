@@ -835,7 +835,7 @@ def _ability_id_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Stealth": ("Supported", "Apply -1 to hit vs ranged attacks."),
         "Deadly Demise": ("Supported", "On destruction, roll 6+ to deal mortals within 6\"."),
         "Plunging Fire": ("Supported", "Extra AP vs targets below attacker elevation."),
-        "Hover": ("Not implemented", "No hover-specific handling."),
+        "Hover": ("Supported", "Declare Hover at battle formations; Move set to 20\" and AIRCRAFT keyword removed."),
     }
     return {_norm(name): val for name, val in raw.items()}
 

@@ -223,11 +223,13 @@ class DeploymentManager:
             unit for unit in self.defender.get_army().units
             if (not _is_attached_leader(unit))
             and deployment_results['reserves'][self.defender.name].get(unit.name, 'deploy') == 'deploy'
+            and not bool(getattr(unit, "must_start_in_reserves", lambda: False)())
         ]
         attacker_units = [
             unit for unit in self.attacker.get_army().units
             if (not _is_attached_leader(unit))
             and deployment_results['reserves'][self.attacker.name].get(unit.name, 'deploy') == 'deploy'
+            and not bool(getattr(unit, "must_start_in_reserves", lambda: False)())
         ]
         
         logger.info(f"📍 Alternating deployment: {len(defender_units)} vs {len(attacker_units)} units")
@@ -361,6 +363,13 @@ class DeploymentManager:
                 except Exception:
                     pass
                 reserve_decision = reserves_decisions.get(unit.name, 'deploy')
+                try:
+                    if bool(getattr(unit, "must_start_in_reserves", lambda: False)()):
+                        if reserve_decision != "strategic_reserves":
+                            logger.info(f"✈️ {unit.name} forced into Strategic Reserves (AIRCRAFT)")
+                        reserve_decision = "strategic_reserves"
+                except Exception:
+                    pass
                 started = reserve_decision in ('reserves', 'strategic_reserves')
                 
                 if reserve_decision == 'deploy':

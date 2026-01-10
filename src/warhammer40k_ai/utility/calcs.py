@@ -28,29 +28,35 @@ from .constants import ENGAGEMENT_RANGE_HORIZONTAL, MM_TO_INCHES
 # Global caches for collision detection
 _terrain_cache = {}  # Cache for terrain blocking polygons by (game_map_id, unit_keywords, movement_type)
 _enemy_model_cache = {}  # Cache for enemy model shapes by (game_map_id, faction)
+_enemy_model_big_cache = {}  # Cache for enemy MONSTER/VEHICLE model shapes by (game_map_id, faction)
 _enemy_engagement_buffer_cache = {}  # Cache for buffered enemy shapes by (game_map_id, faction)
 
 
 def clear_collision_caches():
     """Clear all collision detection caches. Call when models die or game state changes significantly."""
-    global _terrain_cache, _enemy_model_cache, _enemy_engagement_buffer_cache
+    global _terrain_cache, _enemy_model_cache, _enemy_model_big_cache, _enemy_engagement_buffer_cache
     _terrain_cache.clear()
     _enemy_model_cache.clear()
+    _enemy_model_big_cache.clear()
     _enemy_engagement_buffer_cache.clear()
     logger.debug("Cleared collision detection caches")
 
 
 def clear_enemy_model_cache(game_map_id: int = None):
     """Clear enemy model cache for a specific game map or all maps."""
-    global _enemy_model_cache, _enemy_engagement_buffer_cache
+    global _enemy_model_cache, _enemy_model_big_cache, _enemy_engagement_buffer_cache
     if game_map_id is None:
         _enemy_model_cache.clear()
+        _enemy_model_big_cache.clear()
         _enemy_engagement_buffer_cache.clear()
         logger.debug("Cleared all enemy model caches")
     else:
         keys_to_remove = [key for key in _enemy_model_cache.keys() if key[0] == game_map_id]
         for key in keys_to_remove:
             del _enemy_model_cache[key]
+        keys_to_remove = [key for key in _enemy_model_big_cache.keys() if key[0] == game_map_id]
+        for key in keys_to_remove:
+            del _enemy_model_big_cache[key]
         keys_to_remove = [key for key in _enemy_engagement_buffer_cache.keys() if key[0] == game_map_id]
         for key in keys_to_remove:
             del _enemy_engagement_buffer_cache[key]
@@ -189,6 +195,136 @@ def _ruins_wall_traversal_allowed(unit: 'Unit', movement_type=None) -> bool:
     if _super_heavy_walker_active_for_move(unit, movement_type):
         return True
     return False
+
+def _movement_type_allows_fly_over(movement_type) -> bool:
+    mt = _movement_type_tag(movement_type)
+    return mt in ("move", "advance", "fall_back", "charge")
+
+def _movement_type_allows_flip_belt(movement_type) -> bool:
+    mt = _movement_type_tag(movement_type)
+    return mt in ("move", "advance", "fall_back", "charge")
+
+def _unit_ignores_vertical_distance(unit: 'Unit', movement_type=None) -> bool:
+    if not _movement_type_allows_flip_belt(movement_type):
+        return False
+    try:
+        fn = getattr(unit, "has_flip_belt", None)
+        if callable(fn):
+            return bool(fn())
+    except Exception:
+        return False
+    return False
+
+def _unit_is_fly_move(unit: 'Unit', movement_type=None) -> bool:
+    if not _movement_type_allows_fly_over(movement_type):
+        return False
+    try:
+        return bool(getattr(unit, "is_flying", False))
+    except Exception:
+        return False
+
+def _unit_can_fly_over_big_models(unit: 'Unit', movement_type=None) -> bool:
+    if not _unit_is_fly_move(unit, movement_type):
+        return False
+    try:
+        return bool(getattr(unit, "is_monster", False) or getattr(unit, "is_vehicle", False))
+    except Exception:
+        return False
+
+def _is_position_on_terrain(game_map: 'Map', position: Tuple[float, float, float]) -> bool:
+    if game_map is None:
+        return False
+    try:
+        terrain_features = list(getattr(game_map, "terrain_features", []) or [])
+    except Exception:
+        terrain_features = []
+    if not terrain_features:
+        return False
+    try:
+        point = Point(float(position[0]), float(position[1]))
+    except Exception:
+        return False
+    for terrain_feature in terrain_features:
+        try:
+            if terrain_feature.footprint.contains(point):
+                return True
+        except Exception:
+            continue
+    return False
+
+def _fly_use_diagonal(unit: 'Unit', movement_type, game_map: 'Map',
+                      start_pos: Tuple[float, float, float], end_pos: Tuple[float, float, float]) -> bool:
+    if not _unit_is_fly_move(unit, movement_type):
+        return False
+    if game_map is not None:
+        if _is_position_on_terrain(game_map, start_pos) or _is_position_on_terrain(game_map, end_pos):
+            return True
+    try:
+        return abs(float(end_pos[2]) - float(start_pos[2])) > 1e-6
+    except Exception:
+        return False
+
+def movement_segment_cost(start: Tuple[float, float, float], end: Tuple[float, float, float],
+                          unit: 'Unit', movement_type=None) -> float:
+    """Return movement cost for a single segment using rules-aware vertical handling."""
+    dx = float(end[0]) - float(start[0])
+    dy = float(end[1]) - float(start[1])
+    horiz = sqrt(dx * dx + dy * dy)
+
+    if _unit_ignores_vertical_distance(unit, movement_type):
+        return horiz
+    if _unit_is_fly_move(unit, movement_type):
+        return horiz
+
+    dz = 0.0
+    try:
+        dz = abs(float(end[2]) - float(start[2]))
+    except Exception:
+        dz = 0.0
+    threshold = get_freely_climbable_range(unit)
+    vertical = dz if dz > threshold else 0.0
+    return horiz + vertical
+
+def measure_path_distance(path: List[Tuple[float, float, float]], unit: 'Unit',
+                          movement_type=None, game_map: 'Map' = None) -> float:
+    """Measure total path distance with vertical rules and FLY/Flip Belt handling."""
+    if not path or len(path) < 2:
+        return 0.0
+
+    def _pos(p) -> Tuple[float, float, float]:
+        try:
+            return (float(p[0]), float(p[1]), float(p[2]) if len(p) > 2 else 0.0)
+        except Exception:
+            return (0.0, 0.0, 0.0)
+
+    positions = [_pos(p) for p in path]
+    horiz_total = 0.0
+    for i in range(1, len(positions)):
+        dx = positions[i][0] - positions[i - 1][0]
+        dy = positions[i][1] - positions[i - 1][1]
+        horiz_total += sqrt(dx * dx + dy * dy)
+
+    if _unit_ignores_vertical_distance(unit, movement_type):
+        return horiz_total
+
+    if _unit_is_fly_move(unit, movement_type):
+        if _fly_use_diagonal(unit, movement_type, game_map, positions[0], positions[-1]):
+            dz_total = positions[-1][2] - positions[0][2]
+            return sqrt(horiz_total * horiz_total + dz_total * dz_total)
+        return horiz_total
+
+    threshold = get_freely_climbable_range(unit)
+    vertical_total = 0.0
+    for i in range(1, len(positions)):
+        dz = abs(positions[i][2] - positions[i - 1][2])
+        if dz > threshold:
+            vertical_total += dz
+    return horiz_total + vertical_total
+
+def measure_direct_distance(start: Tuple[float, float, float], end: Tuple[float, float, float],
+                            unit: 'Unit', movement_type=None, game_map: 'Map' = None) -> float:
+    """Measure direct (best-case) distance between two points with vertical rules applied."""
+    return measure_path_distance([start, end], unit, movement_type, game_map)
 
 def can_traverse_freely(unit: 'Unit', terrain_feature: 'TerrainFeature') -> bool:
     """Check if a unit can freely traverse over terrain without vertical movement cost.
@@ -612,14 +748,19 @@ def unified_pathfinding(model: 'Model', target: Tuple[float, float, float], move
         max_distance,
     )
 
+    # Attached units: treat the moving unit as the Bodyguard root so collision/keywords/coherency
+    # operate on the full attached group regardless of which model (leader/bodyguard) is moved.
+    moving_unit = model.parent_unit
+    get_root = getattr(moving_unit, "get_attached_unit_root", None)
+    if callable(get_root):
+        moving_unit = get_root()
+
     # Early distance check - if straight-line distance exceeds max_distance, no need to run pathfinding
     current_pos = model.get_location()
     if current_pos:
-        straight_line_distance = get_dist(
-            target[0] - current_pos[0],
-            target[1] - current_pos[1],
-            target[2] - current_pos[2] if len(target) > 2 and len(current_pos) > 2 else 0
-        )
+        start_pos = (float(current_pos[0]), float(current_pos[1]), float(current_pos[2]))
+        target_pos = (float(target[0]), float(target[1]), float(target[2]))
+        straight_line_distance = measure_direct_distance(start_pos, target_pos, moving_unit, movement_type, game_map)
 
         if straight_line_distance > max_distance:
             logger.debug(
@@ -633,13 +774,6 @@ def unified_pathfinding(model: 'Model', target: Tuple[float, float, float], move
                 'distance': straight_line_distance,
                 'reason': f'Distance limit exceeded: {straight_line_distance:.1f}" > {max_distance}"'
             }
-
-    # Attached units: treat the moving unit as the Bodyguard root so collision/keywords/coherency
-    # operate on the full attached group regardless of which model (leader/bodyguard) is moved.
-    moving_unit = model.parent_unit
-    get_root = getattr(moving_unit, "get_attached_unit_root", None)
-    if callable(get_root):
-        moving_unit = get_root()
 
     # Build collision trees based on movement type and unit capabilities
     collision_trees = build_collision_trees(moving_unit, movement_type, game_map, model, moved_models_in_unit, max_distance)
@@ -661,7 +795,7 @@ def unified_pathfinding(model: 'Model', target: Tuple[float, float, float], move
     logger.debug("Validation rules: %s", validation_rules)
 
     # Run unified A* pathfinding
-    result = a_star_unified(model, target, max_distance, collision_trees, validation_rules, game_map)
+    result = a_star_unified(model, target, max_distance, collision_trees, validation_rules, game_map, movement_type)
     logger.debug("A* result: valid=%s, reason=%s", result.get("valid"), result.get("reason"))
     return result
 
@@ -802,19 +936,34 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
     enemy_cache_key = (id(game_map), moving_unit.faction)
     if enemy_cache_key in _enemy_model_cache:
         all_enemy_shapes = _enemy_model_cache[enemy_cache_key]
+        all_enemy_big_shapes = _enemy_model_big_cache.get(enemy_cache_key, [])
     else:
         all_enemy_shapes = []
+        all_enemy_big_shapes = []
         for unit in game_map.units:
             if not unit.is_alive() or not unit.deployed:
                 continue
             if unit.faction == moving_unit.faction:
                 continue
+            try:
+                is_big = bool(getattr(unit, "is_monster", False) or getattr(unit, "is_vehicle", False) or getattr(unit, "is_titanic", False))
+            except Exception:
+                is_big = False
             for model in _unit_models_for_collision(unit):
                 if model.is_alive:
-                    all_enemy_shapes.append(model.model_base.get_base_shape())
+                    shape = model.model_base.get_base_shape()
+                    all_enemy_shapes.append(shape)
+                    if is_big:
+                        all_enemy_big_shapes.append(shape)
         _enemy_model_cache[enemy_cache_key] = all_enemy_shapes
+        _enemy_model_big_cache[enemy_cache_key] = all_enemy_big_shapes
 
     enemy_models = [shape for shape in all_enemy_shapes if is_within_search_area(shape)]
+
+    # FLY over enemy models: block only enemy MONSTER/VEHICLE models for non-MONSTER/VEHICLE flyers.
+    blocking_enemy_models = []
+    if _unit_is_fly_move(moving_unit, movement_type) and not _unit_can_fly_over_big_models(moving_unit, movement_type):
+        blocking_enemy_models = [shape for shape in all_enemy_big_shapes if is_within_search_area(shape)]
 
     # Get friendly models (cannot be cached as they change during individual model movement)
     # Apply spatial filtering to friendly models
@@ -856,6 +1005,8 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
         'friendly_models': STRtree(friendly_models) if friendly_models else None,
         'enemy_models': STRtree(enemy_models) if enemy_models else None
     }
+    if blocking_enemy_models:
+        trees['enemy_models_blocking'] = STRtree(blocking_enemy_models)
 
     # Add engagement range buffers based on movement type
     if movement_type in [MovementType.MOVE, MovementType.ADVANCE]:
@@ -913,6 +1064,8 @@ def get_validation_rules(movement_type: MovementType, target_unit: 'Unit' = None
         'prevent_enemy_overlap': True,       # Always prevent enemy model overlap
         'apply_pivot_cost': True,           # Always apply pivot costs
         'check_terrain_traversal': True,    # Always check if unit can traverse terrain
+        'can_move_through_enemy_models': False,
+        'can_move_through_friendly_models': False,
     }
 
     # Add movement-specific rules
@@ -966,7 +1119,7 @@ def get_validation_rules(movement_type: MovementType, target_unit: 'Unit' = None
 
     elif movement_type == MovementType.FALL_BACK:
         base_rules.update({
-            'can_move_through_models': True,  # Can move through enemy and friendly models
+            'can_move_through_enemy_models': True,  # Can move through enemy models
             'cannot_end_in_engagement_range': True,  # Cannot end within engagement range
             'check_desperate_escape': True,  # Check if Desperate Escape tests are needed
         })
@@ -982,6 +1135,18 @@ def get_validation_rules(movement_type: MovementType, target_unit: 'Unit' = None
             'cannot_move_within_engagement_range': True,  # Cannot move within 1" of enemies
         })
 
+    # FLY: can move over enemy models for Normal/Advance/Fall Back/Charge moves.
+    try:
+        is_fly = bool(moving_unit is not None and moving_unit.is_flying)
+    except Exception:
+        is_fly = False
+    if is_fly and _movement_type_allows_fly_over(movement_type):
+        base_rules['can_move_through_enemy_models'] = True
+        # FLY units can pass within engagement range while moving, but cannot end there.
+        if movement_type in [MovementType.MOVE, MovementType.ADVANCE]:
+            base_rules['cannot_move_within_engagement_range'] = False
+            base_rules['cannot_end_in_engagement_range'] = True
+
     # Super-heavy Walker (Chaos Knights): move through models (excluding TITANIC), can pass within
     # engagement range but cannot end within it for Normal/Advance/Fall Back moves.
     try:
@@ -989,16 +1154,21 @@ def get_validation_rules(movement_type: MovementType, target_unit: 'Unit' = None
     except Exception:
         is_super_heavy = False
     if is_super_heavy and movement_type in [MovementType.MOVE, MovementType.ADVANCE, MovementType.FALL_BACK]:
-        base_rules['can_move_through_models'] = True
+        base_rules['can_move_through_enemy_models'] = True
+        base_rules['can_move_through_friendly_models'] = True
         base_rules['block_titanic_models'] = True
         if movement_type in [MovementType.MOVE, MovementType.ADVANCE]:
             base_rules['cannot_move_within_engagement_range'] = False
             base_rules['cannot_end_in_engagement_range'] = True
 
+    if base_rules.get('can_move_through_enemy_models') or base_rules.get('can_move_through_friendly_models'):
+        base_rules['can_move_through_models'] = True
+
     return base_rules
 
 def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_distance: float,
-                  collision_trees: dict, validation_rules: dict, game_map: 'Map') -> dict:
+                  collision_trees: dict, validation_rules: dict, game_map: 'Map',
+                  movement_type: MovementType) -> dict:
     """
     Unified A* pathfinding algorithm that uses STRTrees for collision detection
     and validation rules for movement-specific constraints.
@@ -1010,47 +1180,179 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
         collision_trees: Dict of STRTrees for different collision types
         validation_rules: Dict of validation rules for this movement type
         game_map: The game map
+        movement_type: Movement type for distance/vertical rules
 
     Returns:
         Dict with keys: 'valid', 'path', 'distance', 'reason'
     """
     import heapq
 
+    unit = model.parent_unit
     start = (model.model_base.x, model.model_base.y, model.model_base.z)
     goal = (float(target[0]), float(target[1]), float(target[2]))
 
     # PERFORMANCE OPTIMIZATION: Adaptive step size and iteration limits based on distance
-    straight_line_distance = heuristic(start, goal)
-    if straight_line_distance <= 3.0:
+    straight_line_distance_2d = heuristic_2d((start[0], start[1]), (goal[0], goal[1]))
+    if straight_line_distance_2d <= 3.0:
         step_size = 0.3  # Smaller steps for short distances
         max_iterations = 5000
-    elif straight_line_distance <= 6.0:
+    elif straight_line_distance_2d <= 6.0:
         step_size = 0.4  # Medium steps for medium distances
         max_iterations = 8000
     else:
         step_size = 0.6  # Larger steps for long distances
         max_iterations = 12000
 
-    logger.debug("A* params: distance=%.2f, step=%.3f, max_iter=%s", straight_line_distance, step_size, max_iterations)
+    logger.debug("A* params: distance=%.2f, step=%.3f, max_iter=%s", straight_line_distance_2d, step_size, max_iterations)
 
-    def _snap(p: Tuple[float, float, float]) -> Tuple[float, float, float]:
-        # Quantize to a step grid anchored at the start position to avoid float drift exploding
-        # the node count, while preserving exact user-supplied coordinates near the origin.
-        # (Global snapping can shift 10.0 -> 9.9 for step=0.3, breaking exact 3.0" tests.)
+    def _snap_xy(x: float, y: float) -> Tuple[float, float]:
+        # Quantize X/Y to a step grid anchored at the start position to avoid float drift.
         return (
-            start[0] + round((p[0] - start[0]) / step_size) * step_size,
-            start[1] + round((p[1] - start[1]) / step_size) * step_size,
-            start[2] + round((p[2] - start[2]) / step_size) * step_size,
+            start[0] + round((x - start[0]) / step_size) * step_size,
+            start[1] + round((y - start[1]) / step_size) * step_size,
         )
 
-    start = _snap(start)
+    snapped_start_xy = _snap_xy(start[0], start[1])
+    start = (snapped_start_xy[0], snapped_start_xy[1], start[2])
+
+    ignore_vertical = _unit_ignores_vertical_distance(unit, movement_type)
+    fly_move = _unit_is_fly_move(unit, movement_type)
+
+    # Surface resolution helpers (2.5D pathing across floors/ground).
+    from ..classes.map import TerrainType
+    from ..utility.constants import RUINS_FLOOR_THICKNESS
+
+    def _poly_contains(poly, point: Point) -> bool:
+        try:
+            if hasattr(poly, "covers"):
+                return bool(poly.covers(point))
+            return bool(poly.contains(point))
+        except Exception:
+            return False
+
+    def _resolve_ruins_floor_option(pos: Tuple[float, float, float]) -> Optional[dict]:
+        if game_map is None:
+            return None
+        try:
+            point = Point(float(pos[0]), float(pos[1]))
+        except Exception:
+            return None
+        for terrain in list(getattr(game_map, "terrain_features", []) or []):
+            try:
+                if getattr(terrain, "terrain_type", None) != TerrainType.RUINS:
+                    continue
+                if not _poly_contains(terrain.footprint, point):
+                    continue
+            except Exception:
+                continue
+            floors = getattr(terrain, "floors", []) or []
+            best = None
+            best_dist = float('inf')
+            for fl in floors:
+                poly = fl.get("polygon")
+                if poly is None:
+                    continue
+                if not _poly_contains(poly, point):
+                    continue
+                surface = float(fl.get("elevation", 0.0) or 0.0) + float(fl.get("thickness", RUINS_FLOOR_THICKNESS) or RUINS_FLOOR_THICKNESS)
+                dist = abs(float(pos[2]) - surface)
+                if dist < best_dist and dist < 1.0:
+                    best = {"polygon": poly, "surface_z": surface}
+                    best_dist = dist
+            if best is not None:
+                return best
+        return None
+
+    start_floor = _resolve_ruins_floor_option(start)
+    target_floor = _resolve_ruins_floor_option(goal)
+    if start_floor and target_floor:
+        try:
+            if abs(float(start_floor["surface_z"]) - float(target_floor["surface_z"])) < 1e-6:
+                if start_floor.get("polygon") is target_floor.get("polygon"):
+                    target_floor = None
+        except Exception:
+            pass
+
+    ground_cache = {}
+    surface_cache = {}
+    air_z = float(start[2])
+
+    def _ground_height(x: float, y: float) -> float:
+        key = (x, y)
+        if key in ground_cache:
+            return ground_cache[key]
+        z = 0.0
+        try:
+            if game_map is not None:
+                z = float(game_map.get_height_at_point(x, y))
+        except Exception:
+            z = 0.0
+        ground_cache[key] = z
+        return z
+
+    def _surface_options_for_point(x: float, y: float) -> List[float]:
+        key = (x, y)
+        if key in surface_cache:
+            options = list(surface_cache[key])
+        else:
+            options = []
+            options.append(_ground_height(x, y))
+            try:
+                point = Point(float(x), float(y))
+            except Exception:
+                point = None
+
+            if point is not None and start_floor is not None:
+                if _poly_contains(start_floor.get("polygon"), point):
+                    options.append(float(start_floor.get("surface_z", 0.0)))
+            if point is not None and target_floor is not None:
+                if _poly_contains(target_floor.get("polygon"), point):
+                    options.append(float(target_floor.get("surface_z", 0.0)))
+
+            # Deduplicate within a small tolerance.
+            uniq = []
+            for z in options:
+                if all(abs(z - uz) > 1e-4 for uz in uniq):
+                    uniq.append(z)
+            surface_cache[key] = uniq
+            options = list(uniq)
+
+        if fly_move:
+            if all(abs(air_z - z) > 1e-4 for z in options):
+                options.append(air_z)
+        return options
+
+    # Snap goal Z to the nearest valid surface at that XY (prevents unreachable targets on elevated ground).
+    try:
+        goal_options = _surface_options_for_point(goal[0], goal[1])
+        surface_only = []
+        for z in goal_options:
+            if fly_move and abs(z - air_z) <= 1e-4:
+                continue
+            surface_only.append(z)
+        if surface_only:
+            nearest = min(surface_only, key=lambda z: abs(float(goal[2]) - float(z)))
+            goal = (goal[0], goal[1], float(nearest))
+    except Exception:
+        pass
+
+    def _heuristic_cost(node: Tuple[float, float, float]) -> float:
+        dx = float(goal[0]) - float(node[0])
+        dy = float(goal[1]) - float(node[1])
+        horiz = sqrt(dx * dx + dy * dy)
+        if ignore_vertical or fly_move:
+            return horiz
+        dz = abs(float(goal[2]) - float(node[2]))
+        threshold = get_freely_climbable_range(unit)
+        vertical = dz if dz > threshold else 0.0
+        return horiz + vertical
 
     # Initialize A* data structures
     open_set = []
     heapq.heappush(open_set, (0, start))
     came_from = {}
     g_score = {start: 0}
-    f_score = {start: heuristic(start, goal)}
+    f_score = {start: _heuristic_cost(start)}
     closed_set = set()
 
     iterations = 0
@@ -1061,8 +1363,30 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
     logger.debug("Starting A* from %s to %s, max_distance=%s", start, goal, max_distance)
 
     # Optimization: Try straight line path first if no obstacles
-    straight_line_distance = heuristic(start, goal)
-    if straight_line_distance <= max_distance:
+    allow_straight_line = True
+    if (not ignore_vertical) and (not fly_move) and game_map is not None:
+        try:
+            line = LineString([(start[0], start[1]), (goal[0], goal[1])])
+            threshold = get_freely_climbable_range(unit)
+            for terrain in list(getattr(game_map, "terrain_features", []) or []):
+                try:
+                    if getattr(terrain, "terrain_type", None) == TerrainType.RUINS:
+                        continue
+                    if not line.intersects(terrain.footprint):
+                        continue
+                    height = getattr(terrain, "height", None)
+                    if height is None:
+                        height = getattr(terrain, "rim_height", 0.0)
+                    if float(height or 0.0) > threshold:
+                        allow_straight_line = False
+                        break
+                except Exception:
+                    continue
+        except Exception:
+            allow_straight_line = False
+
+    straight_line_distance = measure_direct_distance(start, goal, unit, movement_type, game_map)
+    if allow_straight_line and straight_line_distance <= max_distance:
         # Special case: zero-distance move (staying in same position)
         if straight_line_distance == 0.0:
             # For zero-distance moves, we need to check if the current position is valid
@@ -1088,7 +1412,7 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
 
         # Check if straight line path is clear
         straight_line_clear = True
-        num_checks = max(20, int(straight_line_distance / (step_size / 2)))  # More frequent checks
+        num_checks = max(20, int(straight_line_distance_2d / (step_size / 2)))  # More frequent checks
 
         for i in range(1, num_checks):
             t = i / num_checks
@@ -1118,7 +1442,7 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
                 return {
                     'valid': True,
                     'path': [start, goal],
-                    'distance': straight_line_distance,
+                    'distance': measure_path_distance([start, goal], unit, movement_type, game_map),
                     'reason': 'Straight line path',
                     'desperate_escape': desperate_escape_info
                 }
@@ -1144,10 +1468,8 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
             path.reverse()
             path.append(goal)  # Ensure we end exactly at goal
 
-            # Calculate total distance
-            total_distance = 0
-            for i in range(1, len(path)):
-                total_distance += heuristic(path[i-1], path[i])
+            # Calculate total distance using movement rules
+            total_distance = measure_path_distance(path, unit, movement_type, game_map)
 
             # Apply pivot cost only if there's actual rotation
             if validation_rules.get('apply_pivot_cost', False) and len(path) > 1:
@@ -1222,71 +1544,55 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
                 'desperate_escape': desperate_escape_info
             }
 
-        # PERFORMANCE OPTIMIZATION: Prioritize neighbors that move toward goal
-        # Use 2D movement for most cases (much faster)
-        all_neighbors = [(-step_size, 0, 0), (step_size, 0, 0), (0, -step_size, 0), (0, step_size, 0),
-                        (-step_size, -step_size, 0), (-step_size, step_size, 0),
-                        (step_size, -step_size, 0), (step_size, step_size, 0)]
+        # PERFORMANCE OPTIMIZATION: Prioritize neighbors that move toward goal (2D grid)
+        all_neighbors = [(-step_size, 0), (step_size, 0), (0, -step_size), (0, step_size),
+                        (-step_size, -step_size), (-step_size, step_size),
+                        (step_size, -step_size), (step_size, step_size)]
 
-        # Only add vertical movement when terrain has different height levels
-        # Check if there's terrain with height variations in the area
-        has_height_variations = False
-        if game_map and hasattr(game_map, 'terrain_features'):
-            for terrain in game_map.terrain_features:
-                if hasattr(terrain, 'height') and terrain.height > 0:
-                    has_height_variations = True
-                    break
-
-        if has_height_variations:
-            all_neighbors.extend([(0, 0, step_size), (0, 0, -step_size)])
-
-        # Sort neighbors by distance to goal (prioritize promising directions)
         goal_direction = (goal[0] - current[0], goal[1] - current[1])
         goal_distance = (goal_direction[0]**2 + goal_direction[1]**2)**0.5
 
         if goal_distance > 0:
-            # Normalize goal direction
             goal_dir_norm = (goal_direction[0] / goal_distance, goal_direction[1] / goal_distance)
-
-            # Score neighbors by alignment with goal direction
             neighbor_scores = []
-            for dx, dy, dz in all_neighbors:
-                if dx == 0 and dy == 0:  # Vertical movement
-                    score = 0.5  # Neutral score for vertical movement
+            for dx, dy in all_neighbors:
+                move_distance = (dx**2 + dy**2)**0.5
+                if move_distance > 0:
+                    move_dir_norm = (dx / move_distance, dy / move_distance)
+                    alignment = goal_dir_norm[0] * move_dir_norm[0] + goal_dir_norm[1] * move_dir_norm[1]
+                    score = alignment
                 else:
-                    move_distance = (dx**2 + dy**2)**0.5
-                    if move_distance > 0:
-                        move_dir_norm = (dx / move_distance, dy / move_distance)
-                        # Dot product gives alignment score (-1 to 1)
-                        alignment = goal_dir_norm[0] * move_dir_norm[0] + goal_dir_norm[1] * move_dir_norm[1]
-                        score = alignment
-                    else:
-                        score = 0
-                neighbor_scores.append((score, dx, dy, dz))
+                    score = 0
+                neighbor_scores.append((score, dx, dy))
 
-            # Sort by score (highest first) and take top 6 neighbors for performance
             neighbor_scores.sort(reverse=True)
             prioritized_neighbors = neighbor_scores[:6]
         else:
-            # If at goal, check all neighbors
-            prioritized_neighbors = [(0, dx, dy, dz) for dx, dy, dz in all_neighbors]
+            prioritized_neighbors = [(0, dx, dy) for dx, dy in all_neighbors]
 
-        # Generate neighbors (3D movement with vertical component)
-        for score, dx, dy, dz in prioritized_neighbors:
-            neighbor = _snap((current[0] + dx, current[1] + dy, current[2] + dz))
+        neighbor_states = []
+        current_x, current_y, current_z = current
+        current_surface_opts = _surface_options_for_point(current_x, current_y)
+        for z_opt in current_surface_opts:
+            if abs(z_opt - current_z) > 1e-4:
+                neighbor_states.append((current_x, current_y, z_opt))
 
+        for _score, dx, dy in prioritized_neighbors:
+            nx, ny = _snap_xy(current_x + dx, current_y + dy)
+            for nz in _surface_options_for_point(nx, ny):
+                neighbor_states.append((nx, ny, nz))
+
+        for neighbor in neighbor_states:
             if neighbor in closed_set:
                 continue
 
-            # Check if position is valid using STRTrees
             validity_result = is_position_valid_unified_detailed(neighbor, model, collision_trees, validation_rules, game_map, is_final_position=False)
             if not validity_result['valid']:
                 collision_reasons.add(validity_result['reason'])
                 continue
 
-            tentative_g_score = g_score[current] + heuristic(current, neighbor)
+            tentative_g_score = g_score[current] + movement_segment_cost(current, neighbor, unit, movement_type)
 
-            # Check distance limit during pathfinding
             max_dist = validation_rules.get('max_distance_override', max_distance)
             if tentative_g_score > max_dist:
                 continue
@@ -1294,7 +1600,7 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
             if neighbor not in g_score or tentative_g_score < g_score[neighbor]:
                 came_from[neighbor] = current
                 g_score[neighbor] = tentative_g_score
-                f_score[neighbor] = tentative_g_score + heuristic(neighbor, goal)
+                f_score[neighbor] = tentative_g_score + _heuristic_cost(neighbor)
                 heapq.heappush(open_set, (f_score[neighbor], neighbor))
 
         iterations += 1
@@ -1367,6 +1673,15 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
         if actual_hits:
             return {'valid': False, 'reason': 'Position blocked by terrain'}
 
+    allow_through_friendly = validation_rules.get(
+        'can_move_through_friendly_models',
+        validation_rules.get('can_move_through_models', False)
+    )
+    allow_through_enemy = validation_rules.get(
+        'can_move_through_enemy_models',
+        validation_rules.get('can_move_through_models', False)
+    )
+
     # Super-heavy Walker: cannot move through TITANIC models.
     if validation_rules.get('block_titanic_models', False) and game_map is not None:
         for unit in list(getattr(game_map, "units", []) or []):
@@ -1397,7 +1712,7 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
 
     # Check friendly model collisions using shape intersection with 3D consideration
     if collision_trees.get('friendly_models') and validation_rules.get('prevent_friendly_overlap', True):
-        if (not validation_rules.get('can_move_through_models', False)) or is_final_position:
+        if (not allow_through_friendly) or is_final_position:
             potential_hits = query_spatial_index(collision_trees['friendly_models'], test_shape)
             actual_hits = []
 
@@ -1442,9 +1757,19 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
             if actual_hits:
                 return {'valid': False, 'reason': 'Position blocked by friendly models'}
 
+    # For FLY non-MONSTER/VEHICLE: still block enemy MONSTER/VEHICLE models during movement.
+    if collision_trees.get('enemy_models_blocking') and not is_final_position:
+        potential_hits = query_spatial_index(collision_trees['enemy_models_blocking'], test_shape)
+        for hit_shape in potential_hits:
+            try:
+                if test_shape.intersects(hit_shape):
+                    return {'valid': False, 'reason': 'Position blocked by enemy models'}
+            except Exception:
+                continue
+
     # Check enemy model collisions using shape intersection
     if collision_trees.get('enemy_models') and validation_rules.get('prevent_enemy_overlap', True):
-        if (not validation_rules.get('can_move_through_models', False)) or is_final_position:
+        if (not allow_through_enemy) or is_final_position:
             potential_hits = query_spatial_index(collision_trees['enemy_models'], test_shape)
             actual_hits = []
 
@@ -1484,7 +1809,7 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
                     continue
 
             if actual_hits:
-                if validation_rules.get('can_move_through_models', False) and is_final_position and validation_rules.get('cannot_end_in_engagement_range', False):
+                if allow_through_enemy and is_final_position and validation_rules.get('cannot_end_in_engagement_range', False):
                     return {'valid': False, 'reason': 'Position within engagement range of enemy models'}
                 return {'valid': False, 'reason': 'Position blocked by enemy models'}
 
@@ -2603,17 +2928,21 @@ def get_individual_model_movement_path(unit: 'Unit', model_index: int, target: T
     movement_type = movement_type_map.get(movement_action, MovementType.MOVE)
 
     # Use unified pathfinding system
+    target_3d = (
+        float(target[0]),
+        float(target[1]),
+        float(target[2]) if len(target) > 2 else float(model.model_base.z),
+    )
     pathfinding_result = unified_pathfinding(
         model=model,
-        target=target[:2],
+        target=target_3d,
         movement_type=movement_type,
         max_distance=max_distance,
         game_map=game_map
     )
 
     if pathfinding_result and pathfinding_result.get('valid'):
-        # Convert 2D path back to 3D
-        path_3d = [(p[0], p[1], target[2]) for p in pathfinding_result['path']]
+        path_3d = pathfinding_result['path']
         logger.debug(f"Path found for model {model_index} in unit {unit.name}: {len(path_3d)} points, type: {movement_type}")
         return path_3d
     else:

@@ -8517,6 +8517,13 @@ class SetupPhaseHandler(BasePhaseHandler):
             self.game.advance_setup_phase()
             return
 
+        # Apply Hover declarations before any formation dialogs.
+        try:
+            if hasattr(self.game, "_apply_hover_declarations"):
+                self.game._apply_hover_declarations()
+        except Exception:
+            pass
+
         def _army_units(p):
             try:
                 a = p.get_army()
@@ -8613,6 +8620,13 @@ class SetupPhaseHandler(BasePhaseHandler):
                 for root in roots:
                     rid = str(getattr(root, "_id", None) or "")
                     decision = decisions.get(rid, "deploy")
+                    try:
+                        if bool(getattr(root, "must_start_in_reserves", lambda: False)()):
+                            if decision != "strategic_reserves":
+                                print(f"ℹ️ {root.name} must start in Strategic Reserves (AIRCRAFT)")
+                            decision = "strategic_reserves"
+                    except Exception:
+                        pass
                     started = decision in ("reserves", "strategic_reserves")
                     if decision == "deploy":
                         root.set_reserve_status("deployed")
