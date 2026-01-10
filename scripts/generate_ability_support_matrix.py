@@ -876,6 +876,7 @@ def _datasheet_ability_support_global() -> Dict[str, Tuple[str, str]]:
         "Supreme Commander": ("Supported", "If any SUPREME COMMANDER unit is in the army, one must be the Warlord."),
         "One Shot": ("Supported", "Weapon-level one-shot tracking enforced per model."),
         "Super-heavy Walker": ("Partial", "Terrain traversal handling only."),
+        "Collar of Khorne": ("Supported", "Feel No Pain 3+ against Psychic attacks."),
     }
     return {_norm(name): val for name, val in raw.items()}
 
