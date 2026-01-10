@@ -17,9 +17,7 @@ CODEX_SPACE_MARINES_DETACHMENTS = {
     "stormlance task force",
     "vanguard spearhead",
     "1st company task force",
-    "boarding strike",
-    "pilum strike team",
-    "terminator assault",
+    "librarius conclave",
 }
 
 DIVERGENT_CHAPTER_KEYWORDS = {
@@ -44,6 +42,10 @@ CHAPTER_KEYWORD_MAP = {
     "white scars": "WHITE SCARS",
 }
 
+DETACHMENT_CHAPTER_OVERRIDES = {
+    "lion's blade task force": "DARK ANGELS",
+}
+
 
 def _strip_html(text: str) -> str:
     if not text:
@@ -55,7 +57,9 @@ def _strip_html(text: str) -> str:
 
 @lru_cache(maxsize=1)
 def _chapter_detachment_map() -> dict[str, str]:
-    out: dict[str, str] = {}
+    out: dict[str, str] = {
+        _normalize_detachment_name(k): v for k, v in DETACHMENT_CHAPTER_OVERRIDES.items()
+    }
     try:
         base = Path(__file__).resolve().parents[3]
         path = base / "wahapedia_data" / "Detachment_abilities.json"
@@ -79,13 +83,19 @@ def _chapter_detachment_map() -> dict[str, str]:
             if keyword in upper:
                 found.add(keyword)
         if len(found) == 1:
-            out[_normalize_detachment_name(det)] = found.pop()
+            det_key = _normalize_detachment_name(det)
+            if det_key not in out:
+                out[det_key] = found.pop()
 
     return out
 
 
 def _normalize_detachment_name(text: str) -> str:
-    return re.sub(r"\s+", " ", str(text or "").strip().lower())
+    t = str(text or "").lower()
+    t = t.replace("\u2019", "'")
+    t = t.replace("'", "")
+    t = re.sub(r"[^a-z0-9 ]+", " ", t)
+    return re.sub(r"\s+", " ", t).strip()
 
 
 class SpaceMarinesDetachmentManager(DetachmentManagerBase):
