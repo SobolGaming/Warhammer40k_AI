@@ -934,7 +934,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("CD", "Daemon Lord of Khorne (Aura)"): ("Supported", "+1 to hit (melee) aura within 6\" for KHORNE LEGIONES DAEMONICA."),
         ("CD", "Shadow Form"): ("Supported", "Shadow Form selection each battle round with active effect tracking."),
         ("CD", "Wreathed in Shadows (Aura, Psychic)"): ("Supported", "18\" ranged targeting restriction while within 6\" of active Shadow Form source."),
-        ("CD", "Pall of Despair (Aura, Psychic)"): ("Partial", "Heals on failed Battle-shock within 9\"; does not force tests or Starting Strength condition."),
+        ("CD", "Pall of Despair (Aura, Psychic)"): ("Supported", "Forces Battle-shock tests for Below Starting Strength units within 9\" in opponent Command phase; heals on failed tests."),
         ("CD", "Shadow Lord (Aura, Psychic)"): ("Supported", "Re-roll Hit rolls of 1 aura within 6\" while active."),
         ("CD", "The Dark Master (Aura)"): ("Supported", "Area within 6\" counts as Shadow of Chaos."),
         ("CD", "Monarch of the Hunt"): ("Supported", "Quarry selection + melee reroll hooks vs quarry."),

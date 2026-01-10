@@ -537,6 +537,14 @@ class Game:
         if unit_army is None or getattr(unit_army, "player", None) is not current_player:
             return
         try:
+            if hasattr(unit, "is_below_starting_strength") and callable(getattr(unit, "is_below_starting_strength")):
+                if not unit.is_below_starting_strength():
+                    return
+            else:
+                return
+        except Exception:
+            return
+        try:
             from .shadow_form import shadow_form_sources_with_active_key, apply_pall_of_despair_heal, KEY_PALL
             from ..utility.aura_utils import unit_within_range_of_unit
         except Exception:
@@ -4088,7 +4096,6 @@ class Game:
                 except Exception:
                     tested_ids.add(str(id(unit)))
 
-        self.battle_shock_step_active = False
         # Belakor: Pall of Despair can force additional tests for eligible enemy units.
         try:
             self._apply_pall_of_despair_forced_tests(current_player, tested_ids)
@@ -4099,6 +4106,7 @@ class Game:
             self._apply_harbingers_dismay_forced_tests(current_player, tested_ids)
         except Exception:
             pass
+        self.battle_shock_step_active = False
 
         # Necrons: Reanimation Protocols at end of Command phase (resolve before scoring).
         try:
