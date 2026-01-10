@@ -941,6 +941,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("CD", "Monarch of the Hunt"): ("Supported", "Quarry selection + melee reroll hooks vs quarry."),
         ("CD", "No Prey Can Evade"): ("Supported", "Re-roll Advance and Charge rolls."),
         ("CD", "Unholy Speed"): ("Supported", "Re-roll Advance and Charge rolls."),
+        ("CD", "Pack Leader"): ("Supported", "Leading: re-roll Advance and Charge rolls for the unit."),
         ("CSM", "Warpsmith"): ("Partial", "Lone Operative applied without 3\" Heretic Astartes Vehicle proximity requirement."),
         ("CSM", "Indentured Daemon Engines"): ("Partial", "Lone Operative applied without 3\" Daemon Vehicle proximity requirement."),
         ("CSM", "Chosen Marauders"): ("Supported", "Shoot and charge after Advance/Fall Back."),
@@ -1004,6 +1005,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("WE", "Rage Embodied (Aura)"): ("Supported", "+1 melee Attacks aura within 6\" for BLOOD LEGIONS."),
         ("WE", "Daemon Lord of Khorne (Aura)"): ("Supported", "+1 to hit in melee aura within 6\" for BLOOD LEGIONS."),
         ("SM", "Tempormortis"): ("Supported", "Fights First while leading a unit."),
+        ("SM", "Pack Leader"): ("Not implemented", "Warlord/Enhancement restriction not enforced."),
     }
     out: Dict[Tuple[str, str], Tuple[str, str]] = {}
     for (fid, name), val in raw.items():
@@ -1013,11 +1015,6 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
 
 def _datasheet_ability_support_by_name_faction_datasheet() -> Dict[Tuple[str, str, str], Tuple[str, str]]:
     raw = {
-        ("CD", "Pack Leader", "000001104"): ("Supported", "Leading: re-roll Advance and Charge rolls for the unit."),
-        ("CD", "Pack Leader", "000004102"): ("Supported", "Leading: re-roll Advance and Charge rolls for the unit."),
-        ("SM", "Pack Leader", "000002802"): ("Not implemented", "Warlord/Enhancement restriction not enforced."),
-        ("SM", "Pack Leader", "000002803"): ("Not implemented", "Warlord/Enhancement restriction not enforced."),
-        ("SM", "Pack Leader", "000002804"): ("Not implemented", "Warlord/Enhancement restriction not enforced."),
     }
     out: Dict[Tuple[str, str, str], Tuple[str, str]] = {}
     for (fid, name, dsid), val in raw.items():
