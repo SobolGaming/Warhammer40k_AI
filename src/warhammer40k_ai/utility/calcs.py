@@ -691,6 +691,7 @@ class MovementType(Enum):
     ADVANCE = "advance"
     FALL_BACK = "fall_back"
     CHARGE = "charge"
+    BLOOD_SURGE = "blood_surge"
     PILE_IN = "pile_in"
     CONSOLIDATE = "consolidate"
     SCOUT = "scout"
@@ -780,6 +781,11 @@ def unified_pathfinding(model: 'Model', target: Tuple[float, float, float], move
 
     # Get validation rules for this movement type
     validation_rules = get_validation_rules(movement_type, target_unit, moving_unit=moving_unit)
+    if movement_type == MovementType.BLOOD_SURGE:
+        try:
+            validation_rules["blood_surge_max_distance"] = float(max_distance)
+        except Exception:
+            validation_rules["blood_surge_max_distance"] = max_distance
 
     # Special case for CHARGE: Only one model in the unit must end within engagement range.
     # If any model in the charging unit is already within engagement range of the target unit,
@@ -873,7 +879,7 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
     # CRITICAL FIX: For engagement range validation, we need to account for models
     # that might be near the destination, not just the starting position.
     # Formula: max_movement_distance + model_base_radius + engagement_range + buffer
-    if movement_type in [MovementType.MOVE, MovementType.ADVANCE, MovementType.CHARGE]:
+    if movement_type in [MovementType.MOVE, MovementType.ADVANCE, MovementType.CHARGE, MovementType.BLOOD_SURGE]:
         # Calculate the actual maximum possible movement distance for this movement type
         actual_max_movement = max_distance
         if movement_type == MovementType.ADVANCE:
@@ -1116,6 +1122,15 @@ def get_validation_rules(movement_type: MovementType, target_unit: 'Unit' = None
                     base_rules['closest_enemy_unit'] = True
         except Exception:
             pass
+
+    elif movement_type == MovementType.BLOOD_SURGE:
+        base_rules.update({
+            'allow_engagement_range_movement': True,
+            'must_end_as_close_as_possible_to_closest_enemy_unit': True,
+            'closest_enemy_unit_exclude_keywords': {"AIRCRAFT"},
+            # Pathfinding discretization can drift a touch; allow a tiny epsilon.
+            'distance_tolerance': 0.05,
+        })
 
     elif movement_type == MovementType.FALL_BACK:
         base_rules.update({
@@ -2281,6 +2296,81 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
                             max_distance_to_enemy,
                             pile_in_distance,
                         )
+
+    if validation_rules.get('must_end_as_close_as_possible_to_closest_enemy_unit', False):
+        current_pos = model.get_location()
+        if not current_pos:
+            return {'valid': False, 'reason': 'Cannot determine current model position'}
+
+        from ..utility.model_base import Base
+        current_base = Base(model.model_base.base_type, model.model_base.radius)
+        current_base.x, current_base.y, current_base.z = current_pos[0], current_pos[1], current_pos[2]
+
+        new_base = Base(model.model_base.base_type, model.model_base.radius)
+        new_base.x, new_base.y, new_base.z = position[0], position[1], position[2]
+
+        exclude_keywords = set()
+        try:
+            exclude_keywords = set(validation_rules.get('closest_enemy_unit_exclude_keywords', []) or [])
+        except Exception:
+            exclude_keywords = set()
+
+        enemy_units = []
+        for unit in getattr(game_map, 'units', []) or []:
+            if unit.faction == model.parent_unit.faction or not unit.is_alive() or not unit.deployed:
+                continue
+            if exclude_keywords:
+                try:
+                    if any(unit.has_any_keyword(kw) for kw in exclude_keywords):
+                        continue
+                except Exception:
+                    try:
+                        if "AIRCRAFT" in exclude_keywords and getattr(unit, "is_aircraft", False):
+                            continue
+                    except Exception:
+                        pass
+            try:
+                unit_models = [m for m in unit.models if getattr(m, "is_alive", False)]
+            except Exception:
+                unit_models = []
+            if not unit_models:
+                continue
+            from ..utility.aura_utils import distance_between_bases_3d
+            current_distance = min(float(distance_between_bases_3d(current_base, m.model_base)) for m in unit_models)
+            enemy_units.append((unit, current_distance, unit_models))
+
+        if not enemy_units:
+            return {'valid': False, 'reason': 'No enemy units available for Blood Surge validation'}
+
+        enemy_units.sort(key=lambda entry: entry[1])
+        closest_unit, closest_distance, closest_models = enemy_units[0]
+
+        from ..utility.aura_utils import distance_between_bases_3d
+        new_distance_to_unit = min(float(distance_between_bases_3d(new_base, m.model_base)) for m in closest_models)
+
+        try:
+            max_dist = float(validation_rules.get('blood_surge_max_distance', 0) or 0)
+        except Exception:
+            max_dist = 0.0
+        if max_dist <= 0:
+            try:
+                max_dist = float(validation_rules.get('max_distance_override', 0) or 0)
+            except Exception:
+                max_dist = 0.0
+
+        min_possible = max(0.0, float(closest_distance) - float(max_dist))
+        try:
+            tol = float(validation_rules.get("distance_tolerance", 0.0) or 0.0)
+        except Exception:
+            tol = 0.0
+        if new_distance_to_unit > (min_possible + tol):
+            return {
+                'valid': False,
+                'reason': (
+                    f'Blood Surge must end as close as possible to closest enemy unit '
+                    f'({closest_unit.name}): {new_distance_to_unit:.2f}" > {min_possible:.2f}"'
+                )
+            }
 
     if validation_rules.get('must_end_closer_to_enemies_or_objectives', False):
         # Consolidate validation (10th edition):

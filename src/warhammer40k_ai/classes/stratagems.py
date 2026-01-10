@@ -4,6 +4,8 @@ from typing import Callable, Optional, Dict, Any, List
 
 IMPLEMENTED_STRATAGEM_NAMES = {
     "APOPLECTIC FRENZY",
+    "BERZERKER'S WRATH",
+    "BERZERKER’S WRATH",
     "BLOOD OFFERING",
     "COMMAND RE-ROLL",
     "COUNTER-OFFENSIVE",
@@ -23,6 +25,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
 
 REACTION_ONLY_STRATAGEM_NAMES = {
     "APOPLECTIC FRENZY",
+    "BERZERKER'S WRATH",
+    "BERZERKER’S WRATH",
     "BLOOD OFFERING",
     "COMMAND RE-ROLL",
     "COUNTER-OFFENSIVE",
@@ -619,6 +623,8 @@ class StratagemManager:
         es.subscribe("unit_move_ended", self._on_unit_move_ended)
         # Shooting targeting events for reaction stratagems (e.g. GO TO GROUND)
         es.subscribe("shooting_targets_selected", self._on_shooting_targets_selected)
+        # Blood Surge reactions for Berzerker's Wrath
+        es.subscribe("blood_surge_triggered", self._on_blood_surge_triggered)
         # Fight phase selections for reaction stratagems (e.g. EPIC CHALLENGE)
         es.subscribe("fight_unit_selected", self._on_fight_unit_selected)
         # Fight sequence completion for COUNTER-OFFENSIVE
@@ -1075,6 +1081,69 @@ class StratagemManager:
                 "cp_cost": s2.cp_cost,
                 "attacking_unit": attacking_unit,
                 "candidates": smoke_candidates,
+            })
+        except Exception:
+            return
+
+    def _on_blood_surge_triggered(self, player=None, unit=None, attacker_unit=None, **kwargs):
+        """
+        Reaction window for BERZERKER'S WRATH:
+        Opponent Shooting phase, just after an enemy unit has shot and a BERZERKERS unit can Blood Surge.
+        """
+        try:
+            if player is not self.player:
+                return
+            if unit is None or attacker_unit is None:
+                return
+            if (self._current_phase_name or "").strip().lower() != "shooting phase":
+                return
+            s = self.get_by_name("BERZERKER’S WRATH") or self.get_by_name("BERZERKER'S WRATH")
+            if not s:
+                return
+            if self.player.command_points < s.cp_cost:
+                return
+            if (s.name or "").strip().upper() in self._used_stratagems_this_phase:
+                return
+            try:
+                army = unit.get_parent_army()
+            except Exception:
+                army = None
+            we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+            if we_mgr is None or not getattr(we_mgr, "is_berzerker_warband", lambda: False)():
+                return
+            try:
+                if not (unit.has_keyword("KHORNE") and unit.has_keyword("BERZERKERS")):
+                    return
+            except Exception:
+                return
+            if _unit_cannot_be_target_of_stratagem(unit):
+                return
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is self.player:
+                return
+            try:
+                if not unit.can_blood_surge(game=self.game, game_map=getattr(self.game, "map", None)):
+                    return
+            except Exception:
+                return
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or "Shooting phase"
+            phase_name = str(phase_name or "").replace("_", " ").title()
+            if not s.can_use(self.player, self.game, target_unit=unit, attacker_unit=attacker_unit, phase_name=phase_name):
+                return
+            for r in self._pending_reactions:
+                try:
+                    if r.get("event") == "blood_surge_triggered" and r.get("stratagem") == s.name and r.get("unit") is unit and r.get("attacker_unit") is attacker_unit:
+                        return
+                except Exception:
+                    continue
+            self._queue_reaction({
+                "event": "blood_surge_triggered",
+                "phase_name": phase_name,
+                "stratagem": s.name,
+                "cp_cost": s.cp_cost,
+                "unit": unit,
+                "target_unit": unit,
+                "attacker_unit": attacker_unit,
             })
         except Exception:
             return
@@ -2641,6 +2710,72 @@ class StratagemManager:
             print(f"🩸 APOPLETIC FRENZY: {getattr(unit, 'name', 'Unit')} can charge after advancing this turn.")
             return True
 
+        # Berzerker Warband: BERZERKER'S WRATH (fixed 8" Blood Surge for Khorne Berzerkers)
+        if s.name.upper() in ("BERZERKER’S WRATH", "BERZERKER'S WRATH"):
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            attacker_unit = kwargs.get("attacker_unit")
+            if unit is None or attacker_unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() in ("BERZERKER’S WRATH", "BERZERKER'S WRATH"):
+                        unit = unit or r.get("unit") or r.get("target_unit")
+                        attacker_unit = attacker_unit or r.get("attacker_unit")
+                        break
+            if unit is None or attacker_unit is None:
+                print("❌ Berzerker's Wrath: missing target context")
+                return False
+            try:
+                army = unit.get_parent_army()
+            except Exception:
+                army = None
+            we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+            if we_mgr is None or not getattr(we_mgr, "is_berzerker_warband", lambda: False)():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "shooting phase":
+                print("❌ Berzerker's Wrath: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is self.player:
+                print("❌ Berzerker's Wrath: not opponent's turn")
+                return False
+            try:
+                if _unit_cannot_be_target_of_stratagem(unit):
+                    print("❌ Berzerker's Wrath: target cannot be selected")
+                    return False
+            except Exception:
+                return False
+            try:
+                if not (unit.has_keyword("KHORNE") and unit.has_keyword("BERZERKERS")):
+                    print("❌ Berzerker's Wrath: target is not KHORNE BERZERKERS")
+                    return False
+            except Exception:
+                return False
+            try:
+                if not unit.can_blood_surge(game=self.game, game_map=getattr(self.game, "map", None)):
+                    print("❌ Berzerker's Wrath: target cannot Blood Surge")
+                    return False
+            except Exception:
+                return False
+            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["blood_surge_fixed_distance"] = 8
+                sr["blood_surge_fixed_distance_phase_key"] = unit._blood_surge_phase_key(self.game)
+                unit.special_rules = sr
+            except Exception:
+                pass
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
+            print(f"🩸 BERZERKER'S WRATH: {getattr(unit, 'name', 'Unit')} will Blood Surge up to 8\".")
+            return True
+
         # Berzerker Warband: BLOOD OFFERING (sticky objective on unit destruction)
         if s.name.upper() == "BLOOD OFFERING":
             unit = kwargs.get("unit") or kwargs.get("target_unit")
@@ -2755,6 +2890,8 @@ class StratagemManager:
                     trigger_label = "Trigger: enemy charge end"
                 elif r.get("event") == "shooting_targets_selected":
                     trigger_label = "Trigger: after targets selected"
+                elif r.get("event") == "blood_surge_triggered":
+                    trigger_label = "Trigger: after enemy shooting"
                 elif r.get("event") == "fight_sequence_complete":
                     trigger_label = "Trigger: after enemy fought"
                 elif r.get("event") == "roll_made":

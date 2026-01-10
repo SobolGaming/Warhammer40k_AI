@@ -847,6 +847,9 @@ class GameView:
         # Genestealer Cults: Cult Ambush prompt queues
         self._pending_cult_ambush_queue = []
         self._pending_cult_ambush_marker_queue = []
+        # World Eaters: Blood Surge prompt queue
+        self._pending_blood_surge_queue = []
+        self._blood_surge_flow_active = False
         try:
             if self.game and getattr(self.game, "event_system", None) is not None:
                 self.game.event_system.subscribe("battle_round_started", self._on_battle_round_started)
@@ -879,6 +882,8 @@ class GameView:
                 self.game.event_system.subscribe("emperors_children_pact_points_updated", self._on_emperors_children_pact_points_updated)
                 # Drukhari: Power from Pain prompt when a unit can be empowered
                 self.game.event_system.subscribe("pain_token_prompt", self._on_pain_token_prompt)
+                # World Eaters: Blood Surge prompt on opponent shooting casualties
+                self.game.event_system.subscribe("blood_surge_prompt", self._on_blood_surge_prompt)
                 # Quarry re-pick when quarry is destroyed
                 self.game.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_for_monarch_of_the_hunt)
                 # Battle Focus reactive prompts (Opportunity Seized / Fade Back)
@@ -2059,6 +2064,162 @@ class GameView:
         except Exception:
             self._pain_flow_active = False
             self._open_next_pain_prompt(game_ctx)
+
+    # ---------------- Blood Surge prompts ----------------
+
+    def _on_blood_surge_prompt(self, player=None, unit=None, attacker_unit=None, game=None, **_kwargs):
+        if player is None or unit is None:
+            return
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return
+        except Exception:
+            return
+
+        if self._blood_surge_flow_active:
+            self._pending_blood_surge_queue.append((player, unit, attacker_unit, game))
+            return
+        self._pending_blood_surge_queue.append((player, unit, attacker_unit, game))
+        self._open_next_blood_surge_prompt(game or self.game)
+
+    def _open_next_blood_surge_prompt(self, game):
+        q = list(getattr(self, "_pending_blood_surge_queue", []) or [])
+        if not q:
+            self._pending_blood_surge_queue = []
+            self._blood_surge_flow_active = False
+            return
+        player, unit, attacker_unit, game_ctx = q.pop(0)
+        self._pending_blood_surge_queue = q
+
+        game_ctx = game_ctx or game or self.game
+        if player is None or unit is None or game_ctx is None:
+            self._open_next_blood_surge_prompt(game_ctx)
+            return
+
+        try:
+            if not unit.can_blood_surge(game=game_ctx, game_map=getattr(game_ctx, "map", None)):
+                self._open_next_blood_surge_prompt(game_ctx)
+                return
+        except Exception:
+            self._open_next_blood_surge_prompt(game_ctx)
+            return
+
+        attacker_name = getattr(attacker_unit, "name", "Enemy unit")
+        title = "Blood Surge"
+        msg = (
+            f"{attacker_name} destroyed models in {getattr(unit, 'name', 'unit')}.\n\n"
+            "Blood Surge: Move D6+2\" as close as possible to the closest non-AIRCRAFT enemy unit.\n"
+            "This unit cannot Blood Surge while Battle-shocked or within Engagement Range."
+        )
+
+        def _finish_and_next():
+            self._blood_surge_flow_active = False
+            self._open_next_blood_surge_prompt(game_ctx)
+
+        def _start_blood_surge_move():
+            try:
+                max_distance = int(game_ctx.roll_blood_surge_distance(unit) or 0)
+            except Exception:
+                max_distance = 0
+            if max_distance <= 0:
+                _finish_and_next()
+                return
+
+            def _move_done(completed: bool):
+                try:
+                    if completed:
+                        unit.mark_blood_surge_used(game_ctx)
+                except Exception:
+                    pass
+                _finish_and_next()
+
+            try:
+                self.individual_model_movement_dialog.show(
+                    unit, "blood_surge", _move_done, game_ctx.map, max_distance
+                )
+                self.dialog_manager.open(self.individual_model_movement_dialog, modal=True)
+            except Exception:
+                _finish_and_next()
+
+        fixed_active = False
+        try:
+            sr = getattr(unit, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("blood_surge_fixed_distance", None) is not None:
+                expected = unit._blood_surge_phase_key(game_ctx)
+                fixed_key = sr.get("blood_surge_fixed_distance_phase_key", None)
+                if str(fixed_key or "") == str(expected or ""):
+                    fixed_active = True
+        except Exception:
+            fixed_active = False
+
+        manager = getattr(player, "stratagems", None)
+        wrath = None
+        phase_label = str(getattr(getattr(game_ctx, "phase", None), "name", "") or "").replace("_", " ").title()
+        if manager is not None:
+            wrath = manager.get_by_name("BERZERKER’S WRATH") or manager.get_by_name("BERZERKER'S WRATH")
+            if wrath is not None:
+                try:
+                    if not manager.can_use(
+                        wrath.name,
+                        target_unit=unit,
+                        attacker_unit=attacker_unit,
+                        phase_name=phase_label or "Shooting phase",
+                    ):
+                        wrath = None
+                except Exception:
+                    wrath = None
+
+        def _ask_wrath_then_surge():
+            if wrath is None or manager is None:
+                _start_blood_surge_move()
+                return
+
+            try:
+                cost = wrath.cp_cost
+                if hasattr(player, "preview_stratagem_cp_cost"):
+                    cost = int(player.preview_stratagem_cp_cost(wrath, target_unit=unit).get("cost", wrath.cp_cost))
+            except Exception:
+                cost = wrath.cp_cost
+            title2 = "Berzerker's Wrath"
+            msg2 = (
+                "Use Berzerker's Wrath to set Blood Surge distance to 8\" (no roll)?\n"
+                f"CP cost: {int(cost)}"
+            )
+
+            def _wrath_done(use_wrath: bool):
+                if use_wrath:
+                    ok = manager.use(
+                        wrath.name,
+                        target_unit=unit,
+                        attacker_unit=attacker_unit,
+                        phase_name=phase_label or "Shooting phase",
+                        dequeue=True,
+                    )
+                    if not ok:
+                        print("Berzerker's Wrath failed; using normal Blood Surge.")
+                _start_blood_surge_move()
+
+            try:
+                self.yes_no_dialog.show(title2, msg2, _wrath_done, yes_label="Wrath", no_label="Normal")
+                self.dialog_manager.open(self.yes_no_dialog, modal=True)
+            except Exception:
+                _start_blood_surge_move()
+
+        def _done(choice: bool):
+            if not choice:
+                _finish_and_next()
+                return
+            _ask_wrath_then_surge()
+
+        self._blood_surge_flow_active = True
+        if fixed_active:
+            _start_blood_surge_move()
+            return
+        try:
+            self.yes_no_dialog.show(title, msg, _done, yes_label="Surge", no_label="Skip")
+            self.dialog_manager.open(self.yes_no_dialog, modal=True)
+        except Exception:
+            _finish_and_next()
 
     def _on_oath_of_moment_prompt(self, player=None, game=None, **_kwargs):
         """Prompt human players to select an Oath of Moment target at Command phase start."""
@@ -3926,6 +4087,8 @@ class GameView:
             title = "Advance Roll"
         elif rt == "charge":
             title = "Charge Roll"
+        elif rt in ("blood_surge", "blood surge"):
+            title = "Blood Surge Roll"
         elif rt == "hit":
             title = "Hit Roll"
         elif rt == "wound":
@@ -7144,6 +7307,7 @@ class GameView:
                             'advance': MovementType.ADVANCE,
                             'fall_back': MovementType.FALL_BACK,
                             'charge': MovementType.CHARGE,
+                            'blood_surge': MovementType.BLOOD_SURGE,
                             'scout': MovementType.SCOUT,
                             'pile_in': MovementType.PILE_IN,
                             'consolidate': MovementType.CONSOLIDATE
