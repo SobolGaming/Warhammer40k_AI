@@ -155,6 +155,7 @@ def _keyword_support(canon: str, examples: Set[str]) -> Tuple[str, str]:
         "pistol": "Engaged shooting + pistol-vs-other-ranged choice enforced (10e).",
         "lance": "If the bearer charged this turn, +1 to wound rolls for this weapon.",
         "twin-linked": "Re-roll failed wound rolls for attacks made with this weapon.",
+        "precision": "Allows allocating a successful wound to a visible CHARACTER in an Attached unit.",
     }
 
     # Partials: some related logic exists but full 10e rules not fully enforced.
@@ -277,4 +278,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
