@@ -881,6 +881,39 @@ def _datasheet_ability_support_global() -> Dict[str, Tuple[str, str]]:
 
 def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[str, str]]:
     raw = {
+        ("AS", "Endless Suffering"): ("Supported", "Charge-after-Advance eligibility."),
+        ("AS", "Holy Mission"): ("Partial", "Scouts/Infiltrators applied without attachment restriction."),
+        ("AS", "Holy Vanguard"): ("Partial", "Scouts 6\" applied without attached/embarked restriction."),
+        ("AS", "Null Rod"): ("Supported", "Feel No Pain 4+ against mortal wounds and Psychic attacks."),
+        ("AS", "Rituale Nullificatus"): ("Supported", "Feel No Pain 4+ against Psychic attacks and mortal wounds."),
+        ("AS", "Spiritual Fortitude"): ("Supported", "Feel No Pain 4+ against Psychic attacks and mortal wounds."),
+        ("AC", "Daughter of the Abyss"): ("Supported", "Feel No Pain 3+ against Psychic attacks and mortal wounds."),
+        ("AC", "Daughters of the Abyss"): ("Supported", "Feel No Pain 3+ against Psychic attacks and mortal wounds."),
+        ("AC", "Martial Inspiration"): ("Partial", "Advance-and-charge eligibility applied without once-per-battle restriction."),
+        ("AC", "Strike from the Skies"): ("Supported", "Shoot and charge after Falling Back."),
+        ("AC", "Tactical Perception"): ("Partial", "Fights First applied without leading restriction."),
+        ("ADM", "Dynamic Efficiency"): ("Partial", "Charge-after-Advance/Fall Back supported; Desperate Escape rerolls not implemented."),
+        ("ADM", "Elevated Strider"): ("Partial", "Shoot-after-Fall-Back/Advance supported; Desperate Escape rerolls not implemented."),
+        ("ADM", "Enginseer"): ("Partial", "Lone Operative applied without 3\" Vehicle proximity or leading restriction."),
+        ("ADM", "Mechanicus Bodyguard"): ("Partial", "Lone Operative applied without 3\" unit proximity requirement."),
+        ("ADM", "Shroudpsalm (Aura)"): ("Partial", "Stealth applied to bearer only; aura not propagated."),
+        ("AM", "Alchemyk Counteragents"): ("Supported", "Feel No Pain 6+ against mortal wounds."),
+        ("AM", "Desert Riders"): ("Partial", "Shoot and charge after Falling Back; ignores Move/Advance/Charge modifiers not handled."),
+        ("AM", "Enginseer"): ("Partial", "Lone Operative applied without 3\" Vehicle proximity requirement."),
+        ("AM", "Horsemasters"): ("Supported", "Shoot and charge after Falling Back."),
+        ("AM", "Malign Wardings(Psychic)"): ("Partial", "Feel No Pain 4+ against Psychic attacks applied without leading restriction."),
+        ("GK", "Indomitable Spirit (Psychic)"): ("Supported", "Shoot and charge after Advance/Fall Back."),
+        ("GK", "Retinue"): ("Partial", "Deep Strike granted without leading restriction; Teleport Assault not implemented."),
+        ("GK", "Sanctic Hood"): ("Partial", "Feel No Pain 4+ against Psychic attacks applied without leading restriction."),
+        ("GK", "Techmarine"): ("Partial", "Lone Operative applied without 3\" Vehicle proximity requirement."),
+        ("GK", "Truesilver Aegis (Aura)"): ("Partial", "Feel No Pain 6+ against mortal wounds applies to bearer only; aura not propagated."),
+        ("GK", "Untouchable Purity"): ("Partial", "Feel No Pain 4+ against mortal wounds applied without leading restriction."),
+        ("AOI", "Abomination"): ("Supported", "Feel No Pain 2+ against Psychic attacks."),
+        ("AOI", "Backroom Deals"): ("Partial", "Infiltrators applied without formation selection/leading restriction."),
+        ("AOI", "Frenzon"): ("Supported", "Shoot and charge after Advancing."),
+        ("AOI", "Psychic Hood"): ("Supported", "Feel No Pain 4+ against Psychic attacks."),
+        ("AOI", "Rites of Teleportation"): ("Partial", "Deep Strike granted without Inquisitor attachment restriction."),
+        ("AOI", "Unsubtle Crusader"): ("Partial", "Scouts 6\" applied without formation selection/target-unit restriction."),
         ("AE", "ASPECT TRAINING"): ("Partial", "Fights First/Infiltrators/Scouts/Stealth detected; leader/unit restrictions not enforced."),
         ("AE", "Way of the Blade"): ("Partial", "Fights First applied without leader restriction."),
         ("AE", "Empowered by Death"): ("Partial", "Fights First applied without below-strength condition."),
@@ -922,10 +955,6 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("DRU", "ARCHON'S RETINUE"): ("Partial", "Scouts 7\" applied without leader/attachment restriction (affects unit)."),
         ("DRU", "Blur of Blades"): ("Partial", "Fights First applied without leading restriction."),
         ("DRU", "Blur of Movement"): ("Supported", "Charge-after-Advance eligibility."),
-        ("GC", "Alchemyk Counteragents"): ("Supported", "Feel No Pain 6+ against mortal wounds."),
-        ("GC", "Desert Riders"): ("Partial", "Shoot and charge after Falling Back; ignores Move/Advance/Charge modifiers not handled."),
-        ("GC", "Horsemasters"): ("Supported", "Shoot and charge after Falling Back."),
-        ("GC", "Malign Wardings(Psychic)"): ("Partial", "Feel No Pain 4+ against Psychic attacks applied without leading restriction."),
         ("GC", "Sudden Assault"): ("Partial", "Fights First applied without leading restriction."),
         ("GC", "Swift and Deadly"): ("Supported", "Charge-after-Advance eligibility."),
         ("LOV", "Brōkhyr Guild Support"): ("Partial", "Lone Operative applied without 3\" Vehicle/Ironkin proximity or attached-unit restriction."),
@@ -1152,6 +1181,32 @@ def _load_factions() -> Dict[str, Dict[str, str]]:
     return out
 
 
+def _load_sources() -> Dict[str, dict]:
+    path = os.path.join(WAHA_DIR, "Source.json")
+    if not os.path.exists(path):
+        return {}
+    raw = _read_json(path)
+    out = {}
+    for item in raw:
+        sid = str(item.get("id", "") or "").strip()
+        if not sid:
+            continue
+        out[sid] = item
+    return out
+
+
+def _source_is_excluded(source: Optional[dict]) -> bool:
+    if not source:
+        return False
+    name = str(source.get("name", "") or "").lower()
+    stype = str(source.get("type", "") or "").lower()
+    if "(forge world)" in name or "legends" in name or "warhammer 40,000:" in name:
+        return True
+    if stype == "boarding actions" or name.strip() == "boarding actions":
+        return True
+    return False
+
+
 def _load_detachments() -> Dict[str, dict]:
     path = os.path.join(WAHA_DIR, "Detachments.json")
     raw = _read_json(path)
@@ -1168,13 +1223,17 @@ def _detachment_is_boarding(det: dict) -> bool:
     return str(det.get("type", "") or "").strip().lower() == "boarding actions"
 
 
-def _build_datasheet_map() -> Dict[str, dict]:
+def _build_datasheet_map(sources: Optional[Dict[str, dict]] = None) -> Dict[str, dict]:
     raw = _read_json(os.path.join(WAHA_DIR, "Datasheets.json"))
     out = {}
     for ds in raw:
         did = ds.get("id", "") or ""
         if not did:
             continue
+        if sources:
+            source_id = str(ds.get("source_id", "") or "").strip()
+            if source_id and _source_is_excluded(sources.get(source_id)):
+                continue
         out[did] = ds
     return out
 
@@ -1666,7 +1725,8 @@ def _build_matrix() -> str:
     enhancements = _read_json(os.path.join(WAHA_DIR, "Enhancements.json"))
     stratagems = _read_json(os.path.join(WAHA_DIR, "Stratagems.json"))
     detachments = _load_detachments()
-    ds_map = _build_datasheet_map()
+    sources = _load_sources()
+    ds_map = _build_datasheet_map(sources)
 
     _seed_ability_support_maps(abilities, det_abilities_rows)
 
