@@ -35,7 +35,9 @@ SPACE_MARINE_CHAPTER_KEYWORDS = {
 }
 SPACE_MARINE_DEFAULT_CHAPTER = "SPACE MARINES"
 SPACE_MARINE_EXPLICIT_CHAPTERS = SPACE_MARINE_CHAPTER_KEYWORDS - {SPACE_MARINE_DEFAULT_CHAPTER}
-SPACE_MARINE_ALLOWED_NON_CHAPTER_FACTION_KEYWORDS: set[str] = set()
+SPACE_MARINE_ALLOWED_NON_CHAPTER_FACTION_KEYWORDS: set[str] = {
+    "AGENTS OF THE IMPERIUM",
+}
 
 
 def _normalize_faction_name(name: str) -> str:
@@ -139,8 +141,10 @@ BLACK_TEMPLARS_FORBIDDEN_UNITS = {
     "GLADIATOR REAPER",
     "GLADIATOR VALIANT",
     "IMPULSOR",
+    "LAND RAIDER CRUSADER",
     "REPULSOR",
     "REPULSOR EXECUTIONER",
+    "STERNGUARD VETERAN SQUAD",
 }
 DEATHWATCH_FORBIDDEN_UNITS = {
     "ASSAULT SQUAD",
@@ -1081,45 +1085,67 @@ class Army:
         except Exception:
             committed_chapter = None
 
-        chapter_present = set()
-        unexpected_keywords: dict[str, list[str]] = {}
-
-        for unit in astartes_units:
-            unit_chapters = [ch for ch in SPACE_MARINE_EXPLICIT_CHAPTERS if _unit_has_keyword(unit, ch)]
-            if len(unit_chapters) > 1:
-                raise ArmyValidationError(
-                    f"Unit '{getattr(unit, 'name', 'Unknown')}' has multiple Chapter keywords: {unit_chapters}."
-                )
-            if unit_chapters:
-                chapter_present.update(unit_chapters)
-
+        def _unit_chapter_keywords(unit) -> list[str]:
+            chapters: list[str] = []
             fks = list(getattr(unit, "faction_keywords", []) or [])
-            if not fks:
-                continue
             for kw in fks:
                 kw_u = str(kw).strip().upper()
                 if not kw_u:
                     continue
                 if kw_u == "ADEPTUS ASTARTES":
                     continue
-                if kw_u in SPACE_MARINE_CHAPTER_KEYWORDS:
+                if kw_u == SPACE_MARINE_DEFAULT_CHAPTER:
                     continue
                 if kw_u in SPACE_MARINE_ALLOWED_NON_CHAPTER_FACTION_KEYWORDS:
                     continue
-                unexpected_keywords.setdefault(kw_u, []).append(getattr(unit, "name", "Unknown"))
+                if kw_u not in chapters:
+                    chapters.append(kw_u)
+            if not chapters:
+                for ch in SPACE_MARINE_EXPLICIT_CHAPTERS:
+                    if _unit_has_keyword(unit, ch):
+                        if ch not in chapters:
+                            chapters.append(ch)
+            return chapters
 
-        if unexpected_keywords:
-            parts = []
-            for kw, units in sorted(unexpected_keywords.items()):
-                units_s = ", ".join(sorted({str(u) for u in units}))
-                parts.append(f"{kw} (units: {units_s})")
-            raise ArmyValidationError(
-                "Unexpected Adeptus Astartes faction keyword(s) detected: "
-                + "; ".join(parts)
-                + ". Expected chapter keywords: "
-                + ", ".join(sorted(SPACE_MARINE_CHAPTER_KEYWORDS))
-                + "."
-            )
+        def _is_kill_team_cassius(unit_name: str) -> bool:
+            return _norm_name(unit_name).startswith("kill team cassius")
+
+        def _is_mission_tactics_ability(ability) -> bool:
+            if isinstance(ability, str):
+                name = ability
+            else:
+                name = getattr(ability, "name", "")
+            return str(name or "").strip().lower() == "mission tactics"
+
+        def _toggle_mission_tactics(unit, *, enabled: bool) -> None:
+            abilities = list(getattr(unit, "possible_abilities", []) or [])
+            if not abilities:
+                return
+            if enabled:
+                stored = getattr(unit, "_mission_tactics_original_abilities", None)
+                if stored is not None:
+                    unit.possible_abilities = list(stored)
+                    try:
+                        delattr(unit, "_mission_tactics_original_abilities")
+                    except Exception:
+                        pass
+                return
+            if not any(_is_mission_tactics_ability(ab) for ab in abilities):
+                return
+            if getattr(unit, "_mission_tactics_original_abilities", None) is None:
+                unit._mission_tactics_original_abilities = list(abilities)
+            unit.possible_abilities = [ab for ab in abilities if not _is_mission_tactics_ability(ab)]
+
+        chapter_present = set()
+
+        for unit in astartes_units:
+            unit_chapters = _unit_chapter_keywords(unit)
+            if len(unit_chapters) > 1:
+                raise ArmyValidationError(
+                    f"Unit '{getattr(unit, 'name', 'Unknown')}' has multiple Chapter keywords: {unit_chapters}."
+                )
+            if unit_chapters:
+                chapter_present.update(unit_chapters)
 
         if committed_chapter:
             chapter_present.add(committed_chapter)
@@ -1176,9 +1202,11 @@ class Army:
                         f"Deathwatch armies cannot include ADEPTUS ASTARTES units from other Chapters ({unit_name})."
                     )
                 if _unit_has_keyword(unit, "AGENTS OF THE IMPERIUM") and _unit_has_keyword(unit, "DEATHWATCH"):
-                    raise ArmyValidationError(
-                        f"Deathwatch armies cannot include AGENTS OF THE IMPERIUM DEATHWATCH units ({unit_name})."
-                    )
+                    if not _is_kill_team_cassius(unit_name):
+                        raise ArmyValidationError(
+                            "Deathwatch armies cannot include AGENTS OF THE IMPERIUM DEATHWATCH units "
+                            f"({unit_name}), except Kill Team Cassius."
+                        )
                 if is_astartes and unit_norm in dw_banned:
                     raise ArmyValidationError(
                         f"Deathwatch armies cannot include {unit_name}."
@@ -1188,6 +1216,18 @@ class Army:
                 raise ArmyValidationError(
                     f"Space Wolves armies cannot include {unit_name}."
                 )
+
+        is_black_spear = False
+        try:
+            mgr = getattr(self, "space_marines_detachments", None)
+            if mgr is not None:
+                is_black_spear = bool(mgr.detachment_matches("Black Spear Task Force"))
+        except Exception:
+            is_black_spear = False
+
+        if has_deathwatch:
+            for unit in list(getattr(self, "units", []) or []):
+                _toggle_mission_tactics(unit, enabled=is_black_spear)
 
     def validate_dreadblades(self) -> None:
         fid = str(getattr(self, "faction_id", "") or "").strip().upper()

@@ -58,13 +58,24 @@ class TestSpaceMarineChapters(unittest.TestCase):
         with self.assertRaises(ArmyValidationError):
             army.validate_space_marine_chapters()
 
-    def test_unexpected_chapter_keyword_is_reported(self):
+    def test_unknown_chapter_keyword_counts_for_mixing(self):
         units = [
-            StubUnit("Weird", faction_keywords=["ADEPTUS ASTARTES", "OMEGA MARINES"]),
+            StubUnit("Omega Unit", faction_keywords=["ADEPTUS ASTARTES", "OMEGA MARINES"]),
+            StubUnit("Ultramarines Unit", faction_keywords=["ADEPTUS ASTARTES", "ULTRAMARINES"]),
         ]
         army = self._make_army(units)
         with self.assertRaises(ArmyValidationError):
             army.validate_space_marine_chapters()
+
+    def test_kill_team_cassius_exception(self):
+        units = [
+            StubUnit(
+                "Kill Team Cassius",
+                faction_keywords=["ADEPTUS ASTARTES", "DEATHWATCH", "AGENTS OF THE IMPERIUM"],
+            ),
+        ]
+        army = self._make_army(units)
+        army.validate_space_marine_chapters()
 
 
 if __name__ == "__main__":
