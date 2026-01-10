@@ -802,10 +802,20 @@ class Army:
             "can_add_more_strategic_points": strategic_points < limits["max_strategic_points"],
         }
 
+    def _unit_cannot_be_warlord(self, unit: Unit) -> bool:
+        sr = getattr(unit, "special_rules", None)
+        return bool(isinstance(sr, dict) and sr.get("cannot_be_warlord"))
+
+    def _unit_cannot_receive_enhancements(self, unit: Unit) -> bool:
+        sr = getattr(unit, "special_rules", None)
+        return bool(isinstance(sr, dict) and sr.get("cannot_be_given_enhancements"))
+
     def add_enhancement(self, enhancement, character_unit):
         # Assign an Enhancement to a Character unit
         if not character_unit.is_character or character_unit.is_epic_hero:
             raise ArmyValidationError(f"Enhancements can only be assigned to non-Epic Hero Characters. '{character_unit.name}' is not eligible.")
+        if self._unit_cannot_receive_enhancements(character_unit):
+            raise ArmyValidationError(f"Character '{character_unit.name}' cannot be given Enhancements.")
         if character_unit.enhancement:
             raise ArmyValidationError(f"Character '{character_unit.name}' already has an Enhancement.")
         # Enhancements are detachment-specific in 10e; enforce faction and detachment match when available.
@@ -855,6 +865,8 @@ class Army:
     def select_warlord(self, unit: Unit):
         if not unit.is_character:
             raise ArmyValidationError(f"Only Character units can be selected as Warlord. '{unit.name}' is not a Character.")
+        if self._unit_cannot_be_warlord(unit):
+            raise ArmyValidationError(f"Unit '{unit.name}' cannot be your Warlord.")
         if self.warlord:
             raise ArmyValidationError(f"Warlord has already been selected: '{self.warlord.name}'.")
         unit.is_warlord = True
@@ -960,12 +972,16 @@ class Army:
             if unit.enhancement:
                 if unit.is_epic_hero:
                     raise ArmyValidationError(f"Epic Hero '{unit.name}' cannot have Enhancements assigned.")
+                if self._unit_cannot_receive_enhancements(unit):
+                    raise ArmyValidationError(f"Unit '{unit.name}' cannot be given Enhancements.")
 
     def validate_warlord(self):
         # Ensure exactly one Warlord is selected
         warlord_units = [unit for unit in self.units if unit.is_warlord]
         if len(warlord_units) != 1:
             raise ArmyValidationError(f"Army must have exactly one Warlord. Found: {len(warlord_units)}.")
+        if self._unit_cannot_be_warlord(warlord_units[0]):
+            raise ArmyValidationError(f"Unit '{warlord_units[0].name}' cannot be your Warlord.")
 
         # SUPREME COMMANDER (keyword): if your army includes any SUPREME COMMANDER units,
         # one of them must be your Warlord.
