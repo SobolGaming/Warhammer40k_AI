@@ -173,6 +173,31 @@ class TestBloodSurge(unittest.TestCase):
         self.assertTrue(ok.get("valid"))
         self.assertFalse(bad.get("valid"))
 
+    def test_blood_surge_fixed_distance_overrides_roll(self):
+        army1 = Army("World Eaters", detachment_type="Berzerker Warband")
+        army1.faction_id = "WE"
+        army2 = Army("Other", detachment_type="Other")
+        army2.faction_id = "OT"
+
+        p1 = Player("P1", PlayerType.HUMAN, army=army1)
+        p2 = Player("P2", PlayerType.HUMAN, army=army2)
+
+        bf = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
+        game = Game(bf, players=[p1, p2])
+        game.phase = BattleRoundPhases.SHOOTING_PHASE
+        game.current_player_index = 1
+
+        unit = self._make_unit("Berzerkers", army1, blood_surge=True, faction="A")
+        army1.units = [unit]
+
+        unit.special_rules["blood_surge_fixed_distance"] = 8
+        unit.special_rules["blood_surge_fixed_distance_phase_key"] = unit._blood_surge_phase_key(game)
+
+        dist = int(game.roll_blood_surge_distance(unit) or 0)
+        self.assertEqual(dist, 8)
+        self.assertNotIn("blood_surge_fixed_distance", unit.special_rules)
+        self.assertNotIn("blood_surge_fixed_distance_phase_key", unit.special_rules)
+
 
 if __name__ == "__main__":
     unittest.main()

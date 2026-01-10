@@ -1173,6 +1173,8 @@ def _stratagem_support(name: str) -> Tuple[str, str, str]:
         "SMOKESCREEN": "Shooting phase: SMOKE unit gains cover + Stealth.",
         "TANK SHOCK": "Charge phase: roll vs Toughness to deal mortals (max 6).",
         "APOPLECTIC FRENZY": "Advance and Charge for a BERZERKERS unit; Berzerker Warband only.",
+        "BERZERKER'S WRATH": "Blood Surge distance is fixed at 8\" (no D6 roll) for a BERZERKERS unit.",
+        "BERZERKER’S WRATH": "Blood Surge distance is fixed at 8\" (no D6 roll) for a BERZERKERS unit.",
         "BLOOD OFFERING": "Sticky objective on unit destruction; Berzerker Warband only.",
         "UNBOUND ARROGANCE": "Coterie of the Conceited pledge increases by 1 (once per battle round).",
     }

@@ -1455,6 +1455,18 @@ class Game:
 
             es = getattr(self, "event_system", None)
             try:
+                if es is not None:
+                    es.publish(
+                        "blood_surge_triggered",
+                        player=target_player,
+                        unit=target_unit,
+                        attacker_unit=attacker_unit,
+                        phase_name=str(getattr(self.phase, "name", "") or "").replace("_", " ").title(),
+                        game=self,
+                    )
+            except Exception:
+                pass
+            try:
                 is_human = bool(getattr(getattr(target_player, "type", None), "name", "") == "HUMAN")
             except Exception:
                 is_human = False
@@ -1491,6 +1503,35 @@ class Game:
 
             if not use_it:
                 continue
+
+            try:
+                strat_mgr = getattr(target_player, "stratagems", None)
+                if strat_mgr is not None:
+                    wrath = strat_mgr.get_by_name("BERZERKER’S WRATH") or strat_mgr.get_by_name("BERZERKER'S WRATH")
+                    if wrath is not None:
+                        phase_name = str(getattr(self.phase, "name", "") or "").replace("_", " ").title()
+                        can_wrath = False
+                        try:
+                            can_wrath = bool(strat_mgr.can_use(
+                                wrath.name,
+                                target_unit=target_unit,
+                                attacker_unit=attacker_unit,
+                                phase_name=phase_name or "Shooting phase",
+                            ))
+                        except Exception:
+                            can_wrath = False
+                        if can_wrath:
+                            import random
+                            if random.choice([True, False]):
+                                strat_mgr.use(
+                                    wrath.name,
+                                    target_unit=target_unit,
+                                    attacker_unit=attacker_unit,
+                                    phase_name=phase_name or "Shooting phase",
+                                    dequeue=True,
+                                )
+            except Exception:
+                pass
 
             try:
                 max_distance = int(self.roll_blood_surge_distance(target_unit) or 0)
@@ -5897,6 +5938,30 @@ class Game:
         """Roll Blood Surge distance (D6+2), optionally applying leader-provided rerolls."""
         if unit is None:
             return 0
+        try:
+            sr = getattr(unit, "special_rules", None)
+            if isinstance(sr, dict):
+                fixed = sr.get("blood_surge_fixed_distance", None)
+                fixed_key = sr.get("blood_surge_fixed_distance_phase_key", None)
+                if fixed is not None:
+                    expected_key = unit._blood_surge_phase_key(self)
+                    if str(fixed_key or "") == str(expected_key or ""):
+                        sr.pop("blood_surge_fixed_distance", None)
+                        sr.pop("blood_surge_fixed_distance_phase_key", None)
+                        unit.special_rules = sr
+                        try:
+                            from ..utility.event_bus import append_dice
+                            player = getattr(unit.get_parent_army(), "player", None)
+                            if player is not None:
+                                append_dice(player.name, f"Blood Surge fixed distance: {int(fixed)}\" for {unit.name}")
+                        except Exception:
+                            pass
+                        return int(fixed)
+                    sr.pop("blood_surge_fixed_distance", None)
+                    sr.pop("blood_surge_fixed_distance_phase_key", None)
+                    unit.special_rules = sr
+        except Exception:
+            pass
         try:
             from ..utility.dice import get_roll
         except Exception:

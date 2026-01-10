@@ -2112,19 +2112,17 @@ class GameView:
             "This unit cannot Blood Surge while Battle-shocked or within Engagement Range."
         )
 
-        def _done(choice: bool):
-            if not choice:
-                self._blood_surge_flow_active = False
-                self._open_next_blood_surge_prompt(game_ctx)
-                return
+        def _finish_and_next():
+            self._blood_surge_flow_active = False
+            self._open_next_blood_surge_prompt(game_ctx)
 
+        def _start_blood_surge_move():
             try:
                 max_distance = int(game_ctx.roll_blood_surge_distance(unit) or 0)
             except Exception:
                 max_distance = 0
             if max_distance <= 0:
-                self._blood_surge_flow_active = False
-                self._open_next_blood_surge_prompt(game_ctx)
+                _finish_and_next()
                 return
 
             def _move_done(completed: bool):
@@ -2133,8 +2131,7 @@ class GameView:
                         unit.mark_blood_surge_used(game_ctx)
                 except Exception:
                     pass
-                self._blood_surge_flow_active = False
-                self._open_next_blood_surge_prompt(game_ctx)
+                _finish_and_next()
 
             try:
                 self.individual_model_movement_dialog.show(
@@ -2142,16 +2139,87 @@ class GameView:
                 )
                 self.dialog_manager.open(self.individual_model_movement_dialog, modal=True)
             except Exception:
-                self._blood_surge_flow_active = False
-                self._open_next_blood_surge_prompt(game_ctx)
+                _finish_and_next()
+
+        fixed_active = False
+        try:
+            sr = getattr(unit, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("blood_surge_fixed_distance", None) is not None:
+                expected = unit._blood_surge_phase_key(game_ctx)
+                fixed_key = sr.get("blood_surge_fixed_distance_phase_key", None)
+                if str(fixed_key or "") == str(expected or ""):
+                    fixed_active = True
+        except Exception:
+            fixed_active = False
+
+        manager = getattr(player, "stratagems", None)
+        wrath = None
+        phase_label = str(getattr(getattr(game_ctx, "phase", None), "name", "") or "").replace("_", " ").title()
+        if manager is not None:
+            wrath = manager.get_by_name("BERZERKER’S WRATH") or manager.get_by_name("BERZERKER'S WRATH")
+            if wrath is not None:
+                try:
+                    if not manager.can_use(
+                        wrath.name,
+                        target_unit=unit,
+                        attacker_unit=attacker_unit,
+                        phase_name=phase_label or "Shooting phase",
+                    ):
+                        wrath = None
+                except Exception:
+                    wrath = None
+
+        def _ask_wrath_then_surge():
+            if wrath is None or manager is None:
+                _start_blood_surge_move()
+                return
+
+            try:
+                cost = wrath.cp_cost
+                if hasattr(player, "preview_stratagem_cp_cost"):
+                    cost = int(player.preview_stratagem_cp_cost(wrath, target_unit=unit).get("cost", wrath.cp_cost))
+            except Exception:
+                cost = wrath.cp_cost
+            title2 = "Berzerker's Wrath"
+            msg2 = (
+                "Use Berzerker's Wrath to set Blood Surge distance to 8\" (no roll)?\n"
+                f"CP cost: {int(cost)}"
+            )
+
+            def _wrath_done(use_wrath: bool):
+                if use_wrath:
+                    ok = manager.use(
+                        wrath.name,
+                        target_unit=unit,
+                        attacker_unit=attacker_unit,
+                        phase_name=phase_label or "Shooting phase",
+                        dequeue=True,
+                    )
+                    if not ok:
+                        print("Berzerker's Wrath failed; using normal Blood Surge.")
+                _start_blood_surge_move()
+
+            try:
+                self.yes_no_dialog.show(title2, msg2, _wrath_done, yes_label="Wrath", no_label="Normal")
+                self.dialog_manager.open(self.yes_no_dialog, modal=True)
+            except Exception:
+                _start_blood_surge_move()
+
+        def _done(choice: bool):
+            if not choice:
+                _finish_and_next()
+                return
+            _ask_wrath_then_surge()
 
         self._blood_surge_flow_active = True
+        if fixed_active:
+            _start_blood_surge_move()
+            return
         try:
             self.yes_no_dialog.show(title, msg, _done, yes_label="Surge", no_label="Skip")
             self.dialog_manager.open(self.yes_no_dialog, modal=True)
         except Exception:
-            self._blood_surge_flow_active = False
-            self._open_next_blood_surge_prompt(game_ctx)
+            _finish_and_next()
 
     def _on_oath_of_moment_prompt(self, player=None, game=None, **_kwargs):
         """Prompt human players to select an Oath of Moment target at Command phase start."""
