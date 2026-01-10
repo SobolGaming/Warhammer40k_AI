@@ -162,6 +162,8 @@ class Game:
         self.phase_charge_targets: Dict[str, set[str]] = {}
         # Aeldari: Phoenix Gem pending returns (processed at end of the phase they were destroyed in)
         self._phoenix_gem_pending: List[Dict[str, Any]] = []
+        # World Eaters: Blood Surge shooting snapshots (attacker -> {target: model_count})
+        self._blood_surge_shooting_snapshot: Dict['Unit', Dict['Unit', int]] = {}
         # Optional in-engine army mustering requests (player1/player2) for setup phase.
         self.army_muster_requests: Dict[str, Any] = {}
 
@@ -206,6 +208,9 @@ class Game:
         self.event_system.subscribe("fight_unit_selected", self._on_fight_unit_selected_power_from_pain)
         self.event_system.subscribe("unit_move_started", self._on_unit_move_started_power_from_pain)
         self.event_system.subscribe("charge_declared", self._on_charge_declared_power_from_pain)
+        # World Eaters: Blood Surge trigger window
+        self.event_system.subscribe("shooting_targets_selected", self._on_shooting_targets_selected_blood_surge)
+        self.event_system.subscribe("unit_shooting_resolved", self._on_unit_shooting_resolved_blood_surge)
         # Imperial Knights: Bondsman ongoing effects
         self.event_system.subscribe("phase_start", self._on_phase_start_bondsman)
         self.event_system.subscribe("unit_shooting_resolved", self._on_unit_shooting_resolved_bondsman)
@@ -1381,6 +1386,129 @@ class Game:
             mgr.maybe_empower_unit_for_trigger(attacking_unit, trigger="shooting", game=self)
         except Exception:
             return
+
+    def _on_shooting_targets_selected_blood_surge(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None:
+            return
+        if not list(target_units or []):
+            return
+        if not self.is_shooting_phase():
+            return
+
+        snapshot: Dict['Unit', int] = {}
+        for target in list(target_units or []):
+            if target is None:
+                continue
+            try:
+                if not target.has_blood_surge():
+                    continue
+            except Exception:
+                continue
+            try:
+                models = list(getattr(target, "models", []) or [])
+                count = sum(1 for m in models if getattr(m, "is_alive", False))
+            except Exception:
+                count = 0
+            snapshot[target] = int(count)
+
+        if snapshot:
+            self._blood_surge_shooting_snapshot[attacking_unit] = snapshot
+
+    def _on_unit_shooting_resolved_blood_surge(self, attacker_unit=None, **_kwargs) -> None:
+        if attacker_unit is None:
+            return
+        if not self.is_shooting_phase():
+            return
+        snapshot = self._blood_surge_shooting_snapshot.pop(attacker_unit, None)
+        if not snapshot:
+            return
+
+        for target_unit, before_count in list(snapshot.items()):
+            if target_unit is None:
+                continue
+            try:
+                models = list(getattr(target_unit, "models", []) or [])
+                after_count = sum(1 for m in models if getattr(m, "is_alive", False))
+            except Exception:
+                after_count = int(before_count or 0)
+
+            if int(after_count) >= int(before_count or 0):
+                continue
+
+            try:
+                target_player = target_unit.get_parent_army().player
+            except Exception:
+                target_player = None
+            if target_player is None:
+                continue
+            try:
+                if target_player is self.get_current_player():
+                    continue
+            except Exception:
+                pass
+
+            try:
+                if not target_unit.can_blood_surge(game=self, game_map=self.map):
+                    continue
+            except Exception:
+                continue
+
+            es = getattr(self, "event_system", None)
+            try:
+                is_human = bool(getattr(getattr(target_player, "type", None), "name", "") == "HUMAN")
+            except Exception:
+                is_human = False
+            if is_human and es is not None:
+                try:
+                    subs = getattr(es, "subscribers", {})
+                    if isinstance(subs, dict) and subs.get("blood_surge_prompt"):
+                        es.publish(
+                            "blood_surge_prompt",
+                            player=target_player,
+                            unit=target_unit,
+                            attacker_unit=attacker_unit,
+                            phase_name=str(getattr(self.phase, "name", "") or ""),
+                            game=self,
+                        )
+                        continue
+                except Exception:
+                    pass
+
+            use_it = False
+            try:
+                if callable(getattr(target_player, "decision_hook", None)):
+                    ctx = {
+                        "unit": target_unit,
+                        "attacker_unit": attacker_unit,
+                        "phase_name": str(getattr(self.phase, "name", "") or ""),
+                    }
+                    use_it = bool(target_player._should_use_optional_ability("BLOOD_SURGE", ctx))
+                else:
+                    import random
+                    use_it = bool(random.choice([True, False]))
+            except Exception:
+                use_it = False
+
+            if not use_it:
+                continue
+
+            try:
+                max_distance = int(self.roll_blood_surge_distance(target_unit) or 0)
+            except Exception:
+                max_distance = 0
+            if max_distance <= 0:
+                continue
+
+            moved = False
+            try:
+                moved = bool(target_unit.auto_blood_surge_move(self.map, max_distance))
+            except Exception:
+                moved = False
+            if moved:
+                try:
+                    target_unit.mark_blood_surge_used(self)
+                except Exception:
+                    pass
 
     def _on_fight_unit_selected_power_from_pain(self, unit=None, selecting_player=None, **_kwargs) -> None:
         if unit is None:
@@ -5764,6 +5892,74 @@ class Game:
             "reroll_used": bool(reroll_used),
             "miracle_used": bool(miracle_used),
         }
+
+    def roll_blood_surge_distance(self, unit: 'Unit') -> int:
+        """Roll Blood Surge distance (D6+2), optionally applying leader-provided rerolls."""
+        if unit is None:
+            return 0
+        try:
+            from ..utility.dice import get_roll
+        except Exception:
+            def get_roll(_s):
+                return 1
+
+        base_roll = get_roll("D6")
+        reroll_used = False
+
+        player = None
+        try:
+            player = unit.get_parent_army().player
+        except Exception:
+            player = None
+
+        can_reroll = False
+        try:
+            can_reroll = bool(unit.can_reroll_blood_surge_roll())
+        except Exception:
+            can_reroll = False
+
+        try:
+            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+        except Exception:
+            is_human = False
+
+        if is_human:
+            try:
+                provider = getattr(getattr(self, "map", None), "roll_reroll_provider", None)
+                if callable(provider):
+                    want = bool(provider(
+                        player=player,
+                        unit=unit,
+                        roll_type="blood_surge",
+                        value=int(base_roll or 0),
+                        dice=[int(base_roll or 0)],
+                        allow_reroll=bool(can_reroll),
+                    ))
+                    if want and can_reroll:
+                        base_roll = get_roll("D6")
+                        reroll_used = True
+            except Exception:
+                pass
+        elif can_reroll:
+            try:
+                import random
+                if random.choice([True, False]):
+                    base_roll = get_roll("D6")
+                    reroll_used = True
+            except Exception:
+                pass
+
+        max_distance = int(base_roll or 0) + 2
+
+        try:
+            from ..utility.event_bus import append_dice
+            if player is not None:
+                tag = "Blood Surge reroll" if reroll_used else "Blood Surge roll"
+                append_dice(player.name, f"{tag}: {int(base_roll or 0)} (move {max_distance}\") for {unit.name}")
+        except Exception:
+            pass
+
+        return int(max_distance)
 
     def attempt_charge(
         self,

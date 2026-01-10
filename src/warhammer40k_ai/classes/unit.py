@@ -7392,6 +7392,11 @@ class Unit:
         # If we had movable models but none could complete a legal move, the move fails.
         return moved_any
 
+    def auto_blood_surge_move(self, game_map: 'Map', max_distance: float) -> bool:
+        """Best-effort automated Blood Surge move (AI/headless)."""
+        from ..utility.calcs import MovementType
+        return self._auto_fight_phase_move(game_map, MovementType.BLOOD_SURGE, max_distance)
+
     # Battle-shock Phase Actions
     def take_battle_shock_test(self, current_turn: int = 1):
         """Takes a battle shock test.
@@ -9955,6 +9960,88 @@ class Unit:
             self._ability_cache = {}
         self._ability_cache['shoot_on_death'] = found
         return found
+
+    def has_blood_surge(self) -> bool:
+        """Check if the unit has the Blood Surge datasheet ability."""
+        if 'blood_surge' in getattr(self, '_ability_cache', {}):
+            return self._ability_cache['blood_surge']
+
+        found, _ = self._find_ability_with_patterns(["blood surge"])
+        if not hasattr(self, '_ability_cache'):
+            self._ability_cache = {}
+        self._ability_cache['blood_surge'] = found
+        return found
+
+    def can_reroll_blood_surge_roll(self) -> bool:
+        """Check for a leader-provided reroll to the Blood Surge D6 (e.g., Forwards, for Blood!)."""
+        for t in self._iter_attached_leader_ability_texts():
+            s = str(t or "").lower()
+            if ("blood surge" in s) and ("re-roll" in s or "reroll" in s):
+                return True
+        for t in self._iter_active_ability_texts():
+            s = str(t or "").lower()
+            if ("blood surge" in s) and ("re-roll" in s or "reroll" in s):
+                return True
+        return False
+
+    def _blood_surge_phase_key(self, game=None) -> str:
+        if game is None:
+            try:
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+            except Exception:
+                game = None
+        try:
+            br = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            br = 0
+        try:
+            phase = getattr(game, "phase", None)
+            pname = str(getattr(phase, "name", "") or phase or "").strip().upper()
+        except Exception:
+            pname = ""
+        try:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+        except Exception:
+            current_player = None
+        owner = str(getattr(current_player, "name", "") or "")
+        return f"{br}:{pname}:{owner}"
+
+    def blood_surge_used_this_phase(self, game=None) -> bool:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        key = self._blood_surge_phase_key(game)
+        return str(sr.get("blood_surge_used_phase_key", "")) == key
+
+    def mark_blood_surge_used(self, game=None) -> None:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["blood_surge_used_phase_key"] = self._blood_surge_phase_key(game)
+        self.special_rules = sr
+
+    def can_blood_surge(self, game=None, game_map=None) -> bool:
+        if not self.has_blood_surge():
+            return False
+        if not self.is_alive() or not getattr(self, "deployed", False):
+            return False
+        if self.is_battle_shocked():
+            return False
+        if self.blood_surge_used_this_phase(game):
+            return False
+        if game_map is None:
+            try:
+                game_map = getattr(game, "map", None)
+            except Exception:
+                game_map = None
+        if game_map is not None:
+            try:
+                for enemy in game_map.get_enemy_units(self):
+                    if game_map.is_within_engagement_range(self, enemy):
+                        return False
+            except Exception:
+                pass
+        return True
 
     def has_reanimation_protocols(self) -> bool:
         """Check if the unit has Reanimation Protocols (Necrons army rule)."""

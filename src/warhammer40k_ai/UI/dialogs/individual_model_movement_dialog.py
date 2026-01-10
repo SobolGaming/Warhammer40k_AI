@@ -85,7 +85,7 @@ class IndividualModelMovementDialog(BaseDialog):
 
         # Publish unit move started (for Stratagem reactions like Overwatch)
         # NOTE: Do NOT publish for deployment placement.
-        if self.movement_type not in ('deploy', 'reactive'):
+        if self.movement_type not in ('deploy', 'reactive', 'blood_surge'):
             try:
                 _player = getattr(self.unit.get_parent_army(), 'player', None)
                 _game = getattr(_player, 'game', None) if _player else None
@@ -1132,6 +1132,7 @@ class IndividualModelMovementDialog(BaseDialog):
             'advance': MovementType.ADVANCE,
             'fall_back': MovementType.FALL_BACK,
             'charge': MovementType.CHARGE,
+            'blood_surge': MovementType.BLOOD_SURGE,
             'scout': MovementType.SCOUT,
             'pile_in': MovementType.PILE_IN,
             'consolidate': MovementType.CONSOLIDATE,
@@ -1335,7 +1336,7 @@ class IndividualModelMovementDialog(BaseDialog):
 
         # Publish unit move ended (for Stratagem reactions like Overwatch)
         # NOTE: Do NOT publish for deployment placement.
-        if self.movement_type not in ('deploy', 'reactive'):
+        if self.movement_type not in ('deploy', 'reactive', 'blood_surge'):
             try:
                 _player = getattr(self.unit.get_parent_army(), 'player', None)
                 _game = getattr(_player, 'game', None) if _player else None

@@ -994,7 +994,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("WE", "Lord of Murder"): ("Supported", "Conditional Lone Operative within 3\" of friendly WORLD EATERS INFANTRY."),
         ("WE", "Beacons of Rage (Aura)"): ("Supported", "+1 hit (melee) and +1 wound vs Below Half-strength; excludes Monster/Vehicle."),
         ("WE", "Fire Riders"): ("Partial", "Deep Strike detected; movement/leading-only clauses not enforced."),
-        ("WE", "Forwards, for Blood!"): ("Partial", "Advance reroll detected; Blood Surge reroll/leading-only clauses not enforced."),
+        ("WE", "Forwards, for Blood!"): ("Supported", "Leading: re-roll Advance rolls and the Blood Surge D6."),
         ("WE", "Bloody Fury"): ("Partial", "Charge reroll detected; closest-target/ranged reroll clauses not enforced."),
         ("WE", "To Slake its Rage"): ("Supported", "Advance-and-charge eligibility."),
         ("WE", "Idol of Blessed Blood"): ("Supported", "Adds an extra Blessings die for each on-battlefield model with this ability."),
@@ -1004,6 +1004,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("WE", "Lord of the Eightbound"): ("Partial", "Deep Strike/Scouts 6\" detected; attachment requirement not enforced."),
         ("WE", "Rage Embodied (Aura)"): ("Supported", "+1 melee Attacks aura within 6\" for BLOOD LEGIONS."),
         ("WE", "Daemon Lord of Khorne (Aura)"): ("Supported", "+1 to hit in melee aura within 6\" for BLOOD LEGIONS."),
+        ("WE", "Blood Surge"): ("Supported", "Opponent Shooting phase: optional D6+2\" move toward closest non-AIRCRAFT enemy; blocked if Battle-shocked/engaged; once per phase."),
         ("SM", "Tempormortis"): ("Supported", "Fights First while leading a unit."),
         ("SM", "Pack Leader"): ("Supported", "Unit cannot be your Warlord or be given Enhancements."),
     }

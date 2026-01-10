@@ -847,6 +847,9 @@ class GameView:
         # Genestealer Cults: Cult Ambush prompt queues
         self._pending_cult_ambush_queue = []
         self._pending_cult_ambush_marker_queue = []
+        # World Eaters: Blood Surge prompt queue
+        self._pending_blood_surge_queue = []
+        self._blood_surge_flow_active = False
         try:
             if self.game and getattr(self.game, "event_system", None) is not None:
                 self.game.event_system.subscribe("battle_round_started", self._on_battle_round_started)
@@ -879,6 +882,8 @@ class GameView:
                 self.game.event_system.subscribe("emperors_children_pact_points_updated", self._on_emperors_children_pact_points_updated)
                 # Drukhari: Power from Pain prompt when a unit can be empowered
                 self.game.event_system.subscribe("pain_token_prompt", self._on_pain_token_prompt)
+                # World Eaters: Blood Surge prompt on opponent shooting casualties
+                self.game.event_system.subscribe("blood_surge_prompt", self._on_blood_surge_prompt)
                 # Quarry re-pick when quarry is destroyed
                 self.game.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_for_monarch_of_the_hunt)
                 # Battle Focus reactive prompts (Opportunity Seized / Fade Back)
@@ -2059,6 +2064,94 @@ class GameView:
         except Exception:
             self._pain_flow_active = False
             self._open_next_pain_prompt(game_ctx)
+
+    # ---------------- Blood Surge prompts ----------------
+
+    def _on_blood_surge_prompt(self, player=None, unit=None, attacker_unit=None, game=None, **_kwargs):
+        if player is None or unit is None:
+            return
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return
+        except Exception:
+            return
+
+        if self._blood_surge_flow_active:
+            self._pending_blood_surge_queue.append((player, unit, attacker_unit, game))
+            return
+        self._pending_blood_surge_queue.append((player, unit, attacker_unit, game))
+        self._open_next_blood_surge_prompt(game or self.game)
+
+    def _open_next_blood_surge_prompt(self, game):
+        q = list(getattr(self, "_pending_blood_surge_queue", []) or [])
+        if not q:
+            self._pending_blood_surge_queue = []
+            self._blood_surge_flow_active = False
+            return
+        player, unit, attacker_unit, game_ctx = q.pop(0)
+        self._pending_blood_surge_queue = q
+
+        game_ctx = game_ctx or game or self.game
+        if player is None or unit is None or game_ctx is None:
+            self._open_next_blood_surge_prompt(game_ctx)
+            return
+
+        try:
+            if not unit.can_blood_surge(game=game_ctx, game_map=getattr(game_ctx, "map", None)):
+                self._open_next_blood_surge_prompt(game_ctx)
+                return
+        except Exception:
+            self._open_next_blood_surge_prompt(game_ctx)
+            return
+
+        attacker_name = getattr(attacker_unit, "name", "Enemy unit")
+        title = "Blood Surge"
+        msg = (
+            f"{attacker_name} destroyed models in {getattr(unit, 'name', 'unit')}.\n\n"
+            "Blood Surge: Move D6+2\" as close as possible to the closest non-AIRCRAFT enemy unit.\n"
+            "This unit cannot Blood Surge while Battle-shocked or within Engagement Range."
+        )
+
+        def _done(choice: bool):
+            if not choice:
+                self._blood_surge_flow_active = False
+                self._open_next_blood_surge_prompt(game_ctx)
+                return
+
+            try:
+                max_distance = int(game_ctx.roll_blood_surge_distance(unit) or 0)
+            except Exception:
+                max_distance = 0
+            if max_distance <= 0:
+                self._blood_surge_flow_active = False
+                self._open_next_blood_surge_prompt(game_ctx)
+                return
+
+            def _move_done(completed: bool):
+                try:
+                    if completed:
+                        unit.mark_blood_surge_used(game_ctx)
+                except Exception:
+                    pass
+                self._blood_surge_flow_active = False
+                self._open_next_blood_surge_prompt(game_ctx)
+
+            try:
+                self.individual_model_movement_dialog.show(
+                    unit, "blood_surge", _move_done, game_ctx.map, max_distance
+                )
+                self.dialog_manager.open(self.individual_model_movement_dialog, modal=True)
+            except Exception:
+                self._blood_surge_flow_active = False
+                self._open_next_blood_surge_prompt(game_ctx)
+
+        self._blood_surge_flow_active = True
+        try:
+            self.yes_no_dialog.show(title, msg, _done, yes_label="Surge", no_label="Skip")
+            self.dialog_manager.open(self.yes_no_dialog, modal=True)
+        except Exception:
+            self._blood_surge_flow_active = False
+            self._open_next_blood_surge_prompt(game_ctx)
 
     def _on_oath_of_moment_prompt(self, player=None, game=None, **_kwargs):
         """Prompt human players to select an Oath of Moment target at Command phase start."""
@@ -3926,6 +4019,8 @@ class GameView:
             title = "Advance Roll"
         elif rt == "charge":
             title = "Charge Roll"
+        elif rt in ("blood_surge", "blood surge"):
+            title = "Blood Surge Roll"
         elif rt == "hit":
             title = "Hit Roll"
         elif rt == "wound":
@@ -7144,6 +7239,7 @@ class GameView:
                             'advance': MovementType.ADVANCE,
                             'fall_back': MovementType.FALL_BACK,
                             'charge': MovementType.CHARGE,
+                            'blood_surge': MovementType.BLOOD_SURGE,
                             'scout': MovementType.SCOUT,
                             'pile_in': MovementType.PILE_IN,
                             'consolidate': MovementType.CONSOLIDATE
