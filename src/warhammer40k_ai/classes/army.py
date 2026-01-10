@@ -1073,6 +1073,14 @@ class Army:
         if not astartes_units:
             return
 
+        committed_chapter = None
+        try:
+            mgr = getattr(self, "space_marines_detachments", None)
+            if mgr is not None:
+                committed_chapter = getattr(mgr, "get_committed_chapter_keyword", lambda: None)()
+        except Exception:
+            committed_chapter = None
+
         chapter_present = set()
         unexpected_keywords: dict[str, list[str]] = {}
 
@@ -1113,18 +1121,39 @@ class Army:
                 + "."
             )
 
+        if committed_chapter:
+            chapter_present.add(committed_chapter)
+
         if len(chapter_present) > 1:
             raise ArmyValidationError(
                 f"Space Marine armies cannot include units from more than one Chapter ({sorted(chapter_present)})."
             )
 
-        has_black_templars = any(_unit_has_keyword(u, "BLACK TEMPLARS") for u in astartes_units)
-        has_deathwatch = any(_unit_has_keyword(u, "DEATHWATCH") for u in astartes_units)
-        has_space_wolves = any(_unit_has_keyword(u, "SPACE WOLVES") for u in astartes_units)
+        has_black_templars = bool(committed_chapter == "BLACK TEMPLARS") or any(
+            _unit_has_keyword(u, "BLACK TEMPLARS") for u in astartes_units
+        )
+        has_deathwatch = bool(committed_chapter == "DEATHWATCH") or any(
+            _unit_has_keyword(u, "DEATHWATCH") for u in astartes_units
+        )
+        has_space_wolves = bool(committed_chapter == "SPACE WOLVES") or any(
+            _unit_has_keyword(u, "SPACE WOLVES") for u in astartes_units
+        )
 
         bt_banned = {_norm_name(n) for n in BLACK_TEMPLARS_FORBIDDEN_UNITS}
         dw_banned = {_norm_name(n) for n in DEATHWATCH_FORBIDDEN_UNITS}
         sw_banned = {_norm_name(n) for n in SPACE_WOLVES_FORBIDDEN_UNITS}
+
+        if has_black_templars:
+            try:
+                mgr = getattr(self, "space_marines_detachments", None)
+                if mgr is not None and mgr.detachment_matches("1st Company Task Force"):
+                    raise ArmyValidationError(
+                        "Black Templars armies cannot use the 1st Company Task Force detachment."
+                    )
+            except ArmyValidationError:
+                raise
+            except Exception:
+                raise ArmyValidationError("Failed validating Black Templars detachment restrictions.")
 
         for unit in list(getattr(self, "units", []) or []):
             unit_name = getattr(unit, "name", "Unknown")

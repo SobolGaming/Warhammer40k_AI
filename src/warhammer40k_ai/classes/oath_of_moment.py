@@ -29,6 +29,12 @@ class OathOfMomentManager:
     def _army_has_oath(self) -> bool:
         if self.army is None:
             return False
+        try:
+            mgr = getattr(self.army, "templar_vows", None)
+            if mgr is not None and getattr(mgr, "_army_has_vows", lambda: False)():
+                return False
+        except Exception:
+            pass
         if not army_has_ability_id(self.army, ABILITY_OATH_OF_MOMENT):
             return False
         try:

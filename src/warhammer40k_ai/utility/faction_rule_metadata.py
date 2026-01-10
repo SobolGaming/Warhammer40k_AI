@@ -113,8 +113,7 @@ FACTION_RULE_METADATA: dict[str, dict[str, object]] = {
     },
     "SM": {
         "faction_name": "Space Marines",
-        "army_rules": ["Oath of Moment", "Templar Vows (Black Templars)"],
+        "army_rules": ["Oath of Moment", "Templar Vows"],
         "restrictions": ["Space Marine Chapters", "Deathwatch"],
     },
 }
-

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from ..utility.ability_support import ABILITY_TEMPLAR_VOWS, army_has_ability_id
+import re
 
 
 @dataclass(frozen=True)
@@ -47,7 +48,40 @@ class TemplarVowsManager:
     def _army_has_vows(self) -> bool:
         if self.army is None:
             return False
-        return army_has_ability_id(self.army, ABILITY_TEMPLAR_VOWS)
+        if not army_has_ability_id(self.army, ABILITY_TEMPLAR_VOWS):
+            return False
+        return self._army_is_black_templars()
+
+    def _army_is_black_templars(self) -> bool:
+        if self.army is None:
+            return False
+        try:
+            mgr = getattr(self.army, "space_marines_detachments", None)
+            if mgr is not None and getattr(mgr, "get_committed_chapter_keyword", lambda: None)() == "BLACK TEMPLARS":
+                return True
+        except Exception:
+            pass
+        try:
+            for unit in list(getattr(self.army, "units", []) or []):
+                if unit.has_any_keyword("BLACK TEMPLARS"):
+                    return True
+        except Exception:
+            pass
+        def _norm(text: str) -> str:
+            t = re.sub(r"[^a-z0-9 ]+", " ", str(text or "").lower())
+            return re.sub(r"\s+", " ", t).strip()
+        try:
+            if _norm(getattr(self.army, "faction", "")) == "black templars":
+                return True
+        except Exception:
+            pass
+        try:
+            det = _norm(getattr(self.army, "detachment_type", ""))
+            if det in {"black templars", "righteous crusaders", "righteous crusade"}:
+                return True
+        except Exception:
+            pass
+        return False
 
     def _unit_is_adeptus_astartes(self, unit) -> bool:
         if unit is None:
