@@ -1453,15 +1453,19 @@ class GameView:
             return
 
         try:
-            from ..classes.voice_of_command import ORDER_LIST
+            options = mgr.get_available_orders(officer)
         except Exception:
-            ORDER_LIST = []
+            try:
+                from ..classes.voice_of_command import ORDER_LIST
+                options = list(ORDER_LIST or [])
+            except Exception:
+                options = []
         skip_choice = SimpleNamespace(
             key="SKIP",
             name="Skip orders",
             summary="Do not issue an order with this officer right now.",
         )
-        options = [skip_choice] + list(ORDER_LIST or [])
+        options = [skip_choice] + list(options or [])
 
         def _on_confirm(choice):
             key = str(getattr(choice, "key", "") or "").strip().upper()

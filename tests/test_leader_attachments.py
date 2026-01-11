@@ -2,6 +2,7 @@ import unittest
 
 from warhammer40k_ai.classes.unit import Unit
 from warhammer40k_ai.classes.army import Army
+from warhammer40k_ai.classes.ability import Ability
 
 
 class _DummyPlayer:
@@ -11,11 +12,11 @@ class _DummyPlayer:
 
 
 class _DummyDatasheet:
-    def __init__(self, name: str, datasheet_id: str, attached_to=None):
+    def __init__(self, name: str, datasheet_id: str, attached_to=None, *, attached_to_names=None, keywords=None):
         self.name = name
         self.id = datasheet_id
         self.faction_data = {"name": "TestFaction"}
-        self.keywords = []
+        self.keywords = list(keywords or [])
         self.faction_keywords = []
         self.datasheets_unit_composition = []
         self.datasheets_models_cost = []
@@ -23,6 +24,7 @@ class _DummyDatasheet:
         self.datasheets_options = []
         self.datasheets_abilities = []
         self.attached_to = attached_to or []
+        self.attached_to_names = attached_to_names or []
         self.transport = ""
         self.damaged_w = ""
         self.damaged_description = ""
@@ -188,8 +190,65 @@ class TestLeaderAttachments(unittest.TestCase):
         self.assertIsNone(getattr(leader, "attached_to", None))
         self.assertNotIn(leader, bg.attached_leaders)
 
+    def test_attached_unit_rule_allows_attachment(self):
+        leader_ds = _DummyDatasheet(
+            "Leader",
+            "L1",
+            attached_to=["BASE"],
+            attached_to_names=["Base Unit"],
+            keywords=["CAPTAIN", "CHARACTER"],
+        )
+        bodyguard_ds = _DummyDatasheet("Bodyguard", "BG1")
+        leader = _TestUnit(leader_ds)
+        bodyguard = _TestUnit(bodyguard_ds)
+
+        bodyguard.possible_abilities = [
+            Ability(
+                "Attached Unit",
+                "",
+                "If a CAPTAIN model from your army with the Leader ability can be attached to a Base Unit unit, it can be attached to this unit instead.",
+                "",
+            )
+        ]
+
+        army = Army(faction="Test", detachment_type="Test", points_limit=2000)
+        army.player = _DummyPlayer()
+        army.units = [leader, bodyguard]
+        for u in army.units:
+            u.parent_army = army
+
+        self.assertTrue(leader.can_attach_to(bodyguard))
+
+    def test_attached_unit_rule_requires_keyword(self):
+        leader_ds = _DummyDatasheet(
+            "Leader",
+            "L1",
+            attached_to=["BASE"],
+            attached_to_names=["Base Unit"],
+            keywords=["LIEUTENANT"],
+        )
+        bodyguard_ds = _DummyDatasheet("Bodyguard", "BG1")
+        leader = _TestUnit(leader_ds)
+        bodyguard = _TestUnit(bodyguard_ds)
+
+        bodyguard.possible_abilities = [
+            Ability(
+                "Attached Unit",
+                "",
+                "If a CAPTAIN model from your army with the Leader ability can be attached to a Base Unit unit, it can be attached to this unit instead.",
+                "",
+            )
+        ]
+
+        army = Army(faction="Test", detachment_type="Test", points_limit=2000)
+        army.player = _DummyPlayer()
+        army.units = [leader, bodyguard]
+        for u in army.units:
+            u.parent_army = army
+
+        self.assertFalse(leader.can_attach_to(bodyguard))
+
 
 if __name__ == "__main__":
     unittest.main()
-
 

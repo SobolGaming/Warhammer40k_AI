@@ -1140,6 +1140,8 @@ def _classify_ability(
         return desc_support
     common_support = _bearer_unit_common_support(description)
     transport_support = _transport_disembark_support(description)
+    orders_support = _orders_section_support(name, description)
+    attached_unit_support = _attached_unit_support(name, description)
 
     fid = str(faction_id or "").strip().upper()
     name_norm = _norm(name)
@@ -1159,6 +1161,10 @@ def _classify_ability(
         return common_support
     if transport_support:
         return transport_support
+    if orders_support:
+        return orders_support
+    if attached_unit_support:
+        return attached_unit_support
     return ("Not implemented", "")
 
 
@@ -1238,6 +1244,27 @@ def _transport_disembark_support(description: str) -> Optional[Tuple[str, str]]:
     if notes:
         return ("Supported", " ".join(notes))
     return None
+
+
+def _orders_section_support(name: str, description: str) -> Optional[Tuple[str, str]]:
+    if _norm(name) != "orders":
+        return None
+    note = "Orders section parsed for Voice of Command (count, eligible keywords, and order limits)."
+    if description:
+        text = _strip_html(description)
+        if text:
+            return ("Supported", note)
+    return ("Supported", note)
+
+
+def _attached_unit_support(name: str, description: str) -> Optional[Tuple[str, str]]:
+    if _norm(name) != "attached unit":
+        return None
+    note = "Attached Unit section parsed to extend leader attachment eligibility."
+    text = _strip_html(description).lower()
+    if "gains the" in text:
+        return ("Partial", f"{note} Additional leader-gain effects not implemented.")
+    return ("Supported", note)
 
 
 def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str, str]:

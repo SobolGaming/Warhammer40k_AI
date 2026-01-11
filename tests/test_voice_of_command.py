@@ -139,9 +139,73 @@ class TestVoiceOfCommand(unittest.TestCase):
             abilities=[_Ability("Orders", "This model can issue 2 orders to REGIMENT or SQUADRON units within 6\".")],
         )
         mgr = VoiceOfCommandManager()
-        count, keywords = mgr._parse_orders_profile(officer)
+        count, keywords, allowed = mgr._parse_orders_profile(officer)
         self.assertEqual(count, 2)
         self.assertEqual(keywords, ["REGIMENT", "SQUADRON"])
+        self.assertEqual(allowed, [])
+
+    def test_orders_profile_parsing_variants(self):
+        from warhammer40k_ai.classes.voice_of_command import VoiceOfCommandManager
+
+        cases = [
+            (
+                "This OFFICER can issue up to 2 Orders to REGIMENT or GAUNT\u2019S GHOSTS units.",
+                2,
+                ["REGIMENT", "GAUNT'S GHOSTS"],
+            ),
+            (
+                "This OFFICER can issue up to 3 Orders to: REGIMENT units SQUADRON units TITANIC units",
+                3,
+                ["REGIMENT", "SQUADRON", "TITANIC"],
+            ),
+            ("This Officer can issue 1 Order to a CATACHAN JUNGLE FIGHTERS unit.", 1, ["CATACHAN JUNGLE FIGHTERS"]),
+            ("This unit\u2019s OFFICER can issue 2 Orders to REGIMENT units.", 2, ["REGIMENT"]),
+        ]
+        mgr = VoiceOfCommandManager()
+        for text, expected_count, expected_keywords in cases:
+            officer = _UnitStub("Officer", abilities=[_Ability("ORDERS", text)])
+            count, keywords, allowed = mgr._parse_orders_profile(officer)
+            self.assertEqual(count, expected_count)
+            self.assertEqual(keywords, expected_keywords)
+            self.assertEqual(allowed, [])
+
+    def test_orders_profile_restricted_orders(self):
+        from warhammer40k_ai.classes.voice_of_command import VoiceOfCommandManager, ORDER_DUTY_HONOUR, ORDER_FIX_BAYONETS, ORDER_TAKE_AIM
+
+        orders_text = (
+            "This OFFICER can issue 1 Order to a REGIMENT unit. "
+            "This OFFICER can only issue the Duty and Honour! and Fix Bayonets! Orders."
+        )
+        army = _ArmyStub()
+        mgr = VoiceOfCommandManager(army)
+        mgr._army_has_voice = lambda: True
+        army.voice_of_command = mgr
+
+        officer = _UnitStub(
+            "Officer",
+            keywords=["OFFICER", "ASTRA MILITARUM"],
+            abilities=[_Ability("Voice of Command"), _Ability("Orders", orders_text)],
+            army=army,
+        )
+        target = _UnitStub(
+            "Infantry",
+            keywords=["REGIMENT", "ASTRA MILITARUM"],
+            abilities=[],
+            army=army,
+        )
+        army.units = [officer, target]
+        officer.set_parent_army(army)
+        target.set_parent_army(army)
+
+        game = SimpleNamespace(turn=1, map=_MapStub([officer, target]))
+        army.player.game = game
+
+        self.assertEqual(
+            [o.key for o in mgr.get_available_orders(officer)],
+            [ORDER_FIX_BAYONETS.key, ORDER_DUTY_HONOUR.key],
+        )
+        self.assertFalse(mgr.issue_order(game, officer, target, ORDER_TAKE_AIM.key, phase_name="COMMAND_PHASE"))
+        self.assertTrue(mgr.issue_order(game, officer, target, ORDER_DUTY_HONOUR.key, phase_name="COMMAND_PHASE"))
 
     def test_move_order_increases_movement_and_consumes_order(self):
         from warhammer40k_ai.classes.voice_of_command import VoiceOfCommandManager, ORDER_MOVE

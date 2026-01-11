@@ -143,13 +143,23 @@ class VoiceOfCommandManager:
     def _strip_html(self, text: str) -> str:
         raw = re.sub(r"<[^>]+>", " ", str(text or ""))
         raw = html.unescape(raw)
-        raw = raw.replace("’", "'")
+        raw = raw.replace("\u2019", "'").replace("\u2018", "'")
+        raw = raw.replace("ƒ?T", "'")
         raw = re.sub(r"\s+", " ", raw).strip()
         return raw
 
-    def _parse_orders_profile(self, unit) -> tuple[int, list[str]]:
+    def _normalize_order_text(self, text: str) -> str:
+        clean = self._strip_html(text)
+        clean = clean.replace("\u2019", "'").replace("\u2018", "'")
+        clean = clean.lower()
+        clean = re.sub(r"[^a-z0-9\s']", " ", clean)
+        clean = re.sub(r"\s+", " ", clean).strip()
+        return clean
+
+    def _parse_orders_profile(self, unit) -> tuple[int, list[str], list[str]]:
         count = 1
         keywords: list[str] = []
+        allowed_order_keys: list[str] = []
         for ab in (list(getattr(unit, "possible_abilities", []) or []) + list(getattr(unit, "abilities", []) or [])):
             try:
                 name = ab if isinstance(ab, str) else getattr(ab, "name", "")
@@ -157,19 +167,45 @@ class VoiceOfCommandManager:
                     continue
                 desc = ab if isinstance(ab, str) else getattr(ab, "description", "")
                 text = self._strip_html(desc)
-                m = re.search(r"issue\s+(\d+)\s+orders?", text, flags=re.IGNORECASE)
+                m = re.search(r"issue\s+(?:up\s+to\s+)?(\d+)\s+orders?", text, flags=re.IGNORECASE)
                 if m:
                     count = int(m.group(1))
-                m = re.search(r"orders?\s+to\s+(.+?)\s+units", text, flags=re.IGNORECASE)
-                if m:
-                    seg = m.group(1)
+                target_match = re.search(r"orders?\s+to\s*:?\s*(.+?)(?:\.|$)", text, flags=re.IGNORECASE)
+                if target_match:
+                    seg = target_match.group(1)
+                    seg = re.split(r"\bwithin\b", seg, maxsplit=1, flags=re.IGNORECASE)[0]
+                    seg = seg.replace(":", " ")
                     seg = re.sub(r"\b(friendly|eligible)\b", "", seg, flags=re.IGNORECASE)
-                    parts = re.split(r",|\bor\b|\band\b", seg, flags=re.IGNORECASE)
-                    keywords = [p.strip().upper() for p in parts if p.strip()]
+                    raw_parts = re.split(r"\bunits?\b", seg, flags=re.IGNORECASE)
+                    parsed: list[str] = []
+                    for part in raw_parts:
+                        part = part.strip(" ,;:")
+                        if not part:
+                            continue
+                        part = re.sub(r"^(?:a|an|the)\s+", "", part, flags=re.IGNORECASE)
+                        for token in re.split(r",|\bor\b|\band\b", part, flags=re.IGNORECASE):
+                            token = token.strip()
+                            if token:
+                                parsed.append(token.upper())
+                    seen = set()
+                    keywords = []
+                    for item in parsed:
+                        if item in seen:
+                            continue
+                        seen.add(item)
+                        keywords.append(item)
+                if "can only issue" in text.lower():
+                    norm_text = self._normalize_order_text(text)
+                    allowed = []
+                    for order in ORDER_LIST:
+                        name_norm = self._normalize_order_text(order.name)
+                        if name_norm and name_norm in norm_text:
+                            allowed.append(order.key)
+                    allowed_order_keys = allowed
                 break
             except Exception:
                 continue
-        return count, keywords
+        return count, keywords, allowed_order_keys
 
     def _order_issued_state(self, unit, battle_round: int) -> int:
         sr = getattr(unit, "special_rules", None)
@@ -197,7 +233,7 @@ class VoiceOfCommandManager:
         unit.special_rules = sr
 
     def orders_remaining(self, unit, battle_round: int) -> int:
-        count, _ = self._parse_orders_profile(unit)
+        count, _, _ = self._parse_orders_profile(unit)
         issued = self._order_issued_state(unit, battle_round)
         return max(0, int(count) - int(issued))
 
@@ -271,7 +307,7 @@ class VoiceOfCommandManager:
         if game_map is None:
             return []
 
-        _, keywords = self._parse_orders_profile(officer_unit)
+        _, keywords, _ = self._parse_orders_profile(officer_unit)
         keywords = [k for k in (keywords or []) if k]
 
         out = []
@@ -329,6 +365,18 @@ class VoiceOfCommandManager:
             unit.remove_characteristic_modifiers_by_source("voice_of_command:")
         except Exception:
             pass
+
+    def get_available_orders(self, officer_unit) -> list[Order]:
+        if officer_unit is None:
+            return list(ORDER_LIST)
+        _, _, allowed = self._parse_orders_profile(officer_unit)
+        if not allowed:
+            return list(ORDER_LIST)
+        out: list[Order] = []
+        for order in ORDER_LIST:
+            if order.key in allowed:
+                out.append(order)
+        return out
 
     def clear_orders_for_player(self, player) -> None:
         if player is None:
@@ -407,6 +455,9 @@ class VoiceOfCommandManager:
         order_key = str(order_key or "").strip().upper()
         if order_key not in ORDER_BY_KEY:
             return False
+        allowed = self._parse_orders_profile(officer_unit)[2]
+        if allowed and order_key not in allowed:
+            return False
         try:
             battle_round = int(getattr(game, "turn", 0) or 0)
         except Exception:
@@ -459,7 +510,10 @@ class VoiceOfCommandManager:
                 battle_round = 0
             remaining = self.orders_remaining(officer, battle_round)
             while remaining > 0:
-                order = random.choice(ORDER_LIST)
+                available_orders = self.get_available_orders(officer)
+                if not available_orders:
+                    break
+                order = random.choice(available_orders)
                 targets = self.get_eligible_targets(officer, game=game, order_key=order.key)
                 if not targets:
                     break

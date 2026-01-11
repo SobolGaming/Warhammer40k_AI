@@ -208,7 +208,19 @@ class WahaHelper:
             if 'faction_id' in datasheet and datasheet['faction_id'] in self.factions:
                 datasheet['faction_data'] = self.factions[datasheet['faction_id']]
             if 'id' in datasheet and datasheet['id'] in self.datasheets_leaders:
-                datasheet['attached_to'] = self.datasheets_leaders[datasheet['id']]
+                attached_ids = list(self.datasheets_leaders[datasheet['id']])
+                datasheet['attached_to'] = attached_ids
+                attached_names = []
+                seen_names = set()
+                for aid in attached_ids:
+                    name = self.datasheets.get(aid, {}).get('name')
+                    if not name:
+                        continue
+                    if name in seen_names:
+                        continue
+                    seen_names.add(name)
+                    attached_names.append(name)
+                datasheet['attached_to_names'] = attached_names
 
     def strip_special_chars(self, text: str) -> str:
         # Normalize unicode characters

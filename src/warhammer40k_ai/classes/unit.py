@@ -23,6 +23,7 @@ from .status_effects import StatusEffect, BattleShockEffect
 import uuid
 import copy
 import re
+import html
 import numpy as np
 import math
 from enum import Enum, auto
@@ -108,6 +109,7 @@ class Unit:
 
         # Attachments
         self.can_be_attached_to = getattr(datasheet, 'attached_to', [])
+        self.can_be_attached_to_names = getattr(datasheet, 'attached_to_names', [])
         # For Bodyguard units: track Leaders attached to this unit (in 10e, this forms an Attached Unit).
         # We keep the Leader units as real units for combat/abilities, but UI + movement can treat the group as one.
         self.attached_leaders: List['Unit'] = []
@@ -3388,6 +3390,121 @@ class Unit:
             pass
         return max_leaders
 
+    def _normalize_attached_unit_name(self, text: str) -> str:
+        raw = html.unescape(str(text or ""))
+        raw = raw.replace("\u2019", "'").replace("\u2018", "'")
+        raw = re.sub(r"<[^>]+>", " ", raw)
+        raw = re.sub(r"[^a-z0-9]+", " ", raw.lower())
+        return re.sub(r"\s+", " ", raw).strip()
+
+    def _leader_can_attach_to_unit_name(self, unit_name: str) -> bool:
+        target = self._normalize_attached_unit_name(unit_name)
+        if not target:
+            return False
+        names = getattr(self, "can_be_attached_to_names", []) or []
+        for name in names:
+            if self._normalize_attached_unit_name(name) == target:
+                return True
+        army = self.get_parent_army()
+        if army is None:
+            return False
+        allowed = set(getattr(self, "can_be_attached_to", []) or [])
+        for unit in list(getattr(army, "units", []) or []):
+            try:
+                dsid = unit.get_datasheet_id()
+            except Exception:
+                dsid = None
+            if not dsid or dsid not in allowed:
+                continue
+            if self._normalize_attached_unit_name(getattr(unit, "name", "")) == target:
+                return True
+        return False
+
+    def _parse_attached_unit_rule(self, text: str) -> tuple[list[str], list[str], list[str]]:
+        cleaned = html.unescape(str(text or ""))
+        cleaned = cleaned.replace("\u2019", "'").replace("\u2018", "'")
+        cleaned = re.sub(r"<[^>]+>", " ", cleaned)
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        if not cleaned:
+            return [], [], []
+
+        match = re.search(
+            r"if a (.+?) (?:model|unit) from your army.*?can be attached to (.+)",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        if not match:
+            match = re.search(
+                r"if a (.+?) from your army.*?can be attached to (.+)",
+                cleaned,
+                flags=re.IGNORECASE,
+            )
+        if not match:
+            return [], [], []
+
+        leader_clause = match.group(1)
+        base_clause = match.group(2)
+
+        base_clause = re.split(r"\bit can\b", base_clause, maxsplit=1, flags=re.IGNORECASE)[0]
+        base_clause = base_clause.split(".", 1)[0].strip()
+        base_names: list[str] = []
+        for part in re.split(r"\bor\b", base_clause, flags=re.IGNORECASE):
+            part = part.strip(" ,;.")
+            part = re.sub(r"^(?:an?|the)\s+", "", part, flags=re.IGNORECASE)
+            part = re.sub(r"\bunit\b\s*$", "", part, flags=re.IGNORECASE)
+            part = part.strip(" ,;.")
+            if part:
+                base_names.append(part)
+
+        excluded: list[str] = []
+        excl_match = re.search(r"excluding\s+([^)]+)", leader_clause, flags=re.IGNORECASE)
+        if excl_match:
+            excl_clause = excl_match.group(1)
+            excluded = [
+                token.strip().upper()
+                for token in re.split(r"\bor\b|\band\b|,", excl_clause, flags=re.IGNORECASE)
+                if token.strip()
+            ]
+            leader_clause = leader_clause[:excl_match.start()].strip()
+
+        leader_clause = re.sub(r"\bunit\b|\bmodel\b", "", leader_clause, flags=re.IGNORECASE)
+        leader_clause = leader_clause.replace("(", " ").replace(")", " ")
+        leader_clause = re.sub(r"\s+", " ", leader_clause).strip()
+        leader_keywords = [
+            token.strip().upper()
+            for token in re.split(r"\bor\b|\band\b|,", leader_clause, flags=re.IGNORECASE)
+            if token.strip()
+        ]
+
+        return leader_keywords, base_names, excluded
+
+    def _can_attach_via_attached_unit_rule(self, bodyguard: "Unit") -> bool:
+        if bodyguard is None:
+            return False
+        abilities = list(getattr(bodyguard, "possible_abilities", []) or [])
+        for ab in abilities:
+            try:
+                name = ab if isinstance(ab, str) else getattr(ab, "name", "")
+            except Exception:
+                name = ""
+            if "attached unit" not in str(name or "").lower():
+                continue
+            try:
+                desc = ab if isinstance(ab, str) else getattr(ab, "description", "")
+            except Exception:
+                desc = ""
+            leader_keywords, base_names, excluded = self._parse_attached_unit_rule(desc)
+            if not base_names or not leader_keywords:
+                continue
+            if excluded and any(self.has_any_keyword(k) for k in excluded):
+                continue
+            if not any(self.has_any_keyword(k) for k in leader_keywords):
+                continue
+            for base_name in base_names:
+                if self._leader_can_attach_to_unit_name(base_name):
+                    return True
+        return False
+
     def can_attach_to(self, bodyguard: 'Unit') -> bool:
         """Validate basic 10e attachment eligibility using Wahapedia leader linkage data."""
         if not self.is_leader:
@@ -3416,7 +3533,9 @@ class Unit:
             bodyguard_id = None
         if not bodyguard_id:
             return False
-        return bodyguard_id in allowed
+        if bodyguard_id in allowed:
+            return True
+        return self._can_attach_via_attached_unit_rule(bodyguard)
 
     def attach_to_unit(self, bodyguard: 'Unit') -> None:
         """Attach this Leader to a Bodyguard unit (Declare Battle Formations)."""
