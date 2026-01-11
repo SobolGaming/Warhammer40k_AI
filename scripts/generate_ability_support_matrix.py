@@ -598,6 +598,8 @@ def _unit_composition_support(entries: Sequence[dict]) -> Tuple[str, str]:
         if not desc:
             continue
         dlow = desc.strip().rstrip(".").lower()
+        if dlow in ("or", "or:"):
+            continue
         if dlow.startswith("this unit can contain a maximum of "):
             continue
         if dlow.endswith("models maximum"):
