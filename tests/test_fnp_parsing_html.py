@@ -32,6 +32,9 @@ class MockDatasheet:
 
 def test_fnp_parses_html_description():
     unit = Unit(MockDatasheet())
+    # Wargear abilities only apply when the wargear is equipped.
+    for model in unit.models:
+        model.optional_wargear.append("Brass Collar of Bloody Vengeance")
     fnps = unit.has_feel_no_pain()
     assert fnps
     assert any(

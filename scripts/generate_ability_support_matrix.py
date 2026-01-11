@@ -1110,19 +1110,27 @@ def _classify_ability(
     desc_support = _warlord_enhancement_restriction_support(description)
     if desc_support:
         return desc_support
+    common_support = _bearer_unit_common_support(description)
+    transport_support = _transport_disembark_support(description)
 
     fid = str(faction_id or "").strip().upper()
     name_norm = _norm(name)
     dsid = str(datasheet_id or "").strip()
+    ambiguous_name = False
     if name_norm and dsid:
         key = (fid, name_norm, dsid)
         if key in ABILITY_SUPPORT_BY_NAME_FACTION_DS:
             return ABILITY_SUPPORT_BY_NAME_FACTION_DS[key]
         for k_fid, k_name, _k_ds in ABILITY_SUPPORT_BY_NAME_FACTION_DS.keys():
             if k_fid == fid and k_name == name_norm:
-                return ("Not implemented", "")
-    if name_norm and (fid, name_norm) in ABILITY_SUPPORT_BY_NAME_FACTION:
+                ambiguous_name = True
+                break
+    if name_norm and (not ambiguous_name) and (fid, name_norm) in ABILITY_SUPPORT_BY_NAME_FACTION:
         return ABILITY_SUPPORT_BY_NAME_FACTION[(fid, name_norm)]
+    if common_support:
+        return common_support
+    if transport_support:
+        return transport_support
     return ("Not implemented", "")
 
 
@@ -1140,6 +1148,68 @@ def _warlord_enhancement_restriction_support(description: str) -> Optional[Tuple
     if not (warlord_re.search(low) and enh_re.search(low)):
         return None
     return ("Supported", "Unit cannot be your Warlord or be given Enhancements.")
+
+
+def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    low = text.lower()
+    notes: List[str] = []
+
+    m = re.search(
+        r"add\s+(\d+)\s+to\s+charge\s+rolls?\s+made\s+for\s+the\s+bearer'?s\s+unit",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        notes.append(f"Charge rolls for bearer's unit get +{m.group(1)}.")
+
+    m = re.search(
+        r"models\s+in\s+the\s+bearer'?s\s+unit\s+have\s+a\s+leadership\s+characteristic\s+of\s+(\d+)\+?",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        notes.append(f"Bearer's unit Leadership set to {m.group(1)}+.")
+
+    if notes:
+        return ("Supported", " ".join(notes))
+    return None
+
+
+def _transport_disembark_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    low = text.lower()
+    notes: List[str] = []
+
+    if (
+        "disembark" in low
+        and "after it has made a normal move" in low
+        and ("eligible to declare a charge" in low or "can declare a charge" in low)
+    ):
+        notes.append("Disembark after Normal move and still eligible to charge.")
+
+    if (
+        "disembark" in low
+        and "after it has advanced" in low
+        and "cannot declare a charge" in low
+    ):
+        notes.append("Disembark after Advance; counts as Normal move; cannot charge.")
+
+    if notes:
+        return ("Supported", " ".join(notes))
+    return None
 
 
 def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str, str]:

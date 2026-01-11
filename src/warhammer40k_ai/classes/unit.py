@@ -53,8 +53,9 @@ class UnitRoundState:
     # Transport / Embark / Disembark tracking
     embarked_this_round: bool = False
     disembarked_this_round: bool = False
-    disembarked_from_moved_transport: bool = False  # Counts as Normal move, cannot move further or charge this turn
-    disembarked_from_destroyed_transport: bool = False  # Counts as Normal move, cannot charge this turn
+    disembarked_from_moved_transport: bool = False  # Counts as Normal move, cannot move further this turn
+    disembarked_from_destroyed_transport: bool = False  # Counts as Normal move; typically cannot charge
+    disembarked_cannot_charge: bool = False  # Explicit "cannot charge" override after disembark
     # Mission actions
     performing_action_name: Optional[str] = None
     action_started_turn: Optional[int] = None
@@ -175,6 +176,12 @@ class Unit:
         # Parse unit-level mustering restrictions encoded on datasheet abilities.
         try:
             self._parse_warlord_enhancement_restrictions()
+        except Exception:
+            # Defensive: never block unit construction due to unsupported/unknown text patterns.
+            pass
+        # Parse common bearer-unit effects (charge bonuses, Leadership set).
+        try:
+            self._refresh_bearer_unit_common_modifiers()
         except Exception:
             # Defensive: never block unit construction due to unsupported/unknown text patterns.
             pass
@@ -596,6 +603,14 @@ class Unit:
 
     _CANNOT_BE_WARLORD_RE = re.compile(r"\bcannot be your\s+warlord\b", re.IGNORECASE)
     _CANNOT_BE_GIVEN_ENHANCEMENTS_RE = re.compile(r"\bcannot be given\s+(?:an?\s+)?enhancements?\b", re.IGNORECASE)
+    _BEARER_UNIT_CHARGE_BONUS_RE = re.compile(
+        r"add\s+(\d+)\s+to\s+charge\s+rolls?\s+made\s+for\s+the\s+bearer'?s\s+unit",
+        re.IGNORECASE,
+    )
+    _BEARER_UNIT_LEADERSHIP_SET_RE = re.compile(
+        r"models\s+in\s+the\s+bearer'?s\s+unit\s+have\s+a\s+leadership\s+characteristic\s+of\s+(\d+)\+?",
+        re.IGNORECASE,
+    )
 
     def _parse_warlord_enhancement_restrictions(self) -> None:
         """Parse datasheet abilities that forbid Warlord selection or Enhancements."""
@@ -649,6 +664,150 @@ class Unit:
             self.special_rules["cannot_be_warlord"] = True
         if found_enhancements:
             self.special_rules["cannot_be_given_enhancements"] = True
+
+    def _refresh_bearer_unit_common_modifiers(self) -> None:
+        """Parse common bearer-unit rules that grant charge bonuses or set Leadership."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+
+        # Clear prior bearer-unit modifiers from all attached members.
+        for u in members:
+            try:
+                u.remove_characteristic_modifiers_by_source("ability:bearer_unit_leadership")
+            except Exception:
+                pass
+            try:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                existing = sr.get("charge_roll_modifiers")
+                if isinstance(existing, list):
+                    kept = []
+                    for item in existing:
+                        if isinstance(item, dict) and item.get("tag") == "ability:bearer_unit_charge_bonus":
+                            continue
+                        kept.append(item)
+                    if kept:
+                        sr["charge_roll_modifiers"] = kept
+                    elif "charge_roll_modifiers" in sr:
+                        del sr["charge_roll_modifiers"]
+                u.special_rules = sr
+            except Exception:
+                pass
+
+        seen = set()
+        charge_mods: list[tuple[int, str]] = []
+        leadership_sets: list[tuple[int, str]] = []
+
+        for u in members:
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                key = (
+                    str(name or "").strip().lower(),
+                    u._normalize_rules_text(desc or "").lower(),
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                text = u._normalize_rules_text(desc or name or "")
+                if not text:
+                    continue
+                text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+
+                m = self._BEARER_UNIT_CHARGE_BONUS_RE.search(text)
+                if m:
+                    try:
+                        val = int(m.group(1))
+                    except Exception:
+                        val = None
+                    if val:
+                        source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
+                        charge_mods.append((val, source))
+
+                m = self._BEARER_UNIT_LEADERSHIP_SET_RE.search(text)
+                if m:
+                    try:
+                        val = int(m.group(1))
+                    except Exception:
+                        val = None
+                    if val:
+                        source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
+                        leadership_sets.append((val, source))
+
+        if charge_mods:
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                mods = list(sr.get("charge_roll_modifiers", []) or [])
+                for val, source in charge_mods:
+                    mods.append({
+                        "value": int(val),
+                        "source": source,
+                        "tag": "ability:bearer_unit_charge_bonus",
+                    })
+                sr["charge_roll_modifiers"] = mods
+                u.special_rules = sr
+
+        if leadership_sets:
+            from ..utility.modifiers import Modifier, ModifierOp
+
+            for u in members:
+                for val, source in leadership_sets:
+                    u.add_characteristic_modifier(
+                        "leadership",
+                        Modifier(ModifierOp.SET, int(val), source=f"ability:bearer_unit_leadership:{source}"),
+                    )
+
+    def _transport_disembark_rules(self) -> dict:
+        """
+        Detect transport abilities that modify disembark behavior (Assault Ramp/Vehicle patterns).
+
+        Returns:
+            dict with keys:
+              - allow_after_advance (bool): can disembark after transport Advanced
+              - allow_charge_after_normal_move (bool): can charge after disembarking from a Normal move
+        """
+        cache_key = "transport_disembark_rules"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        rules = {
+            "allow_after_advance": False,
+            "allow_charge_after_normal_move": False,
+        }
+
+        for name, desc in self._iter_ability_entries_for_rules(model=None):
+            text = self._normalize_rules_text(desc or name or "")
+            if not text:
+                continue
+            low = text.lower()
+
+            # Assault Ramp: disembark after Normal move and still eligible to charge.
+            if (
+                "disembark" in low
+                and "after it has made a normal move" in low
+                and ("eligible to declare a charge" in low or "can declare a charge" in low)
+            ):
+                rules["allow_charge_after_normal_move"] = True
+
+            # Assault Vehicle: disembark after Advance, counts as Normal move, cannot charge.
+            if (
+                "disembark" in low
+                and "after it has advanced" in low
+                and "cannot declare a charge" in low
+            ):
+                rules["allow_after_advance"] = True
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = rules
+        return rules
 
     def _parse_attribute(self, attribute_value: str) -> int:
         # Remove " and + from the attribute value
@@ -1593,6 +1752,16 @@ class Unit:
             # Apply any post-locks to the model after successfully taking this option
             _apply_post_locks(model)
             _mark_model_took_any_option(model)
+
+        # Wargear selection can activate/deactivate wargear abilities.
+        try:
+            self._invalidate_ability_cache()
+        except Exception:
+            pass
+        try:
+            self._refresh_bearer_unit_common_modifiers()
+        except Exception:
+            pass
 
     def apply_wargear_options(self, wargear_name: Optional[str] = None) -> None:
         """
@@ -3244,6 +3413,14 @@ class Unit:
             bodyguard._parse_against_attack_characteristic_defensive_rules()
         except Exception:
             pass
+        try:
+            self._refresh_bearer_unit_common_modifiers()
+        except Exception:
+            pass
+        try:
+            bodyguard._refresh_bearer_unit_common_modifiers()
+        except Exception:
+            pass
 
     def detach_from_unit(self) -> None:
         """Detach this Leader from its Bodyguard unit."""
@@ -3277,6 +3454,15 @@ class Unit:
         try:
             if bodyguard is not None:
                 bodyguard._parse_against_attack_characteristic_defensive_rules()
+        except Exception:
+            pass
+        try:
+            self._refresh_bearer_unit_common_modifiers()
+        except Exception:
+            pass
+        try:
+            if bodyguard is not None:
+                bodyguard._refresh_bearer_unit_common_modifiers()
         except Exception:
             pass
 
@@ -4011,11 +4197,40 @@ class Unit:
 
     def _ability_is_active(self, ability) -> bool:
         """Return True if the ability is currently active for this unit."""
-        if not self._ability_requires_leading(ability):
-            if self._ability_requires_not_leading(ability):
-                return not bool(getattr(self, "is_attached_leader", False))
-            return True
-        return bool(getattr(self, "is_attached_leader", False))
+        if self._ability_requires_leading(ability):
+            if not bool(getattr(self, "is_attached_leader", False)):
+                return False
+        elif self._ability_requires_not_leading(ability):
+            if bool(getattr(self, "is_attached_leader", False)):
+                return False
+
+        # Wargear abilities only apply if the wargear is equipped.
+        try:
+            atype = str(getattr(ability, "type", "") or "").lower()
+            if "wargear" in atype:
+                return self._has_wargear_named(getattr(ability, "name", ""))
+        except Exception:
+            pass
+        return True
+
+    def _has_wargear_named(self, name: str) -> bool:
+        want = Unit._norm_wargear_name(name)
+        if not want:
+            return False
+        for model in list(getattr(self, "models", []) or []):
+            try:
+                for wg in list(getattr(model, "wargear", []) or []):
+                    if wg and Unit._norm_wargear_name(getattr(wg, "name", "")) == want:
+                        return True
+            except Exception:
+                pass
+            try:
+                for ow in list(getattr(model, "optional_wargear", []) or []):
+                    if Unit._norm_wargear_name(str(ow or "")) == want:
+                        return True
+            except Exception:
+                continue
+        return False
 
     def _iter_active_possible_abilities(self):
         """Yield unit-level abilities that are currently active for this unit."""
@@ -8600,8 +8815,8 @@ class Unit:
 
         - Normally: set up wholly within 3" of the transport and not within engagement range.
         - If the transport moved normally this phase: this unit counts as having made a Normal move,
-          cannot move further this turn, and cannot declare a charge this turn.
-        - Cannot disembark after the transport Advanced or Fell Back this turn.
+          cannot move further this turn; charge eligibility depends on transport rules (e.g. Assault Ramp).
+        - Cannot disembark after the transport Advanced or Fell Back this turn unless a rule allows it.
         - Destroyed transport: immediate disembark; mortal wounds; battle-shock; counts as Normal move; cannot charge.
         - Emergency disembarkation (only on destroyed transport when 3" setup is impossible):
           set up wholly within 6"; harsher mortals; models that cannot be set up are destroyed.
@@ -8623,11 +8838,24 @@ class Unit:
             print(f"❌ {self.name} is not embarked in a transport")
             return False
 
+        transport_rules = {}
+        try:
+            transport_rules = transport_unit._transport_disembark_rules()
+        except Exception:
+            transport_rules = {}
+        allow_after_advance = bool(transport_rules.get("allow_after_advance", False))
+        allow_charge_after_normal_move = bool(transport_rules.get("allow_charge_after_normal_move", False))
+
         # Transport state restrictions for normal disembark
         if not destroyed_transport:
-            if getattr(transport_unit.round_state, "advanced_this_round", False) or getattr(transport_unit.round_state, "fell_back_this_round", False):
-                print(f"❌ {self.name} cannot disembark: {transport_unit.name} Advanced/Fell Back this turn")
+            if getattr(transport_unit.round_state, "advanced_this_round", False):
+                if not allow_after_advance:
+                    print(f"??O {self.name} cannot disembark: {transport_unit.name} Advanced this turn")
+                    return False
+            if getattr(transport_unit.round_state, "fell_back_this_round", False):
+                print(f"??O {self.name} cannot disembark: {transport_unit.name} Fell Back this turn")
                 return False
+
 
         # Determine transport base reference (alive transport uses its current model base)
         transport_base = None
@@ -8725,6 +8953,7 @@ class Unit:
                 # Emergency disembarkation from a destroyed transport still applies destroyed-transport effects
                 self.round_state.disembarked_this_round = True
                 self.round_state.disembarked_from_destroyed_transport = True
+                self.round_state.disembarked_cannot_charge = True
                 self.round_state.moved_this_round = True
                 self.round_state.remained_stationary_this_round = False
                 try:
@@ -8812,6 +9041,7 @@ class Unit:
         # Apply moved/charge restrictions depending on cause
         if destroyed_transport:
             self.round_state.disembarked_from_destroyed_transport = True
+            self.round_state.disembarked_cannot_charge = True
             self.round_state.moved_this_round = True
             self.round_state.remained_stationary_this_round = False
             # Battle-shock until next Command phase
@@ -8833,13 +9063,25 @@ class Unit:
             except Exception:
                 pass
         else:
-            # If the transport moved normally this phase, disembarking unit counts as having made a Normal move,
-            # cannot move further and cannot charge.
-            if getattr(transport_unit.round_state, "moved_this_round", False) and not getattr(transport_unit.round_state, "remained_stationary_this_round", False):
-                if not getattr(transport_unit.round_state, "advanced_this_round", False) and not getattr(transport_unit.round_state, "fell_back_this_round", False):
-                    self.round_state.disembarked_from_moved_transport = True
-                    self.round_state.moved_this_round = True
-                    self.round_state.remained_stationary_this_round = False
+            moved_this_round = bool(getattr(transport_unit.round_state, "moved_this_round", False))
+            remained_stationary = bool(getattr(transport_unit.round_state, "remained_stationary_this_round", False))
+            advanced = bool(getattr(transport_unit.round_state, "advanced_this_round", False))
+            fell_back = bool(getattr(transport_unit.round_state, "fell_back_this_round", False))
+
+            if advanced and allow_after_advance:
+                # Assault Vehicle: counts as Normal move, cannot charge this turn.
+                self.round_state.disembarked_from_moved_transport = True
+                self.round_state.disembarked_cannot_charge = True
+                self.round_state.moved_this_round = True
+                self.round_state.remained_stationary_this_round = False
+            elif moved_this_round and not remained_stationary and not advanced and not fell_back:
+                # Normal moved transport disembark: counts as Normal move, no further move; charge depends on Assault Ramp.
+                self.round_state.disembarked_from_moved_transport = True
+                self.round_state.moved_this_round = True
+                self.round_state.remained_stationary_this_round = False
+                if not allow_charge_after_normal_move:
+                    self.round_state.disembarked_cannot_charge = True
+
 
         return True
 
@@ -9789,8 +10031,10 @@ class Unit:
         if self.round_state.advanced_this_round and not self.can_charge_after_advance():
             return False
 
-        # Transport disembark restrictions (10th ed core)
-        if getattr(self.round_state, "disembarked_from_moved_transport", False) or getattr(self.round_state, "disembarked_from_destroyed_transport", False):
+        # Transport disembark restrictions (10th ed core + Assault Ramp/Vehicle overrides)
+        if getattr(self.round_state, "disembarked_cannot_charge", False):
+            return False
+        if getattr(self.round_state, "disembarked_from_destroyed_transport", False):
             return False
             
         if self.round_state.fell_back_this_round and not self.can_charge_after_fall_back():

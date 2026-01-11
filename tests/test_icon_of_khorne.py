@@ -82,6 +82,8 @@ class TestIconOfKhorne(unittest.TestCase):
     def test_bloodshed_point_on_enemy_unit_destroyed(self):
         game, we_army, enemy_army = self._make_game()
         attacker = self._make_unit("Jakhals", ability_names=["Icon of Khorne"])
+        attacker.models[0].optional_wargear.append("Icon of Khorne")
+        attacker._refresh_bearer_unit_common_modifiers()
         enemy = self._make_unit("Enemy", faction_name="Enemy", faction_keywords=["ENEMY"])
 
         we_army.add_unit(attacker)
@@ -94,6 +96,8 @@ class TestIconOfKhorne(unittest.TestCase):
     def test_no_bloodshed_point_on_friendly_destroy(self):
         game, we_army, _enemy_army = self._make_game()
         attacker = self._make_unit("Jakhals", ability_names=["Icon of Khorne"])
+        attacker.models[0].optional_wargear.append("Icon of Khorne")
+        attacker._refresh_bearer_unit_common_modifiers()
         friendly = self._make_unit("Berserkers", ability_names=[])
 
         we_army.add_unit(attacker)
@@ -111,6 +115,7 @@ class TestIconOfKhorne(unittest.TestCase):
             ability_names=["Icon of Khorne"],
             attached_to=["Bodyguard"],
         )
+        leader.models[0].optional_wargear.append("Icon of Khorne")
         enemy = self._make_unit("Enemy", faction_name="Enemy", faction_keywords=["ENEMY"])
 
         bodyguard.attached_leaders.append(leader)
