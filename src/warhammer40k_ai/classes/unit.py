@@ -2312,7 +2312,30 @@ class Unit:
 
             # Prefer Fight on Death when engaged; otherwise try Shoot on Death.
             did_fight = False
-            if self.has_fight_on_death():
+            try:
+                sr = getattr(self, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("pain_fight_on_death_2plus"):
+                    if not bool(getattr(self.round_state, "fought_this_phase", False)):
+                        wp = getattr(self, "_last_destroyed_by_weapon_profile", None)
+                        is_melee = False
+                        try:
+                            parent = getattr(wp, "parent_wargear", None)
+                            is_melee = bool(parent is not None and parent.is_melee())
+                        except Exception:
+                            is_melee = False
+                        if is_melee:
+                            roll = int(get_roll("D6"))
+                            try:
+                                from ..utility.event_bus import append_dice
+                                pn = self.get_parent_army().player.name
+                                append_dice(pn, f"Mindless Killing Machines roll: {roll} for {self.name}")
+                            except Exception:
+                                pass
+                            if roll >= 2:
+                                did_fight = self._try_fight_on_death(model=model, game_map=game_map)
+            except Exception:
+                pass
+            if (not did_fight) and self.has_fight_on_death():
                 did_fight = self._try_fight_on_death(model=model, game_map=game_map)
 
             if (not did_fight) and self.has_shoot_on_death():
@@ -4372,6 +4395,20 @@ class Unit:
             if bool(getattr(self, "is_attached_leader", False)):
                 return False
 
+        # Power from Pain: pain abilities only apply while the unit is Empowered.
+        try:
+            name = ""
+            if isinstance(ability, str):
+                name = ability
+            else:
+                name = getattr(ability, "name", "") or ""
+            if "(pain)" in str(name or "").lower():
+                sr = getattr(self, "special_rules", None)
+                if not (isinstance(sr, dict) and sr.get("pain_empowered")):
+                    return False
+        except Exception:
+            pass
+
         # Wargear abilities only apply if the wargear is equipped.
         try:
             atype = str(getattr(ability, "type", "") or "").lower()
@@ -5091,6 +5128,20 @@ class Unit:
             advance_roll = None
             miracle_used = False
             try:
+                sr = getattr(self, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("pain_advance_no_roll"):
+                    fixed = int(sr.get("pain_advance_fixed_bonus", 0) or 0)
+                    self.round_state.advance_roll = fixed
+                    try:
+                        from ..utility.event_bus import append_dice
+                        pn = self.get_parent_army().player.name
+                        append_dice(pn, f"Advance roll fixed: {fixed} for {self.name}")
+                    except Exception:
+                        pass
+                    return fixed
+            except Exception:
+                pass
+            try:
                 army = self.get_parent_army()
                 mgr = getattr(army, "acts_of_faith", None) if army is not None else None
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
@@ -5554,8 +5605,25 @@ class Unit:
 
         # If advancing, use stored advance roll or roll new one
         if advance:
+            pain_fixed = None
+            try:
+                sr = getattr(self, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("pain_advance_no_roll"):
+                    pain_fixed = int(sr.get("pain_advance_fixed_bonus", 0) or 0)
+            except Exception:
+                pain_fixed = None
+
             # Use stored advance roll if available, otherwise roll new one
-            if not hasattr(self.round_state, 'advance_roll') or self.round_state.advance_roll is None:
+            if pain_fixed is not None:
+                advance_roll = pain_fixed
+                self.round_state.advance_roll = advance_roll
+                try:
+                    from ..utility.event_bus import append_dice
+                    pn = self.get_parent_army().player.name
+                    append_dice(pn, f"Advance roll fixed: {advance_roll} for {self.name}")
+                except Exception:
+                    pass
+            elif not hasattr(self.round_state, 'advance_roll') or self.round_state.advance_roll is None:
                 advance_roll = None
                 miracle_used = False
                 try:
@@ -6657,6 +6725,12 @@ class Unit:
                 return True
         except Exception:
             pass
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("pain_charge_after_advance"):
+                return True
+        except Exception:
+            pass
         has_ability = self.has_advance_and_charge()
         #print(f"🔍 {self.name} can_charge_after_advance check: {has_ability}")
         return has_ability
@@ -6665,6 +6739,12 @@ class Unit:
         """Check if this unit can charge after falling back."""
         if self.has_thrill_seekers():
             return True
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("pain_charge_after_fall_back"):
+                return True
+        except Exception:
+            pass
         try:
             army = self.get_parent_army()
             mgr = getattr(army, "templar_vows", None) if army is not None else None
@@ -9013,6 +9093,12 @@ class Unit:
             transport_rules = {}
         allow_after_advance = bool(transport_rules.get("allow_after_advance", False))
         allow_charge_after_normal_move = bool(transport_rules.get("allow_charge_after_normal_move", False))
+        try:
+            sr = getattr(transport_unit, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("pain_rapid_deployment_active"):
+                allow_after_advance = True
+        except Exception:
+            pass
 
         # Transport state restrictions for normal disembark
         if not destroyed_transport:
@@ -10188,6 +10274,18 @@ class Unit:
                         if game.get_current_player().name == owner and int(getattr(game, "turn", 0) or 0) == turn:
                             return False
                     except Exception:
+                        return False
+        except Exception:
+            pass
+
+        # Swooping Descent: arriving within 9" denies charges until end of turn.
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("pain_swooping_descent_no_charge_turn_owner"):
+                owner = str(sr.get("pain_swooping_descent_no_charge_turn_owner") or "")
+                turn = int(sr.get("pain_swooping_descent_no_charge_turn", 0) or 0)
+                if owner and game is not None:
+                    if game.get_current_player().name == owner and int(getattr(game, "turn", 0) or 0) == turn:
                         return False
         except Exception:
             pass
@@ -11555,6 +11653,46 @@ class Unit:
             pass
         try:
             setattr(self, "_reserves_edge_touch_this_turn", bool(edge_touch))
+        except Exception:
+            pass
+
+        # Swooping Descent: if set up within 9" of an enemy, cannot charge until end of turn.
+        try:
+            sr = getattr(self, "special_rules", None)
+            pain_min = float(sr.get("pain_deep_strike_min_distance", 0) or 0) if isinstance(sr, dict) else 0.0
+            if pain_min and game_map is not None:
+                from ..utility.aura_utils import horizontal_distance_between_bases_2d
+                within_nine = False
+                for enemy in list(game_map.get_enemy_units(self) or []):
+                    try:
+                        if not getattr(enemy, "is_alive", lambda: True)():
+                            continue
+                        if not getattr(enemy, "deployed", True):
+                            continue
+                    except Exception:
+                        continue
+                    for em in list(getattr(enemy, "models", []) or []):
+                        if not getattr(em, "is_alive", True):
+                            continue
+                        for m in list(getattr(self, "models", []) or []):
+                            if not getattr(m, "is_alive", True):
+                                continue
+                            if float(horizontal_distance_between_bases_2d(m.model_base, em.model_base)) <= 9.0 + 1e-6:
+                                within_nine = True
+                                break
+                        if within_nine:
+                            break
+                    if within_nine:
+                        break
+                if within_nine:
+                    try:
+                        owner = self.get_parent_army().player.name
+                    except Exception:
+                        owner = ""
+                    sr["pain_swooping_descent_no_charge_turn"] = int(turn or 0)
+                    if owner:
+                        sr["pain_swooping_descent_no_charge_turn_owner"] = owner
+                    self.special_rules = sr
         except Exception:
             pass
         

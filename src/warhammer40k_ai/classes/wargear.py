@@ -507,6 +507,9 @@ class WargearProfile:
         try:
             if self.parent_wargear and self.parent_wargear.is_ranged():
                 sr = getattr(attacker.parent_unit, "special_rules", None)
+                bonus = int(sr.get("pain_ranged_ap_bonus", 0) or 0) if isinstance(sr, dict) else 0
+                if bonus:
+                    ap_val -= bonus
                 bonus = int(sr.get("bondsman_ap_bonus_ranged", 0) or 0) if isinstance(sr, dict) else 0
                 if bonus:
                     ap_val -= bonus
@@ -683,6 +686,26 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Drukhari: Power from Pain (Battlefield Butchery) - +1A (melee).
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                bonus = int(getattr(attacker.parent_unit, "special_rules", {}).get("pain_melee_attacks_bonus", 0) or 0)
+                if bonus:
+                    atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="power_from_pain:melee_attacks_add"))
+                    attack_result.attacks_special_modifiers.append(f"Power from Pain +{bonus}A (melee)")
+        except Exception:
+            pass
+
+        # Drukhari: Power from Pain (Experimental Enhancements) - set Attacks for non-CHARACTER melee weapons.
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee() and not bool(getattr(attacker, "is_character", False)):
+                set_val = int(getattr(attacker.parent_unit, "special_rules", {}).get("pain_melee_attacks_set_non_character", 0) or 0)
+                if set_val:
+                    atk_mods.append(Modifier(ModifierOp.SET, int(set_val), source="power_from_pain:melee_attacks_set"))
+                    attack_result.attacks_special_modifiers.append(f"Power from Pain set Attacks {set_val} (non-character melee)")
+        except Exception:
+            pass
+
         # Damaged profile: add attacks to melee weapons (+N).
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():
@@ -741,7 +764,26 @@ class WargearProfile:
             )
         
         # Apply attack modifiers
-        if closest_dist <= (self.range.max / 2) and self.is_rapid_fire():
+        applied_pain_rapid_fire = False
+        try:
+            sr = getattr(attacker.parent_unit, "special_rules", None)
+            bonuses = dict(sr.get("pain_rapid_fire_weapon_bonus", {}) or {}) if isinstance(sr, dict) else {}
+            if bonuses and self.parent_wargear and self.parent_wargear.is_ranged() and closest_dist <= (self.range.max / 2):
+                parent_name = str(getattr(self.parent_wargear, "name", "") or "").strip().lower()
+                matched = None
+                for key, val in bonuses.items():
+                    key_norm = str(key or "").strip().lower()
+                    if key_norm and key_norm in parent_name:
+                        matched = (key_norm, int(val or 0))
+                        break
+                if matched and matched[1]:
+                    attack_result.attacks_special_modifiers.append(f"Power from Pain Rapid Fire +{matched[1]} ({matched[0]})")
+                    atk_mods.append(Modifier(ModifierOp.ADD, int(matched[1]), source="power_from_pain:rapid_fire"))
+                    applied_pain_rapid_fire = True
+        except Exception:
+            applied_pain_rapid_fire = False
+
+        if (not applied_pain_rapid_fire) and closest_dist <= (self.range.max / 2) and self.is_rapid_fire():
             # Support Rapid Fire N / Rapid Fire D3 / Rapid Fire D6+X, etc.
             try:
                 rf = self.get_rapid_fire_bonus()
@@ -877,7 +919,13 @@ class WargearProfile:
             except Exception:
                 precision_from_templar_vows = False
 
-            if (self.is_precision() or precision_from_epic_challenge or precision_from_templar_vows) and game_map is not None:
+            precision_from_assassins = False
+            try:
+                precision_from_assassins = bool(self._assassins_poisons_applies(attacker))
+            except Exception:
+                precision_from_assassins = False
+
+            if (self.is_precision() or precision_from_epic_challenge or precision_from_templar_vows or precision_from_assassins) and game_map is not None:
                 try:
                     root = target.get_attached_unit_root()
                 except Exception:
@@ -993,7 +1041,15 @@ class WargearProfile:
                     attack_result.models_killed += 1
         
         # Handle hazardous weapon effects
-        if self.is_hazardous():
+        hazardous_active = self.is_hazardous()
+        try:
+            sr = getattr(attacker.parent_unit, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("pain_melee_hazardous_non_character"):
+                if self.parent_wargear and self.parent_wargear.is_melee() and not bool(getattr(attacker, "is_character", False)):
+                    hazardous_active = True
+        except Exception:
+            pass
+        if hazardous_active:
             # Provide reroll callback for hazardous test
             def _reroll_hazard():
                 new_roll = get_roll("D6")
@@ -1037,6 +1093,11 @@ class WargearProfile:
                     all_models = root_unit.get_models_for_collision()
                 except Exception:
                     all_models = list(getattr(root_unit, "models", []) or [])
+                try:
+                    root_sr = getattr(root_unit, "special_rules", None)
+                    pain_hazardous = isinstance(root_sr, dict) and root_sr.get("pain_melee_hazardous_non_character")
+                except Exception:
+                    pain_hazardous = False
                 for m in all_models:
                     try:
                         if not getattr(m, "is_alive", True):
@@ -1051,6 +1112,14 @@ class WargearProfile:
                                     break
                             if has_hazardous:
                                 break
+                        if not has_hazardous and pain_hazardous and not bool(getattr(m, "is_character", False)):
+                            for wg in (getattr(m, "wargear", []) or []):
+                                try:
+                                    if wg.is_melee():
+                                        has_hazardous = True
+                                        break
+                                except Exception:
+                                    continue
                         if has_hazardous:
                             eligible.append(m)
                     except Exception:
@@ -1166,6 +1235,25 @@ class WargearProfile:
         except Exception:
             pass
         hit_result['base_skill'] = base_skill
+
+        # Drukhari: ignore cover from Deadly Retinue or Nowhere to Hide (Pain).
+        try:
+            is_ranged = bool(getattr(self.parent_wargear, "is_ranged", lambda: False)())
+        except Exception:
+            is_ranged = False
+        if is_ranged:
+            try:
+                sr = getattr(attacker.parent_unit, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("pain_ignores_cover_ranged"):
+                    attack_instance["ignores_cover"] = True
+            except Exception:
+                pass
+            try:
+                tsr = getattr(target, "special_rules", None)
+                if isinstance(tsr, dict) and tsr.get("pain_no_cover_active"):
+                    attack_instance["ignores_cover"] = True
+            except Exception:
+                pass
         
         # Torrent auto-hits (in case of Overwatch it ignores 6+ restrictions)
         if self.is_torrent():
@@ -1266,6 +1354,14 @@ class WargearProfile:
             if hasattr(target, "has_first_prince_tzeentch_defense") and target.has_first_prince_tzeentch_defense():
                 dice_modifier -= 1
                 hit_result['modifiers'].append("-1 from First Prince of Chaos (Tzeentch)")
+        except Exception:
+            pass
+        # Drukhari: Agonising Suppression (Pain) applies -1 to hit for suppressed units.
+        try:
+            sr = getattr(attacker.parent_unit, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("pain_suppressed_active"):
+                dice_modifier -= 1
+                hit_result['modifiers'].append("-1 from Agonising Suppression (suppressed)")
         except Exception:
             pass
         try:
@@ -1825,6 +1921,149 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Drukhari: Power from Pain (Winged Strike) re-roll Hit rolls for ranged attacks (optional).
+        try:
+            if "reroll" not in hit_result:
+                is_ranged = bool(getattr(self.parent_wargear, "is_ranged", lambda: False)())
+                if is_ranged:
+                    sr = getattr(attacker.parent_unit, "special_rules", None)
+                    if isinstance(sr, dict) and sr.get("pain_reroll_hit_ranged"):
+                        try:
+                            success = (dice_roll != 1) and (self.skill > 0) and (dice_roll >= final_needed)
+                        except Exception:
+                            success = False
+                        do_reroll = False
+                        try:
+                            unit = attacker.parent_unit
+                            game = unit.get_parent_army().player.game
+                            player = unit.get_parent_army().player
+                            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                            provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                        except Exception:
+                            is_human = False
+                            provider = None
+                            player = None
+                        if is_human and callable(provider):
+                            try:
+                                do_reroll = bool(provider(
+                                    player=player,
+                                    unit=unit,
+                                    roll_type="hit",
+                                    value=dice_roll,
+                                    dice=None,
+                                    needed=final_needed,
+                                    success=success,
+                                    reason="Power from Pain (Winged Strike)",
+                                ))
+                            except Exception:
+                                do_reroll = False
+                        else:
+                            do_reroll = (not success)
+                        if do_reroll:
+                            rr = _reroll_hit()
+                            hit_result.setdefault("special_effects", []).append("Power from Pain: re-roll Hit roll (ranged)")
+                            hit_result["reroll"] = rr
+                            dice_roll = rr
+                            reroll_used = True
+        except Exception:
+            pass
+
+        # Drukhari: Power from Pain (Goaded Savagery) re-roll Hit rolls for non-character melee attacks (optional).
+        try:
+            if "reroll" not in hit_result:
+                is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+                if is_melee and not bool(getattr(attacker, "is_character", False)):
+                    sr = getattr(attacker.parent_unit, "special_rules", None)
+                    if isinstance(sr, dict) and sr.get("pain_beast_reroll_hit"):
+                        try:
+                            success = (dice_roll != 1) and (self.skill > 0) and (dice_roll >= final_needed)
+                        except Exception:
+                            success = False
+                        do_reroll = False
+                        try:
+                            unit = attacker.parent_unit
+                            game = unit.get_parent_army().player.game
+                            player = unit.get_parent_army().player
+                            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                            provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                        except Exception:
+                            is_human = False
+                            provider = None
+                            player = None
+                        if is_human and callable(provider):
+                            try:
+                                do_reroll = bool(provider(
+                                    player=player,
+                                    unit=unit,
+                                    roll_type="hit",
+                                    value=dice_roll,
+                                    dice=None,
+                                    needed=final_needed,
+                                    success=success,
+                                    reason="Power from Pain (Goaded Savagery)",
+                                ))
+                            except Exception:
+                                do_reroll = False
+                        else:
+                            do_reroll = (not success)
+                        if do_reroll:
+                            rr = _reroll_hit()
+                            hit_result.setdefault("special_effects", []).append("Power from Pain: re-roll Hit roll (beast melee)")
+                            hit_result["reroll"] = rr
+                            dice_roll = rr
+                            reroll_used = True
+        except Exception:
+            pass
+
+        # Drukhari: Power from Pain (Splinter Racks) re-roll Hit rolls with Anti weapons (optional).
+        try:
+            if "reroll" not in hit_result:
+                sr = getattr(attacker.parent_unit, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("pain_splinter_racks_active"):
+                    is_ranged = bool(getattr(self.parent_wargear, "is_ranged", lambda: False)())
+                    has_anti = bool(self.get_anti_specs())
+                    has_passengers = bool(getattr(attacker.parent_unit, "transport_passengers", []) or [])
+                    if is_ranged and has_anti and has_passengers:
+                        try:
+                            success = (dice_roll != 1) and (self.skill > 0) and (dice_roll >= final_needed)
+                        except Exception:
+                            success = False
+                        do_reroll = False
+                        try:
+                            unit = attacker.parent_unit
+                            game = unit.get_parent_army().player.game
+                            player = unit.get_parent_army().player
+                            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                            provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                        except Exception:
+                            is_human = False
+                            provider = None
+                            player = None
+                        if is_human and callable(provider):
+                            try:
+                                do_reroll = bool(provider(
+                                    player=player,
+                                    unit=unit,
+                                    roll_type="hit",
+                                    value=dice_roll,
+                                    dice=None,
+                                    needed=final_needed,
+                                    success=success,
+                                    reason="Power from Pain (Splinter Racks)",
+                                ))
+                            except Exception:
+                                do_reroll = False
+                        else:
+                            do_reroll = (not success)
+                        if do_reroll:
+                            rr = _reroll_hit()
+                            hit_result.setdefault("special_effects", []).append("Power from Pain: re-roll Hit roll (Splinter Racks)")
+                            hit_result["reroll"] = rr
+                            dice_roll = rr
+                            reroll_used = True
+        except Exception:
+            pass
+
         # Seductive Gambit: melee attacks can re-roll the Hit roll (optional).
         try:
             if "reroll" not in hit_result:
@@ -2005,6 +2244,15 @@ class WargearProfile:
             elif crit_threshold < 6:
                 hit_result['special_effects'].append(f"Critical hit ({crit_threshold}+)")
             attack_instance['crit_hit'] = True
+
+            try:
+                is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+            except Exception:
+                is_melee = False
+            try:
+                is_ranged = bool(getattr(self.parent_wargear, "is_ranged", lambda: False)())
+            except Exception:
+                is_ranged = False
             
             # WORLD EATERS: Blessings of Khorne keyword injection (melee-only).
             # - Warp Blades => Lethal Hits
@@ -2085,6 +2333,9 @@ class WargearProfile:
             pact_sustained = False
             exquisite_lethal = False
             exquisite_sustained = False
+            pain_lethal = False
+            pain_sustained = False
+            pain_sustained_value = 0
             try:
                 unit = getattr(attacker, "parent_unit", None)
                 army = unit.get_parent_army() if unit is not None else None
@@ -2121,12 +2372,42 @@ class WargearProfile:
                 pact_sustained = False
                 exquisite_lethal = False
                 exquisite_sustained = False
+            try:
+                sr = getattr(attacker.parent_unit, "special_rules", None)
+                if isinstance(sr, dict):
+                    if bool(sr.get("pain_lethal_hits")):
+                        pain_lethal = True
+                    if is_melee and bool(sr.get("pain_lethal_hits_melee")):
+                        pain_lethal = True
+                    if self._assassins_poisons_applies(attacker):
+                        pain_lethal = True
+                    pain_sustained_value = int(sr.get("pain_sustained_hits_value", 0) or 0)
+                    if is_ranged:
+                        target_is_vehicle = False
+                        try:
+                            target_is_vehicle = bool(getattr(target, "is_vehicle", False)) or bool(target.has_keyword("Vehicle"))
+                        except Exception:
+                            target_is_vehicle = bool(getattr(target, "is_vehicle", False))
+                        if target_is_vehicle:
+                            pain_sustained_value = max(
+                                int(sr.get("pain_sustained_hits_ranged_vs_vehicle", 0) or 0),
+                                int(pain_sustained_value or 0),
+                            )
+                        else:
+                            pain_sustained_value = max(
+                                int(sr.get("pain_sustained_hits_ranged_vs_non_vehicle", 0) or 0),
+                                int(pain_sustained_value or 0),
+                            )
+            except Exception:
+                pain_lethal = False
+                pain_sustained_value = 0
+            pain_sustained = bool(pain_sustained_value)
 
-            if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal or martial_katah_lethal or bondsman_lethal or pact_lethal or exquisite_lethal:
+            if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal or martial_katah_lethal or bondsman_lethal or pact_lethal or exquisite_lethal or pain_lethal:
                 hit_result['special_effects'].append("Lethal Hits")
                 attack_instance['lethal_hit'] = True
             # For Sustained Hits, do not override an existing Sustained Hits X on the weapon.
-            if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained:
+            if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained:
                 # Support Sustained Hits X / Sustained Hits D3 / etc. Roll per critical hit.
                 if self.is_sustained_hits():
                     try:
@@ -2138,8 +2419,12 @@ class WargearProfile:
                         hit_result['special_effects'].append("Sustained Hits (+1)")
                         attack_instance['sustained_hit'] = 1
                 else:
+                    sustained_val = 1
                     label = "Sustained Hits (+1)"
-                    if blessings_sustained:
+                    if pain_sustained_value:
+                        sustained_val = max(int(sustained_val), int(pain_sustained_value))
+                        label = f"Sustained Hits (+{sustained_val}) [Power from Pain]"
+                    elif blessings_sustained:
                         label += " [Blessings of Khorne]"
                     elif dark_pacts_sustained:
                         label += " [Dark Pacts]"
@@ -2154,7 +2439,7 @@ class WargearProfile:
                     elif empowered_sustained:
                         label += " [Daemonic Empowerment]"
                     hit_result['special_effects'].append(label)
-                    attack_instance['sustained_hit'] = 1
+                    attack_instance['sustained_hit'] = sustained_val
             return hit_result
 
         # Normal hit resolution
@@ -2181,6 +2466,15 @@ class WargearProfile:
             return wound_result
 
         strength = self.strength
+        # Drukhari: Power from Pain (Macro-steroids) set melee Strength.
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                set_val = int(getattr(attacker.parent_unit, "special_rules", {}).get("pain_melee_strength_set", 0) or 0)
+                if set_val and isinstance(strength, int):
+                    strength = int(set_val)
+                    wound_result.setdefault("modifiers", []).append(f"Set Strength {set_val} from Power from Pain (melee)")
+        except Exception:
+            pass
         # Enhancement: improve melee weapons' Strength by X (bearer enhancement).
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():
@@ -2367,6 +2661,18 @@ class WargearProfile:
                     wound_result['modifiers'].append(f"+{w_bonus} to wound from Power from Pain (melee)")
         except Exception:
             pass
+        # Drukhari: Power from Pain (Deadly Retinue) - defensive wound penalty.
+        try:
+            is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+            if is_melee:
+                tsr = getattr(target, "special_rules", None)
+                if isinstance(tsr, dict):
+                    mod = int(tsr.get("pain_melee_wound_roll_defense_mod", 0) or 0)
+                    if mod:
+                        dice_modifier += int(mod)
+                        wound_result['modifiers'].append(f"{mod} to wound from Power from Pain (defense)")
+        except Exception:
+            pass
         # Harbingers of Dread: Doom (+1 to wound vs Battle-shocked targets).
         try:
             army = attacker.parent_unit.get_parent_army()
@@ -2548,6 +2854,169 @@ class WargearProfile:
                         wound_result["reroll"] = rr
                         dice_roll = rr
                         reroll_used = True
+        except Exception:
+            pass
+
+        pain_objective_reroll = False
+        try:
+            sr = getattr(attacker.parent_unit, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("pain_reroll_wound_full_if_objective"):
+                try:
+                    unit = attacker.parent_unit
+                    army = unit.get_parent_army() if unit is not None else None
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                except Exception:
+                    game = None
+                if game is not None and hasattr(game, "_unit_within_range_of_objective"):
+                    pain_objective_reroll = bool(game._unit_within_range_of_objective(target))
+        except Exception:
+            pain_objective_reroll = False
+
+        # Drukhari: Power from Pain (Sadistic Raiders) re-roll Wound roll if target is on an objective (optional).
+        try:
+            if pain_objective_reroll and "reroll" not in wound_result:
+                needed = 0
+                try:
+                    s_val = strength
+                    t_val = target_toughness
+                    if isinstance(s_val, int) and isinstance(t_val, int):
+                        if s_val >= 2 * t_val:
+                            needed = 2
+                        elif s_val > t_val:
+                            needed = 3
+                        elif s_val == t_val:
+                            needed = 4
+                        elif s_val * 2 <= t_val:
+                            needed = 6
+                        else:
+                            needed = 5
+                except Exception:
+                    needed = 0
+                final_needed = needed
+                try:
+                    final_needed = int(min(max(int(final_needed) - int(dice_modifier), 2), 6))
+                except Exception:
+                    pass
+                try:
+                    success = (dice_roll != 1) and (bool(final_needed) and dice_roll >= int(final_needed))
+                except Exception:
+                    success = False
+                do_reroll = False
+                try:
+                    unit = attacker.parent_unit
+                    game = unit.get_parent_army().player.game
+                    player = unit.get_parent_army().player
+                    is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                    provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                except Exception:
+                    is_human = False
+                    provider = None
+                    player = None
+                if is_human and callable(provider):
+                    try:
+                        do_reroll = bool(provider(
+                            player=player,
+                            unit=unit,
+                            roll_type="wound",
+                            value=dice_roll,
+                            dice=None,
+                            needed=final_needed,
+                            success=success,
+                            reason="Power from Pain (Sadistic Raiders)",
+                        ))
+                    except Exception:
+                        do_reroll = False
+                else:
+                    do_reroll = (not success)
+                if do_reroll:
+                    rr = _reroll_wound()
+                    wound_result.setdefault("special_effects", []).append("Power from Pain: re-roll Wound roll (objective)")
+                    wound_result["reroll"] = rr
+                    dice_roll = rr
+                    reroll_used = True
+        except Exception:
+            pass
+
+        # Drukhari: Power from Pain (Sadistic Raiders) re-roll Wound rolls of 1.
+        try:
+            if (not pain_objective_reroll) and dice_roll == 1 and "reroll" not in wound_result:
+                sr = getattr(attacker.parent_unit, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("pain_reroll_wound_ones"):
+                    rr = _reroll_wound()
+                    wound_result.setdefault("special_effects", []).append("Power from Pain: re-roll Wound roll of 1")
+                    wound_result["reroll_of_one"] = 1
+                    wound_result["reroll"] = rr
+                    dice_roll = rr
+                    reroll_used = True
+        except Exception:
+            pass
+
+        # Drukhari: Power from Pain (Goaded Savagery) re-roll Wound rolls for non-character melee attacks (optional).
+        try:
+            if "reroll" not in wound_result:
+                is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+                if is_melee and not bool(getattr(attacker, "is_character", False)):
+                    sr = getattr(attacker.parent_unit, "special_rules", None)
+                    if isinstance(sr, dict) and sr.get("pain_beast_reroll_wound"):
+                        needed = 0
+                        try:
+                            s_val = strength
+                            t_val = target_toughness
+                            if isinstance(s_val, int) and isinstance(t_val, int):
+                                if s_val >= 2 * t_val:
+                                    needed = 2
+                                elif s_val > t_val:
+                                    needed = 3
+                                elif s_val == t_val:
+                                    needed = 4
+                                elif s_val * 2 <= t_val:
+                                    needed = 6
+                                else:
+                                    needed = 5
+                        except Exception:
+                            needed = 0
+                        final_needed = needed
+                        try:
+                            final_needed = int(min(max(int(final_needed) - int(dice_modifier), 2), 6))
+                        except Exception:
+                            pass
+                        try:
+                            success = (dice_roll != 1) and (bool(final_needed) and dice_roll >= int(final_needed))
+                        except Exception:
+                            success = False
+                        do_reroll = False
+                        try:
+                            unit = attacker.parent_unit
+                            game = unit.get_parent_army().player.game
+                            player = unit.get_parent_army().player
+                            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                            provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                        except Exception:
+                            is_human = False
+                            provider = None
+                            player = None
+                        if is_human and callable(provider):
+                            try:
+                                do_reroll = bool(provider(
+                                    player=player,
+                                    unit=unit,
+                                    roll_type="wound",
+                                    value=dice_roll,
+                                    dice=None,
+                                    needed=final_needed,
+                                    success=success,
+                                    reason="Power from Pain (Goaded Savagery)",
+                                ))
+                            except Exception:
+                                do_reroll = False
+                        else:
+                            do_reroll = (not success)
+                        if do_reroll:
+                            rr = _reroll_wound()
+                            wound_result.setdefault("special_effects", []).append("Power from Pain: re-roll Wound roll (beast melee)")
+                            wound_result["reroll"] = rr
+                            dice_roll = rr
+                            reroll_used = True
         except Exception:
             pass
 
@@ -2985,6 +3454,25 @@ class WargearProfile:
                 except Exception:
                     return False
 
+            def _devastating_from_pain() -> bool:
+                """Drukhari: Decapitating Strikes (Pain) melee vs INFANTRY gains Devastating Wounds."""
+                try:
+                    is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+                except Exception:
+                    is_melee = False
+                if not is_melee:
+                    return False
+                try:
+                    if not target.has_keyword("Infantry"):
+                        return False
+                except Exception:
+                    return False
+                try:
+                    sr = getattr(attacker.parent_unit, "special_rules", None)
+                    return bool(isinstance(sr, dict) and sr.get("pain_devastating_vs_infantry"))
+                except Exception:
+                    return False
+
             # Natural 1 always fails
             if roll == 1:
                 return False
@@ -3000,7 +3488,7 @@ class WargearProfile:
                         has_temp_dev = bool(is_melee)
                 except Exception:
                     has_temp_dev = False
-                if self.is_devastating_wounds() or _devastating_from_blessings() or has_temp_dev:
+                if self.is_devastating_wounds() or _devastating_from_blessings() or _devastating_from_pain() or has_temp_dev:
                     wound_result['special_effects'].append("Devastating Wounds")
                     attack_instance['mortal_wound'] = True
                 return True
@@ -3030,7 +3518,7 @@ class WargearProfile:
                                 has_temp_dev = bool(is_melee)
                         except Exception:
                             has_temp_dev = False
-                        if self.is_devastating_wounds() or _devastating_from_blessings() or has_temp_dev:
+                        if self.is_devastating_wounds() or _devastating_from_blessings() or _devastating_from_pain() or has_temp_dev:
                             wound_result['special_effects'].append("Devastating Wounds")
                             attack_instance['mortal_wound'] = True
                         return True
@@ -3863,6 +4351,21 @@ class WargearProfile:
         """Legacy damage target method for backwards compatibility"""
         damage_result = self._damage_target_with_tracking(target_model, attacker, attack_instance)
         return damage_result['damage_applied']
+
+    def _assassins_poisons_applies(self, attacker: 'Model') -> bool:
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            sr = getattr(unit, "special_rules", None)
+            if not (isinstance(sr, dict) and sr.get("pain_assassins_poisons_active")):
+                return False
+            parent = getattr(self, "parent_wargear", None)
+            wname = str(getattr(parent, "name", "") or "").strip().lower()
+            for blocked in ("blast pistol", "blaster", "dark lance"):
+                if blocked in wname:
+                    return False
+            return True
+        except Exception:
+            return False
 
     ###########################################################################
     ### Wargear profile type checks

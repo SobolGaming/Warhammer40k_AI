@@ -830,7 +830,7 @@ def _ability_id_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Bondsman": ("Supported", "Bondsman buffs applied to Armiger units."),
         "Super-heavy Walker": ("Supported", "Move-through models (excl. TITANIC), engagement pass-through, tall-terrain Battle-shock check."),
         "Battle Focus": ("Supported", "Token system + maneuver selection with per-phase limits."),
-        "Power from Pain": ("Partial", "Pain token engine with partial ability coverage."),
+        "Power from Pain": ("Supported", "Pain token engine with full Pain ability coverage."),
         "Cult Ambush": ("Supported", "Resurgence points, ambush markers, reinforcements."),
         "Prioritised Efficiency": ("Supported", "Yield points + mode tracking with objective checks."),
         "Reanimation Protocols": ("Supported", "Command-phase reanimation sequencing for Necrons."),
@@ -910,6 +910,7 @@ def _datasheet_ability_support_global() -> Dict[str, Tuple[str, str]]:
         "Super-heavy Walker": ("Supported", "Move-through models (excl. TITANIC), engagement pass-through, tall-terrain Battle-shock check."),
         "Super-heavy War Engine": ("Supported", "Move-through models (excl. TITANIC), engagement pass-through, tall-terrain Battle-shock check."),
         "Collar of Khorne": ("Supported", "Feel No Pain 3+ against Psychic attacks."),
+        "Flip Belt": ("Supported", "Ignore vertical distance for Move/Advance/Fall Back/Charge movement."),
     }
     return {_norm(name): val for name, val in raw.items()}
 
@@ -1157,6 +1158,8 @@ def _classify_ability(
                 break
     if name_norm and (not ambiguous_name) and (fid, name_norm) in ABILITY_SUPPORT_BY_NAME_FACTION:
         return ABILITY_SUPPORT_BY_NAME_FACTION[(fid, name_norm)]
+    if fid == "DRU" and "(pain)" in str(name or "").lower():
+        return ("Supported", "Power from Pain ability effects implemented.")
     if common_support:
         return common_support
     if transport_support:
