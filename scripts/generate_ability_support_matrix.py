@@ -490,6 +490,8 @@ def _parse_attribute_value(value: str) -> Optional[int]:
     s = str(value).replace("\"", "").replace("+", "").replace("*", "").strip()
     if not s:
         return None
+    if s in ("-", "—"):
+        return 0
     if "-" in s:
         return None
     try:
