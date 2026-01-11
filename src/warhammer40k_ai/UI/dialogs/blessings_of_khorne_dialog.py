@@ -20,6 +20,8 @@ class BlessingsOfKhorneDialog(BaseDialog):
         self.manager = None
         self.ctx = None
         self.on_confirm: Optional[Callable[[Dict[str, Any]], None]] = None
+        self.on_cancel: Optional[Callable[[], None]] = None
+        self.apply_choice: bool = True
 
         self._selected_reroll: List[int] = []
         self._reroll_done: bool = False
@@ -32,7 +34,7 @@ class BlessingsOfKhorneDialog(BaseDialog):
         self._blessing_rects: List[tuple[str, pygame.Rect]] = []
         self._reborn_rect: Optional[pygame.Rect] = None
 
-    def show(self, *, player, game, army, ctx, on_confirm: Callable[[Dict[str, Any]], None]) -> None:
+    def show(self, *, player, game, army, ctx, on_confirm: Callable[[Dict[str, Any]], None], apply_choice: bool = True, on_cancel: Optional[Callable[[], None]] = None) -> None:
         super().show(callback=None)
         self.player = player
         self.game = game
@@ -40,6 +42,8 @@ class BlessingsOfKhorneDialog(BaseDialog):
         self.manager = getattr(army, "blessings_of_khorne", None)
         self.ctx = ctx
         self.on_confirm = on_confirm
+        self.on_cancel = on_cancel
+        self.apply_choice = bool(apply_choice)
 
         self._selected_reroll = []
         self._reroll_done = False
@@ -55,6 +59,7 @@ class BlessingsOfKhorneDialog(BaseDialog):
         self.manager = None
         self.ctx = None
         self.on_confirm = None
+        self.on_cancel = None
         self._die_rects = []
         self._blessing_rects = []
         self._reborn_rect = None
@@ -63,6 +68,11 @@ class BlessingsOfKhorneDialog(BaseDialog):
     def _handle_button_click(self, button_name: str) -> bool:
         if button_name in ("cancel", "close"):
             self.hide()
+            try:
+                if callable(self.on_cancel):
+                    self.on_cancel()
+            except Exception:
+                pass
             return True
 
         if button_name == "reroll":
@@ -92,15 +102,23 @@ class BlessingsOfKhorneDialog(BaseDialog):
                 self._error_text = preview.get("error", "Invalid selection")
                 return True
 
-            try:
-                res = self.manager.apply_choice(
-                    self.ctx,
-                    selected_blessing_keys=list(self._selected_blessings),
-                    use_reborn_in_blood=bool(self._use_reborn),
-                )
-            except Exception as e:
-                self._error_text = str(e)
-                return True
+            if self.apply_choice:
+                try:
+                    res = self.manager.apply_choice(
+                        self.ctx,
+                        selected_blessing_keys=list(self._selected_blessings),
+                        use_reborn_in_blood=bool(self._use_reborn),
+                    )
+                except Exception as e:
+                    self._error_text = str(e)
+                    return True
+            else:
+                res = {
+                    "activated": list(self._selected_blessings),
+                    "spent_indices": list(preview.get("spent_indices", [])),
+                    "reborn_used": bool(self._use_reborn),
+                    "allocation": preview.get("allocation", {}),
+                }
 
             payload = {
                 "player": self.player,
@@ -304,5 +322,4 @@ class BlessingsOfKhorneDialog(BaseDialog):
         self.draw_button(screen, "reroll", "Re-roll")
         self.draw_button(screen, "confirm", "Confirm")
         self.draw_button(screen, "cancel", "Cancel")
-
 

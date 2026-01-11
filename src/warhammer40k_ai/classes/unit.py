@@ -2068,7 +2068,7 @@ class Unit:
                     except Exception:
                         qualifies = False
 
-                    if qualifies and mgr.is_blessing_active("TOTAL_CARNAGE", battle_round=br):
+                    if qualifies and mgr.is_blessing_active_for_unit("TOTAL_CARNAGE", self, battle_round=br):
                         # Must not have fought this phase
                         if not bool(getattr(self.round_state, "fought_this_phase", False)):
                             wp = getattr(self, "_last_destroyed_by_weapon_profile", None)
@@ -8939,7 +8939,7 @@ class Unit:
                 mgr = getattr(army, "blessings_of_khorne", None) if army is not None else None
                 game = army.player.game if (army is not None and getattr(army, "player", None) is not None) else None
                 br = int(getattr(game, "turn", 0) or 0) if game is not None else 0
-                if mgr is not None and br > 0 and mgr.is_blessing_active("TOTAL_CARNAGE", battle_round=br):
+                if mgr is not None and br > 0 and mgr.is_blessing_active_for_unit("TOTAL_CARNAGE", root, battle_round=br):
                     # Only if this attached unit group actually qualifies for Blessings
                     if root.attached_unit_has_blessings_of_khorne():
                         mgr.resolve_total_carnage_queue(owning_unit=root, game_map=game_map)
@@ -9054,7 +9054,7 @@ class Unit:
             # Only units that qualify for Blessings benefit
             if not self.get_attached_unit_root().attached_unit_has_blessings_of_khorne():
                 return None
-            if mgr.is_blessing_active("RAGE_FUELLED_INVIGORATION", battle_round=br):
+            if mgr.is_blessing_active_for_unit("RAGE_FUELLED_INVIGORATION", self, battle_round=br):
                 if str(movement_kind).strip().lower() in ("pile_in", "consolidate"):
                     return 6.0
         except Exception:

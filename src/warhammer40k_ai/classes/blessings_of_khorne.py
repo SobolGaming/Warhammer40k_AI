@@ -134,6 +134,80 @@ class BlessingsOfKhorneManager:
             return False
         return key in self.active_blessing_keys
 
+    def _normalize_blessing_keys(self, keys: Iterable[str]) -> list[str]:
+        out: list[str] = []
+        for k in list(keys or []):
+            kk = str(k).strip().upper()
+            if not kk:
+                continue
+            if kk in self.definitions:
+                if kk not in out:
+                    out.append(kk)
+                continue
+            # Allow matching by name for convenience
+            for dk, d in self.definitions.items():
+                if d.name.strip().upper() == kk:
+                    if dk not in out:
+                        out.append(dk)
+                    break
+        return out
+
+    def get_unit_specific_blessings(self, unit, *, battle_round: int) -> set[str]:
+        if unit is None:
+            return set()
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return set()
+        try:
+            br = int(sr.get("skulls_for_throne_battle_round", 0) or 0)
+        except Exception:
+            br = 0
+        if int(battle_round) != br:
+            return set()
+        keys = self._normalize_blessing_keys(sr.get("skulls_for_throne_blessings", []) or [])
+        return set(keys)
+
+    def grant_unit_blessings(self, unit, *, blessing_keys: Iterable[str], battle_round: int) -> bool:
+        if unit is None:
+            return False
+        keys = self._normalize_blessing_keys(blessing_keys)
+        if not keys:
+            return False
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        try:
+            br = int(sr.get("skulls_for_throne_battle_round", 0) or 0)
+        except Exception:
+            br = 0
+        existing: list[str] = []
+        if br == int(battle_round):
+            existing = self._normalize_blessing_keys(sr.get("skulls_for_throne_blessings", []) or [])
+        merged: list[str] = []
+        for k in existing + list(keys):
+            if k not in merged:
+                merged.append(k)
+        sr["skulls_for_throne_battle_round"] = int(battle_round)
+        sr["skulls_for_throne_blessings"] = merged
+        root.special_rules = sr
+        return True
+
+    def is_blessing_active_for_unit(self, key: str, unit, *, battle_round: int) -> bool:
+        key_u = str(key or "").strip().upper()
+        if not key_u:
+            return False
+        if self.is_blessing_active(key_u, battle_round=int(battle_round)):
+            return True
+        return key_u in self.get_unit_specific_blessings(unit, battle_round=int(battle_round))
+
     def favoured_of_khorne_rerolls_for_army(self, army) -> int:
         """
         Return the number of Blessings rerolls granted by Favoured of Khorne.
@@ -487,5 +561,4 @@ class BlessingsOfKhorneManager:
             if len(idxs) >= int(count):
                 out.append(tuple(idxs[: int(count)]))
         return out
-
 

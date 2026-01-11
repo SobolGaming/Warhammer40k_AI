@@ -6183,7 +6183,7 @@ class Game:
                 mgr = getattr(army, "blessings_of_khorne", None) if army is not None else None
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 br = int(getattr(game, "turn", 0) or 0) if game is not None else 0
-                if mgr is not None and mgr.is_blessing_active("UNBRIDLED_BLOODLUST", battle_round=br):
+                if mgr is not None and mgr.is_blessing_active_for_unit("UNBRIDLED_BLOODLUST", charging_unit, battle_round=br):
                     modifiers.append((battle_lust_bonus, "Battle-lust (Unbridled Bloodlust)"))
         except Exception:
             pass

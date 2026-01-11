@@ -21,6 +21,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "NEW ORDERS",
     "RAPID INGRESS",
     "SMOKESCREEN",
+    "SKULLS FOR THE SKULL THRONE!",
     "TANK SHOCK",
     "UNBOUND ARROGANCE",
 }
@@ -40,6 +41,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "INSANE BRAVERY",
     "NEW ORDERS",
     "RAPID INGRESS",
+    "SKULLS FOR THE SKULL THRONE!",
     "SMOKESCREEN",
     "UNBOUND ARROGANCE",
 }
@@ -636,6 +638,8 @@ class StratagemManager:
         es.subscribe("fight_sequence_complete", self._on_fight_sequence_complete)
         # Unit destroyed hooks for faction stratagems
         es.subscribe("unit_destroyed", self._on_unit_destroyed)
+        # Model destroyed hooks for faction stratagems
+        es.subscribe("model_destroyed", self._on_model_destroyed)
         # Dice events for Command Re-roll
         es.subscribe("roll_made", self._on_roll_made)
         self._event_subscribed = True
@@ -1649,6 +1653,32 @@ class StratagemManager:
                 return
         except Exception:
             return
+        try:
+            if attacker_unit.get_parent_army() == target_unit.get_parent_army():
+                return
+        except Exception:
+            return
+        try:
+            unit = attacker_unit.get_attached_unit_root()
+        except Exception:
+            unit = attacker_unit
+        try:
+            army = unit.get_parent_army()
+        except Exception:
+            army = None
+        we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+        if we_mgr is None or not getattr(we_mgr, "is_berzerker_warband", lambda: False)():
+            return
+        try:
+            if _unit_cannot_be_target_of_stratagem(unit):
+                return
+        except Exception:
+            return
+        try:
+            if not (hasattr(unit, "has_any_keyword") and unit.has_any_keyword("WORLD EATERS")):
+                return
+        except Exception:
+            return
         # Ensure current phase is Fight phase
         phase_name = self._current_phase_name
         if not (phase_name and phase_name.strip().lower() == "fight phase"):
@@ -1674,7 +1704,7 @@ class StratagemManager:
         # Deduplicate same reaction for same attacker+target model in this phase
         for r in self._pending_reactions:
             try:
-                if r.get("event") == "model_destroyed" and r.get("stratagem") == s.name and r.get("attacker_unit") is attacker_unit and r.get("target_model") is target_model:
+                if r.get("event") == "model_destroyed" and r.get("stratagem") == s.name and r.get("attacker_unit") is unit and r.get("target_model") is target_model:
                     return
             except Exception:
                 continue
@@ -1683,7 +1713,8 @@ class StratagemManager:
             "phase_name": phase_name,
             "stratagem": s.name,
             "cp_cost": s.cp_cost,
-            "attacker_unit": attacker_unit,
+            "attacker_unit": unit,
+            "unit": unit,
             "target_model": target_model,
             "target_unit": target_unit,
         })
@@ -3018,6 +3049,111 @@ class StratagemManager:
             except Exception:
                 pass
             print(f"dYc, FRENZIED RESILIENCE: {getattr(unit, 'name', 'Unit')} reduces damage by 1 this phase.")
+            return True
+
+        # Berzerker Warband: SKULLS FOR THE SKULL THRONE! (extra unit-only Blessing of Khorne)
+        if s.name.upper() == "SKULLS FOR THE SKULL THRONE!":
+            unit = kwargs.get("unit") or kwargs.get("attacker_unit") or kwargs.get("target_unit")
+            target_unit = kwargs.get("target_unit")
+            blessings_ctx = kwargs.get("blessings_ctx") or kwargs.get("ctx") or kwargs.get("blessings_context")
+            selected = kwargs.get("selected_blessings") or kwargs.get("selected_blessing_keys") or []
+            if unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "SKULLS FOR THE SKULL THRONE!":
+                        unit = unit or r.get("unit") or r.get("attacker_unit")
+                        target_unit = target_unit or r.get("target_unit")
+                        blessings_ctx = blessings_ctx or r.get("blessings_ctx") or r.get("ctx")
+                        selected = selected or r.get("selected_blessings") or r.get("selected_blessing_keys") or []
+                        break
+            if unit is None:
+                print("??O Skulls for the Skull Throne: no target unit provided")
+                return False
+            try:
+                unit = unit.get_attached_unit_root()
+            except Exception:
+                pass
+            try:
+                army = unit.get_parent_army()
+            except Exception:
+                army = None
+            we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+            if we_mgr is None or not getattr(we_mgr, "is_berzerker_warband", lambda: False)():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "fight phase":
+                print("??O Skulls for the Skull Throne: wrong phase")
+                return False
+            try:
+                if _unit_cannot_be_target_of_stratagem(unit):
+                    print("??O Skulls for the Skull Throne: target cannot be selected")
+                    return False
+            except Exception:
+                return False
+            try:
+                if not (hasattr(unit, "has_any_keyword") and unit.has_any_keyword("WORLD EATERS")):
+                    print("??O Skulls for the Skull Throne: target is not WORLD EATERS")
+                    return False
+            except Exception:
+                return False
+            if target_unit is not None:
+                try:
+                    is_char = bool(target_unit.has_keyword("Character"))
+                    is_mon = bool(target_unit.has_keyword("Monster"))
+                    if not (is_char or is_mon):
+                        print("??O Skulls for the Skull Throne: target was not CHARACTER or MONSTER")
+                        return False
+                except Exception:
+                    pass
+            if not selected:
+                print("??O Skulls for the Skull Throne: no blessing selected")
+                return False
+            mgr = getattr(army, "blessings_of_khorne", None) if army is not None else None
+            if mgr is None:
+                return False
+            if blessings_ctx is not None:
+                try:
+                    preview = mgr.preview_choice(
+                        blessings_ctx,
+                        selected_blessing_keys=list(selected),
+                        use_reborn_in_blood=False,
+                    )
+                except Exception:
+                    preview = {"ok": False}
+                if not preview.get("ok", False):
+                    print("??O Skulls for the Skull Throne: invalid blessing selection")
+                    return False
+
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=unit).get("cost", s.cp_cost))
+            except Exception:
+                eff_cost = s.cp_cost
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                br = int(getattr(self.game, "turn", 0) or 0)
+            except Exception:
+                br = 0
+            if br <= 0:
+                br = int(getattr(self.player, "round", 0) or 0)
+            if not mgr.grant_unit_blessings(unit, blessing_keys=list(selected), battle_round=br):
+                return False
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
+            try:
+                chosen_names = []
+                for k in list(selected):
+                    kk = str(k).strip().upper()
+                    d = mgr.definitions.get(kk)
+                    chosen_names.append(d.name if d is not None else kk)
+                print(f"dYc, SKULLS FOR THE SKULL THRONE!: {getattr(unit, 'name', 'Unit')} gains {', '.join(chosen_names)} until end of battle round.")
+            except Exception:
+                pass
             return True
 
         # Berzerker Warband: BLOOD OFFERING (sticky objective on unit destruction)

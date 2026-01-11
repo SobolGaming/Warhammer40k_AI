@@ -852,6 +852,7 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Internal Rivalries": ("Supported", "Slaanesh's Chosen: ignore negative Move/Advance/Charge; Favoured reroll Wounds."),
         "Sensational Performance": ("Supported", "Court of the Phoenician: optional +1 S/AP on charge."),
         "Master of the Pageant": ("Supported", "Court of the Phoenician: once per round -1 CP stratagem cost."),
+        "Relentless Rage": ("Supported", "Berzerker Warband: on charge, melee weapons gain +1A/+2S until end of turn."),
     }
     return {_norm(name): val for name, val in raw.items()}
 
@@ -1181,6 +1182,7 @@ def _stratagem_support(name: str) -> Tuple[str, str, str]:
         "BLOOD OFFERING": "Sticky objective on unit destruction; Berzerker Warband only.",
         "FRENZIED RESILIENCE": "Fight phase: after enemy targets; WORLD EATERS unit reduces damage by 1.",
         "HACK AND SLASH": "Fight phase: charged WORLD EATERS unit gains +1 AP on melee weapons.",
+        "SKULLS FOR THE SKULL THRONE!": "Fight phase: after CHARACTER/MONSTER kill, roll Blessings for a unit-only extra blessing.",
         "UNBOUND ARROGANCE": "Coterie of the Conceited pledge increases by 1 (once per battle round).",
     }
 

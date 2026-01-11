@@ -2027,8 +2027,8 @@ class WargearProfile:
                         except Exception:
                             qualifies = False
                         if qualifies:
-                            blessings_lethal = bool(mgr.is_blessing_active("WARP_BLADES", battle_round=br))
-                            blessings_sustained = bool(mgr.is_blessing_active("MARTIAL_EXCELLENCE", battle_round=br))
+                            blessings_lethal = bool(mgr.is_blessing_active_for_unit("WARP_BLADES", unit, battle_round=br))
+                            blessings_sustained = bool(mgr.is_blessing_active_for_unit("MARTIAL_EXCELLENCE", unit, battle_round=br))
             except Exception:
                 blessings_lethal = False
                 blessings_sustained = False
@@ -2981,7 +2981,7 @@ class WargearProfile:
                         qualifies = False
                     if not qualifies:
                         return False
-                    return bool(mgr.is_blessing_active("DECAPITATING_STRIKES", battle_round=br))
+                    return bool(mgr.is_blessing_active_for_unit("DECAPITATING_STRIKES", unit, battle_round=br))
                 except Exception:
                     return False
 

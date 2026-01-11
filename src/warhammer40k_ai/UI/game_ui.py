@@ -789,6 +789,11 @@ class GameView:
                 rerolls_allowed = 0
 
             from ..classes.blessings_of_khorne import BlessingsTiming
+            unit = context.get("attacker_unit") or context.get("unit") or context.get("target_unit")
+            try:
+                extra_active = mgr.get_unit_specific_blessings(unit, battle_round=int(getattr(game, "turn", 0) or 0))
+            except Exception:
+                extra_active = set()
             ctx = mgr.create_roll_context(
                 battle_round=int(getattr(game, "turn", 0) or 0),
                 timing=BlessingsTiming.OTHER,
@@ -796,39 +801,30 @@ class GameView:
                 rerolls_allowed=rerolls_allowed,
                 max_activations=1,
                 counts_toward_baseline_limit=False,
-                already_active_keys=set(getattr(mgr, "active_blessing_keys", set()) or set()),
+                already_active_keys=set(getattr(mgr, "active_blessing_keys", set()) or set()) | set(extra_active),
                 reborn_in_blood_available=False,
             )
 
             def _on_confirm(payload):
-                # Spend CP for stratagem AFTER successful blessing selection/apply
-                ok = False
                 try:
-                    cp_cost = int(context.get("cp_cost", 1) or 1)
-                    if not player.spend_command_points(
-                        cp_cost,
-                        reason="Stratagem: SKULLS FOR THE SKULL THRONE!",
-                        source="stratagem",
-                    ):
-                        on_done(False)
-                        return
-                    # Dequeue reaction if present
-                    try:
-                        if getattr(player, "stratagems", None) is not None and hasattr(player.stratagems, "_dequeue_reaction_by_name"):
-                            player.stratagems._dequeue_reaction_by_name("SKULLS FOR THE SKULL THRONE!")
-                    except Exception:
-                        pass
-                    ok = True
-                finally:
-                    try:
-                        if self.rule_detail_panel and self.rule_detail_panel.visible and isinstance(self._rule_panel_state, dict):
-                            if self._rule_panel_state.get("player") is player and self._rule_panel_state.get("rule_type") == "army":
-                                self._toggle_rule_panel(player, "army", force_refresh=True)
-                    except Exception:
-                        pass
-                    on_done(ok)
+                    if isinstance(payload, dict):
+                        payload["unit"] = unit
+                except Exception:
+                    pass
+                on_done(payload)
 
-            self.blessings_of_khorne_dialog.show(player=player, game=game, army=army, ctx=ctx, on_confirm=_on_confirm)
+            def _on_cancel():
+                on_done(None)
+
+            self.blessings_of_khorne_dialog.show(
+                player=player,
+                game=game,
+                army=army,
+                ctx=ctx,
+                on_confirm=_on_confirm,
+                apply_choice=False,
+                on_cancel=_on_cancel,
+            )
             try:
                 self.dialog_manager.open(self.blessings_of_khorne_dialog, modal=True)
             except Exception:
@@ -6318,12 +6314,23 @@ class GameView:
                     return
                 self._blessings_flow_active = True
 
-                def _done(executed: bool):
+                def _done(payload):
                     self._blessings_flow_active = False
-                    if executed:
+                    if not payload:
+                        print("Skulls for the Skull Throne cancelled or failed")
+                        return
+                    ctx = dict(context)
+                    try:
+                        ctx["unit"] = payload.get("unit") or ctx.get("attacker_unit")
+                        ctx["blessings_ctx"] = payload.get("ctx")
+                        ctx["selected_blessings"] = payload.get("selected_blessings") or payload.get("result", {}).get("activated")
+                    except Exception:
+                        pass
+                    ok2 = manager.use(name, **ctx)
+                    if ok2:
                         print(f"Used stratagem: {name}")
                     else:
-                        print("Skulls for the Skull Throne cancelled or failed")
+                        print(f"Could not use stratagem: {name}")
 
                 self._request_blessings_roll(player, self.game, context, _done)
             return
