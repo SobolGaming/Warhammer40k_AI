@@ -918,7 +918,8 @@ class Unit:
         # This is useful for validation and for complex compositions we don't fully model yet.
         self.unit_models_maximum = None
 
-        result: dict[str, tuple[int, int]] = {}
+        options: list[dict[str, tuple[int, int]]] = []
+        current: dict[str, tuple[int, int]] = {}
         for comp in unit_composition or []:
             desc = str(comp.get("description", "") or "").strip()
             if not desc:
@@ -942,7 +943,10 @@ class Unit:
                     except Exception:
                         pass
                 continue
-            if dlow == "or":
+            if dlow in ("or", "or:"):
+                if current:
+                    options.append(current)
+                    current = {}
                 continue
             if dlow.startswith("one of the following:"):
                 continue
@@ -969,13 +973,58 @@ class Unit:
                     min_size, max_size = map(int, count.split("-", 1))
                 else:
                     min_size = max_size = int(count)
-                result[model_name] = (min_size, max_size)
+                if model_name in current:
+                    prev_min, prev_max = current[model_name]
+                    current[model_name] = (prev_min + min_size, prev_max + max_size)
+                else:
+                    current[model_name] = (min_size, max_size)
 
-        return result
+        if current:
+            options.append(current)
+
+        def _total_min(opt: dict[str, tuple[int, int]]) -> int:
+            return sum(min_size for min_size, _ in opt.values())
+
+        if options:
+            try:
+                self.unit_composition_options = options
+            except Exception:
+                pass
+            return min(options, key=_total_min)
+
+        try:
+            self.unit_composition_options = []
+        except Exception:
+            pass
+        return {}
 
     def _create_models(self, datasheet, quantity=None):
         models = []
         total_models = 0
+
+        def _select_unit_composition_option(requested_qty: Optional[int]):
+            options = getattr(self, "unit_composition_options", None)
+            if not isinstance(options, list) or not options:
+                return getattr(self, "unit_composition", {})
+
+            def _totals(opt: dict[str, tuple[int, int]]) -> tuple[int, int]:
+                min_total = sum(min_size for min_size, _ in opt.values())
+                max_total = sum(max_size for _, max_size in opt.values())
+                return min_total, max_total
+
+            if requested_qty is None:
+                return min(options, key=lambda opt: _totals(opt)[0])
+
+            for opt in options:
+                min_total, max_total = _totals(opt)
+                if min_total <= requested_qty <= max_total:
+                    return opt
+
+            return min(options, key=lambda opt: _totals(opt)[0])
+
+        chosen = _select_unit_composition_option(quantity)
+        if isinstance(chosen, dict) and chosen:
+            self.unit_composition = chosen
 
         def _normalize_name(s: str) -> str:
             s = (s or "").replace("’", "'").strip().lower()

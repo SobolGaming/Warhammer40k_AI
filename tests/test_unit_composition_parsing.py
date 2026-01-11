@@ -39,22 +39,53 @@ class TestUnitCompositionParsing(unittest.TestCase):
         parsed = u._parse_unit_composition(rows)
         self.assertEqual(parsed, {"Custodian Guard with Adrasite and Pyrithite Spears": (5, 5)})
 
-    def test_ignores_maximum_lines_and_or(self):
+    def test_or_splits_options_and_tracks_maximum(self):
         from warhammer40k_ai.classes.unit import Unit
 
         u = Unit.__new__(Unit)
         rows = [
-            {"description": "This unit can contain a maximum of 10 models."},
-            {"description": "10 MODELS MAXIMUM"},
-            {"description": "OR"},
-            {"description": "1 Warboss"},
+            {"description": "This unit can contain a maximum of 20 models."},
+            {"description": "20 MODELS MAXIMUM"},
+            {"description": "1 Jakhal Pack Leader, 1 Dishonoured and 8 Jakhals"},
+            {"description": "or:"},
+            {"description": "1 Jakhal Pack Leader, 2 Dishonoured and 17 Jakhals"},
         ]
         parsed = u._parse_unit_composition(rows)
-        self.assertEqual(parsed, {"Warboss": (1, 1)})
+        self.assertEqual(parsed, {"Jakhal Pack Leader": (1, 1), "Dishonoured": (1, 1), "Jakhals": (8, 8)})
+        self.assertEqual(
+            getattr(u, "unit_composition_options", None),
+            [
+                {"Jakhal Pack Leader": (1, 1), "Dishonoured": (1, 1), "Jakhals": (8, 8)},
+                {"Jakhal Pack Leader": (1, 1), "Dishonoured": (2, 2), "Jakhals": (17, 17)},
+            ],
+        )
         # The cap should be captured for validation logic.
-        self.assertEqual(getattr(u, "unit_models_maximum", None), 10)
+        self.assertEqual(getattr(u, "unit_models_maximum", None), 20)
+
+    def test_or_groups_multiline_entries(self):
+        from warhammer40k_ai.classes.unit import Unit
+
+        u = Unit.__new__(Unit)
+        rows = [
+            {"description": "1 Kill Team Sergeant"},
+            {"description": "1 Gravis Veteran"},
+            {"description": "3 Deathwatch Veterans"},
+            {"description": "OR"},
+            {"description": "1 Kill Team Sergeant"},
+            {"description": "2 Gravis Veterans"},
+            {"description": "7 Deathwatch Veterans"},
+        ]
+        parsed = u._parse_unit_composition(rows)
+        opts = getattr(u, "unit_composition_options", [])
+        self.assertEqual(len(opts), 2)
+        self.assertEqual(parsed, opts[0])
+        self.assertEqual(opts[0]["Kill Team Sergeant"], (1, 1))
+        self.assertEqual(opts[0]["Gravis Veteran"], (1, 1))
+        self.assertEqual(opts[0]["Deathwatch Veterans"], (3, 3))
+        self.assertEqual(opts[1]["Kill Team Sergeant"], (1, 1))
+        self.assertEqual(opts[1]["Gravis Veterans"], (2, 2))
+        self.assertEqual(opts[1]["Deathwatch Veterans"], (7, 7))
 
 
 if __name__ == "__main__":
     unittest.main()
-
