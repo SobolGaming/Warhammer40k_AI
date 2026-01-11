@@ -3957,6 +3957,40 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Unit ability: +Damage to melee attacks vs MONSTER/VEHICLE.
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                t_unit = getattr(target_model, "parent_unit", None)
+                target_is_monster = bool(getattr(t_unit, "is_monster", False))
+                target_is_vehicle = bool(getattr(t_unit, "is_vehicle", False))
+                if not (target_is_monster or target_is_vehicle):
+                    try:
+                        target_is_monster = bool(t_unit.has_keyword("Monster"))
+                        target_is_vehicle = bool(t_unit.has_keyword("Vehicle"))
+                    except Exception:
+                        target_is_monster = False
+                        target_is_vehicle = False
+                if target_is_monster or target_is_vehicle:
+                    d_bonus = 0
+                    unit = getattr(attacker, "parent_unit", None)
+                    if unit is not None:
+                        fn = getattr(unit, "get_melee_damage_bonus_vs_monster_vehicle", None)
+                        if callable(fn):
+                            d_bonus = int(fn() or 0)
+                        else:
+                            sr = getattr(unit, "special_rules", None)
+                            if isinstance(sr, dict):
+                                d_bonus = int(sr.get("melee_damage_bonus_vs_monster_vehicle", 0) or 0)
+                    if d_bonus:
+                        damage_mods.append(
+                            Modifier(ModifierOp.ADD, int(d_bonus), source="ability:melee_damage_vs_monster_vehicle")
+                        )
+                        damage_result['special_effects'].append(
+                            f"+{d_bonus}D vs MONSTER/VEHICLE (melee)"
+                        )
+        except Exception:
+            pass
+
         # Enhancement: reduce damage allocated to bearer by X.
         try:
             t_unit = getattr(target_model, "parent_unit", None)

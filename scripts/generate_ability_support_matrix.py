@@ -1141,6 +1141,7 @@ def _classify_ability(
         return desc_support
     common_support = _bearer_unit_common_support(description)
     leading_support = _leading_unit_common_support(description)
+    melee_damage_support = _melee_damage_bonus_support(description)
     transport_support = _transport_disembark_support(description)
     orders_support = _orders_section_support(name, description)
     attached_unit_support = _attached_unit_support(name, description)
@@ -1165,6 +1166,8 @@ def _classify_ability(
         return common_support
     if leading_support:
         return leading_support
+    if melee_damage_support:
+        return melee_damage_support
     if transport_support:
         return transport_support
     if orders_support:
@@ -1255,6 +1258,31 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
     else:
         attack_scope = "all"
     return ("Supported", f"Leading: re-roll Hit/Wound rolls of 1 for {attack_scope} attacks.")
+
+
+def _melee_damage_bonus_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    low = text.lower()
+    if "melee attack" not in low:
+        return None
+    if "damage characteristic" not in low:
+        return None
+    if "monster" not in low or "vehicle" not in low:
+        return None
+    if "target" not in low:
+        return None
+    m = re.search(r"damage characteristic[^.]*?by\s+(\d+)", low, flags=re.IGNORECASE)
+    if not m:
+        m = re.search(r"add\s+(\d+)\s+to\s+the\s+damage characteristic", low, flags=re.IGNORECASE)
+    if not m:
+        return None
+    return ("Supported", f"Melee attacks vs MONSTER/VEHICLE get +{m.group(1)} Damage.")
 
 
 def _transport_disembark_support(description: str) -> Optional[Tuple[str, str]]:

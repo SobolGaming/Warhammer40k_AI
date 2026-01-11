@@ -4713,6 +4713,86 @@ class Unit:
         root._ability_cache[cache_key] = mods
         return mods
 
+    def get_melee_damage_bonus_vs_monster_vehicle(self) -> int:
+        """
+        Return bonus Damage for melee attacks that target MONSTER or VEHICLE units.
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "melee_damage_bonus_vs_monster_vehicle"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return int(root._ability_cache[cache_key] or 0)
+
+        bonus = 0
+        seen: set[tuple[str, str]] = set()
+
+        def _scan(text: str, name: str = "") -> int:
+            if not text:
+                return 0
+            norm = self._normalize_rules_text(text)
+            if not norm:
+                return 0
+            key = (str(name or "").strip().lower(), norm.lower())
+            if key in seen:
+                return 0
+            seen.add(key)
+            low = norm.lower()
+            if "melee attack" not in low:
+                return 0
+            if "damage characteristic" not in low:
+                return 0
+            if "monster" not in low or "vehicle" not in low:
+                return 0
+            if "target" not in low:
+                return 0
+            m = re.search(r"damage characteristic[^.]*?by\s+(\d+)", low)
+            if not m:
+                m = re.search(r"add\s+(\d+)\s+to\s+the\s+damage characteristic", low)
+            if not m:
+                return 0
+            try:
+                return int(m.group(1))
+            except Exception:
+                return 0
+
+        for ab in root._iter_active_abilities():
+            try:
+                if isinstance(ab, str):
+                    bonus += _scan(ab, "")
+                else:
+                    desc = str(getattr(ab, "description", "") or "")
+                    name = str(getattr(ab, "name", "") or "")
+                    if desc:
+                        bonus += _scan(desc, name)
+                    else:
+                        bonus += _scan(name, name)
+            except Exception:
+                continue
+
+        try:
+            for ab, _leader in root._iter_attached_leader_leading_abilities():
+                try:
+                    if isinstance(ab, str):
+                        bonus += _scan(ab, "")
+                    else:
+                        desc = str(getattr(ab, "description", "") or "")
+                        name = str(getattr(ab, "name", "") or "")
+                        if desc:
+                            bonus += _scan(desc, name)
+                        else:
+                            bonus += _scan(name, name)
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = int(bonus or 0)
+        return int(bonus or 0)
+
     def can_reroll_advance_roll(self) -> bool:
         """
         Best-effort detection for abilities that allow re-rolling Advance rolls for this unit/model.
