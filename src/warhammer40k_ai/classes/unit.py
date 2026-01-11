@@ -8957,6 +8957,26 @@ class Unit:
                 return True
         return False
 
+    def has_icon_of_khorne(self) -> bool:
+        """True if this unit has the Icon of Khorne ability."""
+        if "icon_of_khorne" in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache["icon_of_khorne"])
+        found, _ = self._find_ability_with_patterns(["icon of khorne"])
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache["icon_of_khorne"] = bool(found)
+        return bool(found)
+
+    def attached_unit_has_icon_of_khorne(self) -> bool:
+        """Attached unit eligibility: true if any attached member has Icon of Khorne."""
+        for u in self.get_attached_unit_members():
+            try:
+                if u.has_icon_of_khorne():
+                    return True
+            except Exception:
+                continue
+        return False
+
     def attached_unit_has_kill_team(self) -> bool:
         """Attached unit eligibility: true if any attached member has the Kill Team ability."""
         for u in self.get_attached_unit_members():

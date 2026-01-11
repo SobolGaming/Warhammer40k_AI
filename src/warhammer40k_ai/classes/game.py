@@ -171,6 +171,8 @@ class Game:
         """Install non-UI rule subscribers that operate off the event system."""
         self.event_system.subscribe("model_destroyed", self._on_model_destroyed_rules)
         self.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_rules)
+        # World Eaters: Icon of Khorne (Bloodshed points)
+        self.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_bloodshed_points)
         # Transport core rules (Destroyed Transport -> Disembark + mortals + battleshock)
         self.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_transport_rules)
         # Detachment abilities that trigger on unit movement events
@@ -2595,7 +2597,6 @@ class Game:
                         continue
                 except Exception:
                     continue
-
             required = set(spec.get("target_keywords", spec.get("required_target_keywords", set())) or set())
             mode = (spec.get("target_keyword_mode", "all") or "all").lower()
             if required:
@@ -2659,6 +2660,55 @@ class Game:
                         pass
                 except Exception:
                     continue
+
+    def _on_unit_destroyed_bloodshed_points(self, unit=None, destroyed_by_unit=None, **_kwargs) -> None:
+        """World Eaters: Icon of Khorne grants Bloodshed points on enemy unit destruction."""
+        if unit is None or destroyed_by_unit is None:
+            return
+        try:
+            if destroyed_by_unit.get_parent_army() == unit.get_parent_army():
+                return
+        except Exception:
+            return
+        try:
+            root = destroyed_by_unit.get_attached_unit_root()
+        except Exception:
+            root = destroyed_by_unit
+        try:
+            if not root.attached_unit_has_icon_of_khorne():
+                return
+        except Exception:
+            return
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        if army is None:
+            return
+        try:
+            fid = str(getattr(army, "faction_id", "") or "").strip().upper()
+            if fid and fid != "WE":
+                return
+        except Exception:
+            pass
+        mgr = getattr(army, "blessings_of_khorne", None)
+        if mgr is None:
+            return
+        try:
+            mgr.bloodshed_points = int(getattr(mgr, "bloodshed_points", 0) or 0) + 1
+        except Exception:
+            return
+        try:
+            self.event_system.publish(
+                "bloodshed_points_gained",
+                player=army.player,
+                amount=1,
+                total=int(getattr(mgr, "bloodshed_points", 0) or 0),
+                attacker_unit=root,
+                target_unit=unit,
+            )
+        except Exception:
+            pass
 
     def _on_unit_destroyed_power_from_pain(self, unit=None, **_kwargs) -> None:
         if unit is None:

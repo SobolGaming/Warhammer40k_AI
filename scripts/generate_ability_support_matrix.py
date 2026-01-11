@@ -1002,6 +1002,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("WE", "Bloody Fury"): ("Partial", "Charge reroll detected; closest-target/ranged reroll clauses not enforced."),
         ("WE", "To Slake its Rage"): ("Supported", "Advance-and-charge eligibility."),
         ("WE", "Idol of Blessed Blood"): ("Supported", "Adds an extra Blessings die for each on-battlefield model with this ability."),
+        ("WE", "Icon of Khorne"): ("Supported", "Enemy unit destroyed by bearer grants +1 Bloodshed point."),
         ("WE", "Murderlust"): ("Supported", "Advance-and-charge eligibility."),
         ("WE", "Collar of Khorne"): ("Supported", "Feel No Pain 3+ against Psychic attacks."),
         ("WE", "Possessed Lord"): ("Supported", "Once-per-battle Fight phase: +3 Attacks and Devastating Wounds."),
