@@ -474,6 +474,26 @@ class WargearProfile:
         except Exception:
             pass
         try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                sr = getattr(attacker.parent_unit, "special_rules", None)
+                bonus = int(sr.get("hack_and_slash_ap_bonus", 0) or 0) if isinstance(sr, dict) else 0
+                if bonus:
+                    apply_bonus = True
+                    exp = str(sr.get("hack_and_slash_expires_phase", "") or "").strip().upper() if isinstance(sr, dict) else ""
+                    if exp:
+                        try:
+                            army = attacker.parent_unit.get_parent_army()
+                            game = getattr(getattr(army, "player", None), "game", None)
+                            pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                        except Exception:
+                            pname = ""
+                        if pname and pname != exp:
+                            apply_bonus = False
+                    if apply_bonus:
+                        ap_val -= bonus
+        except Exception:
+            pass
+        try:
             unit = getattr(attacker, "parent_unit", None)
             army = unit.get_parent_army() if unit is not None else None
             mgr = getattr(army, "doctrina_imperatives", None) if army is not None else None
@@ -3465,6 +3485,27 @@ class WargearProfile:
                 damage_mods.append(Modifier(ModifierOp.SUB, int(red), source="bondsman:reduce_damage_taken"))
         except Exception:
             pass
+        # Stratagem: Frenzied Resilience reduces damage by 1 in Fight phase.
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            sr = getattr(t_unit, "special_rules", None) if t_unit is not None else None
+            red = int(sr.get("frenzied_resilience_damage_reduction", 0) or 0) if isinstance(sr, dict) else 0
+            if red:
+                apply_bonus = True
+                exp = str(sr.get("frenzied_resilience_expires_phase", "") or "").strip().upper()
+                if exp:
+                    try:
+                        army = t_unit.get_parent_army()
+                        game = getattr(getattr(army, "player", None), "game", None)
+                        pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    except Exception:
+                        pname = ""
+                    if pname and pname != exp:
+                        apply_bonus = False
+                if apply_bonus:
+                    damage_mods.append(Modifier(ModifierOp.SUB, int(red), source="stratagem:frenzied_resilience"))
+        except Exception:
+            pass
 
         # Apply modifiers unless these are "mortal wounds in addition" (not currently used, but Core Rules require it).
         if attack_instance.get("mortal_wound", False) and attack_instance.get("mortal_wound_in_addition", False):
@@ -3492,6 +3533,12 @@ class WargearProfile:
             red = int(getattr(getattr(target_model, "parent_unit", None), "special_rules", {}).get("bondsman_damage_reduction", 0) or 0)
             if red and any(m.op == ModifierOp.SUB and "bondsman" in str(getattr(m, "source", "")) for m in damage_mods):
                 damage_result['special_effects'].append(f"Bondsman -{red}D taken")
+        except Exception:
+            pass
+        try:
+            red = int(getattr(getattr(target_model, "parent_unit", None), "special_rules", {}).get("frenzied_resilience_damage_reduction", 0) or 0)
+            if red and any(m.op == ModifierOp.SUB and "frenzied_resilience" in str(getattr(m, "source", "")) for m in damage_mods):
+                damage_result['special_effects'].append(f"Frenzied Resilience -{red}D taken")
         except Exception:
             pass
         

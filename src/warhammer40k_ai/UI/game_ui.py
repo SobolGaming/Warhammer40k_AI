@@ -658,6 +658,69 @@ class GameView:
                 on_chosen(cand[0])
         self._request_counter_offensive_unit = _request_counter_offensive_unit
 
+        def _request_hack_and_slash_unit(player, game, on_chosen):
+            cand = []
+            try:
+                from ..classes.stratagems import _unit_cannot_be_target_of_stratagem
+            except Exception:
+                _unit_cannot_be_target_of_stratagem = None
+            try:
+                army = player.get_army()
+                we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+                if we_mgr is None or not getattr(we_mgr, "is_berzerker_warband", lambda: False)():
+                    on_chosen(None)
+                    return
+            except Exception:
+                on_chosen(None)
+                return
+            for unit in player.get_army().units or []:
+                try:
+                    if not unit.is_alive() or not unit.deployed:
+                        continue
+                    if callable(_unit_cannot_be_target_of_stratagem) and _unit_cannot_be_target_of_stratagem(unit):
+                        continue
+                    if not (hasattr(unit, "has_any_keyword") and unit.has_any_keyword("WORLD EATERS")):
+                        continue
+                    charged = bool(getattr(getattr(unit, "round_state", None), "charged_this_round", False))
+                    if not charged:
+                        continue
+                    if bool(getattr(getattr(unit, "round_state", None), "fought_this_phase", False)):
+                        continue
+                    cand.append(unit)
+                except Exception:
+                    continue
+            if not cand:
+                on_chosen(None)
+                return
+            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
+                self.overwatch_shooter_dialog.show(
+                    cand,
+                    None,
+                    lambda unit: (self.overwatch_shooter_dialog.hide(), on_chosen(unit)),
+                    title="Select Hack and Slash Unit",
+                    subtitle="Charged this turn; has not fought",
+                )
+            else:
+                on_chosen(cand[0])
+        self._request_hack_and_slash_unit = _request_hack_and_slash_unit
+
+        def _request_frenzied_resilience_unit(player, game, candidates, on_chosen):
+            cand = list(candidates or [])
+            if not cand:
+                on_chosen(None)
+                return
+            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
+                self.overwatch_shooter_dialog.show(
+                    cand,
+                    None,
+                    lambda unit: (self.overwatch_shooter_dialog.hide(), on_chosen(unit)),
+                    title="Select Frenzied Resilience Unit",
+                    subtitle="Targeted by enemy in Fight phase",
+                )
+            else:
+                on_chosen(cand[0])
+        self._request_frenzied_resilience_unit = _request_frenzied_resilience_unit
+
         # Generic yes/no prompt hook for optional ability decisions (e.g., Direct the Slaughter)
         def _request_yes_no(title: str, message: str, yes_label: str, no_label: str, on_chosen):
             self.yes_no_dialog.show(
@@ -6229,6 +6292,26 @@ class GameView:
                 self._request_counter_offensive_unit(player, self.game, candidates, lambda unit: self._finalize_counter_offensive(player, name, context, unit))
             return
 
+        if name_u == "HACK AND SLASH" and "target_unit" not in context and "unit" not in context:
+            if callable(getattr(self, "_request_hack_and_slash_unit", None)):
+                self._request_hack_and_slash_unit(
+                    player,
+                    self.game,
+                    lambda unit: self._finalize_hack_and_slash(player, name, context, unit),
+                )
+            return
+
+        if name_u == "FRENZIED RESILIENCE" and "target_unit" not in context and "unit" not in context:
+            if callable(getattr(self, "_request_frenzied_resilience_unit", None)):
+                candidates = context.get("candidates") or []
+                self._request_frenzied_resilience_unit(
+                    player,
+                    self.game,
+                    candidates,
+                    lambda unit: self._finalize_frenzied_resilience(player, name, context, unit),
+                )
+            return
+
         if name_u == "SKULLS FOR THE SKULL THRONE!" and "attacker_unit" in context:
             if callable(getattr(self, "_request_blessings_roll", None)):
                 if self._blessings_flow_active:
@@ -6490,6 +6573,36 @@ class GameView:
             return
         ctx = dict(context)
         ctx["target_unit"] = unit
+        ok = manager.use(name, **ctx)
+        if ok:
+            print(f"Used stratagem: {name}")
+        else:
+            print(f"Could not use stratagem: {name}")
+
+    def _finalize_hack_and_slash(self, player, name: str, context: Dict[str, Any], unit) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if unit is None:
+            print("Hack and Slash: no unit selected")
+            return
+        ctx = dict(context)
+        ctx["unit"] = unit
+        ok = manager.use(name, **ctx)
+        if ok:
+            print(f"Used stratagem: {name}")
+        else:
+            print(f"Could not use stratagem: {name}")
+
+    def _finalize_frenzied_resilience(self, player, name: str, context: Dict[str, Any], unit) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if unit is None:
+            print("Frenzied Resilience: no unit selected")
+            return
+        ctx = dict(context)
+        ctx["unit"] = unit
         ok = manager.use(name, **ctx)
         if ok:
             print(f"Used stratagem: {name}")

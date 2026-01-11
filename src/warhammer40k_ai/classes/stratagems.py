@@ -7,6 +7,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BERZERKER'S WRATH",
     "BERZERKER’S WRATH",
     "BLOOD OFFERING",
+    "FRENZIED RESILIENCE",
+    "HACK AND SLASH",
     "COMMAND RE-ROLL",
     "COUNTER-OFFENSIVE",
     "EPIC CHALLENGE",
@@ -28,6 +30,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "BERZERKER'S WRATH",
     "BERZERKER’S WRATH",
     "BLOOD OFFERING",
+    "FRENZIED RESILIENCE",
     "COMMAND RE-ROLL",
     "COUNTER-OFFENSIVE",
     "FIRE OVERWATCH",
@@ -627,6 +630,8 @@ class StratagemManager:
         es.subscribe("blood_surge_triggered", self._on_blood_surge_triggered)
         # Fight phase selections for reaction stratagems (e.g. EPIC CHALLENGE)
         es.subscribe("fight_unit_selected", self._on_fight_unit_selected)
+        # Fight phase target selection for defensive stratagems (e.g. FRENZIED RESILIENCE)
+        es.subscribe("fight_targets_selected", self._on_fight_targets_selected)
         # Fight sequence completion for COUNTER-OFFENSIVE
         es.subscribe("fight_sequence_complete", self._on_fight_sequence_complete)
         # Unit destroyed hooks for faction stratagems
@@ -732,6 +737,22 @@ class StratagemManager:
                     except Exception:
                         continue
                 self._epic_challenge_models = []
+                for u in list(getattr(self.player.get_army(), "units", []) or []):
+                    try:
+                        sr = getattr(u, "special_rules", None)
+                        if not isinstance(sr, dict):
+                            continue
+                        if sr.get("hack_and_slash_active") is True:
+                            sr.pop("hack_and_slash_active", None)
+                            sr.pop("hack_and_slash_ap_bonus", None)
+                            sr.pop("hack_and_slash_expires_phase", None)
+                        if sr.get("frenzied_resilience_active") is True:
+                            sr.pop("frenzied_resilience_active", None)
+                            sr.pop("frenzied_resilience_damage_reduction", None)
+                            sr.pop("frenzied_resilience_expires_phase", None)
+                        u.special_rules = sr
+                    except Exception:
+                        continue
         except Exception:
             pass
 
@@ -1239,6 +1260,76 @@ class StratagemManager:
                 "unit": unit,
                 "eligible_models": models,
             })
+        except Exception:
+            return
+
+    def _on_fight_targets_selected(self, attacking_unit=None, target_units=None, **kwargs):
+        """
+        Reaction window for FRENZIED RESILIENCE:
+        Fight phase, just after an enemy unit has selected its targets.
+        """
+        try:
+            if attacking_unit is None:
+                return
+            if (self._current_phase_name or "").strip().lower() != "fight phase":
+                return
+            try:
+                owner_player = attacking_unit.get_parent_army().player
+            except Exception:
+                owner_player = None
+            if owner_player is None or owner_player is self.player:
+                return
+            s = self.get_by_name("FRENZIED RESILIENCE")
+            if not s:
+                return
+            if self.player.command_points < s.cp_cost:
+                return
+            if (s.name or "").strip().upper() in self._used_stratagems_this_phase:
+                return
+            try:
+                army = self.player.get_army()
+            except Exception:
+                army = None
+            we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+            if we_mgr is None or not getattr(we_mgr, "is_berzerker_warband", lambda: False)():
+                return
+
+            candidates = []
+            for unit in list(target_units or []):
+                try:
+                    if unit is None or not unit.is_alive():
+                        continue
+                    if unit.get_parent_army().player is not self.player:
+                        continue
+                    if _unit_cannot_be_target_of_stratagem(unit):
+                        continue
+                    if not (hasattr(unit, "has_any_keyword") and unit.has_any_keyword("WORLD EATERS")):
+                        continue
+                    candidates.append(unit)
+                except Exception:
+                    continue
+            if not candidates:
+                return
+
+            for r in self._pending_reactions:
+                try:
+                    if r.get("event") == "fight_targets_selected" and r.get("stratagem") == s.name and r.get("attacking_unit") is attacking_unit:
+                        return
+                except Exception:
+                    continue
+
+            payload = {
+                "event": "fight_targets_selected",
+                "phase_name": "Fight phase",
+                "stratagem": s.name,
+                "cp_cost": s.cp_cost,
+                "attacking_unit": attacking_unit,
+                "target_units": list(target_units or []),
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload)
         except Exception:
             return
 
@@ -2774,6 +2865,159 @@ class StratagemManager:
             except Exception:
                 pass
             print(f"🩸 BERZERKER'S WRATH: {getattr(unit, 'name', 'Unit')} will Blood Surge up to 8\".")
+            return True
+
+        # Berzerker Warband: HACK AND SLASH (+1 AP on melee weapons after charging)
+        if s.name.upper() == "HACK AND SLASH":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            if unit is None:
+                print("??O Hack and Slash: no target unit provided")
+                return False
+            try:
+                army = unit.get_parent_army()
+            except Exception:
+                army = None
+            we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+            if we_mgr is None or not getattr(we_mgr, "is_berzerker_warband", lambda: False)():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "fight phase":
+                print("??O Hack and Slash: wrong phase")
+                return False
+            try:
+                if _unit_cannot_be_target_of_stratagem(unit):
+                    print("??O Hack and Slash: target cannot be selected")
+                    return False
+            except Exception:
+                return False
+            try:
+                if not (hasattr(unit, "has_any_keyword") and unit.has_any_keyword("WORLD EATERS")):
+                    print("??O Hack and Slash: target is not WORLD EATERS")
+                    return False
+            except Exception:
+                return False
+            try:
+                charged = bool(getattr(getattr(unit, "round_state", None), "charged_this_round", False))
+            except Exception:
+                charged = False
+            if not charged:
+                print("??O Hack and Slash: target did not charge this turn")
+                return False
+            try:
+                if getattr(getattr(unit, "round_state", None), "fought_this_phase", False):
+                    print("??O Hack and Slash: target already fought this phase")
+                    return False
+            except Exception:
+                return False
+
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=unit).get("cost", s.cp_cost))
+            except Exception:
+                eff_cost = s.cp_cost
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["hack_and_slash_active"] = True
+                sr["hack_and_slash_ap_bonus"] = 1
+                sr["hack_and_slash_expires_phase"] = "FIGHT_PHASE"
+                unit.special_rules = sr
+            except Exception:
+                pass
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
+            print(f"dYc, HACK AND SLASH: {getattr(unit, 'name', 'Unit')} gains +1 AP on melee weapons this phase.")
+            return True
+
+        # Berzerker Warband: FRENZIED RESILIENCE (-1 Damage allocated this phase)
+        if s.name.upper() == "FRENZIED RESILIENCE":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            attacker_unit = kwargs.get("attacker_unit")
+            candidates = kwargs.get("candidates") or kwargs.get("target_units") or []
+            if unit is None:
+                if candidates:
+                    unit = candidates[0]
+                else:
+                    for r in reversed(self._pending_reactions):
+                        if r.get("stratagem", "").strip().upper() == "FRENZIED RESILIENCE":
+                            unit = r.get("unit") or r.get("target_unit")
+                            attacker_unit = attacker_unit or r.get("attacking_unit")
+                            candidates = candidates or (r.get("candidates") or [])
+                            break
+            if unit is None:
+                print("??O Frenzied Resilience: no target unit provided")
+                return False
+            try:
+                army = unit.get_parent_army()
+            except Exception:
+                army = None
+            we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+            if we_mgr is None or not getattr(we_mgr, "is_berzerker_warband", lambda: False)():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "fight phase":
+                print("??O Frenzied Resilience: wrong phase")
+                return False
+            try:
+                if _unit_cannot_be_target_of_stratagem(unit):
+                    print("??O Frenzied Resilience: target cannot be selected")
+                    return False
+            except Exception:
+                return False
+            try:
+                if not (hasattr(unit, "has_any_keyword") and unit.has_any_keyword("WORLD EATERS")):
+                    print("??O Frenzied Resilience: target is not WORLD EATERS")
+                    return False
+            except Exception:
+                return False
+            if candidates:
+                try:
+                    if unit not in list(candidates or []):
+                        print("??O Frenzied Resilience: target was not selected as a target")
+                        return False
+                except Exception:
+                    pass
+            if attacker_unit is not None:
+                try:
+                    if attacker_unit.get_parent_army().player is self.player:
+                        print("??O Frenzied Resilience: attacker is not enemy")
+                        return False
+                except Exception:
+                    pass
+
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=unit).get("cost", s.cp_cost))
+            except Exception:
+                eff_cost = s.cp_cost
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["frenzied_resilience_active"] = True
+                sr["frenzied_resilience_damage_reduction"] = 1
+                sr["frenzied_resilience_expires_phase"] = "FIGHT_PHASE"
+                unit.special_rules = sr
+            except Exception:
+                pass
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
+            print(f"dYc, FRENZIED RESILIENCE: {getattr(unit, 'name', 'Unit')} reduces damage by 1 this phase.")
             return True
 
         # Berzerker Warband: BLOOD OFFERING (sticky objective on unit destruction)
