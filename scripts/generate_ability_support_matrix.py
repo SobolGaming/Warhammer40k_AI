@@ -66,6 +66,31 @@ def _norm(text: str) -> str:
     return re.sub(r"\s+", " ", t).strip()
 
 
+def _is_kill_team_unit(name: str) -> bool:
+    return _norm(name).endswith(" kill team")
+
+
+def _is_virtual_datasheet(ds: dict) -> bool:
+    val = str(ds.get("virtual", "") or "").strip().lower()
+    return val in ("true", "1", "yes")
+
+
+def _clean_cell(value: Any) -> Any:
+    if isinstance(value, str):
+        return _strip_html(value).replace("\u0192?T", "'").strip()
+    return value
+
+
+def _freeze_rows(rows: Sequence[dict], *, blacklist: set[str] | None = None) -> tuple[str, ...]:
+    skip = blacklist or set()
+    frozen: List[str] = []
+    for row in rows or []:
+        cleaned = {k: _clean_cell(v) for k, v in row.items() if k not in skip}
+        if cleaned:
+            frozen.append(json.dumps(cleaned, sort_keys=True, ensure_ascii=True))
+    return tuple(sorted(frozen))
+
+
 def _strip_html(text: str) -> str:
     if not text:
         return ""
@@ -1561,6 +1586,7 @@ def _build_faction_content(
     models_cost_by_datasheet: Dict[str, List[dict]],
     unit_comp_by_datasheet: Dict[str, List[dict]],
     datasheet_support_overrides: Dict[Tuple[str, str], Tuple[str, str]],
+    virtual_unit_names: set[str],
 ) -> Tuple[str, int, int]:
     faction_name = str(meta.get("faction_name", "") or faction_id)
     faction_items: List[Tuple[str, str]] = []
@@ -1739,6 +1765,20 @@ def _build_faction_content(
     # Datasheet abilities
     ds_ability_rows = []
     ability_entries = list(datasheet_abilities_by_faction.get(faction_id, {}).values())
+    if ability_entries:
+        filtered_entries = []
+        for entry in ability_entries:
+            units = set(entry.get("units") or set())
+            if units:
+                kept = {u for u in units if u not in virtual_unit_names}
+                if faction_id == "SM":
+                    kept = {u for u in kept if not _is_kill_team_unit(u)}
+                if not kept:
+                    continue
+                entry = dict(entry)
+                entry["units"] = kept
+            filtered_entries.append(entry)
+        ability_entries = filtered_entries
     ability_entries.sort(key=lambda e: (_norm(e.get("name", "")), _norm(_strip_html(e.get("description", "")))))
     name_variants: Dict[str, set[str]] = {}
     for entry in ability_entries:
@@ -1805,6 +1845,8 @@ def _build_faction_content(
 
     # Datasheet support summary
     ds_units = list(datasheets_by_faction.get(faction_id, []) or [])
+    if faction_id == "SM":
+        ds_units = [ds for ds in ds_units if not _is_kill_team_unit(ds.get("name", ""))]
     if ds_units:
         ds_units.sort(key=lambda d: (_norm(d.get("name", "")), str(d.get("id", "") or "")))
         ds_rows = []
@@ -1922,6 +1964,8 @@ def _build_matrix() -> str:
     detachments = _load_detachments()
     sources = _load_sources()
     ds_map = _build_datasheet_map(sources)
+    virtual_datasheet_ids = {dsid for dsid, ds in ds_map.items() if _is_virtual_datasheet(ds)}
+    virtual_unit_names = {ds.get("name", "") or "" for dsid, ds in ds_map.items() if dsid in virtual_datasheet_ids}
 
     _seed_ability_support_maps(abilities, det_abilities_rows)
 
@@ -1993,10 +2037,13 @@ def _build_matrix() -> str:
             continue
         unit_comp_by_datasheet.setdefault(dsid, []).append(row)
 
+    abilities_rows_by_datasheet: Dict[str, List[dict]] = {}
     datasheet_abilities_by_faction: Dict[str, Dict[Tuple[str, ...], dict]] = {}
     datasheet_abilities_by_datasheet: Dict[str, Dict[Tuple[str, ...], dict]] = {}
     for row in ds_abilities_rows:
         dsid = str(row.get("datasheet_id", "") or "").strip()
+        if dsid in virtual_datasheet_ids:
+            continue
         ds = ds_map.get(dsid)
         if not ds:
             continue
@@ -2033,13 +2080,82 @@ def _build_matrix() -> str:
         ds_bucket = datasheet_abilities_by_datasheet.setdefault(dsid, {})
         if key not in ds_bucket:
             ds_bucket[key] = {"name": name, "description": desc, "ability_id": ability_id}
+        abilities_rows_by_datasheet.setdefault(dsid, []).append(row)
 
     datasheets_by_faction: Dict[str, List[dict]] = {}
     for ds in ds_map.values():
+        if _is_virtual_datasheet(ds):
+            continue
         fid = str(ds.get("faction_id", "") or "").strip().upper()
         if fid not in SUPPORTED_FACTION_IDS:
             continue
         datasheets_by_faction.setdefault(fid, []).append(ds)
+
+    row_blacklist = {"datasheet_id", "line", "line_in_wargear"}
+
+    def _datasheet_signature(ds: dict) -> tuple:
+        dsid = str(ds.get("id", "") or "").strip()
+        return (
+            _norm(ds.get("role", "")),
+            _norm(ds.get("transport", "")),
+            _norm(ds.get("damaged_w", "")),
+            _norm(_strip_html(ds.get("damaged_description", ""))),
+            _freeze_rows(unit_comp_by_datasheet.get(dsid, []), blacklist=row_blacklist),
+            _freeze_rows(models_by_datasheet.get(dsid, []), blacklist=row_blacklist),
+            _freeze_rows(models_cost_by_datasheet.get(dsid, []), blacklist=row_blacklist),
+            _freeze_rows(options_by_datasheet.get(dsid, []), blacklist=row_blacklist),
+            _freeze_rows(wargear_by_datasheet.get(dsid, []), blacklist=row_blacklist),
+            _freeze_rows(keywords_by_datasheet.get(dsid, []), blacklist=row_blacklist),
+            _freeze_rows(abilities_rows_by_datasheet.get(dsid, []), blacklist=row_blacklist),
+        )
+
+    def _dedupe_datasheets_by_name(ds_list: List[dict]) -> Tuple[List[dict], List[dict]]:
+        by_name: Dict[str, List[dict]] = {}
+        for ds in ds_list:
+            by_name.setdefault(_norm(ds.get("name", "")), []).append(ds)
+        deduped: List[dict] = []
+        conflicts: List[dict] = []
+        for name_norm, group in by_name.items():
+            if len(group) == 1:
+                deduped.append(group[0])
+                continue
+            sig_map: Dict[tuple, List[dict]] = {}
+            for ds in group:
+                sig_map.setdefault(_datasheet_signature(ds), []).append(ds)
+            if len(sig_map) == 1:
+                keep = sorted(group, key=lambda d: str(d.get("id", "") or ""))[0]
+                deduped.append(keep)
+                continue
+            conflicts.append({
+                "name": group[0].get("name", "") or name_norm,
+                "entries": [
+                    {
+                        "id": str(ds.get("id", "") or "").strip(),
+                        "source": str(sources.get(ds.get("source_id", ""), {}).get("name", "") or "").strip(),
+                    }
+                    for ds in group
+                ],
+            })
+            deduped.extend(group)
+        return deduped, conflicts
+
+    dedupe_conflicts: List[dict] = []
+    deduped_by_faction: Dict[str, List[dict]] = {}
+    for fid, ds_list in datasheets_by_faction.items():
+        deduped, conflicts = _dedupe_datasheets_by_name(ds_list)
+        deduped_by_faction[fid] = deduped
+        dedupe_conflicts.extend(conflicts)
+    datasheets_by_faction = deduped_by_faction
+
+    if dedupe_conflicts:
+        print("⚠️ Datasheets with same name but different content detected:")
+        for entry in dedupe_conflicts:
+            parts = []
+            for item in entry.get("entries", []):
+                sid = item.get("id", "")
+                src = item.get("source", "")
+                parts.append(f"{sid} ({src})" if src else sid)
+            print(f" - {entry.get('name', '')}: {', '.join(parts)}")
 
     datasheet_support_overrides = _datasheet_support_by_name_faction()
 
@@ -2185,6 +2301,7 @@ def _build_matrix() -> str:
             models_cost_by_datasheet=models_cost_by_datasheet,
             unit_comp_by_datasheet=unit_comp_by_datasheet,
             datasheet_support_overrides=datasheet_support_overrides,
+            virtual_unit_names=virtual_unit_names,
         )
         slug = _slugify(faction_name)
         rel_path = f"factions/{slug}.md"
