@@ -27,28 +27,36 @@ from .constants import ENGAGEMENT_RANGE_HORIZONTAL, MM_TO_INCHES
 
 # Global caches for collision detection
 _terrain_cache = {}  # Cache for terrain blocking polygons by (game_map_id, unit_keywords, movement_type)
-_enemy_model_cache = {}  # Cache for enemy model shapes by (game_map_id, faction)
-_enemy_model_big_cache = {}  # Cache for enemy MONSTER/VEHICLE model shapes by (game_map_id, faction)
-_enemy_engagement_buffer_cache = {}  # Cache for buffered enemy shapes by (game_map_id, faction)
+_enemy_model_cache = {}  # Cache for non-aircraft enemy model shapes by (game_map_id, faction)
+_enemy_model_big_cache = {}  # Cache for non-aircraft MONSTER/VEHICLE shapes by (game_map_id, faction)
+_enemy_aircraft_model_cache = {}  # Cache for enemy AIRCRAFT model shapes by (game_map_id, faction)
+_enemy_engagement_buffer_cache = {}  # Cache for buffered non-aircraft enemy shapes by (game_map_id, faction)
+_enemy_aircraft_engagement_buffer_cache = {}  # Cache for buffered aircraft shapes by (game_map_id, faction)
 
 
 def clear_collision_caches():
     """Clear all collision detection caches. Call when models die or game state changes significantly."""
-    global _terrain_cache, _enemy_model_cache, _enemy_model_big_cache, _enemy_engagement_buffer_cache
+    global _terrain_cache, _enemy_model_cache, _enemy_model_big_cache
+    global _enemy_aircraft_model_cache, _enemy_engagement_buffer_cache, _enemy_aircraft_engagement_buffer_cache
     _terrain_cache.clear()
     _enemy_model_cache.clear()
     _enemy_model_big_cache.clear()
+    _enemy_aircraft_model_cache.clear()
     _enemy_engagement_buffer_cache.clear()
+    _enemy_aircraft_engagement_buffer_cache.clear()
     logger.debug("Cleared collision detection caches")
 
 
 def clear_enemy_model_cache(game_map_id: int = None):
     """Clear enemy model cache for a specific game map or all maps."""
-    global _enemy_model_cache, _enemy_model_big_cache, _enemy_engagement_buffer_cache
+    global _enemy_model_cache, _enemy_model_big_cache, _enemy_aircraft_model_cache
+    global _enemy_engagement_buffer_cache, _enemy_aircraft_engagement_buffer_cache
     if game_map_id is None:
         _enemy_model_cache.clear()
         _enemy_model_big_cache.clear()
+        _enemy_aircraft_model_cache.clear()
         _enemy_engagement_buffer_cache.clear()
+        _enemy_aircraft_engagement_buffer_cache.clear()
         logger.debug("Cleared all enemy model caches")
     else:
         keys_to_remove = [key for key in _enemy_model_cache.keys() if key[0] == game_map_id]
@@ -57,9 +65,15 @@ def clear_enemy_model_cache(game_map_id: int = None):
         keys_to_remove = [key for key in _enemy_model_big_cache.keys() if key[0] == game_map_id]
         for key in keys_to_remove:
             del _enemy_model_big_cache[key]
+        keys_to_remove = [key for key in _enemy_aircraft_model_cache.keys() if key[0] == game_map_id]
+        for key in keys_to_remove:
+            del _enemy_aircraft_model_cache[key]
         keys_to_remove = [key for key in _enemy_engagement_buffer_cache.keys() if key[0] == game_map_id]
         for key in keys_to_remove:
             del _enemy_engagement_buffer_cache[key]
+        keys_to_remove = [key for key in _enemy_aircraft_engagement_buffer_cache.keys() if key[0] == game_map_id]
+        for key in keys_to_remove:
+            del _enemy_aircraft_engagement_buffer_cache[key]
         logger.debug("Cleared enemy model cache for game map %s", game_map_id)
 
 # OPTIMIZED PATHFINDING INTEGRATION
@@ -938,19 +952,25 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
     # Apply spatial filtering to terrain for this move
     blocking_terrain = [poly for poly in all_blocking_terrain if is_within_search_area(poly)]
 
-    # Get enemy models with caching and spatial filtering
+    # Get enemy models with caching and spatial filtering (split aircraft vs non-aircraft)
     enemy_cache_key = (id(game_map), moving_unit.faction)
     if enemy_cache_key in _enemy_model_cache:
         all_enemy_shapes = _enemy_model_cache[enemy_cache_key]
         all_enemy_big_shapes = _enemy_model_big_cache.get(enemy_cache_key, [])
+        all_enemy_aircraft_shapes = _enemy_aircraft_model_cache.get(enemy_cache_key, [])
     else:
         all_enemy_shapes = []
         all_enemy_big_shapes = []
+        all_enemy_aircraft_shapes = []
         for unit in game_map.units:
             if not unit.is_alive() or not unit.deployed:
                 continue
             if unit.faction == moving_unit.faction:
                 continue
+            try:
+                is_aircraft = bool(getattr(unit, "is_aircraft", False))
+            except Exception:
+                is_aircraft = False
             try:
                 is_big = bool(getattr(unit, "is_monster", False) or getattr(unit, "is_vehicle", False) or getattr(unit, "is_titanic", False))
             except Exception:
@@ -958,15 +978,21 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
             for model in _unit_models_for_collision(unit):
                 if model.is_alive:
                     shape = model.model_base.get_base_shape()
-                    all_enemy_shapes.append(shape)
-                    if is_big:
-                        all_enemy_big_shapes.append(shape)
+                    if is_aircraft:
+                        all_enemy_aircraft_shapes.append(shape)
+                    else:
+                        all_enemy_shapes.append(shape)
+                        if is_big:
+                            all_enemy_big_shapes.append(shape)
         _enemy_model_cache[enemy_cache_key] = all_enemy_shapes
         _enemy_model_big_cache[enemy_cache_key] = all_enemy_big_shapes
+        _enemy_aircraft_model_cache[enemy_cache_key] = all_enemy_aircraft_shapes
 
     enemy_models = [shape for shape in all_enemy_shapes if is_within_search_area(shape)]
+    enemy_aircraft_models = [shape for shape in all_enemy_aircraft_shapes if is_within_search_area(shape)]
 
     # FLY over enemy models: block only enemy MONSTER/VEHICLE models for non-MONSTER/VEHICLE flyers.
+    # Aircraft are ignored for this blocking rule.
     blocking_enemy_models = []
     if _unit_is_fly_move(moving_unit, movement_type) and not _unit_can_fly_over_big_models(moving_unit, movement_type):
         blocking_enemy_models = [shape for shape in all_enemy_big_shapes if is_within_search_area(shape)]
@@ -1009,7 +1035,8 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
     trees = {
         'terrain': STRtree(blocking_terrain) if blocking_terrain else None,
         'friendly_models': STRtree(friendly_models) if friendly_models else None,
-        'enemy_models': STRtree(enemy_models) if enemy_models else None
+        'enemy_models': STRtree(enemy_models) if enemy_models else None,
+        'enemy_aircraft_models': STRtree(enemy_aircraft_models) if enemy_aircraft_models else None,
     }
     if blocking_enemy_models:
         trees['enemy_models_blocking'] = STRtree(blocking_enemy_models)
@@ -1048,6 +1075,18 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
         # Pile-in/Consolidate: 3" movement, no engagement buffer
         pass  # Use base trees without engagement buffer
 
+    # Aircraft engagement buffers (for final-position checks across movement types)
+    if all_enemy_aircraft_shapes:
+        if enemy_cache_key in _enemy_aircraft_engagement_buffer_cache:
+            all_aircraft_buffered = _enemy_aircraft_engagement_buffer_cache[enemy_cache_key]
+        else:
+            all_aircraft_buffered = [shape.buffer(ENGAGEMENT_RANGE_HORIZONTAL) for shape in all_enemy_aircraft_shapes]
+            _enemy_aircraft_engagement_buffer_cache[enemy_cache_key] = all_aircraft_buffered
+
+        buffered_aircraft = [shape for shape in all_aircraft_buffered if is_within_search_area(shape)]
+        if buffered_aircraft:
+            trees['engagement_buffer_aircraft'] = STRtree(buffered_aircraft)
+
     return trees
 
 
@@ -1072,6 +1111,8 @@ def get_validation_rules(movement_type: MovementType, target_unit: 'Unit' = None
         'check_terrain_traversal': True,    # Always check if unit can traverse terrain
         'can_move_through_enemy_models': False,
         'can_move_through_friendly_models': False,
+        # Aircraft rule: cannot end any move within Engagement Range of enemy AIRCRAFT (charge exception handled below).
+        'cannot_end_within_engagement_range_of_aircraft': True,
     }
 
     # Add movement-specific rules
@@ -1082,6 +1123,13 @@ def get_validation_rules(movement_type: MovementType, target_unit: 'Unit' = None
             'allow_engagement_range_movement': True,  # Can move through engagement range
             'allow_base_to_base_contact': True,  # Can end in base-to-base contact with target
         })
+        try:
+            if target_unit is not None and bool(getattr(target_unit, "is_aircraft", False)):
+                can_fly = bool(moving_unit is not None and getattr(moving_unit, "is_flying", False))
+                if can_fly:
+                    base_rules['allow_end_in_engagement_range_of_aircraft'] = True
+        except Exception:
+            pass
 
     elif movement_type == MovementType.PILE_IN:
         from .constants import PILE_IN_DISTANCE
@@ -1094,6 +1142,11 @@ def get_validation_rules(movement_type: MovementType, target_unit: 'Unit' = None
             # Pathfinding is discretized; allow a tiny epsilon so an intended 3.0" move doesn't get rejected as 3.04".
             'distance_tolerance': 0.05,
         })
+        try:
+            if moving_unit is not None and not bool(getattr(moving_unit, "is_flying", False)):
+                base_rules['closest_enemy_unit_exclude_keywords'] = {"AIRCRAFT"}
+        except Exception:
+            pass
         try:
             if moving_unit is not None:
                 army = moving_unit.get_parent_army()
@@ -1114,6 +1167,11 @@ def get_validation_rules(movement_type: MovementType, target_unit: 'Unit' = None
             # Pathfinding is discretized; allow a tiny epsilon so an intended 3.0" move doesn't get rejected as 3.04".
             'distance_tolerance': 0.05,
         })
+        try:
+            if moving_unit is not None and not bool(getattr(moving_unit, "is_flying", False)):
+                base_rules['closest_enemy_unit_exclude_keywords'] = {"AIRCRAFT"}
+        except Exception:
+            pass
         try:
             if moving_unit is not None:
                 army = moving_unit.get_parent_army()
@@ -1828,6 +1886,39 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
                     return {'valid': False, 'reason': 'Position within engagement range of enemy models'}
                 return {'valid': False, 'reason': 'Position blocked by enemy models'}
 
+    # Check enemy AIRCRAFT overlaps (always ignored during movement, but not at final position)
+    if collision_trees.get('enemy_aircraft_models') and validation_rules.get('prevent_enemy_overlap', True):
+        if is_final_position:
+            potential_hits = query_spatial_index(collision_trees['enemy_aircraft_models'], test_shape)
+            actual_hits = []
+            allowed_target_contact = False
+
+            for hit_shape in potential_hits:
+                try:
+                    if test_shape.intersects(hit_shape):
+                        if validation_rules.get('allow_base_to_base_contact', False) and not allowed_target_contact:
+                            target_unit = validation_rules.get('target_unit')
+                            if target_unit and bool(getattr(target_unit, "is_aircraft", False)):
+                                for enemy_model in target_unit.models:
+                                    if enemy_model.is_alive:
+                                        from ..utility.model_base import Base
+                                        temp_base = Base(model.model_base.base_type, model.model_base.radius)
+                                        temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
+                                        from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
+                                        horizontal_distance = float(horizontal_distance_between_bases_2d(temp_base, enemy_model.model_base))
+                                        vertical_distance = float(vertical_distance_between_bases(temp_base, enemy_model.model_base))
+                                        if (horizontal_distance >= 0.0 and horizontal_distance < 0.1 and
+                                            vertical_distance <= ENGAGEMENT_RANGE_VERTICAL):
+                                            allowed_target_contact = True
+                                            continue
+                        if not allowed_target_contact:
+                            actual_hits.append(hit_shape)
+                except Exception:
+                    continue
+
+            if actual_hits:
+                return {'valid': False, 'reason': 'Position blocked by enemy aircraft'}
+
     # Check engagement range using fast spatial indexing (engagement_buffer tree)
     if validation_rules.get('cannot_move_within_engagement_range', False):
         # Use the pre-built engagement_buffer STRtree for O(log n) performance instead of O(n)
@@ -1854,6 +1945,46 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
             # engagement range of any valid destination, the absence of the tree implies
             # no relevant enemies are in range. Skip slow O(n) fallback checks.
             pass
+
+    # Aircraft engagement range restriction (final position only, unless allowed by charge vs aircraft)
+    if validation_rules.get('cannot_end_within_engagement_range_of_aircraft', False) and is_final_position:
+        if not validation_rules.get('allow_end_in_engagement_range_of_aircraft', False):
+            if collision_trees and collision_trees.get('engagement_buffer_aircraft'):
+                try:
+                    potential_hits = query_spatial_index(collision_trees['engagement_buffer_aircraft'], test_shape)
+                    for hit in potential_hits:
+                        try:
+                            if test_shape.intersects(hit):
+                                return {'valid': False, 'reason': 'Position within engagement range of enemy aircraft'}
+                        except Exception:
+                            continue
+                except Exception:
+                    pass
+            elif game_map is not None:
+                # Fallback: check enemy aircraft models directly
+                from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
+                from ..utility.model_base import Base
+                temp_base = Base(model.model_base.base_type, model.model_base.radius)
+                temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
+                try:
+                    temp_base.set_facing(float(getattr(model.model_base, "facing", 0.0) or 0.0))
+                except Exception:
+                    pass
+                for unit in getattr(game_map, 'units', []) or []:
+                    if unit.faction == model.parent_unit.faction or not unit.is_alive() or not unit.deployed:
+                        continue
+                    try:
+                        if not bool(getattr(unit, "is_aircraft", False)):
+                            continue
+                    except Exception:
+                        continue
+                    for enemy_model in getattr(unit, "models", []) or []:
+                        if not getattr(enemy_model, "is_alive", False):
+                            continue
+                        horiz = float(horizontal_distance_between_bases_2d(temp_base, enemy_model.model_base))
+                        vert = float(vertical_distance_between_bases(temp_base, enemy_model.model_base))
+                        if horiz <= ENGAGEMENT_RANGE_HORIZONTAL and vert <= ENGAGEMENT_RANGE_VERTICAL:
+                            return {'valid': False, 'reason': 'Position within engagement range of enemy aircraft'}
 
     # Check charge-specific rules (only apply to final positions)
     if validation_rules.get('must_end_in_engagement_range', False) and is_final_position:
@@ -2141,12 +2272,26 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
         max_relevant_distance = ENGAGEMENT_RANGE_HORIZONTAL + PILE_IN_DISTANCE
         
         use_unit = bool(validation_rules.get('closest_enemy_unit', False))
+        try:
+            exclude_keywords = set(validation_rules.get('closest_enemy_unit_exclude_keywords', []) or [])
+        except Exception:
+            exclude_keywords = set()
 
         if use_unit:
             enemy_units = []
             for unit in game_map.units:
                 if unit.faction == model.parent_unit.faction or not unit.is_alive() or not unit.deployed:
                     continue
+                if exclude_keywords:
+                    try:
+                        if any(unit.has_any_keyword(kw) for kw in exclude_keywords):
+                            continue
+                    except Exception:
+                        try:
+                            if "AIRCRAFT" in exclude_keywords and getattr(unit, "is_aircraft", False):
+                                continue
+                        except Exception:
+                            pass
                 try:
                     unit_models = [m for m in unit.models if getattr(m, "is_alive", False)]
                 except Exception:
@@ -2211,6 +2356,16 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
             for unit in game_map.units:
                 if unit.faction == model.parent_unit.faction or not unit.is_alive() or not unit.deployed:
                     continue
+                if exclude_keywords:
+                    try:
+                        if any(unit.has_any_keyword(kw) for kw in exclude_keywords):
+                            continue
+                    except Exception:
+                        try:
+                            if "AIRCRAFT" in exclude_keywords and getattr(unit, "is_aircraft", False):
+                                continue
+                        except Exception:
+                            pass
                 for enemy_model in unit.models:
                     if enemy_model.is_alive:
                         # Optimization: exclude enemies too far away to matter for pile-in
@@ -2404,10 +2559,24 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
 
         # Find relevant enemy models (optimize to those that could be reached into engagement)
         max_relevant_distance = ENGAGEMENT_RANGE_HORIZONTAL + CONSOLIDATE_DISTANCE
+        try:
+            exclude_keywords = set(validation_rules.get('closest_enemy_unit_exclude_keywords', []) or [])
+        except Exception:
+            exclude_keywords = set()
         enemy_models = []
         for unit in getattr(game_map, 'units', []) or []:
             if unit.faction == model.parent_unit.faction or not unit.is_alive() or not unit.deployed:
                 continue
+            if exclude_keywords:
+                try:
+                    if any(unit.has_any_keyword(kw) for kw in exclude_keywords):
+                        continue
+                except Exception:
+                    try:
+                        if "AIRCRAFT" in exclude_keywords and getattr(unit, "is_aircraft", False):
+                            continue
+                    except Exception:
+                        pass
             for enemy_model in getattr(unit, 'models', []) or []:
                 if not getattr(enemy_model, 'is_alive', False):
                     continue
@@ -2425,6 +2594,16 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
                 for unit in getattr(game_map, 'units', []) or []:
                     if unit.faction == model.parent_unit.faction or not unit.is_alive() or not unit.deployed:
                         continue
+                    if exclude_keywords:
+                        try:
+                            if any(unit.has_any_keyword(kw) for kw in exclude_keywords):
+                                continue
+                        except Exception:
+                            try:
+                                if "AIRCRAFT" in exclude_keywords and getattr(unit, "is_aircraft", False):
+                                    continue
+                            except Exception:
+                                pass
                     try:
                         unit_models = [m for m in unit.models if getattr(m, "is_alive", False)]
                     except Exception:
@@ -2466,47 +2645,47 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
 
                     return {'valid': True, 'reason': 'Valid final position'}
 
-            if not use_unit:
-                # Closest enemy model by edge-to-edge distance
-                closest_enemy = None
-                closest_distance = float('inf')
-                for em in enemy_models:
-                    from ..utility.aura_utils import distance_between_bases_3d
-                    d = float(distance_between_bases_3d(current_base, em.model_base))
-                    if d < closest_distance:
-                        closest_distance = d
-                        closest_enemy = em
+        if not use_unit:
+            # Closest enemy model by edge-to-edge distance
+            closest_enemy = None
+            closest_distance = float('inf')
+            for em in enemy_models:
+                from ..utility.aura_utils import distance_between_bases_3d
+                d = float(distance_between_bases_3d(current_base, em.model_base))
+                if d < closest_distance:
+                    closest_distance = d
+                    closest_enemy = em
 
-                if closest_enemy is not None:
-                    # If engagement range is achievable (based on distance), require ending in engagement range
-                    engagement_possible = closest_distance <= max_relevant_distance
-                    in_engagement = _is_in_engagement_range_of_any_enemy(enemy_models)
-                    if engagement_possible and not in_engagement:
+            if closest_enemy is not None:
+                # If engagement range is achievable (based on distance), require ending in engagement range
+                engagement_possible = closest_distance <= max_relevant_distance
+                in_engagement = _is_in_engagement_range_of_any_enemy(enemy_models)
+                if engagement_possible and not in_engagement:
+                    return {
+                        'valid': False,
+                        'reason': 'Consolidate must end within engagement range of an enemy unit when possible'
+                    }
+
+                # Must end closer to the closest enemy model (even if not reaching engagement)
+                from ..utility.aura_utils import distance_between_bases_3d
+                new_distance_to_closest = float(distance_between_bases_3d(new_base, closest_enemy.model_base))
+
+                if new_distance_to_closest >= closest_distance:
+                    return {
+                        'valid': False,
+                        'reason': f'Consolidate must end closer to closest enemy ({closest_enemy.name}): {new_distance_to_closest:.2f}" >= {closest_distance:.2f}"'
+                    }
+
+                # Prefer base contact if achievable within consolidate distance
+                if validation_rules.get('prefer_base_contact', False):
+                    if closest_distance <= CONSOLIDATE_DISTANCE and new_distance_to_closest > BASE_CONTACT_EPSILON:
                         return {
                             'valid': False,
-                            'reason': 'Consolidate must end within engagement range of an enemy unit when possible'
+                            'reason': f'Consolidate must end in base contact with closest enemy ({closest_enemy.name}) when possible'
                         }
 
-                    # Must end closer to the closest enemy model (even if not reaching engagement)
-                    from ..utility.aura_utils import distance_between_bases_3d
-                    new_distance_to_closest = float(distance_between_bases_3d(new_base, closest_enemy.model_base))
-
-                    if new_distance_to_closest >= closest_distance:
-                        return {
-                            'valid': False,
-                            'reason': f'Consolidate must end closer to closest enemy ({closest_enemy.name}): {new_distance_to_closest:.2f}" ≥ {closest_distance:.2f}"'
-                        }
-
-                    # Prefer base contact if achievable within consolidate distance
-                    if validation_rules.get('prefer_base_contact', False):
-                        if closest_distance <= CONSOLIDATE_DISTANCE and new_distance_to_closest > BASE_CONTACT_EPSILON:
-                            return {
-                                'valid': False,
-                                'reason': f'Consolidate must end in base contact with closest enemy ({closest_enemy.name}) when possible'
-                            }
-
-                    # If we got here, consolidate is valid via enemy interaction
-                    return {'valid': True, 'reason': 'Valid final position'}
+                # If we got here, consolidate is valid via enemy interaction
+                return {'valid': True, 'reason': 'Valid final position'}
 
         # Enemy engagement not achievable (or no relevant enemies) -> objective fallback
         objectives = getattr(game_map, 'objectives', []) or []

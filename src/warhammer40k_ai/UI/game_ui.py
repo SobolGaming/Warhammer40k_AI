@@ -8668,6 +8668,102 @@ class SetupPhaseHandler(BasePhaseHandler):
 
         print("📋 Transport Assignment Dialog opened - select transports and units to start embarked")
 
+    def _start_hover_mode_selection_flow(self, players, on_done) -> None:
+        """Prompt human players to choose Hover mode for eligible AIRCRAFT before formations dialogs."""
+        queue = []
+        for player in list(players or []):
+            try:
+                if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                    continue
+            except Exception:
+                continue
+            try:
+                army = player.get_army()
+            except Exception:
+                army = None
+            if army is None:
+                continue
+            for unit in list(getattr(army, "units", []) or []):
+                try:
+                    if bool(getattr(unit, "hover_declared", False)):
+                        continue
+                except Exception:
+                    pass
+                try:
+                    if not bool(getattr(unit, "has_hover", lambda: False)()):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    if not bool(getattr(unit, "has_keyword", lambda *_a, **_k: False)("Aircraft")):
+                        continue
+                except Exception:
+                    continue
+                queue.append((player, unit))
+
+        self._pending_hover_mode_queue = queue
+        self._hover_mode_on_done = on_done
+
+        if not queue:
+            self._finish_hover_mode_selection()
+            return
+
+        self._open_next_hover_mode_prompt()
+
+    def _finish_hover_mode_selection(self) -> None:
+        """Finalize Hover mode selection and apply AI declarations."""
+        try:
+            if hasattr(self.game, "_apply_hover_declarations"):
+                self.game._apply_hover_declarations()
+        except Exception:
+            pass
+
+        cb = getattr(self, "_hover_mode_on_done", None)
+        self._hover_mode_on_done = None
+        if callable(cb):
+            try:
+                cb()
+            except Exception:
+                pass
+
+    def _open_next_hover_mode_prompt(self) -> None:
+        q = list(getattr(self, "_pending_hover_mode_queue", []) or [])
+        if not q:
+            self._pending_hover_mode_queue = []
+            self._finish_hover_mode_selection()
+            return
+
+        player, unit = q.pop(0)
+        self._pending_hover_mode_queue = q
+
+        title = "Hover Mode"
+        pname = getattr(player, "name", "Player")
+        uname = getattr(unit, "name", "Unit")
+        msg = (
+            f"Enable Hover mode for {uname} ({pname})?\n\n"
+            "Hover removes the AIRCRAFT keyword and sets Move to 20\"."
+        )
+
+        def _done(chosen: bool):
+            try:
+                unit.set_hover_mode(bool(chosen))
+            except Exception:
+                pass
+            try:
+                unit.hover_declared = True
+            except Exception:
+                pass
+            self._open_next_hover_mode_prompt()
+
+        if callable(getattr(self, "_request_yes_no", None)):
+            self._request_yes_no(title, msg, "Hover", "Aircraft", _done)
+        else:
+            try:
+                self.yes_no_dialog.show(title, msg, _done, yes_label="Hover", no_label="Aircraft")
+                self.dialog_manager.open(self.yes_no_dialog, modal=True)
+            except Exception:
+                _done(False)
+
     def _start_declare_battle_formations_flow(self) -> None:
         """
         Run Declare Battle Formations as simultaneous per-player dialogs:
@@ -8681,352 +8777,285 @@ class SetupPhaseHandler(BasePhaseHandler):
             self.game.advance_setup_phase()
             return
 
-        # Apply Hover declarations before any formation dialogs.
-        try:
-            if hasattr(self.game, "_apply_hover_declarations"):
-                self.game._apply_hover_declarations()
-        except Exception:
-            pass
+        def _after_hover():
+            def _army_units(p):
+                try:
+                    a = p.get_army()
+                    return list(getattr(a, "units", []) or [])
+                except Exception:
+                    return []
 
-        def _army_units(p):
-            try:
-                a = p.get_army()
-                return list(getattr(a, "units", []) or [])
-            except Exception:
-                return []
+            if len(players) != 2:
+                print("⚠️ Side-by-side formations UI currently supports exactly 2 players; falling back to sequential flow.")
+                # Keep existing behavior by running as two sequential dialogs (old implementation).
+                # (We intentionally do not duplicate the old nested functions here.)
+                try:
+                    self._show_leader_attachment_dialog()
+                    return
+                except Exception:
+                    self.game.execute_current_setup_phase()
+                    self.game.advance_setup_phase()
+                    return
 
-        if len(players) != 2:
-            print("⚠️ Side-by-side formations UI currently supports exactly 2 players; falling back to sequential flow.")
-            # Keep existing behavior by running as two sequential dialogs (old implementation).
-            # (We intentionally do not duplicate the old nested functions here.)
-            try:
-                self._show_leader_attachment_dialog()
-                return
-            except Exception:
+            p_left, p_right = players[0], players[1]
+            a_left, a_right = p_left.get_army(), p_right.get_army()
+            if a_left is None or a_right is None:
                 self.game.execute_current_setup_phase()
                 self.game.advance_setup_phase()
                 return
 
-        p_left, p_right = players[0], players[1]
-        a_left, a_right = p_left.get_army(), p_right.get_army()
-        if a_left is None or a_right is None:
-            self.game.execute_current_setup_phase()
-            self.game.advance_setup_phase()
-            return
+            from .dialogs.side_by_side_modal import SideBySideModal
 
-        from .dialogs.side_by_side_modal import SideBySideModal
-
-        def _position_two(left_dlg, right_dlg) -> None:
-            # Place near left/right edges; allow overlap if screen is narrow (dialogs are draggable)
-            margin = 12
-            left_dlg.x = margin
-            left_dlg.y = 60
-            try:
-                left_dlg._update_title_bar()
-                left_dlg._update_buttons()
-            except Exception:
-                pass
-            right_dlg.x = max(margin, self.game_view.screen.get_width() - right_dlg.width - margin)
-            right_dlg.y = 60
-            try:
-                right_dlg._update_title_bar()
-                right_dlg._update_buttons()
-            except Exception:
-                pass
-
-        # Shared helpers
-        def _mark_attached_leaders_handled(army) -> None:
-            try:
-                for u in list(getattr(army, "units", []) or []):
-                    if bool(getattr(u, "is_attached_leader", False)):
-                        u.deployed = True
-            except Exception:
-                pass
-
-        def _apply_transport_assignments(army, units, assignments) -> bool:
-            try:
-                # Clear any previous start-embarked assignments for this army
-                for u in list(units):
-                    if getattr(u, "is_transport", False):
-                        continue
-                    if getattr(u, "embarked_in", None) is not None and (not getattr(u, "deployed", False)):
-                        try:
-                            t = u.embarked_in
-                            if t is not None:
-                                t.remove_passenger(u)
-                        except Exception:
-                            pass
-
-                for transport, passengers in (assignments or {}).items():
-                    for pu in list(passengers or []):
-                        try:
-                            pu.embark(transport)
-                            pu.deployed = True
-                            for l in list(getattr(pu, "attached_leaders", []) or []):
-                                try:
-                                    l.deployed = True
-                                except Exception:
-                                    pass
-                        except Exception:
-                            pass
-            except Exception:
-                return False
-            return True
-
-        def _apply_reserves(army, decisions: Dict[str, str]) -> bool:
-            try:
-                roots = []
+            def _position_two(left_dlg, right_dlg) -> None:
+                # Place near left/right edges; allow overlap if screen is narrow (dialogs are draggable)
+                margin = 12
+                left_dlg.x = margin
+                left_dlg.y = 60
                 try:
-                    roots = list(getattr(army, "_reserve_group_roots")() or [])
+                    left_dlg._update_title_bar()
+                    left_dlg._update_buttons()
                 except Exception:
-                    roots = [u for u in getattr(army, "units", []) or [] if not getattr(u, "is_attached_leader", False)]
+                    pass
+                right_dlg.x = max(margin, self.game_view.screen.get_width() - right_dlg.width - margin)
+                right_dlg.y = 60
+                try:
+                    right_dlg._update_title_bar()
+                    right_dlg._update_buttons()
+                except Exception:
+                    pass
 
-                for root in roots:
-                    rid = str(getattr(root, "_id", None) or "")
-                    decision = decisions.get(rid, "deploy")
-                    try:
-                        if bool(getattr(root, "must_start_in_reserves", lambda: False)()):
-                            if decision != "strategic_reserves":
-                                print(f"ℹ️ {root.name} must start in Strategic Reserves (AIRCRAFT)")
-                            decision = "strategic_reserves"
-                    except Exception:
-                        pass
-                    started = decision in ("reserves", "strategic_reserves")
-                    if decision == "deploy":
-                        root.set_reserve_status("deployed")
-                        root.deployed = False
-                    elif decision == "reserves":
-                        root.set_reserve_status("reserves")
-                        root.deployed = True
-                    elif decision == "strategic_reserves":
-                        root.set_reserve_status("strategic_reserves")
-                        root.deployed = True
-                    else:
-                        root.set_reserve_status("deployed")
-                        root.deployed = False
+            # Shared helpers
+            def _mark_attached_leaders_handled(army) -> None:
+                try:
+                    for u in list(getattr(army, "units", []) or []):
+                        if bool(getattr(u, "is_attached_leader", False)):
+                            u.deployed = True
+                except Exception:
+                    pass
 
-                    try:
-                        members = list(getattr(army, "_reserve_group_members")(root) or [])
-                    except Exception:
-                        members = [root]
-                    # Mark which units started the game in reserves (Chapter Approved round-3 destruction applies only to these).
-                    for m in members:
-                        try:
-                            setattr(m, "_started_in_reserves", bool(started))
-                        except Exception:
-                            pass
-                    for m in members:
-                        if m is root:
+            def _apply_transport_assignments(army, units, assignments) -> bool:
+                try:
+                    # Clear any previous start-embarked assignments for this army
+                    for u in list(units):
+                        if getattr(u, "is_transport", False):
                             continue
-                        try:
-                            m.set_reserve_status(getattr(root, "reserve_status", "deployed"))
-                        except Exception:
+                        if getattr(u, "embarked_in", None) is not None and (not getattr(u, "deployed", False)):
                             try:
-                                m.reserve_status = getattr(root, "reserve_status", "deployed")
+                                t = u.embarked_in
+                                if t is not None:
+                                    t.remove_passenger(u)
                             except Exception:
                                 pass
+
+                    for transport, passengers in (assignments or {}).items():
+                        for pu in list(passengers or []):
+                            try:
+                                pu.embark(transport)
+                                pu.deployed = True
+                                for l in list(getattr(pu, "attached_leaders", []) or []):
+                                    try:
+                                        l.deployed = True
+                                    except Exception:
+                                        pass
+                            except Exception:
+                                pass
+                except Exception:
+                    return False
+                return True
+
+            def _apply_reserves(army, decisions: Dict[str, str]) -> bool:
+                try:
+                    roots = []
+                    try:
+                        roots = list(getattr(army, "_reserve_group_roots")() or [])
+                    except Exception:
+                        roots = [u for u in getattr(army, "units", []) or [] if not getattr(u, "is_attached_leader", False)]
+
+                    for root in roots:
+                        rid = str(getattr(root, "_id", None) or "")
+                        decision = decisions.get(rid, "deploy")
                         try:
-                            m.deployed = True
+                            if bool(getattr(root, "must_start_in_reserves", lambda: False)()):
+                                if decision != "reserves":
+                                    print(f"ℹ️ {root.name} must start in Reserves (AIRCRAFT)")
+                                decision = "reserves"
                         except Exception:
                             pass
-            except Exception:
-                return False
-            return True
+                        started = decision in ("reserves", "strategic_reserves")
+                        if decision == "deploy":
+                            root.set_reserve_status("deployed")
+                            root.deployed = False
+                        elif decision == "reserves":
+                            root.set_reserve_status("reserves")
+                            root.deployed = True
+                        elif decision == "strategic_reserves":
+                            root.set_reserve_status("strategic_reserves")
+                            root.deployed = True
+                        else:
+                            root.set_reserve_status("deployed")
+                            root.deployed = False
 
-        def _show_leaders():
-            # Step 1: Leaders (both at once)
-            from .dialogs import LeaderAttachmentDialog
-            left_leaders = LeaderAttachmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
-            right_leaders = LeaderAttachmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
-            left_leaders.title = f"Attach Leaders - {p_left.name}"
-            right_leaders.title = f"Attach Leaders - {p_right.name}"
+                        # AIRCRAFT TRANSPORT rule: passengers must also start in Reserves
+                        try:
+                            is_transport = bool(getattr(root, "is_transport", False))
+                            must_reserves = bool(getattr(root, "must_start_in_reserves", lambda: False)())
+                        except Exception:
+                            is_transport = False
+                            must_reserves = False
+                        if is_transport and must_reserves and decision in ("reserves", "strategic_reserves"):
+                            try:
+                                passengers = list(getattr(root, "transport_passengers", []) or [])
+                            except Exception:
+                                passengers = []
+                            for p in passengers:
+                                try:
+                                    p.set_reserve_status("reserves")
+                                except Exception:
+                                    try:
+                                        p.reserve_status = "reserves"
+                                    except Exception:
+                                        pass
+                                try:
+                                    p.deployed = True
+                                except Exception:
+                                    pass
+                                try:
+                                    setattr(p, "_started_in_reserves", True)
+                                except Exception:
+                                    pass
+                                try:
+                                    for l in list(getattr(p, "attached_leaders", []) or []):
+                                        setattr(l, "_started_in_reserves", True)
+                                except Exception:
+                                    pass
 
-            modal = SideBySideModal(self.game_view.screen.get_width(), self.game_view.screen.get_height(), left_leaders, right_leaders)
-            _position_two(left_leaders, right_leaders)
-
-            def _maybe_advance_from_leaders():
-                if modal.left_done and modal.right_done:
-                    try:
-                        self.game_view.refresh_roster_panes()
-                    except Exception:
-                        pass
-                    modal.hide()
-                    _show_transports()
-
-            def _left_done():
-                try:
-                    a_left.validate_leaders()
-                except Exception as e:
-                    print(f"⚠️ {p_left.name} leader attachment validation failed: {e}")
-                    return
-                _mark_attached_leaders_handled(a_left)
-                modal.left_done = True
-                _maybe_advance_from_leaders()
-
-            def _right_done():
-                try:
-                    a_right.validate_leaders()
-                except Exception as e:
-                    print(f"⚠️ {p_right.name} leader attachment validation failed: {e}")
-                    return
-                _mark_attached_leaders_handled(a_right)
-                modal.right_done = True
-                _maybe_advance_from_leaders()
-
-            left_leaders.show(_army_units(p_left), on_confirm=_left_done, on_cancel=lambda: None)
-            right_leaders.show(_army_units(p_right), on_confirm=_right_done, on_cancel=lambda: None)
-
-            modal.show()
-            try:
-                self.game_view.dialog_manager.open(modal, modal=True)
-            except Exception:
-                pass
-
-        def _show_transports():
-            from .dialogs import TransportAssignmentDialog
-            ldlg = TransportAssignmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
-            rdlg = TransportAssignmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
-            ldlg.title = f"Transports - {p_left.name}"
-            rdlg.title = f"Transports - {p_right.name}"
-
-            m = SideBySideModal(self.game_view.screen.get_width(), self.game_view.screen.get_height(), ldlg, rdlg)
-            _position_two(ldlg, rdlg)
-
-            units_l = _army_units(p_left)
-            units_r = _army_units(p_right)
-
-            def _maybe_advance():
-                if m.left_done and m.right_done:
-                    try:
-                        self.game_view.refresh_roster_panes()
-                    except Exception:
-                        pass
-                    m.hide()
-                    _show_reserves()
-
-            def _l_done(assignments):
-                if not _apply_transport_assignments(a_left, units_l, assignments):
-                    print(f"⚠️ {p_left.name} transport assignment failed")
-                    return
-                m.left_done = True
-                _maybe_advance()
-
-            def _r_done(assignments):
-                if not _apply_transport_assignments(a_right, units_r, assignments):
-                    print(f"⚠️ {p_right.name} transport assignment failed")
-                    return
-                m.right_done = True
-                _maybe_advance()
-
-            ldlg.show(units_l, on_confirm=_l_done, on_cancel=lambda: None)
-            rdlg.show(units_r, on_confirm=_r_done, on_cancel=lambda: None)
-            m.show()
-            try:
-                self.game_view.dialog_manager.open(m, modal=True)
-            except Exception:
-                pass
-
-        def _show_reserves():
-            from .dialogs import ReservesAllocationDialog
-            ldlg = ReservesAllocationDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
-            rdlg = ReservesAllocationDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
-            ldlg.title = f"Allocate Reserves - {p_left.name}"
-            rdlg.title = f"Allocate Reserves - {p_right.name}"
-
-            m = SideBySideModal(self.game_view.screen.get_width(), self.game_view.screen.get_height(), ldlg, rdlg)
-            _position_two(ldlg, rdlg)
-
-            def _maybe_advance():
-                if m.left_done and m.right_done:
-                    m.hide()
-                    # Execute phase logic (validations) and advance setup phase.
-                    self.game.execute_current_setup_phase()
-                    self.game.advance_setup_phase()
-                    try:
-                        self.game_view.refresh_roster_panes()
-                    except Exception:
-                        pass
-
-            def _l_done(decisions):
-                if not _apply_reserves(a_left, decisions):
-                    print(f"⚠️ {p_left.name} reserves allocation failed")
-                    return
-                m.left_done = True
-                _maybe_advance()
-
-            def _r_done(decisions):
-                if not _apply_reserves(a_right, decisions):
-                    print(f"⚠️ {p_right.name} reserves allocation failed")
-                    return
-                m.right_done = True
-                _maybe_advance()
-
-            ldlg.show(a_left, on_confirm=_l_done, on_cancel=lambda: None)
-            rdlg.show(a_right, on_confirm=_r_done, on_cancel=lambda: None)
-            m.show()
-            try:
-                self.game_view.dialog_manager.open(m, modal=True)
-            except Exception:
-                pass
-
-        def _refresh_army_rule_panel(player_obj) -> None:
-            try:
-                if self.game_view.rule_detail_panel and self.game_view.rule_detail_panel.visible and isinstance(self.game_view._rule_panel_state, dict):
-                    state = self.game_view._rule_panel_state
-                    if state.get("player") is player_obj and state.get("rule_type") == "army":
-                        self.game_view._toggle_rule_panel(player_obj, "army", force_refresh=True)
-            except Exception:
-                pass
-
-        def _needs_plague_selection(player_obj) -> bool:
-            try:
-                army = player_obj.get_army()
-            except Exception:
-                army = None
-            if army is None:
-                return False
-            try:
-                mgr = getattr(army, "nurgles_gift", None)
-            except Exception:
-                mgr = None
-            if mgr is None:
-                return False
-            if not getattr(mgr, "_army_has_gift", lambda: False)():
-                return False
-            if getattr(mgr, "active_plague_key", None):
-                return False
-            return True
-
-        def _show_plague_selection():
-            needs_left = _needs_plague_selection(p_left)
-            needs_right = _needs_plague_selection(p_right)
-            if not (needs_left or needs_right):
-                _show_leaders()
-                return
-
-            from .dialogs import NurglesGiftPlagueDialog
-            try:
-                from ..classes.nurgles_gift import DEFAULT_PLAGUES
-                options = list(DEFAULT_PLAGUES)
-            except Exception:
-                options = []
-
-            def _apply_choice(army, plague):
-                if army is None:
-                    return
-                try:
-                    mgr = getattr(army, "nurgles_gift", None)
+                        try:
+                            members = list(getattr(army, "_reserve_group_members")(root) or [])
+                        except Exception:
+                            members = [root]
+                        # Mark which units started the game in reserves (Chapter Approved round-3 destruction applies only to these).
+                        for m in members:
+                            try:
+                                setattr(m, "_started_in_reserves", bool(started))
+                            except Exception:
+                                pass
+                        for m in members:
+                            if m is root:
+                                continue
+                            try:
+                                m.set_reserve_status(getattr(root, "reserve_status", "deployed"))
+                            except Exception:
+                                try:
+                                    m.reserve_status = getattr(root, "reserve_status", "deployed")
+                                except Exception:
+                                    pass
+                            try:
+                                m.deployed = True
+                            except Exception:
+                                pass
                 except Exception:
-                    mgr = None
-                if mgr is None or getattr(mgr, "active_plague_key", None):
-                    return
-                mgr.active_plague_key = getattr(plague, "key", None)
+                    return False
+                return True
 
-            if needs_left and needs_right:
-                ldlg = NurglesGiftPlagueDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
-                rdlg = NurglesGiftPlagueDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
-                ldlg.title = f"Nurgle's Gift - {p_left.name}"
-                rdlg.title = f"Nurgle's Gift - {p_right.name}"
+            def _show_leaders():
+                # Step 1: Leaders (both at once)
+                from .dialogs import LeaderAttachmentDialog
+                left_leaders = LeaderAttachmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+                right_leaders = LeaderAttachmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+                left_leaders.title = f"Attach Leaders - {p_left.name}"
+                right_leaders.title = f"Attach Leaders - {p_right.name}"
+
+                modal = SideBySideModal(self.game_view.screen.get_width(), self.game_view.screen.get_height(), left_leaders, right_leaders)
+                _position_two(left_leaders, right_leaders)
+
+                def _maybe_advance_from_leaders():
+                    if modal.left_done and modal.right_done:
+                        try:
+                            self.game_view.refresh_roster_panes()
+                        except Exception:
+                            pass
+                        modal.hide()
+                        _show_transports()
+
+                def _left_done():
+                    try:
+                        a_left.validate_leaders()
+                    except Exception as e:
+                        print(f"⚠️ {p_left.name} leader attachment validation failed: {e}")
+                        return
+                    _mark_attached_leaders_handled(a_left)
+                    modal.left_done = True
+                    _maybe_advance_from_leaders()
+
+                def _right_done():
+                    try:
+                        a_right.validate_leaders()
+                    except Exception as e:
+                        print(f"⚠️ {p_right.name} leader attachment validation failed: {e}")
+                        return
+                    _mark_attached_leaders_handled(a_right)
+                    modal.right_done = True
+                    _maybe_advance_from_leaders()
+
+                left_leaders.show(_army_units(p_left), on_confirm=_left_done, on_cancel=lambda: None)
+                right_leaders.show(_army_units(p_right), on_confirm=_right_done, on_cancel=lambda: None)
+
+                modal.show()
+                try:
+                    self.game_view.dialog_manager.open(modal, modal=True)
+                except Exception:
+                    pass
+
+            def _show_transports():
+                from .dialogs import TransportAssignmentDialog
+                ldlg = TransportAssignmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+                rdlg = TransportAssignmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+                ldlg.title = f"Transports - {p_left.name}"
+                rdlg.title = f"Transports - {p_right.name}"
+
+                m = SideBySideModal(self.game_view.screen.get_width(), self.game_view.screen.get_height(), ldlg, rdlg)
+                _position_two(ldlg, rdlg)
+
+                units_l = _army_units(p_left)
+                units_r = _army_units(p_right)
+
+                def _maybe_advance():
+                    if m.left_done and m.right_done:
+                        try:
+                            self.game_view.refresh_roster_panes()
+                        except Exception:
+                            pass
+                        m.hide()
+                        _show_reserves()
+
+                def _l_done(assignments):
+                    if not _apply_transport_assignments(a_left, units_l, assignments):
+                        print(f"⚠️ {p_left.name} transport assignment failed")
+                        return
+                    m.left_done = True
+                    _maybe_advance()
+
+                def _r_done(assignments):
+                    if not _apply_transport_assignments(a_right, units_r, assignments):
+                        print(f"⚠️ {p_right.name} transport assignment failed")
+                        return
+                    m.right_done = True
+                    _maybe_advance()
+
+                ldlg.show(units_l, on_confirm=_l_done, on_cancel=lambda: None)
+                rdlg.show(units_r, on_confirm=_r_done, on_cancel=lambda: None)
+                m.show()
+                try:
+                    self.game_view.dialog_manager.open(m, modal=True)
+                except Exception:
+                    pass
+
+            def _show_reserves():
+                from .dialogs import ReservesAllocationDialog
+                ldlg = ReservesAllocationDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+                rdlg = ReservesAllocationDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+                ldlg.title = f"Allocate Reserves - {p_left.name}"
+                rdlg.title = f"Allocate Reserves - {p_right.name}"
 
                 m = SideBySideModal(self.game_view.screen.get_width(), self.game_view.screen.get_height(), ldlg, rdlg)
                 _position_two(ldlg, rdlg)
@@ -9034,73 +9063,171 @@ class SetupPhaseHandler(BasePhaseHandler):
                 def _maybe_advance():
                     if m.left_done and m.right_done:
                         m.hide()
-                        _show_leaders()
+                        # Execute phase logic (validations) and advance setup phase.
+                        self.game.execute_current_setup_phase()
+                        self.game.advance_setup_phase()
+                        try:
+                            self.game_view.refresh_roster_panes()
+                        except Exception:
+                            pass
 
-                def _l_done(plague):
-                    _apply_choice(a_left, plague)
-                    _refresh_army_rule_panel(p_left)
+                def _l_done(decisions):
+                    if not _apply_reserves(a_left, decisions):
+                        print(f"⚠️ {p_left.name} reserves allocation failed")
+                        return
                     m.left_done = True
                     _maybe_advance()
 
-                def _r_done(plague):
-                    _apply_choice(a_right, plague)
-                    _refresh_army_rule_panel(p_right)
+                def _r_done(decisions):
+                    if not _apply_reserves(a_right, decisions):
+                        print(f"⚠️ {p_right.name} reserves allocation failed")
+                        return
                     m.right_done = True
                     _maybe_advance()
 
-                def _l_cancel():
-                    if options:
-                        _apply_choice(a_left, options[0])
-                        _refresh_army_rule_panel(p_left)
-                    m.left_done = True
-                    _maybe_advance()
-
-                def _r_cancel():
-                    if options:
-                        _apply_choice(a_right, options[0])
-                        _refresh_army_rule_panel(p_right)
-                    m.right_done = True
-                    _maybe_advance()
-
-                ldlg.show(options=options, on_confirm=_l_done, on_cancel=_l_cancel)
-                rdlg.show(options=options, on_confirm=_r_done, on_cancel=_r_cancel)
+                ldlg.show(a_left, on_confirm=_l_done, on_cancel=lambda: None)
+                rdlg.show(a_right, on_confirm=_r_done, on_cancel=lambda: None)
                 m.show()
                 try:
                     self.game_view.dialog_manager.open(m, modal=True)
                 except Exception:
                     pass
-                return
 
-            dlg = NurglesGiftPlagueDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
-            if needs_left:
-                dlg.title = f"Nurgle's Gift - {p_left.name}"
-                target_player = p_left
-                target_army = a_left
-            else:
-                dlg.title = f"Nurgle's Gift - {p_right.name}"
-                target_player = p_right
-                target_army = a_right
+            def _refresh_army_rule_panel(player_obj) -> None:
+                try:
+                    if self.game_view.rule_detail_panel and self.game_view.rule_detail_panel.visible and isinstance(self.game_view._rule_panel_state, dict):
+                        state = self.game_view._rule_panel_state
+                        if state.get("player") is player_obj and state.get("rule_type") == "army":
+                            self.game_view._toggle_rule_panel(player_obj, "army", force_refresh=True)
+                except Exception:
+                    pass
 
-            def _done(plague):
-                _apply_choice(target_army, plague)
-                _refresh_army_rule_panel(target_player)
-                _show_leaders()
+            def _needs_plague_selection(player_obj) -> bool:
+                try:
+                    army = player_obj.get_army()
+                except Exception:
+                    army = None
+                if army is None:
+                    return False
+                try:
+                    mgr = getattr(army, "nurgles_gift", None)
+                except Exception:
+                    mgr = None
+                if mgr is None:
+                    return False
+                if not getattr(mgr, "_army_has_gift", lambda: False)():
+                    return False
+                if getattr(mgr, "active_plague_key", None):
+                    return False
+                return True
 
-            def _cancel():
-                if options:
-                    _apply_choice(target_army, options[0])
+            def _show_plague_selection():
+                needs_left = _needs_plague_selection(p_left)
+                needs_right = _needs_plague_selection(p_right)
+                if not (needs_left or needs_right):
+                    _show_leaders()
+                    return
+
+                from .dialogs import NurglesGiftPlagueDialog
+                try:
+                    from ..classes.nurgles_gift import DEFAULT_PLAGUES
+                    options = list(DEFAULT_PLAGUES)
+                except Exception:
+                    options = []
+
+                def _apply_choice(army, plague):
+                    if army is None:
+                        return
+                    try:
+                        mgr = getattr(army, "nurgles_gift", None)
+                    except Exception:
+                        mgr = None
+                    if mgr is None or getattr(mgr, "active_plague_key", None):
+                        return
+                    mgr.active_plague_key = getattr(plague, "key", None)
+
+                if needs_left and needs_right:
+                    ldlg = NurglesGiftPlagueDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+                    rdlg = NurglesGiftPlagueDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+                    ldlg.title = f"Nurgle's Gift - {p_left.name}"
+                    rdlg.title = f"Nurgle's Gift - {p_right.name}"
+
+                    m = SideBySideModal(self.game_view.screen.get_width(), self.game_view.screen.get_height(), ldlg, rdlg)
+                    _position_two(ldlg, rdlg)
+
+                    def _maybe_advance():
+                        if m.left_done and m.right_done:
+                            m.hide()
+                            _show_leaders()
+
+                    def _l_done(plague):
+                        _apply_choice(a_left, plague)
+                        _refresh_army_rule_panel(p_left)
+                        m.left_done = True
+                        _maybe_advance()
+
+                    def _r_done(plague):
+                        _apply_choice(a_right, plague)
+                        _refresh_army_rule_panel(p_right)
+                        m.right_done = True
+                        _maybe_advance()
+
+                    def _l_cancel():
+                        if options:
+                            _apply_choice(a_left, options[0])
+                            _refresh_army_rule_panel(p_left)
+                        m.left_done = True
+                        _maybe_advance()
+
+                    def _r_cancel():
+                        if options:
+                            _apply_choice(a_right, options[0])
+                            _refresh_army_rule_panel(p_right)
+                        m.right_done = True
+                        _maybe_advance()
+
+                    ldlg.show(options=options, on_confirm=_l_done, on_cancel=_l_cancel)
+                    rdlg.show(options=options, on_confirm=_r_done, on_cancel=_r_cancel)
+                    m.show()
+                    try:
+                        self.game_view.dialog_manager.open(m, modal=True)
+                    except Exception:
+                        pass
+                    return
+
+                dlg = NurglesGiftPlagueDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+                if needs_left:
+                    dlg.title = f"Nurgle's Gift - {p_left.name}"
+                    target_player = p_left
+                    target_army = a_left
+                else:
+                    dlg.title = f"Nurgle's Gift - {p_right.name}"
+                    target_player = p_right
+                    target_army = a_right
+
+                def _done(plague):
+                    _apply_choice(target_army, plague)
                     _refresh_army_rule_panel(target_player)
-                _show_leaders()
+                    _show_leaders()
 
-            dlg.show(options=options, on_confirm=_done, on_cancel=_cancel)
-            try:
-                self.game_view.dialog_manager.open(dlg, modal=True)
-            except Exception:
-                pass
+                def _cancel():
+                    if options:
+                        _apply_choice(target_army, options[0])
+                        _refresh_army_rule_panel(target_player)
+                    _show_leaders()
 
-        _show_plague_selection()
+                dlg.show(options=options, on_confirm=_done, on_cancel=_cancel)
+                try:
+                    self.game_view.dialog_manager.open(dlg, modal=True)
+                except Exception:
+                    pass
+
+            _show_plague_selection()
 
     
+
+        self._start_hover_mode_selection_flow(players, _after_hover)
+        return
     def get_allowed_actions(self) -> List[str]:
         return ["advance_setup_phase", "view_unit_details"]
 

@@ -365,9 +365,9 @@ class DeploymentManager:
                 reserve_decision = reserves_decisions.get(unit.name, 'deploy')
                 try:
                     if bool(getattr(unit, "must_start_in_reserves", lambda: False)()):
-                        if reserve_decision != "strategic_reserves":
-                            logger.info(f"✈️ {unit.name} forced into Strategic Reserves (AIRCRAFT)")
-                        reserve_decision = "strategic_reserves"
+                        if reserve_decision != "reserves":
+                            logger.info(f"✈️ {unit.name} forced into Reserves (AIRCRAFT)")
+                        reserve_decision = "reserves"
                 except Exception:
                     pass
                 started = reserve_decision in ('reserves', 'strategic_reserves')
@@ -384,6 +384,40 @@ class DeploymentManager:
                     # Default to deployed for any unknown status
                     unit.set_reserve_status('deployed')
                     started = False
+
+                # AIRCRAFT TRANSPORT rule: passengers must also start in Reserves
+                try:
+                    is_transport = bool(getattr(unit, "is_transport", False))
+                    must_reserves = bool(getattr(unit, "must_start_in_reserves", lambda: False)())
+                except Exception:
+                    is_transport = False
+                    must_reserves = False
+                if is_transport and must_reserves and reserve_decision in ("reserves", "strategic_reserves"):
+                    try:
+                        passengers = list(getattr(unit, "transport_passengers", []) or [])
+                    except Exception:
+                        passengers = []
+                    for p in passengers:
+                        try:
+                            if hasattr(p, "set_reserve_status"):
+                                p.set_reserve_status("reserves")
+                            else:
+                                p.reserve_status = "reserves"
+                        except Exception:
+                            pass
+                        try:
+                            p.deployed = True
+                        except Exception:
+                            pass
+                        try:
+                            setattr(p, "_started_in_reserves", True)
+                        except Exception:
+                            pass
+                        try:
+                            for l in list(getattr(p, "attached_leaders", []) or []):
+                                setattr(l, "_started_in_reserves", True)
+                        except Exception:
+                            pass
 
                 # Chapter Approved: round-3 destruction only applies to units that STARTED in reserves.
                 try:
@@ -410,6 +444,41 @@ class DeploymentManager:
                                 pass
                 except Exception:
                     pass
+
+            # Final enforcement: AIRCRAFT TRANSPORT passengers must start in Reserves.
+            try:
+                for unit in player.get_army().units:
+                    try:
+                        if not bool(getattr(unit, "is_transport", False)):
+                            continue
+                        if not bool(getattr(unit, "must_start_in_reserves", lambda: False)()):
+                            continue
+                        if str(getattr(unit, "reserve_status", "deployed")) not in ("reserves", "strategic_reserves"):
+                            continue
+                    except Exception:
+                        continue
+                    try:
+                        passengers = list(getattr(unit, "transport_passengers", []) or [])
+                    except Exception:
+                        passengers = []
+                    for p in passengers:
+                        try:
+                            if hasattr(p, "set_reserve_status"):
+                                p.set_reserve_status("reserves")
+                            else:
+                                p.reserve_status = "reserves"
+                        except Exception:
+                            pass
+                        try:
+                            p.deployed = True
+                        except Exception:
+                            pass
+                        try:
+                            setattr(p, "_started_in_reserves", True)
+                        except Exception:
+                            pass
+            except Exception:
+                pass
 
 
 class HumanDeploymentDecisionMaker(DeploymentDecisionMaker):
@@ -445,7 +514,17 @@ class HumanDeploymentDecisionMaker(DeploymentDecisionMaker):
             
             for unit in army.units:
                 print(f"\n📋 {unit.name} ({len(unit.models)} models, {unit.get_unit_cost()} pts)")
-                
+
+                try:
+                    if bool(getattr(unit, "must_start_in_reserves", lambda: False)()):
+                        reserves_decisions[unit.name] = 'reserves'
+                        current_reserve_units += 1
+                        current_reserve_points += unit.get_unit_cost()
+                        print(f"ℹ️ {unit.name} forced into Reserves (AIRCRAFT)")
+                        continue
+                except Exception:
+                    pass
+
                 # Check if unit can use standard reserves
                 can_use_reserves = unit.has_deep_strike() or "Deep Strike" in unit.keywords
                 

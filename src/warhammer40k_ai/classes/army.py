@@ -628,10 +628,20 @@ class Army:
         reserve_points = 0
         strategic_points = 0
 
+        def _must_start_in_reserves(u: Unit) -> bool:
+            try:
+                return bool(getattr(u, "must_start_in_reserves", lambda: False)())
+            except Exception:
+                return False
+
         roots = self._reserve_group_roots()
         for root in roots:
             rid = str(getattr(root, "_id", None) or "")
             decision = reserves_decisions.get(rid, reserves_decisions.get(getattr(root, "name", ""), "deploy"))
+            if _must_start_in_reserves(root):
+                if decision == "deploy":
+                    errors.append(f"{getattr(root, 'name', 'Unit')} must start in Reserves (AIRCRAFT)")
+                decision = "reserves"
             if decision == "strategic_reserves":
                 try:
                     if bool(getattr(root, "is_fortification", False)):
@@ -681,6 +691,12 @@ class Army:
         def _root_key(u: Unit) -> str:
             return str(getattr(u, "_id", None) or getattr(u, "name", ""))
 
+        def _must_start_in_reserves(u: Unit) -> bool:
+            try:
+                return bool(getattr(u, "must_start_in_reserves", lambda: False)())
+            except Exception:
+                return False
+
         # Normalize: ensure every root has an entry (default deploy)
         for r in roots:
             k = _root_key(r)
@@ -699,6 +715,15 @@ class Army:
             if decision == "strategic_reserves":
                 modified[k] = "deploy"
 
+        # AIRCRAFT must start in Reserves: force decisions to standard reserves.
+        for r in roots:
+            if not _must_start_in_reserves(r):
+                continue
+            k = _root_key(r)
+            decision = modified.get(k, modified.get(getattr(r, "name", ""), "deploy"))
+            if decision != "reserves":
+                modified[k] = "reserves"
+
         # Enforce Strategic cap first: if strategic exceeds cap, try converting strategic->reserves if eligible, else deploy.
         # Deterministic order: highest-point strategic groups first.
         while True:
@@ -711,7 +736,7 @@ class Army:
                 for r in roots:
                     k = _root_key(r)
                     decision = modified.get(k, modified.get(getattr(r, "name", ""), "deploy"))
-                    if decision == "strategic_reserves":
+                    if decision == "strategic_reserves" and not _must_start_in_reserves(r):
                         strategic_roots.append(r)
                 strategic_roots.sort(key=lambda u: self._reserve_group_points(u), reverse=True)
                 if not strategic_roots:
@@ -731,7 +756,7 @@ class Army:
             for r in roots:
                 k = _root_key(r)
                 decision = modified.get(k, modified.get(getattr(r, "name", ""), "deploy"))
-                if decision in ("reserves", "strategic_reserves"):
+                if decision in ("reserves", "strategic_reserves") and not _must_start_in_reserves(r):
                     reserve_roots.append(r)
             reserve_roots.sort(key=lambda u: self._reserve_group_points(u), reverse=True)
             if not reserve_roots:
@@ -748,7 +773,7 @@ class Army:
             for r in roots:
                 k = _root_key(r)
                 decision = modified.get(k, modified.get(getattr(r, "name", ""), "deploy"))
-                if decision in ("reserves", "strategic_reserves"):
+                if decision in ("reserves", "strategic_reserves") and not _must_start_in_reserves(r):
                     reserve_roots.append(r)
             if not reserve_roots:
                 break
@@ -774,10 +799,18 @@ class Army:
         reserve_unit_names: List[str] = []
         strategic_reserve_unit_names: List[str] = []
 
+        def _must_start_in_reserves(u: Unit) -> bool:
+            try:
+                return bool(getattr(u, "must_start_in_reserves", lambda: False)())
+            except Exception:
+                return False
+
         roots = self._reserve_group_roots()
         for root in roots:
             rid = str(getattr(root, "_id", None) or "")
             decision = reserves_decisions.get(rid, reserves_decisions.get(getattr(root, "name", ""), "deploy"))
+            if _must_start_in_reserves(root):
+                decision = "reserves"
             if decision == "reserves":
                 reserve_units += 1
                 pts = self._reserve_group_points(root)

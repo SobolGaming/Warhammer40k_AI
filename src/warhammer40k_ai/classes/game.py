@@ -6918,6 +6918,33 @@ class Game:
         if next_phase_value >= len(SetupPhase):
             # Setup is complete, start battle rounds
             self.setup_complete = True
+            # AIRCRAFT are treated as Strategic Reserves once the battle starts.
+            try:
+                for player in list(getattr(self, "players", []) or []):
+                    if player is None:
+                        continue
+                    try:
+                        units = list(getattr(player.get_army(), "units", []) or [])
+                    except Exception:
+                        units = []
+                    for unit in units:
+                        if unit is None:
+                            continue
+                        try:
+                            if not bool(getattr(unit, "is_aircraft", False)):
+                                continue
+                            if bool(getattr(unit, "hover_mode", False)):
+                                continue
+                            if str(getattr(unit, "reserve_status", "deployed")) != "reserves":
+                                continue
+                            if hasattr(unit, "set_reserve_status"):
+                                unit.set_reserve_status("strategic_reserves")
+                            else:
+                                unit.reserve_status = "strategic_reserves"
+                        except Exception:
+                            continue
+            except Exception:
+                pass
             # Set current player to first turn player
             if self.first_turn_player_index is not None:
                 self.current_player_index = self.first_turn_player_index

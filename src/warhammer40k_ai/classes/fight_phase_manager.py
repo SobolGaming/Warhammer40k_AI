@@ -382,6 +382,14 @@ class FightPhaseManager:
             seen.add(rid)
             try:
                 if enemy_root.is_alive() and self.game.map.is_within_engagement_range(fighting_unit, enemy_root):
+                    # AIRCRAFT fight restrictions: only FLY units can fight AIRCRAFT, and AIRCRAFT can only fight FLY.
+                    try:
+                        if bool(getattr(enemy_root, "is_aircraft", False)) and not bool(getattr(fighting_unit, "is_flying", False)):
+                            continue
+                        if bool(getattr(fighting_unit, "is_aircraft", False)) and not bool(getattr(enemy_root, "is_flying", False)):
+                            continue
+                    except Exception:
+                        pass
                     reason = None
                     try:
                         if hasattr(fighting_unit, "_sensational_performance_restriction_reason"):
@@ -595,6 +603,16 @@ class FightPhaseManager:
 
     def _resolve_melee_attacks(self, attacking_unit: Unit, target_unit: Unit, weapon_declarations: List) -> None:
         """Resolve melee attacks with detailed output like shooting."""
+        # AIRCRAFT fight restrictions (defensive guard)
+        try:
+            if bool(getattr(target_unit, "is_aircraft", False)) and not bool(getattr(attacking_unit, "is_flying", False)):
+                print(f"❌ {attacking_unit.name} cannot make melee attacks against AIRCRAFT")
+                return
+            if bool(getattr(attacking_unit, "is_aircraft", False)) and not bool(getattr(target_unit, "is_flying", False)):
+                print(f"❌ {attacking_unit.name} can only make melee attacks against FLY units")
+                return
+        except Exception:
+            pass
         print(f"⚔️ Resolving melee attacks: {attacking_unit.name} vs {target_unit.name}")
 
         # Begin attack resolution window so attached leaders don't separate mid-melee sequence.

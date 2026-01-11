@@ -308,9 +308,9 @@ class Map:
             target_is_aircraft = False
             shooter_is_towering = False
             try:
-                shooter_is_aircraft = bool(shooter_model.parent_unit.is_aircraft())
-                target_is_aircraft = bool(target_model.parent_unit.is_aircraft())
-                shooter_is_towering = bool(shooter_model.parent_unit.is_towering())
+                shooter_is_aircraft = bool(getattr(shooter_model.parent_unit, "is_aircraft", False))
+                target_is_aircraft = bool(getattr(target_model.parent_unit, "is_aircraft", False))
+                shooter_is_towering = bool(getattr(shooter_model.parent_unit, "is_towering", False))
             except Exception:
                 pass
 

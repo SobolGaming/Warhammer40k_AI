@@ -59,6 +59,9 @@ class ReservesAllocationDialog(BaseDialog):
         self.root_units = self._compute_roots()
         self._recompute_display_names()
         self.decisions = {self._uid(u): "deploy" for u in self.root_units}
+        for u in self.root_units:
+            if self._must_start_in_reserves(u):
+                self.decisions[self._uid(u)] = "reserves"
 
         super().show()
         self._create_buttons()
@@ -85,6 +88,12 @@ class ReservesAllocationDialog(BaseDialog):
             return str(getattr(unit, "_id", None) or id(unit))
         except Exception:
             return str(id(unit))
+
+    def _must_start_in_reserves(self, unit) -> bool:
+        try:
+            return bool(getattr(unit, "must_start_in_reserves", lambda: False)())
+        except Exception:
+            return False
 
     def _compute_roots(self) -> List:
         if self.army is None:
@@ -176,11 +185,13 @@ class ReservesAllocationDialog(BaseDialog):
             decision = self.decisions.get(uid, "deploy")
             if override and override[0] == i:
                 decision = override[1]
+            if self._must_start_in_reserves(u):
+                decision = "reserves"
             if decision in ("reserves", "strategic_reserves"):
                 reserve_units += 1
                 pts = self._group_points(u)
                 reserve_points += pts
-                if decision == "strategic_reserves":
+                if decision == "strategic_reserves" and not self._must_start_in_reserves(u):
                     strategic_points += pts
         return reserve_units, reserve_points, strategic_points
 
@@ -191,9 +202,15 @@ class ReservesAllocationDialog(BaseDialog):
             return False, "Invalid selection"
 
         unit = self.root_units[idx]
+        must_reserves = self._must_start_in_reserves(unit)
+
+        if must_reserves and decision == "deploy":
+            return False, "AIRCRAFT must start in Reserves"
 
         # Fortifications cannot be placed into Strategic Reserves.
         if decision == "strategic_reserves":
+            if must_reserves:
+                return False, "AIRCRAFT start in Reserves"
             try:
                 if bool(getattr(unit, "is_fortification", False)):
                     return False, "FORTIFICATIONS cannot be placed in Strategic Reserves"
@@ -201,7 +218,7 @@ class ReservesAllocationDialog(BaseDialog):
                 pass
 
         # Standard Reserves requires Deep Strike (best-effort)
-        if decision == "reserves":
+        if decision == "reserves" and not must_reserves:
             try:
                 if not bool(unit.has_deep_strike()):
                     return False, "Requires Deep Strike"
@@ -386,7 +403,8 @@ class ReservesAllocationDialog(BaseDialog):
         idx = self.selected_index
         ok_res, _ = self._can_set_decision(idx, "reserves")
         ok_str, _ = self._can_set_decision(idx, "strategic_reserves")
-        _set_enabled("clear_reserves", True)
+        ok_dep, _ = self._can_set_decision(idx, "deploy")
+        _set_enabled("clear_reserves", ok_dep)
         _set_enabled("set_reserves", ok_res)
         _set_enabled("set_strategic", ok_str)
 
@@ -403,5 +421,3 @@ class ReservesAllocationDialog(BaseDialog):
         # Bottom
         self.draw_button(screen, "done", "Done")
         self.draw_button(screen, "cancel", "Cancel")
-
-

@@ -3832,19 +3832,51 @@ class Unit:
     def get_engagement_state(self, game_map: 'Map') -> int:
         """Determine if the unit is in engagement range of any enemy model."""
         enemy_units = game_map.get_enemy_units(self)
-        
+
+        engaged = False
+        engaged_non_aircraft = False
         for enemy_unit in enemy_units:
+            if not enemy_unit.is_alive():
+                continue
             if game_map.is_within_engagement_range(self, enemy_unit):
-                return MovementState.IN_ENGAGEMENT_RANGE
-        
-        return MovementState.OUT_OF_ENGAGEMENT_RANGE
+                engaged = True
+                try:
+                    if not bool(getattr(enemy_unit, "is_aircraft", False)):
+                        engaged_non_aircraft = True
+                        break
+                except Exception:
+                    engaged_non_aircraft = True
+                    break
+
+        try:
+            self._engaged_only_by_aircraft = bool(engaged and not engaged_non_aircraft)
+        except Exception:
+            pass
+
+        return MovementState.IN_ENGAGEMENT_RANGE if engaged else MovementState.OUT_OF_ENGAGEMENT_RANGE
 
     def get_available_move_actions(self, state: int) -> List[int]:
         """Get the list of available actions based on the current state."""
-        if state == MovementState.IN_ENGAGEMENT_RANGE:
+        try:
+            state_enum = state if isinstance(state, MovementState) else MovementState(state)
+        except Exception:
+            state_enum = state
+
+        # AIRCRAFT: only Normal moves allowed (no Advance/Fall Back/Remain Stationary).
+        if bool(getattr(self, "is_aircraft", False)):
+            return [MovementAction.MOVE.value]
+
+        engaged_only_by_aircraft = bool(getattr(self, "_engaged_only_by_aircraft", False))
+        if state_enum == MovementState.IN_ENGAGEMENT_RANGE:
+            if engaged_only_by_aircraft:
+                return [
+                    MovementAction.REMAIN_STATIONARY.value,
+                    MovementAction.MOVE.value,
+                    MovementAction.ADVANCE.value,
+                    MovementAction.FALL_BACK.value,
+                ]
             return [MovementAction.REMAIN_STATIONARY.value, MovementAction.FALL_BACK.value]
-        else:
-            return [MovementAction.REMAIN_STATIONARY.value, MovementAction.MOVE.value, MovementAction.ADVANCE.value]
+        return [MovementAction.REMAIN_STATIONARY.value, MovementAction.MOVE.value, MovementAction.ADVANCE.value]
 
     def _execute_action(self, action: int, destination: Tuple[float, float, float], game_map: 'Map', advance_roll: int = None) -> bool:
         """Execute a movement action for the unit."""
@@ -3853,6 +3885,12 @@ class Unit:
         if getattr(self.round_state, "disembarked_from_moved_transport", False) or getattr(self.round_state, "disembarked_from_destroyed_transport", False):
             if action in (MovementAction.MOVE.value, MovementAction.ADVANCE.value, MovementAction.FALL_BACK.value):
                 print(f"❌ {self.name} cannot move further after disembarking this turn")
+                return False
+
+        # AIRCRAFT: only Normal moves allowed.
+        if bool(getattr(self, "is_aircraft", False)):
+            if action in (MovementAction.REMAIN_STATIONARY.value, MovementAction.ADVANCE.value, MovementAction.FALL_BACK.value):
+                print(f"❌ {self.name} cannot {('remain stationary' if action == MovementAction.REMAIN_STATIONARY.value else 'advance' if action == MovementAction.ADVANCE.value else 'fall back')} (AIRCRAFT)")
                 return False
 
         # If the unit is currently performing a mission Action and moves (excluding pile-in/consolidation handled elsewhere), cancel the Action
@@ -3924,6 +3962,9 @@ class Unit:
         return success
 
     def remain_stationary(self) -> bool:
+        if bool(getattr(self, "is_aircraft", False)):
+            print(f"❌ {self.name} cannot Remain Stationary (AIRCRAFT)")
+            return False
         # Unit explicitly chose to remain stationary, so mark it as such
         self.round_state.remained_stationary_this_round = True
         return True
@@ -4866,11 +4907,219 @@ class Unit:
         print(f"⚠️ {self.name} is battle-shocked after moving through tall terrain (Super-heavy Walker).")
 
     def advance(self, destination: Tuple[float, float, float], game_map: 'Map') -> bool:
+        if bool(getattr(self, "is_aircraft", False)):
+            print(f"❌ {self.name} cannot Advance (AIRCRAFT)")
+            return False
         # Check if unit can advance after arriving from reserves
         if self.arrived_from_reserves_this_turn and not self.can_advance_after_arriving_from_reserves():
             logger.info(f"{self.name} cannot advance - arrived from reserves this turn")
             return False
         return self.move(destination, game_map, advance=True)
+
+    def _aircraft_normal_move(self, destination: Tuple[float, float, float], game_map: 'Map') -> bool:
+        """Resolve AIRCRAFT Normal move (straight line, minimum 20", no max)."""
+        if not self.models:
+            logger.error(f"Cannot move unit {self.name}: no models in unit")
+            return False
+
+        # Check if unit can move after arriving from reserves
+        if self.arrived_from_reserves_this_turn and not self.can_move_after_arriving_from_reserves():
+            logger.info(f"{self.name} cannot move - arrived from reserves this turn")
+            return False
+
+        # Use first alive model as reference
+        model = next((m for m in self.models if getattr(m, "is_alive", False)), None)
+        if model is None:
+            logger.error(f"Cannot move unit {self.name}: no valid models")
+            return False
+
+        start_pos = model.get_location()
+        if not start_pos:
+            logger.error(f"Cannot move unit {self.name}: first model has no position")
+            return False
+
+        try:
+            dest_x = float(destination[0])
+            dest_y = float(destination[1])
+        except Exception:
+            logger.error(f"Cannot move unit {self.name}: invalid destination")
+            return False
+
+        start_x, start_y = float(start_pos[0]), float(start_pos[1])
+        start_z = float(start_pos[2]) if len(start_pos) > 2 else 0.0
+
+        facing = float(getattr(model.model_base, "facing", 0.0) or 0.0)
+        # Facing 0 points along +Y (consistent with get_angle usage)
+        forward_x = math.sin(facing)
+        forward_y = math.cos(facing)
+
+        dx = dest_x - start_x
+        dy = dest_y - start_y
+        forward_dist = (dx * forward_x) + (dy * forward_y)
+        # Lateral offset (perpendicular to facing)
+        side_dist = (dx * forward_y) - (dy * forward_x)
+
+        # Straight-line requirement
+        if forward_dist <= 1e-6:
+            print(f"❌ {self.name} must move forward (AIRCRAFT)")
+            return False
+        if abs(side_dist) > 0.25:
+            print(f"❌ {self.name} must move straight forward (AIRCRAFT)")
+            return False
+
+        min_move = 20.0
+
+        # Helper: required forward distance for base-to-base >= min_move
+        def _required_forward_distance_for_model(m) -> float:
+            from ..utility.aura_utils import horizontal_distance_between_bases_2d
+            base_start = m.model_base
+            # Expand search window until requirement satisfied (should converge quickly)
+            hi = max(min_move, 1.0)
+            for _ in range(16):
+                test_base = self._create_potential_base(
+                    base_start.x + forward_x * hi,
+                    base_start.y + forward_y * hi,
+                    base_start.z,
+                    facing,
+                    model=m,
+                )
+                if float(horizontal_distance_between_bases_2d(base_start, test_base)) >= min_move:
+                    break
+                hi *= 1.5
+            lo = 0.0
+            for _ in range(20):
+                mid = (lo + hi) / 2.0
+                test_base = self._create_potential_base(
+                    base_start.x + forward_x * mid,
+                    base_start.y + forward_y * mid,
+                    base_start.z,
+                    facing,
+                    model=m,
+                )
+                if float(horizontal_distance_between_bases_2d(base_start, test_base)) >= min_move:
+                    hi = mid
+                else:
+                    lo = mid
+            return float(hi)
+
+        # Compute minimum forward distance required for all models (base-to-base >= 20")
+        required_forward = 0.0
+        for m in self.models:
+            if not getattr(m, "is_alive", False):
+                continue
+            try:
+                required_forward = max(required_forward, _required_forward_distance_for_model(m))
+            except Exception:
+                required_forward = max(required_forward, min_move)
+
+        def _forward_move_within_boundary(dist: float) -> bool:
+            if game_map is None:
+                return True
+            for m in self.models:
+                if not getattr(m, "is_alive", False):
+                    continue
+                new_x = float(m.model_base.x) + forward_x * dist
+                new_y = float(m.model_base.y) + forward_y * dist
+                if not game_map.is_within_boundary(m, (new_x, new_y)):
+                    return False
+            return True
+
+        def _send_to_strategic_reserves(reason: str) -> bool:
+            try:
+                if hasattr(self, "set_reserve_status"):
+                    self.set_reserve_status("strategic_reserves")
+                else:
+                    self.reserve_status = "strategic_reserves"
+            except Exception:
+                pass
+            try:
+                self.deployed = True
+                self.reserve_turn_deployed = None
+                self.arrived_from_reserves_this_turn = False
+            except Exception:
+                pass
+            try:
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+                current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+            except Exception:
+                current_turn = 0
+            try:
+                if current_turn > 0:
+                    setattr(self, "_aircraft_return_turn", current_turn + 1)
+            except Exception:
+                pass
+            try:
+                if game_map is not None and hasattr(game_map, "units") and self in game_map.units:
+                    game_map.units.remove(self)
+            except Exception:
+                pass
+            if reason:
+                print(f"✈️ {self.name} placed into Strategic Reserves ({reason})")
+            else:
+                print(f"✈️ {self.name} placed into Strategic Reserves")
+            return True
+
+        # Minimum Move enforcement
+        if forward_dist + 1e-6 < required_forward:
+            if not _forward_move_within_boundary(required_forward):
+                return _send_to_strategic_reserves("minimum move impossible")
+            print(f"❌ {self.name} must move at least {min_move}\" (AIRCRAFT)")
+            return False
+
+        # Leaving the battlefield -> Strategic Reserves
+        if not _forward_move_within_boundary(forward_dist):
+            return _send_to_strategic_reserves("left the battlefield")
+
+        move_dx = forward_x * forward_dist
+        move_dy = forward_y * forward_dist
+
+        # Build proposed positions
+        proposed = []
+        for m in self.models:
+            if not getattr(m, "is_alive", False):
+                continue
+            new_x = float(m.model_base.x) + move_dx
+            new_y = float(m.model_base.y) + move_dy
+            new_z = game_map.get_height_at_point(new_x, new_y) if game_map else float(m.model_base.z)
+            proposed.append((m, new_x, new_y, new_z))
+
+        # Final-position validation: no overlaps, no ending in engagement range
+        if game_map is not None:
+            for m, nx, ny, _nz in proposed:
+                if game_map.check_collision_with_other_friendly_units(m, (nx, ny)):
+                    print(f"❌ {self.name} cannot move - {m.name} would overlap a friendly model")
+                    return False
+                if game_map.check_collision_with_other_enemy_units(m, (nx, ny)):
+                    print(f"❌ {self.name} cannot move - {m.name} would overlap an enemy model")
+                    return False
+
+            from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
+            from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VERTICAL
+            for enemy in game_map.get_enemy_units(self):
+                if not enemy.is_alive() or not enemy.deployed:
+                    continue
+                for em in enemy.models:
+                    if not getattr(em, "is_alive", False):
+                        continue
+                    for m, nx, ny, nz in proposed:
+                        test_base = self._create_potential_base(nx, ny, nz, facing, model=m)
+                        horiz = float(horizontal_distance_between_bases_2d(test_base, em.model_base))
+                        vert = float(vertical_distance_between_bases(test_base, em.model_base))
+                        if horiz <= ENGAGEMENT_RANGE_HORIZONTAL and vert <= ENGAGEMENT_RANGE_VERTICAL:
+                            print(f"❌ {self.name} cannot end within Engagement Range (AIRCRAFT)")
+                            return False
+
+        # Apply movement (pivot after move is optional; keep facing by default)
+        for m, nx, ny, nz in proposed:
+            try:
+                m.last_move_path = [(m.model_base.x, m.model_base.y, m.model_base.z, m.model_base.facing),
+                                    (nx, ny, nz, m.model_base.facing)]
+            except Exception:
+                pass
+            m.set_location(nx, ny, nz, m.model_base.facing)
+
+        print(f"✈️ {self.name} moved from ({start_x:.1f}, {start_y:.1f}) to ({start_x + move_dx:.1f}, {start_y + move_dy:.1f}) - distance: {forward_dist:.1f}\"")
+        return True
 
     def move(self, destination: Tuple[float, float, float], game_map: 'Map', advance: bool = False) -> bool:
         """
@@ -4881,6 +5130,8 @@ class Unit:
         2. Validates coherency after all models have moved
         3. If coherency would be broken at the end of the move, the move is NOT allowed and is rolled back
         """
+        if bool(getattr(self, "is_aircraft", False)):
+            return self._aircraft_normal_move(destination, game_map)
         if not self.models:
             logger.error(f"Cannot move unit {self.name}: no models in unit")
             return False
@@ -5189,6 +5440,9 @@ class Unit:
         2. Uses relaxed collision detection for final positioning
         3. Prioritizes achieving engagement range over perfect formations
         """
+        if bool(getattr(self, "is_aircraft", False)):
+            print(f"❌ {self.name} cannot declare charges (AIRCRAFT)")
+            return False
         # Mission Actions: a unit performing an Action is not eligible to declare a charge
         if getattr(self.round_state, 'action_locked_until_turn_end', False):
             print(f"❌ {self.name} is performing an Action and cannot declare a charge this turn")
@@ -5543,6 +5797,9 @@ class Unit:
         Units that fall back can move within engagement range and over enemy models,
         but cannot end within engagement range of any enemy models.
         """
+        if bool(getattr(self, "is_aircraft", False)):
+            print(f"❌ {self.name} cannot Fall Back (AIRCRAFT)")
+            return False
         print(f"🏃 {self.name} falls back from combat")
         
         # Check if unit is Battle-Shocked and must take Desperate Escape Test
@@ -6944,9 +7201,9 @@ class Unit:
                     target_is_aircraft = False
                     shooter_is_towering = False
                     try:
-                        shooter_is_aircraft = bool(shooting_model.parent_unit.is_aircraft())
-                        target_is_aircraft = bool(target_model.parent_unit.is_aircraft())
-                        shooter_is_towering = bool(shooting_model.parent_unit.is_towering())
+                        shooter_is_aircraft = bool(getattr(shooting_model.parent_unit, "is_aircraft", False))
+                        target_is_aircraft = bool(getattr(target_model.parent_unit, "is_aircraft", False))
+                        shooter_is_towering = bool(getattr(shooting_model.parent_unit, "is_towering", False))
                     except Exception:
                         pass
 
@@ -7236,6 +7493,9 @@ class Unit:
         Returns:
             bool: True if pile-in was executed successfully
         """
+        if bool(getattr(self, "is_aircraft", False)):
+            print(f"❌ {self.name} cannot Pile In (AIRCRAFT)")
+            return False
         from ..utility.constants import PILE_IN_DISTANCE
         from ..utility.calcs import MovementType
         dist = PILE_IN_DISTANCE
@@ -7279,6 +7539,9 @@ class Unit:
         Returns:
             bool: True if consolidation was executed successfully
         """
+        if bool(getattr(self, "is_aircraft", False)):
+            print(f"❌ {self.name} cannot Consolidate (AIRCRAFT)")
+            return False
         from ..utility.constants import CONSOLIDATE_DISTANCE
         from ..utility.calcs import MovementType
         dist = CONSOLIDATE_DISTANCE
@@ -7307,6 +7570,11 @@ class Unit:
         for unit in getattr(game_map, 'units', []) or []:
             if unit.faction == self.faction or not unit.is_alive() or not getattr(unit, 'deployed', False):
                 continue
+            try:
+                if not bool(getattr(self, "is_flying", False)) and bool(getattr(unit, "is_aircraft", False)):
+                    continue
+            except Exception:
+                pass
             for m in getattr(unit, 'models', []) or []:
                 if getattr(m, 'is_alive', False):
                     enemy_models.append(m)
@@ -9464,6 +9732,15 @@ class Unit:
         if not self.is_alive() or not target_unit.is_alive():
             return False
 
+        # AIRCRAFT cannot declare charges; only FLY units can charge AIRCRAFT.
+        try:
+            if bool(getattr(self, "is_aircraft", False)):
+                return False
+            if bool(getattr(target_unit, "is_aircraft", False)) and not bool(getattr(self, "is_flying", False)):
+                return False
+        except Exception:
+            pass
+
         # Cabal of Sorcerers (Temporal Surge): cannot charge until end of turn.
         try:
             sr = getattr(self, "special_rules", None)
@@ -10408,8 +10685,20 @@ class Unit:
         # Check if unit is within engagement range of any enemy unit
         enemy_units = game_map.get_enemy_units(self)
         for enemy_unit in enemy_units:
-            if enemy_unit.is_alive() and game_map.is_within_engagement_range(self, enemy_unit):
-                return True
+            if not enemy_unit.is_alive():
+                continue
+            if not game_map.is_within_engagement_range(self, enemy_unit):
+                continue
+            try:
+                if bool(getattr(self, "is_aircraft", False)):
+                    if bool(getattr(enemy_unit, "is_flying", False)):
+                        return True
+                    continue
+                if bool(getattr(enemy_unit, "is_aircraft", False)) and not bool(getattr(self, "is_flying", False)):
+                    continue
+            except Exception:
+                pass
+            return True
         
         return False
     
@@ -10693,6 +10982,18 @@ class Unit:
         # Units cannot arrive from reserves on Turn 1
         if current_turn < 2:
             return False
+
+        # AIRCRAFT placed into Strategic Reserves mid-game return next turn.
+        try:
+            aircraft_return_turn = getattr(self, "_aircraft_return_turn", None)
+        except Exception:
+            aircraft_return_turn = None
+        if aircraft_return_turn is not None:
+            try:
+                if int(current_turn) < int(aircraft_return_turn):
+                    return False
+            except Exception:
+                return False
         
         # Chapter Approved: the "must arrive by end of battle round 3" restriction applies only to
         # units that STARTED the game in reserves, not units placed into reserves mid-game.
@@ -10714,6 +11015,17 @@ class Unit:
         Returns:
             bool: True if the unit must arrive this turn or be destroyed
         """
+        # AIRCRAFT returning next turn is mandatory.
+        try:
+            aircraft_return_turn = getattr(self, "_aircraft_return_turn", None)
+        except Exception:
+            aircraft_return_turn = None
+        if aircraft_return_turn is not None:
+            try:
+                return self.is_in_reserves() and int(current_turn) >= int(aircraft_return_turn)
+            except Exception:
+                return self.is_in_reserves()
+
         try:
             started_in_reserves = bool(getattr(self, "_started_in_reserves", False))
         except Exception:
@@ -10762,6 +11074,11 @@ class Unit:
         self.reserve_status = 'deployed'
         self.reserve_turn_deployed = turn
         self.arrived_from_reserves_this_turn = True
+        try:
+            if hasattr(self, "_aircraft_return_turn"):
+                delattr(self, "_aircraft_return_turn")
+        except Exception:
+            pass
 
         try:
             army = self.get_parent_army()

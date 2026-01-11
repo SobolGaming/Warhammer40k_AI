@@ -195,6 +195,12 @@ class GateOfInfinityManager:
                 except Exception:
                     pass
                 try:
+                    if bool(getattr(member, "is_aircraft", False)) and not bool(getattr(member, "hover_mode", False)):
+                        if game is not None:
+                            member._aircraft_return_turn = int(getattr(game, "turn", 0) or 0) + 1
+                except Exception:
+                    pass
+                try:
                     member.deployed = True
                     member.reserve_turn_deployed = None
                     member.arrived_from_reserves_this_turn = False

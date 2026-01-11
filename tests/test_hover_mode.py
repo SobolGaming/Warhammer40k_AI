@@ -94,7 +94,7 @@ def test_hover_declaration_applied_in_battle_formations():
     assert other_unit.hover_declared is True
 
 
-def test_aircraft_forced_into_strategic_reserves_when_not_hover():
+def test_aircraft_forced_into_reserves_when_not_hover():
     bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(bf)
 
@@ -139,6 +139,6 @@ def test_aircraft_forced_into_strategic_reserves_when_not_hover():
 
     manager.set_reserves_status(deployment_results)
 
-    assert forced_unit.reserve_status == "strategic_reserves"
+    assert forced_unit.reserve_status == "reserves"
     assert getattr(forced_unit, "_started_in_reserves", False) is True
     assert hover_unit.reserve_status == "deployed"
