@@ -3365,9 +3365,15 @@ class Unit:
         return self.has_keyword("Imperium") and self.has_keyword("Primarch")
 
     def has_super_heavy_walker(self) -> bool:
-        """True if this unit has the Super-heavy Walker ability."""
+        """True if this unit has the Super-heavy Walker (or War Engine) ability."""
         try:
-            found, _ = self._find_ability_with_patterns(["super-heavy walker"])
+            found, _ = self._find_ability_with_patterns(
+                [
+                    "super-heavy walker",
+                    "super-heavy war engine",
+                    "super heavy war engine",
+                ]
+            )
             return bool(found)
         except Exception:
             return False

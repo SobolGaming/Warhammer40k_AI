@@ -801,7 +801,7 @@ def _ability_id_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Assigned Agents": ("Supported", "Imperial Agents ally caps enforced by battle size."),
         "Code Chivalric": ("Supported", "Deed/Quality tracking with on-roll effects."),
         "Bondsman": ("Supported", "Bondsman buffs applied to Armiger units."),
-        "Super-heavy Walker": ("Partial", "Terrain traversal handling only."),
+        "Super-heavy Walker": ("Supported", "Move-through models (excl. TITANIC), engagement pass-through, tall-terrain Battle-shock check."),
         "Battle Focus": ("Supported", "Token system + maneuver selection with per-phase limits."),
         "Power from Pain": ("Partial", "Pain token engine with partial ability coverage."),
         "Cult Ambush": ("Supported", "Resurgence points, ambush markers, reinforcements."),
@@ -878,7 +878,8 @@ def _datasheet_ability_support_global() -> Dict[str, Tuple[str, str]]:
     raw = {
         "Supreme Commander": ("Supported", "If any SUPREME COMMANDER unit is in the army, one must be the Warlord."),
         "One Shot": ("Supported", "Weapon-level one-shot tracking enforced per model."),
-        "Super-heavy Walker": ("Partial", "Terrain traversal handling only."),
+        "Super-heavy Walker": ("Supported", "Move-through models (excl. TITANIC), engagement pass-through, tall-terrain Battle-shock check."),
+        "Super-heavy War Engine": ("Supported", "Move-through models (excl. TITANIC), engagement pass-through, tall-terrain Battle-shock check."),
         "Collar of Khorne": ("Supported", "Feel No Pain 3+ against Psychic attacks."),
     }
     return {_norm(name): val for name, val in raw.items()}
