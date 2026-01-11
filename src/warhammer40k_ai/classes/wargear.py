@@ -2614,12 +2614,24 @@ class WargearProfile:
                     bondsman_lance = True
             except Exception:
                 bondsman_lance = False
-            if is_melee and (self.is_lance() or bondsman_lance):
+            blood_tithe_lance = False
+            try:
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+                if mgr is not None and getattr(mgr, "blood_tithe_daemonic_rage_applies", None):
+                    if mgr.blood_tithe_daemonic_rage_applies(unit):
+                        blood_tithe_lance = True
+            except Exception:
+                blood_tithe_lance = False
+            if is_melee and (self.is_lance() or bondsman_lance or blood_tithe_lance):
                 charged = bool(getattr(attacker.parent_unit.round_state, "charged_this_round", False))
                 if charged:
                     dice_modifier += 1
                     if bondsman_lance and not self.is_lance():
                         wound_result['modifiers'].append("+1 to wound from Lance (Bondsman)")
+                    elif blood_tithe_lance and not self.is_lance():
+                        wound_result['modifiers'].append("+1 to wound from Lance (Blood Tithe)")
                     else:
                         wound_result['modifiers'].append("+1 to wound from Lance (charged)")
         except Exception:
@@ -3615,6 +3627,18 @@ class WargearProfile:
                 current = attack_instance.get("inv_save_override", None)
                 if current is None or int(current) > 5:
                     attack_instance["inv_save_override"] = 5
+        except Exception:
+            pass
+        # World Eaters: Blood Tithe (Boon of Blood) 4++ for BLOOD LEGIONS units.
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            army = t_unit.get_parent_army() if t_unit is not None else None
+            mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+            if mgr is not None and t_unit is not None and getattr(mgr, "blood_tithe_boon_of_blood_applies", None):
+                if mgr.blood_tithe_boon_of_blood_applies(t_unit):
+                    current = attack_instance.get("inv_save_override", None)
+                    if current is None or int(current) > 4:
+                        attack_instance["inv_save_override"] = 4
         except Exception:
             pass
 

@@ -1043,6 +1043,11 @@ class Army:
                 for msg in list(ec_mgr.validate_detachment_rules() or []):
                     if msg:
                         raise ArmyValidationError(str(msg))
+            we_mgr = getattr(self, "world_eaters_detachments", None)
+            if we_mgr is not None:
+                for msg in list(we_mgr.validate_detachment_rules() or []):
+                    if msg:
+                        raise ArmyValidationError(str(msg))
         except ArmyValidationError:
             raise
         except Exception:

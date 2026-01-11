@@ -9526,6 +9526,14 @@ class Unit:
 
     def attached_unit_has_blessings_of_khorne(self) -> bool:
         """Attached unit eligibility: true if any attached member (bodyguard or leader) has Blessings of Khorne ability."""
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "blood_tithe_might_of_khorne_applies", None):
+                if mgr.blood_tithe_might_of_khorne_applies(self):
+                    return True
+        except Exception:
+            pass
         for u in self.get_attached_unit_members():
             try:
                 found, _ = u._find_ability_with_patterns(["blessings of khorne"])
@@ -11511,19 +11519,30 @@ class Unit:
                 - Optional condition string (e.g., "against psychic attacks", "against mortal wounds") (None if unconditional)
         """
         # Use cached result if available
+        cached = None
         if 'feel_no_pain' in getattr(self, '_ability_cache', {}):
-            return self._ability_cache['feel_no_pain']
-        
-        result = self._find_all_abilities_with_patterns(
-            ["feel no pain", "fnp"], 
-            r'(?:feel no pain|fnp)\s*\(?(\d+)\+(?:\)?)(?:\s+(.+))?'
-        )
-        
-        # Cache the result
-        if not hasattr(self, '_ability_cache'):
-            self._ability_cache = {}
-        self._ability_cache['feel_no_pain'] = result
-        
+            cached = list(self._ability_cache['feel_no_pain'])
+        if cached is None:
+            cached = self._find_all_abilities_with_patterns(
+                ["feel no pain", "fnp"],
+                r'(?:feel no pain|fnp)\s*\(?(\d+)\+(?:\)?)(?:\s+(.+))?',
+            )
+            # Cache the base result (dynamic additions are layered below).
+            if not hasattr(self, '_ability_cache'):
+                self._ability_cache = {}
+            self._ability_cache['feel_no_pain'] = list(cached)
+
+        result = list(cached)
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "blood_tithe_enraged_abjuration_applies", None):
+                if mgr.blood_tithe_enraged_abjuration_applies(self):
+                    entry = (5, "against psychic attacks and mortal wounds")
+                    if entry not in result:
+                        result.append(entry)
+        except Exception:
+            pass
         return result
 
     def get_max_weapon_range(self) -> float:

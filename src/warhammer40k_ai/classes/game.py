@@ -176,6 +176,8 @@ class Game:
         self.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_rules)
         # World Eaters: Icon of Khorne (Bloodshed points)
         self.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_bloodshed_points)
+        # World Eaters: Blood Tithe (Khorne Daemonkin detachment)
+        self.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_blood_tithe)
         # Transport core rules (Destroyed Transport -> Disembark + mortals + battleshock)
         self.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_transport_rules)
         # Detachment abilities that trigger on unit movement events
@@ -3147,6 +3149,146 @@ class Game:
         except Exception:
             pass
 
+    def _on_unit_destroyed_blood_tithe(self, unit=None, destroyed_by_unit=None, **_kwargs) -> None:
+        """World Eaters: Blood Tithe points (Khorne Daemonkin detachment)."""
+        if unit is None:
+            return
+
+        def _publish_btp_update(*, player, total, amount, attacker_unit=None, target_unit=None, roll=None, source=""):
+            try:
+                payload = {
+                    "player": player,
+                    "amount": int(amount or 0),
+                    "total": int(total or 0),
+                    "attacker_unit": attacker_unit,
+                    "target_unit": target_unit,
+                }
+                if roll is not None:
+                    payload["roll"] = roll
+                if source:
+                    payload["source"] = source
+                self.event_system.publish("blood_tithe_points_gained", **payload)
+                self.event_system.publish(
+                    "blood_tithe_updated",
+                    player=player,
+                    total=int(total or 0),
+                    active=[a.name for a in we_mgr.get_active_blood_tithe_abilities()],
+                )
+            except Exception:
+                pass
+
+        # Enhancement: Blood-forged Armour (bearer destroyed -> gain 1 BTP).
+        try:
+            bearer_army = unit.get_parent_army()
+        except Exception:
+            bearer_army = None
+        we_mgr = getattr(bearer_army, "world_eaters_detachments", None) if bearer_army is not None else None
+        if we_mgr is not None and getattr(we_mgr, "is_khorne_daemonkin", lambda: False)():
+            try:
+                sr = getattr(unit, "special_rules", None)
+                has_blood_forged = isinstance(sr, dict) and sr.get("enhancement_blood_forged_armour", False)
+            except Exception:
+                has_blood_forged = False
+            if has_blood_forged:
+                try:
+                    if we_mgr.unit_is_blood_tithe_eligible(unit):
+                        total = we_mgr.add_blood_tithe_points(1)
+                        _publish_btp_update(
+                            player=bearer_army.player,
+                            total=total,
+                            amount=1,
+                            attacker_unit=None,
+                            target_unit=unit,
+                            source="Blood-forged Armour",
+                        )
+                except Exception:
+                    pass
+
+        if destroyed_by_unit is None:
+            return
+        try:
+            if destroyed_by_unit.get_parent_army() == unit.get_parent_army():
+                return
+        except Exception:
+            return
+        try:
+            root = destroyed_by_unit.get_attached_unit_root()
+        except Exception:
+            root = destroyed_by_unit
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        if army is None:
+            return
+        we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+        if we_mgr is None or not getattr(we_mgr, "is_khorne_daemonkin", lambda: False)():
+            return
+        try:
+            if not we_mgr.unit_is_blood_tithe_eligible(root):
+                return
+        except Exception:
+            return
+
+        def _attached_unit_has_rule(u, key: str) -> bool:
+            try:
+                root_unit = u.get_attached_unit_root()
+            except Exception:
+                root_unit = u
+            try:
+                members = list(root_unit.get_attached_unit_members() or [])
+            except Exception:
+                members = [root_unit]
+            for member in members:
+                try:
+                    sr = getattr(member, "special_rules", None)
+                    if isinstance(sr, dict) and sr.get(key, False):
+                        return True
+                except Exception:
+                    continue
+            return False
+
+        # Enhancement: Blade of Endless Bloodshed (melee kill -> auto gain 1 BTP).
+        try:
+            wp = _kwargs.get("destroyed_by_weapon_profile", None)
+        except Exception:
+            wp = None
+        is_melee = False
+        try:
+            parent = getattr(wp, "parent_wargear", None)
+            if parent is not None and parent.is_melee():
+                is_melee = True
+        except Exception:
+            is_melee = False
+        if is_melee and _attached_unit_has_rule(root, "enhancement_blade_of_endless_bloodshed"):
+            total = we_mgr.add_blood_tithe_points(1)
+            _publish_btp_update(
+                player=army.player,
+                total=total,
+                amount=1,
+                attacker_unit=root,
+                target_unit=unit,
+                source="Blade of Endless Bloodshed",
+            )
+            return
+
+        try:
+            from warhammer40k_ai.utility.dice import get_roll
+            roll = int(get_roll("D6"))
+        except Exception:
+            roll = 0
+        if roll < 3:
+            return
+        total = we_mgr.add_blood_tithe_points(1)
+        _publish_btp_update(
+            player=army.player,
+            total=total,
+            amount=1,
+            attacker_unit=root,
+            target_unit=unit,
+            roll=int(roll),
+        )
+
     def _on_unit_destroyed_power_from_pain(self, unit=None, **_kwargs) -> None:
         if unit is None:
             return
@@ -4634,6 +4776,15 @@ class Game:
             army = getattr(current_player, "get_army", lambda: None)()
             mgr = getattr(army, "waaagh", None) if army is not None else None
             if mgr is not None:
+                mgr.on_command_phase_start(game=self, player=current_player)
+        except Exception:
+            pass
+        # World Eaters: Blood Tithe spending at the start of your Command phase.
+        try:
+            current_player = self.get_current_player()
+            army = getattr(current_player, "get_army", lambda: None)()
+            mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+            if mgr is not None and hasattr(mgr, "on_command_phase_start"):
                 mgr.on_command_phase_start(game=self, player=current_player)
         except Exception:
             pass

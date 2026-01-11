@@ -3,9 +3,10 @@ from typing import Callable, Optional, Dict, Any, List
 
 
 IMPLEMENTED_STRATAGEM_NAMES = {
+    "A WORTHY SKULL",
     "APOPLECTIC FRENZY",
     "BERZERKER'S WRATH",
-    "BERZERKER’S WRATH",
+    "BERZERKER'S WRATH",
     "BLOOD OFFERING",
     "FRENZIED RESILIENCE",
     "HACK AND SLASH",
@@ -27,9 +28,10 @@ IMPLEMENTED_STRATAGEM_NAMES = {
 }
 
 REACTION_ONLY_STRATAGEM_NAMES = {
+    "A WORTHY SKULL",
     "APOPLECTIC FRENZY",
     "BERZERKER'S WRATH",
-    "BERZERKER’S WRATH",
+    "BERZERKER'S WRATH",
     "BLOOD OFFERING",
     "FRENZIED RESILIENCE",
     "COMMAND RE-ROLL",
@@ -346,6 +348,8 @@ class StratagemManager:
         self._reaction_timeout_s = 5.0
         # Track temporary per-phase stratagem buffs that must be cleaned up.
         self._epic_challenge_models: list[Any] = []
+        # Fight-phase kill flags for "A WORTHY SKULL".
+        self._worthy_skull_kills: Dict[Any, bool] = {}
         self._build_available()
         self._subscribe_events()
         # Per-turn usage limits (e.g., Overwatch once/turn)
@@ -636,6 +640,8 @@ class StratagemManager:
         es.subscribe("fight_targets_selected", self._on_fight_targets_selected)
         # Fight sequence completion for COUNTER-OFFENSIVE
         es.subscribe("fight_sequence_complete", self._on_fight_sequence_complete)
+        # Fight attacks resolved (for A WORTHY SKULL).
+        es.subscribe("fight_attacks_resolved", self._on_fight_attacks_resolved)
         # Unit destroyed hooks for faction stratagems
         es.subscribe("unit_destroyed", self._on_unit_destroyed)
         # Model destroyed hooks for faction stratagems
@@ -648,6 +654,10 @@ class StratagemManager:
     def _on_phase_start(self, player, phase, **kwargs):
         # Clear per-phase transient allowances
         self._last_failed_battle_shock_unit = None
+        try:
+            self._worthy_skull_kills = {}
+        except Exception:
+            self._worthy_skull_kills = {}
         # Track phase for phase-aware filtering
         try:
             # Phase may be an Enum; normalize to a friendly string
@@ -1434,6 +1444,78 @@ class StratagemManager:
         except Exception:
             return
 
+    def _on_fight_attacks_resolved(self, unit=None, target_unit=None, **_kwargs) -> None:
+        """
+        Reaction window for A WORTHY SKULL:
+        Fight phase, just after a unit has fought and destroyed a CHARACTER/MONSTER model.
+        """
+        try:
+            if unit is None or not self.game:
+                return
+            if (self._current_phase_name or "").strip().lower() != "fight phase":
+                return
+            s = self.get_by_name("A WORTHY SKULL")
+            if not s:
+                return
+            try:
+                if unit.get_parent_army().player is not self.player:
+                    return
+            except Exception:
+                return
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if not self._worthy_skull_kills.get(root, False):
+                return
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    return
+            except Exception:
+                return
+            try:
+                army = root.get_parent_army()
+            except Exception:
+                army = None
+            we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+            if we_mgr is None or not getattr(we_mgr, "is_khorne_daemonkin", lambda: False)():
+                return
+            try:
+                if not we_mgr.unit_is_blood_tithe_eligible(root):
+                    return
+            except Exception:
+                return
+            if not s.can_use(self.player, self.game, unit=root, phase_name=self._current_phase_name):
+                return
+            if (s.name or "").strip().upper() in self._used_stratagems_this_phase:
+                return
+            for r in self._pending_reactions:
+                if r.get("event") == "fight_attacks_resolved" and r.get("stratagem") == s.name and r.get("unit") is root:
+                    return
+            self._queue_reaction({
+                "event": "fight_attacks_resolved",
+                "phase_name": "Fight phase",
+                "stratagem": s.name,
+                "cp_cost": s.cp_cost,
+                "unit": root,
+                "target_unit": target_unit,
+            })
+        except Exception:
+            return
+        finally:
+            try:
+                if unit is not None:
+                    root = unit.get_attached_unit_root()
+                else:
+                    root = None
+            except Exception:
+                root = unit
+            if root is not None:
+                try:
+                    self._worthy_skull_kills.pop(root, None)
+                except Exception:
+                    pass
+
     def _maybe_queue_overwatch(self, moving_unit, action: str, when: str) -> None:
         # Only offer to the opponent of the moving unit's owner
         try:
@@ -1643,81 +1725,126 @@ class StratagemManager:
             s = self.get_by_name("SKULLS FOR THE SKULL THRONE!")
         except Exception:
             s = None
-        if not s:
-            return
-        # Must be your stratagem manager's player army, in Fight phase (per stratagem text).
-        if attacker_unit is None or target_unit is None:
-            return
-        try:
-            if attacker_unit.get_parent_army().player is not self.player:
+        def _handle_skulls_for_the_skull_throne():
+            if not s:
                 return
-        except Exception:
-            return
-        try:
-            if attacker_unit.get_parent_army() == target_unit.get_parent_army():
+            # Must be your stratagem manager's player army, in Fight phase (per stratagem text).
+            if attacker_unit is None or target_unit is None:
                 return
-        except Exception:
-            return
-        try:
-            unit = attacker_unit.get_attached_unit_root()
-        except Exception:
-            unit = attacker_unit
-        try:
-            army = unit.get_parent_army()
-        except Exception:
-            army = None
-        we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
-        if we_mgr is None or not getattr(we_mgr, "is_berzerker_warband", lambda: False)():
-            return
-        try:
-            if _unit_cannot_be_target_of_stratagem(unit):
-                return
-        except Exception:
-            return
-        try:
-            if not (hasattr(unit, "has_any_keyword") and unit.has_any_keyword("WORLD EATERS")):
-                return
-        except Exception:
-            return
-        # Ensure current phase is Fight phase
-        phase_name = self._current_phase_name
-        if not (phase_name and phase_name.strip().lower() == "fight phase"):
-            return
-        # Must be a melee kill (Fight phase should imply, but be explicit).
-        try:
-            parent = getattr(weapon_profile, "parent_wargear", None)
-            if parent is None or not parent.is_melee():
-                return
-        except Exception:
-            return
-        # Target must be CHARACTER or MONSTER model (approximate via unit keywords)
-        try:
-            is_char = bool(target_unit.has_keyword("Character"))
-            is_mon = bool(target_unit.has_keyword("Monster"))
-            if not (is_char or is_mon):
-                return
-        except Exception:
-            return
-        # Check CP / turn / phase gating
-        if not s.can_use(self.player, self.game, phase_name=phase_name):
-            return
-        # Deduplicate same reaction for same attacker+target model in this phase
-        for r in self._pending_reactions:
             try:
-                if r.get("event") == "model_destroyed" and r.get("stratagem") == s.name and r.get("attacker_unit") is unit and r.get("target_model") is target_model:
+                if attacker_unit.get_parent_army().player is not self.player:
                     return
             except Exception:
-                continue
-        self._queue_reaction({
-            "event": "model_destroyed",
-            "phase_name": phase_name,
-            "stratagem": s.name,
-            "cp_cost": s.cp_cost,
-            "attacker_unit": unit,
-            "unit": unit,
-            "target_model": target_model,
-            "target_unit": target_unit,
-        })
+                return
+            try:
+                if attacker_unit.get_parent_army() == target_unit.get_parent_army():
+                    return
+            except Exception:
+                return
+            try:
+                unit = attacker_unit.get_attached_unit_root()
+            except Exception:
+                unit = attacker_unit
+            try:
+                army = unit.get_parent_army()
+            except Exception:
+                army = None
+            we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+            if we_mgr is None or not getattr(we_mgr, "is_berzerker_warband", lambda: False)():
+                return
+            try:
+                if _unit_cannot_be_target_of_stratagem(unit):
+                    return
+            except Exception:
+                return
+            try:
+                if not (hasattr(unit, "has_any_keyword") and unit.has_any_keyword("WORLD EATERS")):
+                    return
+            except Exception:
+                return
+            # Ensure current phase is Fight phase
+            phase_name = self._current_phase_name
+            if not (phase_name and phase_name.strip().lower() == "fight phase"):
+                return
+            # Must be a melee kill (Fight phase should imply, but be explicit).
+            try:
+                parent = getattr(weapon_profile, "parent_wargear", None)
+                if parent is None or not parent.is_melee():
+                    return
+            except Exception:
+                return
+            # Target must be CHARACTER or MONSTER model (approximate via unit keywords)
+            try:
+                is_char = bool(target_unit.has_keyword("Character"))
+                is_mon = bool(target_unit.has_keyword("Monster"))
+                if not (is_char or is_mon):
+                    return
+            except Exception:
+                return
+            # Check CP / turn / phase gating
+            if not s.can_use(self.player, self.game, phase_name=phase_name):
+                return
+            # Deduplicate same reaction for same attacker+target model in this phase
+            for r in self._pending_reactions:
+                try:
+                    if r.get("event") == "model_destroyed" and r.get("stratagem") == s.name and r.get("attacker_unit") is unit and r.get("target_model") is target_model:
+                        return
+                except Exception:
+                    continue
+            self._queue_reaction({
+                "event": "model_destroyed",
+                "phase_name": phase_name,
+                "stratagem": s.name,
+                "cp_cost": s.cp_cost,
+                "attacker_unit": unit,
+                "unit": unit,
+                "target_model": target_model,
+                "target_unit": target_unit,
+            })
+
+        _handle_skulls_for_the_skull_throne()
+
+        # WORLD EATERS: A WORTHY SKULL (track eligible kills for later prompt).
+        try:
+            if attacker_unit is None or target_unit is None:
+                return
+            if (self._current_phase_name or "").strip().lower() != "fight phase":
+                return
+            try:
+                if attacker_unit.get_parent_army().player is not self.player:
+                    return
+            except Exception:
+                return
+            try:
+                if attacker_unit.get_parent_army() == target_unit.get_parent_army():
+                    return
+            except Exception:
+                return
+            try:
+                parent = getattr(weapon_profile, "parent_wargear", None)
+                if parent is not None and not parent.is_melee():
+                    return
+            except Exception:
+                return
+            is_char = False
+            is_mon = False
+            try:
+                is_char = bool(getattr(target_model, "is_character", False))
+            except Exception:
+                is_char = False
+            try:
+                is_mon = bool(target_unit.has_keyword("Monster"))
+            except Exception:
+                is_mon = False
+            if not (is_char or is_mon):
+                return
+            try:
+                root = attacker_unit.get_attached_unit_root()
+            except Exception:
+                root = attacker_unit
+            self._worthy_skull_kills[root] = True
+        except Exception:
+            return
 
     def _on_unit_destroyed(self, unit=None, last_model=None, **kwargs) -> None:
         """
@@ -2896,6 +3023,113 @@ class StratagemManager:
             except Exception:
                 pass
             print(f"🩸 BERZERKER'S WRATH: {getattr(unit, 'name', 'Unit')} will Blood Surge up to 8\".")
+            return True
+
+        # Khorne Daemonkin: A WORTHY SKULL (gain D3 BTP and optionally activate Blood Tithe)
+        if s.name.upper() == "A WORTHY SKULL":
+            unit = kwargs.get("unit") or kwargs.get("attacker_unit") or kwargs.get("target_unit")
+            target_unit = kwargs.get("target_unit")
+            if unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "A WORTHY SKULL":
+                        unit = r.get("unit") or r.get("attacker_unit") or r.get("target_unit")
+                        target_unit = target_unit or r.get("target_unit")
+                        break
+            if unit is None or target_unit is None:
+                print("??O A Worthy Skull: missing target context")
+                return False
+            try:
+                unit = unit.get_attached_unit_root()
+            except Exception:
+                pass
+            try:
+                army = unit.get_parent_army()
+            except Exception:
+                army = None
+            we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+            if we_mgr is None or not getattr(we_mgr, "is_khorne_daemonkin", lambda: False)():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "fight phase":
+                print("??O A Worthy Skull: wrong phase")
+                return False
+            try:
+                if _unit_cannot_be_target_of_stratagem(unit):
+                    print("??O A Worthy Skull: target cannot be selected")
+                    return False
+            except Exception:
+                return False
+            try:
+                if not we_mgr.unit_is_blood_tithe_eligible(unit):
+                    print("??O A Worthy Skull: unit not eligible for Blood Tithe")
+                    return False
+            except Exception:
+                return False
+            try:
+                is_char = bool(target_unit.has_keyword("Character"))
+                is_mon = bool(target_unit.has_keyword("Monster"))
+                if not (is_char or is_mon):
+                    print("??O A Worthy Skull: target was not CHARACTER or MONSTER")
+                    return False
+            except Exception:
+                pass
+
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=unit).get("cost", s.cp_cost))
+            except Exception:
+                eff_cost = s.cp_cost
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+
+            try:
+                from ..utility.dice import get_roll
+                roll = int(get_roll("D3") or 0)
+            except Exception:
+                roll = 0
+            if roll < 0:
+                roll = 0
+            total = we_mgr.add_blood_tithe_points(roll)
+            try:
+                es = getattr(self.game, "event_system", None)
+                if es is not None:
+                    es.publish(
+                        "blood_tithe_points_gained",
+                        player=getattr(army, "player", None) or self.player,
+                        amount=int(roll),
+                        total=int(total or 0),
+                        attacker_unit=unit,
+                        target_unit=target_unit,
+                        roll=int(roll),
+                    )
+                    es.publish(
+                        "blood_tithe_updated",
+                        player=getattr(army, "player", None) or self.player,
+                        total=int(total or 0),
+                        active=[a.name for a in we_mgr.get_active_blood_tithe_abilities()],
+                    )
+            except Exception:
+                pass
+            try:
+                if int(we_mgr.blood_tithe_points or 0) > 0:
+                    we_mgr.prompt_blood_tithe_activation(
+                        game=self.game,
+                        player=self.player,
+                        timing="fight_phase",
+                        source="A Worthy Skull",
+                        ignore_command_phase_limit=True,
+                    )
+            except Exception:
+                pass
+
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
+            print(f"dYc, A WORTHY SKULL: gained {int(roll)} Blood Tithe point(s).")
             return True
 
         # Berzerker Warband: HACK AND SLASH (+1 AP on melee weapons after charging)

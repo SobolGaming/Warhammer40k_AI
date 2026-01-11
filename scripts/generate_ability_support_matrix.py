@@ -880,6 +880,7 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Sensational Performance": ("Supported", "Court of the Phoenician: optional +1 S/AP on charge."),
         "Master of the Pageant": ("Supported", "Court of the Phoenician: once per round -1 CP stratagem cost."),
         "Relentless Rage": ("Supported", "Berzerker Warband: on charge, melee weapons gain +1A/+2S until end of turn."),
+        "Blood Tithe": ("Supported", "Khorne Daemonkin: gain BTP on 3+ for eligible kills; spend BTP to activate Enraged Abjuration, Daemonic Rage, Boon of Blood, or Might of Khorne (command phase limit + A Worthy Skull fight-phase activation)."),
         "Martial Grace": ("Supported", "Warhost: +1 Battle Focus token; Swift as the Wind +1\" move; +1 to D6 Agile Manoeuvre rolls."),
     }
     return {_norm(name): val for name, val in raw.items()}
@@ -899,6 +900,10 @@ def _restriction_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Pact of Blood": ("Supported", "Army faction restriction enforced during validation."),
         "Space Marine Chapters": ("Supported", "Chapter keyword restrictions and unit bans."),
         "Deathwatch": ("Supported", "Deathwatch-only chapter restrictions."),
+        "You can include the BLOOD LEGIONS units in your army. The combined points cost of such units you can include in your army is: Incursion: Up to 500 pts Strike Force: Up to 1000 pts Onslaught: Up to 1500 pts No BLOOD LEGIONS model from your army can be your WARLORD.": (
+            "Supported",
+            "BLOOD LEGIONS points caps enforced by battle size; BLOOD LEGIONS cannot be your WARLORD.",
+        ),
     }
     return {_norm(name): val for name, val in raw.items()}
 
@@ -1346,6 +1351,8 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000009899003": "Timeless Strategist: +1 Battle Focus token if bearer on battlefield.",
         "000009899004": "Gift of Foresight: Command Re-roll for 0CP once per battle round.",
         "000009899005": "Psychic Destroyer: +1 Damage to bearer ranged Psychic weapons.",
+        "000010078003": "Blood-forged Armour: set bearer Save to 2+; gain 1 Blood Tithe point when bearer is destroyed.",
+        "000010078005": "Blade of Endless Bloodshed: +1 A/S/D for bearer melee weapons; melee kill auto-grants 1 Blood Tithe point.",
     }
     if enh_id in explicit:
         return ("Supported", explicit[enh_id])
@@ -1377,6 +1384,7 @@ def _stratagem_support(name: str) -> Tuple[str, str, str]:
         "BLOOD OFFERING": "Sticky objective on unit destruction; Berzerker Warband only.",
         "FRENZIED RESILIENCE": "Fight phase: after enemy targets; WORLD EATERS unit reduces damage by 1.",
         "HACK AND SLASH": "Fight phase: charged WORLD EATERS unit gains +1 AP on melee weapons.",
+        "A WORTHY SKULL": "Fight phase: after CHARACTER/MONSTER kill, gain D3 Blood Tithe points and optionally activate Blood Tithe.",
         "SKULLS FOR THE SKULL THRONE!": "Fight phase: after CHARACTER/MONSTER kill, roll Blessings for a unit-only extra blessing.",
         "UNBOUND ARROGANCE": "Coterie of the Conceited pledge increases by 1 (once per battle round).",
     }

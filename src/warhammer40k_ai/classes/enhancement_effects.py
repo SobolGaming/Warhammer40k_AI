@@ -89,6 +89,36 @@ def parse_enhancement_effects(description: str) -> List[EnhancementEffectSpec]:
             )
         )
 
+    # Add X to the Attacks, Strength and Damage characteristics of the bearer's melee weapons.
+    m = re.search(
+        r"add\s+(\d+)\s+to\s+the\s+attacks,\s*strength\s+and\s+damage\s+characteristics\s+of\s+the\s+bearer'?s\s+melee\s+weapons\.",
+        r,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        out.append(
+            EnhancementEffectSpec(
+                kind="melee_asd_add",
+                value=int(m.group(1)),
+                notes=f"Improve melee weapons' A/S/D by {m.group(1)}.",
+            )
+        )
+
+    # The bearer has a Save characteristic of X+.
+    m = re.search(
+        r"(?:the\s+)?bearer\s+has\s+a\s+save\s+characteristic\s+of\s+(\d+)\+\.",
+        r,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        out.append(
+            EnhancementEffectSpec(
+                kind="save_set",
+                value=int(m.group(1)),
+                notes=f"Set bearer Save to {m.group(1)}+.",
+            )
+        )
+
     # Each time an attack is allocated to the bearer, subtract X from the Damage characteristic of that attack.
     # IMPORTANT: only supported when it is unconditional (no trailing 'If ...' clause).
     m = re.search(
@@ -164,6 +194,11 @@ def apply_enhancement_effects(unit, effects: List[EnhancementEffectSpec]) -> Non
             unit.special_rules["enhancement_melee_damage_bonus"] = int(unit.special_rules.get("enhancement_melee_damage_bonus", 0)) + eff.value
             continue
 
+        if eff.kind == "save_set" and eff.supported:
+            from ..utility.modifiers import Modifier, ModifierOp
+            unit.add_characteristic_modifier("save", Modifier(ModifierOp.SET, int(eff.value), source="enhancement:save_set"))
+            continue
+
         if eff.kind == "reduce_damage_taken" and eff.supported:
             unit.special_rules["enhancement_reduce_damage_taken"] = int(unit.special_rules.get("enhancement_reduce_damage_taken", 0)) + eff.value
             continue
@@ -185,4 +220,3 @@ def classify_enhancement_support(description: str) -> Tuple[str, str]:
         notes = "; ".join(e.notes for e in effects)
         return "Partial", notes
     return "Partial", "Loadable/assignable + points counted + UI display; rules effects not executed yet."
-
