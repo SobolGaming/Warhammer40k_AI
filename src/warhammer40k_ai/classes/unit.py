@@ -4598,35 +4598,35 @@ class Unit:
         seen_names: set[str] = set()
 
         hit_re = re.compile(
-            r"each time a model in that unit makes (?:a|an) (?P<atype>melee|ranged) attack, add (?P<val>\\d+) to the hit roll",
+            r"each time a model in that unit makes (?:a|an) (?P<atype>melee|ranged) attack, add (?P<val>\d+) to the hit roll",
             re.IGNORECASE,
         )
         hit_any_re = re.compile(
-            r"each time a model in that unit makes (?:a|an) attack, add (?P<val>\\d+) to the hit roll",
+            r"each time a model in that unit makes (?:a|an) attack, add (?P<val>\d+) to the hit roll",
             re.IGNORECASE,
         )
         wound_re = re.compile(
-            r"each time a model in that unit makes (?:a|an) (?P<atype>melee|ranged) attack, add (?P<val>\\d+) to the wound roll",
+            r"each time a model in that unit makes (?:a|an) (?P<atype>melee|ranged) attack, add (?P<val>\d+) to the wound roll",
             re.IGNORECASE,
         )
         wound_any_re = re.compile(
-            r"each time a model in that unit makes (?:a|an) attack, add (?P<val>\\d+) to the wound roll",
+            r"each time a model in that unit makes (?:a|an) attack, add (?P<val>\d+) to the wound roll",
             re.IGNORECASE,
         )
         reroll_hit_re = re.compile(
-            r"each time a model in that unit makes (?:a|an) (?P<atype>melee|ranged) attack, (?:you can )?re-?roll (?:a|any)?\\s*hit roll(?:s)? of 1",
+            r"each time a model in that unit makes (?:a|an) (?P<atype>melee|ranged) attack, .*?re-?roll (?:a|any)?\s*hit roll(?:s)? of 1",
             re.IGNORECASE,
         )
         reroll_hit_any_re = re.compile(
-            r"each time a model in that unit makes (?:a|an) attack, (?:you can )?re-?roll (?:a|any)?\\s*hit roll(?:s)? of 1",
+            r"each time a model in that unit makes (?:a|an) attack, .*?re-?roll (?:a|any)?\s*hit roll(?:s)? of 1",
             re.IGNORECASE,
         )
         reroll_wound_re = re.compile(
-            r"each time a model in that unit makes (?:a|an) (?P<atype>melee|ranged) attack, (?:you can )?re-?roll (?:a|any)?\\s*wound roll(?:s)? of 1",
+            r"each time a model in that unit makes (?:a|an) (?P<atype>melee|ranged) attack, .*?re-?roll (?:a|any)?\s*wound roll(?:s)? of 1",
             re.IGNORECASE,
         )
         reroll_wound_any_re = re.compile(
-            r"each time a model in that unit makes (?:a|an) attack, (?:you can )?re-?roll (?:a|any)?\\s*wound roll(?:s)? of 1",
+            r"each time a model in that unit makes (?:a|an) attack, .*?re-?roll (?:a|any)?\s*wound roll(?:s)? of 1",
             re.IGNORECASE,
         )
 
@@ -4665,13 +4665,12 @@ class Unit:
                         val = int(m.group("val"))
                         mods["hit"] += val
                         hit_reasons.append(f"+{val} to hit from {name}")
-                    continue
-                m = hit_any_re.search(sl)
-                if m:
-                    val = int(m.group("val"))
-                    mods["hit"] += val
-                    hit_reasons.append(f"+{val} to hit from {name}")
-                    continue
+                else:
+                    m = hit_any_re.search(sl)
+                    if m:
+                        val = int(m.group("val"))
+                        mods["hit"] += val
+                        hit_reasons.append(f"+{val} to hit from {name}")
 
                 m = wound_re.search(sl)
                 if m:
@@ -4679,35 +4678,30 @@ class Unit:
                         val = int(m.group("val"))
                         mods["wound"] += val
                         wound_reasons.append(f"+{val} to wound from {name}")
-                    continue
-                m = wound_any_re.search(sl)
-                if m:
-                    val = int(m.group("val"))
-                    mods["wound"] += val
-                    wound_reasons.append(f"+{val} to wound from {name}")
-                    continue
+                else:
+                    m = wound_any_re.search(sl)
+                    if m:
+                        val = int(m.group("val"))
+                        mods["wound"] += val
+                        wound_reasons.append(f"+{val} to wound from {name}")
 
                 m = reroll_hit_re.search(sl)
                 if m:
                     if atype == "any" or m.group("atype").lower() == atype:
                         mods["reroll_hit_ones"] = True
                         reroll_hit_reasons.append(f"Leading: re-roll Hit rolls of 1 from {name}")
-                    continue
-                if reroll_hit_any_re.search(sl):
+                elif reroll_hit_any_re.search(sl):
                     mods["reroll_hit_ones"] = True
                     reroll_hit_reasons.append(f"Leading: re-roll Hit rolls of 1 from {name}")
-                    continue
 
                 m = reroll_wound_re.search(sl)
                 if m:
                     if atype == "any" or m.group("atype").lower() == atype:
                         mods["reroll_wound_ones"] = True
                         reroll_wound_reasons.append(f"Leading: re-roll Wound rolls of 1 from {name}")
-                    continue
-                if reroll_wound_any_re.search(sl):
+                elif reroll_wound_any_re.search(sl):
                     mods["reroll_wound_ones"] = True
                     reroll_wound_reasons.append(f"Leading: re-roll Wound rolls of 1 from {name}")
-                    continue
 
         mods["hit_reasons"] = tuple(hit_reasons)
         mods["wound_reasons"] = tuple(wound_reasons)
@@ -6595,7 +6589,11 @@ class Unit:
         else:
             found = self._has_simple_eligibility_rule([
                 "eligible to declare a charge in a turn in which it advanced",
+                "eligible to declare a charge in a turn in which it advanced or fell back",
+                "eligible to declare a charge in a turn in which it fell back or advanced",
                 "eligible to charge in a turn in which it advanced",
+                "eligible to charge in a turn in which it advanced or fell back",
+                "eligible to charge in a turn in which it fell back or advanced",
                 "eligible to shoot and declare a charge in a turn in which it advanced",
                 "eligible to shoot and declare a charge in a turn in which it advanced or fell back",
                 "eligible to shoot and declare a charge in a turn in which it fell back or advanced",
@@ -6754,6 +6752,10 @@ class Unit:
             pass
         return self._has_simple_eligibility_rule([
             "eligible to declare a charge in a turn in which it fell back",
+            "eligible to declare a charge in a turn in which it advanced or fell back",
+            "eligible to declare a charge in a turn in which it fell back or advanced",
+            "eligible to charge in a turn in which it advanced or fell back",
+            "eligible to charge in a turn in which it fell back or advanced",
             "eligible to shoot and declare a charge in a turn in which it fell back",
             "eligible to shoot and declare a charge in a turn in which it advanced or fell back",
             "eligible to shoot and declare a charge in a turn in which it fell back or advanced",

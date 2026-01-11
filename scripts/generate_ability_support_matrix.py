@@ -956,7 +956,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("AE", "Spiritseer"): ("Partial", "Lone Operative applied without 3\" Wraith Construct proximity requirement."),
         ("AE", "Bonesinger"): ("Partial", "Lone Operative applied without 3\" proximity/leading restrictions."),
         ("AE", "Superlative Strategist"): ("Partial", "Advance reroll enabled; leading/Agile Manoeuvre rerolls not enforced."),
-        ("AE", "Acrobatic"): ("Partial", "Charge-after-Advance supported; Fall Back charge not supported."),
+        ("AE", "Acrobatic"): ("Supported", "Charge-after-Advance/Fall Back eligibility."),
         ("AE", "Blur of Movement"): ("Supported", "Charge-after-Advance eligibility."),
         ("AE", "War Construct"): ("Supported", "Shoot after Falling Back."),
         ("AE", "Flawless Poise"): ("Supported", "Shoot and charge after Falling Back."),
@@ -1140,6 +1140,7 @@ def _classify_ability(
     if desc_support:
         return desc_support
     common_support = _bearer_unit_common_support(description)
+    leading_support = _leading_unit_common_support(description)
     transport_support = _transport_disembark_support(description)
     orders_support = _orders_section_support(name, description)
     attached_unit_support = _attached_unit_support(name, description)
@@ -1162,6 +1163,8 @@ def _classify_ability(
         return ("Supported", "Power from Pain ability effects implemented.")
     if common_support:
         return common_support
+    if leading_support:
+        return leading_support
     if transport_support:
         return transport_support
     if orders_support:
@@ -1206,6 +1209,17 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
     if m:
         notes.append(f"Charge rolls for bearer's unit get +{m.group(1)}.")
 
+    if (
+        ("eligible to declare a charge" in low or "eligible to charge" in low)
+        and (
+            "advanced or fell back" in low
+            or "advance or fell back" in low
+            or "fell back or advanced" in low
+            or "fell back or advance" in low
+        )
+    ):
+        notes.append("Charge-after-Advance/Fall Back eligibility.")
+
     m = re.search(
         r"models\s+in\s+the\s+bearer'?s\s+unit\s+have\s+a\s+leadership\s+characteristic\s+of\s+(\d+)\+?",
         low,
@@ -1217,6 +1231,30 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
     if notes:
         return ("Supported", " ".join(notes))
     return None
+
+
+def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    low = text.lower()
+    if "leading a unit" not in low or "model in that unit" not in low:
+        return None
+    hit_re = re.search(r"re-?roll (?:a|any)?\s*hit roll(?:s)? of 1", low, flags=re.IGNORECASE)
+    wound_re = re.search(r"re-?roll (?:a|any)?\s*wound roll(?:s)? of 1", low, flags=re.IGNORECASE)
+    if not (hit_re and wound_re):
+        return None
+    if "melee attack" in low:
+        attack_scope = "melee"
+    elif "ranged attack" in low:
+        attack_scope = "ranged"
+    else:
+        attack_scope = "all"
+    return ("Supported", f"Leading: re-roll Hit/Wound rolls of 1 for {attack_scope} attacks.")
 
 
 def _transport_disembark_support(description: str) -> Optional[Tuple[str, str]]:
@@ -1801,8 +1839,7 @@ def _build_faction_content(
             units = set(entry.get("units") or set())
             if units:
                 kept = {u for u in units if u not in virtual_unit_names}
-                if faction_id == "SM":
-                    kept = {u for u in kept if not _is_kill_team_unit(u)}
+                kept = {u for u in kept if not _is_kill_team_unit(u)}
                 if not kept:
                     continue
                 entry = dict(entry)
@@ -1875,8 +1912,7 @@ def _build_faction_content(
 
     # Datasheet support summary
     ds_units = list(datasheets_by_faction.get(faction_id, []) or [])
-    if faction_id == "SM":
-        ds_units = [ds for ds in ds_units if not _is_kill_team_unit(ds.get("name", ""))]
+    ds_units = [ds for ds in ds_units if not _is_kill_team_unit(ds.get("name", ""))]
     if ds_units:
         ds_units.sort(key=lambda d: (_norm(d.get("name", "")), str(d.get("id", "") or "")))
         ds_rows = []
