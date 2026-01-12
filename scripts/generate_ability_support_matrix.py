@@ -2471,8 +2471,8 @@ def _build_matrix() -> str:
             [
                 "Faction",
                 "Status",
-                "Supported Detachments (X out of Y)",
-                "Supported Datasheets (X out of Y)",
+                "Supported Detachments",
+                "Supported Datasheets",
                 "Link",
             ],
             summary_rows,
