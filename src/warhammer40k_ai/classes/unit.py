@@ -4871,16 +4871,26 @@ class Unit:
         reroll_hit_full_reasons: list[str] = []
         seen_names: set[str] = set()
 
-        reroll_hit_re = re.compile(
-            r"each time a model in this unit makes (?:a|an) (?P<atype>melee|ranged) attack(?:s)?[\s,;:]*.*?re-?roll (?:a|any)?\s*hit roll(?:s)? of 1",
+        def _split_sentences(text: str) -> list[str]:
+            cleaned = re.sub(r";\s*", ". ", text)
+            return [part.strip() for part in re.split(r"\.\s*", cleaned) if part.strip()]
+
+        reroll_hit_typed_re = re.compile(
+            r"^each time a model in this unit makes (?:a|an) (?P<atype>melee|ranged) attack(?:s)?"
+            r"[,;:]?\s*(?:you can\s*)?re-?roll (?:a|any)?\s*hit roll(?:s)? of 1$",
             re.IGNORECASE,
         )
         reroll_hit_any_re = re.compile(
-            r"each time a model in this unit makes (?:a|an) attack(?:s)?[\s,;:]*.*?re-?roll (?:a|any)?\s*hit roll(?:s)? of 1",
+            r"^each time a model in this unit makes (?:a|an) attack(?:s)?"
+            r"[,;:]?\s*(?:you can\s*)?re-?roll (?:a|any)?\s*hit roll(?:s)? of 1$",
             re.IGNORECASE,
         )
-        objective_re = re.compile(r"objective marker", re.IGNORECASE)
-        full_reroll_re = re.compile(r"re-?roll\s+(?:the|a)?\s*hit roll(?:s)?\s*instead", re.IGNORECASE)
+        objective_clause_re = re.compile(
+            r"^if (?:that attack targets|the target of that attack is) (?:a unit )?(?:that is )?"
+            r"within range of (?:an|one or more) objective marker(?:s)?"
+            r"\s*[,;:]?\s*(?:you can\s*)?re-?roll the hit roll instead$",
+            re.IGNORECASE,
+        )
 
         try:
             members = list(root.get_attached_unit_members() or [])
@@ -4909,22 +4919,33 @@ class Unit:
                 if ("re-roll" not in low) and ("reroll" not in low):
                     continue
 
-                applies = False
-                m = reroll_hit_re.search(low)
-                if m:
-                    if atype == "any" or m.group("atype").lower() == atype:
-                        applies = True
-                elif reroll_hit_any_re.search(low):
-                    applies = True
+                sentences = _split_sentences(text)
+                if not sentences:
+                    continue
 
-                if not applies:
+                base_atype = None
+                for sentence in sentences:
+                    s_low = sentence.lower()
+                    if "model in this unit" not in s_low:
+                        continue
+                    m = reroll_hit_typed_re.match(s_low)
+                    if m:
+                        base_atype = m.group("atype").lower()
+                        break
+                    if reroll_hit_any_re.match(s_low):
+                        base_atype = "any"
+                        break
+
+                if base_atype is None:
+                    continue
+                if atype != "any" and base_atype not in ("any", atype):
                     continue
 
                 mods["reroll_hit_ones"] = True
                 label = ability_name or "Unit ability"
                 reroll_hit_reasons.append(f"{label}: re-roll Hit rolls of 1")
 
-                if objective_re.search(low) and full_reroll_re.search(low):
+                if any(objective_clause_re.match(s.lower()) for s in sentences):
                     mods["reroll_hit_full_if_objective"] = True
                     reroll_hit_full_reasons.append(f"{label}: re-roll Hit roll (objective)")
 

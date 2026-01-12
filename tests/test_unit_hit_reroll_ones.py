@@ -267,6 +267,111 @@ class TestUnitHitRerollOnes(unittest.TestCase):
         self.assertEqual(int(result["roll"]), 6)
         self.assertIn("objective", str(called.get("reason", "")).lower())
 
+    def test_conditional_target_hit_reroll_not_applied(self):
+        from warhammer40k_ai.classes.wargear import WargearProfile
+        from warhammer40k_ai.classes import wargear as wargear_mod
+
+        ability = {
+            "name": "Conditional Reroll",
+            "description": "Each time a model in this unit makes a ranged attack that targets a unit within 9\", re-roll a Hit roll of 1.",
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, army2, _p1 = _build_game()
+        attacker = _make_unit("Lootas", abilities=[ability])
+        target = _make_unit("Target")
+        army1.add_unit(attacker)
+        army2.add_unit(target)
+
+        parent = SimpleNamespace(name="Test Gun", is_melee=lambda: False, is_ranged=lambda: True)
+        profile = WargearProfile(
+            profile_name="Ranged",
+            wargear_data={
+                "range": "24",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "4",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            },
+            parent_wargear=parent,
+        )
+
+        rolls = iter([1, 6])
+        original_roll = wargear_mod.get_roll
+        wargear_mod.get_roll = lambda _d: next(rolls)
+        try:
+            result = profile._hit_target_with_tracking(target, attacker.models[0], {"_aura_attack_mods": _aura_stub()})
+        finally:
+            wargear_mod.get_roll = original_roll
+
+        self.assertEqual(int(result["roll"]), 1)
+        self.assertEqual(int(result.get("reroll_of_one", 0)), 0)
+        self.assertIsNone(result.get("reroll"))
+
+    def test_extra_clause_does_not_trigger_objective_full_reroll(self):
+        from warhammer40k_ai.classes.wargear import WargearProfile
+        from warhammer40k_ai.classes.map import Objective, ObjectiveCategory, ObjectivePoint
+        from warhammer40k_ai.classes import wargear as wargear_mod
+
+        ability = {
+            "name": "Swift Demise",
+            "description": "Each time a model in this unit makes a ranged attack, re-roll a Hit roll of 1. If the target of that attack is the closest eligible target, you can re-roll the Hit roll instead.",
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, army2, _p1 = _build_game()
+        attacker = _make_unit("Windriders", abilities=[ability])
+        target = _make_unit("Target")
+        army1.add_unit(attacker)
+        army2.add_unit(target)
+
+        target.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        objective_point = ObjectivePoint(0.0, 0.0, 0.0, control_radius=3.0)
+        objective = Objective(
+            name="Test Objective",
+            category=ObjectiveCategory.PRIMARY,
+            points=0,
+            description="",
+            conditions=lambda _g: False,
+            location=objective_point,
+        )
+        game.map.add_objective(objective)
+
+        called = {}
+        def _provider(**kwargs):
+            called["called"] = True
+            return True
+
+        game.map.roll_reroll_provider = _provider
+
+        parent = SimpleNamespace(name="Test Gun", is_melee=lambda: False, is_ranged=lambda: True)
+        profile = WargearProfile(
+            profile_name="Ranged",
+            wargear_data={
+                "range": "24",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "4",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            },
+            parent_wargear=parent,
+        )
+
+        rolls = iter([2, 6])
+        original_roll = wargear_mod.get_roll
+        wargear_mod.get_roll = lambda _d: next(rolls)
+        try:
+            result = profile._hit_target_with_tracking(target, attacker.models[0], {"_aura_attack_mods": _aura_stub()})
+        finally:
+            wargear_mod.get_roll = original_roll
+
+        self.assertEqual(int(result["roll"]), 2)
+        self.assertFalse(called)
+
 
 if __name__ == "__main__":
     unittest.main()

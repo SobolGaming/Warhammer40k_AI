@@ -1355,17 +1355,75 @@ def _unit_hit_reroll_ones_support(description: str) -> Optional[Tuple[str, str]]
         return None
     if "leading a unit" in low:
         return None
-    if not re.search(r"re-?roll\s+(?:a|any)?\s*hit roll(?:s)? of 1", low, flags=re.IGNORECASE):
+    text = re.sub(r";\s*", ". ", text)
+
+    def _split_sentences(text_value: str) -> List[str]:
+        return [part.strip() for part in re.split(r"\.\s*", text_value) if part.strip()]
+
+    sentences = _split_sentences(text)
+    if not sentences:
         return None
-    if "melee attack" in low:
+
+    base_typed_re = re.compile(
+        r"^each time a model in this unit makes (?:a|an) (?P<atype>melee|ranged) attack(?:s)?"
+        r"[,;:]?\s*(?:you can\s*)?re-?roll (?:a|any)?\s*hit roll(?:s)? of 1$",
+        re.IGNORECASE,
+    )
+    base_any_re = re.compile(
+        r"^each time a model in this unit makes (?:a|an) attack(?:s)?"
+        r"[,;:]?\s*(?:you can\s*)?re-?roll (?:a|any)?\s*hit roll(?:s)? of 1$",
+        re.IGNORECASE,
+    )
+    objective_clause_re = re.compile(
+        r"^if (?:that attack targets|the target of that attack is) (?:a unit )?(?:that is )?"
+        r"within range of (?:an|one or more) objective marker(?:s)?"
+        r"\s*[,;:]?\s*(?:you can\s*)?re-?roll the hit roll instead$",
+        re.IGNORECASE,
+    )
+
+    base_sentences: List[str] = []
+    base_atype = None
+    multiple_bases = False
+    for sentence in sentences:
+        s_low = sentence.lower()
+        if "model in this unit" not in s_low:
+            continue
+        m = base_typed_re.match(s_low)
+        if m:
+            base_sentences.append(sentence)
+            if base_atype is None:
+                base_atype = m.group("atype").lower()
+            else:
+                multiple_bases = True
+            continue
+        if base_any_re.match(s_low):
+            base_sentences.append(sentence)
+            if base_atype is None:
+                base_atype = "all"
+            else:
+                multiple_bases = True
+
+    if not base_sentences:
+        return None
+
+    if base_atype == "melee":
         attack_scope = "melee"
-    elif "ranged attack" in low:
+    elif base_atype == "ranged":
         attack_scope = "ranged"
     else:
         attack_scope = "all"
+
     notes = [f"Unit attacks re-roll Hit rolls of 1 for {attack_scope} attacks."]
-    if "objective marker" in low and re.search(r"re-?roll\s+(?:the|a)?\s*hit roll(?:s)?\s*instead", low, flags=re.IGNORECASE):
+    objective_sentences = [s for s in sentences if objective_clause_re.match(s.lower())]
+    unsupported = [s for s in sentences if s not in base_sentences and not objective_clause_re.match(s.lower())]
+
+    if objective_sentences:
         notes.append("If the target is within range of an objective marker, the Hit roll can be re-rolled instead (optional).")
+
+    if multiple_bases or unsupported:
+        notes.append("Additional clauses not handled.")
+        return ("Partial", " ".join(notes))
+
     return ("Supported", " ".join(notes))
 
 
