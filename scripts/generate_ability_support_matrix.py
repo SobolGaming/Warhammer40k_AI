@@ -40,13 +40,6 @@ from warhammer40k_ai.classes.enhancement_effects import classify_enhancement_sup
 from warhammer40k_ai.classes.wargear import parse_alternate_3
 
 
-STATUS_COLORS = {
-    "supported": "#e6f4ea",
-    "implemented": "#e6f4ea",
-    "partial": "#fff4cc",
-    "not implemented": "#fdecea",
-}
-
 ABILITY_SUPPORT_BY_ID: Dict[str, Tuple[str, str]] = {}
 ABILITY_SUPPORT_BY_NAME_FACTION: Dict[Tuple[str, str], Tuple[str, str]] = {}
 ABILITY_SUPPORT_BY_NAME_FACTION_DS: Dict[Tuple[str, str, str], Tuple[str, str]] = {}
@@ -115,10 +108,6 @@ def _ascii_text(text: str) -> str:
 def _escape(text: str) -> str:
     return html.escape(_ascii_text(text), quote=True)
 
-
-def _status_color(status: str) -> str:
-    key = _norm(status)
-    return STATUS_COLORS.get(key, "#fdecea")
 
 def _status_icon(status: str) -> str:
     key = _norm(status)
@@ -1436,9 +1425,8 @@ def _extract_restrictions(desc_html: str) -> List[str]:
     return parts
 
 
-def _row(cells: Sequence[str], status: str) -> str:
-    color = _status_color(status)
-    tds = "".join(f"<td bgcolor=\"{color}\">{c}</td>" for c in cells)
+def _row(cells: Sequence[str], _status: str) -> str:
+    tds = "".join(f"<td>{c}</td>" for c in cells)
     return f"<tr>{tds}</tr>"
 
 
@@ -1589,24 +1577,13 @@ def _summarize_section_count(items: Iterable[Tuple[str, str]]) -> Tuple[int, int
     return supported, total
 
 
-def _summary_color(supported: int, total: int) -> str:
-    if total <= 0:
-        return STATUS_COLORS["not implemented"]
-    if supported <= 0:
-        return STATUS_COLORS["not implemented"]
-    if supported >= total:
-        return STATUS_COLORS["supported"]
-    return STATUS_COLORS["partial"]
-
-
 def _summary_span(title: str, supported: int, total: int) -> str:
     return _summary_span_with_label(title, supported, total, "abilities")
 
 
 def _summary_span_with_label(title: str, supported: int, total: int, label: str) -> str:
-    color = _summary_color(supported, total)
     label = f"{_escape(title)} ({supported} out of {total} {label} supported)"
-    return f"<span style=\"background-color:{color}; padding:2px 6px; display:block;\">{label}</span>"
+    return label
 
 
 def _details_raw(summary_html: str, body: str) -> str:
