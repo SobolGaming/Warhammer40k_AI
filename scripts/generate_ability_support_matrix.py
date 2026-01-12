@@ -1397,6 +1397,8 @@ def _stratagem_support(name: str) -> Tuple[str, str, str]:
         "HACK AND SLASH": "Fight phase: charged WORLD EATERS unit gains +1 AP on melee weapons.",
         "A WORTHY SKULL": "Fight phase: after CHARACTER/MONSTER kill, gain D3 Blood Tithe points and optionally activate Blood Tithe.",
         "SKULLS FOR THE SKULL THRONE!": "Fight phase: after CHARACTER/MONSTER kill, roll Blessings for a unit-only extra blessing.",
+        "MURDER-CALL": "End of opponent Fight phase: BLOOD LEGIONS unit not in Engagement Range goes to Strategic Reserves.",
+        "SUMMONED BY SLAUGHTER": "Any phase: set up BLOODLETTERS from Reserves wholly within 9\" of destroyed model; >6\" from enemies; once per battle round.",
         "UNBOUND ARROGANCE": "Coterie of the Conceited pledge increases by 1 (once per battle round).",
     }
 

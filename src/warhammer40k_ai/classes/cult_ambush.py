@@ -304,6 +304,11 @@ class CultAmbushManager:
         except Exception:
             pass
         try:
+            if hasattr(unit, "mark_entered_reserves_midgame"):
+                unit.mark_entered_reserves_midgame(game=game)
+        except Exception:
+            pass
+        try:
             if bool(getattr(unit, "is_aircraft", False)) and not bool(getattr(unit, "hover_mode", False)):
                 if game is not None:
                     unit._aircraft_return_turn = int(getattr(game, "turn", 0) or 0) + 1

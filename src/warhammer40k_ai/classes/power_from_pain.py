@@ -838,6 +838,11 @@ class PowerFromPainManager:
             except Exception:
                 pass
             try:
+                if hasattr(member, "mark_entered_reserves_midgame"):
+                    member.mark_entered_reserves_midgame(game=game)
+            except Exception:
+                pass
+            try:
                 member.deployed = True
                 member.reserve_turn_deployed = None
                 member.arrived_from_reserves_this_turn = False

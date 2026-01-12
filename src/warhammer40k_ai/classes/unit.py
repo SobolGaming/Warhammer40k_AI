@@ -5577,6 +5577,12 @@ class Unit:
             except Exception:
                 pass
             try:
+                if hasattr(self, "mark_entered_reserves_midgame"):
+                    game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+                    self.mark_entered_reserves_midgame(game=game)
+            except Exception:
+                pass
+            try:
                 self.deployed = True
                 self.reserve_turn_deployed = None
                 self.arrived_from_reserves_this_turn = False
@@ -11645,6 +11651,18 @@ class Unit:
                     continue
         except Exception:
             pass
+
+    def mark_entered_reserves_midgame(self, game=None) -> None:
+        """Mark that this unit entered reserves during the battle (not at deployment)."""
+        try:
+            turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        except Exception:
+            turn = 0
+        try:
+            setattr(self, "_entered_reserves_midgame_round", int(turn))
+            setattr(self, "_entered_reserves_midgame", True)
+        except Exception:
+            pass
         
     def is_in_reserves(self) -> bool:
         """Check if the unit is currently in reserves (any type)."""
@@ -11696,70 +11714,11 @@ class Unit:
             return False
         
         return True
-    
-    def must_arrive_from_reserves(self, current_turn: int) -> bool:
-        """Check if the unit must arrive from reserves this turn or be destroyed.
-        
-        Args:
-            current_turn: The current battle round number
-        
-        Returns:
-            bool: True if the unit must arrive this turn or be destroyed
-        """
-        # AIRCRAFT returning next turn is mandatory.
-        try:
-            aircraft_return_turn = getattr(self, "_aircraft_return_turn", None)
-        except Exception:
-            aircraft_return_turn = None
-        if aircraft_return_turn is not None:
-            try:
-                return self.is_in_reserves() and int(current_turn) >= int(aircraft_return_turn)
-            except Exception:
-                return self.is_in_reserves()
 
-        try:
-            started_in_reserves = bool(getattr(self, "_started_in_reserves", False))
-        except Exception:
-            started_in_reserves = False
-        return self.is_in_reserves() and started_in_reserves and current_turn >= 3
-    
-    def arrive_from_reserves(self, position: Tuple[float, float, float], turn: int, game_map: Optional['Map'] = None) -> bool:
-        """Deploy the unit from reserves at the specified position.
-        
-        Args:
-            position: (x, y, z) coordinates where the unit should be placed
-            turn: Current turn number
-        
-        Returns:
-            bool: True if deployment was successful
-        """
-        if not self.can_arrive_from_reserves(turn):
-            return False
-        
-        # Deploy all models at calculated positions
-        try:
-            # Use the existing model positioning logic with battlefield edge repulsors
-            boundary_repulsors = game_map.get_battlefield_edge_repulsors() if game_map else []
-            # During deployment, use relaxed friendly unit avoidance to allow tighter formations
-            model_positions = self.calculate_model_positions(position[0], position[1], game_map, boundary_repulsors=boundary_repulsors, avoid_friendly_units=False)
-            
-            # Check if formation finding failed
-            if model_positions is None:
-                logger.warning(f"Could not find valid formation for {self.name} arriving from reserves - using default placement")
-                # Default: place all models at the unit position
-                for model in self.models:
-                    model.set_location(position[0], position[1], position[2], 0.0)
-            else:
-                for model, model_pos in zip(self.models, model_positions):
-                    model.set_location(model_pos[0], model_pos[1], model_pos[2], model_pos[3])
-        except Exception as e:
-            logger.warning(f"Could not calculate model positions for {self.name} arriving from reserves: {e}")
-            # Default: place all models at the unit position
-            for model in self.models:
-                model.set_location(position[0], position[1], position[2], 0.0)
-        
+    def _finalize_reserves_arrival(self, turn: int, game_map: Optional['Map'] = None) -> bool:
+        """Finalize state updates for a unit that has been set up from reserves."""
         # Unit position is now determined by model positions
-        
+
         # Update unit status
         self.deployed = True
         self.reserve_status = 'deployed'
@@ -11850,7 +11809,7 @@ class Unit:
                     self.special_rules = sr
         except Exception:
             pass
-        
+
         logger.info(f"🪂 {self.name} arrived from reserves at turn {turn}")
         try:
             army = self.get_parent_army()
@@ -11861,6 +11820,70 @@ class Unit:
         except Exception:
             pass
         return True
+    
+    def must_arrive_from_reserves(self, current_turn: int) -> bool:
+        """Check if the unit must arrive from reserves this turn or be destroyed.
+        
+        Args:
+            current_turn: The current battle round number
+        
+        Returns:
+            bool: True if the unit must arrive this turn or be destroyed
+        """
+        # AIRCRAFT returning next turn is mandatory.
+        try:
+            aircraft_return_turn = getattr(self, "_aircraft_return_turn", None)
+        except Exception:
+            aircraft_return_turn = None
+        if aircraft_return_turn is not None:
+            try:
+                return self.is_in_reserves() and int(current_turn) >= int(aircraft_return_turn)
+            except Exception:
+                return self.is_in_reserves()
+
+        try:
+            started_in_reserves = bool(getattr(self, "_started_in_reserves", False))
+        except Exception:
+            started_in_reserves = False
+        return self.is_in_reserves() and started_in_reserves and current_turn >= 3
+    
+    def arrive_from_reserves(self, position: Tuple[float, float, float], turn: int, game_map: Optional['Map'] = None) -> bool:
+        """Deploy the unit from reserves at the specified position.
+        
+        Args:
+            position: (x, y, z) coordinates where the unit should be placed
+            turn: Current turn number
+        
+        Returns:
+            bool: True if deployment was successful
+        """
+        if not self.can_arrive_from_reserves(turn):
+            return False
+        
+        # Deploy all models at calculated positions
+        try:
+            # Use the existing model positioning logic with battlefield edge repulsors
+            boundary_repulsors = game_map.get_battlefield_edge_repulsors() if game_map else []
+            # During deployment, use relaxed friendly unit avoidance to allow tighter formations
+            model_positions = self.calculate_model_positions(position[0], position[1], game_map, boundary_repulsors=boundary_repulsors, avoid_friendly_units=False)
+            
+            # Check if formation finding failed
+            if model_positions is None:
+                logger.warning(f"Could not find valid formation for {self.name} arriving from reserves - using default placement")
+                # Default: place all models at the unit position
+                for model in self.models:
+                    model.set_location(position[0], position[1], position[2], 0.0)
+            else:
+                for model, model_pos in zip(self.models, model_positions):
+                    model.set_location(model_pos[0], model_pos[1], model_pos[2], model_pos[3])
+        except Exception as e:
+            logger.warning(f"Could not calculate model positions for {self.name} arriving from reserves: {e}")
+            # Default: place all models at the unit position
+            for model in self.models:
+                model.set_location(position[0], position[1], position[2], 0.0)
+        
+        # Unit position is now determined by model positions
+        return self._finalize_reserves_arrival(turn, game_map)
     
     def can_move_after_arriving_from_reserves(self) -> bool:
         """Check if the unit can move normally after arriving from reserves this turn."""

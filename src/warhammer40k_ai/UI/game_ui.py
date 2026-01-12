@@ -723,6 +723,172 @@ class GameView:
                 on_chosen(cand[0])
         self._request_frenzied_resilience_unit = _request_frenzied_resilience_unit
 
+        def _request_murder_call_unit(player, game, candidates, on_chosen):
+            cand = list(candidates or [])
+            if not cand:
+                try:
+                    from ..classes.stratagems import _unit_cannot_be_target_of_stratagem
+                except Exception:
+                    _unit_cannot_be_target_of_stratagem = None
+                try:
+                    army = player.get_army()
+                    we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+                    if we_mgr is None or not getattr(we_mgr, "is_khorne_daemonkin", lambda: False)():
+                        on_chosen(None)
+                        return
+                except Exception:
+                    on_chosen(None)
+                    return
+                game_map = getattr(game, "map", None)
+                if game_map is None:
+                    on_chosen(None)
+                    return
+                seen = set()
+                for unit in player.get_army().units or []:
+                    try:
+                        root = unit.get_attached_unit_root()
+                    except Exception:
+                        root = unit
+                    if root is None:
+                        continue
+                    try:
+                        uid = getattr(root, "_id", id(root))
+                    except Exception:
+                        uid = id(root)
+                    if uid in seen:
+                        continue
+                    seen.add(uid)
+                    try:
+                        if not root.is_alive():
+                            continue
+                    except Exception:
+                        pass
+                    try:
+                        if not getattr(root, "deployed", False):
+                            continue
+                    except Exception:
+                        continue
+                    try:
+                        if getattr(root, "is_in_reserves", lambda: False)():
+                            continue
+                    except Exception:
+                        pass
+                    try:
+                        if not we_mgr.unit_is_blood_legions(root):
+                            continue
+                    except Exception:
+                        continue
+                    if callable(_unit_cannot_be_target_of_stratagem) and _unit_cannot_be_target_of_stratagem(root):
+                        continue
+                    try:
+                        engaged = False
+                        for enemy in list(game_map.get_enemy_units(root) or []):
+                            if not getattr(enemy, "is_alive", lambda: True)():
+                                continue
+                            if not getattr(enemy, "deployed", True):
+                                continue
+                            if game_map.is_within_engagement_range(root, enemy):
+                                engaged = True
+                                break
+                        if engaged:
+                            continue
+                    except Exception:
+                        pass
+                    cand.append(root)
+            if not cand:
+                on_chosen(None)
+                return
+            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
+                self.overwatch_shooter_dialog.show(
+                    cand,
+                    None,
+                    lambda unit: (self.overwatch_shooter_dialog.hide(), on_chosen(unit)),
+                    title="Select Murder-Call Unit",
+                    subtitle="BLOOD LEGIONS not in Engagement Range",
+                )
+            else:
+                on_chosen(cand[0])
+        self._request_murder_call_unit = _request_murder_call_unit
+
+        def _request_summoned_by_slaughter_unit(player, game, candidates, on_chosen):
+            def _is_bloodletters(u) -> bool:
+                if u is None:
+                    return False
+                try:
+                    if hasattr(u, "has_any_keyword") and u.has_any_keyword("BLOODLETTERS"):
+                        return True
+                except Exception:
+                    pass
+                try:
+                    if hasattr(u, "has_keyword") and u.has_keyword("BLOODLETTERS"):
+                        return True
+                except Exception:
+                    pass
+                try:
+                    return "bloodletters" in str(getattr(u, "name", "") or "").strip().lower()
+                except Exception:
+                    return False
+
+            cand = list(candidates or [])
+            if not cand:
+                try:
+                    from ..classes.stratagems import _unit_cannot_be_target_of_stratagem
+                except Exception:
+                    _unit_cannot_be_target_of_stratagem = None
+                try:
+                    army = player.get_army()
+                    we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+                    if we_mgr is None or not getattr(we_mgr, "is_khorne_daemonkin", lambda: False)():
+                        on_chosen(None)
+                        return
+                except Exception:
+                    on_chosen(None)
+                    return
+                seen = set()
+                for unit in player.get_army().units or []:
+                    try:
+                        root = unit.get_attached_unit_root()
+                    except Exception:
+                        root = unit
+                    if root is None:
+                        continue
+                    try:
+                        uid = getattr(root, "_id", id(root))
+                    except Exception:
+                        uid = id(root)
+                    if uid in seen:
+                        continue
+                    seen.add(uid)
+                    try:
+                        if not root.is_in_reserves():
+                            continue
+                    except Exception:
+                        continue
+                    try:
+                        if not root.is_alive():
+                            continue
+                    except Exception:
+                        pass
+                    if not _is_bloodletters(root):
+                        continue
+                    if callable(_unit_cannot_be_target_of_stratagem) and _unit_cannot_be_target_of_stratagem(root):
+                        continue
+                    cand.append(root)
+            if not cand:
+                on_chosen(None)
+                return
+            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
+                self.overwatch_shooter_dialog.show(
+                    cand,
+                    None,
+                    lambda unit: (self.overwatch_shooter_dialog.hide(), on_chosen(unit)),
+                    title="Select Summoned by Slaughter Unit",
+                    subtitle="Bloodletters unit in Reserves",
+                )
+            else:
+                on_chosen(cand[0])
+        self._request_summoned_by_slaughter_unit = _request_summoned_by_slaughter_unit
+
         # Generic yes/no prompt hook for optional ability decisions (e.g., Direct the Slaughter)
         def _request_yes_no(title: str, message: str, yes_label: str, no_label: str, on_chosen):
             self.yes_no_dialog.show(
@@ -865,6 +1031,7 @@ class GameView:
         self._oath_of_moment_flow_active = False
         self._code_chivalric_flow_active = False
         self._bondsman_flow_active = False
+        self._summoned_by_slaughter_flow_active = False
         self._dark_pacts_flow_active = False
         self._martial_katah_flow_active = False
         self._emperors_children_pledge_flow_active = False
@@ -6571,6 +6738,38 @@ class GameView:
                 )
             return
 
+        if name_u == "MURDER-CALL" and "target_unit" not in context and "unit" not in context:
+            if callable(getattr(self, "_request_murder_call_unit", None)):
+                candidates = context.get("candidates") or []
+                self._request_murder_call_unit(
+                    player,
+                    self.game,
+                    candidates,
+                    lambda unit: self._finalize_murder_call(player, name, context, unit),
+                )
+            return
+
+        if name_u == "SUMMONED BY SLAUGHTER" and "target_unit" not in context and "unit" not in context:
+            if callable(getattr(self, "_request_summoned_by_slaughter_unit", None)):
+                candidates = context.get("candidates") or []
+                self._request_summoned_by_slaughter_unit(
+                    player,
+                    self.game,
+                    candidates,
+                    lambda unit: self._finalize_summoned_by_slaughter(player, name, context, unit),
+                )
+            return
+
+        if name_u == "MURDER-CALL" and ("target_unit" in context or "unit" in context):
+            unit = context.get("target_unit") or context.get("unit")
+            self._finalize_murder_call(player, name, context, unit)
+            return
+
+        if name_u == "SUMMONED BY SLAUGHTER" and ("target_unit" in context or "unit" in context) and "manual_placement" not in context:
+            unit = context.get("target_unit") or context.get("unit")
+            self._finalize_summoned_by_slaughter(player, name, context, unit)
+            return
+
         if name_u == "SKULLS FOR THE SKULL THRONE!" and "attacker_unit" in context:
             if callable(getattr(self, "_request_blessings_roll", None)):
                 if self._blessings_flow_active:
@@ -6878,6 +7077,144 @@ class GameView:
             print(f"Used stratagem: {name}")
         else:
             print(f"Could not use stratagem: {name}")
+
+    def _finalize_murder_call(self, player, name: str, context: Dict[str, Any], unit) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if unit is None:
+            print("Murder-Call: no unit selected")
+            return
+        ctx = dict(context)
+        ctx["unit"] = unit
+        ok = manager.use(name, **ctx)
+        if ok:
+            print(f"Used stratagem: {name}")
+        else:
+            print(f"Could not use stratagem: {name}")
+
+    def _finalize_summoned_by_slaughter(self, player, name: str, context: Dict[str, Any], unit) -> None:
+        if self._summoned_by_slaughter_flow_active:
+            return
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if unit is None:
+            print("Summoned by Slaughter: no unit selected")
+            return
+        destroyed_base = context.get("destroyed_model_base") or context.get("destroyed_base")
+        if destroyed_base is None:
+            print("Summoned by Slaughter: missing destroyed model position")
+            return
+        game_map = getattr(self.game, "map", None)
+        if game_map is None:
+            print("Summoned by Slaughter: no map context")
+            return
+
+        strat = manager.get_by_name(str(name)) if manager else None
+        if strat is not None and player.command_points < strat.cp_cost:
+            print("Summoned by Slaughter: not enough CP")
+            return
+
+        destroyed_shape = None
+        try:
+            destroyed_shape = destroyed_base.get_base_shape()
+        except Exception:
+            destroyed_shape = None
+
+        def _placement_validator(model, x: float, y: float, z: float) -> dict:
+            try:
+                # Build candidate base
+                base = Base(model.model_base.base_type, model.model_base.radius)
+                base.set_position(float(x), float(y), float(z))
+                base.set_facing(float(self.individual_model_movement_dialog.get_deploy_facing_radians()))
+                try:
+                    base.set_model_height(float(getattr(model.model_base, "model_height", base.model_height)))
+                except Exception:
+                    pass
+            except Exception:
+                return {"valid": False, "reason": "Invalid base for placement"}
+
+            # Battlefield boundary
+            try:
+                if not game_map.is_within_boundary(model, (float(x), float(y))):
+                    return {"valid": False, "reason": "Outside battlefield"}
+            except Exception:
+                pass
+
+            # RUINS placement validation
+            try:
+                from ..classes.map import validate_ruins_placement
+                ruins_validation = validate_ruins_placement(unit, (float(x), float(y), float(z)), game_map.terrain_features, moving_model=model)
+                if not ruins_validation.get("valid", False):
+                    return {"valid": False, "reason": ruins_validation.get("reason", "RUINS placement invalid")}
+            except Exception:
+                pass
+
+            # Wholly within 9" of destroyed model (3D distance).
+            try:
+                dz = abs(float(z) - float(getattr(destroyed_base, "z", 0.0)))
+                if dz > 9.0 + 1e-6:
+                    return {"valid": False, "reason": "Too far from destroyed model (>9\")"}
+                if destroyed_shape is None:
+                    return {"valid": False, "reason": "Missing destroyed model geometry"}
+                r2 = math.sqrt(max(0.0, (9.0 * 9.0) - (dz * dz)))
+                allowed = destroyed_shape.buffer(r2)
+                if not allowed.covers(base.get_base_shape()):
+                    return {"valid": False, "reason": "Not wholly within 9\" of destroyed model"}
+            except Exception:
+                return {"valid": False, "reason": "Placement range check failed"}
+
+            # More than 6" horizontally away from all enemy units.
+            try:
+                from ..utility.aura_utils import horizontal_distance_between_bases_2d
+                for enemy in list(game_map.get_enemy_units(unit) or []):
+                    if not getattr(enemy, "is_alive", lambda: True)():
+                        continue
+                    if not getattr(enemy, "deployed", True):
+                        continue
+                    for em in list(getattr(enemy, "models", []) or []):
+                        if not getattr(em, "is_alive", True):
+                            continue
+                        if float(horizontal_distance_between_bases_2d(base, em.model_base)) <= 6.0 + 1e-6:
+                            return {"valid": False, "reason": "Too close to enemy (<6\")"}
+            except Exception:
+                pass
+
+            return {"valid": True, "reason": "OK"}
+
+        self._summoned_by_slaughter_flow_active = True
+
+        def _on_complete(completed: bool):
+            self._summoned_by_slaughter_flow_active = False
+            if not completed:
+                print("Summoned by Slaughter: placement cancelled or failed")
+                return
+            ctx = dict(context)
+            ctx["target_unit"] = unit
+            ctx["manual_placement"] = True
+            ok = manager.use(name, **ctx)
+            if ok:
+                print(f"Used stratagem: {name}")
+            else:
+                print(f"Could not use stratagem: {name}")
+
+        try:
+            if hasattr(self, "individual_model_movement_dialog") and self.individual_model_movement_dialog:
+                self.individual_model_movement_dialog.show(
+                    unit,
+                    "deploy",
+                    _on_complete,
+                    self.game.map,
+                    max_distance=0.0,
+                    placement_validator=_placement_validator,
+                )
+            else:
+                self._summoned_by_slaughter_flow_active = False
+                print("Summoned by Slaughter: placement dialog unavailable")
+        except Exception:
+            self._summoned_by_slaughter_flow_active = False
+            print("Summoned by Slaughter: failed to open placement dialog")
 
     # -------- Rule info helpers --------
     def _get_waha_helper(self):
