@@ -2194,7 +2194,17 @@ def add_unit_to_army(army: Army, unit: Unit, model_count: int, wargear_dict: Dic
                     for _ in range(quantity):
                         unit.add_wargear([matching_gear if gear.name.lower().replace("’","'") == gear_name else None for gear in unit.possible_wargear], model_name)
             else:
-                matching_gear = next((gear for gear in unit.wargear_options if gear_name in gear.wargear_to), None)
+                matching_gear = None
+                for gear in unit.wargear_options:
+                    for choice in (gear.wargear_to or []):
+                        for _qty, nm in (choice or []):
+                            if nm and nm.lower().replace("’", "'") == gear_name:
+                                matching_gear = gear
+                                break
+                        if matching_gear:
+                            break
+                    if matching_gear:
+                        break
                 if matching_gear:
                     # Army lists must be deterministic: if an option can't be resolved uniquely, that's an error.
                     unit.apply_wargear_options_strict(gear_name)

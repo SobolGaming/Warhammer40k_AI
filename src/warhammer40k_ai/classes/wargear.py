@@ -1172,6 +1172,142 @@ class WargearProfile:
         
         return attack_result
 
+    def _maybe_apply_aspect_shrine_token(
+        self,
+        attacker: 'Model',
+        target: 'Unit',
+        roll_type: str,
+        roll_value: Optional[int],
+        needed: Optional[int] = None,
+    ) -> tuple[Optional[int], Optional[str]]:
+        """
+        Aeldari Aspect Shrine Token: optionally set a hit/wound roll to an unmodified 6.
+        Returns (new_roll_value, decision_str) where decision_str is "use", "skip", or "suppress".
+        """
+        try:
+            if roll_value is None:
+                return roll_value, None
+            if int(roll_value) == 6:
+                return roll_value, None
+        except Exception:
+            return roll_value, None
+
+        try:
+            if bool(getattr(attacker, "is_character", False)):
+                return roll_value, None
+        except Exception:
+            pass
+
+        unit = getattr(attacker, "parent_unit", None)
+        if unit is None:
+            return roll_value, None
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+
+        try:
+            if not hasattr(root, "get_aspect_shrine_token_remaining"):
+                return roll_value, None
+            if int(root.get_aspect_shrine_token_remaining() or 0) <= 0:
+                return roll_value, None
+            if bool(root.is_aspect_shrine_prompt_suppressed()):
+                return roll_value, None
+        except Exception:
+            return roll_value, None
+
+        player = None
+        game_map = None
+        is_human = False
+        provider = None
+        try:
+            army = root.get_parent_army()
+            player = getattr(army, "player", None)
+            game = getattr(player, "game", None) if player is not None else None
+            game_map = getattr(game, "map", None) if game is not None else None
+            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+            provider = getattr(game_map, "aspect_shrine_provider", None) if game_map is not None else None
+        except Exception:
+            player = None
+            game_map = None
+            is_human = False
+            provider = None
+
+        decision = None
+        tokens_remaining = 0
+        try:
+            tokens_remaining = int(root.get_aspect_shrine_token_remaining() or 0)
+        except Exception:
+            tokens_remaining = 0
+
+        if is_human and callable(provider):
+            try:
+                decision = provider(
+                    player=player,
+                    unit=root,
+                    roll_type=str(roll_type or ""),
+                    value=int(roll_value),
+                    needed=needed,
+                    tokens_remaining=tokens_remaining,
+                    attacker=attacker,
+                    target=target,
+                    weapon_name=getattr(getattr(self, "parent_wargear", None), "name", None)
+                    or getattr(self, "name", "Weapon"),
+                )
+            except Exception:
+                decision = None
+        else:
+            try:
+                ctx = {
+                    "roll_type": str(roll_type or ""),
+                    "roll": int(roll_value),
+                    "needed": int(needed) if needed is not None else None,
+                    "tokens_remaining": int(tokens_remaining or 0),
+                    "unit": root,
+                    "attacker": attacker,
+                    "target": target,
+                }
+            except Exception:
+                ctx = {}
+            try:
+                if player is not None and player._should_use_optional_ability("ASPECT_SHRINE_TOKEN", ctx):
+                    decision = "use"
+                else:
+                    decision = "skip"
+            except Exception:
+                decision = "skip"
+
+        decision_norm = str(decision or "").strip().lower()
+        if decision_norm in ("dont use for this unit", "dont_use_for_unit", "dont_use_for_this_unit", "dont_unit", "skip_unit", "suppress", "unit"):
+            try:
+                root.set_aspect_shrine_prompt_suppressed(True)
+            except Exception:
+                pass
+            return roll_value, "suppress"
+
+        if decision_norm in ("use", "yes", "true"):
+            try:
+                if root.spend_aspect_shrine_token(1):
+                    try:
+                        from warhammer40k_ai.utility.event_bus import append_dice
+                        pname = getattr(player, "name", "Player")
+                        rt = str(roll_type or "").strip().lower()
+                        label = "roll"
+                        if rt == "hit":
+                            label = "Hit roll"
+                        elif rt == "wound":
+                            label = "Wound roll"
+                        append_dice(
+                            pname,
+                            f"{label} made {int(roll_value)}, Aspect Shrine Token used to change value to 6",
+                        )
+                    except Exception:
+                        pass
+                    return 6, "use"
+            except Exception:
+                return roll_value, None
+        return roll_value, "skip"
+
     def _hit_target_with_tracking(self, target: 'Unit', attacker: 'Model', attack_instance: Dict) -> Dict:
         """Hit resolution with detailed tracking"""
         hit_result = {
@@ -1295,6 +1431,17 @@ class WargearProfile:
             hit_result['roll'] = dice_roll
             hit_result['needed'] = 6
             hit_result['final_needed'] = 6
+            new_roll, decision = self._maybe_apply_aspect_shrine_token(
+                attacker,
+                target,
+                roll_type="hit",
+                roll_value=dice_roll,
+                needed=6,
+            )
+            if new_roll is not None and int(new_roll) != int(dice_roll):
+                dice_roll = int(new_roll)
+                hit_result['roll'] = dice_roll
+                hit_result['special_effects'].append("Aspect Shrine Token: set roll to 6")
             if dice_roll == 6:
                 hit_result['hit'] = True
                 hit_result['special_effects'].append("Overwatch: 6 required to hit")
@@ -2205,6 +2352,19 @@ class WargearProfile:
             )
         except Exception:
             pass
+
+        # Aspect Shrine Token (Aeldari): optionally set the roll to an unmodified 6.
+        new_roll, decision = self._maybe_apply_aspect_shrine_token(
+            attacker,
+            target,
+            roll_type="hit",
+            roll_value=dice_roll,
+            needed=final_needed,
+        )
+        if new_roll is not None and int(new_roll) != int(dice_roll):
+            dice_roll = int(new_roll)
+            hit_result['roll'] = dice_roll
+            hit_result['special_effects'].append("Aspect Shrine Token: set roll to 6")
         
         # INDIRECT FIRE: if no target models were visible at selection time,
         # an unmodified hit roll of 1, 2, or 3 always fails.
@@ -3431,6 +3591,35 @@ class WargearProfile:
             )
         except Exception:
             pass
+
+        # Aspect Shrine Token (Aeldari): optionally set the roll to an unmodified 6.
+        needed_for_prompt = None
+        try:
+            if isinstance(strength, int) and isinstance(target_toughness, int):
+                if strength >= (target_toughness * 2):
+                    base_needed = 2
+                elif strength > target_toughness:
+                    base_needed = 3
+                elif strength == target_toughness:
+                    base_needed = 4
+                elif strength * 2 <= target_toughness:
+                    base_needed = 6
+                else:
+                    base_needed = 5
+                needed_for_prompt = min(max(int(base_needed) - int(dice_modifier), 2), 6)
+        except Exception:
+            needed_for_prompt = None
+        new_roll, decision = self._maybe_apply_aspect_shrine_token(
+            attacker,
+            target,
+            roll_type="wound",
+            roll_value=dice_roll,
+            needed=needed_for_prompt,
+        )
+        if new_roll is not None and int(new_roll) != int(dice_roll):
+            dice_roll = int(new_roll)
+            wound_result['roll'] = dice_roll
+            wound_result['special_effects'].append("Aspect Shrine Token: set roll to 6")
 
         def _apply_wound_roll(roll: int) -> bool:
             """Apply wound logic for a given (unmodified) roll; respects dice_modifier."""
@@ -5288,6 +5477,14 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
                     wgo.conditionals.append(condition.strip())
                 wargear_options.extend(wgo_list)
             called_recursively = True
+        elif match := re.match(r"^this unit can have (.*)", description):
+            replacement_items, limit = parse_wargear_string_ending(match.group(1))
+            item_limit = Quantity(min=1, max=limit)
+            actor = "unit"
+        elif match := re.match(r"^it can have (.*)", description):
+            replacement_items, limit = parse_wargear_string_ending(match.group(1))
+            item_limit = Quantity(min=1, max=limit)
+            actor = "unit"
         elif match := re.match(r"^it can be equipped with (.*)", description):
             replacement_items, limit = parse_wargear_string_ending(match.group(1))
             item_limit = Quantity(min=1, max=limit)

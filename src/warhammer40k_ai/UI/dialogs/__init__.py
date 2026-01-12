@@ -28,6 +28,7 @@ from .yes_no_dialog import YesNoDialog
 from .quarry_selection_dialog import QuarrySelectionDialog
 from .pledge_selection_dialog import PledgeSelectionDialog
 from .roll_reroll_dialog import RollRerollDialog
+from .aspect_shrine_prompt_dialog import AspectShrinePromptDialog
 from .miracle_dice_dialog import MiracleDiceDialog
 from .templar_vows_dialog import TemplarVowsDialog
 from .nurgles_gift_plague_dialog import NurglesGiftPlagueDialog
@@ -71,6 +72,7 @@ __all__ = [
     'QuarrySelectionDialog',
     'PledgeSelectionDialog',
     'RollRerollDialog',
+    'AspectShrinePromptDialog',
     'MiracleDiceDialog',
     'TemplarVowsDialog',
     'NurglesGiftPlagueDialog',

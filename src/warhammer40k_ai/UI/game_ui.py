@@ -430,6 +430,7 @@ class GameView:
                 self.game.map.roll_reroll_provider = self._roll_reroll_provider
                 self.game.map.reanimation_allocation_provider = self._reanimation_allocation_provider
                 self.game.map.miracle_dice_provider = self._miracle_dice_provider
+                self.game.map.aspect_shrine_provider = self._aspect_shrine_provider
         except Exception:
             pass
         try:
@@ -440,6 +441,7 @@ class GameView:
                 self.game_map.roll_reroll_provider = self._roll_reroll_provider
                 self.game_map.reanimation_allocation_provider = self._reanimation_allocation_provider
                 self.game_map.miracle_dice_provider = self._miracle_dice_provider
+                self.game_map.aspect_shrine_provider = self._aspect_shrine_provider
         except Exception:
             pass
         
@@ -4662,6 +4664,105 @@ class GameView:
             clock.tick(60)
 
         return bool(choice_holder["choice"])
+
+    def _aspect_shrine_provider(
+        self,
+        player=None,
+        unit=None,
+        roll_type: str = "",
+        value=None,
+        needed=None,
+        tokens_remaining: int = 0,
+        **_kwargs,
+    ):
+        """
+        Blocking modal prompt for Aspect Shrine Token usage.
+        Returns: "use", "skip", or "suppress".
+        """
+        try:
+            if player is None or getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return "skip"
+        except Exception:
+            return "skip"
+
+        try:
+            from .dialogs import AspectShrinePromptDialog
+        except Exception:
+            return "skip"
+
+        if not hasattr(self, "aspect_shrine_prompt_dialog") or self.aspect_shrine_prompt_dialog is None:
+            self.aspect_shrine_prompt_dialog = AspectShrinePromptDialog(self.screen.get_width(), self.screen.get_height())
+
+        rt = str(roll_type or "").strip().lower()
+        title = "Aspect Shrine Token"
+        if rt == "hit":
+            title = "Aspect Shrine Token (Hit)"
+        elif rt == "wound":
+            title = "Aspect Shrine Token (Wound)"
+
+        ulabel = getattr(unit, "name", "Unit")
+        roll_val = value
+        try:
+            roll_val = int(value)
+        except Exception:
+            roll_val = value
+
+        roll_text = f"Rolled {roll_val}"
+        try:
+            if needed is not None:
+                roll_text = f"Rolled {int(roll_val)} (need {int(needed)}+)"
+        except Exception:
+            pass
+
+        remaining_txt = ""
+        try:
+            remaining_txt = f"Tokens remaining: {int(tokens_remaining)}"
+        except Exception:
+            remaining_txt = ""
+
+        msg = f"{ulabel} can use an Aspect Shrine token to change this {rt or 'roll'} to an unmodified 6."
+        if remaining_txt:
+            msg = f"{msg}\n{remaining_txt}"
+
+        dlg = self.aspect_shrine_prompt_dialog
+        choice_holder = {"choice": "skip", "done": False}
+
+        def _on_choice(chosen: str):
+            choice_holder["choice"] = chosen
+            choice_holder["done"] = True
+
+        dlg.show(
+            title=title,
+            message=msg,
+            roll_text=roll_text,
+            callback=_on_choice,
+        )
+        try:
+            self.dialog_manager.open(dlg, modal=True)
+        except Exception:
+            pass
+
+        clock = pygame.time.Clock()
+        while dlg.visible and not choice_holder["done"]:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    return "skip"
+                try:
+                    self.dialog_manager.handle_event(event)
+                except Exception:
+                    pass
+            try:
+                self.draw()
+            except Exception:
+                try:
+                    dlg.draw(self.screen)
+                    pygame.display.update()
+                except Exception:
+                    pass
+            clock.tick(60)
+
+        return str(choice_holder["choice"] or "skip")
 
     def _miracle_dice_provider(
         self,

@@ -19,7 +19,8 @@ from ..ui_utils import (
     draw_aircraft_icon,
     draw_beast_icon,
     draw_psyker_icon,
-    draw_generic_icon
+    draw_generic_icon,
+    draw_aspect_shrine_token_icon
 )
 
 # Font sizes
@@ -385,6 +386,36 @@ class RosterPane(pygame.sprite.Sprite):
             pass
         cost_text = self.font_small.render(f"{cost_val}pts", True, TEXT_ACCENT)
         surface.blit(cost_text, (x_right - cost_text.get_width(), y_offset))
+
+        # Aspect Shrine token indicators (read-only)
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        try:
+            token_total = int(root.get_aspect_shrine_token_total() or 0)
+        except Exception:
+            token_total = 0
+        if token_total > 0:
+            try:
+                token_remaining = int(root.get_aspect_shrine_token_remaining() or 0)
+            except Exception:
+                token_remaining = 0
+            token_size = 8
+            gap = 3
+            tokens_y = y_offset + 20
+            total_w = token_total * token_size + max(0, token_total - 1) * gap
+            start_x = x_right - total_w
+            for i in range(token_total):
+                cx = start_x + i * (token_size + gap) + token_size // 2
+                cy = tokens_y + token_size // 2
+                draw_aspect_shrine_token_icon(
+                    surface,
+                    cx,
+                    cy,
+                    token_size,
+                    filled=(i < token_remaining),
+                )
 
         # Extra roster details (composition + status), like the legacy pane
         def _composition_text(u: Unit) -> str:

@@ -190,6 +190,9 @@ class Game:
         self.event_system.subscribe("unit_move_ended", self._on_unit_move_ended_battle_focus)
         self.event_system.subscribe("fight_unit_selected", self._on_fight_unit_selected_battle_focus)
         self.event_system.subscribe("unit_shooting_resolved", self._on_unit_shooting_resolved_battle_focus)
+        # Aeldari: Aspect Shrine Token prompt suppression resets after activation
+        self.event_system.subscribe("unit_shooting_resolved", self._on_unit_shooting_resolved_aspect_shrine)
+        self.event_system.subscribe("fight_sequence_complete", self._on_fight_sequence_complete_aspect_shrine)
         # Phase-level target tracking (Thrill Seekers)
         self.event_system.subscribe("phase_start", self._on_phase_start_target_tracking)
         self.event_system.subscribe("shooting_targets_selected", self._on_shooting_targets_selected_tracking)
@@ -3190,6 +3193,30 @@ class Game:
             else:
                 for target_unit, hits in hits_map.items():
                     mgr.maybe_trigger_fade_back(attacker_unit, target_unit, hits, self)
+
+    def _on_unit_shooting_resolved_aspect_shrine(self, attacker_unit=None, **_kwargs) -> None:
+        if attacker_unit is None:
+            return
+        try:
+            root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            root = attacker_unit
+        try:
+            root.clear_aspect_shrine_prompt_suppression()
+        except Exception:
+            pass
+
+    def _on_fight_sequence_complete_aspect_shrine(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        try:
+            root.clear_aspect_shrine_prompt_suppression()
+        except Exception:
+            pass
 
     def _on_unit_move_ended_detachment_rules(self, unit=None, action: str | None = None, **_kwargs) -> None:
         if unit is None:

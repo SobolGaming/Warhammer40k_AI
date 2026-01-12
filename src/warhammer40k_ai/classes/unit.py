@@ -168,6 +168,10 @@ class Unit:
         
         # Ability cache for performance optimization
         self._ability_cache = {}
+        # Aspect Shrine Token tracking (Aeldari wargear ability)
+        self._aspect_shrine_tokens_total = 0
+        self._aspect_shrine_tokens_used = 0
+        self._aspect_shrine_prompt_suppressed = False
 
         # Parse a small subset of defensive "against attacks with X characteristic of Y" rules into special_rules.
         # (AP/Damage-based ones are applied at Allocate Attack time in the attack sequence.)
@@ -1807,6 +1811,8 @@ class Unit:
                 if wg is None:
                     # Keep as optional note (so UI/printouts can still show it)
                     try:
+                        if _norm(nm) == "aspect shrine token":
+                            self.add_aspect_shrine_tokens(int(qty) if qty else 1)
                         model.optional_wargear.append(str(nm))
                     except Exception:
                         pass
@@ -1880,6 +1886,8 @@ class Unit:
                     continue
                 # Only auto-apply if *all* items are unknown wargear (i.e. they will land in optional_wargear)
                 if all(_find_wargear(nm) is None for qty, nm in first if nm):
+                    if any(_norm(nm) == "aspect shrine token" for qty, nm in first if nm):
+                        continue
                     self.apply_wargear_option(opt)
             return
 
@@ -4448,10 +4456,100 @@ class Unit:
             pass
         return True
 
+    def _get_aspect_shrine_root(self) -> 'Unit':
+        try:
+            return self.get_attached_unit_root()
+        except Exception:
+            return self
+
+    def get_aspect_shrine_token_total(self) -> int:
+        root = self._get_aspect_shrine_root()
+        total = int(getattr(root, "_aspect_shrine_tokens_total", 0) or 0)
+        if total <= 0:
+            # Fallback to optional wargear count if tokens predate the unit-level counter.
+            count = 0
+            try:
+                for model in list(getattr(root, "models", []) or []):
+                    for ow in list(getattr(model, "optional_wargear", []) or []):
+                        if Unit._norm_wargear_name(str(ow or "")) == "aspect shrine token":
+                            count += 1
+            except Exception:
+                count = 0
+            if count:
+                total = count
+                try:
+                    setattr(root, "_aspect_shrine_tokens_total", int(total))
+                except Exception:
+                    pass
+        return max(0, int(total))
+
+    def get_aspect_shrine_token_used(self) -> int:
+        root = self._get_aspect_shrine_root()
+        used = int(getattr(root, "_aspect_shrine_tokens_used", 0) or 0)
+        return max(0, int(used))
+
+    def get_aspect_shrine_token_remaining(self) -> int:
+        return max(0, self.get_aspect_shrine_token_total() - self.get_aspect_shrine_token_used())
+
+    def add_aspect_shrine_tokens(self, count: int = 1) -> None:
+        root = self._get_aspect_shrine_root()
+        try:
+            count = int(count)
+        except Exception:
+            count = 1
+        if count <= 0:
+            return
+        try:
+            current = int(getattr(root, "_aspect_shrine_tokens_total", 0) or 0)
+        except Exception:
+            current = 0
+        try:
+            setattr(root, "_aspect_shrine_tokens_total", current + count)
+        except Exception:
+            pass
+
+    def spend_aspect_shrine_token(self, count: int = 1) -> bool:
+        root = self._get_aspect_shrine_root()
+        try:
+            count = int(count)
+        except Exception:
+            count = 1
+        if count <= 0:
+            return False
+        total = self.get_aspect_shrine_token_total()
+        used = self.get_aspect_shrine_token_used()
+        if used + count > total:
+            return False
+        try:
+            setattr(root, "_aspect_shrine_tokens_used", used + count)
+        except Exception:
+            return False
+        return True
+
+    def is_aspect_shrine_prompt_suppressed(self) -> bool:
+        root = self._get_aspect_shrine_root()
+        return bool(getattr(root, "_aspect_shrine_prompt_suppressed", False))
+
+    def set_aspect_shrine_prompt_suppressed(self, suppressed: bool = True) -> None:
+        root = self._get_aspect_shrine_root()
+        try:
+            setattr(root, "_aspect_shrine_prompt_suppressed", bool(suppressed))
+        except Exception:
+            pass
+
+    def clear_aspect_shrine_prompt_suppression(self) -> None:
+        self.set_aspect_shrine_prompt_suppressed(False)
+
     def _has_wargear_named(self, name: str) -> bool:
         want = Unit._norm_wargear_name(name)
         if not want:
             return False
+        if want == "aspect shrine token":
+            try:
+                if self.get_aspect_shrine_token_total() > 0:
+                    return True
+            except Exception:
+                pass
         for model in list(getattr(self, "models", []) or []):
             try:
                 for wg in list(getattr(model, "wargear", []) or []):

@@ -1,6 +1,7 @@
 import pygame
 from typing import List
 from warhammer40k_ai.classes.unit import Unit
+from ..ui_utils import draw_aspect_shrine_token_icon
 
 # Font sizes
 FONT_LARGE = 20
@@ -133,6 +134,37 @@ class UnitDetailPanel(pygame.sprite.Sprite):
             leaders_text = self.font_tiny.render(line, True, TEXT_SECONDARY)
             surface.blit(leaders_text, (x_left, y_pos))
             y_pos += 14
+
+        # Aspect Shrine tokens HUD (read-only indicators)
+        try:
+            total_tokens = int(root.get_aspect_shrine_token_total() or 0)
+        except Exception:
+            total_tokens = 0
+        if total_tokens > 0:
+            try:
+                remaining_tokens = int(root.get_aspect_shrine_token_remaining() or 0)
+            except Exception:
+                remaining_tokens = 0
+            header = self.font_small.render("Aspect Shrine Tokens:", True, TEXT_ACCENT)
+            surface.blit(header, (x_left, y_pos))
+            token_size = 12
+            gap = 4
+            ix = x_left + header.get_width() + 8
+            iy = y_pos + 2
+            max_x = x + self.width - 25
+            for i in range(total_tokens):
+                if ix + token_size > max_x:
+                    ix = x_left
+                    iy += token_size + 4
+                draw_aspect_shrine_token_icon(
+                    surface,
+                    ix + token_size // 2,
+                    iy + token_size // 2,
+                    token_size,
+                    filled=(i < remaining_tokens),
+                )
+                ix += token_size + gap
+            y_pos = iy + token_size + 6
 
         # Leader footer / attachment constraints (datasheet-provided text)
         # Some datasheets include important "Leader" exceptions/constraints in `leader_footer`.
