@@ -887,6 +887,14 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
             "Supported",
             "Khorne Daemonkin: gain BTP on 3+ for eligible kills; spend BTP to activate Enraged Abjuration, Daemonic Rage, Boon of Blood, or Might of Khorne (command phase limit + A Worthy Skull fight-phase activation). Restriction enforced during army validation.",
         ),
+        "Duty Before All": (
+            "Supported",
+            "Hallowed Conclave: GREY KNIGHTS TERMINATOR units can shoot and charge after Falling Back.",
+        ),
+        "Fury of Titan": (
+            "Supported",
+            "Brotherhood Strike: Deep Strike arrivals re-roll Hit and Wound rolls of 1 until end of turn.",
+        ),
         "Warp Rifts": (
             "Supported",
             "Daemonic Incursion: Deep Strike min distance reduced to 6\" when wholly within Shadow of Chaos zones or within 6\" of a matching Greater Daemon/Dark Master aura; cannot bootstrap off the arriving unit.",

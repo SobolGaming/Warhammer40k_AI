@@ -1763,6 +1763,21 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Grey Knights: Fury of Titan (Deep Strike) re-roll Hit rolls of 1.
+        try:
+            if dice_roll == 1 and "reroll" not in hit_result:
+                unit = attacker.parent_unit
+                sr = getattr(unit, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("fury_of_titan_active"):
+                    rr = _reroll_hit()
+                    hit_result.setdefault("special_effects", []).append("Fury of Titan: re-roll Hit roll of 1")
+                    hit_result["reroll_of_one"] = 1
+                    hit_result["reroll"] = rr
+                    dice_roll = rr
+                    reroll_used = True
+        except Exception:
+            pass
+
         # Model-specific abilities: re-roll Hit roll vs CHARACTER targets (optional).
         try:
             if "reroll" not in hit_result:
@@ -3115,6 +3130,21 @@ class WargearProfile:
                     rr = _reroll_wound()
                     wound_result.setdefault("special_effects", []).append("Leading: re-roll Wound rolls of 1")
                     wound_result.setdefault("special_effects", []).extend(list(lead_mods.get("reroll_wound_reasons", ()) or ()))
+                    wound_result["reroll_of_one"] = 1
+                    wound_result["reroll"] = rr
+                    dice_roll = rr
+                    reroll_used = True
+        except Exception:
+            pass
+
+        # Grey Knights: Fury of Titan (Deep Strike) re-roll Wound rolls of 1.
+        try:
+            if dice_roll == 1 and "reroll" not in wound_result:
+                unit = attacker.parent_unit
+                sr = getattr(unit, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("fury_of_titan_active"):
+                    rr = _reroll_wound()
+                    wound_result.setdefault("special_effects", []).append("Fury of Titan: re-roll Wound roll of 1")
                     wound_result["reroll_of_one"] = 1
                     wound_result["reroll"] = rr
                     dice_roll = rr

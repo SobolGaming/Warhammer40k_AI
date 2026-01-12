@@ -2902,6 +2902,10 @@ class Game:
                     if exp and exp == pname:
                         for k in ("exquisite_swordsmanship_choice", "exquisite_swordsmanship_expires_phase"):
                             sr.pop(k, None)
+                    exp = str(sr.get("fury_of_titan_expires_phase", "") or "").strip().upper()
+                    if exp and exp == pname:
+                        for k in ("fury_of_titan_active", "fury_of_titan_expires_phase"):
+                            sr.pop(k, None)
                     exp = str(sr.get("sensational_performance_expires_phase", "") or "").strip().upper()
                     if exp and exp == pname:
                         for k in (
@@ -7739,8 +7743,21 @@ class Game:
                     setattr(unit, "_pending_reserves_edge_touch", True)
                 except Exception:
                     pass
+            if ok:
+                try:
+                    if battlefield_edge is None:
+                        pending_deep_strike = bool(deep_strike_ok)
+                    else:
+                        pending_deep_strike = bool(deep_strike_ok and not strategic_ok)
+                    setattr(unit, "_pending_reserves_deep_strike", pending_deep_strike)
+                except Exception:
+                    pass
             return ok
 
+        try:
+            setattr(unit, "_pending_reserves_deep_strike", True)
+        except Exception:
+            pass
         return True
     
     def is_valid_strategic_reserves_edge(self, battlefield_edge: str) -> bool:

@@ -6850,20 +6850,29 @@ class Unit:
             return self._ability_cache['fell_back_and_shoot']
         
         found = False
-        if self.has_thrill_seekers():
-            found = True
-        else:
-            found = self._has_simple_eligibility_rule([
-                "eligible to shoot in a turn in which it fell back",
-                "eligible to shoot in a turn in which it fell back or advanced",
-                "eligible to shoot in a turn in which it advanced or fell back",
-                "eligible to shoot and declare a charge in a turn in which it fell back",
-                "eligible to shoot and declare a charge in a turn in which it advanced or fell back",
-                "eligible to shoot and declare a charge in a turn in which it fell back or advanced",
-                "that unit is eligible to shoot and declare a charge in a turn in which it fell back",
-                "that unit is eligible to shoot and declare a charge in a turn in which it advanced or fell back",
-                "that unit is eligible to shoot and declare a charge in a turn in which it fell back or advanced",
-            ])
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "duty_before_all_applies", None):
+                if mgr.duty_before_all_applies(self):
+                    found = True
+        except Exception:
+            pass
+        if not found:
+            if self.has_thrill_seekers():
+                found = True
+            else:
+                found = self._has_simple_eligibility_rule([
+                    "eligible to shoot in a turn in which it fell back",
+                    "eligible to shoot in a turn in which it fell back or advanced",
+                    "eligible to shoot in a turn in which it advanced or fell back",
+                    "eligible to shoot and declare a charge in a turn in which it fell back",
+                    "eligible to shoot and declare a charge in a turn in which it advanced or fell back",
+                    "eligible to shoot and declare a charge in a turn in which it fell back or advanced",
+                    "that unit is eligible to shoot and declare a charge in a turn in which it fell back",
+                    "that unit is eligible to shoot and declare a charge in a turn in which it advanced or fell back",
+                    "that unit is eligible to shoot and declare a charge in a turn in which it fell back or advanced",
+                ])
         
         # Cache the result
         if not hasattr(self, '_ability_cache'):
@@ -6964,6 +6973,14 @@ class Unit:
         """Check if this unit can charge after falling back."""
         if self.has_thrill_seekers():
             return True
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "duty_before_all_applies", None):
+                if mgr.duty_before_all_applies(self):
+                    return True
+        except Exception:
+            pass
         try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("feigned_retreat_active"):
@@ -11978,6 +11995,19 @@ class Unit:
     def _finalize_reserves_arrival(self, turn: int, game_map: Optional['Map'] = None) -> bool:
         """Finalize state updates for a unit that has been set up from reserves."""
         # Unit position is now determined by model positions
+        try:
+            pre_reserve_status = str(getattr(self, "reserve_status", "") or "")
+        except Exception:
+            pre_reserve_status = ""
+        try:
+            pending_deep_strike = bool(getattr(self, "_pending_reserves_deep_strike", False))
+        except Exception:
+            pending_deep_strike = False
+        try:
+            if hasattr(self, "_pending_reserves_deep_strike"):
+                delattr(self, "_pending_reserves_deep_strike")
+        except Exception:
+            pass
 
         # Update unit status
         self.deployed = True
@@ -12004,6 +12034,18 @@ class Unit:
                 except Exception:
                     sr["voice_of_command_set_up_round"] = int(turn or 0)
             self.special_rules = sr
+        except Exception:
+            pass
+
+        # Grey Knights: Fury of Titan (Deep Strike arrivals re-roll hit/wound 1s until end of turn).
+        try:
+            used_deep_strike = bool(pre_reserve_status == "reserves" or pending_deep_strike)
+            if used_deep_strike and self.has_deep_strike():
+                army = self.get_parent_army()
+                mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
+                if mgr is not None and getattr(mgr, "fury_of_titan_applies", None):
+                    if mgr.fury_of_titan_applies(self, used_deep_strike=True):
+                        mgr.apply_fury_of_titan(self)
         except Exception:
             pass
 
