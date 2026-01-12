@@ -1763,6 +1763,63 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Model-specific abilities: re-roll Hit roll vs CHARACTER targets (optional).
+        try:
+            if "reroll" not in hit_result:
+                unit = attacker.parent_unit
+                is_character_target = False
+                try:
+                    is_character_target = bool(target.has_keyword("CHARACTER"))
+                except Exception:
+                    try:
+                        is_character_target = bool(target.has_any_keyword("CHARACTER"))
+                    except Exception:
+                        is_character_target = False
+                if unit is not None and is_character_target:
+                    allow, reason = unit.model_can_reroll_hit_vs_character(attacker)
+                    if allow:
+                        try:
+                            success = (dice_roll != 1) and (self.skill > 0) and (dice_roll >= final_needed)
+                        except Exception:
+                            success = False
+                        do_reroll = False
+                        try:
+                            game = unit.get_parent_army().player.game
+                            player = unit.get_parent_army().player
+                            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                            provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                        except Exception:
+                            is_human = False
+                            provider = None
+                            player = None
+                        if is_human and callable(provider):
+                            try:
+                                do_reroll = bool(provider(
+                                    player=player,
+                                    unit=unit,
+                                    roll_type="hit",
+                                    value=dice_roll,
+                                    dice=None,
+                                    needed=final_needed,
+                                    success=success,
+                                    reason=reason or "Model ability",
+                                ))
+                            except Exception:
+                                do_reroll = False
+                        else:
+                            do_reroll = (not success)
+                        if do_reroll:
+                            rr = _reroll_hit()
+                            label = reason or "Model ability"
+                            hit_result.setdefault("special_effects", []).append(
+                                f"{label}: re-roll Hit roll vs CHARACTER"
+                            )
+                            hit_result["reroll"] = rr
+                            dice_roll = rr
+                            reroll_used = True
+        except Exception:
+            pass
+
         # Emperor's Children: Pledges to the Dark Prince (1+) re-roll Hit rolls of 1.
         try:
             if dice_roll == 1 and "reroll" not in hit_result:

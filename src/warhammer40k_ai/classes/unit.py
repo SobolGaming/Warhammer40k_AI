@@ -11384,6 +11384,46 @@ class Unit:
         self._ability_cache[cache_key] = (allowed, reason)
         return allowed, reason
 
+    def model_can_reroll_hit_vs_character(self, model: Optional['Model'] = None) -> tuple[bool, Optional[str]]:
+        """
+        Model-specific rule: re-roll the Hit roll vs CHARACTER targets.
+
+        Returns (allowed, reason_name).
+        """
+        if model is None:
+            return False, None
+        cache_key = f"model_reroll_hit_vs_character:{getattr(model, '_id', id(model))}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        allowed = False
+        reason = None
+        kw = "character"
+        target_re = re.compile(rf"targets (?:a|an) {re.escape(kw)} units?", re.IGNORECASE)
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text = self._normalize_rules_text(desc or name or "")
+            if not text:
+                continue
+            low = text.lower()
+            if "this model makes an attack" not in low:
+                continue
+            if "hit roll" not in low:
+                continue
+            if ("re-roll" not in low) and ("reroll" not in low):
+                continue
+            if "hit roll of 1" in low or "hit rolls of 1" in low:
+                continue
+            if not target_re.search(low):
+                continue
+            allowed = True
+            reason = str(name or "Model ability")
+            break
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = (allowed, reason)
+        return allowed, reason
+
     def _parse_cp_on_kill_specs_from_text(self, ability_name: str, ability_desc: str) -> List[dict]:
         """Parse partial support for 'gain CP when destroying enemy keyword unit/model' abilities.
 
