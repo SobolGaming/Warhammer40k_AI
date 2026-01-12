@@ -966,6 +966,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("AOI", "Rites of Teleportation"): ("Partial", "Deep Strike granted without Inquisitor attachment restriction."),
         ("AOI", "Unsubtle Crusader"): ("Partial", "Scouts 6\" applied without formation selection/target-unit restriction."),
         ("AE", "ASPECT TRAINING"): ("Partial", "Fights First/Infiltrators/Scouts/Stealth detected; leader/unit restrictions not enforced."),
+        ("AE", "Aspect Shrine Token"): (
+            "Supported",
+            "Per-roll prompt lets non-CHARACTER models change a hit or wound roll to an unmodified 6, consuming a token; tokens tracked from wargear options with per-activation prompt suppression.",
+        ),
         ("AE", "Way of the Blade"): ("Partial", "Fights First applied without leader restriction."),
         ("AE", "Empowered by Death"): ("Partial", "Fights First applied without below-strength condition."),
         ("AE", "Spiritseer"): ("Partial", "Lone Operative applied without 3\" Wraith Construct proximity requirement."),
