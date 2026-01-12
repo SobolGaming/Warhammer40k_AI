@@ -624,6 +624,10 @@ class Unit:
         r"models\s+in\s+the\s+bearer'?s\s+unit\s+have\s+a\s+leadership\s+characteristic\s+of\s+(\d+)\+?",
         re.IGNORECASE,
     )
+    _BEARER_INVULNERABLE_SAVE_RE = re.compile(
+        r"^the bearer has a (\d)\+ invulnerable save\.?$",
+        re.IGNORECASE,
+    )
     _SPAWN_ONLY_ABILITY_RE = re.compile(r"^using\s+sir\s+hekhtur$", re.IGNORECASE)
 
     def _parse_warlord_enhancement_restrictions(self) -> None:
@@ -1171,7 +1175,7 @@ class Unit:
                 break
         return models
 
-    def _parse_loadout(self, loadout: str, model_name: str = "") -> List[Wargear]:
+    def _parse_loadout(self, loadout: str, model_name: str = "", return_optional: bool = False) -> List[Wargear] | Tuple[List[Wargear], List[str]]:
         def _norm_item(s: str) -> str:
             s = (s or "").replace("’", "'").lower().strip()
             s = re.sub(r"<[^>]+>", " ", s)
@@ -1189,6 +1193,37 @@ class Unit:
             return 1, item_name.strip()
 
         starting_wargear = []
+        optional_wargear: List[str] = []
+        wargear_lookup = {
+            _norm_item(getattr(wg, "name", "")): wg
+            for wg in (getattr(self, "possible_wargear", []) or [])
+            if wg
+        }
+        wargear_ability_names: dict[str, str] = {}
+        for ab in list(getattr(self, "possible_abilities", []) or []):
+            try:
+                atype = str(getattr(ab, "type", "") or "").lower()
+                if "wargear" not in atype:
+                    continue
+                name = getattr(ab, "name", "") or ""
+                if name:
+                    wargear_ability_names[_norm_item(name)] = name
+            except Exception:
+                continue
+
+        def _record_item(item_name: str, quantity: int) -> None:
+            norm = _norm_item(item_name)
+            if not norm:
+                return
+            wg = wargear_lookup.get(norm)
+            if wg is not None:
+                for _ in range(quantity):
+                    starting_wargear.append(wg)
+                return
+            ability_name = wargear_ability_names.get(norm)
+            if ability_name:
+                for _ in range(quantity):
+                    optional_wargear.append(ability_name)
         for entry in entries:
             if not entry:
                 continue
@@ -1197,25 +1232,16 @@ class Unit:
             if match := re.match(r"^this model is equipped with: (.*)$", entry):
                 for item_name in match.group(1).split(";"):
                     quantity, item_name = _parse_loadout_quantity(item_name)
-                    for wargear in self.possible_wargear:
-                        if _norm_item(item_name) == _norm_item(wargear.name):
-                            for _ in range(quantity):
-                                starting_wargear.append(wargear)
+                    _record_item(item_name, quantity)
             elif match := re.match(r"^every model is equipped with: (.*)$", entry):
                 for item_name in match.group(1).split(";"):
                     quantity, item_name = _parse_loadout_quantity(item_name)
-                    for wargear in self.possible_wargear:
-                        if _norm_item(item_name) == _norm_item(wargear.name):
-                            for _ in range(quantity):
-                                starting_wargear.append(wargear)
+                    _record_item(item_name, quantity)
             elif match := re.match(r"^(?:the|every) (.*) model is equipped with: (.*)$", entry):
                 if model_name and model_name == match.group(1).strip():
                     for item_name in match.group(2).split(";"):
                         quantity, item_name = _parse_loadout_quantity(item_name)
-                        for wargear in self.possible_wargear:
-                            if _norm_item(item_name) == _norm_item(wargear.name):
-                                for _ in range(quantity):
-                                    starting_wargear.append(wargear)
+                        _record_item(item_name, quantity)
                 else:
                     continue
             elif match := re.match(r"^(?:the|every|a|an) (\D+) is equipped with: (.*)$", entry):
@@ -1226,10 +1252,7 @@ class Unit:
                     if model_name and model_name == actor.strip():
                         for item_name in match.group(2).split(";"):
                             quantity, item_name = _parse_loadout_quantity(item_name)
-                            for wargear in self.possible_wargear:
-                                if _norm_item(item_name) == _norm_item(wargear.name):
-                                    for _ in range(quantity):
-                                        starting_wargear.append(wargear)
+                            _record_item(item_name, quantity)
                     else:
                         continue
             elif match := re.match(r"^(\D+) is equipped with: (.*)$", entry):
@@ -1240,16 +1263,15 @@ class Unit:
                     if model_name and model_name == actor.strip():
                         for item_name in match.group(2).split(";"):
                             quantity, item_name = _parse_loadout_quantity(item_name)
-                            for wargear in self.possible_wargear:
-                                if _norm_item(item_name) == _norm_item(wargear.name):
-                                    for _ in range(quantity):
-                                        starting_wargear.append(wargear)
+                            _record_item(item_name, quantity)
                     else:
                         continue
             elif match := re.match(r"^this (?:model|unit) is equipped with: nothing$", entry):
                 continue
             else:
                 print(f"UNKNOWN LOADOUT: {entry}")
+        if return_optional:
+            return starting_wargear, optional_wargear
         return starting_wargear
 
     def _parse_wargear(self, datasheet):
@@ -2132,9 +2154,17 @@ class Unit:
     def add_wargear(self, wargear: List[Wargear]=[], model_name: str=None) -> None:
         for model_instance in self.models:
             wargear_to_add = []
+            optional_wargear = []
             if not wargear:
-                for wargear_instance in self._parse_loadout(getattr(self._datasheet, 'loadout', []), model_instance.name.lower()):
-                    wargear_to_add.append(wargear_instance)
+                parsed = self._parse_loadout(
+                    getattr(self._datasheet, 'loadout', []),
+                    model_instance.name.lower(),
+                    return_optional=True,
+                )
+                if isinstance(parsed, tuple):
+                    wargear_to_add, optional_wargear = parsed
+                else:
+                    wargear_to_add = parsed
             else:
                 # TODO - validate wargear against options and their limits and exchanges
                 wargear_to_add.extend(wargear)
@@ -2146,6 +2176,12 @@ class Unit:
                 else:
                     if wargear_instance:
                         model_instance.wargear.append(wargear_instance)
+            if optional_wargear:
+                for ow in optional_wargear:
+                    try:
+                        model_instance.optional_wargear.append(str(ow))
+                    except Exception:
+                        continue
 
     def set_parent_army(self, army_ptr) -> None:
         """Set the parent army of the unit."""
@@ -4564,6 +4600,99 @@ class Unit:
             except Exception:
                 continue
         return False
+
+    def _model_has_wargear_named(self, model: Optional['Model'], name: str) -> bool:
+        if model is None:
+            return False
+        want = Unit._norm_wargear_name(name)
+        if not want:
+            return False
+        try:
+            for wg in list(getattr(model, "wargear", []) or []):
+                if wg and Unit._norm_wargear_name(getattr(wg, "name", "")) == want:
+                    return True
+        except Exception:
+            pass
+        try:
+            for ow in list(getattr(model, "optional_wargear", []) or []):
+                if Unit._norm_wargear_name(str(ow or "")) == want:
+                    return True
+        except Exception:
+            pass
+        return False
+
+    def _parse_bearer_invulnerable_save(self, text: str) -> Optional[int]:
+        if not text:
+            return None
+        normalized = self._normalize_rules_text(text)
+        if not normalized:
+            return None
+        normalized = normalized.replace("’", "'")
+        normalized = re.sub(r"\s+([.])", r"\1", normalized).strip()
+        m = self._BEARER_INVULNERABLE_SAVE_RE.match(normalized)
+        if not m:
+            return None
+        try:
+            return int(m.group(1))
+        except Exception:
+            return None
+
+    def get_model_invulnerable_save_override(self, model: Optional['Model'] = None) -> tuple[Optional[int], Optional[str]]:
+        """
+        Return (invulnerable_save_value, source_name) for bearer-only invuln wargear abilities.
+        """
+        if model is None:
+            return None, None
+        cache_key = f"model_invulnerable_save:{getattr(model, '_id', id(model))}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        best_value: Optional[int] = None
+        best_source: Optional[str] = None
+
+        # Model-level abilities (if any)
+        try:
+            for ab in getattr(model, "abilities", {}).values():
+                try:
+                    desc = ab if isinstance(ab, str) else (getattr(ab, "description", "") or "")
+                    name = ab if isinstance(ab, str) else (getattr(ab, "name", "") or "Model ability")
+                except Exception:
+                    desc = ""
+                    name = "Model ability"
+                val = self._parse_bearer_invulnerable_save(desc)
+                if val is None:
+                    continue
+                if best_value is None or val < best_value:
+                    best_value = val
+                    best_source = str(name or "Model ability")
+        except Exception:
+            pass
+
+        # Wargear abilities tied to equipped items.
+        for ab in list(getattr(self, "possible_abilities", []) or []):
+            try:
+                atype = str(getattr(ab, "type", "") or "").lower()
+                if "wargear" not in atype:
+                    continue
+                name = getattr(ab, "name", "") or ""
+                if not name:
+                    continue
+                if not self._model_has_wargear_named(model, name):
+                    continue
+                desc = getattr(ab, "description", "") or ""
+                val = self._parse_bearer_invulnerable_save(desc)
+                if val is None:
+                    continue
+                if best_value is None or val < best_value:
+                    best_value = val
+                    best_source = str(name)
+            except Exception:
+                continue
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = (best_value, best_source)
+        return best_value, best_source
 
     def _iter_active_possible_abilities(self):
         """Yield unit-level abilities that are currently active for this unit."""

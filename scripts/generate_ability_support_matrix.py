@@ -1170,6 +1170,7 @@ def _classify_ability(
         return desc_support
     common_support = _bearer_unit_common_support(description)
     leading_support = _leading_unit_common_support(description)
+    bearer_invuln_support = _bearer_invulnerable_save_support(description)
     unit_hit_reroll_support = _unit_hit_reroll_ones_support(description)
     melee_damage_support = _melee_damage_bonus_support(description)
     transport_support = _transport_disembark_support(description)
@@ -1197,6 +1198,8 @@ def _classify_ability(
         return common_support
     if leading_support:
         return leading_support
+    if bearer_invuln_support:
+        return bearer_invuln_support
     if unit_hit_reroll_support:
         return unit_hit_reroll_support
     if melee_damage_support:
@@ -1285,6 +1288,21 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
     if notes:
         return ("Supported", " ".join(notes))
     return None
+
+
+def _bearer_invulnerable_save_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    text = re.sub(r"\s+([.])", r"\1", text)
+    m = re.fullmatch(r"the bearer has a (\d)\+ invulnerable save\.?", text, flags=re.IGNORECASE)
+    if not m:
+        return None
+    return ("Supported", f"Bearer has a {m.group(1)}+ invulnerable save.")
 
 
 def _model_reroll_wound_vs_character_support(description: str) -> Optional[Tuple[str, str]]:

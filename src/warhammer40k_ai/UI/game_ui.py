@@ -11515,6 +11515,20 @@ class BattlePhaseHandler(BasePhaseHandler):
                         effective_needed = inv_value
                         detail_text = f"{inv_value}+ Invuln"
 
+            # Check invulnerable save from wargear abilities (model-specific).
+            try:
+                t_unit = getattr(target_model, "parent_unit", None)
+                if t_unit is not None and hasattr(t_unit, "get_model_invulnerable_save_override"):
+                    inv_override, inv_reason = t_unit.get_model_invulnerable_save_override(target_model)
+                    if inv_override and int(inv_override) < effective_needed:
+                        effective_needed = int(inv_override)
+                        if inv_reason:
+                            detail_text = f"{inv_override}+ Invuln ({inv_reason})"
+                        else:
+                            detail_text = f"{inv_override}+ Invuln"
+            except Exception:
+                pass
+
             print(f"    🛡️ Save: {save_roll} vs {effective_needed}+ ({detail_text}) = {'SAVED' if save_roll >= effective_needed else 'FAILED'}")
             
             if save_roll >= effective_needed:

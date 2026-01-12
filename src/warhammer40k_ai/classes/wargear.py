@@ -4167,6 +4167,19 @@ class WargearProfile:
                         attack_instance["inv_save_override"] = 4
         except Exception:
             pass
+        # Wargear abilities (e.g. "The bearer has a 4+ invulnerable save.").
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            if t_unit is not None and hasattr(t_unit, "get_model_invulnerable_save_override"):
+                inv_value, inv_reason = t_unit.get_model_invulnerable_save_override(target_model)
+                if inv_value:
+                    current = attack_instance.get("inv_save_override", None)
+                    if current is None or int(current) > int(inv_value):
+                        attack_instance["inv_save_override"] = int(inv_value)
+                        if inv_reason:
+                            attack_instance["inv_save_override_reason"] = str(inv_reason)
+        except Exception:
+            pass
 
         # Calculate save value
         save_value = target_model.save - ap
@@ -4182,7 +4195,11 @@ class WargearProfile:
                     save_value = inv_override
                     save_result['save_type'] = 'invulnerable'
                     save_result['final_save'] = save_value
-                    save_result['special_effects'].append(f"Invulnerable save {inv_override}+ (override)")
+                    inv_reason = attack_instance.get("inv_save_override_reason", None)
+                    if inv_reason:
+                        save_result['special_effects'].append(f"Invulnerable save {inv_override}+ ({inv_reason})")
+                    else:
+                        save_result['special_effects'].append(f"Invulnerable save {inv_override}+ (override)")
         except Exception:
             pass
         
