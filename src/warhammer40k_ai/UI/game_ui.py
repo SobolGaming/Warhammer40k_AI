@@ -998,6 +998,29 @@ class GameView:
 
             def _on_confirm(payload):
                 try:
+                    from ..utility.event_bus import append_action
+                    sel_keys = list(payload.get("selected_blessings") or payload.get("result", {}).get("activated") or [])
+                    use_reborn = bool(payload.get("use_reborn") or payload.get("result", {}).get("reborn_used"))
+                    names = []
+                    if sel_keys:
+                        for k in sel_keys:
+                            try:
+                                d = mgr.definitions.get(str(k).strip().upper())
+                            except Exception:
+                                d = None
+                            names.append(getattr(d, "name", None) or str(k))
+                    if use_reborn:
+                        names.append("Reborn in Blood")
+                    if not names:
+                        names_text = "no blessings activated"
+                    else:
+                        names_text = ", ".join(names)
+                    dice = list(getattr(payload.get("ctx", None), "dice", []) or [])
+                    dice_text = ", ".join(str(int(d)) for d in dice) if dice else "?"
+                    append_action(player.name, f"Blessings of Khorne (Skulls for the Skull Throne!): {names_text} (dice: {dice_text})")
+                except Exception:
+                    pass
+                try:
                     if isinstance(payload, dict):
                         payload["unit"] = unit
                 except Exception:
@@ -5168,6 +5191,29 @@ class GameView:
         )
 
         def _on_confirm(payload):
+            try:
+                from ..utility.event_bus import append_action
+                sel_keys = list(payload.get("selected_blessings") or payload.get("result", {}).get("activated") or [])
+                use_reborn = bool(payload.get("use_reborn") or payload.get("result", {}).get("reborn_used"))
+                names = []
+                if sel_keys:
+                    for k in sel_keys:
+                        try:
+                            d = mgr.definitions.get(str(k).strip().upper())
+                        except Exception:
+                            d = None
+                        names.append(getattr(d, "name", None) or str(k))
+                if use_reborn:
+                    names.append("Reborn in Blood")
+                if not names:
+                    names_text = "no blessings activated"
+                else:
+                    names_text = ", ".join(names)
+                dice = list(getattr(payload.get("ctx", None), "dice", []) or [])
+                dice_text = ", ".join(str(int(d)) for d in dice) if dice else "?"
+                append_action(player.name, f"Blessings of Khorne: {names_text} (dice: {dice_text})")
+            except Exception:
+                pass
             try:
                 res = payload.get("result") or {}
                 if res.get("reborn_used", False):

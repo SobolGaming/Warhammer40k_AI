@@ -204,6 +204,22 @@ class Player:
         if self.command_points >= amount:
             self.command_points -= amount
             self._record_cp_change(-amount, reason=reason or "Command Points spent", source=source or "spend")
+            try:
+                if str(source or "").strip().lower() == "stratagem" or "stratagem:" in str(reason or "").lower():
+                    from ..utility.event_bus import append_action
+                    pname = getattr(self, "name", "Player")
+                    strat_name = ""
+                    try:
+                        if "stratagem:" in str(reason or "").lower():
+                            strat_name = str(reason).split(":", 1)[1].strip()
+                    except Exception:
+                        strat_name = ""
+                    if strat_name:
+                        append_action(pname, f"Stratagem used: {strat_name} ({amount} CP)")
+                    else:
+                        append_action(pname, f"Stratagem used ({amount} CP)")
+            except Exception:
+                pass
             return True
         return False
 

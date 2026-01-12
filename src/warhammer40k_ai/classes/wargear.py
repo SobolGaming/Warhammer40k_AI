@@ -1281,6 +1281,16 @@ class WargearProfile:
         if decision_norm in ("dont use for this unit", "dont_use_for_unit", "dont_use_for_this_unit", "dont_unit", "skip_unit", "suppress", "unit"):
             try:
                 root.set_aspect_shrine_prompt_suppressed(True)
+                try:
+                    from warhammer40k_ai.utility.event_bus import append_action
+                    pname = getattr(player, "name", "Player")
+                    uname = getattr(root, "name", "Unit")
+                    append_action(
+                        pname,
+                        f"{uname}: Aspect Shrine Token prompt suppressed for this activation",
+                    )
+                except Exception:
+                    pass
             except Exception:
                 pass
             return roll_value, "suppress"
@@ -1300,6 +1310,22 @@ class WargearProfile:
                         append_dice(
                             pname,
                             f"{label} made {int(roll_value)}, Aspect Shrine Token used to change value to 6",
+                        )
+                    except Exception:
+                        pass
+                    try:
+                        from warhammer40k_ai.utility.event_bus import append_action
+                        pname = getattr(player, "name", "Player")
+                        uname = getattr(root, "name", "Unit")
+                        rt = str(roll_type or "").strip().lower()
+                        label = "roll"
+                        if rt == "hit":
+                            label = "Hit roll"
+                        elif rt == "wound":
+                            label = "Wound roll"
+                        append_action(
+                            pname,
+                            f"{uname}: Aspect Shrine Token used to change {label} {int(roll_value)} to 6",
                         )
                     except Exception:
                         pass
