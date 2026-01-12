@@ -520,6 +520,31 @@ class WargearProfile:
         cabal_bonus = self._cabal_twist_of_fate_ap_bonus(attacker, target)
         if cabal_bonus:
             ap_val -= int(cabal_bonus)
+        # Defensive stratagems that worsen AP for attacks against a specific target.
+        try:
+            target_root = target.get_attached_unit_root() if target is not None else target
+        except Exception:
+            target_root = target
+        try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+        except Exception:
+            attacker_unit = None
+        try:
+            if target_root is not None and attacker_unit is not None:
+                try:
+                    attacker_root = attacker_unit.get_attached_unit_root()
+                except Exception:
+                    attacker_root = attacker_unit
+                attacker_key = str(getattr(attacker_root, "_id", None) or id(attacker_root))
+                sr = getattr(target_root, "special_rules", None)
+                if isinstance(sr, dict):
+                    spec = sr.get("armour_of_contempt_ap_worsen")
+                    if isinstance(spec, dict):
+                        bonus = int(spec.get(str(attacker_key), 0) or 0)
+                        if bonus:
+                            ap_val += bonus
+        except Exception:
+            pass
         return int(apply_characteristic_caps("ap", int(ap_val), base_raw=getattr(self, "_raw_ap", None)))
 
     def attack(self, target: 'Unit', attacker: 'Model', game_map: Optional['Map'] = None) -> Optional[AttackResult]:

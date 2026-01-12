@@ -1559,6 +1559,7 @@ def _stratagem_support(name: str) -> Tuple[str, str, str]:
         "SMOKESCREEN": "Shooting phase: SMOKE unit gains cover + Stealth.",
         "TANK SHOCK": "Charge phase: roll vs Toughness to deal mortals (max 6).",
         "APOPLECTIC FRENZY": "Advance and Charge for a BERZERKERS unit; Berzerker Warband only.",
+        "ARMOUR OF CONTEMPT": "Shooting/Fight phase: targeted ADEPTUS ASTARTES unit worsens AP by 1 vs the attacking unit until it finishes its attacks.",
         "BERZERKER'S WRATH": "Blood Surge distance is fixed at 8\" (no D6 roll) for a BERZERKERS unit.",
         "BERZERKER’S WRATH": "Blood Surge distance is fixed at 8\" (no D6 roll) for a BERZERKERS unit.",
         "BLITZING FIREPOWER": "Shooting phase: ASURYANI unit gains Sustained Hits 1 vs targets within 12\"; if already has Sustained Hits, crits on 5+.",
@@ -1574,6 +1575,7 @@ def _stratagem_support(name: str) -> Tuple[str, str, str]:
         "SKULLS FOR THE SKULL THRONE!": "Fight phase: after CHARACTER/MONSTER kill, roll Blessings for a unit-only extra blessing.",
         "MURDER-CALL": "End of opponent Fight phase: BLOOD LEGIONS unit not in Engagement Range goes to Strategic Reserves.",
         "SUMMONED BY SLAUGHTER": "Any phase: set up BLOODLETTERS from Reserves wholly within 9\" of destroyed model; >6\" from enemies; once per battle round.",
+        "THE FOE FORESEEN": "Shooting/Fight phase: targeted ADEPTUS ASTARTES unit worsens AP by 1 vs the attacking unit until it finishes its attacks.",
         "UNBOUND ARROGANCE": "Coterie of the Conceited pledge increases by 1 (once per battle round).",
     }
 

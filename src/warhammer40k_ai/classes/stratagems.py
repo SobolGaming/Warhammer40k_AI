@@ -4,6 +4,7 @@ from typing import Callable, Optional, Dict, Any, List
 
 
 IMPLEMENTED_STRATAGEM_NAMES = {
+    "ARMOUR OF CONTEMPT",
     "A WORTHY SKULL",
     "APOPLECTIC FRENZY",
     "BERZERKER'S WRATH",
@@ -32,11 +33,13 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SKULLS FOR THE SKULL THRONE!",
     "SUMMONED BY SLAUGHTER",
     "TANK SHOCK",
+    "THE FOE FORESEEN",
     "UNBOUND ARROGANCE",
     "WEBWAY TUNNEL",
 }
 
 REACTION_ONLY_STRATAGEM_NAMES = {
+    "ARMOUR OF CONTEMPT",
     "A WORTHY SKULL",
     "APOPLECTIC FRENZY",
     "BERZERKER'S WRATH",
@@ -60,6 +63,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "SMOKESCREEN",
     "SKYBORNE SANCTUARY",
     "SUMMONED BY SLAUGHTER",
+    "THE FOE FORESEEN",
     "UNBOUND ARROGANCE",
     "WEBWAY TUNNEL",
 }
@@ -397,6 +401,65 @@ class StratagemManager:
 
     def _now(self) -> float:
         return float(time.monotonic())
+
+    def _attacker_unit_key(self, unit: Any) -> Optional[str]:
+        if unit is None:
+            return None
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        try:
+            return str(getattr(root, "_id", None) or id(root))
+        except Exception:
+            return str(id(root))
+
+    def _apply_armour_of_contempt(self, target_unit: Any, attacker_unit: Any, *, amount: int = 1) -> bool:
+        if target_unit is None or attacker_unit is None:
+            return False
+        try:
+            root = target_unit.get_attached_unit_root()
+        except Exception:
+            root = target_unit
+        key = self._attacker_unit_key(attacker_unit)
+        if key is None:
+            return False
+        try:
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            spec = sr.get("armour_of_contempt_ap_worsen")
+            if not isinstance(spec, dict):
+                spec = {}
+            spec[str(key)] = int(amount)
+            sr["armour_of_contempt_ap_worsen"] = spec
+            root.special_rules = sr
+            return True
+        except Exception:
+            return False
+
+    def _clear_armour_of_contempt_for_attacker(self, attacker_unit: Any) -> None:
+        key = self._attacker_unit_key(attacker_unit)
+        if key is None:
+            return
+        try:
+            units = list(getattr(self.player.get_army(), "units", []) or [])
+        except Exception:
+            units = []
+        for unit in units:
+            try:
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                spec = sr.get("armour_of_contempt_ap_worsen")
+                if not isinstance(spec, dict) or str(key) not in spec:
+                    continue
+                spec.pop(str(key), None)
+                if not spec:
+                    sr.pop("armour_of_contempt_ap_worsen", None)
+                unit.special_rules = sr
+            except Exception:
+                continue
 
     def _queue_reaction(self, payload: Dict[str, Any], use_timer: bool = True) -> None:
         if not isinstance(payload, dict):
@@ -863,6 +926,7 @@ class StratagemManager:
         es.subscribe("fight_sequence_complete", self._on_fight_sequence_complete)
         # Fight attacks resolved (for A WORTHY SKULL).
         es.subscribe("fight_attacks_resolved", self._on_fight_attacks_resolved)
+        es.subscribe("fight_attacks_resolved", self._on_fight_attacks_resolved_armour_of_contempt_cleanup)
         # Unit destroyed hooks for faction stratagems
         es.subscribe("unit_destroyed", self._on_unit_destroyed)
         # Model destroyed hooks for faction stratagems
@@ -870,6 +934,8 @@ class StratagemManager:
         es.subscribe("model_destroyed_before_removal", self._on_model_destroyed_before_removal)
         # Shooting resolution hooks (for Fire and Fade).
         es.subscribe("unit_shooting_resolved", self._on_unit_shooting_resolved_fire_and_fade)
+        # Clear single-attacker defensive buffs after attacks resolve.
+        es.subscribe("unit_shooting_resolved", self._on_unit_shooting_resolved_armour_of_contempt_cleanup)
         # Dice events for Command Re-roll
         es.subscribe("roll_made", self._on_roll_made)
         self._event_subscribed = True
@@ -1523,6 +1589,11 @@ class StratagemManager:
         except Exception:
             return
 
+    def _on_unit_shooting_resolved_armour_of_contempt_cleanup(self, attacker_unit=None, **_kwargs) -> None:
+        if attacker_unit is None:
+            return
+        self._clear_armour_of_contempt_for_attacker(attacker_unit)
+
     def _maybe_queue_tank_shock(self, charging_unit, action: str) -> None:
         # Trigger condition: just after a VEHICLE unit from your army ends a Charge move.
         try:
@@ -1737,6 +1808,53 @@ class StratagemManager:
                         "attacking_unit": attacking_unit,
                         "candidates": smoke_candidates,
                     })
+        except Exception:
+            pass
+
+        # ARMOUR OF CONTEMPT / THE FOE FORESEEN (opponent Shooting phase, after targets selected).
+        try:
+            for strat_name in ("ARMOUR OF CONTEMPT", "THE FOE FORESEEN"):
+                s4 = self.get_by_name(strat_name)
+                if not s4:
+                    continue
+                if self.player.command_points < s4.cp_cost:
+                    continue
+                if (s4.name or "").strip().upper() in self._used_stratagems_this_phase:
+                    continue
+                candidates = []
+                for u in list(target_units or []):
+                    try:
+                        if u is None or not u.is_alive():
+                            continue
+                        if u.get_parent_army().player is not self.player:
+                            continue
+                        if _unit_cannot_be_target_of_stratagem(u):
+                            continue
+                        if not u.has_any_keyword("ADEPTUS ASTARTES"):
+                            continue
+                        candidates.append(u)
+                    except Exception:
+                        continue
+                if not candidates:
+                    continue
+                already = False
+                for r in self._pending_reactions:
+                    try:
+                        if r.get("event") == "shooting_targets_selected" and r.get("stratagem") == s4.name and r.get("attacking_unit") is attacking_unit:
+                            already = True
+                            break
+                    except Exception:
+                        continue
+                if already:
+                    continue
+                self._queue_reaction({
+                    "event": "shooting_targets_selected",
+                    "phase_name": "Shooting phase",
+                    "stratagem": s4.name,
+                    "cp_cost": s4.cp_cost,
+                    "attacking_unit": attacking_unit,
+                    "candidates": candidates,
+                })
         except Exception:
             pass
 
@@ -2001,6 +2119,53 @@ class StratagemManager:
         except Exception:
             pass
 
+        # ARMOUR OF CONTEMPT / THE FOE FORESEEN (opponent Fight phase, after targets selected).
+        try:
+            for strat_name in ("ARMOUR OF CONTEMPT", "THE FOE FORESEEN"):
+                s4 = self.get_by_name(strat_name)
+                if not s4:
+                    continue
+                if self.player.command_points < s4.cp_cost:
+                    continue
+                if (s4.name or "").strip().upper() in self._used_stratagems_this_phase:
+                    continue
+                candidates = []
+                for unit in list(target_units or []):
+                    try:
+                        if unit is None or not unit.is_alive():
+                            continue
+                        if unit.get_parent_army().player is not self.player:
+                            continue
+                        if _unit_cannot_be_target_of_stratagem(unit):
+                            continue
+                        if not unit.has_any_keyword("ADEPTUS ASTARTES"):
+                            continue
+                        candidates.append(unit)
+                    except Exception:
+                        continue
+                if not candidates:
+                    continue
+                already = False
+                for r in self._pending_reactions:
+                    try:
+                        if r.get("event") == "fight_targets_selected" and r.get("stratagem") == s4.name and r.get("attacking_unit") is attacking_unit:
+                            already = True
+                            break
+                    except Exception:
+                        continue
+                if already:
+                    continue
+                self._queue_reaction({
+                    "event": "fight_targets_selected",
+                    "phase_name": "Fight phase",
+                    "stratagem": s4.name,
+                    "cp_cost": s4.cp_cost,
+                    "attacking_unit": attacking_unit,
+                    "candidates": candidates,
+                })
+        except Exception:
+            pass
+
         # Warhost: LIGHTNING-FAST REACTIONS (Fight phase)
         try:
             s = self.get_by_name("LIGHTNING-FAST REACTIONS")
@@ -2209,6 +2374,11 @@ class StratagemManager:
                     self._worthy_skull_kills.pop(root, None)
                 except Exception:
                     pass
+
+    def _on_fight_attacks_resolved_armour_of_contempt_cleanup(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        self._clear_armour_of_contempt_for_attacker(unit)
 
     def _maybe_queue_overwatch(self, moving_unit, action: str, when: str) -> None:
         # Only offer to the opponent of the moving unit's owner
@@ -3062,6 +3232,56 @@ class StratagemManager:
             except Exception:
                 pass
             print(f"🛡️ SMOKESCREEN: {getattr(target_unit, 'name', 'Unit')} gains Benefit of Cover + Stealth until end of phase.")
+            return True
+
+        # Armour of Contempt / The Foe Foreseen: worsen AP by 1 vs a selected ADEPTUS ASTARTES unit.
+        if s.name.upper() in ("ARMOUR OF CONTEMPT", "THE FOE FORESEEN"):
+            target_unit = kwargs.get("target_unit") or kwargs.get("unit")
+            attacker_unit = kwargs.get("attacker_unit")
+            if target_unit is None or attacker_unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == s.name.upper():
+                        cands = r.get("candidates") or []
+                        if target_unit is None and cands:
+                            target_unit = cands[0]
+                        attacker_unit = attacker_unit or r.get("attacking_unit")
+                        break
+            if target_unit is None or attacker_unit is None:
+                print(f"❌ {s.name}: missing target context")
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() not in ("shooting phase", "fight phase"):
+                print(f"❌ {s.name}: wrong phase")
+                return False
+            try:
+                if attacker_unit.get_parent_army().player is self.player:
+                    print(f"❌ {s.name}: must be used in opponent's phase")
+                    return False
+            except Exception:
+                return False
+            try:
+                if target_unit.get_parent_army().player is not self.player:
+                    print(f"❌ {s.name}: target unit is not yours")
+                    return False
+            except Exception:
+                return False
+            try:
+                if not target_unit.has_any_keyword("ADEPTUS ASTARTES"):
+                    print(f"❌ {s.name}: target is not ADEPTUS ASTARTES")
+                    return False
+            except Exception:
+                return False
+            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            if not self._apply_armour_of_contempt(target_unit, attacker_unit, amount=1):
+                return False
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
+            print(f"🛡️ {s.name}: {getattr(target_unit, 'name', 'Unit')} worsens AP by 1 vs {getattr(attacker_unit, 'name', 'attacker')}.")
             return True
         # Special-case: FIRE OVERWATCH full resolution
         if s.name.upper() in ("FIRE OVERWATCH", "OVERWATCH"):
