@@ -2312,7 +2312,30 @@ class Unit:
 
             # Prefer Fight on Death when engaged; otherwise try Shoot on Death.
             did_fight = False
-            if self.has_fight_on_death():
+            try:
+                sr = getattr(self, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("pain_fight_on_death_2plus"):
+                    if not bool(getattr(self.round_state, "fought_this_phase", False)):
+                        wp = getattr(self, "_last_destroyed_by_weapon_profile", None)
+                        is_melee = False
+                        try:
+                            parent = getattr(wp, "parent_wargear", None)
+                            is_melee = bool(parent is not None and parent.is_melee())
+                        except Exception:
+                            is_melee = False
+                        if is_melee:
+                            roll = int(get_roll("D6"))
+                            try:
+                                from ..utility.event_bus import append_dice
+                                pn = self.get_parent_army().player.name
+                                append_dice(pn, f"Mindless Killing Machines roll: {roll} for {self.name}")
+                            except Exception:
+                                pass
+                            if roll >= 2:
+                                did_fight = self._try_fight_on_death(model=model, game_map=game_map)
+            except Exception:
+                pass
+            if (not did_fight) and self.has_fight_on_death():
                 did_fight = self._try_fight_on_death(model=model, game_map=game_map)
 
             if (not did_fight) and self.has_shoot_on_death():
@@ -4372,6 +4395,20 @@ class Unit:
             if bool(getattr(self, "is_attached_leader", False)):
                 return False
 
+        # Power from Pain: pain abilities only apply while the unit is Empowered.
+        try:
+            name = ""
+            if isinstance(ability, str):
+                name = ability
+            else:
+                name = getattr(ability, "name", "") or ""
+            if "(pain)" in str(name or "").lower():
+                sr = getattr(self, "special_rules", None)
+                if not (isinstance(sr, dict) and sr.get("pain_empowered")):
+                    return False
+        except Exception:
+            pass
+
         # Wargear abilities only apply if the wargear is equipped.
         try:
             atype = str(getattr(ability, "type", "") or "").lower()
@@ -4561,35 +4598,35 @@ class Unit:
         seen_names: set[str] = set()
 
         hit_re = re.compile(
-            r"each time a model in that unit makes (?:a|an) (?P<atype>melee|ranged) attack, add (?P<val>\\d+) to the hit roll",
+            r"each time a model in that unit makes (?:a|an) (?P<atype>melee|ranged) attack, add (?P<val>\d+) to the hit roll",
             re.IGNORECASE,
         )
         hit_any_re = re.compile(
-            r"each time a model in that unit makes (?:a|an) attack, add (?P<val>\\d+) to the hit roll",
+            r"each time a model in that unit makes (?:a|an) attack, add (?P<val>\d+) to the hit roll",
             re.IGNORECASE,
         )
         wound_re = re.compile(
-            r"each time a model in that unit makes (?:a|an) (?P<atype>melee|ranged) attack, add (?P<val>\\d+) to the wound roll",
+            r"each time a model in that unit makes (?:a|an) (?P<atype>melee|ranged) attack, add (?P<val>\d+) to the wound roll",
             re.IGNORECASE,
         )
         wound_any_re = re.compile(
-            r"each time a model in that unit makes (?:a|an) attack, add (?P<val>\\d+) to the wound roll",
+            r"each time a model in that unit makes (?:a|an) attack, add (?P<val>\d+) to the wound roll",
             re.IGNORECASE,
         )
         reroll_hit_re = re.compile(
-            r"each time a model in that unit makes (?:a|an) (?P<atype>melee|ranged) attack, (?:you can )?re-?roll (?:a|any)?\\s*hit roll(?:s)? of 1",
+            r"each time a model in that unit makes (?:a|an) (?P<atype>melee|ranged) attack, .*?re-?roll (?:a|any)?\s*hit roll(?:s)? of 1",
             re.IGNORECASE,
         )
         reroll_hit_any_re = re.compile(
-            r"each time a model in that unit makes (?:a|an) attack, (?:you can )?re-?roll (?:a|any)?\\s*hit roll(?:s)? of 1",
+            r"each time a model in that unit makes (?:a|an) attack, .*?re-?roll (?:a|any)?\s*hit roll(?:s)? of 1",
             re.IGNORECASE,
         )
         reroll_wound_re = re.compile(
-            r"each time a model in that unit makes (?:a|an) (?P<atype>melee|ranged) attack, (?:you can )?re-?roll (?:a|any)?\\s*wound roll(?:s)? of 1",
+            r"each time a model in that unit makes (?:a|an) (?P<atype>melee|ranged) attack, .*?re-?roll (?:a|any)?\s*wound roll(?:s)? of 1",
             re.IGNORECASE,
         )
         reroll_wound_any_re = re.compile(
-            r"each time a model in that unit makes (?:a|an) attack, (?:you can )?re-?roll (?:a|any)?\\s*wound roll(?:s)? of 1",
+            r"each time a model in that unit makes (?:a|an) attack, .*?re-?roll (?:a|any)?\s*wound roll(?:s)? of 1",
             re.IGNORECASE,
         )
 
@@ -4628,13 +4665,12 @@ class Unit:
                         val = int(m.group("val"))
                         mods["hit"] += val
                         hit_reasons.append(f"+{val} to hit from {name}")
-                    continue
-                m = hit_any_re.search(sl)
-                if m:
-                    val = int(m.group("val"))
-                    mods["hit"] += val
-                    hit_reasons.append(f"+{val} to hit from {name}")
-                    continue
+                else:
+                    m = hit_any_re.search(sl)
+                    if m:
+                        val = int(m.group("val"))
+                        mods["hit"] += val
+                        hit_reasons.append(f"+{val} to hit from {name}")
 
                 m = wound_re.search(sl)
                 if m:
@@ -4642,35 +4678,30 @@ class Unit:
                         val = int(m.group("val"))
                         mods["wound"] += val
                         wound_reasons.append(f"+{val} to wound from {name}")
-                    continue
-                m = wound_any_re.search(sl)
-                if m:
-                    val = int(m.group("val"))
-                    mods["wound"] += val
-                    wound_reasons.append(f"+{val} to wound from {name}")
-                    continue
+                else:
+                    m = wound_any_re.search(sl)
+                    if m:
+                        val = int(m.group("val"))
+                        mods["wound"] += val
+                        wound_reasons.append(f"+{val} to wound from {name}")
 
                 m = reroll_hit_re.search(sl)
                 if m:
                     if atype == "any" or m.group("atype").lower() == atype:
                         mods["reroll_hit_ones"] = True
                         reroll_hit_reasons.append(f"Leading: re-roll Hit rolls of 1 from {name}")
-                    continue
-                if reroll_hit_any_re.search(sl):
+                elif reroll_hit_any_re.search(sl):
                     mods["reroll_hit_ones"] = True
                     reroll_hit_reasons.append(f"Leading: re-roll Hit rolls of 1 from {name}")
-                    continue
 
                 m = reroll_wound_re.search(sl)
                 if m:
                     if atype == "any" or m.group("atype").lower() == atype:
                         mods["reroll_wound_ones"] = True
                         reroll_wound_reasons.append(f"Leading: re-roll Wound rolls of 1 from {name}")
-                    continue
-                if reroll_wound_any_re.search(sl):
+                elif reroll_wound_any_re.search(sl):
                     mods["reroll_wound_ones"] = True
                     reroll_wound_reasons.append(f"Leading: re-roll Wound rolls of 1 from {name}")
-                    continue
 
         mods["hit_reasons"] = tuple(hit_reasons)
         mods["wound_reasons"] = tuple(wound_reasons)
@@ -4681,6 +4712,86 @@ class Unit:
             root._ability_cache = {}
         root._ability_cache[cache_key] = mods
         return mods
+
+    def get_melee_damage_bonus_vs_monster_vehicle(self) -> int:
+        """
+        Return bonus Damage for melee attacks that target MONSTER or VEHICLE units.
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "melee_damage_bonus_vs_monster_vehicle"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return int(root._ability_cache[cache_key] or 0)
+
+        bonus = 0
+        seen: set[tuple[str, str]] = set()
+
+        def _scan(text: str, name: str = "") -> int:
+            if not text:
+                return 0
+            norm = self._normalize_rules_text(text)
+            if not norm:
+                return 0
+            key = (str(name or "").strip().lower(), norm.lower())
+            if key in seen:
+                return 0
+            seen.add(key)
+            low = norm.lower()
+            if "melee attack" not in low:
+                return 0
+            if "damage characteristic" not in low:
+                return 0
+            if "monster" not in low or "vehicle" not in low:
+                return 0
+            if "target" not in low:
+                return 0
+            m = re.search(r"damage characteristic[^.]*?by\s+(\d+)", low)
+            if not m:
+                m = re.search(r"add\s+(\d+)\s+to\s+the\s+damage characteristic", low)
+            if not m:
+                return 0
+            try:
+                return int(m.group(1))
+            except Exception:
+                return 0
+
+        for ab in root._iter_active_abilities():
+            try:
+                if isinstance(ab, str):
+                    bonus += _scan(ab, "")
+                else:
+                    desc = str(getattr(ab, "description", "") or "")
+                    name = str(getattr(ab, "name", "") or "")
+                    if desc:
+                        bonus += _scan(desc, name)
+                    else:
+                        bonus += _scan(name, name)
+            except Exception:
+                continue
+
+        try:
+            for ab, _leader in root._iter_attached_leader_leading_abilities():
+                try:
+                    if isinstance(ab, str):
+                        bonus += _scan(ab, "")
+                    else:
+                        desc = str(getattr(ab, "description", "") or "")
+                        name = str(getattr(ab, "name", "") or "")
+                        if desc:
+                            bonus += _scan(desc, name)
+                        else:
+                            bonus += _scan(name, name)
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = int(bonus or 0)
+        return int(bonus or 0)
 
     def can_reroll_advance_roll(self) -> bool:
         """
@@ -5090,6 +5201,20 @@ class Unit:
         if not hasattr(self.round_state, 'advance_roll') or self.round_state.advance_roll is None:
             advance_roll = None
             miracle_used = False
+            try:
+                sr = getattr(self, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("pain_advance_no_roll"):
+                    fixed = int(sr.get("pain_advance_fixed_bonus", 0) or 0)
+                    self.round_state.advance_roll = fixed
+                    try:
+                        from ..utility.event_bus import append_dice
+                        pn = self.get_parent_army().player.name
+                        append_dice(pn, f"Advance roll fixed: {fixed} for {self.name}")
+                    except Exception:
+                        pass
+                    return fixed
+            except Exception:
+                pass
             try:
                 army = self.get_parent_army()
                 mgr = getattr(army, "acts_of_faith", None) if army is not None else None
@@ -5554,8 +5679,25 @@ class Unit:
 
         # If advancing, use stored advance roll or roll new one
         if advance:
+            pain_fixed = None
+            try:
+                sr = getattr(self, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("pain_advance_no_roll"):
+                    pain_fixed = int(sr.get("pain_advance_fixed_bonus", 0) or 0)
+            except Exception:
+                pain_fixed = None
+
             # Use stored advance roll if available, otherwise roll new one
-            if not hasattr(self.round_state, 'advance_roll') or self.round_state.advance_roll is None:
+            if pain_fixed is not None:
+                advance_roll = pain_fixed
+                self.round_state.advance_roll = advance_roll
+                try:
+                    from ..utility.event_bus import append_dice
+                    pn = self.get_parent_army().player.name
+                    append_dice(pn, f"Advance roll fixed: {advance_roll} for {self.name}")
+                except Exception:
+                    pass
+            elif not hasattr(self.round_state, 'advance_roll') or self.round_state.advance_roll is None:
                 advance_roll = None
                 miracle_used = False
                 try:
@@ -6527,7 +6669,11 @@ class Unit:
         else:
             found = self._has_simple_eligibility_rule([
                 "eligible to declare a charge in a turn in which it advanced",
+                "eligible to declare a charge in a turn in which it advanced or fell back",
+                "eligible to declare a charge in a turn in which it fell back or advanced",
                 "eligible to charge in a turn in which it advanced",
+                "eligible to charge in a turn in which it advanced or fell back",
+                "eligible to charge in a turn in which it fell back or advanced",
                 "eligible to shoot and declare a charge in a turn in which it advanced",
                 "eligible to shoot and declare a charge in a turn in which it advanced or fell back",
                 "eligible to shoot and declare a charge in a turn in which it fell back or advanced",
@@ -6657,6 +6803,12 @@ class Unit:
                 return True
         except Exception:
             pass
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("pain_charge_after_advance"):
+                return True
+        except Exception:
+            pass
         has_ability = self.has_advance_and_charge()
         #print(f"🔍 {self.name} can_charge_after_advance check: {has_ability}")
         return has_ability
@@ -6666,6 +6818,12 @@ class Unit:
         if self.has_thrill_seekers():
             return True
         try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("pain_charge_after_fall_back"):
+                return True
+        except Exception:
+            pass
+        try:
             army = self.get_parent_army()
             mgr = getattr(army, "templar_vows", None) if army is not None else None
             if mgr is not None and mgr.can_charge_after_fall_back(self):
@@ -6674,6 +6832,10 @@ class Unit:
             pass
         return self._has_simple_eligibility_rule([
             "eligible to declare a charge in a turn in which it fell back",
+            "eligible to declare a charge in a turn in which it advanced or fell back",
+            "eligible to declare a charge in a turn in which it fell back or advanced",
+            "eligible to charge in a turn in which it advanced or fell back",
+            "eligible to charge in a turn in which it fell back or advanced",
             "eligible to shoot and declare a charge in a turn in which it fell back",
             "eligible to shoot and declare a charge in a turn in which it advanced or fell back",
             "eligible to shoot and declare a charge in a turn in which it fell back or advanced",
@@ -9013,6 +9175,12 @@ class Unit:
             transport_rules = {}
         allow_after_advance = bool(transport_rules.get("allow_after_advance", False))
         allow_charge_after_normal_move = bool(transport_rules.get("allow_charge_after_normal_move", False))
+        try:
+            sr = getattr(transport_unit, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("pain_rapid_deployment_active"):
+                allow_after_advance = True
+        except Exception:
+            pass
 
         # Transport state restrictions for normal disembark
         if not destroyed_transport:
@@ -9358,6 +9526,14 @@ class Unit:
 
     def attached_unit_has_blessings_of_khorne(self) -> bool:
         """Attached unit eligibility: true if any attached member (bodyguard or leader) has Blessings of Khorne ability."""
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "blood_tithe_might_of_khorne_applies", None):
+                if mgr.blood_tithe_might_of_khorne_applies(self):
+                    return True
+        except Exception:
+            pass
         for u in self.get_attached_unit_members():
             try:
                 found, _ = u._find_ability_with_patterns(["blessings of khorne"])
@@ -10188,6 +10364,18 @@ class Unit:
                         if game.get_current_player().name == owner and int(getattr(game, "turn", 0) or 0) == turn:
                             return False
                     except Exception:
+                        return False
+        except Exception:
+            pass
+
+        # Swooping Descent: arriving within 9" denies charges until end of turn.
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("pain_swooping_descent_no_charge_turn_owner"):
+                owner = str(sr.get("pain_swooping_descent_no_charge_turn_owner") or "")
+                turn = int(sr.get("pain_swooping_descent_no_charge_turn", 0) or 0)
+                if owner and game is not None:
+                    if game.get_current_player().name == owner and int(getattr(game, "turn", 0) or 0) == turn:
                         return False
         except Exception:
             pass
@@ -11331,19 +11519,30 @@ class Unit:
                 - Optional condition string (e.g., "against psychic attacks", "against mortal wounds") (None if unconditional)
         """
         # Use cached result if available
+        cached = None
         if 'feel_no_pain' in getattr(self, '_ability_cache', {}):
-            return self._ability_cache['feel_no_pain']
-        
-        result = self._find_all_abilities_with_patterns(
-            ["feel no pain", "fnp"], 
-            r'(?:feel no pain|fnp)\s*\(?(\d+)\+(?:\)?)(?:\s+(.+))?'
-        )
-        
-        # Cache the result
-        if not hasattr(self, '_ability_cache'):
-            self._ability_cache = {}
-        self._ability_cache['feel_no_pain'] = result
-        
+            cached = list(self._ability_cache['feel_no_pain'])
+        if cached is None:
+            cached = self._find_all_abilities_with_patterns(
+                ["feel no pain", "fnp"],
+                r'(?:feel no pain|fnp)\s*\(?(\d+)\+(?:\)?)(?:\s+(.+))?',
+            )
+            # Cache the base result (dynamic additions are layered below).
+            if not hasattr(self, '_ability_cache'):
+                self._ability_cache = {}
+            self._ability_cache['feel_no_pain'] = list(cached)
+
+        result = list(cached)
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "blood_tithe_enraged_abjuration_applies", None):
+                if mgr.blood_tithe_enraged_abjuration_applies(self):
+                    entry = (5, "against psychic attacks and mortal wounds")
+                    if entry not in result:
+                        result.append(entry)
+        except Exception:
+            pass
         return result
 
     def get_max_weapon_range(self) -> float:
@@ -11555,6 +11754,46 @@ class Unit:
             pass
         try:
             setattr(self, "_reserves_edge_touch_this_turn", bool(edge_touch))
+        except Exception:
+            pass
+
+        # Swooping Descent: if set up within 9" of an enemy, cannot charge until end of turn.
+        try:
+            sr = getattr(self, "special_rules", None)
+            pain_min = float(sr.get("pain_deep_strike_min_distance", 0) or 0) if isinstance(sr, dict) else 0.0
+            if pain_min and game_map is not None:
+                from ..utility.aura_utils import horizontal_distance_between_bases_2d
+                within_nine = False
+                for enemy in list(game_map.get_enemy_units(self) or []):
+                    try:
+                        if not getattr(enemy, "is_alive", lambda: True)():
+                            continue
+                        if not getattr(enemy, "deployed", True):
+                            continue
+                    except Exception:
+                        continue
+                    for em in list(getattr(enemy, "models", []) or []):
+                        if not getattr(em, "is_alive", True):
+                            continue
+                        for m in list(getattr(self, "models", []) or []):
+                            if not getattr(m, "is_alive", True):
+                                continue
+                            if float(horizontal_distance_between_bases_2d(m.model_base, em.model_base)) <= 9.0 + 1e-6:
+                                within_nine = True
+                                break
+                        if within_nine:
+                            break
+                    if within_nine:
+                        break
+                if within_nine:
+                    try:
+                        owner = self.get_parent_army().player.name
+                    except Exception:
+                        owner = ""
+                    sr["pain_swooping_descent_no_charge_turn"] = int(turn or 0)
+                    if owner:
+                        sr["pain_swooping_descent_no_charge_turn_owner"] = owner
+                    self.special_rules = sr
         except Exception:
             pass
         

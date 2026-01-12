@@ -513,6 +513,7 @@ class GameView:
         self.battle_focus_dialog = OverwatchShooterDialog(screen_width, screen_height)
         # Blessings of Khorne dialog (lazy-create only if needed)
         self.blessings_of_khorne_dialog = None
+        self.blood_tithe_dialog = None
         self.templar_vows_dialog = None
         self.shadow_form_dialog = None
         self.harbingers_of_dread_dialog = None
@@ -906,6 +907,9 @@ class GameView:
         # Genestealer Cults: Cult Ambush prompt queues
         self._pending_cult_ambush_queue = []
         self._pending_cult_ambush_marker_queue = []
+        # World Eaters: Blood Tithe prompt queue
+        self._pending_blood_tithe_queue = []
+        self._blood_tithe_flow_active = False
         # World Eaters: Blood Surge prompt queue
         self._pending_blood_surge_queue = []
         self._blood_surge_flow_active = False
@@ -941,6 +945,9 @@ class GameView:
                 self.game.event_system.subscribe("emperors_children_pact_points_updated", self._on_emperors_children_pact_points_updated)
                 # Drukhari: Power from Pain prompt when a unit can be empowered
                 self.game.event_system.subscribe("pain_token_prompt", self._on_pain_token_prompt)
+                # World Eaters: Blood Tithe prompt (Command phase / fight-phase A Worthy Skull)
+                self.game.event_system.subscribe("blood_tithe_prompt", self._on_blood_tithe_prompt)
+                self.game.event_system.subscribe("blood_tithe_updated", self._on_blood_tithe_updated)
                 # World Eaters: Blood Surge prompt on opponent shooting casualties
                 self.game.event_system.subscribe("blood_surge_prompt", self._on_blood_surge_prompt)
                 # Quarry re-pick when quarry is destroyed
@@ -2043,6 +2050,136 @@ class GameView:
             self._open_next_emperors_children_sensational_prompt(game_ctx)
 
     def _on_emperors_children_pact_points_updated(self, player=None, **_kwargs):
+        if player is None:
+            return
+        try:
+            if self.rule_detail_panel and self.rule_detail_panel.visible and isinstance(self._rule_panel_state, dict):
+                if self._rule_panel_state.get("player") is player and self._rule_panel_state.get("rule_type") == "detachment":
+                    self._toggle_rule_panel(player, "detachment", force_refresh=True)
+        except Exception:
+            pass
+
+    # ---------------- Blood Tithe prompts ----------------
+
+    def _on_blood_tithe_prompt(
+        self,
+        player=None,
+        game=None,
+        manager=None,
+        options=None,
+        points: int = 0,
+        timing: str = "",
+        source: str = "",
+        ignore_command_phase_limit: bool = False,
+        **_kwargs,
+    ):
+        if player is None:
+            return
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return
+        except Exception:
+            return
+
+        payload = (player, game, manager, options, points, timing, source, ignore_command_phase_limit)
+        if self._blood_tithe_flow_active:
+            self._pending_blood_tithe_queue.append(payload)
+            return
+        self._pending_blood_tithe_queue.append(payload)
+        self._open_next_blood_tithe_prompt(game or self.game)
+
+    def _open_next_blood_tithe_prompt(self, game):
+        q = list(getattr(self, "_pending_blood_tithe_queue", []) or [])
+        if not q:
+            self._pending_blood_tithe_queue = []
+            self._blood_tithe_flow_active = False
+            return
+        player, game_ctx, manager, options, points, timing, source, ignore_limit = q.pop(0)
+        self._pending_blood_tithe_queue = q
+
+        game_ctx = game_ctx or game or self.game
+        if player is None or game_ctx is None:
+            self._open_next_blood_tithe_prompt(game_ctx)
+            return
+
+        if manager is None:
+            try:
+                army = player.get_army()
+            except Exception:
+                army = None
+            manager = getattr(army, "world_eaters_detachments", None) if army is not None else None
+        if manager is None:
+            self._open_next_blood_tithe_prompt(game_ctx)
+            return
+
+        try:
+            option_list = list(options or manager.get_available_blood_tithe_abilities() or [])
+        except Exception:
+            option_list = []
+        if not option_list:
+            self._open_next_blood_tithe_prompt(game_ctx)
+            return
+
+        try:
+            points = int(points or getattr(manager, "blood_tithe_points", 0) or 0)
+        except Exception:
+            points = 0
+
+        if self.blood_tithe_dialog is None:
+            try:
+                sw, sh = self.screen.get_width(), self.screen.get_height()
+                from .dialogs import BloodTitheDialog
+                self.blood_tithe_dialog = BloodTitheDialog(sw, sh)
+            except Exception:
+                self.blood_tithe_dialog = None
+        if self.blood_tithe_dialog is None:
+            self._open_next_blood_tithe_prompt(game_ctx)
+            return
+
+        def _finish():
+            self._blood_tithe_flow_active = False
+            self._open_next_blood_tithe_prompt(game_ctx)
+
+        def _on_confirm(choice):
+            try:
+                key = getattr(choice, "key", None)
+                if key:
+                    manager.activate_blood_tithe(
+                        key,
+                        game=game_ctx,
+                        player=player,
+                        timing=timing,
+                        ignore_command_phase_limit=bool(ignore_limit),
+                    )
+            except Exception:
+                pass
+            try:
+                from ..utility.event_bus import append_action
+                ability_name = getattr(choice, "name", None) or str(choice)
+                append_action(player.name, f"Blood Tithe: {ability_name}")
+            except Exception:
+                pass
+            _finish()
+
+        def _on_cancel():
+            _finish()
+
+        self._blood_tithe_flow_active = True
+        try:
+            self.blood_tithe_dialog.show(
+                options=option_list,
+                points=points,
+                timing=timing,
+                source=source,
+                on_confirm=_on_confirm,
+                on_cancel=_on_cancel,
+            )
+            self.dialog_manager.open(self.blood_tithe_dialog, modal=True)
+        except Exception:
+            self._blood_tithe_flow_active = False
+            self._open_next_blood_tithe_prompt(game_ctx)
+
+    def _on_blood_tithe_updated(self, player=None, **_kwargs):
         if player is None:
             return
         try:
@@ -6870,7 +7007,46 @@ class GameView:
                     "get_hint": lambda: ("Active bonuses: " + ", ".join(_pact_active())) if _pact_active() else "No Pact bonuses active.",
                     "highlight_words": active,
                 }
+        if rule_type == "detachment" and "blood tithe" in rule_name.strip().lower():
+            try:
+                army = player.get_army()
+            except Exception:
+                army = None
+            mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+            if mgr is not None:
+                try:
+                    active_blood_tithe = [a.name for a in mgr.get_active_blood_tithe_abilities()]
+                except Exception:
+                    active_blood_tithe = []
+                for ab in active_blood_tithe:
+                    try:
+                        highlight_words.append(ab)
+                    except Exception:
+                        continue
         hud = None
+        if rule_type == "detachment" and "blood tithe" in rule_name.strip().lower():
+            try:
+                army = player.get_army()
+            except Exception:
+                army = None
+            mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+            if mgr is not None:
+                def _bt_hint():
+                    try:
+                        active = [a.name for a in mgr.get_active_blood_tithe_abilities()]
+                    except Exception:
+                        active = []
+                    if not active:
+                        return "No Blood Tithe abilities active."
+                    return "Active: " + ", ".join(active)
+
+                hud = {
+                    "label": "Blood Tithe Points",
+                    "get_tokens": lambda: int(getattr(mgr, "blood_tithe_points", 0) or 0),
+                    "show_button": False,
+                    "get_hint": _bt_hint,
+                    "highlight_words": [a.name for a in mgr.get_active_blood_tithe_abilities()] if mgr else [],
+                }
         if rule_type == "army" and "battle focus" in rule_name.strip().lower():
             mgr = self._get_battle_focus_manager(player)
             if mgr is not None:

@@ -20,6 +20,7 @@ from .precision_allocation_dialog import PrecisionAllocationDialog
 from .damage_allocation_dialog import DamageAllocationDialog
 from .firing_deck_dialog import FiringDeckDialog
 from .blessings_of_khorne_dialog import BlessingsOfKhorneDialog
+from .blood_tithe_dialog import BloodTitheDialog
 from .battlefield_point_pick_dialog import BattlefieldPointPickDialog
 from .hazard_objective_select_dialog import HazardObjectiveSelectDialog
 from .yes_no_dialog import YesNoDialog
@@ -61,6 +62,7 @@ __all__ = [
     'DamageAllocationDialog',
     'FiringDeckDialog',
     'BlessingsOfKhorneDialog',
+    'BloodTitheDialog',
     'BattlefieldPointPickDialog',
     'HazardObjectiveSelectDialog',
     'YesNoDialog',

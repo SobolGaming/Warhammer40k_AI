@@ -830,7 +830,7 @@ def _ability_id_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Bondsman": ("Supported", "Bondsman buffs applied to Armiger units."),
         "Super-heavy Walker": ("Supported", "Move-through models (excl. TITANIC), engagement pass-through, tall-terrain Battle-shock check."),
         "Battle Focus": ("Supported", "Token system + maneuver selection with per-phase limits."),
-        "Power from Pain": ("Partial", "Pain token engine with partial ability coverage."),
+        "Power from Pain": ("Supported", "Pain token engine with full Pain ability coverage."),
         "Cult Ambush": ("Supported", "Resurgence points, ambush markers, reinforcements."),
         "Prioritised Efficiency": ("Supported", "Yield points + mode tracking with objective checks."),
         "Reanimation Protocols": ("Supported", "Command-phase reanimation sequencing for Necrons."),
@@ -880,6 +880,7 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Sensational Performance": ("Supported", "Court of the Phoenician: optional +1 S/AP on charge."),
         "Master of the Pageant": ("Supported", "Court of the Phoenician: once per round -1 CP stratagem cost."),
         "Relentless Rage": ("Supported", "Berzerker Warband: on charge, melee weapons gain +1A/+2S until end of turn."),
+        "Blood Tithe": ("Supported", "Khorne Daemonkin: gain BTP on 3+ for eligible kills; spend BTP to activate Enraged Abjuration, Daemonic Rage, Boon of Blood, or Might of Khorne (command phase limit + A Worthy Skull fight-phase activation)."),
         "Martial Grace": ("Supported", "Warhost: +1 Battle Focus token; Swift as the Wind +1\" move; +1 to D6 Agile Manoeuvre rolls."),
     }
     return {_norm(name): val for name, val in raw.items()}
@@ -899,6 +900,10 @@ def _restriction_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Pact of Blood": ("Supported", "Army faction restriction enforced during validation."),
         "Space Marine Chapters": ("Supported", "Chapter keyword restrictions and unit bans."),
         "Deathwatch": ("Supported", "Deathwatch-only chapter restrictions."),
+        "You can include the BLOOD LEGIONS units in your army. The combined points cost of such units you can include in your army is: Incursion: Up to 500 pts Strike Force: Up to 1000 pts Onslaught: Up to 1500 pts No BLOOD LEGIONS model from your army can be your WARLORD.": (
+            "Supported",
+            "BLOOD LEGIONS points caps enforced by battle size; BLOOD LEGIONS cannot be your WARLORD.",
+        ),
     }
     return {_norm(name): val for name, val in raw.items()}
 
@@ -910,6 +915,7 @@ def _datasheet_ability_support_global() -> Dict[str, Tuple[str, str]]:
         "Super-heavy Walker": ("Supported", "Move-through models (excl. TITANIC), engagement pass-through, tall-terrain Battle-shock check."),
         "Super-heavy War Engine": ("Supported", "Move-through models (excl. TITANIC), engagement pass-through, tall-terrain Battle-shock check."),
         "Collar of Khorne": ("Supported", "Feel No Pain 3+ against Psychic attacks."),
+        "Flip Belt": ("Supported", "Ignore vertical distance for Move/Advance/Fall Back/Charge movement."),
     }
     return {_norm(name): val for name, val in raw.items()}
 
@@ -955,7 +961,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("AE", "Spiritseer"): ("Partial", "Lone Operative applied without 3\" Wraith Construct proximity requirement."),
         ("AE", "Bonesinger"): ("Partial", "Lone Operative applied without 3\" proximity/leading restrictions."),
         ("AE", "Superlative Strategist"): ("Partial", "Advance reroll enabled; leading/Agile Manoeuvre rerolls not enforced."),
-        ("AE", "Acrobatic"): ("Partial", "Charge-after-Advance supported; Fall Back charge not supported."),
+        ("AE", "Acrobatic"): ("Supported", "Charge-after-Advance/Fall Back eligibility."),
         ("AE", "Blur of Movement"): ("Supported", "Charge-after-Advance eligibility."),
         ("AE", "War Construct"): ("Supported", "Shoot after Falling Back."),
         ("AE", "Flawless Poise"): ("Supported", "Shoot and charge after Falling Back."),
@@ -1139,6 +1145,8 @@ def _classify_ability(
     if desc_support:
         return desc_support
     common_support = _bearer_unit_common_support(description)
+    leading_support = _leading_unit_common_support(description)
+    melee_damage_support = _melee_damage_bonus_support(description)
     transport_support = _transport_disembark_support(description)
     orders_support = _orders_section_support(name, description)
     attached_unit_support = _attached_unit_support(name, description)
@@ -1157,8 +1165,14 @@ def _classify_ability(
                 break
     if name_norm and (not ambiguous_name) and (fid, name_norm) in ABILITY_SUPPORT_BY_NAME_FACTION:
         return ABILITY_SUPPORT_BY_NAME_FACTION[(fid, name_norm)]
+    if fid == "DRU" and "(pain)" in str(name or "").lower():
+        return ("Supported", "Power from Pain ability effects implemented.")
     if common_support:
         return common_support
+    if leading_support:
+        return leading_support
+    if melee_damage_support:
+        return melee_damage_support
     if transport_support:
         return transport_support
     if orders_support:
@@ -1203,6 +1217,17 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
     if m:
         notes.append(f"Charge rolls for bearer's unit get +{m.group(1)}.")
 
+    if (
+        ("eligible to declare a charge" in low or "eligible to charge" in low)
+        and (
+            "advanced or fell back" in low
+            or "advance or fell back" in low
+            or "fell back or advanced" in low
+            or "fell back or advance" in low
+        )
+    ):
+        notes.append("Charge-after-Advance/Fall Back eligibility.")
+
     m = re.search(
         r"models\s+in\s+the\s+bearer'?s\s+unit\s+have\s+a\s+leadership\s+characteristic\s+of\s+(\d+)\+?",
         low,
@@ -1214,6 +1239,55 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
     if notes:
         return ("Supported", " ".join(notes))
     return None
+
+
+def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    low = text.lower()
+    if "leading a unit" not in low or "model in that unit" not in low:
+        return None
+    hit_re = re.search(r"re-?roll (?:a|any)?\s*hit roll(?:s)? of 1", low, flags=re.IGNORECASE)
+    wound_re = re.search(r"re-?roll (?:a|any)?\s*wound roll(?:s)? of 1", low, flags=re.IGNORECASE)
+    if not (hit_re and wound_re):
+        return None
+    if "melee attack" in low:
+        attack_scope = "melee"
+    elif "ranged attack" in low:
+        attack_scope = "ranged"
+    else:
+        attack_scope = "all"
+    return ("Supported", f"Leading: re-roll Hit/Wound rolls of 1 for {attack_scope} attacks.")
+
+
+def _melee_damage_bonus_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    low = text.lower()
+    if "melee attack" not in low:
+        return None
+    if "damage characteristic" not in low:
+        return None
+    if "monster" not in low or "vehicle" not in low:
+        return None
+    if "target" not in low:
+        return None
+    m = re.search(r"damage characteristic[^.]*?by\s+(\d+)", low, flags=re.IGNORECASE)
+    if not m:
+        m = re.search(r"add\s+(\d+)\s+to\s+the\s+damage characteristic", low, flags=re.IGNORECASE)
+    if not m:
+        return None
+    return ("Supported", f"Melee attacks vs MONSTER/VEHICLE get +{m.group(1)} Damage.")
 
 
 def _transport_disembark_support(description: str) -> Optional[Tuple[str, str]]:
@@ -1277,6 +1351,8 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000009899003": "Timeless Strategist: +1 Battle Focus token if bearer on battlefield.",
         "000009899004": "Gift of Foresight: Command Re-roll for 0CP once per battle round.",
         "000009899005": "Psychic Destroyer: +1 Damage to bearer ranged Psychic weapons.",
+        "000010078003": "Blood-forged Armour: set bearer Save to 2+; gain 1 Blood Tithe point when bearer is destroyed.",
+        "000010078005": "Blade of Endless Bloodshed: +1 A/S/D for bearer melee weapons; melee kill auto-grants 1 Blood Tithe point.",
     }
     if enh_id in explicit:
         return ("Supported", explicit[enh_id])
@@ -1308,6 +1384,7 @@ def _stratagem_support(name: str) -> Tuple[str, str, str]:
         "BLOOD OFFERING": "Sticky objective on unit destruction; Berzerker Warband only.",
         "FRENZIED RESILIENCE": "Fight phase: after enemy targets; WORLD EATERS unit reduces damage by 1.",
         "HACK AND SLASH": "Fight phase: charged WORLD EATERS unit gains +1 AP on melee weapons.",
+        "A WORTHY SKULL": "Fight phase: after CHARACTER/MONSTER kill, gain D3 Blood Tithe points and optionally activate Blood Tithe.",
         "SKULLS FOR THE SKULL THRONE!": "Fight phase: after CHARACTER/MONSTER kill, roll Blessings for a unit-only extra blessing.",
         "UNBOUND ARROGANCE": "Coterie of the Conceited pledge increases by 1 (once per battle round).",
     }
@@ -1798,8 +1875,7 @@ def _build_faction_content(
             units = set(entry.get("units") or set())
             if units:
                 kept = {u for u in units if u not in virtual_unit_names}
-                if faction_id == "SM":
-                    kept = {u for u in kept if not _is_kill_team_unit(u)}
+                kept = {u for u in kept if not _is_kill_team_unit(u)}
                 if not kept:
                     continue
                 entry = dict(entry)
@@ -1872,8 +1948,7 @@ def _build_faction_content(
 
     # Datasheet support summary
     ds_units = list(datasheets_by_faction.get(faction_id, []) or [])
-    if faction_id == "SM":
-        ds_units = [ds for ds in ds_units if not _is_kill_team_unit(ds.get("name", ""))]
+    ds_units = [ds for ds in ds_units if not _is_kill_team_unit(ds.get("name", ""))]
     if ds_units:
         ds_units.sort(key=lambda d: (_norm(d.get("name", "")), str(d.get("id", "") or "")))
         ds_rows = []

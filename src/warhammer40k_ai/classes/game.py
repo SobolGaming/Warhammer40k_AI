@@ -164,6 +164,9 @@ class Game:
         self._phoenix_gem_pending: List[Dict[str, Any]] = []
         # World Eaters: Blood Surge shooting snapshots (attacker -> {target: model_count})
         self._blood_surge_shooting_snapshot: Dict['Unit', Dict['Unit', int]] = {}
+        # Drukhari: Pain Parasite snapshots (attacker -> {target: model_count})
+        self._pain_parasite_shooting_snapshot: Dict['Unit', Dict['Unit', int]] = {}
+        self._pain_parasite_fight_snapshot: Dict['Unit', Dict['Unit', int]] = {}
         # Optional in-engine army mustering requests (player1/player2) for setup phase.
         self.army_muster_requests: Dict[str, Any] = {}
 
@@ -173,6 +176,8 @@ class Game:
         self.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_rules)
         # World Eaters: Icon of Khorne (Bloodshed points)
         self.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_bloodshed_points)
+        # World Eaters: Blood Tithe (Khorne Daemonkin detachment)
+        self.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_blood_tithe)
         # Transport core rules (Destroyed Transport -> Disembark + mortals + battleshock)
         self.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_transport_rules)
         # Detachment abilities that trigger on unit movement events
@@ -210,6 +215,10 @@ class Game:
         self.event_system.subscribe("fight_unit_selected", self._on_fight_unit_selected_power_from_pain)
         self.event_system.subscribe("unit_move_started", self._on_unit_move_started_power_from_pain)
         self.event_system.subscribe("charge_declared", self._on_charge_declared_power_from_pain)
+        self.event_system.subscribe("phase_start", self._on_phase_start_power_from_pain)
+        self.event_system.subscribe("phase_end", self._on_phase_end_power_from_pain)
+        self.event_system.subscribe("unit_shooting_resolved", self._on_unit_shooting_resolved_power_from_pain)
+        self.event_system.subscribe("fight_sequence_complete", self._on_fight_sequence_complete_power_from_pain)
         # World Eaters: Blood Surge trigger window
         self.event_system.subscribe("shooting_targets_selected", self._on_shooting_targets_selected_blood_surge)
         self.event_system.subscribe("unit_shooting_resolved", self._on_unit_shooting_resolved_blood_surge)
@@ -1343,6 +1352,42 @@ class Game:
             return
         for t in list(target_units or []):
             self._record_phase_target(t, attacking_unit)
+        # Drukhari: Pain Parasite snapshot for fight sequences.
+        try:
+            army = attacking_unit.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "power_from_pain", None) if army is not None else None
+        if mgr is None:
+            return
+        try:
+            sr = getattr(attacking_unit, "special_rules", None)
+            has_parasite = isinstance(sr, dict) and sr.get("pain_on_kill_heal")
+        except Exception:
+            has_parasite = False
+        if not has_parasite:
+            try:
+                abilities = mgr.get_applicable_pain_ability_names(attacking_unit, trigger="fight", game=self)
+            except Exception:
+                abilities = []
+            has_parasite = any(str(a or "").strip().lower() == "pain parasite" for a in abilities)
+        if not has_parasite:
+            return
+        snapshot: Dict['Unit', int] = {}
+        for target in list(target_units or []):
+            if target is None:
+                continue
+            try:
+                models = target.get_models_for_collision()
+            except Exception:
+                models = list(getattr(target, "models", []) or [])
+            try:
+                count = sum(1 for m in models if getattr(m, "is_alive", False))
+            except Exception:
+                count = 0
+            snapshot[target] = int(count)
+        if snapshot:
+            self._pain_parasite_fight_snapshot[attacking_unit] = snapshot
 
     def _on_shooting_targets_selected_power_from_pain(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:
@@ -1361,6 +1406,29 @@ class Game:
         if mgr is None:
             return
         abilities = mgr.get_applicable_pain_ability_names(attacking_unit, trigger="shooting", game=self)
+        try:
+            sr = getattr(attacking_unit, "special_rules", None)
+            has_parasite = isinstance(sr, dict) and sr.get("pain_on_kill_heal")
+        except Exception:
+            has_parasite = False
+        if not has_parasite:
+            has_parasite = any(str(a or "").strip().lower() == "pain parasite" for a in abilities)
+        if has_parasite:
+            snapshot: Dict['Unit', int] = {}
+            for target in list(target_units or []):
+                if target is None:
+                    continue
+                try:
+                    models = target.get_models_for_collision()
+                except Exception:
+                    models = list(getattr(target, "models", []) or [])
+                try:
+                    count = sum(1 for m in models if getattr(m, "is_alive", False))
+                except Exception:
+                    count = 0
+                snapshot[target] = int(count)
+            if snapshot:
+                self._pain_parasite_shooting_snapshot[attacking_unit] = snapshot
         if not abilities:
             return
         es = getattr(self, "event_system", None)
@@ -1730,6 +1798,337 @@ class Game:
             mgr.maybe_empower_unit_for_trigger(unit, trigger="charge", game=self)
         except Exception:
             return
+
+    def _on_phase_start_power_from_pain(self, player=None, phase=None, **_kwargs) -> None:
+        try:
+            pname = str(getattr(phase, "name", "") or "").strip().upper()
+        except Exception:
+            pname = ""
+        if not pname:
+            return
+
+        # Clear pinned/suppressed at the start of the owner's next Command phase.
+        if pname == "COMMAND_PHASE":
+            owner_name = str(getattr(player, "name", "") or "")
+            if owner_name:
+                try:
+                    current_turn = int(getattr(self, "turn", 0) or 0)
+                except Exception:
+                    current_turn = 0
+                for p in list(getattr(self, "players", []) or []):
+                    army = getattr(p, "army", None)
+                    for u in list(getattr(army, "units", []) or []):
+                        sr = getattr(u, "special_rules", None)
+                        if not isinstance(sr, dict):
+                            continue
+                        if str(sr.get("pain_pinned_owner", "") or "") == owner_name:
+                            try:
+                                pin_turn = int(sr.get("pain_pinned_turn", 0) or 0)
+                            except Exception:
+                                pin_turn = 0
+                            if current_turn > pin_turn:
+                                try:
+                                    u.remove_characteristic_modifiers_by_source("pain_pinned")
+                                except Exception:
+                                    pass
+                                try:
+                                    mods = sr.get("charge_roll_modifiers", None)
+                                    if isinstance(mods, list):
+                                        kept = []
+                                        for item in mods:
+                                            if isinstance(item, dict) and item.get("tag") == "pain_pinned":
+                                                continue
+                                            kept.append(item)
+                                        if kept:
+                                            sr["charge_roll_modifiers"] = kept
+                                        else:
+                                            sr.pop("charge_roll_modifiers", None)
+                                except Exception:
+                                    pass
+                                sr.pop("pain_pinned_owner", None)
+                                sr.pop("pain_pinned_turn", None)
+                                u.special_rules = sr
+                        if str(sr.get("pain_suppressed_owner", "") or "") == owner_name:
+                            try:
+                                sup_turn = int(sr.get("pain_suppressed_turn", 0) or 0)
+                            except Exception:
+                                sup_turn = 0
+                            if current_turn > sup_turn:
+                                for k in ("pain_suppressed_active", "pain_suppressed_owner", "pain_suppressed_turn"):
+                                    sr.pop(k, None)
+                                u.special_rules = sr
+
+        def _maybe_trigger_for_player(owner_player, trigger: str) -> None:
+            if owner_player is None:
+                return
+            army = getattr(owner_player, "army", None)
+            mgr = getattr(army, "power_from_pain", None) if army is not None else None
+            if mgr is None or int(getattr(mgr, "tokens", 0) or 0) <= 0:
+                return
+            es = getattr(self, "event_system", None)
+            try:
+                is_human = bool(getattr(getattr(owner_player, "type", None), "name", "") == "HUMAN")
+            except Exception:
+                is_human = False
+            for unit in list(getattr(army, "units", []) or []):
+                if unit is None:
+                    continue
+                try:
+                    if hasattr(unit, "is_alive") and callable(unit.is_alive) and not unit.is_alive():
+                        continue
+                except Exception:
+                    pass
+                try:
+                    abilities = mgr.get_applicable_pain_ability_names(unit, trigger=trigger, game=self)
+                except Exception:
+                    abilities = []
+                if not abilities:
+                    continue
+                if is_human and es is not None:
+                    try:
+                        subs = getattr(es, "subscribers", {})
+                        if isinstance(subs, dict) and subs.get("pain_token_prompt"):
+                            es.publish(
+                                "pain_token_prompt",
+                                player=owner_player,
+                                unit=unit,
+                                phase_name=str(getattr(self.phase, "name", "") or ""),
+                                trigger=trigger,
+                                abilities=list(abilities),
+                                game=self,
+                            )
+                            continue
+                    except Exception:
+                        pass
+                try:
+                    mgr.maybe_empower_unit_for_trigger(unit, trigger=trigger, game=self)
+                except Exception:
+                    continue
+
+        if pname == "MOVEMENT_PHASE":
+            _maybe_trigger_for_player(player, "movement")
+        elif pname == "SHOOTING_PHASE":
+            _maybe_trigger_for_player(player, "shooting_start")
+        elif pname == "CHARGE_PHASE":
+            _maybe_trigger_for_player(player, "charge_start")
+        elif pname == "FIGHT_PHASE":
+            for p in list(getattr(self, "players", []) or []):
+                _maybe_trigger_for_player(p, "fight_start")
+
+    def _on_phase_end_power_from_pain(self, player=None, phase=None, **_kwargs) -> None:
+        try:
+            pname = str(getattr(phase, "name", "") or "").strip().upper()
+        except Exception:
+            pname = ""
+        if pname != "FIGHT_PHASE":
+            return
+        # Opponent's Fight phase end triggers (Fade Away).
+        for p in list(getattr(self, "players", []) or []):
+            if p is None or p is player:
+                continue
+            army = getattr(p, "army", None)
+            mgr = getattr(army, "power_from_pain", None) if army is not None else None
+            if mgr is None or int(getattr(mgr, "tokens", 0) or 0) <= 0:
+                continue
+            es = getattr(self, "event_system", None)
+            try:
+                is_human = bool(getattr(getattr(p, "type", None), "name", "") == "HUMAN")
+            except Exception:
+                is_human = False
+            for unit in list(getattr(army, "units", []) or []):
+                if unit is None:
+                    continue
+                try:
+                    abilities = mgr.get_applicable_pain_ability_names(unit, trigger="opp_fight_end", game=self)
+                except Exception:
+                    abilities = []
+                if not abilities:
+                    continue
+                if is_human and es is not None:
+                    try:
+                        subs = getattr(es, "subscribers", {})
+                        if isinstance(subs, dict) and subs.get("pain_token_prompt"):
+                            es.publish(
+                                "pain_token_prompt",
+                                player=p,
+                                unit=unit,
+                                phase_name=str(getattr(self.phase, "name", "") or ""),
+                                trigger="opp_fight_end",
+                                abilities=list(abilities),
+                                game=self,
+                            )
+                            continue
+                    except Exception:
+                        pass
+                try:
+                    mgr.maybe_empower_unit_for_trigger(unit, trigger="opp_fight_end", game=self)
+                except Exception:
+                    continue
+
+    def _on_unit_shooting_resolved_power_from_pain(self, attacker_unit=None, hits_by_target=None, **_kwargs) -> None:
+        if attacker_unit is None:
+            return
+        try:
+            sr = getattr(attacker_unit, "special_rules", None)
+        except Exception:
+            sr = None
+        if not isinstance(sr, dict):
+            sr = {}
+
+        def _is_monster_or_vehicle(unit) -> bool:
+            try:
+                if bool(getattr(unit, "is_monster", False)) or bool(getattr(unit, "is_vehicle", False)):
+                    return True
+            except Exception:
+                pass
+            try:
+                return bool(unit.has_keyword("Monster") or unit.has_keyword("Vehicle"))
+            except Exception:
+                return False
+
+        def _pick_target(filter_fn=None):
+            best = None
+            best_hits = -1
+            for tgt, hits in (hits_by_target or {}).items():
+                try:
+                    h = int(hits or 0)
+                except Exception:
+                    h = 0
+                if h <= 0:
+                    continue
+                if filter_fn is not None and not filter_fn(tgt):
+                    continue
+                if h > best_hits:
+                    best_hits = h
+                    best = tgt
+            return best
+
+        if hits_by_target and (sr.get("pain_shoot_pin") or sr.get("pain_shoot_no_cover") or sr.get("pain_shoot_suppress")):
+            try:
+                owner_name = attacker_unit.get_parent_army().player.name
+            except Exception:
+                owner_name = ""
+            try:
+                current_turn = int(getattr(self, "turn", 0) or 0)
+            except Exception:
+                current_turn = 0
+
+            if sr.get("pain_shoot_pin"):
+                target = _pick_target(lambda t: not _is_monster_or_vehicle(t))
+                if target is not None:
+                    try:
+                        from ..utility.modifiers import Modifier, ModifierOp
+                        target.add_characteristic_modifier(
+                            "movement",
+                            Modifier(ModifierOp.ADD, -2, source="pain_pinned"),
+                        )
+                    except Exception:
+                        pass
+                    try:
+                        tsr = getattr(target, "special_rules", None)
+                        if not isinstance(tsr, dict):
+                            tsr = {}
+                        mods = list(tsr.get("charge_roll_modifiers", []) or [])
+                        mods.append({
+                            "value": -2,
+                            "source": "Nowhere to Run (Pain)",
+                            "tag": "pain_pinned",
+                        })
+                        tsr["charge_roll_modifiers"] = mods
+                        tsr["pain_pinned_owner"] = owner_name
+                        tsr["pain_pinned_turn"] = int(current_turn)
+                        target.special_rules = tsr
+                    except Exception:
+                        pass
+
+            if sr.get("pain_shoot_no_cover"):
+                target = _pick_target()
+                if target is not None:
+                    try:
+                        tsr = getattr(target, "special_rules", None)
+                        if not isinstance(tsr, dict):
+                            tsr = {}
+                        tsr["pain_no_cover_active"] = True
+                        tsr["pain_no_cover_expires_phase"] = str(getattr(self.phase, "name", "") or "").strip().upper()
+                        target.special_rules = tsr
+                    except Exception:
+                        pass
+
+            if sr.get("pain_shoot_suppress"):
+                target = _pick_target()
+                if target is not None:
+                    try:
+                        tsr = getattr(target, "special_rules", None)
+                        if not isinstance(tsr, dict):
+                            tsr = {}
+                        tsr["pain_suppressed_active"] = True
+                        tsr["pain_suppressed_owner"] = owner_name
+                        tsr["pain_suppressed_turn"] = int(current_turn)
+                        target.special_rules = tsr
+                    except Exception:
+                        pass
+
+        # Pain Parasite healing on kills after shooting.
+        snapshot = self._pain_parasite_shooting_snapshot.pop(attacker_unit, None)
+        if snapshot and sr.get("pain_on_kill_heal"):
+            try:
+                army = attacker_unit.get_parent_army()
+            except Exception:
+                army = None
+            mgr = getattr(army, "power_from_pain", None) if army is not None else None
+            if mgr is not None:
+                for target_unit, before_count in list(snapshot.items()):
+                    if target_unit is None:
+                        continue
+                    try:
+                        models = target_unit.get_models_for_collision()
+                    except Exception:
+                        models = list(getattr(target_unit, "models", []) or [])
+                    try:
+                        after_count = sum(1 for m in models if getattr(m, "is_alive", False))
+                    except Exception:
+                        after_count = int(before_count or 0)
+                    if int(after_count) < int(before_count or 0):
+                        try:
+                            mgr.apply_pain_parasite_heal(attacker_unit, game=self)
+                        except Exception:
+                            pass
+                        break
+
+    def _on_fight_sequence_complete_power_from_pain(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        try:
+            sr = getattr(unit, "special_rules", None)
+        except Exception:
+            sr = None
+        snapshot = self._pain_parasite_fight_snapshot.pop(unit, None)
+        if not snapshot or not (isinstance(sr, dict) and sr.get("pain_on_kill_heal")):
+            return
+        try:
+            army = unit.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "power_from_pain", None) if army is not None else None
+        if mgr is None:
+            return
+        for target_unit, before_count in list(snapshot.items()):
+            if target_unit is None:
+                continue
+            try:
+                models = target_unit.get_models_for_collision()
+            except Exception:
+                models = list(getattr(target_unit, "models", []) or [])
+            try:
+                after_count = sum(1 for m in models if getattr(m, "is_alive", False))
+            except Exception:
+                after_count = int(before_count or 0)
+            if int(after_count) < int(before_count or 0):
+                try:
+                    mgr.apply_pain_parasite_heal(unit, game=self)
+                except Exception:
+                    pass
+                break
 
     def _maybe_prompt_power_from_pain_command_phase(self) -> None:
         try:
@@ -2166,12 +2565,49 @@ class Game:
                             "pain_empowered_expires_phase",
                             "pain_empowered_sources",
                             "pain_reroll_hit",
+                            "pain_reroll_hit_ranged",
                             "pain_reroll_advance",
                             "pain_reroll_charge",
                             "pain_melee_strength_bonus",
+                            "pain_melee_strength_set",
                             "pain_melee_ap_bonus",
                             "pain_melee_wound_bonus",
+                            "pain_melee_attacks_bonus",
+                            "pain_melee_attacks_set_non_character",
+                            "pain_melee_hazardous_non_character",
+                            "pain_experimental_enhancements_choice",
+                            "pain_charge_after_advance",
+                            "pain_charge_after_fall_back",
+                            "pain_lethal_hits",
+                            "pain_lethal_hits_melee",
+                            "pain_sustained_hits_value",
+                            "pain_archon_poisoned_tongue_choice",
+                            "pain_assassins_poisons_active",
+                            "pain_ignores_cover_ranged",
+                            "pain_melee_wound_roll_defense_mod",
+                            "pain_sustained_hits_ranged_vs_vehicle",
+                            "pain_sustained_hits_ranged_vs_non_vehicle",
+                            "pain_rapid_fire_weapon_bonus",
+                            "pain_beast_reroll_hit",
+                            "pain_beast_reroll_wound",
+                            "pain_advance_no_roll",
+                            "pain_advance_fixed_bonus",
+                            "pain_fight_on_death_2plus",
+                            "pain_shoot_pin",
+                            "pain_shoot_no_cover",
+                            "pain_shoot_suppress",
+                            "pain_on_kill_heal",
+                            "pain_rapid_deployment_active",
+                            "pain_reroll_wound_ones",
+                            "pain_reroll_wound_full_if_objective",
+                            "pain_ranged_ap_bonus",
+                            "pain_splinter_racks_active",
+                            "pain_deep_strike_min_distance",
                         ):
+                            sr.pop(k, None)
+                    exp = str(sr.get("pain_no_cover_expires_phase", "") or "").strip().upper()
+                    if exp and exp == pname:
+                        for k in ("pain_no_cover_active", "pain_no_cover_expires_phase"):
                             sr.pop(k, None)
                     exp = str(sr.get("cabal_destinys_ruin_expires_phase", "") or "").strip().upper()
                     if exp and exp == pname:
@@ -2223,6 +2659,9 @@ class Game:
                             continue
                         if str(sr.get("cabal_temporal_surge_no_charge_turn_owner", "") or "") == owner_name:
                             for k in ("cabal_temporal_surge_no_charge_turn_owner", "cabal_temporal_surge_no_charge_turn"):
+                                sr.pop(k, None)
+                        if str(sr.get("pain_swooping_descent_no_charge_turn_owner", "") or "") == owner_name:
+                            for k in ("pain_swooping_descent_no_charge_turn_owner", "pain_swooping_descent_no_charge_turn"):
                                 sr.pop(k, None)
             except Exception:
                 pass
@@ -2709,6 +3148,146 @@ class Game:
             )
         except Exception:
             pass
+
+    def _on_unit_destroyed_blood_tithe(self, unit=None, destroyed_by_unit=None, **_kwargs) -> None:
+        """World Eaters: Blood Tithe points (Khorne Daemonkin detachment)."""
+        if unit is None:
+            return
+
+        def _publish_btp_update(*, player, total, amount, attacker_unit=None, target_unit=None, roll=None, source=""):
+            try:
+                payload = {
+                    "player": player,
+                    "amount": int(amount or 0),
+                    "total": int(total or 0),
+                    "attacker_unit": attacker_unit,
+                    "target_unit": target_unit,
+                }
+                if roll is not None:
+                    payload["roll"] = roll
+                if source:
+                    payload["source"] = source
+                self.event_system.publish("blood_tithe_points_gained", **payload)
+                self.event_system.publish(
+                    "blood_tithe_updated",
+                    player=player,
+                    total=int(total or 0),
+                    active=[a.name for a in we_mgr.get_active_blood_tithe_abilities()],
+                )
+            except Exception:
+                pass
+
+        # Enhancement: Blood-forged Armour (bearer destroyed -> gain 1 BTP).
+        try:
+            bearer_army = unit.get_parent_army()
+        except Exception:
+            bearer_army = None
+        we_mgr = getattr(bearer_army, "world_eaters_detachments", None) if bearer_army is not None else None
+        if we_mgr is not None and getattr(we_mgr, "is_khorne_daemonkin", lambda: False)():
+            try:
+                sr = getattr(unit, "special_rules", None)
+                has_blood_forged = isinstance(sr, dict) and sr.get("enhancement_blood_forged_armour", False)
+            except Exception:
+                has_blood_forged = False
+            if has_blood_forged:
+                try:
+                    if we_mgr.unit_is_blood_tithe_eligible(unit):
+                        total = we_mgr.add_blood_tithe_points(1)
+                        _publish_btp_update(
+                            player=bearer_army.player,
+                            total=total,
+                            amount=1,
+                            attacker_unit=None,
+                            target_unit=unit,
+                            source="Blood-forged Armour",
+                        )
+                except Exception:
+                    pass
+
+        if destroyed_by_unit is None:
+            return
+        try:
+            if destroyed_by_unit.get_parent_army() == unit.get_parent_army():
+                return
+        except Exception:
+            return
+        try:
+            root = destroyed_by_unit.get_attached_unit_root()
+        except Exception:
+            root = destroyed_by_unit
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        if army is None:
+            return
+        we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+        if we_mgr is None or not getattr(we_mgr, "is_khorne_daemonkin", lambda: False)():
+            return
+        try:
+            if not we_mgr.unit_is_blood_tithe_eligible(root):
+                return
+        except Exception:
+            return
+
+        def _attached_unit_has_rule(u, key: str) -> bool:
+            try:
+                root_unit = u.get_attached_unit_root()
+            except Exception:
+                root_unit = u
+            try:
+                members = list(root_unit.get_attached_unit_members() or [])
+            except Exception:
+                members = [root_unit]
+            for member in members:
+                try:
+                    sr = getattr(member, "special_rules", None)
+                    if isinstance(sr, dict) and sr.get(key, False):
+                        return True
+                except Exception:
+                    continue
+            return False
+
+        # Enhancement: Blade of Endless Bloodshed (melee kill -> auto gain 1 BTP).
+        try:
+            wp = _kwargs.get("destroyed_by_weapon_profile", None)
+        except Exception:
+            wp = None
+        is_melee = False
+        try:
+            parent = getattr(wp, "parent_wargear", None)
+            if parent is not None and parent.is_melee():
+                is_melee = True
+        except Exception:
+            is_melee = False
+        if is_melee and _attached_unit_has_rule(root, "enhancement_blade_of_endless_bloodshed"):
+            total = we_mgr.add_blood_tithe_points(1)
+            _publish_btp_update(
+                player=army.player,
+                total=total,
+                amount=1,
+                attacker_unit=root,
+                target_unit=unit,
+                source="Blade of Endless Bloodshed",
+            )
+            return
+
+        try:
+            from warhammer40k_ai.utility.dice import get_roll
+            roll = int(get_roll("D6"))
+        except Exception:
+            roll = 0
+        if roll < 3:
+            return
+        total = we_mgr.add_blood_tithe_points(1)
+        _publish_btp_update(
+            player=army.player,
+            total=total,
+            amount=1,
+            attacker_unit=root,
+            target_unit=unit,
+            roll=int(roll),
+        )
 
     def _on_unit_destroyed_power_from_pain(self, unit=None, **_kwargs) -> None:
         if unit is None:
@@ -4197,6 +4776,15 @@ class Game:
             army = getattr(current_player, "get_army", lambda: None)()
             mgr = getattr(army, "waaagh", None) if army is not None else None
             if mgr is not None:
+                mgr.on_command_phase_start(game=self, player=current_player)
+        except Exception:
+            pass
+        # World Eaters: Blood Tithe spending at the start of your Command phase.
+        try:
+            current_player = self.get_current_player()
+            army = getattr(current_player, "get_army", lambda: None)()
+            mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+            if mgr is not None and hasattr(mgr, "on_command_phase_start"):
                 mgr.on_command_phase_start(game=self, player=current_player)
         except Exception:
             pass
@@ -6723,6 +7311,15 @@ class Game:
             for m, loc in zip(unit.models, snapshot):
                 if loc:
                     m.set_location(*loc)
+
+        if battlefield_edge is None:
+            try:
+                sr = getattr(unit, "special_rules", None)
+                pain_min = float(sr.get("pain_deep_strike_min_distance", 0) or 0) if isinstance(sr, dict) else 0.0
+                if pain_min:
+                    min_enemy_distance = min(float(min_enemy_distance), float(pain_min))
+            except Exception:
+                pass
 
         if not prospective:
             return False

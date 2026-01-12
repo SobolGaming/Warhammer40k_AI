@@ -169,6 +169,33 @@ class TestDrukhariPowerFromPain(unittest.TestCase):
         self.assertTrue(unit.special_rules.get("pain_reroll_advance"))
         self.assertTrue(unit.special_rules.get("pain_reroll_charge"))
 
+    def test_matchless_swiftness_sets_fixed_advance_roll(self):
+        from warhammer40k_ai.classes.unit import Unit
+
+        class _RoundState:
+            advance_roll = None
+
+        class _UnitStub:
+            def __init__(self):
+                self.name = "Scourges"
+                self.round_state = _RoundState()
+                self.special_rules = {"pain_advance_no_roll": True, "pain_advance_fixed_bonus": 8}
+                self._army = SimpleNamespace(player=SimpleNamespace(name="P1"))
+
+            def get_parent_army(self):
+                return self._army
+
+            def _apply_advance_roll_modifiers(self, roll):
+                return roll
+
+        unit = _UnitStub()
+        with patch("warhammer40k_ai.classes.unit.get_roll") as roll_mock:
+            advance = Unit.prepare_advance(unit)
+
+        self.assertEqual(advance, 8)
+        self.assertEqual(unit.round_state.advance_roll, 8)
+        roll_mock.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

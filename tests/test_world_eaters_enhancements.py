@@ -4,6 +4,52 @@ from unittest.mock import patch
 
 
 class TestWorldEatersEnhancements(unittest.TestCase):
+    class _MockDatasheet:
+        def __init__(
+            self,
+            name,
+            *,
+            faction_name="World Eaters",
+            keywords=None,
+            faction_keywords=None,
+            cost=100,
+        ):
+            self.name = name
+            self.faction_data = {"name": faction_name}
+            self.keywords = list(keywords or [])
+            self.faction_keywords = list(faction_keywords or [])
+            self.datasheets_unit_composition = [{"description": "1 Test Model"}]
+            self.datasheets_models_cost = [{"description": "1 model", "cost": cost}]
+            self.datasheets_models = [
+                {
+                    "M": "6",
+                    "T": "4",
+                    "Sv": "6",
+                    "W": "2",
+                    "Ld": "7",
+                    "OC": "1",
+                    "base_size": "32mm",
+                    "inv_sv": "7",
+                    "inv_sv_descr": "none",
+                }
+            ]
+            self.datasheets_wargear = []
+            self.datasheets_options = [{"description": "none"}]
+            self.datasheets_abilities = []
+            self.loadout = "This model is equipped with: nothing"
+            self.attached_to = []
+
+    def _make_unit(self, name, *, faction_name="World Eaters", keywords=None, faction_keywords=None, cost=100):
+        from warhammer40k_ai.classes.unit import Unit
+
+        datasheet = self._MockDatasheet(
+            name,
+            faction_name=faction_name,
+            keywords=keywords,
+            faction_keywords=faction_keywords,
+            cost=cost,
+        )
+        return Unit(datasheet)
     def _hit_result_stub(self, *, hit: bool = False):
         return {
             "roll": 1,
@@ -299,6 +345,96 @@ class TestWorldEatersEnhancements(unittest.TestCase):
         ).apply_to_unit(unit)
 
         self.assertEqual(int(unit.special_rules.get("enhancement_reduce_damage_taken", 0) or 0), 1)
+
+    def test_blood_forged_armour_save_and_btp_on_death(self):
+        from warhammer40k_ai.classes.army import Army
+        from warhammer40k_ai.classes.enhancement import Enhancement
+        from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.classes.player import Player, PlayerType
+
+        army = Army("World Eaters", "Khorne Daemonkin")
+        army.faction_id = "WE"
+        unit = self._make_unit(
+            "Blood Legion",
+            keywords=["BLOOD LEGIONS"],
+            faction_keywords=["WORLD EATERS"],
+        )
+        army.add_unit(unit)
+
+        Enhancement(
+            id="000010078003",
+            name="Blood-forged Armour",
+            faction_id="WE",
+            detachment="Khorne Daemonkin",
+            points=20,
+            description="The bearer has a Save characteristic of 2+. If the bearer is destroyed, you gain 1 Blood Tithe point.",
+        ).apply_to_unit(unit)
+
+        self.assertEqual(int(unit.models[0].save), 2)
+
+        enemy_army = Army("Enemy", "Other")
+        enemy_army.faction_id = "EN"
+        enemy = self._make_unit("Enemy", faction_name="Enemy", faction_keywords=["ENEMY"])
+        enemy_army.add_unit(enemy)
+
+        bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
+        game = Game(bf, players=[
+            Player("P1", player_type=PlayerType.HUMAN, army=army),
+            Player("P2", player_type=PlayerType.AI, army=enemy_army),
+        ])
+
+        game.event_system.publish("unit_destroyed", unit=unit, destroyed_by_unit=enemy)
+        self.assertEqual(int(army.world_eaters_detachments.blood_tithe_points), 1)
+
+    def test_blade_of_endless_bloodshed_auto_btp_on_melee_kill(self):
+        from warhammer40k_ai.classes.army import Army
+        from warhammer40k_ai.classes.enhancement import Enhancement
+        from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.classes.player import Player, PlayerType
+
+        army = Army("World Eaters", "Khorne Daemonkin")
+        army.faction_id = "WE"
+        unit = self._make_unit(
+            "Champion",
+            keywords=["WORLD EATERS"],
+            faction_keywords=["WORLD EATERS"],
+        )
+        army.add_unit(unit)
+
+        Enhancement(
+            id="000010078005",
+            name="Blade of Endless Bloodshed",
+            faction_id="WE",
+            detachment="Khorne Daemonkin",
+            points=15,
+            description="Add 1 to the Attacks, Strength and Damage characteristics of the bearers melee weapons.",
+        ).apply_to_unit(unit)
+
+        self.assertEqual(int(unit.special_rules.get("enhancement_melee_attacks_bonus", 0) or 0), 1)
+        self.assertEqual(int(unit.special_rules.get("enhancement_melee_strength_bonus", 0) or 0), 1)
+        self.assertEqual(int(unit.special_rules.get("enhancement_melee_damage_bonus", 0) or 0), 1)
+
+        enemy_army = Army("Enemy", "Other")
+        enemy_army.faction_id = "EN"
+        enemy = self._make_unit("Enemy", faction_name="Enemy", faction_keywords=["ENEMY"])
+        enemy_army.add_unit(enemy)
+
+        bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
+        game = Game(bf, players=[
+            Player("P1", player_type=PlayerType.HUMAN, army=army),
+            Player("P2", player_type=PlayerType.AI, army=enemy_army),
+        ])
+
+        weapon_profile = SimpleNamespace(parent_wargear=SimpleNamespace(is_melee=lambda: True))
+        with patch("warhammer40k_ai.utility.dice.get_roll", return_value=1):
+            game.event_system.publish(
+                "unit_destroyed",
+                unit=enemy,
+                destroyed_by_unit=unit,
+                destroyed_by_weapon_profile=weapon_profile,
+            )
+
+        self.assertEqual(int(army.world_eaters_detachments.blood_tithe_points), 1)
 
 
 if __name__ == "__main__":

@@ -96,6 +96,10 @@ class Enhancement:
         except Exception:
             is_berzerker_warband = False
         try:
+            is_khorne_daemonkin = bool(we_mgr and we_mgr.is_khorne_daemonkin())
+        except Exception:
+            is_khorne_daemonkin = False
+        try:
             is_warhost = bool(ae_mgr and ae_mgr.is_warhost_detachment())
         except Exception:
             is_warhost = False
@@ -137,6 +141,16 @@ class Enhancement:
             unit.special_rules["enhancement_psychic_destroyer_damage_bonus"] = int(
                 unit.special_rules.get("enhancement_psychic_destroyer_damage_bonus", 0) or 0
             ) + 1
+
+        if name == "blood-forged armour" or enh_id == "000010078003":
+            if not is_khorne_daemonkin:
+                return
+            unit.special_rules["enhancement_blood_forged_armour"] = True
+
+        if name == "blade of endless bloodshed" or enh_id == "000010078005":
+            if not is_khorne_daemonkin:
+                return
+            unit.special_rules["enhancement_blade_of_endless_bloodshed"] = True
 
         if name == "timeless strategist" or enh_id == "000009899003":
             if not is_warhost:
