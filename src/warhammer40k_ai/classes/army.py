@@ -843,6 +843,17 @@ class Army:
         sr = getattr(unit, "special_rules", None)
         return bool(isinstance(sr, dict) and sr.get("cannot_be_given_enhancements"))
 
+    def _unit_spawn_only(self, unit: Unit) -> bool:
+        sr = getattr(unit, "special_rules", None)
+        return bool(isinstance(sr, dict) and sr.get("spawn_only"))
+
+    def validate_spawn_only_units(self):
+        for unit in self.units:
+            if self._unit_spawn_only(unit) and not getattr(unit, "spawned_in_battle", False):
+                raise ArmyValidationError(
+                    f"Unit '{unit.name}' is spawn-only and cannot be mustered; it is created by other rules."
+                )
+
     def add_enhancement(self, enhancement, character_unit):
         # Assign an Enhancement to a Character unit
         if not character_unit.is_character or character_unit.is_epic_hero:
@@ -1753,6 +1764,7 @@ class Army:
         self.validate_leaders()
         self.validate_enhancements()
         self.validate_warlord()
+        self.validate_spawn_only_units()
         self.validate_detachment_rules()
         self.validate_space_marine_chapters()
         self.validate_dreadblades()

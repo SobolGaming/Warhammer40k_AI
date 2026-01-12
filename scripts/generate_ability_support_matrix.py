@@ -483,6 +483,15 @@ def _points_support(entries: Sequence[dict]) -> Tuple[str, str]:
 
     return ("Supported", f"{len(base)} cost bucket(s)")
 
+def _is_spawn_only_datasheet(ability_entries: Sequence[dict], points_entries: Sequence[dict]) -> bool:
+    if points_entries:
+        return False
+    for entry in (ability_entries or []):
+        name = str(entry.get("name", "") or "").strip()
+        if _norm(name) == "using sir hekhtur":
+            return True
+    return False
+
 
 def _keywords_support(entries: Sequence[dict]) -> Tuple[str, str]:
     if not entries:
@@ -1044,6 +1053,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("WE", "Rage Embodied (Aura)"): ("Supported", "+1 melee Attacks aura within 6\" for BLOOD LEGIONS."),
         ("WE", "Daemon Lord of Khorne (Aura)"): ("Supported", "+1 to hit in melee aura within 6\" for BLOOD LEGIONS."),
         ("WE", "Blood Surge"): ("Supported", "Opponent Shooting phase: optional D6+2\" move toward closest non-AIRCRAFT enemy; blocked if Battle-shocked/engaged; once per phase."),
+        ("WE", "Frenzy"): ("Supported", "After being targeted, Helbrute can shoot or fight vs the attacker (eligible target check)."),
         ("SM", "Tempormortis"): ("Supported", "Fights First while leading a unit."),
         ("SM", "Pack Leader"): ("Supported", "Unit cannot be your Warlord or be given Enhancements."),
     }
@@ -1984,6 +1994,8 @@ def _build_faction_content(
             wargear_kw_status, wargear_kw_note = _wargear_keywords_support(wargear_by_datasheet.get(dsid, []))
             points_status, points_note = _points_support(models_cost_by_datasheet.get(dsid, []))
             keywords_status, keywords_note = _keywords_support(keywords_by_datasheet.get(dsid, []))
+            if _is_spawn_only_datasheet(ability_entries, models_cost_by_datasheet.get(dsid, [])):
+                points_status, points_note = ("Supported", "")
 
             damaged_w = str(ds.get("damaged_w", "") or "").strip()
             damaged_desc = str(ds.get("damaged_description", "") or "").strip()

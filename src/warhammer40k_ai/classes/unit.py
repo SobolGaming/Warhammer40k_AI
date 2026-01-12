@@ -128,6 +128,7 @@ class Unit:
         self.enhancement = enhancement  # The Enhancement assigned to this unit (if any)
         self.is_warlord = False
         self.parent_army = None
+        self.spawned_in_battle = False  # Spawn-only units should not be mustered.
 
         # Game State specific attributes
         self.models_lost = []
@@ -178,6 +179,12 @@ class Unit:
         # Parse unit-level mustering restrictions encoded on datasheet abilities.
         try:
             self._parse_warlord_enhancement_restrictions()
+        except Exception:
+            # Defensive: never block unit construction due to unsupported/unknown text patterns.
+            pass
+        # Parse spawn-only units that are created by other rules instead of mustering.
+        try:
+            self._parse_spawn_only_restrictions()
         except Exception:
             # Defensive: never block unit construction due to unsupported/unknown text patterns.
             pass
@@ -613,6 +620,7 @@ class Unit:
         r"models\s+in\s+the\s+bearer'?s\s+unit\s+have\s+a\s+leadership\s+characteristic\s+of\s+(\d+)\+?",
         re.IGNORECASE,
     )
+    _SPAWN_ONLY_ABILITY_RE = re.compile(r"^using\s+sir\s+hekhtur$", re.IGNORECASE)
 
     def _parse_warlord_enhancement_restrictions(self) -> None:
         """Parse datasheet abilities that forbid Warlord selection or Enhancements."""
@@ -666,6 +674,28 @@ class Unit:
             self.special_rules["cannot_be_warlord"] = True
         if found_enhancements:
             self.special_rules["cannot_be_given_enhancements"] = True
+
+    def _parse_spawn_only_restrictions(self) -> None:
+        """Flag units that cannot be mustered and only spawn via other rules."""
+        if getattr(self, "special_rules", None) is None:
+            self.special_rules = {}
+
+        try:
+            cost_entries = getattr(self._datasheet, "datasheets_models_cost", None) or []
+        except Exception:
+            cost_entries = []
+        if cost_entries:
+            return
+
+        for ab in list(getattr(self, "possible_abilities", []) or []):
+            try:
+                name = ab if isinstance(ab, str) else (getattr(ab, "name", "") or "")
+            except Exception:
+                name = ""
+            if self._SPAWN_ONLY_ABILITY_RE.search(str(name).strip()):
+                self.special_rules["spawn_only"] = True
+                self.special_rules["spawn_only_reason"] = "USING SIR HEKHTUR + no points data"
+                return
 
     def _refresh_bearer_unit_common_modifiers(self) -> None:
         """Parse common bearer-unit rules that grant charge bonuses or set Leadership."""
