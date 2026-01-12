@@ -1170,6 +1170,7 @@ def _classify_ability(
         return desc_support
     common_support = _bearer_unit_common_support(description)
     leading_support = _leading_unit_common_support(description)
+    unit_hit_reroll_support = _unit_hit_reroll_ones_support(description)
     melee_damage_support = _melee_damage_bonus_support(description)
     transport_support = _transport_disembark_support(description)
     orders_support = _orders_section_support(name, description)
@@ -1196,6 +1197,8 @@ def _classify_ability(
         return common_support
     if leading_support:
         return leading_support
+    if unit_hit_reroll_support:
+        return unit_hit_reroll_support
     if melee_damage_support:
         return melee_damage_support
     if transport_support:
@@ -1337,6 +1340,33 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
     else:
         attack_scope = "all"
     return ("Supported", f"Leading: re-roll Hit/Wound rolls of 1 for {attack_scope} attacks.")
+
+
+def _unit_hit_reroll_ones_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    low = text.lower()
+    if "model in this unit" not in low:
+        return None
+    if "leading a unit" in low:
+        return None
+    if not re.search(r"re-?roll\s+(?:a|any)?\s*hit roll(?:s)? of 1", low, flags=re.IGNORECASE):
+        return None
+    if "melee attack" in low:
+        attack_scope = "melee"
+    elif "ranged attack" in low:
+        attack_scope = "ranged"
+    else:
+        attack_scope = "all"
+    notes = [f"Unit attacks re-roll Hit rolls of 1 for {attack_scope} attacks."]
+    if "objective marker" in low and re.search(r"re-?roll\s+(?:the|a)?\s*hit roll(?:s)?\s*instead", low, flags=re.IGNORECASE):
+        notes.append("If the target is within range of an objective marker, the Hit roll can be re-rolled instead (optional).")
+    return ("Supported", " ".join(notes))
 
 
 def _melee_damage_bonus_support(description: str) -> Optional[Tuple[str, str]]:

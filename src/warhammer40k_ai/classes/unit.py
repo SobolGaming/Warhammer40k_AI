@@ -4841,6 +4841,101 @@ class Unit:
         root._ability_cache[cache_key] = mods
         return mods
 
+    def get_unit_hit_reroll_modifiers(self, attack_type: str) -> dict:
+        """
+        Return unit-level hit re-roll modifiers for this attached unit.
+
+        Supports strict patterns:
+        - Each time a model in this unit makes a ranged/melee/any attack, re-roll a Hit roll of 1.
+        - If that attack targets a unit within range of an objective marker, you can re-roll the Hit roll instead.
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        atype = str(attack_type or "").strip().lower()
+        if atype not in ("melee", "ranged"):
+            atype = "any"
+        cache_key = f"unit_hit_reroll_mods:{atype}"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        mods = {
+            "reroll_hit_ones": False,
+            "reroll_hit_full_if_objective": False,
+            "reroll_hit_reasons": (),
+            "reroll_hit_full_reasons": (),
+        }
+
+        reroll_hit_reasons: list[str] = []
+        reroll_hit_full_reasons: list[str] = []
+        seen_names: set[str] = set()
+
+        reroll_hit_re = re.compile(
+            r"each time a model in this unit makes (?:a|an) (?P<atype>melee|ranged) attack(?:s)?[\s,;:]*.*?re-?roll (?:a|any)?\s*hit roll(?:s)? of 1",
+            re.IGNORECASE,
+        )
+        reroll_hit_any_re = re.compile(
+            r"each time a model in this unit makes (?:a|an) attack(?:s)?[\s,;:]*.*?re-?roll (?:a|any)?\s*hit roll(?:s)? of 1",
+            re.IGNORECASE,
+        )
+        objective_re = re.compile(r"objective marker", re.IGNORECASE)
+        full_reroll_re = re.compile(r"re-?roll\s+(?:the|a)?\s*hit roll(?:s)?\s*instead", re.IGNORECASE)
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        for member in members:
+            for name, desc in member._iter_ability_entries_for_rules():
+                try:
+                    ability_name = str(name or "").replace("’", "'").strip()
+                except Exception:
+                    ability_name = ""
+                name_key = ability_name.lower().strip()
+                if name_key and name_key in seen_names:
+                    continue
+                if name_key:
+                    seen_names.add(name_key)
+                text_src = desc or name or ""
+                text = member._normalize_rules_text(text_src)
+                if not text:
+                    continue
+                low = text.lower()
+                if "model in this unit" not in low:
+                    continue
+                if "leading a unit" in low:
+                    continue
+                if ("re-roll" not in low) and ("reroll" not in low):
+                    continue
+
+                applies = False
+                m = reroll_hit_re.search(low)
+                if m:
+                    if atype == "any" or m.group("atype").lower() == atype:
+                        applies = True
+                elif reroll_hit_any_re.search(low):
+                    applies = True
+
+                if not applies:
+                    continue
+
+                mods["reroll_hit_ones"] = True
+                label = ability_name or "Unit ability"
+                reroll_hit_reasons.append(f"{label}: re-roll Hit rolls of 1")
+
+                if objective_re.search(low) and full_reroll_re.search(low):
+                    mods["reroll_hit_full_if_objective"] = True
+                    reroll_hit_full_reasons.append(f"{label}: re-roll Hit roll (objective)")
+
+        mods["reroll_hit_reasons"] = tuple(reroll_hit_reasons)
+        mods["reroll_hit_full_reasons"] = tuple(reroll_hit_full_reasons)
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = mods
+        return mods
+
     def get_melee_damage_bonus_vs_monster_vehicle(self) -> int:
         """
         Return bonus Damage for melee attacks that target MONSTER or VEHICLE units.

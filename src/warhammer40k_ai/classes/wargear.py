@@ -1676,6 +1676,8 @@ class WargearProfile:
 
         # Attached leader leading bonuses (e.g., Drill Boss)
         lead_mods = None
+        unit_hit_mods = None
+        attack_type = "ranged"
         try:
             unit = attacker.parent_unit
             root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
@@ -1688,6 +1690,11 @@ class WargearProfile:
                 hit_result['modifiers'].extend(list(lead_mods.get("hit_reasons", ()) or ()))
         except Exception:
             lead_mods = None
+        try:
+            unit = attacker.parent_unit
+            unit_hit_mods = unit.get_unit_hit_reroll_modifiers(attack_type)
+        except Exception:
+            unit_hit_mods = None
         
         dice_modifier = min(max(dice_modifier, -1), 1)  # modifications are capped between -1 and 1
         final_needed = base_skill - dice_modifier  # Note: negative dice_modifier makes it harder (higher final_needed)
@@ -1760,6 +1767,86 @@ class WargearProfile:
                     hit_result["reroll"] = rr
                     dice_roll = rr
                     reroll_used = True
+        except Exception:
+            pass
+
+        objective_in_range = False
+        try:
+            if isinstance(unit_hit_mods, dict) and unit_hit_mods.get("reroll_hit_full_if_objective"):
+                unit = attacker.parent_unit
+                army = unit.get_parent_army() if unit is not None else None
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if game is not None and hasattr(game, "_unit_within_range_of_objective"):
+                    objective_in_range = bool(game._unit_within_range_of_objective(target))
+        except Exception:
+            objective_in_range = False
+
+        # Unit abilities: objective upgrade to re-roll the Hit roll instead of re-rolling 1s.
+        try:
+            if objective_in_range and "reroll" not in hit_result:
+                if isinstance(unit_hit_mods, dict) and unit_hit_mods.get("reroll_hit_full_if_objective"):
+                    try:
+                        success = (dice_roll != 1) and (self.skill > 0) and (dice_roll >= final_needed)
+                    except Exception:
+                        success = False
+                    do_reroll = False
+                    try:
+                        unit = attacker.parent_unit
+                        game = unit.get_parent_army().player.game
+                        player = unit.get_parent_army().player
+                        is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                        provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                    except Exception:
+                        is_human = False
+                        provider = None
+                        player = None
+                    reason = None
+                    try:
+                        reasons = list(unit_hit_mods.get("reroll_hit_full_reasons", ()) or ())
+                        if reasons:
+                            reason = reasons[0]
+                    except Exception:
+                        reason = None
+                    if is_human and callable(provider):
+                        try:
+                            do_reroll = bool(provider(
+                                player=player,
+                                unit=unit,
+                                roll_type="hit",
+                                value=dice_roll,
+                                dice=None,
+                                needed=final_needed,
+                                success=success,
+                                reason=reason or "Unit ability (objective)",
+                            ))
+                        except Exception:
+                            do_reroll = False
+                    else:
+                        do_reroll = (not success)
+                    if do_reroll:
+                        rr = _reroll_hit()
+                        reasons = list(unit_hit_mods.get("reroll_hit_full_reasons", ()) or ())
+                        if reasons:
+                            hit_result.setdefault("special_effects", []).extend(reasons)
+                        elif reason:
+                            hit_result.setdefault("special_effects", []).append(reason)
+                        hit_result["reroll"] = rr
+                        dice_roll = rr
+                        reroll_used = True
+        except Exception:
+            pass
+
+        # Unit abilities: re-roll Hit rolls of 1 (skip if objective upgrade is present).
+        try:
+            if dice_roll == 1 and "reroll" not in hit_result:
+                if isinstance(unit_hit_mods, dict) and unit_hit_mods.get("reroll_hit_ones", False):
+                    if not (objective_in_range and unit_hit_mods.get("reroll_hit_full_if_objective")):
+                        rr = _reroll_hit()
+                        hit_result.setdefault("special_effects", []).extend(list(unit_hit_mods.get("reroll_hit_reasons", ()) or ()))
+                        hit_result["reroll_of_one"] = 1
+                        hit_result["reroll"] = rr
+                        dice_roll = rr
+                        reroll_used = True
         except Exception:
             pass
 
