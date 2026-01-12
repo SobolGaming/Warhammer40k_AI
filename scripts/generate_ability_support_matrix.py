@@ -156,8 +156,13 @@ def _desc_block(rules_text: str, engine_text: str) -> str:
 
 def _engine_block(engine_text: str) -> str:
     engine = _escape(engine_text or "-")
-    body = f"<strong>Engine:</strong> {engine}"
-    return _details("Description", body)
+    return f"<strong>Engine:</strong> {engine}"
+
+
+def _detachment_has_restrictions(det_id: str, det_name: str) -> bool:
+    if str(det_id or "").strip() == "000001043":
+        return False
+    return True
 
 
 def _normalize_token(token: str) -> str:
@@ -878,7 +883,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Sensational Performance": ("Supported", "Court of the Phoenician: optional +1 S/AP on charge."),
         "Master of the Pageant": ("Supported", "Court of the Phoenician: once per round -1 CP stratagem cost."),
         "Relentless Rage": ("Supported", "Berzerker Warband: on charge, melee weapons gain +1A/+2S until end of turn."),
-        "Blood Tithe": ("Supported", "Khorne Daemonkin: gain BTP on 3+ for eligible kills; spend BTP to activate Enraged Abjuration, Daemonic Rage, Boon of Blood, or Might of Khorne (command phase limit + A Worthy Skull fight-phase activation)."),
+        "Blood Tithe": (
+            "Supported",
+            "Khorne Daemonkin: gain BTP on 3+ for eligible kills; spend BTP to activate Enraged Abjuration, Daemonic Rage, Boon of Blood, or Might of Khorne (command phase limit + A Worthy Skull fight-phase activation). Restriction enforced during army validation.",
+        ),
         "Martial Grace": ("Supported", "Warhost: +1 Battle Focus token; Swift as the Wind +1\" move; +1 to D6 Agile Manoeuvre rolls."),
     }
     return {_norm(name): val for name, val in raw.items()}
@@ -1681,10 +1689,14 @@ def _build_faction_content(
     unit_comp_by_datasheet: Dict[str, List[dict]],
     datasheet_support_overrides: Dict[Tuple[str, str], Tuple[str, str]],
     virtual_unit_names: set[str],
-) -> Tuple[str, int, int]:
+) -> Tuple[str, int, int, int, int, int, int]:
     faction_name = str(meta.get("faction_name", "") or faction_id)
     faction_items: List[Tuple[str, str]] = []
     faction_body: List[str] = []
+    det_supported = 0
+    det_total = 0
+    ds_supported = 0
+    ds_total = 0
 
     # Army rules
     army_rule_rows = []
@@ -1740,9 +1752,13 @@ def _build_faction_content(
     if dets:
         faction_body.append("## Detachments")
         for det in dets:
+            det_total += 1
             det_name = str(det.get("name", "") or "Detachment")
             det_id = str(det.get("id", "") or "").strip()
             det_body: List[str] = []
+            det_rule_statuses: List[str] = []
+            det_enh_statuses: List[str] = []
+            det_strat_statuses: List[str] = []
 
             # Detachment abilities
             det_ability_rows = []
@@ -1753,6 +1769,7 @@ def _build_faction_content(
                 ability_id = str(ability.get("id", "") or "")
                 status, notes = _classify_ability(name, desc, ability_id=ability_id, faction_id=faction_id)
                 faction_items.append((status, name))
+                det_rule_statuses.append(status)
                 det_ability_rows.append(
                     (
                         [
@@ -1770,12 +1787,15 @@ def _build_faction_content(
                 det_body.append("")
 
             det_restrictions = sorted({r for r in det_restrictions if r}, key=str.lower)
+            if not _detachment_has_restrictions(det_id, det_name):
+                det_restrictions = []
             if det_restrictions:
                 det_restriction_rows = []
                 for restriction in det_restrictions:
                     status, notes = _classify_ability(restriction, "", faction_id=faction_id)
                     rules_text, engine_text = _restriction_rule_and_engine(restriction, abilities, faction_id)
                     faction_items.append((status, restriction))
+                    det_rule_statuses.append(status)
                     det_restriction_rows.append(
                         (
                             [
@@ -1799,6 +1819,7 @@ def _build_faction_content(
                     desc = enh.get("description", "") or ""
                     enh_id = str(enh.get("id", "") or "")
                     status, notes = _enhancement_support(name, enh_id, desc)
+                    det_enh_statuses.append(status)
                     enh_rows.append(
                         (
                             [
@@ -1827,6 +1848,7 @@ def _build_faction_content(
                 strat_rows = []
                 for s in det_strats:
                     status, notes, _ = _stratagem_support(s.get("name", ""))
+                    det_strat_statuses.append(status)
                     strat_rows.append(
                         (
                             [
@@ -1855,6 +1877,17 @@ def _build_faction_content(
                 det_body.append("_No detachment data available._")
             faction_body.append(_details_raw(_escape(det_name), "\n".join(det_body)))
             faction_body.append("")
+            det_rules_supported = bool(det_rule_statuses) and all(
+                _status_is_supported(status) for status in det_rule_statuses
+            )
+            det_enh_supported = (not det_enh_statuses) or all(
+                _status_is_supported(status) for status in det_enh_statuses
+            )
+            det_strat_supported = (not det_strat_statuses) or all(
+                _status_is_supported(status) for status in det_strat_statuses
+            )
+            if det_rules_supported and det_enh_supported and det_strat_supported:
+                det_supported += 1
 
     # Datasheet abilities
     ds_ability_rows = []
@@ -1941,6 +1974,7 @@ def _build_faction_content(
     ds_units = [ds for ds in ds_units if not _is_kill_team_unit(ds.get("name", ""))]
     if ds_units:
         ds_units.sort(key=lambda d: (_norm(d.get("name", "")), str(d.get("id", "") or "")))
+        ds_total = len(ds_units)
         ds_rows = []
         for ds in ds_units:
             dsid = str(ds.get("id", "") or "").strip()
@@ -2006,6 +2040,8 @@ def _build_faction_content(
                 categories=categories,
                 overrides=datasheet_support_overrides,
             )
+            if _status_is_supported(status):
+                ds_supported += 1
             ds_rows.append(
                 (
                     [
@@ -2039,7 +2075,15 @@ def _build_faction_content(
         ),
         "",
     ]
-    return "\n".join(header + faction_body).rstrip() + "\n", supported, total
+    return (
+        "\n".join(header + faction_body).rstrip() + "\n",
+        supported,
+        total,
+        det_supported,
+        det_total,
+        ds_supported,
+        ds_total,
+    )
 
 
 def _build_matrix() -> str:
@@ -2376,7 +2420,7 @@ def _build_matrix() -> str:
         if faction_id not in SUPPORTED_FACTION_IDS:
             continue
         faction_name = str(meta.get("faction_name", "") or faction_id)
-        content, supported, total = _build_faction_content(
+        content, supported, total, det_supported, det_total, ds_supported, ds_total = _build_faction_content(
             faction_id=faction_id,
             meta=meta,
             abilities=abilities,
@@ -2402,24 +2446,38 @@ def _build_matrix() -> str:
         out_path = os.path.join(FACTION_DOCS_DIR, f"{slug}.md")
         with open(out_path, "w", encoding="utf-8") as f:
             f.write(content)
-        summary_entries.append((faction_name, supported, total, rel_path))
+        summary_entries.append(
+            (faction_name, supported, total, det_supported, det_total, ds_supported, ds_total, rel_path)
+        )
 
     summary_entries.sort(key=lambda t: t[0].lower())
-    for faction_name, supported, total, rel_path in summary_entries:
+    for faction_name, supported, total, det_supported, det_total, ds_supported, ds_total, rel_path in summary_entries:
         status = _summary_status(supported, total)
         summary_rows.append(
             (
                 [
                     _escape(faction_name),
                     _escape(_summary_icon(supported, total)),
-                    _escape(f"{supported} out of {total}"),
+                    _escape(f"{det_supported} out of {det_total}"),
+                    _escape(f"{ds_supported} out of {ds_total}"),
                     f"<a href=\"{_escape(rel_path)}\">View</a>",
                 ],
                 status,
             )
         )
     lines.append("## Factions")
-    lines.append(_table(["Faction", "Status", "Supported", "Link"], summary_rows))
+    lines.append(
+        _table(
+            [
+                "Faction",
+                "Status",
+                "Supported Detachments (X out of Y)",
+                "Supported Datasheets (X out of Y)",
+                "Link",
+            ],
+            summary_rows,
+        )
+    )
 
     return "\n".join(lines).rstrip() + "\n"
 
