@@ -7468,17 +7468,16 @@ class Unit:
             )
             successful_attacks += weapon_attacks
 
-        if hit_tracker:
-            try:
-                game = self.get_parent_army().player.game
-                if game is not None and hasattr(game, "event_system"):
-                    game.event_system.publish(
-                        "unit_shooting_resolved",
-                        attacker_unit=self,
-                        hits_by_target=dict(hit_tracker),
-                    )
-            except Exception:
-                pass
+        try:
+            game = self.get_parent_army().player.game
+            if game is not None and hasattr(game, "event_system"):
+                game.event_system.publish(
+                    "unit_shooting_resolved",
+                    attacker_unit=self,
+                    hits_by_target=dict(hit_tracker),
+                )
+        except Exception:
+            pass
             
         # Report shooting results
         if successful_attacks > 0:
@@ -10984,6 +10983,31 @@ class Unit:
             self._ability_cache = {}
         self._ability_cache['blood_surge'] = found
         return found
+
+    def has_frenzy(self) -> bool:
+        """True if this unit has the Helbrute-style Frenzy ability (shoot or fight vs the triggering unit)."""
+        if 'frenzy' in getattr(self, '_ability_cache', {}):
+            return bool(self._ability_cache['frenzy'])
+
+        found = False
+        try:
+            for name, desc in self._iter_ability_entries_for_rules(model=None):
+                text = self._normalize_rules_text(f"{name} {desc}").lower()
+                if "frenzy" not in text:
+                    continue
+                if "can either shoot or fight" not in text:
+                    continue
+                if "only target that enemy unit" not in text:
+                    continue
+                found = True
+                break
+        except Exception:
+            found = False
+
+        if not hasattr(self, '_ability_cache'):
+            self._ability_cache = {}
+        self._ability_cache['frenzy'] = bool(found)
+        return bool(found)
 
     def can_reroll_blood_surge_roll(self) -> bool:
         """Check for a leader-provided reroll to the Blood Surge D6 (e.g., Forwards, for Blood!)."""

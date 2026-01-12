@@ -164,6 +164,9 @@ class Game:
         self._phoenix_gem_pending: List[Dict[str, Any]] = []
         # World Eaters: Blood Surge shooting snapshots (attacker -> {target: model_count})
         self._blood_surge_shooting_snapshot: Dict['Unit', Dict['Unit', int]] = {}
+        # World Eaters: Frenzy (Helbrute) target snapshots (attacker -> [targets])
+        self._frenzy_shooting_targets: Dict['Unit', List['Unit']] = {}
+        self._frenzy_fight_targets: Dict['Unit', List['Unit']] = {}
         # Drukhari: Pain Parasite snapshots (attacker -> {target: model_count})
         self._pain_parasite_shooting_snapshot: Dict['Unit', Dict['Unit', int]] = {}
         self._pain_parasite_fight_snapshot: Dict['Unit', Dict['Unit', int]] = {}
@@ -222,6 +225,11 @@ class Game:
         # World Eaters: Blood Surge trigger window
         self.event_system.subscribe("shooting_targets_selected", self._on_shooting_targets_selected_blood_surge)
         self.event_system.subscribe("unit_shooting_resolved", self._on_unit_shooting_resolved_blood_surge)
+        # World Eaters: Frenzy (Helbrute)
+        self.event_system.subscribe("shooting_targets_selected", self._on_shooting_targets_selected_frenzy)
+        self.event_system.subscribe("fight_targets_selected", self._on_fight_targets_selected_frenzy)
+        self.event_system.subscribe("unit_shooting_resolved", self._on_unit_shooting_resolved_frenzy)
+        self.event_system.subscribe("fight_attacks_resolved", self._on_fight_attacks_resolved_frenzy)
         # Imperial Knights: Bondsman ongoing effects
         self.event_system.subscribe("phase_start", self._on_phase_start_bondsman)
         self.event_system.subscribe("unit_shooting_resolved", self._on_unit_shooting_resolved_bondsman)
@@ -872,6 +880,8 @@ class Game:
         """Reset phase-scoped target tracking at the start of each phase."""
         self.phase_targeted_units = {}
         self.phase_charge_targets = {}
+        self._frenzy_shooting_targets = {}
+        self._frenzy_fight_targets = {}
 
     def _record_phase_target(self, target_unit=None, attacker_unit=None) -> None:
         if target_unit is None or attacker_unit is None:
@@ -1620,6 +1630,350 @@ class Game:
                     target_unit.mark_blood_surge_used(self)
                 except Exception:
                     pass
+
+    def _on_shooting_targets_selected_frenzy(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None:
+            return
+        if not list(target_units or []):
+            return
+        if not self.is_shooting_phase():
+            return
+        self._frenzy_shooting_targets[attacking_unit] = list(target_units)
+
+    def _on_fight_targets_selected_frenzy(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None:
+            return
+        if not list(target_units or []):
+            return
+        if not self.is_fight_phase():
+            return
+        self._frenzy_fight_targets[attacking_unit] = list(target_units)
+
+    def _on_unit_shooting_resolved_frenzy(self, attacker_unit=None, **_kwargs) -> None:
+        if attacker_unit is None:
+            return
+        if not self.is_shooting_phase():
+            return
+        targets = self._frenzy_shooting_targets.pop(attacker_unit, None)
+        if not targets:
+            return
+        for target_unit in list(targets):
+            self._maybe_trigger_frenzy(target_unit, attacker_unit, phase_name="SHOOTING_PHASE")
+
+    def _on_fight_attacks_resolved_frenzy(self, unit=None, target_unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        if not self.is_fight_phase():
+            return
+        targets = self._frenzy_fight_targets.pop(unit, None)
+        if not targets and target_unit is not None:
+            targets = [target_unit]
+        if not targets:
+            return
+        for tgt in list(targets):
+            self._maybe_trigger_frenzy(tgt, unit, phase_name="FIGHT_PHASE")
+
+    def _maybe_trigger_frenzy(self, frenzy_unit=None, attacker_unit=None, *, phase_name: str = "") -> None:
+        if frenzy_unit is None or attacker_unit is None:
+            return
+        try:
+            if not frenzy_unit.is_alive():
+                return
+        except Exception:
+            return
+        try:
+            if not frenzy_unit.has_frenzy():
+                return
+        except Exception:
+            return
+        try:
+            if frenzy_unit.get_parent_army() == attacker_unit.get_parent_army():
+                return
+        except Exception:
+            return
+
+        options = self._frenzy_available_actions(frenzy_unit, attacker_unit, phase_name=phase_name)
+        if not options:
+            return
+
+        try:
+            player = frenzy_unit.get_parent_army().player
+        except Exception:
+            player = None
+        es = getattr(self, "event_system", None)
+        try:
+            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+        except Exception:
+            is_human = False
+
+        if is_human and es is not None:
+            try:
+                subs = getattr(es, "subscribers", {})
+                if isinstance(subs, dict) and subs.get("frenzy_prompt"):
+                    es.publish(
+                        "frenzy_prompt",
+                        player=player,
+                        unit=frenzy_unit,
+                        attacker_unit=attacker_unit,
+                        phase_name=str(phase_name or getattr(self.phase, "name", "") or ""),
+                        options=list(options),
+                        game=self,
+                    )
+                    return
+            except Exception:
+                pass
+
+        if player is None:
+            return
+
+        ctx = {
+            "unit": frenzy_unit,
+            "attacker_unit": attacker_unit,
+            "phase_name": str(phase_name or getattr(self.phase, "name", "") or ""),
+            "options": list(options),
+        }
+        choice = None
+        try:
+            choice = player._choose_optional_value("FRENZY_ACTION", list(options), ctx)
+        except Exception:
+            choice = None
+        if choice not in options:
+            choice = None
+
+        if choice is None:
+            if "fight" in options:
+                choice = "fight"
+            elif "shoot" in options:
+                choice = "shoot"
+
+        if choice == "shoot":
+            self._execute_frenzy_shooting(frenzy_unit, attacker_unit)
+        elif choice == "fight":
+            self._execute_frenzy_fight(frenzy_unit, attacker_unit, phase_name=phase_name)
+
+    def _frenzy_available_actions(self, frenzy_unit, attacker_unit, *, phase_name: str = "") -> List[str]:
+        if frenzy_unit is None or attacker_unit is None:
+            return []
+        try:
+            if not frenzy_unit.is_alive():
+                return []
+        except Exception:
+            return []
+        try:
+            if not attacker_unit.is_alive():
+                return []
+        except Exception:
+            return []
+        try:
+            if frenzy_unit.get_parent_army() == attacker_unit.get_parent_army():
+                return []
+        except Exception:
+            return []
+
+        phase_key = str(phase_name or getattr(self.phase, "name", "") or "").strip().upper()
+        if phase_key == "SHOOTING_PHASE":
+            if not self.is_shooting_phase():
+                return []
+            try:
+                attacker_player = attacker_unit.get_parent_army().player
+                defender_player = frenzy_unit.get_parent_army().player
+                if attacker_player is None or defender_player is None:
+                    return []
+                if self.get_current_player() is not attacker_player:
+                    return []
+                if attacker_player is defender_player:
+                    return []
+            except Exception:
+                return []
+        elif phase_key == "FIGHT_PHASE":
+            if not self.is_fight_phase():
+                return []
+        else:
+            return []
+
+        options: List[str] = []
+        if self._frenzy_has_eligible_shot(frenzy_unit, attacker_unit):
+            options.append("shoot")
+        if self._frenzy_can_fight_target(frenzy_unit, attacker_unit, phase_name=phase_key):
+            options.append("fight")
+        return options
+
+    def _frenzy_can_fight_target(self, frenzy_unit, attacker_unit, *, phase_name: str = "") -> bool:
+        if frenzy_unit is None or attacker_unit is None:
+            return False
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return False
+        try:
+            if bool(getattr(attacker_unit, "is_aircraft", False)) and not bool(getattr(frenzy_unit, "is_flying", False)):
+                return False
+            if bool(getattr(frenzy_unit, "is_aircraft", False)) and not bool(getattr(attacker_unit, "is_flying", False)):
+                return False
+        except Exception:
+            pass
+
+        try:
+            if game_map.is_within_engagement_range(frenzy_unit, attacker_unit):
+                return True
+        except Exception:
+            pass
+
+        if str(phase_name or "").strip().upper() != "FIGHT_PHASE":
+            return False
+
+        return self._frenzy_can_pile_in_to_target(frenzy_unit, attacker_unit)
+
+    def _frenzy_can_pile_in_to_target(self, frenzy_unit, attacker_unit) -> bool:
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return False
+        from ..utility.constants import PILE_IN_DISTANCE, ENGAGEMENT_RANGE_HORIZONTAL
+        max_distance = PILE_IN_DISTANCE
+        try:
+            override = frenzy_unit.get_fight_phase_move_distance_override("pile_in")
+            if override is not None:
+                max_distance = float(override)
+        except Exception:
+            max_distance = PILE_IN_DISTANCE
+        try:
+            dist = float(game_map.get_distance_between_units(frenzy_unit, attacker_unit))
+        except Exception:
+            return False
+        return dist <= (float(max_distance) + float(ENGAGEMENT_RANGE_HORIZONTAL) + 1e-6)
+
+    def _frenzy_has_eligible_shot(self, frenzy_unit, attacker_unit) -> bool:
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return False
+        try:
+            models = list(getattr(frenzy_unit, "models", []) or [])
+        except Exception:
+            models = []
+        for model in models:
+            if not getattr(model, "is_alive", False):
+                continue
+            for wargear in list(getattr(model, "wargear", []) or []):
+                try:
+                    if not wargear.is_ranged():
+                        continue
+                except Exception:
+                    continue
+                for profile in getattr(wargear, "profiles", {}).values():
+                    try:
+                        if frenzy_unit._can_model_shoot_weapon_at_target(model, profile, attacker_unit, game_map):
+                            return True
+                    except Exception:
+                        continue
+        return False
+
+    def _build_frenzy_shooting_declarations(self, frenzy_unit, attacker_unit) -> List[dict]:
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return []
+        profile_to_models: Dict[Any, List[Any]] = {}
+        try:
+            models = list(getattr(frenzy_unit, "models", []) or [])
+        except Exception:
+            models = []
+        for model in models:
+            if not getattr(model, "is_alive", False):
+                continue
+            best_profile = None
+            best_score = -1.0
+            for wargear in list(getattr(model, "wargear", []) or []):
+                try:
+                    if not wargear.is_ranged():
+                        continue
+                except Exception:
+                    continue
+                for profile in getattr(wargear, "profiles", {}).values():
+                    try:
+                        if not frenzy_unit._can_model_shoot_weapon_at_target(model, profile, attacker_unit, game_map):
+                            continue
+                    except Exception:
+                        continue
+                    try:
+                        score = float(profile.get_damage_potential(attacker_unit))
+                    except Exception:
+                        score = 0.0
+                    if score > best_score:
+                        best_score = score
+                        best_profile = profile
+            if best_profile is not None:
+                profile_to_models.setdefault(best_profile, []).append(model)
+
+        declarations: List[dict] = []
+        for profile, models in profile_to_models.items():
+            declarations.append({
+                "weapon_profile": profile,
+                "target_unit": attacker_unit,
+                "models": models,
+            })
+        return declarations
+
+    def _execute_frenzy_shooting(self, frenzy_unit, attacker_unit) -> bool:
+        declarations = self._build_frenzy_shooting_declarations(frenzy_unit, attacker_unit)
+        if not declarations:
+            return False
+        try:
+            return bool(frenzy_unit.execute_shooting_declarations(declarations, self.map, out_of_phase=True))
+        except Exception:
+            return False
+
+    def _execute_frenzy_fight(self, frenzy_unit, attacker_unit, *, phase_name: str = "") -> bool:
+        if not self._frenzy_can_fight_target(frenzy_unit, attacker_unit, phase_name=str(phase_name or "")):
+            return False
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return False
+
+        engaged = False
+        try:
+            engaged = bool(game_map.is_within_engagement_range(frenzy_unit, attacker_unit))
+        except Exception:
+            engaged = False
+
+        moved = False
+        try:
+            moved = bool(frenzy_unit.pile_in_towards_enemies(game_map))
+        except Exception:
+            moved = False
+        if not engaged and not moved:
+            return False
+
+        try:
+            from .fight_phase_manager import FightPhaseManager
+            mgr = FightPhaseManager(self)
+            attacker_view = mgr._as_attached_view(frenzy_unit)
+            declarations = mgr._auto_select_melee_weapons(attacker_view)
+        except Exception:
+            declarations = []
+        if not declarations:
+            return False
+
+        self.resolve_frenzy_melee_attacks(frenzy_unit, attacker_unit, declarations)
+
+        try:
+            frenzy_unit.consolidate_towards_enemies(game_map)
+        except Exception:
+            pass
+
+        return True
+
+    def resolve_frenzy_melee_attacks(self, frenzy_unit, target_unit, weapon_declarations: List[dict]) -> None:
+        if frenzy_unit is None or target_unit is None:
+            return
+        if not weapon_declarations:
+            return
+        try:
+            from .fight_phase_manager import FightPhaseManager
+            mgr = getattr(self, "fight_phase_manager", None)
+            if mgr is None:
+                mgr = FightPhaseManager(self)
+            attacker_view = mgr._as_attached_view(frenzy_unit)
+            mgr._resolve_melee_attacks(attacker_view, target_unit, weapon_declarations)
+        except Exception:
+            return
 
     def _on_fight_unit_selected_power_from_pain(self, unit=None, selecting_player=None, **_kwargs) -> None:
         if unit is None:

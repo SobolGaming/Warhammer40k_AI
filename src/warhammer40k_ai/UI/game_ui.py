@@ -505,8 +505,9 @@ class GameView:
         # Stratagem interaction dialogs
         screen_width, screen_height = self.screen.get_size()
         # Generic Yes/No prompt dialog (used for optional abilities, confirmations, etc.)
-        from .dialogs import YesNoDialog
+        from .dialogs import YesNoDialog, FrenzyChoiceDialog
         self.yes_no_dialog = YesNoDialog(screen_width, screen_height)
+        self.frenzy_choice_dialog = FrenzyChoiceDialog(screen_width, screen_height)
         self.cult_ambush_point_dialog = BattlefieldPointPickDialog(screen_width, screen_height)
         self.secondary_discard_dialog = SecondaryDiscardDialog(screen_width, screen_height)
         self.overwatch_shooter_dialog = OverwatchShooterDialog(screen_width, screen_height)
@@ -749,15 +750,36 @@ class GameView:
             except Exception:
                 pass
             def _cb(_):
-                # Determine success by checking if any declarations were made and executed
-                # The dialog's execute_shooting already executed and hides itself
-                # We approximate success if the shooter's shot_this_round is now True
-                executed = bool(getattr(shooter_unit.round_state, 'shot_this_round', False))
+                # The dialog executes shooting internally; ask it whether the execution succeeded.
+                executed = bool(getattr(self.shooting_declaration_dialog, "last_execution_success", False))
+                try:
+                    self.shooting_declaration_dialog.force_single_target_unit = None
+                except Exception:
+                    pass
                 on_done(executed)
-            self.shooting_declaration_dialog.show(shooter_unit, _cb, self.game.map, self)
+            self.shooting_declaration_dialog.show(shooter_unit, _cb, self.game.map, self, out_of_phase=True, allow_actions=False)
             # Ensure dialog is visible and receives events immediately
             self.shooting_declaration_dialog.visible = True
         self._request_overwatch_shooting = _request_overwatch_shooting
+
+        def _request_frenzy_shooting(shooter_unit, enemy_unit, on_done):
+            if not hasattr(self, 'shooting_declaration_dialog'):
+                from .dialogs import ShootingDeclarationDialog
+                self.shooting_declaration_dialog = ShootingDeclarationDialog(self.screen.get_width(), self.screen.get_height())
+            try:
+                self.shooting_declaration_dialog.force_single_target_unit = enemy_unit
+            except Exception:
+                pass
+            def _cb(_):
+                executed = bool(getattr(self.shooting_declaration_dialog, "last_execution_success", False))
+                try:
+                    self.shooting_declaration_dialog.force_single_target_unit = None
+                except Exception:
+                    pass
+                on_done(executed)
+            self.shooting_declaration_dialog.show(shooter_unit, _cb, self.game.map, self, out_of_phase=True, allow_actions=False)
+            self.shooting_declaration_dialog.visible = True
+        self._request_frenzy_shooting = _request_frenzy_shooting
 
         # WORLD EATERS: SKULLS FOR THE SKULL THRONE! -> interactive Blessings roll (extra global Blessing)
         def _request_blessings_roll(player, game, context, on_done):
@@ -950,6 +972,8 @@ class GameView:
                 self.game.event_system.subscribe("blood_tithe_updated", self._on_blood_tithe_updated)
                 # World Eaters: Blood Surge prompt on opponent shooting casualties
                 self.game.event_system.subscribe("blood_surge_prompt", self._on_blood_surge_prompt)
+                # World Eaters: Frenzy prompt (Helbrute reactive shoot/fight)
+                self.game.event_system.subscribe("frenzy_prompt", self._on_frenzy_prompt)
                 # Quarry re-pick when quarry is destroyed
                 self.game.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_for_monarch_of_the_hunt)
                 # Battle Focus reactive prompts (Opportunity Seized / Fade Back)
@@ -2420,6 +2444,104 @@ class GameView:
             self.dialog_manager.open(self.yes_no_dialog, modal=True)
         except Exception:
             _finish_and_next()
+
+    # ---------------- Frenzy prompts ----------------
+
+    def _on_frenzy_prompt(self, player=None, unit=None, attacker_unit=None, options=None, game=None, **_kwargs):
+        if player is None or unit is None or attacker_unit is None:
+            return
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return
+        except Exception:
+            return
+
+        game_ctx = game or self.game
+        if game_ctx is None:
+            return
+
+        opts = [str(o or "").strip().lower() for o in (options or [])]
+        opts = [o for o in opts if o in ("shoot", "fight")]
+        if not opts:
+            return
+
+        def _resolve_choice(choice: str):
+            if choice == "shoot":
+                if callable(getattr(self, "_request_frenzy_shooting", None)):
+                    self._request_frenzy_shooting(unit, attacker_unit, lambda _ok: None)
+                else:
+                    try:
+                        game_ctx._execute_frenzy_shooting(unit, attacker_unit)
+                    except Exception:
+                        pass
+                return
+            if choice == "fight":
+                self._start_frenzy_fight_sequence(unit, attacker_unit, game_ctx)
+                return
+
+        if len(opts) == 1:
+            _resolve_choice(opts[0])
+            return
+
+        try:
+            self.frenzy_choice_dialog.show(
+                getattr(unit, "name", "Unit"),
+                getattr(attacker_unit, "name", "Enemy unit"),
+                opts,
+                lambda choice: _resolve_choice(str(choice or "").strip().lower()),
+            )
+            self.dialog_manager.open(self.frenzy_choice_dialog, modal=True)
+        except Exception:
+            return
+
+    def _start_frenzy_fight_sequence(self, unit, attacker_unit, game_ctx):
+        if unit is None or attacker_unit is None or game_ctx is None:
+            return
+        game_map = getattr(game_ctx, "map", None)
+        if game_map is None:
+            try:
+                game_ctx._execute_frenzy_fight(unit, attacker_unit, phase_name=str(getattr(game_ctx.phase, "name", "") or ""))
+            except Exception:
+                pass
+            return
+
+        def _start_consolidate():
+            max_distance = 3.0
+            try:
+                override = unit.get_fight_phase_move_distance_override("consolidate")
+                if override is not None:
+                    max_distance = float(override)
+            except Exception:
+                max_distance = 3.0
+            self.individual_model_movement_dialog.show(
+                unit, 'consolidate', lambda _completed: None, game_map, max_distance
+            )
+
+        def _on_weapon_selection_complete(weapon_declarations):
+            try:
+                game_ctx.resolve_frenzy_melee_attacks(unit, attacker_unit, weapon_declarations)
+            except Exception:
+                pass
+            _start_consolidate()
+
+        def _on_pile_in_complete(_completed: bool):
+            try:
+                if not game_map.is_within_engagement_range(unit, attacker_unit):
+                    return
+            except Exception:
+                pass
+            self.melee_weapon_declaration_dialog.show(unit, _on_weapon_selection_complete, game_map)
+
+        max_distance = 3.0
+        try:
+            override = unit.get_fight_phase_move_distance_override("pile_in")
+            if override is not None:
+                max_distance = float(override)
+        except Exception:
+            max_distance = 3.0
+        self.individual_model_movement_dialog.show(
+            unit, 'pile_in', _on_pile_in_complete, game_map, max_distance
+        )
 
     def _on_oath_of_moment_prompt(self, player=None, game=None, **_kwargs):
         """Prompt human players to select an Oath of Moment target at Command phase start."""
