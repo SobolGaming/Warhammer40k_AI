@@ -3065,6 +3065,85 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Model-specific abilities: re-roll Wound roll vs CHARACTER targets (optional).
+        try:
+            if "reroll" not in wound_result:
+                unit = attacker.parent_unit
+                is_character_target = False
+                try:
+                    is_character_target = bool(target.has_keyword("CHARACTER"))
+                except Exception:
+                    try:
+                        is_character_target = bool(target.has_any_keyword("CHARACTER"))
+                    except Exception:
+                        is_character_target = False
+                if unit is not None and is_character_target:
+                    allow, reason = unit.model_can_reroll_wound_vs_character(attacker)
+                    if allow:
+                        needed = 0
+                        try:
+                            s_val = strength
+                            t_val = target_toughness
+                            if isinstance(s_val, int) and isinstance(t_val, int):
+                                if s_val >= 2 * t_val:
+                                    needed = 2
+                                elif s_val > t_val:
+                                    needed = 3
+                                elif s_val == t_val:
+                                    needed = 4
+                                elif s_val * 2 <= t_val:
+                                    needed = 6
+                                else:
+                                    needed = 5
+                        except Exception:
+                            needed = 0
+                        final_needed = needed
+                        try:
+                            final_needed = int(min(max(int(final_needed) - int(dice_modifier), 2), 6))
+                        except Exception:
+                            pass
+                        try:
+                            success = (dice_roll != 1) and (bool(final_needed) and dice_roll >= int(final_needed))
+                        except Exception:
+                            success = False
+                        do_reroll = False
+                        try:
+                            game = unit.get_parent_army().player.game
+                            player = unit.get_parent_army().player
+                            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                            provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                        except Exception:
+                            is_human = False
+                            provider = None
+                            player = None
+                        if is_human and callable(provider):
+                            try:
+                                do_reroll = bool(provider(
+                                    player=player,
+                                    unit=unit,
+                                    roll_type="wound",
+                                    value=dice_roll,
+                                    dice=None,
+                                    needed=final_needed,
+                                    success=success,
+                                    reason=reason or "Model ability",
+                                ))
+                            except Exception:
+                                do_reroll = False
+                        else:
+                            do_reroll = (not success)
+                        if do_reroll:
+                            rr = _reroll_wound()
+                            label = reason or "Model ability"
+                            wound_result.setdefault("special_effects", []).append(
+                                f"{label}: re-roll Wound roll vs CHARACTER"
+                            )
+                            wound_result["reroll"] = rr
+                            dice_roll = rr
+                            reroll_used = True
+        except Exception:
+            pass
+
         # Emperor's Children: Pledges to the Dark Prince (3+) re-roll Wound rolls of 1.
         try:
             if dice_roll == 1 and "reroll" not in wound_result:

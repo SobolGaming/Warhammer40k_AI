@@ -1166,6 +1166,7 @@ def _classify_ability(
     transport_support = _transport_disembark_support(description)
     orders_support = _orders_section_support(name, description)
     attached_unit_support = _attached_unit_support(name, description)
+    model_reroll_support = _model_reroll_wound_vs_character_support(description)
 
     fid = str(faction_id or "").strip().upper()
     name_norm = _norm(name)
@@ -1195,6 +1196,8 @@ def _classify_ability(
         return orders_support
     if attached_unit_support:
         return attached_unit_support
+    if model_reroll_support:
+        return model_reroll_support
     return ("Not implemented", "")
 
 
@@ -1255,6 +1258,25 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
     if notes:
         return ("Supported", " ".join(notes))
     return None
+
+
+def _model_reroll_wound_vs_character_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'")
+    low = text.lower()
+    if "this model makes an attack" not in low:
+        return None
+    if "wound roll" not in low:
+        return None
+    if ("re-roll" not in low) and ("reroll" not in low):
+        return None
+    if "wound roll of 1" in low or "wound rolls of 1" in low:
+        return None
+    if "targets a character unit" not in low and "targets an character unit" not in low and "targets a character units" not in low:
+        return None
+    return ("Supported", "Model attacks vs CHARACTER units can re-roll the Wound roll (optional).")
 
 
 def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
