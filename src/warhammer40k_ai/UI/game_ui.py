@@ -891,6 +891,126 @@ class GameView:
                 on_chosen(cand[0])
         self._request_summoned_by_slaughter_unit = _request_summoned_by_slaughter_unit
 
+        def _request_blitzing_firepower_unit(player, game, candidates, on_chosen):
+            cand = list(candidates or [])
+            if not cand:
+                mgr = getattr(player, "stratagems", None)
+                try:
+                    if mgr is not None and hasattr(mgr, "_blitzing_firepower_candidates"):
+                        cand = list(mgr._blitzing_firepower_candidates() or [])
+                except Exception:
+                    cand = []
+            if not cand:
+                on_chosen(None)
+                return
+            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
+                self.overwatch_shooter_dialog.show(
+                    cand,
+                    None,
+                    lambda unit: (self.overwatch_shooter_dialog.hide(), on_chosen(unit)),
+                    title="Select Blitzing Firepower Unit",
+                    subtitle="ASURYANI unit that has not shot",
+                )
+            else:
+                on_chosen(cand[0])
+        self._request_blitzing_firepower_unit = _request_blitzing_firepower_unit
+
+        def _request_lightning_fast_reactions_unit(player, game, candidates, on_chosen):
+            cand = list(candidates or [])
+            if not cand:
+                on_chosen(None)
+                return
+            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
+                self.overwatch_shooter_dialog.show(
+                    cand,
+                    None,
+                    lambda unit: (self.overwatch_shooter_dialog.hide(), on_chosen(unit)),
+                    title="Select Lightning-Fast Reactions Unit",
+                    subtitle="Targeted by enemy this phase",
+                )
+            else:
+                on_chosen(cand[0])
+        self._request_lightning_fast_reactions_unit = _request_lightning_fast_reactions_unit
+
+        def _request_webway_tunnel_unit(player, game, candidates, on_chosen):
+            cand = list(candidates or [])
+            if not cand:
+                on_chosen(None)
+                return
+            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
+                self.overwatch_shooter_dialog.show(
+                    cand,
+                    None,
+                    lambda unit: (self.overwatch_shooter_dialog.hide(), on_chosen(unit)),
+                    title="Select Webway Tunnel Unit",
+                    subtitle="ASURYANI INFANTRY within 9\" of an edge",
+                )
+            else:
+                on_chosen(cand[0])
+        self._request_webway_tunnel_unit = _request_webway_tunnel_unit
+
+        def _request_skyborne_sanctuary_targets(player, game, candidates, transport_candidates_by_unit, on_chosen):
+            cand = list(candidates or [])
+            if not cand:
+                on_chosen(None, None)
+                return
+
+            def _pick_transport(unit):
+                if unit is None:
+                    on_chosen(None, None)
+                    return
+                transports = []
+                try:
+                    if isinstance(transport_candidates_by_unit, dict):
+                        transports = list(transport_candidates_by_unit.get(unit) or [])
+                except Exception:
+                    transports = []
+                if not transports:
+                    try:
+                        from ..utility.aura_utils import unit_wholly_within_range_of_unit
+                    except Exception:
+                        unit_wholly_within_range_of_unit = None
+                    for t in player.get_army().units or []:
+                        try:
+                            if t is None or not t.is_alive() or not getattr(t, "deployed", False):
+                                continue
+                            if not getattr(t, "is_transport", False):
+                                continue
+                            if not t.can_transport(unit):
+                                continue
+                            if callable(unit_wholly_within_range_of_unit):
+                                if not unit_wholly_within_range_of_unit(t, unit, 6.0, use_attached_aggregate=True):
+                                    continue
+                            transports.append(t)
+                        except Exception:
+                            continue
+                if not transports:
+                    on_chosen(unit, None)
+                    return
+                if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
+                    self.overwatch_shooter_dialog.show(
+                        transports,
+                        unit,
+                        lambda t: (self.overwatch_shooter_dialog.hide(), on_chosen(unit, t)),
+                        title="Select Skyborne Sanctuary Transport",
+                        subtitle=f"Embark {getattr(unit, 'name', 'unit')} within 6\"",
+                    )
+                else:
+                    on_chosen(unit, transports[0])
+
+            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
+                self.overwatch_shooter_dialog.show(
+                    cand,
+                    None,
+                    lambda unit: (self.overwatch_shooter_dialog.hide(), _pick_transport(unit)),
+                    title="Select Skyborne Sanctuary Unit",
+                    subtitle="Not within Engagement Range and wholly within 6\"",
+                )
+            else:
+                _pick_transport(cand[0])
+
+        self._request_skyborne_sanctuary_targets = _request_skyborne_sanctuary_targets
+
         # Generic yes/no prompt hook for optional ability decisions (e.g., Direct the Slaughter)
         def _request_yes_no(title: str, message: str, yes_label: str, no_label: str, on_chosen):
             self.yes_no_dialog.show(
@@ -1173,6 +1293,8 @@ class GameView:
                 self.game.event_system.subscribe("battle_focus_fade_back_prompt", self._on_battle_focus_fade_back_prompt)
                 # Cabal of Sorcerers: Temporal Surge movement prompt
                 self.game.event_system.subscribe("cabal_temporal_surge_move", self._on_cabal_temporal_surge_move)
+                # Warhost: Fire and Fade reactive movement prompt
+                self.game.event_system.subscribe("fire_and_fade_move", self._on_fire_and_fade_move)
                 # Cabal of Sorcerers: Ritual resolution popup
                 self.game.event_system.subscribe("cabal_ritual_resolved", self._on_cabal_ritual_resolved)
                 # Leagues of Votann: Prioritised Efficiency updates (Yield Points / mode)
@@ -4289,6 +4411,37 @@ class GameView:
         except Exception:
             return
 
+    def _on_fire_and_fade_move(self, player=None, unit=None, max_distance=None, **_kwargs):
+        if player is None or unit is None or self.game is None:
+            return
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return
+        except Exception:
+            return
+        try:
+            if unit.get_parent_army() != player.get_army():
+                return
+        except Exception:
+            return
+        try:
+            max_dist = float(max_distance or 0)
+        except Exception:
+            max_dist = 0.0
+        if max_dist <= 0:
+            return
+
+        def _done(_completed: bool):
+            pass
+
+        try:
+            self.individual_model_movement_dialog.show(
+                unit, "reactive", _done, self.game.map, max_dist
+            )
+            self.dialog_manager.open(self.individual_model_movement_dialog, modal=True)
+        except Exception:
+            return
+
     def _on_cabal_ritual_resolved(
         self,
         player=None,
@@ -6907,6 +7060,52 @@ class GameView:
                 )
             return
 
+        if name_u == "BLITZING FIREPOWER" and "target_unit" not in context and "unit" not in context:
+            if callable(getattr(self, "_request_blitzing_firepower_unit", None)):
+                candidates = context.get("candidates") or []
+                self._request_blitzing_firepower_unit(
+                    player,
+                    self.game,
+                    candidates,
+                    lambda unit: self._finalize_blitzing_firepower(player, name, context, unit),
+                )
+            return
+
+        if name_u == "LIGHTNING-FAST REACTIONS" and "target_unit" not in context and "unit" not in context:
+            if callable(getattr(self, "_request_lightning_fast_reactions_unit", None)):
+                candidates = context.get("candidates") or []
+                self._request_lightning_fast_reactions_unit(
+                    player,
+                    self.game,
+                    candidates,
+                    lambda unit: self._finalize_lightning_fast_reactions(player, name, context, unit),
+                )
+            return
+
+        if name_u == "SKYBORNE SANCTUARY" and ("target_unit" not in context or "transport_unit" not in context):
+            if callable(getattr(self, "_request_skyborne_sanctuary_targets", None)):
+                candidates = context.get("candidates") or []
+                transports_by_unit = context.get("transport_candidates_by_unit") or {}
+                self._request_skyborne_sanctuary_targets(
+                    player,
+                    self.game,
+                    candidates,
+                    transports_by_unit,
+                    lambda unit, transport: self._finalize_skyborne_sanctuary(player, name, context, unit, transport),
+                )
+            return
+
+        if name_u == "WEBWAY TUNNEL" and "target_unit" not in context and "unit" not in context:
+            if callable(getattr(self, "_request_webway_tunnel_unit", None)):
+                candidates = context.get("candidates") or []
+                self._request_webway_tunnel_unit(
+                    player,
+                    self.game,
+                    candidates,
+                    lambda unit: self._finalize_webway_tunnel(player, name, context, unit),
+                )
+            return
+
         if name_u == "MURDER-CALL" and ("target_unit" in context or "unit" in context):
             unit = context.get("target_unit") or context.get("unit")
             self._finalize_murder_call(player, name, context, unit)
@@ -7362,6 +7561,67 @@ class GameView:
         except Exception:
             self._summoned_by_slaughter_flow_active = False
             print("Summoned by Slaughter: failed to open placement dialog")
+
+    def _finalize_blitzing_firepower(self, player, name: str, context: Dict[str, Any], unit) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if unit is None:
+            print("Blitzing Firepower: no unit selected")
+            return
+        ctx = dict(context)
+        ctx["unit"] = unit
+        ok = manager.use(name, **ctx)
+        if ok:
+            print(f"Used stratagem: {name}")
+        else:
+            print(f"Could not use stratagem: {name}")
+
+    def _finalize_lightning_fast_reactions(self, player, name: str, context: Dict[str, Any], unit) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if unit is None:
+            print("Lightning-Fast Reactions: no unit selected")
+            return
+        ctx = dict(context)
+        ctx["unit"] = unit
+        ok = manager.use(name, **ctx)
+        if ok:
+            print(f"Used stratagem: {name}")
+        else:
+            print(f"Could not use stratagem: {name}")
+
+    def _finalize_skyborne_sanctuary(self, player, name: str, context: Dict[str, Any], unit, transport) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if unit is None or transport is None:
+            print("Skyborne Sanctuary: missing unit or transport")
+            return
+        ctx = dict(context)
+        ctx["unit"] = unit
+        ctx["transport_unit"] = transport
+        ok = manager.use(name, **ctx)
+        if ok:
+            print(f"Used stratagem: {name}")
+        else:
+            print(f"Could not use stratagem: {name}")
+
+    def _finalize_webway_tunnel(self, player, name: str, context: Dict[str, Any], unit) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if unit is None:
+            print("Webway Tunnel: no unit selected")
+            return
+        ctx = dict(context)
+        ctx["unit"] = unit
+        ok = manager.use(name, **ctx)
+        if ok:
+            print(f"Used stratagem: {name}")
+        else:
+            print(f"Could not use stratagem: {name}")
 
     # -------- Rule info helpers --------
     def _get_waha_helper(self):

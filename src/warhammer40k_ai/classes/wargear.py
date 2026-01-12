@@ -1522,6 +1522,18 @@ class WargearProfile:
         if hasattr(target, 'has_stealth') and target.has_stealth():
             dice_modifier -= 1
             hit_result['modifiers'].append("-1 from target Stealth")
+        # Warhost: Lightning-Fast Reactions (-1 to hit while active).
+        try:
+            try:
+                troot = target.get_attached_unit_root()
+            except Exception:
+                troot = target
+            sr = getattr(troot, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("lightning_fast_reactions_active") is True:
+                dice_modifier -= 1
+                hit_result['modifiers'].append("-1 from Lightning-Fast Reactions")
+        except Exception:
+            pass
         # First Prince of Chaos (Shadow Legion Tzeentch): -1 to hit when targeting this unit.
         try:
             if hasattr(target, "has_first_prince_tzeentch_defense") and target.has_first_prince_tzeentch_defense():
@@ -2419,6 +2431,208 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Precompute attack context (for Blitzing Firepower and critical hit effects).
+        try:
+            is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+        except Exception:
+            is_melee = False
+        try:
+            is_ranged = bool(getattr(self.parent_wargear, "is_ranged", lambda: False)())
+        except Exception:
+            is_ranged = False
+
+        # WORLD EATERS: Blessings of Khorne keyword injection (melee-only).
+        # - Warp Blades => Lethal Hits
+        # - Martial Excellence => Sustained Hits 1
+        blessings_lethal = False
+        blessings_sustained = False
+        try:
+            if is_melee:
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "blessings_of_khorne", None) if army is not None else None
+                game = army.player.game if (army is not None and getattr(army, "player", None) is not None) else None
+                br = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                if mgr is not None and br > 0:
+                    # Eligibility: attached unit group qualifies if any member has Blessings of Khorne ability
+                    try:
+                        qualifies = bool(unit.get_attached_unit_root().attached_unit_has_blessings_of_khorne())
+                    except Exception:
+                        qualifies = False
+                    if qualifies:
+                        blessings_lethal = bool(mgr.is_blessing_active_for_unit("WARP_BLADES", unit, battle_round=br))
+                        blessings_sustained = bool(mgr.is_blessing_active_for_unit("MARTIAL_EXCELLENCE", unit, battle_round=br))
+        except Exception:
+            blessings_lethal = False
+            blessings_sustained = False
+
+        dark_pacts_choice = None
+        try:
+            sr = getattr(attacker.parent_unit, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("dark_pacts_active"):
+                dark_pacts_choice = str(sr.get("dark_pacts_choice", "") or "").strip().upper()
+        except Exception:
+            dark_pacts_choice = None
+        dark_pacts_lethal = dark_pacts_choice == "LETHAL HITS"
+        dark_pacts_sustained = bool(dark_pacts_choice and dark_pacts_choice.startswith("SUSTAINED"))
+
+        bondsman_lethal = False
+        bondsman_sustained = False
+        bondsman_sustained_ranged = False
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            sr = getattr(unit, "special_rules", None)
+            if isinstance(sr, dict):
+                bondsman_lethal = bool(sr.get("bondsman_lethal_hits"))
+                bondsman_sustained = bool(sr.get("bondsman_sustained_hits"))
+                bondsman_sustained_ranged = bool(sr.get("bondsman_sustained_hits_ranged"))
+                if bondsman_sustained_ranged:
+                    bondsman_sustained_ranged = bool(
+                        getattr(self.parent_wargear, "is_ranged", lambda: False)()
+                    )
+        except Exception:
+            bondsman_lethal = False
+            bondsman_sustained = False
+            bondsman_sustained_ranged = False
+
+        martial_katah_lethal = False
+        martial_katah_sustained = False
+        try:
+            if is_melee:
+                unit = getattr(attacker, "parent_unit", None)
+                root = unit.get_attached_unit_root() if unit is not None else None
+                if root is not None and root.attached_unit_has_martial_katah():
+                    sr = getattr(root, "special_rules", None)
+                    choice = ""
+                    if isinstance(sr, dict):
+                        choice = str(sr.get("martial_katah_choice", "") or "").strip().upper()
+                    if choice == "RENDAX":
+                        martial_katah_lethal = True
+                    elif choice == "DACATARAI":
+                        martial_katah_sustained = True
+        except Exception:
+            martial_katah_lethal = False
+            martial_katah_sustained = False
+
+        pact_lethal = False
+        pact_sustained = False
+        exquisite_lethal = False
+        exquisite_sustained = False
+        pain_lethal = False
+        pain_sustained = False
+        pain_sustained_value = 0
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            mgr = getattr(army, "emperors_children", None) if army is not None else None
+            if mgr is not None and mgr.is_emperors_children_unit(unit):
+                if mgr.pact_points_at_least(5) and is_melee:
+                    pact_lethal = True
+                    pact_sustained = True
+            if is_melee:
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                sr = getattr(root, "special_rules", None) if root is not None else None
+                if not isinstance(sr, dict):
+                    sr = None
+            if is_melee and sr:
+                choice = str(sr.get("exquisite_swordsmanship_choice", "") or "").strip().upper()
+                exp = str(sr.get("exquisite_swordsmanship_expires_phase", "") or "").strip().upper()
+                if exp:
+                    try:
+                        game = getattr(getattr(army, "player", None), "game", None)
+                        pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    except Exception:
+                        pname = ""
+                    if pname and pname != exp:
+                        choice = ""
+                if choice == "LETHAL":
+                    exquisite_lethal = True
+                elif choice == "SUSTAINED":
+                    exquisite_sustained = True
+        except Exception:
+            pact_lethal = False
+            pact_sustained = False
+            exquisite_lethal = False
+            exquisite_sustained = False
+        try:
+            sr = getattr(attacker.parent_unit, "special_rules", None)
+            if isinstance(sr, dict):
+                if bool(sr.get("pain_lethal_hits")):
+                    pain_lethal = True
+                if is_melee and bool(sr.get("pain_lethal_hits_melee")):
+                    pain_lethal = True
+                if self._assassins_poisons_applies(attacker):
+                    pain_lethal = True
+                pain_sustained_value = int(sr.get("pain_sustained_hits_value", 0) or 0)
+                if is_ranged:
+                    target_is_vehicle = False
+                    try:
+                        target_is_vehicle = bool(getattr(target, "is_vehicle", False)) or bool(target.has_keyword("Vehicle"))
+                    except Exception:
+                        target_is_vehicle = bool(getattr(target, "is_vehicle", False))
+                    if target_is_vehicle:
+                        pain_sustained_value = max(
+                            int(sr.get("pain_sustained_hits_ranged_vs_vehicle", 0) or 0),
+                            int(pain_sustained_value or 0),
+                        )
+                    else:
+                        pain_sustained_value = max(
+                            int(sr.get("pain_sustained_hits_ranged_vs_non_vehicle", 0) or 0),
+                            int(pain_sustained_value or 0),
+                        )
+        except Exception:
+            pain_lethal = False
+            pain_sustained_value = 0
+        pain_sustained = bool(pain_sustained_value)
+
+        sustained_base = (
+            self.is_sustained_hits()
+            or blessings_sustained
+            or dark_pacts_sustained
+            or martial_katah_sustained
+            or bondsman_sustained
+            or bondsman_sustained_ranged
+            or pact_sustained
+            or exquisite_sustained
+            or empowered_sustained
+            or pain_sustained
+        )
+
+        blitzing_grants_sustained = False
+        try:
+            if is_ranged:
+                unit = getattr(attacker, "parent_unit", None)
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                sr = getattr(root, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("blitzing_firepower_active") is True:
+                    in_range = False
+                    try:
+                        _closest, dist = attacker.return_closest_model_in_unit(target)
+                        in_range = float(dist) <= 12.0 + 1e-6
+                    except Exception:
+                        try:
+                            game = getattr(getattr(unit, "get_parent_army", lambda: None)(), "player", None)
+                            game = getattr(game, "game", None) if game is not None else None
+                            game_map = getattr(game, "map", None) if game is not None else None
+                            if game_map is not None:
+                                dist = game_map.get_distance_between_units(root, target)
+                                in_range = float(dist) <= 12.0 + 1e-6
+                        except Exception:
+                            in_range = False
+                    if in_range:
+                        if sustained_base:
+                            crit_threshold = min(int(crit_threshold), 5)
+                        else:
+                            blitzing_grants_sustained = True
+        except Exception:
+            blitzing_grants_sustained = False
+
         if dice_roll == 1:  # unmodified dice roll of 1 is always a miss
             hit_result['hit'] = False
             hit_result['special_effects'].append("Natural 1 (auto-miss)")
@@ -2431,169 +2645,11 @@ class WargearProfile:
                 hit_result['special_effects'].append(f"Critical hit ({crit_threshold}+)")
             attack_instance['crit_hit'] = True
 
-            try:
-                is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
-            except Exception:
-                is_melee = False
-            try:
-                is_ranged = bool(getattr(self.parent_wargear, "is_ranged", lambda: False)())
-            except Exception:
-                is_ranged = False
-            
-            # WORLD EATERS: Blessings of Khorne keyword injection (melee-only).
-            # - Warp Blades => Lethal Hits
-            # - Martial Excellence => Sustained Hits 1
-            blessings_lethal = False
-            blessings_sustained = False
-            try:
-                # Only for melee weapons
-                is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
-                if is_melee:
-                    unit = getattr(attacker, "parent_unit", None)
-                    army = unit.get_parent_army() if unit is not None else None
-                    mgr = getattr(army, "blessings_of_khorne", None) if army is not None else None
-                    game = army.player.game if (army is not None and getattr(army, "player", None) is not None) else None
-                    br = int(getattr(game, "turn", 0) or 0) if game is not None else 0
-                    if mgr is not None and br > 0:
-                        # Eligibility: attached unit group qualifies if any member has Blessings of Khorne ability
-                        try:
-                            qualifies = bool(unit.get_attached_unit_root().attached_unit_has_blessings_of_khorne())
-                        except Exception:
-                            qualifies = False
-                        if qualifies:
-                            blessings_lethal = bool(mgr.is_blessing_active_for_unit("WARP_BLADES", unit, battle_round=br))
-                            blessings_sustained = bool(mgr.is_blessing_active_for_unit("MARTIAL_EXCELLENCE", unit, battle_round=br))
-            except Exception:
-                blessings_lethal = False
-                blessings_sustained = False
-
-            dark_pacts_choice = None
-            try:
-                sr = getattr(attacker.parent_unit, "special_rules", None)
-                if isinstance(sr, dict) and sr.get("dark_pacts_active"):
-                    dark_pacts_choice = str(sr.get("dark_pacts_choice", "") or "").strip().upper()
-            except Exception:
-                dark_pacts_choice = None
-            dark_pacts_lethal = dark_pacts_choice == "LETHAL HITS"
-            dark_pacts_sustained = bool(dark_pacts_choice and dark_pacts_choice.startswith("SUSTAINED"))
-
-            bondsman_lethal = False
-            bondsman_sustained = False
-            bondsman_sustained_ranged = False
-            try:
-                unit = getattr(attacker, "parent_unit", None)
-                sr = getattr(unit, "special_rules", None)
-                if isinstance(sr, dict):
-                    bondsman_lethal = bool(sr.get("bondsman_lethal_hits"))
-                    bondsman_sustained = bool(sr.get("bondsman_sustained_hits"))
-                    bondsman_sustained_ranged = bool(sr.get("bondsman_sustained_hits_ranged"))
-                    if bondsman_sustained_ranged:
-                        bondsman_sustained_ranged = bool(
-                            getattr(self.parent_wargear, "is_ranged", lambda: False)()
-                        )
-            except Exception:
-                bondsman_lethal = False
-                bondsman_sustained = False
-                bondsman_sustained_ranged = False
-
-            martial_katah_lethal = False
-            martial_katah_sustained = False
-            try:
-                if is_melee:
-                    unit = getattr(attacker, "parent_unit", None)
-                    root = unit.get_attached_unit_root() if unit is not None else None
-                    if root is not None and root.attached_unit_has_martial_katah():
-                        sr = getattr(root, "special_rules", None)
-                        choice = ""
-                        if isinstance(sr, dict):
-                            choice = str(sr.get("martial_katah_choice", "") or "").strip().upper()
-                        if choice == "RENDAX":
-                            martial_katah_lethal = True
-                        elif choice == "DACATARAI":
-                            martial_katah_sustained = True
-            except Exception:
-                martial_katah_lethal = False
-                martial_katah_sustained = False
-
-            pact_lethal = False
-            pact_sustained = False
-            exquisite_lethal = False
-            exquisite_sustained = False
-            pain_lethal = False
-            pain_sustained = False
-            pain_sustained_value = 0
-            try:
-                unit = getattr(attacker, "parent_unit", None)
-                army = unit.get_parent_army() if unit is not None else None
-                mgr = getattr(army, "emperors_children", None) if army is not None else None
-                if mgr is not None and mgr.is_emperors_children_unit(unit):
-                    if mgr.pact_points_at_least(5) and is_melee:
-                        pact_lethal = True
-                        pact_sustained = True
-                if is_melee:
-                    try:
-                        root = unit.get_attached_unit_root()
-                    except Exception:
-                        root = unit
-                    sr = getattr(root, "special_rules", None) if root is not None else None
-                    if not isinstance(sr, dict):
-                        sr = None
-                if is_melee and sr:
-                    choice = str(sr.get("exquisite_swordsmanship_choice", "") or "").strip().upper()
-                    exp = str(sr.get("exquisite_swordsmanship_expires_phase", "") or "").strip().upper()
-                    if exp:
-                        try:
-                            game = getattr(getattr(army, "player", None), "game", None)
-                            pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
-                        except Exception:
-                            pname = ""
-                        if pname and pname != exp:
-                            choice = ""
-                    if choice == "LETHAL":
-                        exquisite_lethal = True
-                    elif choice == "SUSTAINED":
-                        exquisite_sustained = True
-            except Exception:
-                pact_lethal = False
-                pact_sustained = False
-                exquisite_lethal = False
-                exquisite_sustained = False
-            try:
-                sr = getattr(attacker.parent_unit, "special_rules", None)
-                if isinstance(sr, dict):
-                    if bool(sr.get("pain_lethal_hits")):
-                        pain_lethal = True
-                    if is_melee and bool(sr.get("pain_lethal_hits_melee")):
-                        pain_lethal = True
-                    if self._assassins_poisons_applies(attacker):
-                        pain_lethal = True
-                    pain_sustained_value = int(sr.get("pain_sustained_hits_value", 0) or 0)
-                    if is_ranged:
-                        target_is_vehicle = False
-                        try:
-                            target_is_vehicle = bool(getattr(target, "is_vehicle", False)) or bool(target.has_keyword("Vehicle"))
-                        except Exception:
-                            target_is_vehicle = bool(getattr(target, "is_vehicle", False))
-                        if target_is_vehicle:
-                            pain_sustained_value = max(
-                                int(sr.get("pain_sustained_hits_ranged_vs_vehicle", 0) or 0),
-                                int(pain_sustained_value or 0),
-                            )
-                        else:
-                            pain_sustained_value = max(
-                                int(sr.get("pain_sustained_hits_ranged_vs_non_vehicle", 0) or 0),
-                                int(pain_sustained_value or 0),
-                            )
-            except Exception:
-                pain_lethal = False
-                pain_sustained_value = 0
-            pain_sustained = bool(pain_sustained_value)
-
             if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal or martial_katah_lethal or bondsman_lethal or pact_lethal or exquisite_lethal or pain_lethal:
                 hit_result['special_effects'].append("Lethal Hits")
                 attack_instance['lethal_hit'] = True
             # For Sustained Hits, do not override an existing Sustained Hits X on the weapon.
-            if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained:
+            if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or blitzing_grants_sustained:
                 # Support Sustained Hits X / Sustained Hits D3 / etc. Roll per critical hit.
                 if self.is_sustained_hits():
                     try:
@@ -2607,7 +2663,9 @@ class WargearProfile:
                 else:
                     sustained_val = 1
                     label = "Sustained Hits (+1)"
-                    if pain_sustained_value:
+                    if blitzing_grants_sustained:
+                        label = "Sustained Hits (+1) [Blitzing Firepower]"
+                    elif pain_sustained_value:
                         sustained_val = max(int(sustained_val), int(pain_sustained_value))
                         label = f"Sustained Hits (+{sustained_val}) [Power from Pain]"
                     elif blessings_sustained:

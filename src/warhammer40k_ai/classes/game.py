@@ -3020,6 +3020,15 @@ class Game:
                         if str(sr.get("pain_swooping_descent_no_charge_turn_owner", "") or "") == owner_name:
                             for k in ("pain_swooping_descent_no_charge_turn_owner", "pain_swooping_descent_no_charge_turn"):
                                 sr.pop(k, None)
+                        if str(sr.get("feigned_retreat_turn_owner", "") or "") == owner_name:
+                            for k in ("feigned_retreat_active", "feigned_retreat_turn_owner", "feigned_retreat_turn"):
+                                sr.pop(k, None)
+                        if str(sr.get("fire_and_fade_no_charge_turn_owner", "") or "") == owner_name:
+                            for k in ("fire_and_fade_no_charge_turn_owner", "fire_and_fade_no_charge_turn"):
+                                sr.pop(k, None)
+                        if str(sr.get("fire_and_fade_no_embark_turn_owner", "") or "") == owner_name:
+                            for k in ("fire_and_fade_no_embark_turn_owner", "fire_and_fade_no_embark_turn"):
+                                sr.pop(k, None)
             except Exception:
                 pass
 

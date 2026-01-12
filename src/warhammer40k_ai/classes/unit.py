@@ -6832,6 +6832,19 @@ class Unit:
         Returns:
             bool: True if the unit has an ability that allows shooting after falling back
         """
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("feigned_retreat_active"):
+                owner = str(sr.get("feigned_retreat_turn_owner", "") or "")
+                turn = int(sr.get("feigned_retreat_turn", 0) or 0)
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+                if game is None:
+                    return True
+                if owner and str(getattr(game.get_current_player(), "name", "") or "") == owner:
+                    if int(getattr(game, "turn", 0) or 0) == int(turn or 0):
+                        return True
+        except Exception:
+            pass
         # Use cached result if available
         if 'fell_back_and_shoot' in getattr(self, '_ability_cache', {}):
             return self._ability_cache['fell_back_and_shoot']
@@ -6951,6 +6964,19 @@ class Unit:
         """Check if this unit can charge after falling back."""
         if self.has_thrill_seekers():
             return True
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("feigned_retreat_active"):
+                owner = str(sr.get("feigned_retreat_turn_owner", "") or "")
+                turn = int(sr.get("feigned_retreat_turn", 0) or 0)
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+                if game is None:
+                    return True
+                if owner and str(getattr(game.get_current_player(), "name", "") or "") == owner:
+                    if int(getattr(game, "turn", 0) or 0) == int(turn or 0):
+                        return True
+        except Exception:
+            pass
         try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("pain_charge_after_fall_back"):
@@ -8988,6 +9014,18 @@ class Unit:
         except Exception:
             game_map = None
 
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("fire_and_fade_no_embark_turn_owner"):
+                owner = str(sr.get("fire_and_fade_no_embark_turn_owner") or "")
+                turn = int(sr.get("fire_and_fade_no_embark_turn", 0) or 0)
+                if owner and _game is not None:
+                    if _game.get_current_player().name == owner and int(getattr(_game, "turn", 0) or 0) == turn:
+                        print(f"❌ {self.name} cannot embark this turn (Fire and Fade)")
+                        return
+        except Exception:
+            pass
+
         if self.round_state.disembarked_this_round:
             print(f"❌ {self.name} cannot embark after disembarking this turn")
             return
@@ -10507,6 +10545,18 @@ class Unit:
             if isinstance(sr, dict) and sr.get("pain_swooping_descent_no_charge_turn_owner"):
                 owner = str(sr.get("pain_swooping_descent_no_charge_turn_owner") or "")
                 turn = int(sr.get("pain_swooping_descent_no_charge_turn", 0) or 0)
+                if owner and game is not None:
+                    if game.get_current_player().name == owner and int(getattr(game, "turn", 0) or 0) == turn:
+                        return False
+        except Exception:
+            pass
+
+        # Fire and Fade: cannot charge until end of turn.
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("fire_and_fade_no_charge_turn_owner"):
+                owner = str(sr.get("fire_and_fade_no_charge_turn_owner") or "")
+                turn = int(sr.get("fire_and_fade_no_charge_turn", 0) or 0)
                 if owner and game is not None:
                     if game.get_current_player().name == owner and int(getattr(game, "turn", 0) or 0) == turn:
                         return False
