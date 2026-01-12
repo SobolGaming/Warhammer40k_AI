@@ -1022,7 +1022,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("NEC", "Illuminor"): ("Partial", "Lone Operative applied without 3\" proximity to friendly Necrons."),
         ("NEC", "Protective Disciples"): ("Partial", "Lone Operative applied without 3\" proximity to Destroyer Cult units."),
         ("NEC", "VANGUARD PROTOCOLS"): ("Partial", "Scouts 8\" applied without attached-unit restriction."),
-        ("NEC", "Relentless Combatants"): ("Partial", "Charge-after-Fall-Back supported; charge rerolls not implemented."),
+        ("NEC", "Relentless Combatants"): ("Supported", "Re-roll Charge rolls. Charge-after-Fall-Back eligibility."),
         ("NEC", "Shadowloom"): ("Supported", "Stealth."),
         ("NEC", "Gloom Prism (Aura)"): ("Partial", "Feel No Pain vs Psychic (and mortal where listed) applies to bearer only; aura not propagated."),
         ("NEC", "Nullstone Field Generator (Aura)"): ("Partial", "Feel No Pain vs mortal/psychic applies to bearer only; aura not propagated."),
@@ -1227,6 +1227,9 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         return None
     low = text.lower()
     notes: List[str] = []
+    leading_prefix = ""
+    if "while this model is leading a unit" in low:
+        leading_prefix = "Leading: "
 
     m = re.search(
         r"add\s+(\d+)\s+to\s+charge\s+rolls?\s+made\s+for\s+the\s+bearer'?s\s+unit",
@@ -1236,16 +1239,29 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
     if m:
         notes.append(f"Charge rolls for bearer's unit get +{m.group(1)}.")
 
-    if (
-        ("eligible to declare a charge" in low or "eligible to charge" in low)
-        and (
-            "advanced or fell back" in low
-            or "advance or fell back" in low
-            or "fell back or advanced" in low
-            or "fell back or advance" in low
-        )
-    ):
-        notes.append("Charge-after-Advance/Fall Back eligibility.")
+    if re.search(r"re-?roll\s+charge\s+rolls?", low, flags=re.IGNORECASE):
+        if re.search(r"bearer'?s\s+unit", low, flags=re.IGNORECASE):
+            notes.append("Re-roll Charge rolls for bearer's unit.")
+        elif leading_prefix:
+            notes.append("Leading: re-roll Charge rolls for the unit.")
+        else:
+            notes.append("Re-roll Charge rolls.")
+
+    eligible_charge = (
+        "eligible to declare a charge" in low
+        or "eligible to charge" in low
+        or "eligible to shoot and declare a charge" in low
+        or "eligible to shoot and charge" in low
+    )
+    if eligible_charge:
+        has_advance = ("advance" in low) or ("advanced" in low) or ("advancing" in low)
+        has_fall_back = ("fell back" in low) or ("fall back" in low) or ("falling back" in low)
+        if has_advance and has_fall_back:
+            notes.append("Charge-after-Advance/Fall Back eligibility.")
+        elif has_advance:
+            notes.append("Charge-after-Advance eligibility.")
+        elif has_fall_back:
+            notes.append("Charge-after-Fall-Back eligibility.")
 
     m = re.search(
         r"models\s+in\s+the\s+bearer'?s\s+unit\s+have\s+a\s+leadership\s+characteristic\s+of\s+(\d+)\+?",

@@ -5101,7 +5101,7 @@ class Unit:
             pass
 
         for t in Unit._iter_reroll_scan_texts(self):
-            s = str(t or "").lower()
+            s = self._normalize_rules_text(str(t or "")).lower()
             if ("re-roll" in s or "reroll" in s) and "charge" in s:
                 return True
         return False
