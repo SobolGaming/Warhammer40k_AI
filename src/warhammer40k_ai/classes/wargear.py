@@ -543,9 +543,72 @@ class WargearProfile:
                         bonus = int(spec.get(str(attacker_key), 0) or 0)
                         if bonus:
                             ap_val += bonus
+                if isinstance(sr, dict):
+                    phase_key = self._resolve_phase_key(attacker_unit=attacker_unit, target_unit=target_root)
+                    for entry in self._iter_defensive_entries(
+                        target_root,
+                        "defensive_ap_worsen_phase",
+                        attacker_key=None,
+                        attack_type="any",
+                        phase_key=phase_key,
+                    ):
+                        try:
+                            ap_val += int(entry.get("value", 0) or 0)
+                        except Exception:
+                            continue
         except Exception:
             pass
         return int(apply_characteristic_caps("ap", int(ap_val), base_raw=getattr(self, "_raw_ap", None)))
+
+    def _resolve_phase_key(self, attacker_unit: Optional['Unit'] = None, target_unit: Optional['Unit'] = None) -> str:
+        try:
+            unit = attacker_unit or target_unit
+            if unit is None:
+                return ""
+            army = unit.get_parent_army()
+            game = getattr(getattr(army, "player", None), "game", None)
+            return str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        except Exception:
+            return ""
+
+    def _iter_defensive_entries(
+        self,
+        target_unit: Optional['Unit'],
+        key: str,
+        *,
+        attacker_key: Optional[str],
+        attack_type: Optional[str],
+        phase_key: Optional[str],
+    ):
+        if target_unit is None:
+            return []
+        try:
+            sr = getattr(target_unit, "special_rules", None)
+        except Exception:
+            sr = None
+        if not isinstance(sr, dict):
+            return []
+        items = sr.get(key)
+        if not isinstance(items, list):
+            return []
+        atk_type = str(attack_type or "any").strip().lower()
+        phase_key = str(phase_key or "").strip().upper()
+        out = []
+        for entry in list(items):
+            if not isinstance(entry, dict):
+                continue
+            entry_attack_type = str(entry.get("attack_type") or "any").strip().lower()
+            if atk_type and entry_attack_type not in ("any", atk_type):
+                continue
+            entry_attacker = entry.get("attacker_key")
+            if entry_attacker:
+                if not attacker_key or str(entry_attacker) != str(attacker_key):
+                    continue
+            entry_phase = str(entry.get("expires_phase") or "").strip().upper()
+            if entry_phase and phase_key and entry_phase != phase_key:
+                continue
+            out.append(entry)
+        return out
 
     def attack(self, target: 'Unit', attacker: 'Model', game_map: Optional['Map'] = None) -> Optional[AttackResult]:
         # ONE SHOT: enforce once per battle per model per weapon.
@@ -597,6 +660,14 @@ class WargearProfile:
         wound_instances = []
         hit_instances = []
         num_attacks = 0
+        attacker_unit = getattr(attacker, "parent_unit", None)
+        attacker_key = None
+        try:
+            if attacker_unit is not None:
+                attacker_root = attacker_unit.get_attached_unit_root() if hasattr(attacker_unit, "get_attached_unit_root") else attacker_unit
+                attacker_key = str(getattr(attacker_root, "_id", None) or id(attacker_root))
+        except Exception:
+            attacker_key = None
 
         # INDIRECT FIRE (penalty only if no models in target unit are visible to attacking unit at selection time)
         indirect_fire_no_visible = False
@@ -870,6 +941,10 @@ class WargearProfile:
                 'damage': 0,
                 'target_toughness_override': kill_team_toughness,
             }
+            if attacker_unit is not None:
+                attack_instance["attacker_unit"] = attacker_unit
+            if attacker_key is not None:
+                attack_instance["attacker_key"] = attacker_key
 
             if indirect_fire_no_visible:
                 attack_instance["indirect_fire_no_visible"] = True
@@ -895,6 +970,10 @@ class WargearProfile:
                             'damage': 0,
                             'target_toughness_override': kill_team_toughness,
                         }
+                        if attacker_unit is not None:
+                            extra_instance["attacker_unit"] = attacker_unit
+                        if attacker_key is not None:
+                            extra_instance["attacker_key"] = attacker_key
                         hit_instances.append(extra_instance)
                         attack_result.total_hits += 1
 
@@ -1572,6 +1651,37 @@ class WargearProfile:
                     dice_modifier -= int(penalty)
                     if reasons:
                         hit_result['modifiers'].extend(list(reasons))
+        except Exception:
+            pass
+        # Defensive reaction stratagems: -1 to hit (generic template).
+        try:
+            try:
+                troot = target.get_attached_unit_root()
+            except Exception:
+                troot = target
+            attack_type = "melee" if (self.parent_wargear and self.parent_wargear.is_melee()) else "ranged"
+            attacker_key = attack_instance.get("attacker_key")
+            if not attacker_key:
+                try:
+                    attacker_unit = getattr(attacker, "parent_unit", None)
+                    if attacker_unit is not None:
+                        attacker_root = attacker_unit.get_attached_unit_root() if hasattr(attacker_unit, "get_attached_unit_root") else attacker_unit
+                        attacker_key = str(getattr(attacker_root, "_id", None) or id(attacker_root))
+                except Exception:
+                    attacker_key = None
+            phase_key = self._resolve_phase_key(attacker_unit=getattr(attacker, "parent_unit", None), target_unit=troot)
+            for entry in self._iter_defensive_entries(
+                troot,
+                "defensive_hit_mods",
+                attacker_key=attacker_key,
+                attack_type=attack_type,
+                phase_key=phase_key,
+            ):
+                penalty = int(entry.get("value", 0) or 0)
+                if penalty:
+                    dice_modifier -= penalty
+                    src = entry.get("source") or "Defensive stratagem"
+                    hit_result['modifiers'].append(f"-{penalty} to hit from {src}")
         except Exception:
             pass
         # First Prince of Chaos (Shadow Legion Tzeentch): -1 to hit when targeting this unit.
@@ -3194,6 +3304,38 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Defensive reaction stratagems: -1 to wound (generic template).
+        try:
+            try:
+                troot = target.get_attached_unit_root()
+            except Exception:
+                troot = target
+            attack_type = "melee" if (self.parent_wargear and self.parent_wargear.is_melee()) else "ranged"
+            attacker_key = attack_instance.get("attacker_key")
+            if not attacker_key:
+                try:
+                    attacker_unit = getattr(attacker, "parent_unit", None)
+                    if attacker_unit is not None:
+                        attacker_root = attacker_unit.get_attached_unit_root() if hasattr(attacker_unit, "get_attached_unit_root") else attacker_unit
+                        attacker_key = str(getattr(attacker_root, "_id", None) or id(attacker_root))
+                except Exception:
+                    attacker_key = None
+            phase_key = self._resolve_phase_key(attacker_unit=getattr(attacker, "parent_unit", None), target_unit=troot)
+            for entry in self._iter_defensive_entries(
+                troot,
+                "defensive_wound_mods",
+                attacker_key=attacker_key,
+                attack_type=attack_type,
+                phase_key=phase_key,
+            ):
+                penalty = int(entry.get("value", 0) or 0)
+                if penalty:
+                    dice_modifier -= penalty
+                    src = entry.get("source") or "Defensive stratagem"
+                    wound_result['modifiers'].append(f"-{penalty} to wound from {src}")
+        except Exception:
+            pass
+
         dice_modifier = min(max(dice_modifier, -1), 1)
 
         dice_roll = None
@@ -4229,6 +4371,34 @@ class WargearProfile:
                             attack_instance["inv_save_override_reason"] = str(inv_reason)
         except Exception:
             pass
+        # Defensive reaction stratagems: invulnerable save overrides.
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            t_root = t_unit.get_attached_unit_root() if (t_unit is not None and hasattr(t_unit, "get_attached_unit_root")) else t_unit
+            attack_type = "melee" if (self.parent_wargear and self.parent_wargear.is_melee()) else "ranged"
+            attacker_key = attack_instance.get("attacker_key")
+            phase_key = self._resolve_phase_key(
+                attacker_unit=attack_instance.get("attacker_unit"),
+                target_unit=t_root,
+            )
+            for entry in self._iter_defensive_entries(
+                t_root,
+                "defensive_invuln_overrides",
+                attacker_key=attacker_key,
+                attack_type=attack_type,
+                phase_key=phase_key,
+            ):
+                inv_value = int(entry.get("value", 0) or 0)
+                if not inv_value:
+                    continue
+                current = attack_instance.get("inv_save_override", None)
+                if current is None or int(current) > inv_value:
+                    attack_instance["inv_save_override"] = inv_value
+                    src = entry.get("source")
+                    if src:
+                        attack_instance["inv_save_override_reason"] = str(src)
+        except Exception:
+            pass
 
         # Calculate save value
         save_value = target_model.save - ap
@@ -4513,6 +4683,7 @@ class WargearProfile:
         from ..utility.modifiers import Modifier, ModifierOp, apply_numeric_modifiers, apply_characteristic_caps
 
         damage_mods: list[Modifier] = []
+        defensive_damage_entries = []
 
         if self.is_melta() and attack_instance.get('below_half_distance', False):
             # Support Melta N / Melta D3 / Melta D6+X, etc.
@@ -4644,6 +4815,34 @@ class WargearProfile:
                     damage_mods.append(Modifier(ModifierOp.SUB, int(red), source="stratagem:frenzied_resilience"))
         except Exception:
             pass
+        # Defensive reaction stratagems: reduce damage allocated to target.
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            t_root = t_unit.get_attached_unit_root() if (t_unit is not None and hasattr(t_unit, "get_attached_unit_root")) else t_unit
+            attack_type = "melee" if (self.parent_wargear and self.parent_wargear.is_melee()) else "ranged"
+            attacker_key = attack_instance.get("attacker_key")
+            if not attacker_key:
+                try:
+                    attacker_unit = getattr(attacker, "parent_unit", None)
+                    if attacker_unit is not None:
+                        attacker_root = attacker_unit.get_attached_unit_root() if hasattr(attacker_unit, "get_attached_unit_root") else attacker_unit
+                        attacker_key = str(getattr(attacker_root, "_id", None) or id(attacker_root))
+                except Exception:
+                    attacker_key = None
+            phase_key = self._resolve_phase_key(attacker_unit=getattr(attacker, "parent_unit", None), target_unit=t_root)
+            for entry in self._iter_defensive_entries(
+                t_root,
+                "defensive_damage_reductions",
+                attacker_key=attacker_key,
+                attack_type=attack_type,
+                phase_key=phase_key,
+            ):
+                red = int(entry.get("value", 0) or 0)
+                if red:
+                    damage_mods.append(Modifier(ModifierOp.SUB, int(red), source="stratagem:defensive_damage"))
+                    defensive_damage_entries.append((red, entry.get("source") or "Defensive stratagem"))
+        except Exception:
+            pass
 
         # Apply modifiers unless these are "mortal wounds in addition" (not currently used, but Core Rules require it).
         if attack_instance.get("mortal_wound", False) and attack_instance.get("mortal_wound_in_addition", False):
@@ -4677,6 +4876,12 @@ class WargearProfile:
             red = int(getattr(getattr(target_model, "parent_unit", None), "special_rules", {}).get("frenzied_resilience_damage_reduction", 0) or 0)
             if red and any(m.op == ModifierOp.SUB and "frenzied_resilience" in str(getattr(m, "source", "")) for m in damage_mods):
                 damage_result['special_effects'].append(f"Frenzied Resilience -{red}D taken")
+        except Exception:
+            pass
+        try:
+            for red, src in defensive_damage_entries:
+                if red:
+                    damage_result['special_effects'].append(f"{src} -{red}D taken")
         except Exception:
             pass
         
@@ -4731,6 +4936,32 @@ class WargearProfile:
             fnp_abilities = target_model.parent_unit.has_feel_no_pain()
         except Exception:
             fnp_abilities = []
+        # Defensive reaction stratagems: temporary Feel No Pain.
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            t_root = t_unit.get_attached_unit_root() if (t_unit is not None and hasattr(t_unit, "get_attached_unit_root")) else t_unit
+            attack_type = "melee" if (self.parent_wargear and self.parent_wargear.is_melee()) else "ranged"
+            attacker_key = None
+            try:
+                attacker_unit = getattr(attacker, "parent_unit", None)
+                if attacker_unit is not None:
+                    attacker_root = attacker_unit.get_attached_unit_root() if hasattr(attacker_unit, "get_attached_unit_root") else attacker_unit
+                    attacker_key = str(getattr(attacker_root, "_id", None) or id(attacker_root))
+            except Exception:
+                attacker_key = None
+            phase_key = self._resolve_phase_key(attacker_unit=getattr(attacker, "parent_unit", None), target_unit=t_root)
+            for entry in self._iter_defensive_entries(
+                t_root,
+                "defensive_fnp_overrides",
+                attacker_key=attacker_key,
+                attack_type=attack_type,
+                phase_key=phase_key,
+            ):
+                val = int(entry.get("value", 0) or 0)
+                if val:
+                    fnp_abilities.append((val, None))
+        except Exception:
+            pass
 
         if fnp_abilities and not wounds_cannot_be_ignored:
             # Find the best applicable Feel No Pain ability

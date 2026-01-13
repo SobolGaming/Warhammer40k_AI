@@ -35,7 +35,11 @@ if SRC_DIR not in sys.path:
 
 from warhammer40k_ai.utility.faction_rule_metadata import FACTION_RULE_METADATA
 from warhammer40k_ai.classes.army import SUPPORTED_FACTION_IDS
-from warhammer40k_ai.classes.stratagems import IMPLEMENTED_STRATAGEM_NAMES
+from warhammer40k_ai.classes.stratagems import (
+    IMPLEMENTED_STRATAGEM_NAMES,
+    defensive_reaction_note,
+    parse_defensive_reaction_stratagem,
+)
 from warhammer40k_ai.classes.enhancement_effects import classify_enhancement_support
 from warhammer40k_ai.classes.wargear import parse_alternate_3
 
@@ -1648,7 +1652,7 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
     return (status, notes)
 
 
-def _stratagem_support(name: str) -> Tuple[str, str, str]:
+def _stratagem_support(name: str, description: str = "") -> Tuple[str, str, str]:
     name_u = (name or "").strip().upper()
     notes = {
         "COMMAND RE-ROLL": "Queued on roll; executes reroll callback; once-per-phase rule enforced.",
@@ -1686,6 +1690,9 @@ def _stratagem_support(name: str) -> Tuple[str, str, str]:
 
     if name_u in IMPLEMENTED_STRATAGEM_NAMES:
         return ("Implemented", notes.get(name_u, "Implemented in engine."), name_u)
+    spec = parse_defensive_reaction_stratagem(name, description or "")
+    if spec:
+        return ("Implemented", defensive_reaction_note(spec), name_u)
     return ("Not implemented", "No effect logic currently wired.", name_u)
 
 
@@ -2132,7 +2139,7 @@ def _build_faction_content(
                 det_strats.sort(key=lambda s: _norm(s.get("name", "")))
                 strat_rows = []
                 for s in det_strats:
-                    status, notes, _ = _stratagem_support(s.get("name", ""))
+                    status, notes, _ = _stratagem_support(s.get("name", ""), s.get("description", ""))
                     det_strat_statuses.append(status)
                     strat_rows.append(
                         (
@@ -2650,7 +2657,7 @@ def _build_matrix() -> str:
     core_strat_rows = []
     core_strat_items: List[Tuple[str, str]] = []
     for s in core_strats:
-        status, notes, _ = _stratagem_support(s.get("name", ""))
+        status, notes, _ = _stratagem_support(s.get("name", ""), s.get("description", ""))
         core_strat_items.append((status, s.get("name", "") or ""))
         core_strat_rows.append(
             (

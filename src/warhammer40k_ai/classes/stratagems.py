@@ -1,5 +1,7 @@
 import time
 import copy
+import html
+import re
 from typing import Callable, Optional, Dict, Any, List
 
 
@@ -126,6 +128,285 @@ def _extract_friendly_target_unit_from_kwargs(kwargs: Dict[str, Any]) -> Any:
         if u is not None:
             return u
     return None
+
+
+def _strip_html(text: str) -> str:
+    if not text:
+        return ""
+    text = html.unescape(text)
+    text = text.replace("\u2019", "'")
+    text = re.sub(r"<br\s*/?>", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _normalize_token(text: str) -> str:
+    t = str(text or "").lower().replace("\u2019", "'")
+    t = re.sub(r"[^a-z0-9+ ]+", " ", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def _extract_stratagem_section(description: str, label: str) -> str:
+    if not description:
+        return ""
+    m = re.search(
+        rf"<b>{re.escape(label)}:</b>(.*?)(?:<br><br><b>|$)",
+        description,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if m:
+        return m.group(1).strip()
+    m = re.search(
+        rf"\b{re.escape(label)}:\s*(.*?)(?:\b(?:WHEN|TARGET|EFFECT):|$)",
+        description,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    return m.group(1).strip() if m else ""
+
+
+def _extract_kwb_keywords(target_html: str) -> List[str]:
+    if not target_html:
+        return []
+    pattern = re.compile(r'<span[^>]+class="[^"]*\bkwb\w*\b[^"]*"[^>]*>(.*?)</span>', re.I | re.S)
+    matches = list(pattern.finditer(target_html))
+    keywords: List[str] = []
+    i = 0
+    while i < len(matches):
+        phrase = _strip_html(matches[i].group(1))
+        j = i + 1
+        while j < len(matches):
+            between = _strip_html(target_html[matches[j - 1].end() : matches[j].start()])
+            if _normalize_token(between) == "":
+                phrase = f"{phrase} {_strip_html(matches[j].group(1))}".strip()
+                j += 1
+                continue
+            break
+        if phrase:
+            keywords.append(phrase)
+        i = j
+    out: List[str] = []
+    for kw in keywords:
+        if kw not in out:
+            out.append(kw)
+    return out
+
+
+def parse_defensive_reaction_stratagem(name: str, description: str) -> Optional[Dict[str, Any]]:
+    """
+    Parse generic defensive stratagems that trigger after enemy target selection.
+
+    Supported effect patterns (strict):
+    - -1 to hit / -1 to wound (melee/ranged/any)
+    - AP worsened by 1
+    - Damage characteristic reduced by 1
+    - Invulnerable save granted (X+)
+    - Feel No Pain granted (X+)
+    """
+    if not description:
+        return None
+
+    when_html = _extract_stratagem_section(description, "WHEN")
+    target_html = _extract_stratagem_section(description, "TARGET")
+    effect_html = _extract_stratagem_section(description, "EFFECT")
+    if not (when_html and target_html and effect_html):
+        return None
+
+    when_text = _strip_html(when_html).lower()
+    if not re.search(r"(?:just\s+)?after an enemy unit has selected its targets", when_text):
+        return None
+    phases: set[str] = set()
+    if "shooting phase" in when_text:
+        phases.add("shooting")
+    if "fight phase" in when_text:
+        phases.add("fight")
+    if not phases:
+        return None
+
+    target_text = _strip_html(target_html)
+    target_keywords = _extract_kwb_keywords(target_html)
+    if not target_keywords:
+        try:
+            m = re.search(r"\bone\s+(.+?)\s+unit from your army", target_text, flags=re.IGNORECASE)
+        except Exception:
+            m = None
+        if m:
+            kw_text = m.group(1).strip()
+            if kw_text:
+                target_keywords = [
+                    part.strip()
+                    for part in re.split(r"\s+or\s+|\s+and\s+", kw_text, flags=re.IGNORECASE)
+                    if part.strip()
+                ]
+    replaced = target_text
+    for kw in sorted(target_keywords, key=len, reverse=True):
+        if kw:
+            replaced = re.sub(re.escape(kw), "KW", replaced, flags=re.IGNORECASE)
+    replaced_norm = _normalize_token(replaced)
+    mode = "all"
+    if re.search(r"\bkw\b\s+or\s+kw\b", replaced_norm):
+        mode = "any"
+    replaced_norm = re.sub(r"\bkw\b(?:\s+kw\b)+", "kw", replaced_norm)
+    replaced_norm = re.sub(r"\bkw\b(?:\s+(?:or|and)\s+kw\b)+", "kw", replaced_norm)
+    canonical_kw = _normalize_token(
+        "one kw unit from your army that was selected as the target of one or more of the attacking unit's attacks"
+    )
+    canonical_plain = _normalize_token(
+        "one unit from your army that was selected as the target of one or more of the attacking unit's attacks"
+    )
+    if ("kw" in replaced_norm and replaced_norm != canonical_kw) or (
+        "kw" not in replaced_norm and replaced_norm != canonical_plain
+    ):
+        return None
+
+    effect_text = _strip_html(effect_html).lower().strip().rstrip(".")
+    if any(word in effect_text for word in (" if ", " unless ", " while ", " instead ", " in addition", " then ")):
+        return None
+
+    duration = None
+    rest = None
+    for label, prefix in (
+        ("phase", "until the end of the phase,"),
+        ("attacker", "until the attacking unit has finished making its attacks,"),
+    ):
+        if effect_text.startswith(prefix):
+            duration = label
+            rest = effect_text[len(prefix) :].strip()
+            break
+    if duration is None or rest is None:
+        return None
+
+    hit_re = re.compile(
+        r"each time (?:an|a) (?:(?P<atype>melee|ranged) )?attack targets your unit, subtract 1 from the hit roll"
+    )
+    wound_re = re.compile(
+        r"each time (?:an|a) (?:(?P<atype>melee|ranged) )?attack targets your unit, subtract 1 from the wound roll"
+    )
+    ap_re = re.compile(
+        r"each time an attack targets your unit, worsen the armou?r penetration characteristic of that attack by 1"
+    )
+    damage_re = re.compile(
+        r"each time (?:an|a) (?:(?P<atype>melee|ranged) )?attack is allocated to a model in your unit, subtract 1 from the damage characteristic of that attack"
+    )
+    invuln_re = re.compile(
+        r"(?:all )?models in your unit have a (?P<value>\d)\+ invulnerable save"
+    )
+    invuln_unit_re = re.compile(r"your unit has a (?P<value>\d)\+ invulnerable save")
+    fnp_re = re.compile(
+        r"(?:all )?models in your unit have the feel no pain (?P<value>\d)\+ ability"
+    )
+    fnp_unit_re = re.compile(r"your unit has the feel no pain (?P<value>\d)\+ ability")
+
+    m = hit_re.fullmatch(rest)
+    if m:
+        return {
+            "name": name or "",
+            "phases": phases,
+            "duration": duration,
+            "effect_type": "hit_penalty",
+            "value": 1,
+            "attack_type": (m.group("atype") or "any"),
+            "target_keywords": list(target_keywords or []),
+            "target_keyword_mode": mode,
+        }
+    m = wound_re.fullmatch(rest)
+    if m:
+        return {
+            "name": name or "",
+            "phases": phases,
+            "duration": duration,
+            "effect_type": "wound_penalty",
+            "value": 1,
+            "attack_type": (m.group("atype") or "any"),
+            "target_keywords": list(target_keywords or []),
+            "target_keyword_mode": mode,
+        }
+    if ap_re.fullmatch(rest):
+        return {
+            "name": name or "",
+            "phases": phases,
+            "duration": duration,
+            "effect_type": "ap_worsen",
+            "value": 1,
+            "attack_type": "any",
+            "target_keywords": list(target_keywords or []),
+            "target_keyword_mode": mode,
+        }
+    m = damage_re.fullmatch(rest)
+    if m:
+        return {
+            "name": name or "",
+            "phases": phases,
+            "duration": duration,
+            "effect_type": "damage_reduction",
+            "value": 1,
+            "attack_type": (m.group("atype") or "any"),
+            "target_keywords": list(target_keywords or []),
+            "target_keyword_mode": mode,
+        }
+    m = invuln_re.fullmatch(rest) or invuln_unit_re.fullmatch(rest)
+    if m:
+        return {
+            "name": name or "",
+            "phases": phases,
+            "duration": duration,
+            "effect_type": "invulnerable_save",
+            "value": int(m.group("value")),
+            "attack_type": "any",
+            "target_keywords": list(target_keywords or []),
+            "target_keyword_mode": mode,
+        }
+    m = fnp_re.fullmatch(rest) or fnp_unit_re.fullmatch(rest)
+    if m:
+        return {
+            "name": name or "",
+            "phases": phases,
+            "duration": duration,
+            "effect_type": "feel_no_pain",
+            "value": int(m.group("value")),
+            "attack_type": "any",
+            "target_keywords": list(target_keywords or []),
+            "target_keyword_mode": mode,
+        }
+
+    return None
+
+
+def defensive_reaction_note(spec: Dict[str, Any]) -> str:
+    if not spec:
+        return "Generic defensive reaction."
+    effect_type = spec.get("effect_type")
+    value = spec.get("value")
+    attack_type = (spec.get("attack_type") or "any").strip().lower()
+    duration = spec.get("duration", "")
+
+    effect_desc = "defensive effect"
+    if effect_type == "hit_penalty":
+        effect_desc = f"-{int(value or 1)} to hit"
+    elif effect_type == "wound_penalty":
+        effect_desc = f"-{int(value or 1)} to wound"
+    elif effect_type == "ap_worsen":
+        effect_desc = f"worsen AP by {int(value or 1)}"
+    elif effect_type == "damage_reduction":
+        effect_desc = f"-{int(value or 1)} Damage"
+    elif effect_type == "invulnerable_save":
+        effect_desc = f"{int(value)}+ invulnerable save"
+    elif effect_type == "feel_no_pain":
+        effect_desc = f"Feel No Pain {int(value)}+"
+
+    if attack_type in ("melee", "ranged"):
+        effect_desc = f"{effect_desc} ({attack_type})"
+
+    duration_desc = "until end of phase"
+    if duration == "attacker":
+        duration_desc = "until the attacking unit finishes its attacks"
+
+    keywords = spec.get("target_keywords") or []
+    if keywords:
+        joiner = " or " if spec.get("target_keyword_mode") == "any" else " "
+        target_desc = f"{joiner.join(keywords)} unit"
+    else:
+        target_desc = "unit"
+    return f"Defensive reaction after targets selected: {target_desc} gains {effect_desc} {duration_desc}."
 
 
 class Stratagem:
@@ -385,6 +666,8 @@ class StratagemManager:
         }
         # Once-per-battle-round limits (e.g., SUMMONED BY SLAUGHTER)
         self._used_battle_round: Dict[str, int] = {}
+        # Cache parsed generic defensive reaction specs by stratagem id/name.
+        self._defensive_reaction_cache: Dict[str, Optional[Dict[str, Any]]] = {}
 
     def _dequeue_reaction_by_name(self, stratagem_name: str) -> None:
         """Remove the first pending reaction matching this stratagem name."""
@@ -413,6 +696,250 @@ class StratagemManager:
             return str(getattr(root, "_id", None) or id(root))
         except Exception:
             return str(id(root))
+
+    @staticmethod
+    def _phase_key_from_name(phase_name: str) -> str:
+        return str(phase_name or "").strip().upper().replace(" ", "_")
+
+    def _get_defensive_reaction_spec(self, stratagem: Stratagem) -> Optional[Dict[str, Any]]:
+        if stratagem is None:
+            return None
+        name_u = (str(getattr(stratagem, "name", "") or "")).strip().upper()
+        if name_u in IMPLEMENTED_STRATAGEM_NAMES:
+            return None
+        key = str(getattr(stratagem, "id", "") or name_u)
+        if key in self._defensive_reaction_cache:
+            return self._defensive_reaction_cache[key]
+        spec = parse_defensive_reaction_stratagem(stratagem.name or "", stratagem.description or "")
+        self._defensive_reaction_cache[key] = spec
+        return spec
+
+    def _unit_matches_defensive_target_spec(self, unit: Any, spec: Dict[str, Any]) -> bool:
+        if unit is None or spec is None:
+            return False
+        keywords = list(spec.get("target_keywords") or [])
+        if not keywords:
+            return True
+        mode = str(spec.get("target_keyword_mode") or "all").strip().lower()
+
+        def _match_keyword(kw: str) -> bool:
+            if not kw:
+                return False
+            try:
+                if unit.has_any_keyword(kw):
+                    return True
+            except Exception:
+                pass
+            if " " in kw:
+                parts = [p for p in kw.split(" ") if p]
+                if parts:
+                    try:
+                        return all(unit.has_any_keyword(p) for p in parts)
+                    except Exception:
+                        return False
+            return False
+
+        if mode == "any":
+            return any(_match_keyword(k) for k in keywords)
+        return all(_match_keyword(k) for k in keywords)
+
+    def _append_defensive_effect(self, unit: Any, key: str, entry: Dict[str, Any]) -> None:
+        try:
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            items = sr.get(key)
+            if not isinstance(items, list):
+                items = []
+            items.append(dict(entry))
+            sr[key] = items
+            unit.special_rules = sr
+        except Exception:
+            return
+
+    def _apply_generic_defensive_effect(
+        self,
+        unit: Any,
+        spec: Dict[str, Any],
+        *,
+        attacker_unit: Any,
+        phase_name: str,
+        source_name: str,
+    ) -> bool:
+        if unit is None or spec is None:
+            return False
+        duration = spec.get("duration")
+        effect_type = spec.get("effect_type")
+        value = int(spec.get("value") or 0)
+        attack_type = str(spec.get("attack_type") or "any").strip().lower()
+        attacker_key = self._attacker_unit_key(attacker_unit) if duration == "attacker" else None
+        expires_phase = self._phase_key_from_name(phase_name) if duration == "phase" else None
+        entry = {
+            "value": value,
+            "attack_type": attack_type,
+            "attacker_key": attacker_key,
+            "expires_phase": expires_phase,
+            "source": str(source_name or "Stratagem"),
+        }
+
+        if effect_type == "ap_worsen":
+            if duration == "phase":
+                self._append_defensive_effect(unit, "defensive_ap_worsen_phase", entry)
+                return True
+            if attacker_unit is None:
+                return False
+            return bool(self._apply_armour_of_contempt(unit, attacker_unit, amount=value))
+        if effect_type == "hit_penalty":
+            self._append_defensive_effect(unit, "defensive_hit_mods", entry)
+            return True
+        if effect_type == "wound_penalty":
+            self._append_defensive_effect(unit, "defensive_wound_mods", entry)
+            return True
+        if effect_type == "damage_reduction":
+            self._append_defensive_effect(unit, "defensive_damage_reductions", entry)
+            return True
+        if effect_type == "invulnerable_save":
+            self._append_defensive_effect(unit, "defensive_invuln_overrides", entry)
+            return True
+        if effect_type == "feel_no_pain":
+            self._append_defensive_effect(unit, "defensive_fnp_overrides", entry)
+            return True
+        return False
+
+    def _clear_defensive_effects_for_attacker(self, attacker_unit: Any) -> None:
+        key = self._attacker_unit_key(attacker_unit)
+        if key is None:
+            return
+        try:
+            units = list(getattr(self.player.get_army(), "units", []) or [])
+        except Exception:
+            units = []
+        for unit in units:
+            try:
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                for k in (
+                    "defensive_hit_mods",
+                    "defensive_wound_mods",
+                    "defensive_damage_reductions",
+                    "defensive_invuln_overrides",
+                    "defensive_fnp_overrides",
+                    "defensive_ap_worsen_phase",
+                ):
+                    items = sr.get(k)
+                    if not isinstance(items, list):
+                        continue
+                    kept = [e for e in items if str(e.get("attacker_key", "")) != str(key)]
+                    if kept:
+                        sr[k] = kept
+                    else:
+                        sr.pop(k, None)
+                unit.special_rules = sr
+            except Exception:
+                continue
+
+    def _clear_defensive_effects_for_phase(self, phase_name: str) -> None:
+        phase_key = self._phase_key_from_name(phase_name)
+        if not phase_key:
+            return
+        try:
+            units = list(getattr(self.player.get_army(), "units", []) or [])
+        except Exception:
+            units = []
+        for unit in units:
+            try:
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                for k in (
+                    "defensive_hit_mods",
+                    "defensive_wound_mods",
+                    "defensive_damage_reductions",
+                    "defensive_invuln_overrides",
+                    "defensive_fnp_overrides",
+                ):
+                    items = sr.get(k)
+                    if not isinstance(items, list):
+                        continue
+                    kept = [e for e in items if str(e.get("expires_phase", "")) != str(phase_key)]
+                    if kept:
+                        sr[k] = kept
+                    else:
+                        sr.pop(k, None)
+                unit.special_rules = sr
+            except Exception:
+                continue
+
+    def _queue_generic_defensive_reactions(
+        self,
+        attacking_unit: Any,
+        target_units: Optional[List[Any]],
+        *,
+        phase_name: str,
+    ) -> None:
+        if attacking_unit is None:
+            return
+        phase_key = str(phase_name or "").strip().lower()
+        phase_tag = None
+        if "shooting" in phase_key:
+            phase_tag = "shooting"
+        elif "fight" in phase_key:
+            phase_tag = "fight"
+        if phase_tag is None:
+            return
+        for s in list(self.available or []):
+            spec = self._get_defensive_reaction_spec(s)
+            if not spec:
+                continue
+            if phase_tag not in set(spec.get("phases") or []):
+                continue
+            if self.player.command_points < int(getattr(s, "cp_cost", 0) or 0):
+                continue
+            if (s.name or "").strip().upper() in self._used_stratagems_this_phase:
+                continue
+            candidates = []
+            for u in list(target_units or []):
+                try:
+                    if u is None or not u.is_alive():
+                        continue
+                    if u.get_parent_army().player is not self.player:
+                        continue
+                    if _unit_cannot_be_target_of_stratagem(u):
+                        continue
+                    if not self._unit_matches_defensive_target_spec(u, spec):
+                        continue
+                    candidates.append(u)
+                except Exception:
+                    continue
+            if not candidates:
+                continue
+            already = False
+            for r in self._pending_reactions:
+                try:
+                    if (
+                        r.get("event") in ("shooting_targets_selected", "fight_targets_selected")
+                        and r.get("stratagem") == s.name
+                        and r.get("attacking_unit") is attacking_unit
+                    ):
+                        already = True
+                        break
+                except Exception:
+                    continue
+            if already:
+                continue
+            payload = {
+                "event": "shooting_targets_selected" if phase_tag == "shooting" else "fight_targets_selected",
+                "phase_name": phase_name,
+                "stratagem": s.name,
+                "cp_cost": s.cp_cost,
+                "attacking_unit": attacking_unit,
+                "target_units": list(target_units or []),
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload)
 
     def _apply_armour_of_contempt(self, target_unit: Any, attacker_unit: Any, *, amount: int = 1) -> bool:
         if target_unit is None or attacker_unit is None:
@@ -510,7 +1037,10 @@ class StratagemManager:
 
     def _is_implemented_stratagem(self, stratagem: Stratagem) -> bool:
         try:
-            return (stratagem.name or "").strip().upper() in IMPLEMENTED_STRATAGEM_NAMES
+            name_u = (stratagem.name or "").strip().upper()
+            if name_u in IMPLEMENTED_STRATAGEM_NAMES:
+                return True
+            return self._get_defensive_reaction_spec(stratagem) is not None
         except Exception:
             return False
 
@@ -1049,6 +1579,14 @@ class StratagemManager:
                             u.special_rules = sr
                     except Exception:
                         continue
+        except Exception:
+            pass
+
+        # Clear generic defensive reaction effects at phase end.
+        try:
+            phase_name = getattr(phase, "name", None)
+            if phase_name in ("SHOOTING_PHASE", "FIGHT_PHASE"):
+                self._clear_defensive_effects_for_phase(phase_name)
         except Exception:
             pass
 
@@ -1593,6 +2131,7 @@ class StratagemManager:
         if attacker_unit is None:
             return
         self._clear_armour_of_contempt_for_attacker(attacker_unit)
+        self._clear_defensive_effects_for_attacker(attacker_unit)
 
     def _maybe_queue_tank_shock(self, charging_unit, action: str) -> None:
         # Trigger condition: just after a VEHICLE unit from your army ends a Charge move.
@@ -1855,6 +2394,16 @@ class StratagemManager:
                     "attacking_unit": attacking_unit,
                     "candidates": candidates,
                 })
+        except Exception:
+            pass
+
+        # Generic defensive reactions (after targets selected).
+        try:
+            self._queue_generic_defensive_reactions(
+                attacking_unit,
+                list(target_units or []),
+                phase_name="Shooting phase",
+            )
         except Exception:
             pass
 
@@ -2166,6 +2715,16 @@ class StratagemManager:
         except Exception:
             pass
 
+        # Generic defensive reactions (after targets selected).
+        try:
+            self._queue_generic_defensive_reactions(
+                attacking_unit,
+                list(target_units or []),
+                phase_name="Fight phase",
+            )
+        except Exception:
+            pass
+
         # Warhost: LIGHTNING-FAST REACTIONS (Fight phase)
         try:
             s = self.get_by_name("LIGHTNING-FAST REACTIONS")
@@ -2379,6 +2938,7 @@ class StratagemManager:
         if unit is None:
             return
         self._clear_armour_of_contempt_for_attacker(unit)
+        self._clear_defensive_effects_for_attacker(unit)
 
     def _maybe_queue_overwatch(self, moving_unit, action: str, when: str) -> None:
         # Only offer to the opponent of the moving unit's owner
@@ -5334,6 +5894,92 @@ class StratagemManager:
             print(f"🩸 Summoned by Slaughter: {getattr(root, 'name', 'Unit')} set up from Reserves.")
             return True
 
+        # Generic defensive reaction stratagems (after targets selected).
+        spec = self._get_defensive_reaction_spec(s)
+        if spec:
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            attacker_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit")
+            candidates = kwargs.get("candidates") or kwargs.get("target_units") or []
+            if unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == (s.name or "").strip().upper():
+                        unit = unit or r.get("unit") or r.get("target_unit")
+                        attacker_unit = attacker_unit or r.get("attacking_unit")
+                        if not candidates:
+                            candidates = r.get("candidates") or r.get("target_units") or []
+                        break
+            if unit is None:
+                print(f"❌ {s.name}: no target unit provided")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                return False
+            if candidates:
+                try:
+                    if root not in list(candidates or []):
+                        print(f"❌ {s.name}: target was not selected by the attacker")
+                        return False
+                except Exception:
+                    pass
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            phase_key = str(phase_name or "").strip().lower()
+            phase_tag = "shooting" if "shooting" in phase_key else "fight" if "fight" in phase_key else None
+            if phase_tag is None or phase_tag not in set(spec.get("phases") or []):
+                print(f"❌ {s.name}: wrong phase")
+                return False
+            if spec.get("duration") == "attacker" and attacker_unit is None:
+                print(f"❌ {s.name}: missing attacker context")
+                return False
+            try:
+                if attacker_unit is not None and attacker_unit.get_parent_army().player is self.player:
+                    print(f"❌ {s.name}: attacker is not enemy")
+                    return False
+            except Exception:
+                pass
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print(f"❌ {s.name}: target cannot be selected")
+                    return False
+            except Exception:
+                return False
+            try:
+                if not self._unit_matches_defensive_target_spec(root, spec):
+                    print(f"❌ {s.name}: target does not match keywords")
+                    return False
+            except Exception:
+                return False
+
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                eff_cost = s.cp_cost
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            if not self._apply_generic_defensive_effect(
+                root,
+                spec,
+                attacker_unit=attacker_unit,
+                phase_name=phase_name or "",
+                source_name=s.name,
+            ):
+                return False
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
+            try:
+                print(f"🛡️ {s.name}: {defensive_reaction_note(spec)}")
+            except Exception:
+                pass
+            return True
+
         # Provide phase_name for timing checks
         if 'phase_name' not in kwargs:
             kwargs['phase_name'] = self._current_phase_name
@@ -5435,11 +6081,12 @@ class StratagemManager:
             if not s.is_phase_allowed(phase_name or ""):
                 continue
             name_u = (s.name or "").strip().upper()
-            if name_u in pending_names and name_u in REACTION_ONLY_STRATAGEM_NAMES:
+            is_reaction_only = name_u in REACTION_ONLY_STRATAGEM_NAMES or self._get_defensive_reaction_spec(s) is not None
+            if name_u in pending_names and is_reaction_only:
                 continue
             ctx = {"phase_name": phase_name}
             availability = self._evaluate_availability(s, ctx, is_active_turn=is_active_turn)
-            if name_u in REACTION_ONLY_STRATAGEM_NAMES:
+            if is_reaction_only:
                 if availability["available"]:
                     availability["available"] = False
                     availability["reason"] = "No trigger"
