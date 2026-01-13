@@ -9372,9 +9372,17 @@ class Unit:
         except Exception:
             auto_passed = False
 
+        icon_of_war_reroll_available = False
+        if not auto_passed:
+            try:
+                icon_of_war_reroll_available = bool(self._icon_of_war_battle_shock_reroll_available())
+            except Exception:
+                icon_of_war_reroll_available = False
+
         if not auto_passed:
             total_mod = int(shadow_mod) + int(extra_mod)
-            if not synapse_3d6 and total_mod == 0:
+            manual_roll = bool(synapse_3d6 or total_mod != 0 or icon_of_war_reroll_available)
+            if not manual_roll:
                 try:
                     passed = bool(self.pass_leadership_check())
                 except Exception:
@@ -9422,6 +9430,63 @@ class Unit:
                         f"{self.name} Leadership test: {dice_expr} rolled {roll_result}{dice_note} "
                         f"-> {mod_roll} vs Ld {leadership_value} - {'PASSED' if passed else 'FAILED'}"
                     )
+
+                if icon_of_war_reroll_available:
+                    try:
+                        provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                        is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                    except Exception:
+                        provider = None
+                        is_human = False
+                    if is_human and callable(provider):
+                        try:
+                            want_reroll = bool(
+                                provider(
+                                    player=player,
+                                    unit=self,
+                                    roll_type="battle-shock",
+                                    value=roll_result,
+                                    dice=dice_rolls,
+                                )
+                            )
+                        except Exception:
+                            want_reroll = False
+                        try:
+                            from ..utility.event_bus import append_action
+                            pn = getattr(player, "name", "")
+                        except Exception:
+                            append_action = None
+                            pn = ""
+                        if want_reroll:
+                            original_roll = roll_result
+                            new_roll = get_roll(dice_expr)
+                            roll_result = new_roll
+                            try:
+                                mod_roll = int(roll_result) + int(total_mod)
+                            except Exception:
+                                mod_roll = roll_result
+                            passed = mod_roll <= leadership_value
+                            if append_action and pn:
+                                append_action(
+                                    pn,
+                                    f"Icon of War: {self.name} re-rolls Battle-shock test ({original_roll} -> {new_roll}).",
+                                )
+                            if total_mod:
+                                print(
+                                    f"{self.name} Leadership test re-roll: {dice_expr} rolled {roll_result} (mod {total_mod:+}) "
+                                    f"-> {mod_roll} vs Ld {leadership_value} - {'PASSED' if passed else 'FAILED'}"
+                                )
+                            else:
+                                print(
+                                    f"{self.name} Leadership test re-roll: {dice_expr} rolled {roll_result} "
+                                    f"-> {mod_roll} vs Ld {leadership_value} - {'PASSED' if passed else 'FAILED'}"
+                                )
+                        else:
+                            if append_action and pn:
+                                append_action(
+                                    pn,
+                                    f"Icon of War: {self.name} keeps Battle-shock roll ({roll_result}).",
+                                )
 
         # Units that are already Battle-shocked can still be forced to take another Battle-shock test,
         # but the result does not change the unit's Battle-shocked status or duration.
@@ -10502,6 +10567,9 @@ class Unit:
             if mgr is not None and getattr(mgr, "blood_tithe_might_of_khorne_applies", None):
                 if mgr.blood_tithe_might_of_khorne_applies(self):
                     return True
+            if mgr is not None and getattr(mgr, "unit_is_blood_legions", None):
+                if mgr.unit_is_blood_legions(self) and self._unit_within_icon_of_war_range():
+                    return True
         except Exception:
             pass
         for u in self.get_attached_unit_members():
@@ -10522,6 +10590,147 @@ class Unit:
             self._ability_cache = {}
         self._ability_cache["icon_of_khorne"] = bool(found)
         return bool(found)
+
+    def has_icon_of_war(self) -> bool:
+        """True if this unit has the Icon of War enhancement."""
+        cache_key = "icon_of_war"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            if bool(self._ability_cache[cache_key]):
+                return True
+        found = False
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("enhancement_icon_of_war"):
+                found = True
+        except Exception:
+            found = False
+        if not found:
+            try:
+                enh = getattr(self, "enhancement", None)
+                name = str(getattr(enh, "name", "") or "").strip().lower()
+                enh_id = str(getattr(enh, "id", "") or "").strip()
+                if name == "icon of war" or enh_id == "000010078002":
+                    found = True
+            except Exception:
+                found = False
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = bool(found)
+        return bool(found)
+
+    def _unit_on_battlefield_for_icon_of_war(self, unit) -> bool:
+        if unit is None:
+            return False
+        try:
+            if not bool(getattr(unit, "deployed", True)):
+                return False
+            if str(getattr(unit, "reserve_status", "deployed")) != "deployed":
+                return False
+        except Exception:
+            return False
+        try:
+            if bool(getattr(unit, "embarked_in", None)) or bool(getattr(unit, "is_embarked", False)):
+                return False
+        except Exception:
+            return False
+        try:
+            if hasattr(unit, "is_alive") and callable(unit.is_alive) and not unit.is_alive():
+                return False
+        except Exception:
+            pass
+        return True
+
+    def _models_within_icon_of_war_range(self, source_unit, target_unit, *, radius: float) -> bool:
+        try:
+            from ..utility.aura_utils import distance_between_models_bases_3d
+        except Exception:
+            return False
+        try:
+            src_models = list(getattr(source_unit, "models", []) or [])
+        except Exception:
+            src_models = []
+        try:
+            tgt_models = list(target_unit.get_attached_unit_models() or [])
+        except Exception:
+            tgt_models = list(getattr(target_unit, "models", []) or [])
+        if not src_models or not tgt_models:
+            return False
+        for sm in src_models:
+            try:
+                if not getattr(sm, "is_alive", True):
+                    continue
+            except Exception:
+                continue
+            for tm in tgt_models:
+                try:
+                    if not getattr(tm, "is_alive", True):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    if distance_between_models_bases_3d(sm, tm) <= float(radius) + 1e-6:
+                        return True
+                except Exception:
+                    continue
+        return False
+
+    def _unit_within_icon_of_war_range(self, *, radius: float = 6.0) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if not self._unit_on_battlefield_for_icon_of_war(root):
+            return False
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        if army is None:
+            return False
+        try:
+            units = list(getattr(army, "units", []) or [])
+        except Exception:
+            units = []
+        for source in units:
+            try:
+                if not source.has_icon_of_war():
+                    continue
+            except Exception:
+                continue
+            if not self._unit_on_battlefield_for_icon_of_war(source):
+                continue
+            if self._models_within_icon_of_war_range(source, root, radius=radius):
+                return True
+        return False
+
+    def _icon_of_war_battle_shock_reroll_available(self) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+        if mgr is None:
+            return False
+        try:
+            if not mgr.is_khorne_daemonkin():
+                return False
+        except Exception:
+            return False
+        try:
+            if not mgr.is_blood_tithe_active("MIGHT_OF_KHORNE"):
+                return False
+        except Exception:
+            return False
+        try:
+            if not mgr.unit_is_blood_legions(root):
+                return False
+        except Exception:
+            return False
+        return bool(root._unit_within_icon_of_war_range())
 
     def has_command_phase_sticky_objective(self) -> bool:
         """

@@ -147,6 +147,11 @@ class Enhancement:
                 return
             unit.special_rules["enhancement_blood_forged_armour"] = True
 
+        if name == "icon of war" or enh_id == "000010078002":
+            if not is_khorne_daemonkin:
+                return
+            unit.special_rules["enhancement_icon_of_war"] = True
+
         if name == "blade of endless bloodshed" or enh_id == "000010078005":
             if not is_khorne_daemonkin:
                 return
