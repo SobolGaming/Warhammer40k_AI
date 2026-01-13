@@ -61,8 +61,11 @@ class ShootingDeclarationDialog(BaseDialog):
         # Weapon group expansion state
         self.expanded_weapon_groups = set()  # Set of weapon profile IDs that are expanded
         # Targeting cache removed for performance; validation now happens on click only
+        self.out_of_phase = False
+        self.allow_actions = True
+        self.last_execution_success = None
     
-    def show(self, unit, callback, game_map=None, game_view=None):
+    def show(self, unit, callback, game_map=None, game_view=None, *, out_of_phase: bool = False, allow_actions: bool | None = None):
         """Show the shooting declaration dialog."""
         # Call parent show method
         super().show(callback)
@@ -70,6 +73,11 @@ class ShootingDeclarationDialog(BaseDialog):
         self.unit = unit
         self.game_map = game_map
         self.game_view = game_view
+        self.out_of_phase = bool(out_of_phase)
+        if allow_actions is None:
+            self.allow_actions = not self.out_of_phase
+        else:
+            self.allow_actions = bool(allow_actions)
         
         # Clear previous state
         self.weapon_declarations = []
@@ -115,15 +123,16 @@ class ShootingDeclarationDialog(BaseDialog):
         # Add Cancel button
         self.add_button('cancel', self.width - 160, self.height - 50, 140, 35)
 
-        # Add additional Mission Action buttons (The Ritual / Move Hazard)
-        self.add_button('start_the_ritual', 10, self.height - 140, 200, 35)
-        self.add_button('start_move_hazard', 220, self.height - 140, 200, 35)
+        if self.allow_actions:
+            # Add additional Mission Action buttons (The Ritual / Move Hazard)
+            self.add_button('start_the_ritual', 10, self.height - 140, 200, 35)
+            self.add_button('start_move_hazard', 220, self.height - 140, 200, 35)
 
-        # Add Mission Action buttons (Terraform / Sabotage / Burn Objective)
-        # Place above the bottom row
-        self.add_button('start_terraform', 10, self.height - 95, 200, 35)
-        self.add_button('start_sabotage', 220, self.height - 95, 200, 35)
-        self.add_button('start_burn_objective', 430, self.height - 95, 185, 35)
+            # Add Mission Action buttons (Terraform / Sabotage / Burn Objective)
+            # Place above the bottom row
+            self.add_button('start_terraform', 10, self.height - 95, 200, 35)
+            self.add_button('start_sabotage', 220, self.height - 95, 200, 35)
+            self.add_button('start_burn_objective', 430, self.height - 95, 185, 35)
 
     def _handle_button_click(self, button_name: str) -> bool:
         """Handle button click events from BaseDialog"""
@@ -131,9 +140,11 @@ class ShootingDeclarationDialog(BaseDialog):
             self.execute_shooting()
             return True
         elif button_name == 'cancel':
-            print("✅ Cancel button clicked")
+            print("Cancel button clicked")
             self.hide()
             return True
+        if not self.allow_actions and button_name.startswith("start_"):
+            return False
         elif button_name == 'start_terraform':
             return self._try_start_terraform()
         elif button_name == 'start_sabotage':
@@ -178,6 +189,13 @@ class ShootingDeclarationDialog(BaseDialog):
         self.unit = None
         self.callback = None
         self.game_map = None
+        self.out_of_phase = False
+        self.allow_actions = True
+        self.last_execution_success = None
+        try:
+            self.force_single_target_unit = None
+        except Exception:
+            pass
 
         # Clear weapon profile on game view to remove range visualization
         if hasattr(self, 'game_view') and self.game_view:
@@ -302,7 +320,7 @@ class ShootingDeclarationDialog(BaseDialog):
         except Exception:
             pass
         # Check if the unit has already shot
-        if self.unit.round_state.shot_this_round:
+        if (not self.out_of_phase) and self.unit.round_state.shot_this_round:
             return False
         
         # Check for restrictions due to Advance or Fall Back
@@ -871,7 +889,12 @@ class ShootingDeclarationDialog(BaseDialog):
         print(f"🎯 Executing {len(self.weapon_declarations)} shooting declarations...")
         
         # Execute shooting using the unit's new method
-        success = self.unit.execute_shooting_declarations(self.weapon_declarations, self.game_map)
+        success = self.unit.execute_shooting_declarations(
+            self.weapon_declarations,
+            self.game_map,
+            out_of_phase=bool(self.out_of_phase),
+        )
+        self.last_execution_success = bool(success)
         
         if success:
             print(f"✅ {self.unit.name} completed shooting phase")

@@ -520,7 +520,95 @@ class WargearProfile:
         cabal_bonus = self._cabal_twist_of_fate_ap_bonus(attacker, target)
         if cabal_bonus:
             ap_val -= int(cabal_bonus)
+        # Defensive stratagems that worsen AP for attacks against a specific target.
+        try:
+            target_root = target.get_attached_unit_root() if target is not None else target
+        except Exception:
+            target_root = target
+        try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+        except Exception:
+            attacker_unit = None
+        try:
+            if target_root is not None and attacker_unit is not None:
+                try:
+                    attacker_root = attacker_unit.get_attached_unit_root()
+                except Exception:
+                    attacker_root = attacker_unit
+                attacker_key = str(getattr(attacker_root, "_id", None) or id(attacker_root))
+                sr = getattr(target_root, "special_rules", None)
+                if isinstance(sr, dict):
+                    spec = sr.get("armour_of_contempt_ap_worsen")
+                    if isinstance(spec, dict):
+                        bonus = int(spec.get(str(attacker_key), 0) or 0)
+                        if bonus:
+                            ap_val += bonus
+                if isinstance(sr, dict):
+                    phase_key = self._resolve_phase_key(attacker_unit=attacker_unit, target_unit=target_root)
+                    for entry in self._iter_defensive_entries(
+                        target_root,
+                        "defensive_ap_worsen_phase",
+                        attacker_key=None,
+                        attack_type="any",
+                        phase_key=phase_key,
+                    ):
+                        try:
+                            ap_val += int(entry.get("value", 0) or 0)
+                        except Exception:
+                            continue
+        except Exception:
+            pass
         return int(apply_characteristic_caps("ap", int(ap_val), base_raw=getattr(self, "_raw_ap", None)))
+
+    def _resolve_phase_key(self, attacker_unit: Optional['Unit'] = None, target_unit: Optional['Unit'] = None) -> str:
+        try:
+            unit = attacker_unit or target_unit
+            if unit is None:
+                return ""
+            army = unit.get_parent_army()
+            game = getattr(getattr(army, "player", None), "game", None)
+            return str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        except Exception:
+            return ""
+
+    def _iter_defensive_entries(
+        self,
+        target_unit: Optional['Unit'],
+        key: str,
+        *,
+        attacker_key: Optional[str],
+        attack_type: Optional[str],
+        phase_key: Optional[str],
+    ):
+        if target_unit is None:
+            return []
+        try:
+            sr = getattr(target_unit, "special_rules", None)
+        except Exception:
+            sr = None
+        if not isinstance(sr, dict):
+            return []
+        items = sr.get(key)
+        if not isinstance(items, list):
+            return []
+        atk_type = str(attack_type or "any").strip().lower()
+        phase_key = str(phase_key or "").strip().upper()
+        out = []
+        for entry in list(items):
+            if not isinstance(entry, dict):
+                continue
+            entry_attack_type = str(entry.get("attack_type") or "any").strip().lower()
+            if atk_type and entry_attack_type not in ("any", atk_type):
+                continue
+            entry_attacker = entry.get("attacker_key")
+            if entry_attacker:
+                if not attacker_key or str(entry_attacker) != str(attacker_key):
+                    continue
+            entry_phase = str(entry.get("expires_phase") or "").strip().upper()
+            if entry_phase and phase_key and entry_phase != phase_key:
+                continue
+            out.append(entry)
+        return out
 
     def attack(self, target: 'Unit', attacker: 'Model', game_map: Optional['Map'] = None) -> Optional[AttackResult]:
         # ONE SHOT: enforce once per battle per model per weapon.
@@ -572,6 +660,14 @@ class WargearProfile:
         wound_instances = []
         hit_instances = []
         num_attacks = 0
+        attacker_unit = getattr(attacker, "parent_unit", None)
+        attacker_key = None
+        try:
+            if attacker_unit is not None:
+                attacker_root = attacker_unit.get_attached_unit_root() if hasattr(attacker_unit, "get_attached_unit_root") else attacker_unit
+                attacker_key = str(getattr(attacker_root, "_id", None) or id(attacker_root))
+        except Exception:
+            attacker_key = None
 
         # INDIRECT FIRE (penalty only if no models in target unit are visible to attacking unit at selection time)
         indirect_fire_no_visible = False
@@ -726,6 +822,18 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Two melee weapons (plus close combat weapon): add Attacks to those two weapons.
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                unit = getattr(attacker, "parent_unit", None)
+                if unit is not None and getattr(unit, "get_two_melee_weapons_bonus", None):
+                    bonus, bonus_wargear = unit.get_two_melee_weapons_bonus(attacker)
+                    if bonus and bonus_wargear and self.parent_wargear in bonus_wargear:
+                        atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="ability:two_melee_weapons_attacks_add"))
+                        attack_result.attacks_special_modifiers.append(f"Two melee weapons +{bonus}A")
+        except Exception:
+            pass
+
         # Damaged profile: add attacks to a specific named weapon (+N).
         try:
             wname = str(getattr(attacker.parent_unit, "special_rules", {}).get("damaged_attacks_bonus_weapon_name", "") or "").strip().lower()
@@ -748,6 +856,59 @@ class WargearProfile:
             pass
 
         closest_target, closest_dist = attacker.return_closest_model_in_unit(target)
+
+        furious_onslaught_applies = False
+        try:
+            is_ranged = bool(getattr(getattr(self, "parent_wargear", None), "is_ranged", lambda: False)())
+            if is_ranged:
+                unit = getattr(attacker, "parent_unit", None)
+                if unit is not None and getattr(unit, "has_furious_onslaught", None):
+                    if unit.has_furious_onslaught(attacker):
+                        gm = game_map
+                        if gm is None:
+                            try:
+                                gm = unit.get_parent_army().player.game.map
+                            except Exception:
+                                gm = None
+                        if gm is not None and getattr(unit, "is_target_closest_eligible", None):
+                            furious_onslaught_applies = bool(
+                                unit.is_target_closest_eligible(attacker, self, target, gm, max_distance=18.0)
+                            )
+        except Exception:
+            furious_onslaught_applies = False
+        closest_monster_vehicle_rule = None
+        try:
+            is_ranged = bool(getattr(getattr(self, "parent_wargear", None), "is_ranged", lambda: False)())
+            if is_ranged:
+                unit = getattr(attacker, "parent_unit", None)
+                if unit is not None and getattr(unit, "get_closest_monster_vehicle_reroll_rule", None):
+                    rule = unit.get_closest_monster_vehicle_reroll_rule(attacker)
+                    if rule:
+                        gm = game_map
+                        if gm is None:
+                            try:
+                                gm = unit.get_parent_army().player.game.map
+                            except Exception:
+                                gm = None
+                        if gm is not None and getattr(unit, "is_target_closest_eligible", None):
+                            max_dist = None
+                            try:
+                                max_dist = int(rule.get("range", 0) or 0)
+                            except Exception:
+                                max_dist = None
+                            closest_monster_vehicle_rule = None
+                            if max_dist:
+                                if unit.is_target_closest_eligible(
+                                    attacker,
+                                    self,
+                                    target,
+                                    gm,
+                                    max_distance=float(max_dist),
+                                    require_keywords={"monster", "vehicle"},
+                                ):
+                                    closest_monster_vehicle_rule = rule
+        except Exception:
+            closest_monster_vehicle_rule = None
 
         # Apply AP modifiers that depend on attacker/target context (e.g., Plunging Fire)
         effective_ap = self.get_effective_ap(attacker, target)
@@ -861,6 +1022,14 @@ class WargearProfile:
                 'conversion_active': conversion_active,
                 'distance_to_target': closest_dist,
             }
+            if attacker_unit is not None:
+                attack_instance["attacker_unit"] = attacker_unit
+            if attacker_key is not None:
+                attack_instance["attacker_key"] = attacker_key
+            if furious_onslaught_applies:
+                attack_instance["furious_onslaught_applies"] = True
+            if closest_monster_vehicle_rule:
+                attack_instance["closest_monster_vehicle_reroll_rule"] = closest_monster_vehicle_rule
 
             if indirect_fire_no_visible:
                 attack_instance["indirect_fire_no_visible"] = True
@@ -886,6 +1055,14 @@ class WargearProfile:
                             'damage': 0,
                             'target_toughness_override': kill_team_toughness,
                         }
+                        if attacker_unit is not None:
+                            extra_instance["attacker_unit"] = attacker_unit
+                        if attacker_key is not None:
+                            extra_instance["attacker_key"] = attacker_key
+                        if furious_onslaught_applies:
+                            extra_instance["furious_onslaught_applies"] = True
+                        if closest_monster_vehicle_rule:
+                            extra_instance["closest_monster_vehicle_reroll_rule"] = closest_monster_vehicle_rule
                         hit_instances.append(extra_instance)
                         attack_result.total_hits += 1
 
@@ -1188,6 +1365,168 @@ class WargearProfile:
         
         return attack_result
 
+    def _maybe_apply_aspect_shrine_token(
+        self,
+        attacker: 'Model',
+        target: 'Unit',
+        roll_type: str,
+        roll_value: Optional[int],
+        needed: Optional[int] = None,
+    ) -> tuple[Optional[int], Optional[str]]:
+        """
+        Aeldari Aspect Shrine Token: optionally set a hit/wound roll to an unmodified 6.
+        Returns (new_roll_value, decision_str) where decision_str is "use", "skip", or "suppress".
+        """
+        try:
+            if roll_value is None:
+                return roll_value, None
+            if int(roll_value) == 6:
+                return roll_value, None
+        except Exception:
+            return roll_value, None
+
+        try:
+            if bool(getattr(attacker, "is_character", False)):
+                return roll_value, None
+        except Exception:
+            pass
+
+        unit = getattr(attacker, "parent_unit", None)
+        if unit is None:
+            return roll_value, None
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+
+        try:
+            if not hasattr(root, "get_aspect_shrine_token_remaining"):
+                return roll_value, None
+            if int(root.get_aspect_shrine_token_remaining() or 0) <= 0:
+                return roll_value, None
+            if bool(root.is_aspect_shrine_prompt_suppressed()):
+                return roll_value, None
+        except Exception:
+            return roll_value, None
+
+        player = None
+        game_map = None
+        is_human = False
+        provider = None
+        try:
+            army = root.get_parent_army()
+            player = getattr(army, "player", None)
+            game = getattr(player, "game", None) if player is not None else None
+            game_map = getattr(game, "map", None) if game is not None else None
+            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+            provider = getattr(game_map, "aspect_shrine_provider", None) if game_map is not None else None
+        except Exception:
+            player = None
+            game_map = None
+            is_human = False
+            provider = None
+
+        decision = None
+        tokens_remaining = 0
+        try:
+            tokens_remaining = int(root.get_aspect_shrine_token_remaining() or 0)
+        except Exception:
+            tokens_remaining = 0
+
+        if is_human and callable(provider):
+            try:
+                decision = provider(
+                    player=player,
+                    unit=root,
+                    roll_type=str(roll_type or ""),
+                    value=int(roll_value),
+                    needed=needed,
+                    tokens_remaining=tokens_remaining,
+                    attacker=attacker,
+                    target=target,
+                    weapon_name=getattr(getattr(self, "parent_wargear", None), "name", None)
+                    or getattr(self, "name", "Weapon"),
+                )
+            except Exception:
+                decision = None
+        else:
+            try:
+                ctx = {
+                    "roll_type": str(roll_type or ""),
+                    "roll": int(roll_value),
+                    "needed": int(needed) if needed is not None else None,
+                    "tokens_remaining": int(tokens_remaining or 0),
+                    "unit": root,
+                    "attacker": attacker,
+                    "target": target,
+                }
+            except Exception:
+                ctx = {}
+            try:
+                if player is not None and player._should_use_optional_ability("ASPECT_SHRINE_TOKEN", ctx):
+                    decision = "use"
+                else:
+                    decision = "skip"
+            except Exception:
+                decision = "skip"
+
+        decision_norm = str(decision or "").strip().lower()
+        if decision_norm in ("dont use for this unit", "dont_use_for_unit", "dont_use_for_this_unit", "dont_unit", "skip_unit", "suppress", "unit"):
+            try:
+                root.set_aspect_shrine_prompt_suppressed(True)
+                try:
+                    from warhammer40k_ai.utility.event_bus import append_action
+                    pname = getattr(player, "name", "Player")
+                    uname = getattr(root, "name", "Unit")
+                    append_action(
+                        pname,
+                        f"{uname}: Aspect Shrine Token prompt suppressed for this activation",
+                    )
+                except Exception:
+                    pass
+            except Exception:
+                pass
+            return roll_value, "suppress"
+
+        if decision_norm in ("use", "yes", "true"):
+            try:
+                if root.spend_aspect_shrine_token(1):
+                    try:
+                        from warhammer40k_ai.utility.event_bus import append_dice
+                        pname = getattr(player, "name", "Player")
+                        rt = str(roll_type or "").strip().lower()
+                        label = "roll"
+                        if rt == "hit":
+                            label = "Hit roll"
+                        elif rt == "wound":
+                            label = "Wound roll"
+                        append_dice(
+                            pname,
+                            f"{label} made {int(roll_value)}, Aspect Shrine Token used to change value to 6",
+                        )
+                    except Exception:
+                        pass
+                    try:
+                        from warhammer40k_ai.utility.event_bus import append_action
+                        pname = getattr(player, "name", "Player")
+                        uname = getattr(root, "name", "Unit")
+                        rt = str(roll_type or "").strip().lower()
+                        label = "roll"
+                        if rt == "hit":
+                            label = "Hit roll"
+                        elif rt == "wound":
+                            label = "Wound roll"
+                        append_action(
+                            pname,
+                            f"{uname}: Aspect Shrine Token used to change {label} {int(roll_value)} to 6",
+                        )
+                    except Exception:
+                        pass
+                    return 6, "use"
+            except Exception:
+                return roll_value, None
+        return roll_value, "skip"
+
     def _hit_target_with_tracking(self, target: 'Unit', attacker: 'Model', attack_instance: Dict) -> Dict:
         """Hit resolution with detailed tracking"""
         hit_result = {
@@ -1268,6 +1607,12 @@ class WargearProfile:
             except Exception:
                 pass
             try:
+                sr = getattr(attacker.parent_unit, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("bearer_unit_ignores_cover"):
+                    attack_instance["ignores_cover"] = True
+            except Exception:
+                pass
+            try:
                 tsr = getattr(target, "special_rules", None)
                 if isinstance(tsr, dict) and tsr.get("pain_no_cover_active"):
                     attack_instance["ignores_cover"] = True
@@ -1314,6 +1659,17 @@ class WargearProfile:
             hit_result['roll'] = dice_roll
             hit_result['needed'] = 6
             hit_result['final_needed'] = 6
+            new_roll, decision = self._maybe_apply_aspect_shrine_token(
+                attacker,
+                target,
+                roll_type="hit",
+                roll_value=dice_roll,
+                needed=6,
+            )
+            if new_roll is not None and int(new_roll) != int(dice_roll):
+                dice_roll = int(new_roll)
+                hit_result['roll'] = dice_roll
+                hit_result['special_effects'].append("Aspect Shrine Token: set roll to 6")
             if dice_roll == 6:
                 hit_result['hit'] = True
                 hit_result['special_effects'].append("Overwatch: 6 required to hit")
@@ -1358,9 +1714,30 @@ class WargearProfile:
         # apply -1 to Hit unless the attack is made with a Pistol.
         try:
             pu = attacker.parent_unit
-            if getattr(pu, "_bgnt_locked_at_target_selection", False) and (pu.is_vehicle or pu.is_monster) and (not self.is_pistol()):
+            if is_ranged and getattr(pu, "_bgnt_locked_at_target_selection", False) and (pu.is_vehicle or pu.is_monster) and (not self.is_pistol()):
                 dice_modifier -= 1
                 hit_result['modifiers'].append("-1 from Big Guns Never Tire (locked when selecting targets)")
+        except Exception:
+            pass
+
+        # BGNT target exception: ranged attacks vs an engaged enemy MONSTER/VEHICLE are -1 to hit (unless Pistol).
+        try:
+            pu = getattr(attacker, "parent_unit", None)
+            if is_ranged and pu is not None and (not self.is_pistol()) and (target.is_vehicle or target.is_monster):
+                game_map = None
+                try:
+                    game_map = pu.get_parent_army().player.game.map
+                except Exception:
+                    game_map = None
+                if game_map is not None:
+                    engaged_with_friendly = any(
+                        game_map.is_within_engagement_range(friendly, target)
+                        for friendly in game_map.get_friendly_units(pu)
+                        if friendly.is_alive() and getattr(friendly, "deployed", True)
+                    )
+                    if engaged_with_friendly:
+                        dice_modifier -= 1
+                        hit_result['modifiers'].append("-1 from Big Guns Never Tire (target engaged)")
         except Exception:
             pass
         
@@ -1368,6 +1745,64 @@ class WargearProfile:
         if hasattr(target, 'has_stealth') and target.has_stealth():
             dice_modifier -= 1
             hit_result['modifiers'].append("-1 from target Stealth")
+        # Warhost: Lightning-Fast Reactions (-1 to hit while active).
+        try:
+            try:
+                troot = target.get_attached_unit_root()
+            except Exception:
+                troot = target
+            sr = getattr(troot, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("lightning_fast_reactions_active") is True:
+                dice_modifier -= 1
+                hit_result['modifiers'].append("-1 from Lightning-Fast Reactions")
+        except Exception:
+            pass
+        # Generic defensive penalty: -1 to hit when targeting this unit/model.
+        try:
+            if hasattr(target, "get_target_hit_roll_penalty"):
+                is_melee = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_melee())
+                attack_type = "melee" if is_melee else "ranged"
+                penalty, reasons = target.get_target_hit_roll_penalty(
+                    attack_type,
+                    target_model=attack_instance.get("target_model"),
+                )
+                if penalty:
+                    dice_modifier -= int(penalty)
+                    if reasons:
+                        hit_result['modifiers'].extend(list(reasons))
+        except Exception:
+            pass
+        # Defensive reaction stratagems: -1 to hit (generic template).
+        try:
+            try:
+                troot = target.get_attached_unit_root()
+            except Exception:
+                troot = target
+            attack_type = "melee" if (self.parent_wargear and self.parent_wargear.is_melee()) else "ranged"
+            attacker_key = attack_instance.get("attacker_key")
+            if not attacker_key:
+                try:
+                    attacker_unit = getattr(attacker, "parent_unit", None)
+                    if attacker_unit is not None:
+                        attacker_root = attacker_unit.get_attached_unit_root() if hasattr(attacker_unit, "get_attached_unit_root") else attacker_unit
+                        attacker_key = str(getattr(attacker_root, "_id", None) or id(attacker_root))
+                except Exception:
+                    attacker_key = None
+            phase_key = self._resolve_phase_key(attacker_unit=getattr(attacker, "parent_unit", None), target_unit=troot)
+            for entry in self._iter_defensive_entries(
+                troot,
+                "defensive_hit_mods",
+                attacker_key=attacker_key,
+                attack_type=attack_type,
+                phase_key=phase_key,
+            ):
+                penalty = int(entry.get("value", 0) or 0)
+                if penalty:
+                    dice_modifier -= penalty
+                    src = entry.get("source") or "Defensive stratagem"
+                    hit_result['modifiers'].append(f"-{penalty} to hit from {src}")
+        except Exception:
+            pass
         # First Prince of Chaos (Shadow Legion Tzeentch): -1 to hit when targeting this unit.
         try:
             if hasattr(target, "has_first_prince_tzeentch_defense") and target.has_first_prince_tzeentch_defense():
@@ -1510,6 +1945,8 @@ class WargearProfile:
 
         # Attached leader leading bonuses (e.g., Drill Boss)
         lead_mods = None
+        unit_hit_mods = None
+        attack_type = "ranged"
         try:
             unit = attacker.parent_unit
             root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
@@ -1522,6 +1959,11 @@ class WargearProfile:
                 hit_result['modifiers'].extend(list(lead_mods.get("hit_reasons", ()) or ()))
         except Exception:
             lead_mods = None
+        try:
+            unit = attacker.parent_unit
+            unit_hit_mods = unit.get_unit_hit_reroll_modifiers(attack_type)
+        except Exception:
+            unit_hit_mods = None
         
         dice_modifier = min(max(dice_modifier, -1), 1)  # modifications are capped between -1 and 1
         final_needed = base_skill - dice_modifier  # Note: negative dice_modifier makes it harder (higher final_needed)
@@ -1591,6 +2033,201 @@ class WargearProfile:
                     hit_result.setdefault("special_effects", []).append("Leading: re-roll Hit rolls of 1")
                     hit_result.setdefault("special_effects", []).extend(list(lead_mods.get("reroll_hit_reasons", ()) or ()))
                     hit_result["reroll_of_one"] = 1
+                    hit_result["reroll"] = rr
+                    dice_roll = rr
+                    reroll_used = True
+        except Exception:
+            pass
+
+        objective_in_range = False
+        try:
+            if isinstance(unit_hit_mods, dict) and unit_hit_mods.get("reroll_hit_full_if_objective"):
+                unit = attacker.parent_unit
+                army = unit.get_parent_army() if unit is not None else None
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if game is not None and hasattr(game, "_unit_within_range_of_objective"):
+                    objective_in_range = bool(game._unit_within_range_of_objective(target))
+        except Exception:
+            objective_in_range = False
+
+        # Unit abilities: objective upgrade to re-roll the Hit roll instead of re-rolling 1s.
+        try:
+            if objective_in_range and "reroll" not in hit_result:
+                if isinstance(unit_hit_mods, dict) and unit_hit_mods.get("reroll_hit_full_if_objective"):
+                    try:
+                        success = (dice_roll != 1) and (self.skill > 0) and (dice_roll >= final_needed)
+                    except Exception:
+                        success = False
+                    do_reroll = False
+                    try:
+                        unit = attacker.parent_unit
+                        game = unit.get_parent_army().player.game
+                        player = unit.get_parent_army().player
+                        is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                        provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                    except Exception:
+                        is_human = False
+                        provider = None
+                        player = None
+                    reason = None
+                    try:
+                        reasons = list(unit_hit_mods.get("reroll_hit_full_reasons", ()) or ())
+                        if reasons:
+                            reason = reasons[0]
+                    except Exception:
+                        reason = None
+                    if is_human and callable(provider):
+                        try:
+                            do_reroll = bool(provider(
+                                player=player,
+                                unit=unit,
+                                roll_type="hit",
+                                value=dice_roll,
+                                dice=None,
+                                needed=final_needed,
+                                success=success,
+                                reason=reason or "Unit ability (objective)",
+                            ))
+                        except Exception:
+                            do_reroll = False
+                    else:
+                        do_reroll = (not success)
+                    if do_reroll:
+                        rr = _reroll_hit()
+                        reasons = list(unit_hit_mods.get("reroll_hit_full_reasons", ()) or ())
+                        if reasons:
+                            hit_result.setdefault("special_effects", []).extend(reasons)
+                        elif reason:
+                            hit_result.setdefault("special_effects", []).append(reason)
+                        hit_result["reroll"] = rr
+                        dice_roll = rr
+                        reroll_used = True
+        except Exception:
+            pass
+
+        # Unit abilities: re-roll Hit rolls of 1 (skip if objective upgrade is present).
+        try:
+            if dice_roll == 1 and "reroll" not in hit_result:
+                if isinstance(unit_hit_mods, dict) and unit_hit_mods.get("reroll_hit_ones", False):
+                    if not (objective_in_range and unit_hit_mods.get("reroll_hit_full_if_objective")):
+                        rr = _reroll_hit()
+                        hit_result.setdefault("special_effects", []).extend(list(unit_hit_mods.get("reroll_hit_reasons", ()) or ()))
+                        hit_result["reroll_of_one"] = 1
+                        hit_result["reroll"] = rr
+                        dice_roll = rr
+                        reroll_used = True
+        except Exception:
+            pass
+
+        # Grey Knights: Fury of Titan (Deep Strike) re-roll Hit rolls of 1.
+        try:
+            if dice_roll == 1 and "reroll" not in hit_result:
+                unit = attacker.parent_unit
+                sr = getattr(unit, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("fury_of_titan_active"):
+                    rr = _reroll_hit()
+                    hit_result.setdefault("special_effects", []).append("Fury of Titan: re-roll Hit roll of 1")
+                    hit_result["reroll_of_one"] = 1
+                    hit_result["reroll"] = rr
+                    dice_roll = rr
+                    reroll_used = True
+        except Exception:
+            pass
+
+        # Model-specific abilities: re-roll Hit roll vs CHARACTER targets (optional).
+        try:
+            if "reroll" not in hit_result:
+                unit = attacker.parent_unit
+                is_character_target = False
+                try:
+                    is_character_target = bool(target.has_keyword("CHARACTER"))
+                except Exception:
+                    try:
+                        is_character_target = bool(target.has_any_keyword("CHARACTER"))
+                    except Exception:
+                        is_character_target = False
+                if unit is not None and is_character_target:
+                    allow, reason = unit.model_can_reroll_hit_vs_character(attacker)
+                    if allow:
+                        try:
+                            success = (dice_roll != 1) and (self.skill > 0) and (dice_roll >= final_needed)
+                        except Exception:
+                            success = False
+                        do_reroll = False
+                        try:
+                            game = unit.get_parent_army().player.game
+                            player = unit.get_parent_army().player
+                            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                            provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                        except Exception:
+                            is_human = False
+                            provider = None
+                            player = None
+                        if is_human and callable(provider):
+                            try:
+                                do_reroll = bool(provider(
+                                    player=player,
+                                    unit=unit,
+                                    roll_type="hit",
+                                    value=dice_roll,
+                                    dice=None,
+                                    needed=final_needed,
+                                    success=success,
+                                    reason=reason or "Model ability",
+                                ))
+                            except Exception:
+                                do_reroll = False
+                        else:
+                            do_reroll = (not success)
+                        if do_reroll:
+                            rr = _reroll_hit()
+                            label = reason or "Model ability"
+                            hit_result.setdefault("special_effects", []).append(
+                                f"{label}: re-roll Hit roll vs CHARACTER"
+                            )
+                            hit_result["reroll"] = rr
+                            dice_roll = rr
+                            reroll_used = True
+        except Exception:
+            pass
+
+        # World Eaters: Furious Onslaught (Forgefiend) re-roll Hit roll vs closest eligible target within 18" (optional).
+        try:
+            if attack_instance.get("furious_onslaught_applies") and "reroll" not in hit_result:
+                try:
+                    success = (dice_roll != 1) and (self.skill > 0) and (dice_roll >= final_needed)
+                except Exception:
+                    success = False
+                do_reroll = False
+                try:
+                    unit = attacker.parent_unit
+                    game = unit.get_parent_army().player.game
+                    player = unit.get_parent_army().player
+                    is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                    provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                except Exception:
+                    is_human = False
+                    provider = None
+                    player = None
+                if is_human and callable(provider):
+                    try:
+                        do_reroll = bool(provider(
+                            player=player,
+                            unit=unit,
+                            roll_type="hit",
+                            value=dice_roll,
+                            dice=None,
+                            needed=final_needed,
+                            success=success,
+                            reason="Furious Onslaught",
+                        ))
+                    except Exception:
+                        do_reroll = False
+                else:
+                    do_reroll = (not success)
+                if do_reroll:
+                    rr = _reroll_hit()
+                    hit_result.setdefault("special_effects", []).append("Furious Onslaught: re-roll Hit roll")
                     hit_result["reroll"] = rr
                     dice_roll = rr
                     reroll_used = True
@@ -2226,6 +2863,19 @@ class WargearProfile:
             )
         except Exception:
             pass
+
+        # Aspect Shrine Token (Aeldari): optionally set the roll to an unmodified 6.
+        new_roll, decision = self._maybe_apply_aspect_shrine_token(
+            attacker,
+            target,
+            roll_type="hit",
+            roll_value=dice_roll,
+            needed=final_needed,
+        )
+        if new_roll is not None and int(new_roll) != int(dice_roll):
+            dice_roll = int(new_roll)
+            hit_result['roll'] = dice_roll
+            hit_result['special_effects'].append("Aspect Shrine Token: set roll to 6")
         
         # INDIRECT FIRE: if no target models were visible at selection time,
         # an unmodified hit roll of 1, 2, or 3 always fails.
@@ -2255,6 +2905,227 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Precompute attack context (for Blitzing Firepower and critical hit effects).
+        try:
+            is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+        except Exception:
+            is_melee = False
+        try:
+            is_ranged = bool(getattr(self.parent_wargear, "is_ranged", lambda: False)())
+        except Exception:
+            is_ranged = False
+
+        # WORLD EATERS: Blessings of Khorne keyword injection (melee-only).
+        # - Warp Blades => Lethal Hits
+        # - Martial Excellence => Sustained Hits 1
+        blessings_lethal = False
+        blessings_sustained = False
+        try:
+            if is_melee:
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "blessings_of_khorne", None) if army is not None else None
+                game = army.player.game if (army is not None and getattr(army, "player", None) is not None) else None
+                br = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                if mgr is not None and br > 0:
+                    # Eligibility: attached unit group qualifies if any member has Blessings of Khorne ability
+                    try:
+                        qualifies = bool(unit.get_attached_unit_root().attached_unit_has_blessings_of_khorne())
+                    except Exception:
+                        qualifies = False
+                    if qualifies:
+                        blessings_lethal = bool(mgr.is_blessing_active_for_unit("WARP_BLADES", unit, battle_round=br))
+                        blessings_sustained = bool(mgr.is_blessing_active_for_unit("MARTIAL_EXCELLENCE", unit, battle_round=br))
+        except Exception:
+            blessings_lethal = False
+            blessings_sustained = False
+
+        dark_pacts_choice = None
+        try:
+            sr = getattr(attacker.parent_unit, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("dark_pacts_active"):
+                dark_pacts_choice = str(sr.get("dark_pacts_choice", "") or "").strip().upper()
+        except Exception:
+            dark_pacts_choice = None
+        dark_pacts_lethal = dark_pacts_choice == "LETHAL HITS"
+        dark_pacts_sustained = bool(dark_pacts_choice and dark_pacts_choice.startswith("SUSTAINED"))
+
+        bondsman_lethal = False
+        bondsman_sustained = False
+        bondsman_sustained_ranged = False
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            sr = getattr(unit, "special_rules", None)
+            if isinstance(sr, dict):
+                bondsman_lethal = bool(sr.get("bondsman_lethal_hits"))
+                bondsman_sustained = bool(sr.get("bondsman_sustained_hits"))
+                bondsman_sustained_ranged = bool(sr.get("bondsman_sustained_hits_ranged"))
+                if bondsman_sustained_ranged:
+                    bondsman_sustained_ranged = bool(
+                        getattr(self.parent_wargear, "is_ranged", lambda: False)()
+                    )
+        except Exception:
+            bondsman_lethal = False
+            bondsman_sustained = False
+            bondsman_sustained_ranged = False
+
+        martial_katah_lethal = False
+        martial_katah_sustained = False
+        try:
+            if is_melee:
+                unit = getattr(attacker, "parent_unit", None)
+                root = unit.get_attached_unit_root() if unit is not None else None
+                if root is not None and root.attached_unit_has_martial_katah():
+                    sr = getattr(root, "special_rules", None)
+                    choice = ""
+                    if isinstance(sr, dict):
+                        choice = str(sr.get("martial_katah_choice", "") or "").strip().upper()
+                    if choice == "RENDAX":
+                        martial_katah_lethal = True
+                    elif choice == "DACATARAI":
+                        martial_katah_sustained = True
+        except Exception:
+            martial_katah_lethal = False
+            martial_katah_sustained = False
+
+        leading_lethal = False
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            root = unit.get_attached_unit_root() if unit is not None else None
+            if root is not None and hasattr(root, "leading_unit_weapons_have_lethal_hits"):
+                leading_lethal = bool(root.leading_unit_weapons_have_lethal_hits())
+        except Exception:
+            leading_lethal = False
+
+        pact_lethal = False
+        pact_sustained = False
+        exquisite_lethal = False
+        exquisite_sustained = False
+        pain_lethal = False
+        pain_sustained = False
+        pain_sustained_value = 0
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            mgr = getattr(army, "emperors_children", None) if army is not None else None
+            if mgr is not None and mgr.is_emperors_children_unit(unit):
+                if mgr.pact_points_at_least(5) and is_melee:
+                    pact_lethal = True
+                    pact_sustained = True
+            if is_melee:
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                sr = getattr(root, "special_rules", None) if root is not None else None
+                if not isinstance(sr, dict):
+                    sr = None
+            if is_melee and sr:
+                choice = str(sr.get("exquisite_swordsmanship_choice", "") or "").strip().upper()
+                exp = str(sr.get("exquisite_swordsmanship_expires_phase", "") or "").strip().upper()
+                if exp:
+                    try:
+                        game = getattr(getattr(army, "player", None), "game", None)
+                        pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    except Exception:
+                        pname = ""
+                    if pname and pname != exp:
+                        choice = ""
+                if choice == "LETHAL":
+                    exquisite_lethal = True
+                elif choice == "SUSTAINED":
+                    exquisite_sustained = True
+        except Exception:
+            pact_lethal = False
+            pact_sustained = False
+            exquisite_lethal = False
+            exquisite_sustained = False
+        try:
+            sr = getattr(attacker.parent_unit, "special_rules", None)
+            if isinstance(sr, dict):
+                if bool(sr.get("pain_lethal_hits")):
+                    pain_lethal = True
+                if is_melee and bool(sr.get("pain_lethal_hits_melee")):
+                    pain_lethal = True
+                if self._assassins_poisons_applies(attacker):
+                    pain_lethal = True
+                pain_sustained_value = int(sr.get("pain_sustained_hits_value", 0) or 0)
+                if is_ranged:
+                    target_is_vehicle = False
+                    try:
+                        target_is_vehicle = bool(getattr(target, "is_vehicle", False)) or bool(target.has_keyword("Vehicle"))
+                    except Exception:
+                        target_is_vehicle = bool(getattr(target, "is_vehicle", False))
+                    if target_is_vehicle:
+                        pain_sustained_value = max(
+                            int(sr.get("pain_sustained_hits_ranged_vs_vehicle", 0) or 0),
+                            int(pain_sustained_value or 0),
+                        )
+                    else:
+                        pain_sustained_value = max(
+                            int(sr.get("pain_sustained_hits_ranged_vs_non_vehicle", 0) or 0),
+                            int(pain_sustained_value or 0),
+                        )
+        except Exception:
+            pain_lethal = False
+            pain_sustained_value = 0
+        pain_sustained = bool(pain_sustained_value)
+
+        bearer_unit_sustained_value = 0
+        try:
+            sr = getattr(attacker.parent_unit, "special_rules", None)
+            if isinstance(sr, dict):
+                bearer_unit_sustained_value = int(sr.get("bearer_unit_sustained_hits_value", 0) or 0)
+        except Exception:
+            bearer_unit_sustained_value = 0
+        bearer_unit_sustained = bool(bearer_unit_sustained_value)
+
+        sustained_base = (
+            self.is_sustained_hits()
+            or blessings_sustained
+            or dark_pacts_sustained
+            or martial_katah_sustained
+            or bondsman_sustained
+            or bondsman_sustained_ranged
+            or pact_sustained
+            or exquisite_sustained
+            or empowered_sustained
+            or pain_sustained
+            or bearer_unit_sustained
+        )
+
+        blitzing_grants_sustained = False
+        try:
+            if is_ranged:
+                unit = getattr(attacker, "parent_unit", None)
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                sr = getattr(root, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("blitzing_firepower_active") is True:
+                    in_range = False
+                    try:
+                        _closest, dist = attacker.return_closest_model_in_unit(target)
+                        in_range = float(dist) <= 12.0 + 1e-6
+                    except Exception:
+                        try:
+                            game = getattr(getattr(unit, "get_parent_army", lambda: None)(), "player", None)
+                            game = getattr(game, "game", None) if game is not None else None
+                            game_map = getattr(game, "map", None) if game is not None else None
+                            if game_map is not None:
+                                dist = game_map.get_distance_between_units(root, target)
+                                in_range = float(dist) <= 12.0 + 1e-6
+                        except Exception:
+                            in_range = False
+                    if in_range:
+                        if sustained_base:
+                            crit_threshold = min(int(crit_threshold), 5)
+                        else:
+                            blitzing_grants_sustained = True
+        except Exception:
+            blitzing_grants_sustained = False
+
         if dice_roll == 1:  # unmodified dice roll of 1 is always a miss
             hit_result['hit'] = False
             hit_result['unmodified_roll'] = dice_roll
@@ -2271,169 +3142,11 @@ class WargearProfile:
                 hit_result['special_effects'].append(f"Critical hit ({crit_threshold}+)")
             attack_instance['crit_hit'] = True
 
-            try:
-                is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
-            except Exception:
-                is_melee = False
-            try:
-                is_ranged = bool(getattr(self.parent_wargear, "is_ranged", lambda: False)())
-            except Exception:
-                is_ranged = False
-            
-            # WORLD EATERS: Blessings of Khorne keyword injection (melee-only).
-            # - Warp Blades => Lethal Hits
-            # - Martial Excellence => Sustained Hits 1
-            blessings_lethal = False
-            blessings_sustained = False
-            try:
-                # Only for melee weapons
-                is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
-                if is_melee:
-                    unit = getattr(attacker, "parent_unit", None)
-                    army = unit.get_parent_army() if unit is not None else None
-                    mgr = getattr(army, "blessings_of_khorne", None) if army is not None else None
-                    game = army.player.game if (army is not None and getattr(army, "player", None) is not None) else None
-                    br = int(getattr(game, "turn", 0) or 0) if game is not None else 0
-                    if mgr is not None and br > 0:
-                        # Eligibility: attached unit group qualifies if any member has Blessings of Khorne ability
-                        try:
-                            qualifies = bool(unit.get_attached_unit_root().attached_unit_has_blessings_of_khorne())
-                        except Exception:
-                            qualifies = False
-                        if qualifies:
-                            blessings_lethal = bool(mgr.is_blessing_active_for_unit("WARP_BLADES", unit, battle_round=br))
-                            blessings_sustained = bool(mgr.is_blessing_active_for_unit("MARTIAL_EXCELLENCE", unit, battle_round=br))
-            except Exception:
-                blessings_lethal = False
-                blessings_sustained = False
-
-            dark_pacts_choice = None
-            try:
-                sr = getattr(attacker.parent_unit, "special_rules", None)
-                if isinstance(sr, dict) and sr.get("dark_pacts_active"):
-                    dark_pacts_choice = str(sr.get("dark_pacts_choice", "") or "").strip().upper()
-            except Exception:
-                dark_pacts_choice = None
-            dark_pacts_lethal = dark_pacts_choice == "LETHAL HITS"
-            dark_pacts_sustained = bool(dark_pacts_choice and dark_pacts_choice.startswith("SUSTAINED"))
-
-            bondsman_lethal = False
-            bondsman_sustained = False
-            bondsman_sustained_ranged = False
-            try:
-                unit = getattr(attacker, "parent_unit", None)
-                sr = getattr(unit, "special_rules", None)
-                if isinstance(sr, dict):
-                    bondsman_lethal = bool(sr.get("bondsman_lethal_hits"))
-                    bondsman_sustained = bool(sr.get("bondsman_sustained_hits"))
-                    bondsman_sustained_ranged = bool(sr.get("bondsman_sustained_hits_ranged"))
-                    if bondsman_sustained_ranged:
-                        bondsman_sustained_ranged = bool(
-                            getattr(self.parent_wargear, "is_ranged", lambda: False)()
-                        )
-            except Exception:
-                bondsman_lethal = False
-                bondsman_sustained = False
-                bondsman_sustained_ranged = False
-
-            martial_katah_lethal = False
-            martial_katah_sustained = False
-            try:
-                if is_melee:
-                    unit = getattr(attacker, "parent_unit", None)
-                    root = unit.get_attached_unit_root() if unit is not None else None
-                    if root is not None and root.attached_unit_has_martial_katah():
-                        sr = getattr(root, "special_rules", None)
-                        choice = ""
-                        if isinstance(sr, dict):
-                            choice = str(sr.get("martial_katah_choice", "") or "").strip().upper()
-                        if choice == "RENDAX":
-                            martial_katah_lethal = True
-                        elif choice == "DACATARAI":
-                            martial_katah_sustained = True
-            except Exception:
-                martial_katah_lethal = False
-                martial_katah_sustained = False
-
-            pact_lethal = False
-            pact_sustained = False
-            exquisite_lethal = False
-            exquisite_sustained = False
-            pain_lethal = False
-            pain_sustained = False
-            pain_sustained_value = 0
-            try:
-                unit = getattr(attacker, "parent_unit", None)
-                army = unit.get_parent_army() if unit is not None else None
-                mgr = getattr(army, "emperors_children", None) if army is not None else None
-                if mgr is not None and mgr.is_emperors_children_unit(unit):
-                    if mgr.pact_points_at_least(5) and is_melee:
-                        pact_lethal = True
-                        pact_sustained = True
-                if is_melee:
-                    try:
-                        root = unit.get_attached_unit_root()
-                    except Exception:
-                        root = unit
-                    sr = getattr(root, "special_rules", None) if root is not None else None
-                    if not isinstance(sr, dict):
-                        sr = None
-                if is_melee and sr:
-                    choice = str(sr.get("exquisite_swordsmanship_choice", "") or "").strip().upper()
-                    exp = str(sr.get("exquisite_swordsmanship_expires_phase", "") or "").strip().upper()
-                    if exp:
-                        try:
-                            game = getattr(getattr(army, "player", None), "game", None)
-                            pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
-                        except Exception:
-                            pname = ""
-                        if pname and pname != exp:
-                            choice = ""
-                    if choice == "LETHAL":
-                        exquisite_lethal = True
-                    elif choice == "SUSTAINED":
-                        exquisite_sustained = True
-            except Exception:
-                pact_lethal = False
-                pact_sustained = False
-                exquisite_lethal = False
-                exquisite_sustained = False
-            try:
-                sr = getattr(attacker.parent_unit, "special_rules", None)
-                if isinstance(sr, dict):
-                    if bool(sr.get("pain_lethal_hits")):
-                        pain_lethal = True
-                    if is_melee and bool(sr.get("pain_lethal_hits_melee")):
-                        pain_lethal = True
-                    if self._assassins_poisons_applies(attacker):
-                        pain_lethal = True
-                    pain_sustained_value = int(sr.get("pain_sustained_hits_value", 0) or 0)
-                    if is_ranged:
-                        target_is_vehicle = False
-                        try:
-                            target_is_vehicle = bool(getattr(target, "is_vehicle", False)) or bool(target.has_keyword("Vehicle"))
-                        except Exception:
-                            target_is_vehicle = bool(getattr(target, "is_vehicle", False))
-                        if target_is_vehicle:
-                            pain_sustained_value = max(
-                                int(sr.get("pain_sustained_hits_ranged_vs_vehicle", 0) or 0),
-                                int(pain_sustained_value or 0),
-                            )
-                        else:
-                            pain_sustained_value = max(
-                                int(sr.get("pain_sustained_hits_ranged_vs_non_vehicle", 0) or 0),
-                                int(pain_sustained_value or 0),
-                            )
-            except Exception:
-                pain_lethal = False
-                pain_sustained_value = 0
-            pain_sustained = bool(pain_sustained_value)
-
-            if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal or martial_katah_lethal or bondsman_lethal or pact_lethal or exquisite_lethal or pain_lethal:
+            if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal or martial_katah_lethal or bondsman_lethal or pact_lethal or exquisite_lethal or pain_lethal or leading_lethal:
                 hit_result['special_effects'].append("Lethal Hits")
                 attack_instance['lethal_hit'] = True
             # For Sustained Hits, do not override an existing Sustained Hits X on the weapon.
-            if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained:
+            if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or bearer_unit_sustained or blitzing_grants_sustained:
                 # Support Sustained Hits X / Sustained Hits D3 / etc. Roll per critical hit.
                 if self.is_sustained_hits():
                     try:
@@ -2447,9 +3160,14 @@ class WargearProfile:
                 else:
                     sustained_val = 1
                     label = "Sustained Hits (+1)"
-                    if pain_sustained_value:
+                    if blitzing_grants_sustained:
+                        label = "Sustained Hits (+1) [Blitzing Firepower]"
+                    elif pain_sustained_value:
                         sustained_val = max(int(sustained_val), int(pain_sustained_value))
                         label = f"Sustained Hits (+{sustained_val}) [Power from Pain]"
+                    elif bearer_unit_sustained_value:
+                        sustained_val = max(int(sustained_val), int(bearer_unit_sustained_value))
+                        label = f"Sustained Hits (+{sustained_val}) [Bearer Unit]"
                     elif blessings_sustained:
                         label += " [Blessings of Khorne]"
                     elif dark_pacts_sustained:
@@ -2695,7 +3413,32 @@ class WargearProfile:
                         blood_tithe_lance = True
             except Exception:
                 blood_tithe_lance = False
-            if is_melee and (self.is_lance() or bondsman_lance or blood_tithe_lance):
+            daemonic_fury_lance = False
+            try:
+                sr = getattr(attacker.parent_unit, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("daemonic_fury_lance_active") is True:
+                    daemonic_fury_lance = True
+                    owner = str(sr.get("daemonic_fury_lance_turn_owner", "") or "")
+                    turn = int(sr.get("daemonic_fury_lance_turn", 0) or 0)
+                    if owner or turn:
+                        try:
+                            army = attacker.parent_unit.get_parent_army()
+                            game = getattr(getattr(army, "player", None), "game", None)
+                        except Exception:
+                            game = None
+                        if game is None:
+                            daemonic_fury_lance = False
+                        else:
+                            cur_turn = int(getattr(game, "turn", 0) or 0)
+                            cur_player = getattr(game, "get_current_player", lambda: None)()
+                            cur_owner = str(getattr(cur_player, "name", "") or "")
+                            if owner and owner != cur_owner:
+                                daemonic_fury_lance = False
+                            if turn and turn != cur_turn:
+                                daemonic_fury_lance = False
+            except Exception:
+                daemonic_fury_lance = False
+            if is_melee and (self.is_lance() or bondsman_lance or blood_tithe_lance or daemonic_fury_lance):
                 charged = bool(getattr(attacker.parent_unit.round_state, "charged_this_round", False))
                 if charged:
                     dice_modifier += 1
@@ -2703,6 +3446,8 @@ class WargearProfile:
                         wound_result['modifiers'].append("+1 to wound from Lance (Bondsman)")
                     elif blood_tithe_lance and not self.is_lance():
                         wound_result['modifiers'].append("+1 to wound from Lance (Blood Tithe)")
+                    elif daemonic_fury_lance and not self.is_lance():
+                        wound_result['modifiers'].append("+1 to wound from Lance (Daemonic Fury)")
                     else:
                         wound_result['modifiers'].append("+1 to wound from Lance (charged)")
         except Exception:
@@ -2813,6 +3558,38 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Defensive reaction stratagems: -1 to wound (generic template).
+        try:
+            try:
+                troot = target.get_attached_unit_root()
+            except Exception:
+                troot = target
+            attack_type = "melee" if (self.parent_wargear and self.parent_wargear.is_melee()) else "ranged"
+            attacker_key = attack_instance.get("attacker_key")
+            if not attacker_key:
+                try:
+                    attacker_unit = getattr(attacker, "parent_unit", None)
+                    if attacker_unit is not None:
+                        attacker_root = attacker_unit.get_attached_unit_root() if hasattr(attacker_unit, "get_attached_unit_root") else attacker_unit
+                        attacker_key = str(getattr(attacker_root, "_id", None) or id(attacker_root))
+                except Exception:
+                    attacker_key = None
+            phase_key = self._resolve_phase_key(attacker_unit=getattr(attacker, "parent_unit", None), target_unit=troot)
+            for entry in self._iter_defensive_entries(
+                troot,
+                "defensive_wound_mods",
+                attacker_key=attacker_key,
+                attack_type=attack_type,
+                phase_key=phase_key,
+            ):
+                penalty = int(entry.get("value", 0) or 0)
+                if penalty:
+                    dice_modifier -= penalty
+                    src = entry.get("source") or "Defensive stratagem"
+                    wound_result['modifiers'].append(f"-{penalty} to wound from {src}")
+        except Exception:
+            pass
+
         dice_modifier = min(max(dice_modifier, -1), 1)
 
         dice_roll = None
@@ -2886,6 +3663,169 @@ class WargearProfile:
                     wound_result.setdefault("special_effects", []).append("Leading: re-roll Wound rolls of 1")
                     wound_result.setdefault("special_effects", []).extend(list(lead_mods.get("reroll_wound_reasons", ()) or ()))
                     wound_result["reroll_of_one"] = 1
+                    wound_result["reroll"] = rr
+                    dice_roll = rr
+                    reroll_used = True
+        except Exception:
+            pass
+
+        # Grey Knights: Fury of Titan (Deep Strike) re-roll Wound rolls of 1.
+        try:
+            if dice_roll == 1 and "reroll" not in wound_result:
+                unit = attacker.parent_unit
+                sr = getattr(unit, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("fury_of_titan_active"):
+                    rr = _reroll_wound()
+                    wound_result.setdefault("special_effects", []).append("Fury of Titan: re-roll Wound roll of 1")
+                    wound_result["reroll_of_one"] = 1
+                    wound_result["reroll"] = rr
+                    dice_roll = rr
+                    reroll_used = True
+        except Exception:
+            pass
+
+        # Model-specific abilities: re-roll Wound roll vs CHARACTER targets (optional).
+        try:
+            if "reroll" not in wound_result:
+                unit = attacker.parent_unit
+                is_character_target = False
+                try:
+                    is_character_target = bool(target.has_keyword("CHARACTER"))
+                except Exception:
+                    try:
+                        is_character_target = bool(target.has_any_keyword("CHARACTER"))
+                    except Exception:
+                        is_character_target = False
+                if unit is not None and is_character_target:
+                    allow, reason = unit.model_can_reroll_wound_vs_character(attacker)
+                    if allow:
+                        needed = 0
+                        try:
+                            s_val = strength
+                            t_val = target_toughness
+                            if isinstance(s_val, int) and isinstance(t_val, int):
+                                if s_val >= 2 * t_val:
+                                    needed = 2
+                                elif s_val > t_val:
+                                    needed = 3
+                                elif s_val == t_val:
+                                    needed = 4
+                                elif s_val * 2 <= t_val:
+                                    needed = 6
+                                else:
+                                    needed = 5
+                        except Exception:
+                            needed = 0
+                        final_needed = needed
+                        try:
+                            final_needed = int(min(max(int(final_needed) - int(dice_modifier), 2), 6))
+                        except Exception:
+                            pass
+                        try:
+                            success = (dice_roll != 1) and (bool(final_needed) and dice_roll >= int(final_needed))
+                        except Exception:
+                            success = False
+                        do_reroll = False
+                        try:
+                            game = unit.get_parent_army().player.game
+                            player = unit.get_parent_army().player
+                            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                            provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                        except Exception:
+                            is_human = False
+                            provider = None
+                            player = None
+                        if is_human and callable(provider):
+                            try:
+                                do_reroll = bool(provider(
+                                    player=player,
+                                    unit=unit,
+                                    roll_type="wound",
+                                    value=dice_roll,
+                                    dice=None,
+                                    needed=final_needed,
+                                    success=success,
+                                    reason=reason or "Model ability",
+                                ))
+                            except Exception:
+                                do_reroll = False
+                        else:
+                            do_reroll = (not success)
+                        if do_reroll:
+                            rr = _reroll_wound()
+                            label = reason or "Model ability"
+                            wound_result.setdefault("special_effects", []).append(
+                                f"{label}: re-roll Wound roll vs CHARACTER"
+                            )
+                            wound_result["reroll"] = rr
+                            dice_roll = rr
+                            reroll_used = True
+        except Exception:
+            pass
+
+        # Closest eligible MONSTER/VEHICLE target: re-roll Wound roll (optional).
+        try:
+            rule = attack_instance.get("closest_monster_vehicle_reroll_rule")
+            if rule and rule.get("reroll_wound") and "reroll" not in wound_result:
+                needed = 0
+                try:
+                    s_val = strength
+                    t_val = target_toughness
+                    if isinstance(s_val, int) and isinstance(t_val, int):
+                        if s_val >= 2 * t_val:
+                            needed = 2
+                        elif s_val > t_val:
+                            needed = 3
+                        elif s_val == t_val:
+                            needed = 4
+                        elif s_val * 2 <= t_val:
+                            needed = 6
+                        else:
+                            needed = 5
+                except Exception:
+                    needed = 0
+                final_needed = needed
+                try:
+                    final_needed = int(min(max(int(final_needed) - int(dice_modifier), 2), 6))
+                except Exception:
+                    pass
+                try:
+                    success = (dice_roll != 1) and (bool(final_needed) and dice_roll >= int(final_needed))
+                except Exception:
+                    success = False
+                do_reroll = False
+                try:
+                    unit = attacker.parent_unit
+                    game = unit.get_parent_army().player.game
+                    player = unit.get_parent_army().player
+                    is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                    provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                except Exception:
+                    is_human = False
+                    provider = None
+                    player = None
+                reason = str(rule.get("source", "") or "").strip() or "Closest eligible MONSTER/VEHICLE"
+                if is_human and callable(provider):
+                    try:
+                        do_reroll = bool(provider(
+                            player=player,
+                            unit=unit,
+                            roll_type="wound",
+                            value=dice_roll,
+                            dice=None,
+                            needed=final_needed,
+                            success=success,
+                            reason=reason,
+                        ))
+                    except Exception:
+                        do_reroll = False
+                else:
+                    do_reroll = (not success)
+                if do_reroll:
+                    rr = _reroll_wound()
+                    wound_result.setdefault("special_effects", []).append(
+                        f"{reason}: re-roll Wound roll"
+                    )
                     wound_result["reroll"] = rr
                     dice_roll = rr
                     reroll_used = True
@@ -3503,6 +4443,35 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Aspect Shrine Token (Aeldari): optionally set the roll to an unmodified 6.
+        needed_for_prompt = None
+        try:
+            if isinstance(strength, int) and isinstance(target_toughness, int):
+                if strength >= (target_toughness * 2):
+                    base_needed = 2
+                elif strength > target_toughness:
+                    base_needed = 3
+                elif strength == target_toughness:
+                    base_needed = 4
+                elif strength * 2 <= target_toughness:
+                    base_needed = 6
+                else:
+                    base_needed = 5
+                needed_for_prompt = min(max(int(base_needed) - int(dice_modifier), 2), 6)
+        except Exception:
+            needed_for_prompt = None
+        new_roll, decision = self._maybe_apply_aspect_shrine_token(
+            attacker,
+            target,
+            roll_type="wound",
+            roll_value=dice_roll,
+            needed=needed_for_prompt,
+        )
+        if new_roll is not None and int(new_roll) != int(dice_roll):
+            dice_roll = int(new_roll)
+            wound_result['roll'] = dice_roll
+            wound_result['special_effects'].append("Aspect Shrine Token: set roll to 6")
+
         def _apply_wound_roll(roll: int) -> bool:
             """Apply wound logic for a given (unmodified) roll; respects dice_modifier."""
             def _devastating_from_blessings() -> bool:
@@ -3647,9 +4616,27 @@ class WargearProfile:
 
         # TWIN-LINKED: re-roll failed wound rolls once.
         try:
-            if (not wound_result['wound']) and self.is_twin_linked():
+            daemonic_fury_twin_linked = False
+            try:
+                unit = getattr(attacker, "parent_unit", None)
+                sr = getattr(unit, "special_rules", None) if unit is not None else None
+                if isinstance(sr, dict) and sr.get("daemonic_fury_twin_linked_active") is True:
+                    is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+                    if is_melee:
+                        daemonic_fury_twin_linked = True
+                        expires_phase = str(sr.get("daemonic_fury_twin_linked_expires_phase", "") or "")
+                        if expires_phase:
+                            phase_key = self._resolve_phase_key(attacker_unit=unit, target_unit=target)
+                            if phase_key and expires_phase != phase_key:
+                                daemonic_fury_twin_linked = False
+            except Exception:
+                daemonic_fury_twin_linked = False
+            if (not wound_result['wound']) and (self.is_twin_linked() or daemonic_fury_twin_linked):
                 reroll = _reroll_wound()
-                wound_result['special_effects'].append("Twin-linked (re-roll failed wound)")
+                if daemonic_fury_twin_linked and not self.is_twin_linked():
+                    wound_result['special_effects'].append("Twin-linked (Daemonic Fury)")
+                else:
+                    wound_result['special_effects'].append("Twin-linked (re-roll failed wound)")
                 wound_result['reroll'] = reroll
                 wound_result['wound'] = _apply_wound_roll(reroll)
         except Exception:
@@ -3712,6 +4699,47 @@ class WargearProfile:
                         attack_instance["inv_save_override"] = 4
         except Exception:
             pass
+        # Wargear abilities (e.g. "The bearer has a 4+ invulnerable save.").
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            if t_unit is not None and hasattr(t_unit, "get_model_invulnerable_save_override"):
+                inv_value, inv_reason = t_unit.get_model_invulnerable_save_override(target_model)
+                if inv_value:
+                    current = attack_instance.get("inv_save_override", None)
+                    if current is None or int(current) > int(inv_value):
+                        attack_instance["inv_save_override"] = int(inv_value)
+                        if inv_reason:
+                            attack_instance["inv_save_override_reason"] = str(inv_reason)
+        except Exception:
+            pass
+        # Defensive reaction stratagems: invulnerable save overrides.
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            t_root = t_unit.get_attached_unit_root() if (t_unit is not None and hasattr(t_unit, "get_attached_unit_root")) else t_unit
+            attack_type = "melee" if (self.parent_wargear and self.parent_wargear.is_melee()) else "ranged"
+            attacker_key = attack_instance.get("attacker_key")
+            phase_key = self._resolve_phase_key(
+                attacker_unit=attack_instance.get("attacker_unit"),
+                target_unit=t_root,
+            )
+            for entry in self._iter_defensive_entries(
+                t_root,
+                "defensive_invuln_overrides",
+                attacker_key=attacker_key,
+                attack_type=attack_type,
+                phase_key=phase_key,
+            ):
+                inv_value = int(entry.get("value", 0) or 0)
+                if not inv_value:
+                    continue
+                current = attack_instance.get("inv_save_override", None)
+                if current is None or int(current) > inv_value:
+                    attack_instance["inv_save_override"] = inv_value
+                    src = entry.get("source")
+                    if src:
+                        attack_instance["inv_save_override_reason"] = str(src)
+        except Exception:
+            pass
 
         # Calculate save value
         save_value = target_model.save - ap
@@ -3727,7 +4755,11 @@ class WargearProfile:
                     save_value = inv_override
                     save_result['save_type'] = 'invulnerable'
                     save_result['final_save'] = save_value
-                    save_result['special_effects'].append(f"Invulnerable save {inv_override}+ (override)")
+                    inv_reason = attack_instance.get("inv_save_override_reason", None)
+                    if inv_reason:
+                        save_result['special_effects'].append(f"Invulnerable save {inv_override}+ ({inv_reason})")
+                    else:
+                        save_result['special_effects'].append(f"Invulnerable save {inv_override}+ (override)")
         except Exception:
             pass
         
@@ -3984,6 +5016,52 @@ class WargearProfile:
             damage_result['damage_dice_rolls'] = []
         damage_result['damage_rolled'] = damage_value
 
+        # Closest eligible MONSTER/VEHICLE target: re-roll Damage roll (optional).
+        try:
+            rule = attack_instance.get("closest_monster_vehicle_reroll_rule")
+            if rule and rule.get("reroll_damage") and isinstance(self.damage, DiceCollection):
+                do_reroll = False
+                try:
+                    unit = attacker.parent_unit
+                    game = unit.get_parent_army().player.game
+                    player = unit.get_parent_army().player
+                    is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                    provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                except Exception:
+                    is_human = False
+                    provider = None
+                    player = None
+                reason = str(rule.get("source", "") or "").strip() or "Closest eligible MONSTER/VEHICLE"
+                if is_human and callable(provider):
+                    try:
+                        do_reroll = bool(provider(
+                            player=player,
+                            unit=unit,
+                            roll_type="damage",
+                            value=damage_value,
+                            dice=damage_result.get("damage_dice_rolls", None),
+                            reason=reason,
+                        ))
+                    except Exception:
+                        do_reroll = False
+                else:
+                    try:
+                        avg = float(self.damage.stat_average())
+                        do_reroll = float(damage_value) < avg
+                    except Exception:
+                        do_reroll = False
+                if do_reroll:
+                    new_val, new_rolls = _reroll_damage()
+                    damage_value = new_val
+                    damage_result['damage_dice_rolls'] = new_rolls
+                    damage_result['damage_rolled'] = new_val
+                    damage_result.setdefault('special_effects', []).append(
+                        f"{reason}: re-roll Damage roll"
+                    )
+                    damage_result['reroll'] = new_val
+        except Exception:
+            pass
+
         # Core Rules: Damage characteristic modifiers are cumulative and follow ordering:
         # replace -> DIV -> MUL -> ADD -> SUB, then round up.
         #
@@ -3992,6 +5070,7 @@ class WargearProfile:
         from ..utility.modifiers import Modifier, ModifierOp, apply_numeric_modifiers, apply_characteristic_caps
 
         damage_mods: list[Modifier] = []
+        defensive_damage_entries = []
 
         if self.is_melta() and attack_instance.get('below_half_distance', False):
             # Support Melta N / Melta D3 / Melta D6+X, etc.
@@ -4123,6 +5202,34 @@ class WargearProfile:
                     damage_mods.append(Modifier(ModifierOp.SUB, int(red), source="stratagem:frenzied_resilience"))
         except Exception:
             pass
+        # Defensive reaction stratagems: reduce damage allocated to target.
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            t_root = t_unit.get_attached_unit_root() if (t_unit is not None and hasattr(t_unit, "get_attached_unit_root")) else t_unit
+            attack_type = "melee" if (self.parent_wargear and self.parent_wargear.is_melee()) else "ranged"
+            attacker_key = attack_instance.get("attacker_key")
+            if not attacker_key:
+                try:
+                    attacker_unit = getattr(attacker, "parent_unit", None)
+                    if attacker_unit is not None:
+                        attacker_root = attacker_unit.get_attached_unit_root() if hasattr(attacker_unit, "get_attached_unit_root") else attacker_unit
+                        attacker_key = str(getattr(attacker_root, "_id", None) or id(attacker_root))
+                except Exception:
+                    attacker_key = None
+            phase_key = self._resolve_phase_key(attacker_unit=getattr(attacker, "parent_unit", None), target_unit=t_root)
+            for entry in self._iter_defensive_entries(
+                t_root,
+                "defensive_damage_reductions",
+                attacker_key=attacker_key,
+                attack_type=attack_type,
+                phase_key=phase_key,
+            ):
+                red = int(entry.get("value", 0) or 0)
+                if red:
+                    damage_mods.append(Modifier(ModifierOp.SUB, int(red), source="stratagem:defensive_damage"))
+                    defensive_damage_entries.append((red, entry.get("source") or "Defensive stratagem"))
+        except Exception:
+            pass
 
         # Apply modifiers unless these are "mortal wounds in addition" (not currently used, but Core Rules require it).
         if attack_instance.get("mortal_wound", False) and attack_instance.get("mortal_wound_in_addition", False):
@@ -4156,6 +5263,12 @@ class WargearProfile:
             red = int(getattr(getattr(target_model, "parent_unit", None), "special_rules", {}).get("frenzied_resilience_damage_reduction", 0) or 0)
             if red and any(m.op == ModifierOp.SUB and "frenzied_resilience" in str(getattr(m, "source", "")) for m in damage_mods):
                 damage_result['special_effects'].append(f"Frenzied Resilience -{red}D taken")
+        except Exception:
+            pass
+        try:
+            for red, src in defensive_damage_entries:
+                if red:
+                    damage_result['special_effects'].append(f"{src} -{red}D taken")
         except Exception:
             pass
         
@@ -4210,6 +5323,32 @@ class WargearProfile:
             fnp_abilities = target_model.parent_unit.has_feel_no_pain()
         except Exception:
             fnp_abilities = []
+        # Defensive reaction stratagems: temporary Feel No Pain.
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            t_root = t_unit.get_attached_unit_root() if (t_unit is not None and hasattr(t_unit, "get_attached_unit_root")) else t_unit
+            attack_type = "melee" if (self.parent_wargear and self.parent_wargear.is_melee()) else "ranged"
+            attacker_key = None
+            try:
+                attacker_unit = getattr(attacker, "parent_unit", None)
+                if attacker_unit is not None:
+                    attacker_root = attacker_unit.get_attached_unit_root() if hasattr(attacker_unit, "get_attached_unit_root") else attacker_unit
+                    attacker_key = str(getattr(attacker_root, "_id", None) or id(attacker_root))
+            except Exception:
+                attacker_key = None
+            phase_key = self._resolve_phase_key(attacker_unit=getattr(attacker, "parent_unit", None), target_unit=t_root)
+            for entry in self._iter_defensive_entries(
+                t_root,
+                "defensive_fnp_overrides",
+                attacker_key=attacker_key,
+                attack_type=attack_type,
+                phase_key=phase_key,
+            ):
+                val = int(entry.get("value", 0) or 0)
+                if val:
+                    fnp_abilities.append((val, None))
+        except Exception:
+            pass
 
         if fnp_abilities and not wounds_cannot_be_ignored:
             # Find the best applicable Feel No Pain ability
@@ -5385,6 +6524,14 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
                     wgo.conditionals.append(condition.strip())
                 wargear_options.extend(wgo_list)
             called_recursively = True
+        elif match := re.match(r"^this unit can have (.*)", description):
+            replacement_items, limit = parse_wargear_string_ending(match.group(1))
+            item_limit = Quantity(min=1, max=limit)
+            actor = "unit"
+        elif match := re.match(r"^it can have (.*)", description):
+            replacement_items, limit = parse_wargear_string_ending(match.group(1))
+            item_limit = Quantity(min=1, max=limit)
+            actor = "unit"
         elif match := re.match(r"^it can be equipped with (.*)", description):
             replacement_items, limit = parse_wargear_string_ending(match.group(1))
             item_limit = Quantity(min=1, max=limit)

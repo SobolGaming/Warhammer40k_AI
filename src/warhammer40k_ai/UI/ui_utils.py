@@ -255,4 +255,31 @@ def draw_generic_icon(surface: pygame.Surface, center_x: int, center_y: int, siz
     ]
     
     for start, end in leg_positions:
-        pygame.draw.line(surface, generic_color, start, end, 2) 
+        pygame.draw.line(surface, generic_color, start, end, 2)
+
+
+def draw_aspect_shrine_token_icon(
+    surface: pygame.Surface,
+    center_x: int,
+    center_y: int,
+    size: int,
+    filled: bool = True,
+) -> None:
+    """Draw an Aspect Shrine token icon (diamond)."""
+    fill_color = (216, 189, 96)
+    outline_color = (160, 135, 60)
+    empty_color = (70, 70, 70)
+
+    half = size // 2
+    points = [
+        (center_x, center_y - half),
+        (center_x + half, center_y),
+        (center_x, center_y + half),
+        (center_x - half, center_y),
+    ]
+
+    if filled:
+        pygame.draw.polygon(surface, fill_color, points)
+    else:
+        pygame.draw.polygon(surface, empty_color, points)
+    pygame.draw.polygon(surface, outline_color, points, 2)

@@ -35,17 +35,14 @@ if SRC_DIR not in sys.path:
 
 from warhammer40k_ai.utility.faction_rule_metadata import FACTION_RULE_METADATA
 from warhammer40k_ai.classes.army import SUPPORTED_FACTION_IDS
-from warhammer40k_ai.classes.stratagems import IMPLEMENTED_STRATAGEM_NAMES
+from warhammer40k_ai.classes.stratagems import (
+    IMPLEMENTED_STRATAGEM_NAMES,
+    defensive_reaction_note,
+    parse_defensive_reaction_stratagem,
+)
 from warhammer40k_ai.classes.enhancement_effects import classify_enhancement_support
 from warhammer40k_ai.classes.wargear import parse_alternate_3
 
-
-STATUS_COLORS = {
-    "supported": "#e6f4ea",
-    "implemented": "#e6f4ea",
-    "partial": "#fff4cc",
-    "not implemented": "#fdecea",
-}
 
 ABILITY_SUPPORT_BY_ID: Dict[str, Tuple[str, str]] = {}
 ABILITY_SUPPORT_BY_NAME_FACTION: Dict[Tuple[str, str], Tuple[str, str]] = {}
@@ -116,10 +113,6 @@ def _escape(text: str) -> str:
     return html.escape(_ascii_text(text), quote=True)
 
 
-def _status_color(status: str) -> str:
-    key = _norm(status)
-    return STATUS_COLORS.get(key, "#fdecea")
-
 def _status_icon(status: str) -> str:
     key = _norm(status)
     if key in ("supported", "implemented"):
@@ -167,8 +160,13 @@ def _desc_block(rules_text: str, engine_text: str) -> str:
 
 def _engine_block(engine_text: str) -> str:
     engine = _escape(engine_text or "-")
-    body = f"<strong>Engine:</strong> {engine}"
-    return _details("Description", body)
+    return f"<strong>Engine:</strong> {engine}"
+
+
+def _detachment_has_restrictions(det_id: str, det_name: str) -> bool:
+    if str(det_id or "").strip() == "000001043":
+        return False
+    return True
 
 
 def _normalize_token(token: str) -> str:
@@ -482,6 +480,15 @@ def _points_support(entries: Sequence[dict]) -> Tuple[str, str]:
         return ("Partial", ", ".join(bits))
 
     return ("Supported", f"{len(base)} cost bucket(s)")
+
+def _is_spawn_only_datasheet(ability_entries: Sequence[dict], points_entries: Sequence[dict]) -> bool:
+    if points_entries:
+        return False
+    for entry in (ability_entries or []):
+        name = str(entry.get("name", "") or "").strip()
+        if _norm(name) == "using sir hekhtur":
+            return True
+    return False
 
 
 def _keywords_support(entries: Sequence[dict]) -> Tuple[str, str]:
@@ -880,7 +887,22 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Sensational Performance": ("Supported", "Court of the Phoenician: optional +1 S/AP on charge."),
         "Master of the Pageant": ("Supported", "Court of the Phoenician: once per round -1 CP stratagem cost."),
         "Relentless Rage": ("Supported", "Berzerker Warband: on charge, melee weapons gain +1A/+2S until end of turn."),
-        "Blood Tithe": ("Supported", "Khorne Daemonkin: gain BTP on 3+ for eligible kills; spend BTP to activate Enraged Abjuration, Daemonic Rage, Boon of Blood, or Might of Khorne (command phase limit + A Worthy Skull fight-phase activation)."),
+        "Blood Tithe": (
+            "Supported",
+            "Khorne Daemonkin: gain BTP on 3+ for eligible kills; spend BTP to activate Enraged Abjuration, Daemonic Rage, Boon of Blood, or Might of Khorne (command phase limit + A Worthy Skull fight-phase activation). Restriction enforced during army validation.",
+        ),
+        "Duty Before All": (
+            "Supported",
+            "Hallowed Conclave: GREY KNIGHTS TERMINATOR units can shoot and charge after Falling Back.",
+        ),
+        "Fury of Titan": (
+            "Supported",
+            "Brotherhood Strike: Deep Strike arrivals re-roll Hit and Wound rolls of 1 until end of turn.",
+        ),
+        "Warp Rifts": (
+            "Supported",
+            "Daemonic Incursion: Deep Strike min distance reduced to 6\" when wholly within Shadow of Chaos zones or within 6\" of a matching Greater Daemon/Dark Master aura; cannot bootstrap off the arriving unit.",
+        ),
         "Martial Grace": ("Supported", "Warhost: +1 Battle Focus token; Swift as the Wind +1\" move; +1 to D6 Agile Manoeuvre rolls."),
     }
     return {_norm(name): val for name, val in raw.items()}
@@ -956,6 +978,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("AOI", "Rites of Teleportation"): ("Partial", "Deep Strike granted without Inquisitor attachment restriction."),
         ("AOI", "Unsubtle Crusader"): ("Partial", "Scouts 6\" applied without formation selection/target-unit restriction."),
         ("AE", "ASPECT TRAINING"): ("Partial", "Fights First/Infiltrators/Scouts/Stealth detected; leader/unit restrictions not enforced."),
+        ("AE", "Aspect Shrine Token"): (
+            "Supported",
+            "Per-roll prompt lets non-CHARACTER models change a hit or wound roll to an unmodified 6, consuming a token; tokens tracked from wargear options with per-activation prompt suppression.",
+        ),
         ("AE", "Way of the Blade"): ("Partial", "Fights First applied without leader restriction."),
         ("AE", "Empowered by Death"): ("Partial", "Fights First applied without below-strength condition."),
         ("AE", "Spiritseer"): ("Partial", "Lone Operative applied without 3\" Wraith Construct proximity requirement."),
@@ -1008,7 +1034,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("NEC", "Illuminor"): ("Partial", "Lone Operative applied without 3\" proximity to friendly Necrons."),
         ("NEC", "Protective Disciples"): ("Partial", "Lone Operative applied without 3\" proximity to Destroyer Cult units."),
         ("NEC", "VANGUARD PROTOCOLS"): ("Partial", "Scouts 8\" applied without attached-unit restriction."),
-        ("NEC", "Relentless Combatants"): ("Partial", "Charge-after-Fall-Back supported; charge rerolls not implemented."),
+        ("NEC", "Relentless Combatants"): ("Supported", "Re-roll Charge rolls. Charge-after-Fall-Back eligibility."),
         ("NEC", "Shadowloom"): ("Supported", "Stealth."),
         ("NEC", "Gloom Prism (Aura)"): ("Partial", "Feel No Pain vs Psychic (and mortal where listed) applies to bearer only; aura not propagated."),
         ("NEC", "Nullstone Field Generator (Aura)"): ("Partial", "Feel No Pain vs mortal/psychic applies to bearer only; aura not propagated."),
@@ -1028,6 +1054,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("TYR", "Unnatural Resilience"): ("Supported", "Feel No Pain 4+ against mortal wounds."),
         ("TS", "Bounding Leaps"): ("Supported", "Shoot after Falling Back."),
         ("TS", "Servile Pawns"): ("Partial", "Lone Operative applied without 3\" Thousand Sons Infantry proximity requirement."),
+        ("WE", "Furious Onslaught"): ("Supported", "Ranged attacks vs closest eligible target within 18\" allow an optional Hit re-roll."),
         ("WE", "Reborn in Blood"): ("Partial", "Revive + reserves placement; next Movement phase-only not enforced."),
         ("WE", "Lord of Murder"): ("Supported", "Conditional Lone Operative within 3\" of friendly WORLD EATERS INFANTRY."),
         ("WE", "Beacons of Rage (Aura)"): ("Supported", "+1 hit (melee) and +1 wound vs Below Half-strength; excludes Monster/Vehicle."),
@@ -1040,10 +1067,11 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("WE", "Murderlust"): ("Supported", "Advance-and-charge eligibility."),
         ("WE", "Collar of Khorne"): ("Supported", "Feel No Pain 3+ against Psychic attacks."),
         ("WE", "Possessed Lord"): ("Supported", "Once-per-battle Fight phase: +3 Attacks and Devastating Wounds."),
-        ("WE", "Lord of the Eightbound"): ("Partial", "Deep Strike/Scouts 6\" detected; attachment requirement not enforced."),
+        ("WE", "Lord of the Eightbound"): ("Supported", "Leader gains Deep Strike and Scouts 6\" if attached to WORLD EATERS POSSESSED at battle formations."),
         ("WE", "Rage Embodied (Aura)"): ("Supported", "+1 melee Attacks aura within 6\" for BLOOD LEGIONS."),
         ("WE", "Daemon Lord of Khorne (Aura)"): ("Supported", "+1 to hit in melee aura within 6\" for BLOOD LEGIONS."),
         ("WE", "Blood Surge"): ("Supported", "Opponent Shooting phase: optional D6+2\" move toward closest non-AIRCRAFT enemy; blocked if Battle-shocked/engaged; once per phase."),
+        ("WE", "Frenzy"): ("Supported", "After being targeted, Helbrute can shoot or fight vs the attacker (eligible target check)."),
         ("SM", "Tempormortis"): ("Supported", "Fights First while leading a unit."),
         ("SM", "Pack Leader"): ("Supported", "Unit cannot be your Warlord or be given Enhancements."),
     }
@@ -1055,6 +1083,8 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
 
 def _datasheet_ability_support_by_name_faction_datasheet() -> Dict[Tuple[str, str, str], Tuple[str, str]]:
     raw = {
+        ("WE", "Frenzy", "000002632"): ("Supported", "After being targeted, Helbrute can shoot or fight vs the attacker (eligible target check)."),
+        ("WE", "Furious Onslaught", "000002638"): ("Supported", "Ranged attacks vs closest eligible target within 18\" allow an optional Hit re-roll."),
     }
     out: Dict[Tuple[str, str, str], Tuple[str, str]] = {}
     for (fid, name, dsid), val in raw.items():
@@ -1070,6 +1100,7 @@ def _datasheet_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[str, str
     """
     raw: Dict[Tuple[str, str], Tuple[str, str]] = {
         # ("WE", "Angron"): ("Supported", "Full datasheet support verified."),
+        ("WE", "Furious Onslaught"): ("Supported", "Ranged attacks vs closest eligible target within 18\" allow an optional Hit re-roll."),
     }
     out: Dict[Tuple[str, str], Tuple[str, str]] = {}
     for (fid, name), val in raw.items():
@@ -1144,12 +1175,25 @@ def _classify_ability(
     desc_support = _warlord_enhancement_restriction_support(description)
     if desc_support:
         return desc_support
+    closest_m_veh_support = _closest_monster_vehicle_reroll_support(description)
+    unit_contains_oc_support = _unit_contains_oc_support(description)
+    aura_oc_support = _aura_objective_control_support(description)
     common_support = _bearer_unit_common_support(description)
     leading_support = _leading_unit_common_support(description)
+    bearer_invuln_support = _bearer_invulnerable_save_support(description)
+    unit_hit_reroll_support = _unit_hit_reroll_ones_support(description)
+    target_hit_penalty_support = _target_hit_roll_penalty_support(description)
     melee_damage_support = _melee_damage_bonus_support(description)
+    two_melee_weapons_support = _two_melee_weapons_bonus_support(description)
+    attached_possessed_support = _attached_possessed_formation_bonus_support(description)
     transport_support = _transport_disembark_support(description)
+    sticky_support = _sticky_objective_support(description)
+    bodyguard_return_support = _command_phase_bodyguard_return_support(description)
+    command_phase_bonus_cp_support = _command_phase_bonus_cp_support(description)
     orders_support = _orders_section_support(name, description)
     attached_unit_support = _attached_unit_support(name, description)
+    model_reroll_support = _model_reroll_wound_vs_character_support(description)
+    targeted_stratagem_discount_support = _targeted_stratagem_cp_discount_support(description)
 
     fid = str(faction_id or "").strip().upper()
     name_norm = _norm(name)
@@ -1167,18 +1211,44 @@ def _classify_ability(
         return ABILITY_SUPPORT_BY_NAME_FACTION[(fid, name_norm)]
     if fid == "DRU" and "(pain)" in str(name or "").lower():
         return ("Supported", "Power from Pain ability effects implemented.")
+    if closest_m_veh_support:
+        return closest_m_veh_support
+    if unit_contains_oc_support:
+        return unit_contains_oc_support
+    if aura_oc_support:
+        return aura_oc_support
     if common_support:
         return common_support
     if leading_support:
         return leading_support
+    if bearer_invuln_support:
+        return bearer_invuln_support
+    if unit_hit_reroll_support:
+        return unit_hit_reroll_support
+    if target_hit_penalty_support:
+        return target_hit_penalty_support
     if melee_damage_support:
         return melee_damage_support
+    if two_melee_weapons_support:
+        return two_melee_weapons_support
+    if attached_possessed_support:
+        return attached_possessed_support
     if transport_support:
         return transport_support
+    if sticky_support:
+        return sticky_support
+    if bodyguard_return_support:
+        return bodyguard_return_support
+    if command_phase_bonus_cp_support:
+        return command_phase_bonus_cp_support
     if orders_support:
         return orders_support
     if attached_unit_support:
         return attached_unit_support
+    if model_reroll_support:
+        return model_reroll_support
+    if targeted_stratagem_discount_support:
+        return targeted_stratagem_discount_support
     return ("Not implemented", "")
 
 
@@ -1193,9 +1263,15 @@ def _warlord_enhancement_restriction_support(description: str) -> Optional[Tuple
     low = text.lower()
     warlord_re = re.compile(r"\b(?:cannot be your|none of these models can be your)\s+warlord\b", re.IGNORECASE)
     enh_re = re.compile(r"\bcannot be given\s+(?:an?\s+)?enhancements?\b", re.IGNORECASE)
-    if not (warlord_re.search(low) and enh_re.search(low)):
+    has_warlord = bool(warlord_re.search(low))
+    has_enh = bool(enh_re.search(low))
+    if not (has_warlord or has_enh):
         return None
-    return ("Supported", "Unit cannot be your Warlord or be given Enhancements.")
+    if has_warlord and has_enh:
+        return ("Supported", "Unit cannot be your Warlord or be given Enhancements.")
+    if has_warlord:
+        return ("Supported", "Unit cannot be your Warlord.")
+    return ("Supported", "Unit cannot be given Enhancements.")
 
 
 def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
@@ -1208,6 +1284,9 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         return None
     low = text.lower()
     notes: List[str] = []
+    leading_prefix = ""
+    if "while this model is leading a unit" in low:
+        leading_prefix = "Leading: "
 
     m = re.search(
         r"add\s+(\d+)\s+to\s+charge\s+rolls?\s+made\s+for\s+the\s+bearer'?s\s+unit",
@@ -1217,16 +1296,58 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
     if m:
         notes.append(f"Charge rolls for bearer's unit get +{m.group(1)}.")
 
-    if (
-        ("eligible to declare a charge" in low or "eligible to charge" in low)
-        and (
-            "advanced or fell back" in low
-            or "advance or fell back" in low
-            or "fell back or advanced" in low
-            or "fell back or advance" in low
-        )
-    ):
-        notes.append("Charge-after-Advance/Fall Back eligibility.")
+    advance_charge_re = re.search(r"re-?roll\s+advance\s+and\s+charge\s+rolls?", low, flags=re.IGNORECASE)
+    if advance_charge_re:
+        if "bearer's unit" in low or "that unit" in low:
+            notes.append("Re-roll Advance and Charge rolls for bearer's unit.")
+        elif leading_prefix:
+            notes.append("Leading: re-roll Advance and Charge rolls for the unit.")
+        else:
+            notes.append("Re-roll Advance and Charge rolls.")
+
+    charge_objective_re = re.search(
+        r"bearer'?s\s+unit\s+declares\s+a\s+charge.*?objective\s+marker.*?re-?roll\s+the\s+charge\s+roll",
+        low,
+        flags=re.IGNORECASE,
+    )
+    charge_setup_re = re.search(
+        r"re-?roll\s+charge\s+rolls?.*?\bset\s+up\s+on\s+the\s+battlefield\b",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if charge_objective_re:
+        if leading_prefix:
+            notes.append("Leading: charge reroll if target is within objective range.")
+        else:
+            notes.append("Charge reroll if target is within objective range.")
+    elif charge_setup_re:
+        if leading_prefix:
+            notes.append("Leading: charge reroll on setup turns.")
+        else:
+            notes.append("Charge reroll on setup turns.")
+    elif not advance_charge_re and re.search(r"re-?roll\s+charge\s+rolls?", low, flags=re.IGNORECASE):
+        if re.search(r"bearer'?s\s+unit", low, flags=re.IGNORECASE):
+            notes.append("Re-roll Charge rolls for bearer's unit.")
+        elif leading_prefix:
+            notes.append("Leading: re-roll Charge rolls for the unit.")
+        else:
+            notes.append("Re-roll Charge rolls.")
+
+    eligible_charge = (
+        "eligible to declare a charge" in low
+        or "eligible to charge" in low
+        or "eligible to shoot and declare a charge" in low
+        or "eligible to shoot and charge" in low
+    )
+    if eligible_charge:
+        has_advance = ("advance" in low) or ("advanced" in low) or ("advancing" in low)
+        has_fall_back = ("fell back" in low) or ("fall back" in low) or ("falling back" in low)
+        if has_advance and has_fall_back:
+            notes.append("Charge-after-Advance/Fall Back eligibility.")
+        elif has_advance:
+            notes.append("Charge-after-Advance eligibility.")
+        elif has_fall_back:
+            notes.append("Charge-after-Fall-Back eligibility.")
 
     m = re.search(
         r"models\s+in\s+the\s+bearer'?s\s+unit\s+have\s+a\s+leadership\s+characteristic\s+of\s+(\d+)\+?",
@@ -1236,9 +1357,206 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
     if m:
         notes.append(f"Bearer's unit Leadership set to {m.group(1)}+.")
 
+    m = re.search(
+        r"add\s+(\d+)\s+to\s+the\s+objective\s+control\s+characteristic\s+of\s+(?:models\s+in\s+)?"
+        r"the\s+bearer'?s\s+unit",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        if leading_prefix:
+            notes.append(f"{leading_prefix}Objective Control for the unit +{m.group(1)}.")
+        else:
+            notes.append(f"Bearer's unit Objective Control +{m.group(1)}.")
+    elif leading_prefix:
+        m = re.search(
+            r"add\s+(\d+)\s+to\s+the\s+objective\s+control\s+characteristic\s+of\s+(?:models\s+in\s+)?"
+            r"that\s+unit",
+            low,
+            flags=re.IGNORECASE,
+        )
+        if m:
+            notes.append(f"{leading_prefix}Objective Control for the unit +{m.group(1)}.")
+
+    m = re.search(
+        r"models?\s+in\s+the\s+bearer'?s\s+unit\s+have\s+(?:a\s+|the\s+)?feel\s+no\s+pain\s*(\d+)\+",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if not m and leading_prefix:
+        m = re.search(
+            r"models?\s+in\s+that\s+unit\s+have\s+(?:a\s+|the\s+)?feel\s+no\s+pain\s*(\d+)\+",
+            low,
+            flags=re.IGNORECASE,
+        )
+    if m:
+        if leading_prefix:
+            notes.append(f"{leading_prefix}Feel No Pain {m.group(1)}+.")
+        else:
+            notes.append(f"Bearer's unit gains Feel No Pain {m.group(1)}+.")
+
     if notes:
         return ("Supported", " ".join(notes))
     return None
+
+
+def _closest_monster_vehicle_reroll_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    low = text.lower()
+    if "ranged attack" not in low:
+        return None
+    if "closest eligible" not in low:
+        return None
+    if "monster" not in low or "vehicle" not in low:
+        return None
+    m = re.search(r"within\s+(\d+)\s*(?:\"|inches)", low)
+    if not m:
+        return None
+    allow_wound = bool(re.search(r"re-?roll\s+the\s+wound\s+roll", low))
+    allow_damage = bool(re.search(r"re-?roll\s+the\s+damage\s+roll", low))
+    if not (allow_wound or allow_damage):
+        return None
+    rng = m.group(1)
+    notes = []
+    if allow_wound:
+        notes.append(f"Ranged attacks vs closest eligible MONSTER/VEHICLE within {rng}\" can re-roll the Wound roll (optional).")
+    if allow_damage:
+        notes.append(f"Ranged attacks vs closest eligible MONSTER/VEHICLE within {rng}\" can re-roll the Damage roll (optional).")
+    return ("Supported", " ".join(notes))
+
+
+def _unit_contains_oc_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    m = re.search(
+        r"while\s+this\s+unit\s+contains\s+an?\s+(.+?),\s*add\s+(\d+)\s+to\s+the\s+objective\s+control\s+"
+        r"characteristic\s+of\s+models\s+in\s+this\s+unit",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+    model_name = m.group(1).strip()
+    amt = m.group(2)
+    return ("Supported", f"Unit Objective Control +{amt} while it contains {model_name}.")
+
+
+def _aura_objective_control_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    m = re.search(
+        r'while\s+a\s+friendly\s+(.+?)\s+unit\s+is\s+within\s+(\d+)"\s+of\s+this\s+(?:model|unit),\s+'
+        r"add\s+(\d+)\s+to\s+the\s+objective\s+control\s+characteristic\s+of\s+models\s+in\s+that\s+unit",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+    faction_kw = m.group(1).strip()
+    rng = m.group(2)
+    amt = m.group(3)
+    return ("Supported", f"Aura: friendly {faction_kw} within {rng}\" gain Objective Control +{amt}.")
+
+
+def _bearer_invulnerable_save_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    text = re.sub(r"\s+([.])", r"\1", text)
+    m = re.fullmatch(r"the bearer has a (\d)\+ invulnerable save\.?", text, flags=re.IGNORECASE)
+    if not m:
+        return None
+    return ("Supported", f"Bearer has a {m.group(1)}+ invulnerable save.")
+
+
+def _model_reroll_wound_vs_character_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'")
+    low = text.lower()
+    attack_re = re.compile(r"this model makes (?:a|an)?\s*(?:melee|ranged)?\s*attacks?", re.IGNORECASE)
+    if not attack_re.search(low):
+        return None
+    if ("re-roll" not in low) and ("reroll" not in low):
+        return None
+    if (
+        "targets a character unit" not in low
+        and "targets an character unit" not in low
+        and "targets a character units" not in low
+        and "targets a character model" not in low
+        and "targets an character model" not in low
+        and "targets a character models" not in low
+    ):
+        return None
+    hit_reroll = bool(re.search(r"re-?roll\s+(?:the\s+)?hit\s+rolls?", low, flags=re.IGNORECASE))
+    if "hit roll of 1" in low or "hit rolls of 1" in low:
+        hit_reroll = False
+    wound_reroll = bool(re.search(r"re-?roll\s+(?:the\s+)?wound\s+rolls?", low, flags=re.IGNORECASE))
+    if "wound roll of 1" in low or "wound rolls of 1" in low:
+        wound_reroll = False
+    if not (hit_reroll or wound_reroll):
+        return None
+    cp_on_kill = "gain" in low and "cp" in low and "destroys" in low and "character" in low
+    notes = []
+    if hit_reroll:
+        notes.append("Model attacks vs CHARACTER units can re-roll the Hit roll (optional).")
+    if wound_reroll:
+        notes.append("Model attacks vs CHARACTER units can re-roll the Wound roll (optional).")
+    if cp_on_kill:
+        notes.append("Gain CP on destroying CHARACTER models supported.")
+    return ("Supported", " ".join(notes))
+
+
+def _targeted_stratagem_cp_discount_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    low = text.lower()
+    if "once per battle round" not in low:
+        return None
+    if "stratagem" not in low:
+        return None
+    if "reduce the cp cost" not in low:
+        return None
+    if "within" in low:
+        return None
+    pattern = re.compile(
+        r"once\s+per\s+battle\s+round.*?\bone\s+(?:unit|model)\s+from\s+your\s+army\s+with\s+this\s+ability\s+can\s+use\s+it\s+when\s+"
+        r"(?:its\s+unit|this\s+model'?s\s+unit|that\s+model'?s\s+unit)\s+is\s+targeted\s+with\s+a\s+stratagem.*?"
+        r"reduce\s+the\s+cp\s+cost\s+of\s+that\s+(?:use|usage)\s+of\s+that\s+stratagem\s+by\s+1cp",
+        flags=re.IGNORECASE,
+    )
+    if not pattern.search(low):
+        return None
+    return (
+        "Supported",
+        "Once per battle round, when this unit is targeted with a Stratagem, you can reduce its CP cost by 1.",
+    )
 
 
 def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
@@ -1250,8 +1568,17 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
     if not text:
         return None
     low = text.lower()
-    if "leading a unit" not in low or "model in that unit" not in low:
+    if "leading a unit" not in low:
         return None
+    if "model in that unit" not in low and "models in that unit" not in low:
+        return None
+    lethal_re = re.search(
+        r"weapons equipped by models in that unit have the \[?lethal hits\]? ability",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if lethal_re:
+        return ("Supported", "Leading: unit weapons gain Lethal Hits.")
     hit_re = re.search(r"re-?roll (?:a|any)?\s*hit roll(?:s)? of 1", low, flags=re.IGNORECASE)
     wound_re = re.search(r"re-?roll (?:a|any)?\s*wound roll(?:s)? of 1", low, flags=re.IGNORECASE)
     if not (hit_re and wound_re):
@@ -1263,6 +1590,153 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
     else:
         attack_scope = "all"
     return ("Supported", f"Leading: re-roll Hit/Wound rolls of 1 for {attack_scope} attacks.")
+
+
+def _unit_hit_reroll_ones_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    low = text.lower()
+    if "model in this unit" not in low:
+        return None
+    if "leading a unit" in low:
+        return None
+    text = re.sub(r";\s*", ". ", text)
+
+    def _split_sentences(text_value: str) -> List[str]:
+        return [part.strip() for part in re.split(r"\.\s*", text_value) if part.strip()]
+
+    sentences = _split_sentences(text)
+    if not sentences:
+        return None
+
+    base_typed_re = re.compile(
+        r"^each time a model in this unit makes (?:a|an) (?P<atype>melee|ranged) attack(?:s)?"
+        r"[,;:]?\s*(?:you can\s*)?re-?roll (?:a|any)?\s*hit roll(?:s)? of 1$",
+        re.IGNORECASE,
+    )
+    base_any_re = re.compile(
+        r"^each time a model in this unit makes (?:a|an) attack(?:s)?"
+        r"[,;:]?\s*(?:you can\s*)?re-?roll (?:a|any)?\s*hit roll(?:s)? of 1$",
+        re.IGNORECASE,
+    )
+    objective_clause_re = re.compile(
+        r"^if (?:that attack targets|the target of that attack is) (?:a unit )?(?:that is )?"
+        r"within range of (?:an|one or more) objective marker(?:s)?"
+        r"\s*[,;:]?\s*(?:you can\s*)?re-?roll the hit roll instead$",
+        re.IGNORECASE,
+    )
+
+    base_sentences: List[str] = []
+    base_atype = None
+    multiple_bases = False
+    for sentence in sentences:
+        s_low = sentence.lower()
+        if "model in this unit" not in s_low:
+            continue
+        m = base_typed_re.match(s_low)
+        if m:
+            base_sentences.append(sentence)
+            if base_atype is None:
+                base_atype = m.group("atype").lower()
+            else:
+                multiple_bases = True
+            continue
+        if base_any_re.match(s_low):
+            base_sentences.append(sentence)
+            if base_atype is None:
+                base_atype = "all"
+            else:
+                multiple_bases = True
+
+    if not base_sentences:
+        return None
+
+    if base_atype == "melee":
+        attack_scope = "melee"
+    elif base_atype == "ranged":
+        attack_scope = "ranged"
+    else:
+        attack_scope = "all"
+
+    notes = [f"Unit attacks re-roll Hit rolls of 1 for {attack_scope} attacks."]
+    objective_sentences = [s for s in sentences if objective_clause_re.match(s.lower())]
+    unsupported = [s for s in sentences if s not in base_sentences and not objective_clause_re.match(s.lower())]
+
+    if objective_sentences:
+        notes.append("If the target is within range of an objective marker, the Hit roll can be re-rolled instead (optional).")
+
+    if multiple_bases or unsupported:
+        notes.append("Additional clauses not handled.")
+        return ("Partial", " ".join(notes))
+
+    return ("Supported", " ".join(notes))
+
+
+def _target_hit_roll_penalty_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    text = re.sub(r";\s*", ". ", text)
+    sentences = [part.strip() for part in re.split(r"\.\s*", text) if part.strip()]
+    if not sentences:
+        return None
+
+    unit_re = re.compile(
+        r"^each time (?:a|an) (?:(?P<atype>melee|ranged) )?attack targets this unit, subtract 1 from the hit roll(?P<tail>.*)$",
+        re.IGNORECASE,
+    )
+    model_re = re.compile(
+        r"^each time (?:a|an) (?:(?P<atype>melee|ranged) )?attack targets this model, subtract 1 from the hit roll(?P<tail>.*)$",
+        re.IGNORECASE,
+    )
+
+    matched: List[str] = []
+    notes: List[str] = []
+    partial = False
+
+    def _note(scope: str, atype: Optional[str]) -> None:
+        if atype == "melee":
+            scope_text = "melee"
+        elif atype == "ranged":
+            scope_text = "ranged"
+        else:
+            scope_text = "all"
+        notes.append(f"{scope} targeted: -1 to hit vs {scope_text} attacks.")
+
+    for sentence in sentences:
+        sl = sentence.lower()
+        if not sl.startswith("each time"):
+            continue
+        if any(x in f" {sl} " for x in (" if ", " unless ", " while ", " when ")):
+            continue
+        for scope, pattern in (("Unit", unit_re), ("Model", model_re)):
+            m = pattern.match(sl)
+            if not m:
+                continue
+            matched.append(sentence)
+            _note(scope, (m.group("atype") or "").lower() or None)
+            tail = (m.group("tail") or "").strip().strip(" .;")
+            if tail:
+                partial = True
+            break
+
+    if not matched:
+        return None
+
+    if any(s for s in sentences if s not in matched):
+        partial = True
+
+    status = "Partial" if partial else "Supported"
+    return (status, " ".join(notes) if notes else "-1 to hit when targeted.")
 
 
 def _melee_damage_bonus_support(description: str) -> Optional[Tuple[str, str]]:
@@ -1320,6 +1794,144 @@ def _transport_disembark_support(description: str) -> Optional[Tuple[str, str]]:
     return None
 
 
+def _sticky_objective_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    low = text.lower()
+    if "end of your command phase" not in low:
+        return None
+    if "objective marker remains under your control" not in low:
+        return None
+    if "objective marker you control" not in low or "within range of an objective marker" not in low:
+        return None
+    legacy_sticky = (
+        "even if you have no models within range of it" in low
+        and "until your opponent controls it" in low
+    )
+    loc_sticky = "level of control" in low and "greater than yours" in low
+    if not (legacy_sticky or loc_sticky):
+        return None
+    return ("Supported", "End of Command phase: objective becomes sticky while you controlled it.")
+
+
+def _command_phase_bodyguard_return_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    low = text.lower()
+    if "command phase" not in low:
+        return None
+    if "bodyguard model" not in low:
+        return None
+    if "return" not in low or "destroyed" not in low:
+        return None
+    if "not leading a unit" in low:
+        return None
+    if (
+        "leading a unit" not in low
+        and "leading this unit" not in low
+        and "bearer is leading a unit" not in low
+    ):
+        return None
+    if "can return" not in low:
+        return None
+    m = re.search(r"return\s+(?:up to\s+)?(one|a|\d+)\s+destroyed\s+bodyguard\s+models?", low)
+    if not m:
+        return None
+    token = m.group(1)
+    try:
+        amount = int(token)
+    except Exception:
+        amount = 1 if token in ("one", "a") else 0
+    if amount <= 0:
+        return None
+    return (
+        "Supported",
+        f"Command phase: return {amount} destroyed Bodyguard model(s) while leading (capped at starting strength).",
+    )
+
+
+def _command_phase_bonus_cp_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    low = text.lower()
+    if "command phase" not in low:
+        return None
+    if "on the battlefield" not in low:
+        return None
+    if "this model" not in low and "this unit" not in low and "the bearer" not in low:
+        return None
+    m = re.search(
+        r"(?:at\s+the\s+)?start\s+of\s+(?:each\s+of\s+)?your\s+command\s+phase[s]?\b.*?\bgain\s+(\d+)\s*(?:cp|command point(?:s)?)",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+    return ("Supported", f"Start of Command phase: gain {m.group(1)} CP while on the battlefield.")
+
+
+def _two_melee_weapons_bonus_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    low = text.lower()
+    if "two melee weapons" not in low or "close combat weapon" not in low:
+        return None
+    m = re.search(
+        r"add\s+(\d+)\s+to\s+the\s+attacks\s+characteristic\s+of\s+those\s+(?:two\s+)?weapons",
+        low,
+    )
+    if not m:
+        return None
+    return (
+        "Supported",
+        f"If equipped with two melee weapons plus a close combat weapon, those two weapons gain +{m.group(1)} Attacks.",
+    )
+
+
+def _attached_possessed_formation_bonus_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    low = text.lower()
+    if "declare battle formations" not in low:
+        return None
+    if "attached to a world eaters possessed unit" not in low:
+        return None
+    if "deep strike" not in low or "scout" not in low:
+        return None
+    m = re.search(r"scouts?\s*(\d+)", low)
+    if not m:
+        return None
+    return (
+        "Supported",
+        f"Leader gains Deep Strike and Scouts {m.group(1)}\" if attached to WORLD EATERS POSSESSED at battle formations.",
+    )
+
+
 def _orders_section_support(name: str, description: str) -> Optional[Tuple[str, str]]:
     if _norm(name) != "orders":
         return None
@@ -1351,7 +1963,9 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000009899003": "Timeless Strategist: +1 Battle Focus token if bearer on battlefield.",
         "000009899004": "Gift of Foresight: Command Re-roll for 0CP once per battle round.",
         "000009899005": "Psychic Destroyer: +1 Damage to bearer ranged Psychic weapons.",
+        "000010078002": "Icon of War: BLOOD LEGIONS within 6\" gain Blessings of Khorne; with Might of Khorne active, may re-roll Battle-shock tests.",
         "000010078003": "Blood-forged Armour: set bearer Save to 2+; gain 1 Blood Tithe point when bearer is destroyed.",
+        "000010078004": "Disciple of Khorne: Lord on Juggernaut can attach to Bloodcrushers/Flesh Hounds; bearer gains Deep Strike and BLOOD LEGIONS (instead of WORLD EATERS) while leading; attached unit benefits from Blessings of Khorne (FAQ).",
         "000010078005": "Blade of Endless Bloodshed: +1 A/S/D for bearer melee weapons; melee kill auto-grants 1 Blood Tithe point.",
     }
     if enh_id in explicit:
@@ -1363,7 +1977,7 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
     return (status, notes)
 
 
-def _stratagem_support(name: str) -> Tuple[str, str, str]:
+def _stratagem_support(name: str, description: str = "") -> Tuple[str, str, str]:
     name_u = (name or "").strip().upper()
     notes = {
         "COMMAND RE-ROLL": "Queued on roll; executes reroll callback; once-per-phase rule enforced.",
@@ -1379,18 +1993,34 @@ def _stratagem_support(name: str) -> Tuple[str, str, str]:
         "SMOKESCREEN": "Shooting phase: SMOKE unit gains cover + Stealth.",
         "TANK SHOCK": "Charge phase: roll vs Toughness to deal mortals (max 6).",
         "APOPLECTIC FRENZY": "Advance and Charge for a BERZERKERS unit; Berzerker Warband only.",
+        "ARMOUR OF CONTEMPT": "Shooting/Fight phase: targeted ADEPTUS ASTARTES unit worsens AP by 1 vs the attacking unit until it finishes its attacks.",
         "BERZERKER'S WRATH": "Blood Surge distance is fixed at 8\" (no D6 roll) for a BERZERKERS unit.",
         "BERZERKER’S WRATH": "Blood Surge distance is fixed at 8\" (no D6 roll) for a BERZERKERS unit.",
+        "BLESSING OF BURNING BLOOD": "Shooting/Fight phase: after enemy targets; BLOOD LEGIONS unit within 6\" of targeted WORLD EATERS grants 5++ (4++ if Boon of Blood active) until end of phase.",
+        "BLITZING FIREPOWER": "Shooting phase: ASURYANI unit gains Sustained Hits 1 vs targets within 12\"; if already has Sustained Hits, crits on 5+.",
+        "FEIGNED RETREAT": "Movement phase: ASURYANI unit that Fell Back can shoot and charge this turn.",
+        "FIRE AND FADE": "Shooting phase: ASURYANI INFANTRY makes Normal move D6+1\" after shooting; cannot charge or embark this turn.",
+        "LIGHTNING-FAST REACTIONS": "Shooting/Fight phase: targeted ASURYANI (non-Wraith Construct) gets -1 to hit until end of phase.",
+        "SKYBORNE SANCTUARY": "End of Fight phase: ASURYANI unit not engaged and wholly within 6\" can embark in friendly Transport.",
+        "WEBWAY TUNNEL": "End of opponent Fight phase: ASURYANI INFANTRY wholly within 9\" of battlefield edge goes to Strategic Reserves.",
         "BLOOD OFFERING": "Sticky objective on unit destruction; Berzerker Warband only.",
+        "DAEMONIC FURY": "Fight phase: BLOOD LEGIONS unit selects WORLD EATERS unit within 6\" to gain [LANCE] until end of turn; if Daemonic Rage active, also [TWIN-LINKED] this phase.",
+        "DAEMONTIDE": "Command phase: WORLD EATERS unit selects BLOOD LEGIONS within 6\" to return destroyed models (1 Mounted / D3 Beast / D6 Infantry).",
         "FRENZIED RESILIENCE": "Fight phase: after enemy targets; WORLD EATERS unit reduces damage by 1.",
         "HACK AND SLASH": "Fight phase: charged WORLD EATERS unit gains +1 AP on melee weapons.",
         "A WORTHY SKULL": "Fight phase: after CHARACTER/MONSTER kill, gain D3 Blood Tithe points and optionally activate Blood Tithe.",
         "SKULLS FOR THE SKULL THRONE!": "Fight phase: after CHARACTER/MONSTER kill, roll Blessings for a unit-only extra blessing.",
+        "MURDER-CALL": "End of opponent Fight phase: BLOOD LEGIONS unit not in Engagement Range goes to Strategic Reserves.",
+        "SUMMONED BY SLAUGHTER": "Any phase: set up BLOODLETTERS from Reserves wholly within 9\" of destroyed model; >6\" from enemies; once per battle round.",
+        "THE FOE FORESEEN": "Shooting/Fight phase: targeted ADEPTUS ASTARTES unit worsens AP by 1 vs the attacking unit until it finishes its attacks.",
         "UNBOUND ARROGANCE": "Coterie of the Conceited pledge increases by 1 (once per battle round).",
     }
 
     if name_u in IMPLEMENTED_STRATAGEM_NAMES:
         return ("Implemented", notes.get(name_u, "Implemented in engine."), name_u)
+    spec = parse_defensive_reaction_stratagem(name, description or "")
+    if spec:
+        return ("Implemented", defensive_reaction_note(spec), name_u)
     return ("Not implemented", "No effect logic currently wired.", name_u)
 
 
@@ -1423,9 +2053,8 @@ def _extract_restrictions(desc_html: str) -> List[str]:
     return parts
 
 
-def _row(cells: Sequence[str], status: str) -> str:
-    color = _status_color(status)
-    tds = "".join(f"<td bgcolor=\"{color}\">{c}</td>" for c in cells)
+def _row(cells: Sequence[str], _status: str) -> str:
+    tds = "".join(f"<td>{c}</td>" for c in cells)
     return f"<tr>{tds}</tr>"
 
 
@@ -1576,24 +2205,13 @@ def _summarize_section_count(items: Iterable[Tuple[str, str]]) -> Tuple[int, int
     return supported, total
 
 
-def _summary_color(supported: int, total: int) -> str:
-    if total <= 0:
-        return STATUS_COLORS["not implemented"]
-    if supported <= 0:
-        return STATUS_COLORS["not implemented"]
-    if supported >= total:
-        return STATUS_COLORS["supported"]
-    return STATUS_COLORS["partial"]
-
-
 def _summary_span(title: str, supported: int, total: int) -> str:
     return _summary_span_with_label(title, supported, total, "abilities")
 
 
 def _summary_span_with_label(title: str, supported: int, total: int, label: str) -> str:
-    color = _summary_color(supported, total)
     label = f"{_escape(title)} ({supported} out of {total} {label} supported)"
-    return f"<span style=\"background-color:{color}; padding:2px 6px; display:block;\">{label}</span>"
+    return label
 
 
 def _details_raw(summary_html: str, body: str) -> str:
@@ -1691,10 +2309,14 @@ def _build_faction_content(
     unit_comp_by_datasheet: Dict[str, List[dict]],
     datasheet_support_overrides: Dict[Tuple[str, str], Tuple[str, str]],
     virtual_unit_names: set[str],
-) -> Tuple[str, int, int]:
+) -> Tuple[str, int, int, int, int, int, int]:
     faction_name = str(meta.get("faction_name", "") or faction_id)
     faction_items: List[Tuple[str, str]] = []
     faction_body: List[str] = []
+    det_supported = 0
+    det_total = 0
+    ds_supported = 0
+    ds_total = 0
 
     # Army rules
     army_rule_rows = []
@@ -1750,9 +2372,13 @@ def _build_faction_content(
     if dets:
         faction_body.append("## Detachments")
         for det in dets:
+            det_total += 1
             det_name = str(det.get("name", "") or "Detachment")
             det_id = str(det.get("id", "") or "").strip()
             det_body: List[str] = []
+            det_rule_statuses: List[str] = []
+            det_enh_statuses: List[str] = []
+            det_strat_statuses: List[str] = []
 
             # Detachment abilities
             det_ability_rows = []
@@ -1763,6 +2389,7 @@ def _build_faction_content(
                 ability_id = str(ability.get("id", "") or "")
                 status, notes = _classify_ability(name, desc, ability_id=ability_id, faction_id=faction_id)
                 faction_items.append((status, name))
+                det_rule_statuses.append(status)
                 det_ability_rows.append(
                     (
                         [
@@ -1780,12 +2407,15 @@ def _build_faction_content(
                 det_body.append("")
 
             det_restrictions = sorted({r for r in det_restrictions if r}, key=str.lower)
+            if not _detachment_has_restrictions(det_id, det_name):
+                det_restrictions = []
             if det_restrictions:
                 det_restriction_rows = []
                 for restriction in det_restrictions:
                     status, notes = _classify_ability(restriction, "", faction_id=faction_id)
                     rules_text, engine_text = _restriction_rule_and_engine(restriction, abilities, faction_id)
                     faction_items.append((status, restriction))
+                    det_rule_statuses.append(status)
                     det_restriction_rows.append(
                         (
                             [
@@ -1809,6 +2439,7 @@ def _build_faction_content(
                     desc = enh.get("description", "") or ""
                     enh_id = str(enh.get("id", "") or "")
                     status, notes = _enhancement_support(name, enh_id, desc)
+                    det_enh_statuses.append(status)
                     enh_rows.append(
                         (
                             [
@@ -1836,7 +2467,8 @@ def _build_faction_content(
                 det_strats.sort(key=lambda s: _norm(s.get("name", "")))
                 strat_rows = []
                 for s in det_strats:
-                    status, notes, _ = _stratagem_support(s.get("name", ""))
+                    status, notes, _ = _stratagem_support(s.get("name", ""), s.get("description", ""))
+                    det_strat_statuses.append(status)
                     strat_rows.append(
                         (
                             [
@@ -1865,6 +2497,17 @@ def _build_faction_content(
                 det_body.append("_No detachment data available._")
             faction_body.append(_details_raw(_escape(det_name), "\n".join(det_body)))
             faction_body.append("")
+            det_rules_supported = bool(det_rule_statuses) and all(
+                _status_is_supported(status) for status in det_rule_statuses
+            )
+            det_enh_supported = (not det_enh_statuses) or all(
+                _status_is_supported(status) for status in det_enh_statuses
+            )
+            det_strat_supported = (not det_strat_statuses) or all(
+                _status_is_supported(status) for status in det_strat_statuses
+            )
+            if det_rules_supported and det_enh_supported and det_strat_supported:
+                det_supported += 1
 
     # Datasheet abilities
     ds_ability_rows = []
@@ -1951,6 +2594,7 @@ def _build_faction_content(
     ds_units = [ds for ds in ds_units if not _is_kill_team_unit(ds.get("name", ""))]
     if ds_units:
         ds_units.sort(key=lambda d: (_norm(d.get("name", "")), str(d.get("id", "") or "")))
+        ds_total = len(ds_units)
         ds_rows = []
         for ds in ds_units:
             dsid = str(ds.get("id", "") or "").strip()
@@ -1983,6 +2627,8 @@ def _build_faction_content(
             wargear_kw_status, wargear_kw_note = _wargear_keywords_support(wargear_by_datasheet.get(dsid, []))
             points_status, points_note = _points_support(models_cost_by_datasheet.get(dsid, []))
             keywords_status, keywords_note = _keywords_support(keywords_by_datasheet.get(dsid, []))
+            if _is_spawn_only_datasheet(ability_entries, models_cost_by_datasheet.get(dsid, [])):
+                points_status, points_note = ("Supported", "")
 
             damaged_w = str(ds.get("damaged_w", "") or "").strip()
             damaged_desc = str(ds.get("damaged_description", "") or "").strip()
@@ -2014,6 +2660,8 @@ def _build_faction_content(
                 categories=categories,
                 overrides=datasheet_support_overrides,
             )
+            if _status_is_supported(status):
+                ds_supported += 1
             ds_rows.append(
                 (
                     [
@@ -2047,7 +2695,15 @@ def _build_faction_content(
         ),
         "",
     ]
-    return "\n".join(header + faction_body).rstrip() + "\n", supported, total
+    return (
+        "\n".join(header + faction_body).rstrip() + "\n",
+        supported,
+        total,
+        det_supported,
+        det_total,
+        ds_supported,
+        ds_total,
+    )
 
 
 def _build_matrix() -> str:
@@ -2329,7 +2985,7 @@ def _build_matrix() -> str:
     core_strat_rows = []
     core_strat_items: List[Tuple[str, str]] = []
     for s in core_strats:
-        status, notes, _ = _stratagem_support(s.get("name", ""))
+        status, notes, _ = _stratagem_support(s.get("name", ""), s.get("description", ""))
         core_strat_items.append((status, s.get("name", "") or ""))
         core_strat_rows.append(
             (
@@ -2384,7 +3040,7 @@ def _build_matrix() -> str:
         if faction_id not in SUPPORTED_FACTION_IDS:
             continue
         faction_name = str(meta.get("faction_name", "") or faction_id)
-        content, supported, total = _build_faction_content(
+        content, supported, total, det_supported, det_total, ds_supported, ds_total = _build_faction_content(
             faction_id=faction_id,
             meta=meta,
             abilities=abilities,
@@ -2410,24 +3066,38 @@ def _build_matrix() -> str:
         out_path = os.path.join(FACTION_DOCS_DIR, f"{slug}.md")
         with open(out_path, "w", encoding="utf-8") as f:
             f.write(content)
-        summary_entries.append((faction_name, supported, total, rel_path))
+        summary_entries.append(
+            (faction_name, supported, total, det_supported, det_total, ds_supported, ds_total, rel_path)
+        )
 
     summary_entries.sort(key=lambda t: t[0].lower())
-    for faction_name, supported, total, rel_path in summary_entries:
+    for faction_name, supported, total, det_supported, det_total, ds_supported, ds_total, rel_path in summary_entries:
         status = _summary_status(supported, total)
         summary_rows.append(
             (
                 [
                     _escape(faction_name),
                     _escape(_summary_icon(supported, total)),
-                    _escape(f"{supported} out of {total}"),
+                    _escape(f"{det_supported} out of {det_total}"),
+                    _escape(f"{ds_supported} out of {ds_total}"),
                     f"<a href=\"{_escape(rel_path)}\">View</a>",
                 ],
                 status,
             )
         )
     lines.append("## Factions")
-    lines.append(_table(["Faction", "Status", "Supported", "Link"], summary_rows))
+    lines.append(
+        _table(
+            [
+                "Faction",
+                "Status",
+                "Supported Detachments",
+                "Supported Datasheets",
+                "Link",
+            ],
+            summary_rows,
+        )
+    )
 
     return "\n".join(lines).rstrip() + "\n"
 

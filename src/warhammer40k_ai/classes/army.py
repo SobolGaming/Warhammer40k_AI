@@ -843,6 +843,17 @@ class Army:
         sr = getattr(unit, "special_rules", None)
         return bool(isinstance(sr, dict) and sr.get("cannot_be_given_enhancements"))
 
+    def _unit_spawn_only(self, unit: Unit) -> bool:
+        sr = getattr(unit, "special_rules", None)
+        return bool(isinstance(sr, dict) and sr.get("spawn_only"))
+
+    def validate_spawn_only_units(self):
+        for unit in self.units:
+            if self._unit_spawn_only(unit) and not getattr(unit, "spawned_in_battle", False):
+                raise ArmyValidationError(
+                    f"Unit '{unit.name}' is spawn-only and cannot be mustered; it is created by other rules."
+                )
+
     def add_enhancement(self, enhancement, character_unit):
         # Assign an Enhancement to a Character unit
         if not character_unit.is_character or character_unit.is_epic_hero:
@@ -1753,6 +1764,7 @@ class Army:
         self.validate_leaders()
         self.validate_enhancements()
         self.validate_warlord()
+        self.validate_spawn_only_units()
         self.validate_detachment_rules()
         self.validate_space_marine_chapters()
         self.validate_dreadblades()
@@ -2182,7 +2194,17 @@ def add_unit_to_army(army: Army, unit: Unit, model_count: int, wargear_dict: Dic
                     for _ in range(quantity):
                         unit.add_wargear([matching_gear if gear.name.lower().replace("’","'") == gear_name else None for gear in unit.possible_wargear], model_name)
             else:
-                matching_gear = next((gear for gear in unit.wargear_options if gear_name in gear.wargear_to), None)
+                matching_gear = None
+                for gear in unit.wargear_options:
+                    for choice in (gear.wargear_to or []):
+                        for _qty, nm in (choice or []):
+                            if nm and nm.lower().replace("’", "'") == gear_name:
+                                matching_gear = gear
+                                break
+                        if matching_gear:
+                            break
+                    if matching_gear:
+                        break
                 if matching_gear:
                     # Army lists must be deterministic: if an option can't be resolved uniquely, that's an error.
                     unit.apply_wargear_options_strict(gear_name)

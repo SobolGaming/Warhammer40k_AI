@@ -40,6 +40,8 @@ class Map:
         self.reanimation_allocation_provider = None
         # Signature: provider(player, unit, roll_type, dice_count, die_faces, pool, needed) -> chosen_value | None
         self.miracle_dice_provider = None
+        # Signature: provider(player, unit, roll_type, value, needed, tokens_remaining, ...) -> "use" | "skip" | "suppress"
+        self.aspect_shrine_provider = None
 
     def create_boundary_polygon(self) -> Polygon:
         """

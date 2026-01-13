@@ -1,15 +1,28 @@
 import time
+import copy
+import html
+import re
 from typing import Callable, Optional, Dict, Any, List
+from ..utility.dice import get_roll
 
 
 IMPLEMENTED_STRATAGEM_NAMES = {
+    "ARMOUR OF CONTEMPT",
     "A WORTHY SKULL",
     "APOPLECTIC FRENZY",
     "BERZERKER'S WRATH",
-    "BERZERKER'S WRATH",
+    "BERZERKER’S WRATH",
+    "BLESSING OF BURNING BLOOD",
+    "BLITZING FIREPOWER",
     "BLOOD OFFERING",
+    "DAEMONIC FURY",
+    "DAEMONTIDE",
     "FRENZIED RESILIENCE",
+    "FEIGNED RETREAT",
+    "FIRE AND FADE",
     "HACK AND SLASH",
+    "LIGHTNING-FAST REACTIONS",
+    "MURDER-CALL",
     "COMMAND RE-ROLL",
     "COUNTER-OFFENSIVE",
     "EPIC CHALLENGE",
@@ -21,19 +34,26 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "INSANE BRAVERY",
     "NEW ORDERS",
     "RAPID INGRESS",
+    "SKYBORNE SANCTUARY",
     "SMOKESCREEN",
     "SKULLS FOR THE SKULL THRONE!",
+    "SUMMONED BY SLAUGHTER",
     "TANK SHOCK",
+    "THE FOE FORESEEN",
     "UNBOUND ARROGANCE",
+    "WEBWAY TUNNEL",
 }
 
 REACTION_ONLY_STRATAGEM_NAMES = {
+    "ARMOUR OF CONTEMPT",
     "A WORTHY SKULL",
     "APOPLECTIC FRENZY",
     "BERZERKER'S WRATH",
-    "BERZERKER'S WRATH",
+    "BERZERKER’S WRATH",
+    "BLESSING OF BURNING BLOOD",
     "BLOOD OFFERING",
     "FRENZIED RESILIENCE",
+    "FEIGNED RETREAT",
     "COMMAND RE-ROLL",
     "COUNTER-OFFENSIVE",
     "FIRE OVERWATCH",
@@ -43,9 +63,16 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "INSANE BRAVERY",
     "NEW ORDERS",
     "RAPID INGRESS",
+    "FIRE AND FADE",
+    "MURDER-CALL",
+    "LIGHTNING-FAST REACTIONS",
     "SKULLS FOR THE SKULL THRONE!",
     "SMOKESCREEN",
+    "SKYBORNE SANCTUARY",
+    "SUMMONED BY SLAUGHTER",
+    "THE FOE FORESEEN",
     "UNBOUND ARROGANCE",
+    "WEBWAY TUNNEL",
 }
 
 
@@ -106,6 +133,285 @@ def _extract_friendly_target_unit_from_kwargs(kwargs: Dict[str, Any]) -> Any:
         if u is not None:
             return u
     return None
+
+
+def _strip_html(text: str) -> str:
+    if not text:
+        return ""
+    text = html.unescape(text)
+    text = text.replace("\u2019", "'")
+    text = re.sub(r"<br\s*/?>", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _normalize_token(text: str) -> str:
+    t = str(text or "").lower().replace("\u2019", "'")
+    t = re.sub(r"[^a-z0-9+ ]+", " ", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def _extract_stratagem_section(description: str, label: str) -> str:
+    if not description:
+        return ""
+    m = re.search(
+        rf"<b>{re.escape(label)}:</b>(.*?)(?:<br><br><b>|$)",
+        description,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if m:
+        return m.group(1).strip()
+    m = re.search(
+        rf"\b{re.escape(label)}:\s*(.*?)(?:\b(?:WHEN|TARGET|EFFECT):|$)",
+        description,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    return m.group(1).strip() if m else ""
+
+
+def _extract_kwb_keywords(target_html: str) -> List[str]:
+    if not target_html:
+        return []
+    pattern = re.compile(r'<span[^>]+class="[^"]*\bkwb\w*\b[^"]*"[^>]*>(.*?)</span>', re.I | re.S)
+    matches = list(pattern.finditer(target_html))
+    keywords: List[str] = []
+    i = 0
+    while i < len(matches):
+        phrase = _strip_html(matches[i].group(1))
+        j = i + 1
+        while j < len(matches):
+            between = _strip_html(target_html[matches[j - 1].end() : matches[j].start()])
+            if _normalize_token(between) == "":
+                phrase = f"{phrase} {_strip_html(matches[j].group(1))}".strip()
+                j += 1
+                continue
+            break
+        if phrase:
+            keywords.append(phrase)
+        i = j
+    out: List[str] = []
+    for kw in keywords:
+        if kw not in out:
+            out.append(kw)
+    return out
+
+
+def parse_defensive_reaction_stratagem(name: str, description: str) -> Optional[Dict[str, Any]]:
+    """
+    Parse generic defensive stratagems that trigger after enemy target selection.
+
+    Supported effect patterns (strict):
+    - -1 to hit / -1 to wound (melee/ranged/any)
+    - AP worsened by 1
+    - Damage characteristic reduced by 1
+    - Invulnerable save granted (X+)
+    - Feel No Pain granted (X+)
+    """
+    if not description:
+        return None
+
+    when_html = _extract_stratagem_section(description, "WHEN")
+    target_html = _extract_stratagem_section(description, "TARGET")
+    effect_html = _extract_stratagem_section(description, "EFFECT")
+    if not (when_html and target_html and effect_html):
+        return None
+
+    when_text = _strip_html(when_html).lower()
+    if not re.search(r"(?:just\s+)?after an enemy unit has selected its targets", when_text):
+        return None
+    phases: set[str] = set()
+    if "shooting phase" in when_text:
+        phases.add("shooting")
+    if "fight phase" in when_text:
+        phases.add("fight")
+    if not phases:
+        return None
+
+    target_text = _strip_html(target_html)
+    target_keywords = _extract_kwb_keywords(target_html)
+    if not target_keywords:
+        try:
+            m = re.search(r"\bone\s+(.+?)\s+unit from your army", target_text, flags=re.IGNORECASE)
+        except Exception:
+            m = None
+        if m:
+            kw_text = m.group(1).strip()
+            if kw_text:
+                target_keywords = [
+                    part.strip()
+                    for part in re.split(r"\s+or\s+|\s+and\s+", kw_text, flags=re.IGNORECASE)
+                    if part.strip()
+                ]
+    replaced = target_text
+    for kw in sorted(target_keywords, key=len, reverse=True):
+        if kw:
+            replaced = re.sub(re.escape(kw), "KW", replaced, flags=re.IGNORECASE)
+    replaced_norm = _normalize_token(replaced)
+    mode = "all"
+    if re.search(r"\bkw\b\s+or\s+kw\b", replaced_norm):
+        mode = "any"
+    replaced_norm = re.sub(r"\bkw\b(?:\s+kw\b)+", "kw", replaced_norm)
+    replaced_norm = re.sub(r"\bkw\b(?:\s+(?:or|and)\s+kw\b)+", "kw", replaced_norm)
+    canonical_kw = _normalize_token(
+        "one kw unit from your army that was selected as the target of one or more of the attacking unit's attacks"
+    )
+    canonical_plain = _normalize_token(
+        "one unit from your army that was selected as the target of one or more of the attacking unit's attacks"
+    )
+    if ("kw" in replaced_norm and replaced_norm != canonical_kw) or (
+        "kw" not in replaced_norm and replaced_norm != canonical_plain
+    ):
+        return None
+
+    effect_text = _strip_html(effect_html).lower().strip().rstrip(".")
+    if any(word in effect_text for word in (" if ", " unless ", " while ", " instead ", " in addition", " then ")):
+        return None
+
+    duration = None
+    rest = None
+    for label, prefix in (
+        ("phase", "until the end of the phase,"),
+        ("attacker", "until the attacking unit has finished making its attacks,"),
+    ):
+        if effect_text.startswith(prefix):
+            duration = label
+            rest = effect_text[len(prefix) :].strip()
+            break
+    if duration is None or rest is None:
+        return None
+
+    hit_re = re.compile(
+        r"each time (?:an|a) (?:(?P<atype>melee|ranged) )?attack targets your unit, subtract 1 from the hit roll"
+    )
+    wound_re = re.compile(
+        r"each time (?:an|a) (?:(?P<atype>melee|ranged) )?attack targets your unit, subtract 1 from the wound roll"
+    )
+    ap_re = re.compile(
+        r"each time an attack targets your unit, worsen the armou?r penetration characteristic of that attack by 1"
+    )
+    damage_re = re.compile(
+        r"each time (?:an|a) (?:(?P<atype>melee|ranged) )?attack is allocated to a model in your unit, subtract 1 from the damage characteristic of that attack"
+    )
+    invuln_re = re.compile(
+        r"(?:all )?models in your unit have a (?P<value>\d)\+ invulnerable save"
+    )
+    invuln_unit_re = re.compile(r"your unit has a (?P<value>\d)\+ invulnerable save")
+    fnp_re = re.compile(
+        r"(?:all )?models in your unit have the feel no pain (?P<value>\d)\+ ability"
+    )
+    fnp_unit_re = re.compile(r"your unit has the feel no pain (?P<value>\d)\+ ability")
+
+    m = hit_re.fullmatch(rest)
+    if m:
+        return {
+            "name": name or "",
+            "phases": phases,
+            "duration": duration,
+            "effect_type": "hit_penalty",
+            "value": 1,
+            "attack_type": (m.group("atype") or "any"),
+            "target_keywords": list(target_keywords or []),
+            "target_keyword_mode": mode,
+        }
+    m = wound_re.fullmatch(rest)
+    if m:
+        return {
+            "name": name or "",
+            "phases": phases,
+            "duration": duration,
+            "effect_type": "wound_penalty",
+            "value": 1,
+            "attack_type": (m.group("atype") or "any"),
+            "target_keywords": list(target_keywords or []),
+            "target_keyword_mode": mode,
+        }
+    if ap_re.fullmatch(rest):
+        return {
+            "name": name or "",
+            "phases": phases,
+            "duration": duration,
+            "effect_type": "ap_worsen",
+            "value": 1,
+            "attack_type": "any",
+            "target_keywords": list(target_keywords or []),
+            "target_keyword_mode": mode,
+        }
+    m = damage_re.fullmatch(rest)
+    if m:
+        return {
+            "name": name or "",
+            "phases": phases,
+            "duration": duration,
+            "effect_type": "damage_reduction",
+            "value": 1,
+            "attack_type": (m.group("atype") or "any"),
+            "target_keywords": list(target_keywords or []),
+            "target_keyword_mode": mode,
+        }
+    m = invuln_re.fullmatch(rest) or invuln_unit_re.fullmatch(rest)
+    if m:
+        return {
+            "name": name or "",
+            "phases": phases,
+            "duration": duration,
+            "effect_type": "invulnerable_save",
+            "value": int(m.group("value")),
+            "attack_type": "any",
+            "target_keywords": list(target_keywords or []),
+            "target_keyword_mode": mode,
+        }
+    m = fnp_re.fullmatch(rest) or fnp_unit_re.fullmatch(rest)
+    if m:
+        return {
+            "name": name or "",
+            "phases": phases,
+            "duration": duration,
+            "effect_type": "feel_no_pain",
+            "value": int(m.group("value")),
+            "attack_type": "any",
+            "target_keywords": list(target_keywords or []),
+            "target_keyword_mode": mode,
+        }
+
+    return None
+
+
+def defensive_reaction_note(spec: Dict[str, Any]) -> str:
+    if not spec:
+        return "Generic defensive reaction."
+    effect_type = spec.get("effect_type")
+    value = spec.get("value")
+    attack_type = (spec.get("attack_type") or "any").strip().lower()
+    duration = spec.get("duration", "")
+
+    effect_desc = "defensive effect"
+    if effect_type == "hit_penalty":
+        effect_desc = f"-{int(value or 1)} to hit"
+    elif effect_type == "wound_penalty":
+        effect_desc = f"-{int(value or 1)} to wound"
+    elif effect_type == "ap_worsen":
+        effect_desc = f"worsen AP by {int(value or 1)}"
+    elif effect_type == "damage_reduction":
+        effect_desc = f"-{int(value or 1)} Damage"
+    elif effect_type == "invulnerable_save":
+        effect_desc = f"{int(value)}+ invulnerable save"
+    elif effect_type == "feel_no_pain":
+        effect_desc = f"Feel No Pain {int(value)}+"
+
+    if attack_type in ("melee", "ranged"):
+        effect_desc = f"{effect_desc} ({attack_type})"
+
+    duration_desc = "until end of phase"
+    if duration == "attacker":
+        duration_desc = "until the attacking unit finishes its attacks"
+
+    keywords = spec.get("target_keywords") or []
+    if keywords:
+        joiner = " or " if spec.get("target_keyword_mode") == "any" else " "
+        target_desc = f"{joiner.join(keywords)} unit"
+    else:
+        target_desc = "unit"
+    return f"Defensive reaction after targets selected: {target_desc} gains {effect_desc} {duration_desc}."
 
 
 class Stratagem:
@@ -363,6 +669,10 @@ class StratagemManager:
         self._used_once_per_battle: Dict[str, bool] = {
             'INSANE BRAVERY': False,
         }
+        # Once-per-battle-round limits (e.g., SUMMONED BY SLAUGHTER)
+        self._used_battle_round: Dict[str, int] = {}
+        # Cache parsed generic defensive reaction specs by stratagem id/name.
+        self._defensive_reaction_cache: Dict[str, Optional[Dict[str, Any]]] = {}
 
     def _dequeue_reaction_by_name(self, stratagem_name: str) -> None:
         """Remove the first pending reaction matching this stratagem name."""
@@ -379,6 +689,309 @@ class StratagemManager:
 
     def _now(self) -> float:
         return float(time.monotonic())
+
+    def _attacker_unit_key(self, unit: Any) -> Optional[str]:
+        if unit is None:
+            return None
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        try:
+            return str(getattr(root, "_id", None) or id(root))
+        except Exception:
+            return str(id(root))
+
+    @staticmethod
+    def _phase_key_from_name(phase_name: str) -> str:
+        return str(phase_name or "").strip().upper().replace(" ", "_")
+
+    def _get_defensive_reaction_spec(self, stratagem: Stratagem) -> Optional[Dict[str, Any]]:
+        if stratagem is None:
+            return None
+        name_u = (str(getattr(stratagem, "name", "") or "")).strip().upper()
+        if name_u in IMPLEMENTED_STRATAGEM_NAMES:
+            return None
+        key = str(getattr(stratagem, "id", "") or name_u)
+        if key in self._defensive_reaction_cache:
+            return self._defensive_reaction_cache[key]
+        spec = parse_defensive_reaction_stratagem(stratagem.name or "", stratagem.description or "")
+        self._defensive_reaction_cache[key] = spec
+        return spec
+
+    def _unit_matches_defensive_target_spec(self, unit: Any, spec: Dict[str, Any]) -> bool:
+        if unit is None or spec is None:
+            return False
+        keywords = list(spec.get("target_keywords") or [])
+        if not keywords:
+            return True
+        mode = str(spec.get("target_keyword_mode") or "all").strip().lower()
+
+        def _match_keyword(kw: str) -> bool:
+            if not kw:
+                return False
+            try:
+                if unit.has_any_keyword(kw):
+                    return True
+            except Exception:
+                pass
+            if " " in kw:
+                parts = [p for p in kw.split(" ") if p]
+                if parts:
+                    try:
+                        return all(unit.has_any_keyword(p) for p in parts)
+                    except Exception:
+                        return False
+            return False
+
+        if mode == "any":
+            return any(_match_keyword(k) for k in keywords)
+        return all(_match_keyword(k) for k in keywords)
+
+    def _append_defensive_effect(self, unit: Any, key: str, entry: Dict[str, Any]) -> None:
+        try:
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            items = sr.get(key)
+            if not isinstance(items, list):
+                items = []
+            items.append(dict(entry))
+            sr[key] = items
+            unit.special_rules = sr
+        except Exception:
+            return
+
+    def _apply_generic_defensive_effect(
+        self,
+        unit: Any,
+        spec: Dict[str, Any],
+        *,
+        attacker_unit: Any,
+        phase_name: str,
+        source_name: str,
+    ) -> bool:
+        if unit is None or spec is None:
+            return False
+        duration = spec.get("duration")
+        effect_type = spec.get("effect_type")
+        value = int(spec.get("value") or 0)
+        attack_type = str(spec.get("attack_type") or "any").strip().lower()
+        attacker_key = self._attacker_unit_key(attacker_unit) if duration == "attacker" else None
+        expires_phase = self._phase_key_from_name(phase_name) if duration == "phase" else None
+        entry = {
+            "value": value,
+            "attack_type": attack_type,
+            "attacker_key": attacker_key,
+            "expires_phase": expires_phase,
+            "source": str(source_name or "Stratagem"),
+        }
+
+        if effect_type == "ap_worsen":
+            if duration == "phase":
+                self._append_defensive_effect(unit, "defensive_ap_worsen_phase", entry)
+                return True
+            if attacker_unit is None:
+                return False
+            return bool(self._apply_armour_of_contempt(unit, attacker_unit, amount=value))
+        if effect_type == "hit_penalty":
+            self._append_defensive_effect(unit, "defensive_hit_mods", entry)
+            return True
+        if effect_type == "wound_penalty":
+            self._append_defensive_effect(unit, "defensive_wound_mods", entry)
+            return True
+        if effect_type == "damage_reduction":
+            self._append_defensive_effect(unit, "defensive_damage_reductions", entry)
+            return True
+        if effect_type == "invulnerable_save":
+            self._append_defensive_effect(unit, "defensive_invuln_overrides", entry)
+            return True
+        if effect_type == "feel_no_pain":
+            self._append_defensive_effect(unit, "defensive_fnp_overrides", entry)
+            return True
+        return False
+
+    def _clear_defensive_effects_for_attacker(self, attacker_unit: Any) -> None:
+        key = self._attacker_unit_key(attacker_unit)
+        if key is None:
+            return
+        try:
+            units = list(getattr(self.player.get_army(), "units", []) or [])
+        except Exception:
+            units = []
+        for unit in units:
+            try:
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                for k in (
+                    "defensive_hit_mods",
+                    "defensive_wound_mods",
+                    "defensive_damage_reductions",
+                    "defensive_invuln_overrides",
+                    "defensive_fnp_overrides",
+                    "defensive_ap_worsen_phase",
+                ):
+                    items = sr.get(k)
+                    if not isinstance(items, list):
+                        continue
+                    kept = [e for e in items if str(e.get("attacker_key", "")) != str(key)]
+                    if kept:
+                        sr[k] = kept
+                    else:
+                        sr.pop(k, None)
+                unit.special_rules = sr
+            except Exception:
+                continue
+
+    def _clear_defensive_effects_for_phase(self, phase_name: str) -> None:
+        phase_key = self._phase_key_from_name(phase_name)
+        if not phase_key:
+            return
+        try:
+            units = list(getattr(self.player.get_army(), "units", []) or [])
+        except Exception:
+            units = []
+        for unit in units:
+            try:
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                for k in (
+                    "defensive_hit_mods",
+                    "defensive_wound_mods",
+                    "defensive_damage_reductions",
+                    "defensive_invuln_overrides",
+                    "defensive_fnp_overrides",
+                ):
+                    items = sr.get(k)
+                    if not isinstance(items, list):
+                        continue
+                    kept = [e for e in items if str(e.get("expires_phase", "")) != str(phase_key)]
+                    if kept:
+                        sr[k] = kept
+                    else:
+                        sr.pop(k, None)
+                unit.special_rules = sr
+            except Exception:
+                continue
+
+    def _queue_generic_defensive_reactions(
+        self,
+        attacking_unit: Any,
+        target_units: Optional[List[Any]],
+        *,
+        phase_name: str,
+    ) -> None:
+        if attacking_unit is None:
+            return
+        phase_key = str(phase_name or "").strip().lower()
+        phase_tag = None
+        if "shooting" in phase_key:
+            phase_tag = "shooting"
+        elif "fight" in phase_key:
+            phase_tag = "fight"
+        if phase_tag is None:
+            return
+        for s in list(self.available or []):
+            spec = self._get_defensive_reaction_spec(s)
+            if not spec:
+                continue
+            if phase_tag not in set(spec.get("phases") or []):
+                continue
+            if self.player.command_points < int(getattr(s, "cp_cost", 0) or 0):
+                continue
+            if (s.name or "").strip().upper() in self._used_stratagems_this_phase:
+                continue
+            candidates = []
+            for u in list(target_units or []):
+                try:
+                    if u is None or not u.is_alive():
+                        continue
+                    if u.get_parent_army().player is not self.player:
+                        continue
+                    if _unit_cannot_be_target_of_stratagem(u):
+                        continue
+                    if not self._unit_matches_defensive_target_spec(u, spec):
+                        continue
+                    candidates.append(u)
+                except Exception:
+                    continue
+            if not candidates:
+                continue
+            already = False
+            for r in self._pending_reactions:
+                try:
+                    if (
+                        r.get("event") in ("shooting_targets_selected", "fight_targets_selected")
+                        and r.get("stratagem") == s.name
+                        and r.get("attacking_unit") is attacking_unit
+                    ):
+                        already = True
+                        break
+                except Exception:
+                    continue
+            if already:
+                continue
+            payload = {
+                "event": "shooting_targets_selected" if phase_tag == "shooting" else "fight_targets_selected",
+                "phase_name": phase_name,
+                "stratagem": s.name,
+                "cp_cost": s.cp_cost,
+                "attacking_unit": attacking_unit,
+                "target_units": list(target_units or []),
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload)
+
+    def _apply_armour_of_contempt(self, target_unit: Any, attacker_unit: Any, *, amount: int = 1) -> bool:
+        if target_unit is None or attacker_unit is None:
+            return False
+        try:
+            root = target_unit.get_attached_unit_root()
+        except Exception:
+            root = target_unit
+        key = self._attacker_unit_key(attacker_unit)
+        if key is None:
+            return False
+        try:
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            spec = sr.get("armour_of_contempt_ap_worsen")
+            if not isinstance(spec, dict):
+                spec = {}
+            spec[str(key)] = int(amount)
+            sr["armour_of_contempt_ap_worsen"] = spec
+            root.special_rules = sr
+            return True
+        except Exception:
+            return False
+
+    def _clear_armour_of_contempt_for_attacker(self, attacker_unit: Any) -> None:
+        key = self._attacker_unit_key(attacker_unit)
+        if key is None:
+            return
+        try:
+            units = list(getattr(self.player.get_army(), "units", []) or [])
+        except Exception:
+            units = []
+        for unit in units:
+            try:
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                spec = sr.get("armour_of_contempt_ap_worsen")
+                if not isinstance(spec, dict) or str(key) not in spec:
+                    continue
+                spec.pop(str(key), None)
+                if not spec:
+                    sr.pop("armour_of_contempt_ap_worsen", None)
+                unit.special_rules = sr
+            except Exception:
+                continue
 
     def _queue_reaction(self, payload: Dict[str, Any], use_timer: bool = True) -> None:
         if not isinstance(payload, dict):
@@ -429,7 +1042,10 @@ class StratagemManager:
 
     def _is_implemented_stratagem(self, stratagem: Stratagem) -> bool:
         try:
-            return (stratagem.name or "").strip().upper() in IMPLEMENTED_STRATAGEM_NAMES
+            name_u = (stratagem.name or "").strip().upper()
+            if name_u in IMPLEMENTED_STRATAGEM_NAMES:
+                return True
+            return self._get_defensive_reaction_spec(stratagem) is not None
         except Exception:
             return False
 
@@ -440,6 +1056,28 @@ class StratagemManager:
         except Exception:
             return ""
         return t.replace("’", "'")
+
+    @staticmethod
+    def _is_bloodletters_unit(unit) -> bool:
+        if unit is None:
+            return False
+        try:
+            if hasattr(unit, "has_any_keyword") and unit.has_any_keyword("BLOODLETTERS"):
+                return True
+        except Exception:
+            pass
+        try:
+            if hasattr(unit, "has_keyword") and unit.has_keyword("BLOODLETTERS"):
+                return True
+        except Exception:
+            pass
+        try:
+            name = str(getattr(unit, "name", "") or "").strip().lower()
+            if "bloodletters" in name:
+                return True
+        except Exception:
+            pass
+        return False
 
     def _turn_category(self, stratagem: Stratagem) -> str:
         try:
@@ -534,6 +1172,11 @@ class StratagemManager:
                     result["available"] = True
                     result["reason"] = None
                     return result
+            if name_u == "BLITZING FIREPOWER":
+                if self._blitzing_firepower_candidates():
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
             if stratagem.can_use(self.player, self.game, **context):
                 result["available"] = True
                 result["reason"] = None
@@ -557,6 +1200,293 @@ class StratagemManager:
         except Exception:
             return ""
         return ""
+
+    def _is_warhost_detachment(self) -> bool:
+        try:
+            army = self.player.get_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "aeldari_detachments", None) if army is not None else None
+        if mgr is None:
+            return False
+        try:
+            return bool(mgr.is_warhost_detachment())
+        except Exception:
+            return False
+
+    def _blitzing_firepower_candidates(self) -> List[Any]:
+        if not self._is_warhost_detachment():
+            return []
+        try:
+            army = self.player.get_army()
+        except Exception:
+            army = None
+        units = list(getattr(army, "units", []) or []) if army is not None else []
+        candidates: List[Any] = []
+        seen = set()
+        for unit in units:
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            try:
+                uid = getattr(root, "_id", id(root))
+            except Exception:
+                uid = id(root)
+            if uid in seen:
+                continue
+            seen.add(uid)
+            try:
+                if not root.is_alive():
+                    continue
+            except Exception:
+                pass
+            try:
+                if not getattr(root, "deployed", False):
+                    continue
+            except Exception:
+                continue
+            try:
+                if getattr(root, "is_in_reserves", lambda: False)():
+                    continue
+            except Exception:
+                pass
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    continue
+            except Exception:
+                continue
+            try:
+                if not root.has_any_keyword("ASURYANI"):
+                    continue
+            except Exception:
+                continue
+            try:
+                if getattr(getattr(root, "round_state", None), "shot_this_round", False):
+                    continue
+            except Exception:
+                pass
+            candidates.append(root)
+        return candidates
+
+    def _unit_wholly_within_battlefield_edge_distance(self, unit, distance: float) -> bool:
+        if unit is None:
+            return False
+        try:
+            dist = float(distance)
+        except Exception:
+            dist = 0.0
+        if dist <= 0.0:
+            return False
+        try:
+            game = self.game
+        except Exception:
+            game = None
+        width = None
+        height = None
+        try:
+            bf = getattr(game, "battlefield", None)
+            width = getattr(bf, "width", None)
+            height = getattr(bf, "height", None)
+        except Exception:
+            width = None
+            height = None
+        if width is None or height is None:
+            try:
+                game_map = getattr(game, "map", None)
+                width = getattr(game_map, "width", None)
+                height = getattr(game_map, "height", None)
+            except Exception:
+                width = None
+                height = None
+        if width is None or height is None:
+            return False
+        try:
+            models = unit.get_attached_unit_models()
+        except Exception:
+            models = list(getattr(unit, "models", []) or [])
+        if not models:
+            return False
+        for m in models:
+            try:
+                if not getattr(m, "is_alive", True):
+                    continue
+            except Exception:
+                continue
+            base = getattr(m, "model_base", None)
+            if base is None:
+                return False
+            try:
+                x = float(getattr(base, "x", 0.0))
+                y = float(getattr(base, "y", 0.0))
+            except Exception:
+                try:
+                    x, y, _z, _f = m.get_location()
+                except Exception:
+                    return False
+            try:
+                r = float(getattr(base, "get_radius", lambda: 0.0)())
+            except Exception:
+                r = 0.0
+            within = (
+                (x - r) <= dist + 1e-6 or
+                ((float(width) - x) - r) <= dist + 1e-6 or
+                (y - r) <= dist + 1e-6 or
+                ((float(height) - y) - r) <= dist + 1e-6
+            )
+            if not within:
+                return False
+        return True
+
+    def _return_destroyed_models_full(
+        self,
+        unit,
+        *,
+        amount: int,
+        game_map=None,
+        skip_character: bool = False,
+    ) -> int:
+        if unit is None:
+            return 0
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return 0
+        try:
+            destroyed = list(getattr(root, "models_lost", []) or [])
+        except Exception:
+            destroyed = []
+        if not destroyed:
+            return 0
+        if skip_character:
+            filtered = []
+            for m in destroyed:
+                try:
+                    if bool(getattr(m, "is_character", False)):
+                        continue
+                except Exception:
+                    pass
+                filtered.append(m)
+            destroyed = filtered
+        if not destroyed:
+            return 0
+        to_return = destroyed[: max(0, int(amount or 0))]
+        if not to_return:
+            return 0
+        try:
+            alive_models = [m for m in (getattr(root, "models", []) or []) if getattr(m, "is_alive", True)]
+        except Exception:
+            alive_models = []
+        returned = 0
+        for model in to_return:
+            try:
+                if hasattr(root, "models_lost") and model in root.models_lost:
+                    root.models_lost.remove(model)
+            except Exception:
+                pass
+            try:
+                if hasattr(model, "set_parent_unit"):
+                    model.set_parent_unit(root)
+                else:
+                    model.parent_unit = root
+            except Exception:
+                pass
+            try:
+                base_wounds = int(getattr(model, "_base_wounds", getattr(model, "base_wounds", 0)) or 0)
+                if base_wounds:
+                    model.wounds = base_wounds
+            except Exception:
+                pass
+            try:
+                if hasattr(model, "_check_damaged_profile"):
+                    model._check_damaged_profile()
+            except Exception:
+                pass
+            try:
+                setattr(model, "_on_death_reactions_resolved", False)
+                setattr(model, "_fight_on_death_used", False)
+                setattr(model, "_shoot_on_death_used", False)
+            except Exception:
+                pass
+            added = False
+            try:
+                if hasattr(root, "add_model"):
+                    root.add_model(model)
+                    added = True
+                else:
+                    root.models.append(model)
+                    added = True
+            except Exception:
+                added = False
+            if not added:
+                try:
+                    root.models.append(model)
+                except Exception:
+                    pass
+            # Attempt to place the model near the unit coherently
+            try:
+                if alive_models and hasattr(root, "_find_reanimation_position"):
+                    new_count = len(alive_models) + 1
+                    required_neighbors = 0 if new_count <= 1 else (2 if new_count >= 7 else 1)
+                    pos = root._find_reanimation_position(
+                        model,
+                        alive_models,
+                        game_map=game_map,
+                        required_neighbors=required_neighbors,
+                    )
+                    if pos is not None and hasattr(model, "set_location"):
+                        model.set_location(*pos)
+            except Exception:
+                pass
+            alive_models.append(model)
+            try:
+                if hasattr(root, "update_coherency"):
+                    root.update_coherency()
+            except Exception:
+                pass
+            returned += 1
+        return returned
+
+    def _skyborne_transport_candidates(self, unit) -> List[Any]:
+        if unit is None:
+            return []
+        try:
+            game = self.game
+        except Exception:
+            game = None
+        game_map = getattr(game, "map", None) if game is not None else None
+        try:
+            army = unit.get_parent_army()
+        except Exception:
+            army = None
+        if army is None:
+            return []
+        try:
+            from ..utility.aura_utils import unit_wholly_within_range_of_unit
+        except Exception:
+            unit_wholly_within_range_of_unit = None
+        transports: List[Any] = []
+        for t in list(getattr(army, "units", []) or []):
+            try:
+                if t is None or not t.is_alive():
+                    continue
+                if not getattr(t, "deployed", False):
+                    continue
+                if not bool(getattr(t, "is_transport", False)):
+                    continue
+                if not t.can_transport(unit):
+                    continue
+                if callable(unit_wholly_within_range_of_unit):
+                    if not unit_wholly_within_range_of_unit(t, unit, 6.0, use_attached_aggregate=True):
+                        continue
+                transports.append(t)
+            except Exception:
+                continue
+        return transports
 
     def _build_available(self) -> None:
         """
@@ -642,10 +1572,16 @@ class StratagemManager:
         es.subscribe("fight_sequence_complete", self._on_fight_sequence_complete)
         # Fight attacks resolved (for A WORTHY SKULL).
         es.subscribe("fight_attacks_resolved", self._on_fight_attacks_resolved)
+        es.subscribe("fight_attacks_resolved", self._on_fight_attacks_resolved_armour_of_contempt_cleanup)
         # Unit destroyed hooks for faction stratagems
         es.subscribe("unit_destroyed", self._on_unit_destroyed)
         # Model destroyed hooks for faction stratagems
         es.subscribe("model_destroyed", self._on_model_destroyed)
+        es.subscribe("model_destroyed_before_removal", self._on_model_destroyed_before_removal)
+        # Shooting resolution hooks (for Fire and Fade).
+        es.subscribe("unit_shooting_resolved", self._on_unit_shooting_resolved_fire_and_fade)
+        # Clear single-attacker defensive buffs after attacks resolve.
+        es.subscribe("unit_shooting_resolved", self._on_unit_shooting_resolved_armour_of_contempt_cleanup)
         # Dice events for Command Re-roll
         es.subscribe("roll_made", self._on_roll_made)
         self._event_subscribed = True
@@ -733,8 +1669,47 @@ class StratagemManager:
                         if isinstance(sr, dict) and sr.get("smokescreen_active") is True:
                             sr.pop("smokescreen_active", None)
                             u.special_rules = sr
+                        if isinstance(sr, dict) and sr.get("blitzing_firepower_active") is True:
+                            sr.pop("blitzing_firepower_active", None)
+                            sr.pop("blitzing_firepower_expires_phase", None)
+                            u.special_rules = sr
+                        if isinstance(sr, dict) and sr.get("lightning_fast_reactions_active") is True:
+                            sr.pop("lightning_fast_reactions_active", None)
+                            sr.pop("lightning_fast_reactions_expires_phase", None)
+                            u.special_rules = sr
                     except Exception:
                         continue
+        except Exception:
+            pass
+
+        # Clear end-of-phase defensive buffs for Fight phase.
+        try:
+            phase_name = getattr(phase, 'name', None)
+            if phase_name == 'FIGHT_PHASE':
+                for u in list(getattr(self.player.get_army(), "units", []) or []):
+                    try:
+                        sr = getattr(u, "special_rules", None)
+                        if isinstance(sr, dict) and sr.get("lightning_fast_reactions_active") is True:
+                            sr.pop("lightning_fast_reactions_active", None)
+                            sr.pop("lightning_fast_reactions_expires_phase", None)
+                        if isinstance(sr, dict) and sr.get("daemonic_fury_twin_linked_active") is True:
+                            sr.pop("daemonic_fury_twin_linked_active", None)
+                            sr.pop("daemonic_fury_twin_linked_expires_phase", None)
+                        if isinstance(sr, dict) and sr.get("daemonic_fury_lance_active") is True:
+                            sr.pop("daemonic_fury_lance_active", None)
+                            sr.pop("daemonic_fury_lance_turn_owner", None)
+                            sr.pop("daemonic_fury_lance_turn", None)
+                        u.special_rules = sr
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+
+        # Clear generic defensive reaction effects at phase end.
+        try:
+            phase_name = getattr(phase, "name", None)
+            if phase_name in ("SHOOTING_PHASE", "FIGHT_PHASE"):
+                self._clear_defensive_effects_for_phase(phase_name)
         except Exception:
             pass
 
@@ -807,7 +1782,311 @@ class StratagemManager:
                     'stratagem': s.name,
                     'cp_cost': s.cp_cost,
                     'candidates': candidates,
-                })
+                        })
+        except Exception:
+            pass
+
+        # Warhost: SKYBORNE SANCTUARY (end of Fight phase, either player's turn)
+        try:
+            phase_name = getattr(phase, "name", None)
+            if phase_name == "FIGHT_PHASE":
+                s = self.get_by_name("SKYBORNE SANCTUARY")
+                if not s:
+                    pass
+                elif not self._is_warhost_detachment():
+                    pass
+                elif self.player.command_points < s.cp_cost:
+                    pass
+                elif (s.name or "").strip().upper() in self._used_stratagems_this_phase:
+                    pass
+                elif not s.can_use(self.player, self.game, phase_name="Fight phase"):
+                    pass
+                else:
+                    game_map = getattr(self.game, "map", None)
+                    candidates = []
+                    transport_candidates_by_unit = {}
+                    seen = set()
+                    for unit in list(getattr(self.player.get_army(), "units", []) or []):
+                        try:
+                            root = unit.get_attached_unit_root()
+                        except Exception:
+                            root = unit
+                        if root is None:
+                            continue
+                        try:
+                            uid = getattr(root, "_id", id(root))
+                        except Exception:
+                            uid = id(root)
+                        if uid in seen:
+                            continue
+                        seen.add(uid)
+                        try:
+                            if not root.is_alive():
+                                continue
+                        except Exception:
+                            pass
+                        try:
+                            if not getattr(root, "deployed", False):
+                                continue
+                        except Exception:
+                            pass
+                        try:
+                            if getattr(root, "is_in_reserves", lambda: False)():
+                                continue
+                        except Exception:
+                            pass
+                        try:
+                            if _unit_cannot_be_target_of_stratagem(root):
+                                continue
+                        except Exception:
+                            pass
+                        try:
+                            if not root.has_any_keyword("ASURYANI"):
+                                continue
+                        except Exception:
+                            continue
+                        try:
+                            engaged = False
+                            for enemy in list(game_map.get_enemy_units(root) or []):
+                                if not getattr(enemy, "is_alive", lambda: True)():
+                                    continue
+                                if not getattr(enemy, "deployed", True):
+                                    continue
+                                if game_map.is_within_engagement_range(root, enemy):
+                                    engaged = True
+                                    break
+                            if engaged:
+                                continue
+                        except Exception:
+                            pass
+                        try:
+                            sr = getattr(root, "special_rules", None)
+                            owner = str(sr.get("fire_and_fade_no_embark_turn_owner", "") or "") if isinstance(sr, dict) else ""
+                            turn = int(sr.get("fire_and_fade_no_embark_turn", 0) or 0) if isinstance(sr, dict) else 0
+                            if owner and self.game is not None:
+                                if owner == str(getattr(getattr(self.game, "get_current_player", lambda: None)(), "name", "") or ""):
+                                    if int(getattr(self.game, "turn", 0) or 0) == int(turn or 0):
+                                        continue
+                        except Exception:
+                            pass
+                        transports = self._skyborne_transport_candidates(root)
+                        if not transports:
+                            continue
+                        candidates.append(root)
+                        transport_candidates_by_unit[root] = transports
+                    if candidates:
+                        already = False
+                        for r in self._pending_reactions:
+                            try:
+                                if r.get("event") == "phase_end" and r.get("stratagem") == s.name and r.get("phase") == "Fight phase":
+                                    already = True
+                                    break
+                            except Exception:
+                                continue
+                        if not already:
+                            self._queue_reaction({
+                                "event": "phase_end",
+                                "phase": "Fight phase",
+                                "phase_name": "Fight phase",
+                                "stratagem": s.name,
+                                "cp_cost": s.cp_cost,
+                                "candidates": candidates,
+                                "transport_candidates_by_unit": transport_candidates_by_unit,
+                            }, use_timer=False)
+        except Exception:
+            pass
+
+        # Warhost: WEBWAY TUNNEL (end of opponent's Fight phase)
+        try:
+            is_opponents_turn = player is not self.player
+            phase_name = getattr(phase, "name", None)
+            if is_opponents_turn and phase_name == "FIGHT_PHASE":
+                s = self.get_by_name("WEBWAY TUNNEL")
+                if not s:
+                    pass
+                elif not self._is_warhost_detachment():
+                    pass
+                elif self.player.command_points < s.cp_cost:
+                    pass
+                elif (s.name or "").strip().upper() in self._used_stratagems_this_phase:
+                    pass
+                elif not s.can_use(self.player, self.game, phase_name="Fight phase"):
+                    pass
+                else:
+                    game_map = getattr(self.game, "map", None)
+                    candidates = []
+                    seen = set()
+                    for unit in list(getattr(self.player.get_army(), "units", []) or []):
+                        try:
+                            root = unit.get_attached_unit_root()
+                        except Exception:
+                            root = unit
+                        if root is None:
+                            continue
+                        try:
+                            uid = getattr(root, "_id", id(root))
+                        except Exception:
+                            uid = id(root)
+                        if uid in seen:
+                            continue
+                        seen.add(uid)
+                        try:
+                            if not root.is_alive():
+                                continue
+                        except Exception:
+                            pass
+                        try:
+                            if not getattr(root, "deployed", False):
+                                continue
+                        except Exception:
+                            pass
+                        try:
+                            if getattr(root, "is_in_reserves", lambda: False)():
+                                continue
+                        except Exception:
+                            pass
+                        try:
+                            if _unit_cannot_be_target_of_stratagem(root):
+                                continue
+                        except Exception:
+                            pass
+                        try:
+                            if not root.has_any_keyword("ASURYANI"):
+                                continue
+                            if not root.has_keyword("INFANTRY"):
+                                continue
+                        except Exception:
+                            continue
+                        try:
+                            engaged = False
+                            for enemy in list(game_map.get_enemy_units(root) or []):
+                                if not getattr(enemy, "is_alive", lambda: True)():
+                                    continue
+                                if not getattr(enemy, "deployed", True):
+                                    continue
+                                if game_map.is_within_engagement_range(root, enemy):
+                                    engaged = True
+                                    break
+                            if engaged:
+                                continue
+                        except Exception:
+                            pass
+                        if not self._unit_wholly_within_battlefield_edge_distance(root, 9.0):
+                            continue
+                        candidates.append(root)
+                    if candidates:
+                        already = False
+                        for r in self._pending_reactions:
+                            try:
+                                if r.get("event") == "phase_end" and r.get("stratagem") == s.name and r.get("phase") == "Fight phase":
+                                    already = True
+                                    break
+                            except Exception:
+                                continue
+                        if not already:
+                            self._queue_reaction({
+                                "event": "phase_end",
+                                "phase": "Fight phase",
+                                "phase_name": "Fight phase",
+                                "stratagem": s.name,
+                                "cp_cost": s.cp_cost,
+                                "candidates": candidates,
+                            }, use_timer=False)
+        except Exception:
+            pass
+
+        # Queue MURDER-CALL at end of opponent's Fight phase
+        try:
+            is_opponents_turn = player is not self.player
+            phase_name = getattr(phase, "name", None)
+            if is_opponents_turn and phase_name == "FIGHT_PHASE":
+                s = self.get_by_name("MURDER-CALL")
+                if not s:
+                    return
+                try:
+                    army = self.player.get_army()
+                except Exception:
+                    army = None
+                we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+                if we_mgr is None or not getattr(we_mgr, "is_khorne_daemonkin", lambda: False)():
+                    return
+                game_map = getattr(self.game, "map", None)
+                if game_map is None:
+                    return
+                candidates = []
+                seen = set()
+                for unit in list(getattr(army, "units", []) or []):
+                    try:
+                        root = unit.get_attached_unit_root()
+                    except Exception:
+                        root = unit
+                    if root is None:
+                        continue
+                    try:
+                        uid = getattr(root, "_id", id(root))
+                    except Exception:
+                        uid = id(root)
+                    if uid in seen:
+                        continue
+                    seen.add(uid)
+                    try:
+                        if not root.is_alive():
+                            continue
+                    except Exception:
+                        pass
+                    try:
+                        if getattr(root, "is_in_reserves", lambda: False)():
+                            continue
+                    except Exception:
+                        pass
+                    try:
+                        if not getattr(root, "deployed", False):
+                            continue
+                    except Exception:
+                        pass
+                    try:
+                        if not we_mgr.unit_is_blood_legions(root):
+                            continue
+                    except Exception:
+                        continue
+                    try:
+                        if _unit_cannot_be_target_of_stratagem(root):
+                            continue
+                    except Exception:
+                        pass
+                    try:
+                        engaged = False
+                        for enemy in list(game_map.get_enemy_units(root) or []):
+                            if not getattr(enemy, "is_alive", lambda: True)():
+                                continue
+                            if not getattr(enemy, "deployed", True):
+                                continue
+                            if game_map.is_within_engagement_range(root, enemy):
+                                engaged = True
+                                break
+                        if engaged:
+                            continue
+                    except Exception:
+                        pass
+                    candidates.append(root)
+                if not candidates:
+                    return
+                if not s.can_use(self.player, self.game, phase_name="Fight phase"):
+                    return
+                for r in self._pending_reactions:
+                    try:
+                        if r.get("event") == "phase_end" and r.get("stratagem") == s.name and r.get("phase") == "Fight phase":
+                            return
+                    except Exception:
+                        continue
+                self._queue_reaction({
+                    "event": "phase_end",
+                    "phase": "Fight phase",
+                    "phase_name": "Fight phase",
+                    "stratagem": s.name,
+                    "cp_cost": s.cp_cost,
+                    "candidates": candidates,
+                }, use_timer=False)
         except Exception:
             pass
     def _on_battle_shock_test_started(self, unit, **kwargs):
@@ -901,6 +2180,81 @@ class StratagemManager:
         self._maybe_queue_overwatch(unit, action, when='end')
         self._maybe_queue_tank_shock(unit, action)
         self._maybe_queue_heroic_intervention(unit, action)
+        self._maybe_queue_feigned_retreat(unit, action)
+
+    def _on_unit_shooting_resolved_fire_and_fade(self, attacker_unit=None, **kwargs):
+        """
+        Reaction window for FIRE AND FADE:
+        Your Shooting phase, just after an ASURYANI INFANTRY unit has shot.
+        """
+        try:
+            if attacker_unit is None or self.game is None:
+                return
+            if (self._current_phase_name or "").strip().lower() != "shooting phase":
+                return
+            if not self._is_warhost_detachment():
+                return
+            # Only offer to the active player (your turn)
+            active_player = getattr(self.game, "get_current_player", lambda: None)()
+            if active_player is not self.player:
+                return
+            try:
+                if attacker_unit.get_parent_army().player is not self.player:
+                    return
+            except Exception:
+                return
+            s = self.get_by_name("FIRE AND FADE")
+            if not s:
+                return
+            if self.player.command_points < s.cp_cost:
+                return
+            if (s.name or "").strip().upper() in self._used_stratagems_this_phase:
+                return
+            try:
+                root = attacker_unit.get_attached_unit_root()
+            except Exception:
+                root = attacker_unit
+            if root is None:
+                return
+            if _unit_cannot_be_target_of_stratagem(root):
+                return
+            try:
+                if not root.has_any_keyword("ASURYANI"):
+                    return
+                if not root.has_keyword("INFANTRY"):
+                    return
+                if root.has_keyword("WRAITH CONSTRUCT"):
+                    return
+                if root.has_keyword("AIRCRAFT") or bool(getattr(root, "is_aircraft", False)):
+                    return
+                if str(getattr(root, "name", "") or "").strip().upper() == "ASURMEN":
+                    return
+            except Exception:
+                return
+            if not s.can_use(self.player, self.game, phase_name="Shooting phase", unit=root):
+                return
+            for r in self._pending_reactions:
+                try:
+                    if r.get("event") == "unit_shooting_resolved" and r.get("stratagem") == s.name and r.get("unit") is root:
+                        return
+                except Exception:
+                    continue
+            self._queue_reaction({
+                "event": "unit_shooting_resolved",
+                "phase_name": "Shooting phase",
+                "stratagem": s.name,
+                "cp_cost": s.cp_cost,
+                "unit": root,
+                "target_unit": root,
+            })
+        except Exception:
+            return
+
+    def _on_unit_shooting_resolved_armour_of_contempt_cleanup(self, attacker_unit=None, **_kwargs) -> None:
+        if attacker_unit is None:
+            return
+        self._clear_armour_of_contempt_for_attacker(attacker_unit)
+        self._clear_defensive_effects_for_attacker(attacker_unit)
 
     def _maybe_queue_tank_shock(self, charging_unit, action: str) -> None:
         # Trigger condition: just after a VEHICLE unit from your army ends a Charge move.
@@ -1046,10 +2400,251 @@ class StratagemManager:
             owner_player = attacking_unit.get_parent_army().player
             if owner_player is self.player:
                 return  # only opponent can react
+        except Exception:
+            return
+
+        # GO TO GROUND
+        try:
             s = self.get_by_name("GO TO GROUND")
-            if not s:
+            if s and self.player.command_points >= s.cp_cost:
+                candidates = []
+                for u in list(target_units or []):
+                    try:
+                        if u is None or not u.is_alive():
+                            continue
+                        if u.get_parent_army().player is not self.player:
+                            continue
+                        if not bool(getattr(u, "is_infantry", False)):
+                            continue
+                        if _unit_cannot_be_target_of_stratagem(u):
+                            continue
+                        candidates.append(u)
+                    except Exception:
+                        continue
+                if candidates:
+                    # Queue as a reaction with candidates; UI may choose which unit to protect.
+                    self._queue_reaction({
+                        "event": "shooting_targets_selected",
+                        "phase_name": "Shooting phase",
+                        "stratagem": s.name,
+                        "cp_cost": s.cp_cost,
+                        "attacking_unit": attacking_unit,
+                        "candidates": candidates,
+                    })
+        except Exception:
+            pass
+
+        # Also offer SMOKESCREEN in the same window (opponent Shooting phase, after targets selected).
+        try:
+            s2 = self.get_by_name("SMOKESCREEN")
+            can_offer = bool(
+                s2
+                and self.player.command_points >= s2.cp_cost
+                and (s2.name or "").strip().upper() not in self._used_stratagems_this_phase
+            )
+            if can_offer:
+                smoke_candidates = []
+                for u in list(target_units or []):
+                    try:
+                        if u is None or not u.is_alive():
+                            continue
+                        if u.get_parent_army().player is not self.player:
+                            continue
+                        if _unit_cannot_be_target_of_stratagem(u):
+                            continue
+                        # Target must be a SMOKE unit
+                        if hasattr(u, "has_keyword") and callable(getattr(u, "has_keyword")):
+                            if not u.has_keyword("SMOKE"):
+                                continue
+                        else:
+                            continue
+                        smoke_candidates.append(u)
+                    except Exception:
+                        continue
+                if smoke_candidates:
+                    self._queue_reaction({
+                        "event": "shooting_targets_selected",
+                        "phase_name": "Shooting phase",
+                        "stratagem": s2.name,
+                        "cp_cost": s2.cp_cost,
+                        "attacking_unit": attacking_unit,
+                        "candidates": smoke_candidates,
+                    })
+        except Exception:
+            pass
+
+        # ARMOUR OF CONTEMPT / THE FOE FORESEEN (opponent Shooting phase, after targets selected).
+        try:
+            for strat_name in ("ARMOUR OF CONTEMPT", "THE FOE FORESEEN"):
+                s4 = self.get_by_name(strat_name)
+                if not s4:
+                    continue
+                if self.player.command_points < s4.cp_cost:
+                    continue
+                if (s4.name or "").strip().upper() in self._used_stratagems_this_phase:
+                    continue
+                candidates = []
+                for u in list(target_units or []):
+                    try:
+                        if u is None or not u.is_alive():
+                            continue
+                        if u.get_parent_army().player is not self.player:
+                            continue
+                        if _unit_cannot_be_target_of_stratagem(u):
+                            continue
+                        if not u.has_any_keyword("ADEPTUS ASTARTES"):
+                            continue
+                        candidates.append(u)
+                    except Exception:
+                        continue
+                if not candidates:
+                    continue
+                already = False
+                for r in self._pending_reactions:
+                    try:
+                        if r.get("event") == "shooting_targets_selected" and r.get("stratagem") == s4.name and r.get("attacking_unit") is attacking_unit:
+                            already = True
+                            break
+                    except Exception:
+                        continue
+                if already:
+                    continue
+                self._queue_reaction({
+                    "event": "shooting_targets_selected",
+                    "phase_name": "Shooting phase",
+                    "stratagem": s4.name,
+                    "cp_cost": s4.cp_cost,
+                    "attacking_unit": attacking_unit,
+                    "candidates": candidates,
+                })
+        except Exception:
+            pass
+
+        # Khorne Daemonkin: BLESSING OF BURNING BLOOD (opponent Shooting phase, after targets selected).
+        try:
+            s5 = self.get_by_name("BLESSING OF BURNING BLOOD")
+            if s5 and self.player.command_points >= s5.cp_cost and (s5.name or "").strip().upper() not in self._used_stratagems_this_phase:
+                try:
+                    army = self.player.get_army()
+                except Exception:
+                    army = None
+                we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+                if we_mgr is not None and getattr(we_mgr, "is_khorne_daemonkin", lambda: False)():
+                    game_map = getattr(self.game, "map", None)
+                    if game_map is not None:
+                        for we_unit in list(target_units or []):
+                            try:
+                                if we_unit is None or not we_unit.is_alive():
+                                    continue
+                                if we_unit.get_parent_army().player is not self.player:
+                                    continue
+                                if _unit_cannot_be_target_of_stratagem(we_unit):
+                                    continue
+                                if not we_mgr.unit_is_world_eaters(we_unit):
+                                    continue
+                            except Exception:
+                                continue
+
+                            candidates = []
+                            seen = set()
+                            for bl_unit in list(getattr(army, "units", []) or []):
+                                try:
+                                    root = bl_unit.get_attached_unit_root()
+                                except Exception:
+                                    root = bl_unit
+                                if root is None:
+                                    continue
+                                try:
+                                    uid = getattr(root, "_id", id(root))
+                                except Exception:
+                                    uid = id(root)
+                                if uid in seen:
+                                    continue
+                                seen.add(uid)
+                                try:
+                                    if not root.is_alive():
+                                        continue
+                                except Exception:
+                                    pass
+                                try:
+                                    if not getattr(root, "deployed", False):
+                                        continue
+                                except Exception:
+                                    continue
+                                try:
+                                    if getattr(root, "is_in_reserves", lambda: False)():
+                                        continue
+                                except Exception:
+                                    pass
+                                try:
+                                    if _unit_cannot_be_target_of_stratagem(root):
+                                        continue
+                                except Exception:
+                                    continue
+                                try:
+                                    if not we_mgr.unit_is_blood_legions(root):
+                                        continue
+                                except Exception:
+                                    continue
+                                try:
+                                    dist = game_map.get_distance_between_units(root, we_unit)
+                                except Exception:
+                                    dist = None
+                                if dist is None or dist > 6.0:
+                                    continue
+                                candidates.append(root)
+                            if not candidates:
+                                continue
+                            already = False
+                            for r in self._pending_reactions:
+                                try:
+                                    if (
+                                        r.get("event") == "shooting_targets_selected"
+                                        and r.get("stratagem") == s5.name
+                                        and r.get("attacking_unit") is attacking_unit
+                                        and r.get("world_eaters_unit") is we_unit
+                                    ):
+                                        already = True
+                                        break
+                                except Exception:
+                                    continue
+                            if already:
+                                continue
+                            payload = {
+                                "event": "shooting_targets_selected",
+                                "phase_name": "Shooting phase",
+                                "stratagem": s5.name,
+                                "cp_cost": s5.cp_cost,
+                                "attacking_unit": attacking_unit,
+                                "world_eaters_unit": we_unit,
+                                "candidates": candidates,
+                            }
+                            if len(candidates) == 1:
+                                payload["target_unit"] = candidates[0]
+                            self._queue_reaction(payload)
+        except Exception:
+            pass
+
+        # Generic defensive reactions (after targets selected).
+        try:
+            self._queue_generic_defensive_reactions(
+                attacking_unit,
+                list(target_units or []),
+                phase_name="Shooting phase",
+            )
+        except Exception:
+            pass
+
+        # Warhost: LIGHTNING-FAST REACTIONS (opponent Shooting phase, after targets selected).
+        try:
+            s3 = self.get_by_name("LIGHTNING-FAST REACTIONS")
+            if not s3:
                 return
-            if self.player.command_points < s.cp_cost:
+            if not self._is_warhost_detachment():
+                return
+            if self.player.command_points < s3.cp_cost:
+                return
+            if (s3.name or "").strip().upper() in self._used_stratagems_this_phase:
                 return
             candidates = []
             for u in list(target_units or []):
@@ -1058,67 +2653,27 @@ class StratagemManager:
                         continue
                     if u.get_parent_army().player is not self.player:
                         continue
-                    if not bool(getattr(u, "is_infantry", False)):
-                        continue
                     if _unit_cannot_be_target_of_stratagem(u):
+                        continue
+                    if not u.has_any_keyword("ASURYANI"):
+                        continue
+                    if u.has_keyword("WRAITH CONSTRUCT"):
                         continue
                     candidates.append(u)
                 except Exception:
                     continue
             if not candidates:
                 return
-            # Queue as a reaction with candidates; UI may choose which unit to protect.
             self._queue_reaction({
                 "event": "shooting_targets_selected",
                 "phase_name": "Shooting phase",
-                "stratagem": s.name,
-                "cp_cost": s.cp_cost,
+                "stratagem": s3.name,
+                "cp_cost": s3.cp_cost,
                 "attacking_unit": attacking_unit,
                 "candidates": candidates,
             })
         except Exception:
-            return
-
-        # Also offer SMOKESCREEN in the same window (opponent Shooting phase, after targets selected).
-        try:
-            s2 = self.get_by_name("SMOKESCREEN")
-            if not s2:
-                return
-            if self.player.command_points < s2.cp_cost:
-                return
-            # Core rule: can't use the same stratagem more than once per phase
-            if (s2.name or "").strip().upper() in self._used_stratagems_this_phase:
-                return
-            smoke_candidates = []
-            for u in list(target_units or []):
-                try:
-                    if u is None or not u.is_alive():
-                        continue
-                    if u.get_parent_army().player is not self.player:
-                        continue
-                    if _unit_cannot_be_target_of_stratagem(u):
-                        continue
-                    # Target must be a SMOKE unit
-                    if hasattr(u, "has_keyword") and callable(getattr(u, "has_keyword")):
-                        if not u.has_keyword("SMOKE"):
-                            continue
-                    else:
-                        continue
-                    smoke_candidates.append(u)
-                except Exception:
-                    continue
-            if not smoke_candidates:
-                return
-            self._queue_reaction({
-                "event": "shooting_targets_selected",
-                "phase_name": "Shooting phase",
-                "stratagem": s2.name,
-                "cp_cost": s2.cp_cost,
-                "attacking_unit": attacking_unit,
-                "candidates": smoke_candidates,
-            })
-        except Exception:
-            return
+            pass
 
     def _on_blood_surge_triggered(self, player=None, unit=None, attacker_unit=None, **kwargs):
         """
@@ -1279,35 +2834,241 @@ class StratagemManager:
 
     def _on_fight_targets_selected(self, attacking_unit=None, target_units=None, **kwargs):
         """
-        Reaction window for FRENZIED RESILIENCE:
+        Reaction windows for FRENZIED RESILIENCE and LIGHTNING-FAST REACTIONS:
         Fight phase, just after an enemy unit has selected its targets.
         """
+        if attacking_unit is None:
+            return
+        if (self._current_phase_name or "").strip().lower() != "fight phase":
+            return
         try:
-            if attacking_unit is None:
-                return
-            if (self._current_phase_name or "").strip().lower() != "fight phase":
-                return
-            try:
-                owner_player = attacking_unit.get_parent_army().player
-            except Exception:
-                owner_player = None
-            if owner_player is None or owner_player is self.player:
-                return
+            owner_player = attacking_unit.get_parent_army().player
+        except Exception:
+            owner_player = None
+        if owner_player is None or owner_player is self.player:
+            return
+
+        # FRENZIED RESILIENCE (World Eaters)
+        try:
             s = self.get_by_name("FRENZIED RESILIENCE")
+            if s and self.player.command_points >= s.cp_cost and (s.name or "").strip().upper() not in self._used_stratagems_this_phase:
+                try:
+                    army = self.player.get_army()
+                except Exception:
+                    army = None
+                we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+                if we_mgr is not None and getattr(we_mgr, "is_berzerker_warband", lambda: False)():
+                    candidates = []
+                    for unit in list(target_units or []):
+                        try:
+                            if unit is None or not unit.is_alive():
+                                continue
+                            if unit.get_parent_army().player is not self.player:
+                                continue
+                            if _unit_cannot_be_target_of_stratagem(unit):
+                                continue
+                            if not (hasattr(unit, "has_any_keyword") and unit.has_any_keyword("WORLD EATERS")):
+                                continue
+                            candidates.append(unit)
+                        except Exception:
+                            continue
+                    if candidates:
+                        for r in self._pending_reactions:
+                            try:
+                                if r.get("event") == "fight_targets_selected" and r.get("stratagem") == s.name and r.get("attacking_unit") is attacking_unit:
+                                    candidates = []
+                                    break
+                            except Exception:
+                                continue
+                        if candidates:
+                            payload = {
+                                "event": "fight_targets_selected",
+                                "phase_name": "Fight phase",
+                                "stratagem": s.name,
+                                "cp_cost": s.cp_cost,
+                                "attacking_unit": attacking_unit,
+                                "target_units": list(target_units or []),
+                                "candidates": candidates,
+                            }
+                            if len(candidates) == 1:
+                                payload["target_unit"] = candidates[0]
+                            self._queue_reaction(payload)
+        except Exception:
+            pass
+
+        # ARMOUR OF CONTEMPT / THE FOE FORESEEN (opponent Fight phase, after targets selected).
+        try:
+            for strat_name in ("ARMOUR OF CONTEMPT", "THE FOE FORESEEN"):
+                s4 = self.get_by_name(strat_name)
+                if not s4:
+                    continue
+                if self.player.command_points < s4.cp_cost:
+                    continue
+                if (s4.name or "").strip().upper() in self._used_stratagems_this_phase:
+                    continue
+                candidates = []
+                for unit in list(target_units or []):
+                    try:
+                        if unit is None or not unit.is_alive():
+                            continue
+                        if unit.get_parent_army().player is not self.player:
+                            continue
+                        if _unit_cannot_be_target_of_stratagem(unit):
+                            continue
+                        if not unit.has_any_keyword("ADEPTUS ASTARTES"):
+                            continue
+                        candidates.append(unit)
+                    except Exception:
+                        continue
+                if not candidates:
+                    continue
+                already = False
+                for r in self._pending_reactions:
+                    try:
+                        if r.get("event") == "fight_targets_selected" and r.get("stratagem") == s4.name and r.get("attacking_unit") is attacking_unit:
+                            already = True
+                            break
+                    except Exception:
+                        continue
+                if already:
+                    continue
+                self._queue_reaction({
+                    "event": "fight_targets_selected",
+                    "phase_name": "Fight phase",
+                    "stratagem": s4.name,
+                    "cp_cost": s4.cp_cost,
+                    "attacking_unit": attacking_unit,
+                    "candidates": candidates,
+                })
+        except Exception:
+            pass
+
+        # Khorne Daemonkin: BLESSING OF BURNING BLOOD (opponent Fight phase, after targets selected).
+        try:
+            s5 = self.get_by_name("BLESSING OF BURNING BLOOD")
+            if s5 and self.player.command_points >= s5.cp_cost and (s5.name or "").strip().upper() not in self._used_stratagems_this_phase:
+                try:
+                    army = self.player.get_army()
+                except Exception:
+                    army = None
+                we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+                if we_mgr is not None and getattr(we_mgr, "is_khorne_daemonkin", lambda: False)():
+                    game_map = getattr(self.game, "map", None)
+                    if game_map is not None:
+                        for we_unit in list(target_units or []):
+                            try:
+                                if we_unit is None or not we_unit.is_alive():
+                                    continue
+                                if we_unit.get_parent_army().player is not self.player:
+                                    continue
+                                if _unit_cannot_be_target_of_stratagem(we_unit):
+                                    continue
+                                if not we_mgr.unit_is_world_eaters(we_unit):
+                                    continue
+                            except Exception:
+                                continue
+
+                            candidates = []
+                            seen = set()
+                            for bl_unit in list(getattr(army, "units", []) or []):
+                                try:
+                                    root = bl_unit.get_attached_unit_root()
+                                except Exception:
+                                    root = bl_unit
+                                if root is None:
+                                    continue
+                                try:
+                                    uid = getattr(root, "_id", id(root))
+                                except Exception:
+                                    uid = id(root)
+                                if uid in seen:
+                                    continue
+                                seen.add(uid)
+                                try:
+                                    if not root.is_alive():
+                                        continue
+                                except Exception:
+                                    pass
+                                try:
+                                    if not getattr(root, "deployed", False):
+                                        continue
+                                except Exception:
+                                    continue
+                                try:
+                                    if getattr(root, "is_in_reserves", lambda: False)():
+                                        continue
+                                except Exception:
+                                    pass
+                                try:
+                                    if _unit_cannot_be_target_of_stratagem(root):
+                                        continue
+                                except Exception:
+                                    continue
+                                try:
+                                    if not we_mgr.unit_is_blood_legions(root):
+                                        continue
+                                except Exception:
+                                    continue
+                                try:
+                                    dist = game_map.get_distance_between_units(root, we_unit)
+                                except Exception:
+                                    dist = None
+                                if dist is None or dist > 6.0:
+                                    continue
+                                candidates.append(root)
+                            if not candidates:
+                                continue
+                            already = False
+                            for r in self._pending_reactions:
+                                try:
+                                    if (
+                                        r.get("event") == "fight_targets_selected"
+                                        and r.get("stratagem") == s5.name
+                                        and r.get("attacking_unit") is attacking_unit
+                                        and r.get("world_eaters_unit") is we_unit
+                                    ):
+                                        already = True
+                                        break
+                                except Exception:
+                                    continue
+                            if already:
+                                continue
+                            payload = {
+                                "event": "fight_targets_selected",
+                                "phase_name": "Fight phase",
+                                "stratagem": s5.name,
+                                "cp_cost": s5.cp_cost,
+                                "attacking_unit": attacking_unit,
+                                "world_eaters_unit": we_unit,
+                                "candidates": candidates,
+                            }
+                            if len(candidates) == 1:
+                                payload["target_unit"] = candidates[0]
+                            self._queue_reaction(payload)
+        except Exception:
+            pass
+
+        # Generic defensive reactions (after targets selected).
+        try:
+            self._queue_generic_defensive_reactions(
+                attacking_unit,
+                list(target_units or []),
+                phase_name="Fight phase",
+            )
+        except Exception:
+            pass
+
+        # Warhost: LIGHTNING-FAST REACTIONS (Fight phase)
+        try:
+            s = self.get_by_name("LIGHTNING-FAST REACTIONS")
             if not s:
+                return
+            if not self._is_warhost_detachment():
                 return
             if self.player.command_points < s.cp_cost:
                 return
             if (s.name or "").strip().upper() in self._used_stratagems_this_phase:
                 return
-            try:
-                army = self.player.get_army()
-            except Exception:
-                army = None
-            we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
-            if we_mgr is None or not getattr(we_mgr, "is_berzerker_warband", lambda: False)():
-                return
-
             candidates = []
             for unit in list(target_units or []):
                 try:
@@ -1317,33 +3078,23 @@ class StratagemManager:
                         continue
                     if _unit_cannot_be_target_of_stratagem(unit):
                         continue
-                    if not (hasattr(unit, "has_any_keyword") and unit.has_any_keyword("WORLD EATERS")):
+                    if not unit.has_any_keyword("ASURYANI"):
+                        continue
+                    if unit.has_keyword("WRAITH CONSTRUCT"):
                         continue
                     candidates.append(unit)
                 except Exception:
                     continue
             if not candidates:
                 return
-
-            for r in self._pending_reactions:
-                try:
-                    if r.get("event") == "fight_targets_selected" and r.get("stratagem") == s.name and r.get("attacking_unit") is attacking_unit:
-                        return
-                except Exception:
-                    continue
-
-            payload = {
+            self._queue_reaction({
                 "event": "fight_targets_selected",
                 "phase_name": "Fight phase",
                 "stratagem": s.name,
                 "cp_cost": s.cp_cost,
                 "attacking_unit": attacking_unit,
-                "target_units": list(target_units or []),
                 "candidates": candidates,
-            }
-            if len(candidates) == 1:
-                payload["target_unit"] = candidates[0]
-            self._queue_reaction(payload)
+            })
         except Exception:
             return
 
@@ -1516,6 +3267,12 @@ class StratagemManager:
                 except Exception:
                     pass
 
+    def _on_fight_attacks_resolved_armour_of_contempt_cleanup(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        self._clear_armour_of_contempt_for_attacker(unit)
+        self._clear_defensive_effects_for_attacker(unit)
+
     def _maybe_queue_overwatch(self, moving_unit, action: str, when: str) -> None:
         # Only offer to the opponent of the moving unit's owner
         try:
@@ -1658,6 +3415,57 @@ class StratagemManager:
             "unit": unit,
             "target_unit": unit,
             "action": "advance",
+        })
+
+    def _maybe_queue_feigned_retreat(self, unit, action: str) -> None:
+        try:
+            if str(action or "").strip().lower() != "fall_back":
+                return
+            if unit is None or not getattr(unit, "is_alive", lambda: True)():
+                return
+            owner = unit.get_parent_army().player
+            if owner is not self.player:
+                return
+            if not self._is_warhost_detachment():
+                return
+            if (self._current_phase_name or "").strip().lower() != "movement phase":
+                return
+            active_player = getattr(self.game, "get_current_player", lambda: None)()
+            if active_player is not self.player:
+                return
+            s = self.get_by_name("FEIGNED RETREAT")
+            if not s:
+                return
+            if self.player.command_points < s.cp_cost:
+                return
+            if (s.name or "").strip().upper() in self._used_stratagems_this_phase:
+                return
+            if _unit_cannot_be_target_of_stratagem(unit):
+                return
+            try:
+                if not unit.has_any_keyword("ASURYANI"):
+                    return
+            except Exception:
+                return
+            try:
+                if not bool(getattr(getattr(unit, "round_state", None), "fell_back_this_round", False)):
+                    return
+            except Exception:
+                pass
+        except Exception:
+            return
+
+        for r in self._pending_reactions:
+            if r.get("event") == "unit_move_ended" and r.get("stratagem") == s.name and r.get("unit") is unit:
+                return
+        self._queue_reaction({
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": s.name,
+            "cp_cost": s.cp_cost,
+            "unit": unit,
+            "target_unit": unit,
+            "action": "fall_back",
         })
 
     # Command Re-roll trigger on roll_made for active player only
@@ -1845,6 +3653,109 @@ class StratagemManager:
             self._worthy_skull_kills[root] = True
         except Exception:
             return
+
+    def _on_model_destroyed_before_removal(self, unit=None, model=None, **_kwargs) -> None:
+        """
+        Faction stratagem reactions that trigger before the destroyed model is removed.
+        """
+        # WORLD EATERS (Khorne Daemonkin): SUMMONED BY SLAUGHTER
+        try:
+            s = self.get_by_name("SUMMONED BY SLAUGHTER")
+        except Exception:
+            s = None
+        if s is None or unit is None or model is None:
+            return
+
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+
+        # Trigger only when the last model in the attached unit is destroyed.
+        try:
+            models = list(root.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(root, "models", []) or [])
+        alive_others = [m for m in models if getattr(m, "is_alive", True) and m is not model]
+        if alive_others:
+            return
+
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+        if we_mgr is None or not getattr(we_mgr, "is_khorne_daemonkin", lambda: False)():
+            return
+
+        try:
+            br = int(getattr(self.game, "turn", 0) or 0)
+        except Exception:
+            br = 0
+        if br and int(self._used_battle_round.get("SUMMONED BY SLAUGHTER", 0) or 0) == br:
+            return
+
+        candidates = []
+        seen = set()
+        try:
+            units = list(getattr(army, "units", []) or [])
+        except Exception:
+            units = []
+        for u in units:
+            try:
+                cand = u.get_attached_unit_root()
+            except Exception:
+                cand = u
+            if cand is None:
+                continue
+            try:
+                uid = getattr(cand, "_id", id(cand))
+            except Exception:
+                uid = id(cand)
+            if uid in seen:
+                continue
+            seen.add(uid)
+            try:
+                if not cand.is_in_reserves():
+                    continue
+            except Exception:
+                continue
+            try:
+                if not cand.is_alive():
+                    continue
+            except Exception:
+                pass
+            if not self._is_bloodletters_unit(cand):
+                continue
+            try:
+                if _unit_cannot_be_target_of_stratagem(cand):
+                    continue
+            except Exception:
+                pass
+            candidates.append(cand)
+
+        if not candidates:
+            return
+
+        phase_name = self._current_phase_name or ""
+        if not s.can_use(self.player, self.game, phase_name=phase_name):
+            return
+
+        try:
+            destroyed_base = copy.deepcopy(getattr(model, "model_base", None))
+        except Exception:
+            destroyed_base = None
+
+        self._queue_reaction({
+            "event": "model_destroyed_before_removal",
+            "phase_name": phase_name,
+            "stratagem": s.name,
+            "cp_cost": s.cp_cost,
+            "destroyed_unit": root,
+            "destroyed_model": model,
+            "destroyed_model_base": destroyed_base,
+            "candidates": candidates,
+        })
 
     def _on_unit_destroyed(self, unit=None, last_model=None, **kwargs) -> None:
         """
@@ -2214,6 +4125,56 @@ class StratagemManager:
             except Exception:
                 pass
             print(f"🛡️ SMOKESCREEN: {getattr(target_unit, 'name', 'Unit')} gains Benefit of Cover + Stealth until end of phase.")
+            return True
+
+        # Armour of Contempt / The Foe Foreseen: worsen AP by 1 vs a selected ADEPTUS ASTARTES unit.
+        if s.name.upper() in ("ARMOUR OF CONTEMPT", "THE FOE FORESEEN"):
+            target_unit = kwargs.get("target_unit") or kwargs.get("unit")
+            attacker_unit = kwargs.get("attacker_unit")
+            if target_unit is None or attacker_unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == s.name.upper():
+                        cands = r.get("candidates") or []
+                        if target_unit is None and cands:
+                            target_unit = cands[0]
+                        attacker_unit = attacker_unit or r.get("attacking_unit")
+                        break
+            if target_unit is None or attacker_unit is None:
+                print(f"❌ {s.name}: missing target context")
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() not in ("shooting phase", "fight phase"):
+                print(f"❌ {s.name}: wrong phase")
+                return False
+            try:
+                if attacker_unit.get_parent_army().player is self.player:
+                    print(f"❌ {s.name}: must be used in opponent's phase")
+                    return False
+            except Exception:
+                return False
+            try:
+                if target_unit.get_parent_army().player is not self.player:
+                    print(f"❌ {s.name}: target unit is not yours")
+                    return False
+            except Exception:
+                return False
+            try:
+                if not target_unit.has_any_keyword("ADEPTUS ASTARTES"):
+                    print(f"❌ {s.name}: target is not ADEPTUS ASTARTES")
+                    return False
+            except Exception:
+                return False
+            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            if not self._apply_armour_of_contempt(target_unit, attacker_unit, amount=1):
+                return False
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
+            print(f"🛡️ {s.name}: {getattr(target_unit, 'name', 'Unit')} worsens AP by 1 vs {getattr(attacker_unit, 'name', 'attacker')}.")
             return True
         # Special-case: FIRE OVERWATCH full resolution
         if s.name.upper() in ("FIRE OVERWATCH", "OVERWATCH"):
@@ -2650,25 +4611,42 @@ class StratagemManager:
         if s.name.upper() == "GRENADE":
             unit = kwargs.get("unit") or kwargs.get("target_unit")
             enemy = kwargs.get("enemy_unit")
+
+            def _grenade_unit_eligible(u) -> bool:
+                try:
+                    if u is None or not u.is_alive() or not getattr(u, "deployed", False):
+                        return False
+                    if not u.has_keyword("Grenades"):
+                        return False
+                    rs = getattr(u, "round_state", None)
+                    if (
+                        getattr(rs, "advanced_this_round", False)
+                        or getattr(rs, "fell_back_this_round", False)
+                        or getattr(rs, "shot_this_round", False)
+                    ):
+                        return False
+                    if self.game and getattr(self.game, "map", None):
+                        if any(
+                            self.game.map.is_within_engagement_range(u, e)
+                            for e in (self.game.map.get_enemy_units(u) or [])
+                            if e.is_alive()
+                        ):
+                            return False
+                except Exception:
+                    return False
+                return True
+
             if unit is None:
                 # Best-effort pick: first eligible GRENADES unit from your army
                 for u in list(getattr(self.player.get_army(), "units", []) or []):
-                    try:
-                        if not u.is_alive() or not getattr(u, "deployed", False):
-                            continue
-                        if not u.has_keyword("Grenades"):
-                            continue
-                        if getattr(u.round_state, "advanced_this_round", False) or getattr(u.round_state, "fell_back_this_round", False) or getattr(u.round_state, "shot_this_round", False):
-                            continue
-                        if self.game and getattr(self.game, "map", None):
-                            if any(self.game.map.is_within_engagement_range(u, e) for e in (self.game.map.get_enemy_units(u) or []) if e.is_alive()):
-                                continue
+                    if _grenade_unit_eligible(u):
                         unit = u
                         break
-                    except Exception:
-                        continue
             if unit is None:
                 print("❌ GRENADE: no eligible friendly GRENADES unit")
+                return False
+            if not _grenade_unit_eligible(unit):
+                print("❌ GRENADE: selected unit is not eligible (already shot/advanced/fell back/engaged or no Grenades)")
                 return False
             if enemy is None and self.game and getattr(self.game, "map", None):
                 # Best-effort: pick the first eligible enemy within 8" and visible, and not in engagement range of any friendly unit.
@@ -2959,6 +4937,569 @@ class StratagemManager:
             print(f"🩸 APOPLETIC FRENZY: {getattr(unit, 'name', 'Unit')} can charge after advancing this turn.")
             return True
 
+        # Warhost: BLITZING FIREPOWER
+        if s.name.upper() == "BLITZING FIREPOWER":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            if unit is None:
+                cand = kwargs.get("candidates") or []
+                if cand:
+                    unit = cand[0]
+            if unit is None:
+                print("❌ Blitzing Firepower: no target unit provided")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                return False
+            if not self._is_warhost_detachment():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "shooting phase":
+                print("❌ Blitzing Firepower: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is not self.player:
+                print("❌ Blitzing Firepower: not your turn")
+                return False
+            try:
+                if not root.is_alive():
+                    return False
+            except Exception:
+                pass
+            try:
+                if not getattr(root, "deployed", False):
+                    return False
+            except Exception:
+                pass
+            try:
+                if getattr(root, "is_in_reserves", lambda: False)():
+                    return False
+            except Exception:
+                pass
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print("❌ Blitzing Firepower: target cannot be selected")
+                    return False
+            except Exception:
+                return False
+            try:
+                if not root.has_any_keyword("ASURYANI"):
+                    return False
+            except Exception:
+                return False
+            try:
+                if getattr(getattr(root, "round_state", None), "shot_this_round", False):
+                    return False
+            except Exception:
+                pass
+            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["blitzing_firepower_active"] = True
+                sr["blitzing_firepower_expires_phase"] = "SHOOTING_PHASE"
+                root.special_rules = sr
+            except Exception:
+                pass
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
+            print(f"🔥 BLITZING FIREPOWER: {getattr(root, 'name', 'Unit')} gains Sustained Hits vs targets within 12\".")
+            return True
+
+        # Warhost: FEIGNED RETREAT
+        if s.name.upper() == "FEIGNED RETREAT":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            if unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "FEIGNED RETREAT":
+                        unit = r.get("unit") or r.get("target_unit")
+                        if unit is not None:
+                            kwargs.setdefault("action", r.get("action"))
+                        break
+            if unit is None:
+                print("❌ Feigned Retreat: no target unit provided")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                return False
+            if not self._is_warhost_detachment():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "movement phase":
+                print("❌ Feigned Retreat: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is not self.player:
+                print("❌ Feigned Retreat: not your turn")
+                return False
+            if str(kwargs.get("action", "") or "").strip().lower() not in ("", "fall_back"):
+                print("❌ Feigned Retreat: invalid trigger")
+                return False
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print("❌ Feigned Retreat: target cannot be selected")
+                    return False
+            except Exception:
+                return False
+            try:
+                if not root.has_any_keyword("ASURYANI"):
+                    return False
+            except Exception:
+                return False
+            try:
+                if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+                    return False
+            except Exception:
+                pass
+            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["feigned_retreat_active"] = True
+                sr["feigned_retreat_turn_owner"] = str(getattr(self.player, "name", "") or "")
+                sr["feigned_retreat_turn"] = int(getattr(self.game, "turn", 0) or 0)
+                root.special_rules = sr
+            except Exception:
+                pass
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
+            print(f"🌀 FEIGNED RETREAT: {getattr(root, 'name', 'Unit')} can shoot and charge after falling back.")
+            return True
+
+        # Warhost: FIRE AND FADE
+        if s.name.upper() == "FIRE AND FADE":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            if unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "FIRE AND FADE":
+                        unit = r.get("unit") or r.get("target_unit")
+                        break
+            if unit is None:
+                print("❌ Fire and Fade: no target unit provided")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                return False
+            if not self._is_warhost_detachment():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "shooting phase":
+                print("❌ Fire and Fade: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is not self.player:
+                print("❌ Fire and Fade: not your turn")
+                return False
+            try:
+                if not root.is_alive():
+                    return False
+            except Exception:
+                pass
+            try:
+                if not getattr(root, "deployed", False):
+                    return False
+            except Exception:
+                pass
+            try:
+                if getattr(root, "is_in_reserves", lambda: False)():
+                    return False
+            except Exception:
+                pass
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print("❌ Fire and Fade: target cannot be selected")
+                    return False
+            except Exception:
+                return False
+            try:
+                if not root.has_any_keyword("ASURYANI"):
+                    return False
+                if not root.has_keyword("INFANTRY"):
+                    return False
+                if root.has_keyword("WRAITH CONSTRUCT"):
+                    return False
+                if root.has_keyword("AIRCRAFT") or bool(getattr(root, "is_aircraft", False)):
+                    return False
+                if str(getattr(root, "name", "") or "").strip().upper() == "ASURMEN":
+                    return False
+            except Exception:
+                return False
+            try:
+                if not bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+                    return False
+            except Exception:
+                pass
+            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                from ..utility.dice import get_roll
+                roll = int(get_roll("D6") or 0)
+            except Exception:
+                roll = 1
+            move_max = int(roll) + 1
+            try:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["fire_and_fade_no_charge_turn_owner"] = str(getattr(self.player, "name", "") or "")
+                sr["fire_and_fade_no_charge_turn"] = int(getattr(self.game, "turn", 0) or 0)
+                sr["fire_and_fade_no_embark_turn_owner"] = str(getattr(self.player, "name", "") or "")
+                sr["fire_and_fade_no_embark_turn"] = int(getattr(self.game, "turn", 0) or 0)
+                root.special_rules = sr
+            except Exception:
+                pass
+            try:
+                if self.game is not None and hasattr(self.game, "event_system"):
+                    self.game.event_system.publish(
+                        "fire_and_fade_move",
+                        player=self.player,
+                        unit=root,
+                        max_distance=int(move_max),
+                    )
+            except Exception:
+                pass
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
+            print(f"💨 FIRE AND FADE: {getattr(root, 'name', 'Unit')} can move {move_max}\" and cannot charge or embark this turn.")
+            return True
+
+        # Warhost: LIGHTNING-FAST REACTIONS
+        if s.name.upper() == "LIGHTNING-FAST REACTIONS":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            if unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "LIGHTNING-FAST REACTIONS":
+                        unit = r.get("unit") or r.get("target_unit")
+                        break
+            if unit is None:
+                print("❌ Lightning-Fast Reactions: no target unit provided")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                return False
+            if not self._is_warhost_detachment():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            pname = str(phase_name or "").strip().lower()
+            if pname not in ("shooting phase", "fight phase"):
+                print("❌ Lightning-Fast Reactions: wrong phase")
+                return False
+            if pname == "shooting phase":
+                active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+                if active_player is self.player:
+                    print("❌ Lightning-Fast Reactions: not opponent's Shooting phase")
+                    return False
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print("❌ Lightning-Fast Reactions: target cannot be selected")
+                    return False
+            except Exception:
+                return False
+            try:
+                if not root.has_any_keyword("ASURYANI"):
+                    return False
+                if root.has_keyword("WRAITH CONSTRUCT"):
+                    return False
+            except Exception:
+                return False
+            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["lightning_fast_reactions_active"] = True
+                sr["lightning_fast_reactions_expires_phase"] = "SHOOTING_PHASE" if pname == "shooting phase" else "FIGHT_PHASE"
+                root.special_rules = sr
+            except Exception:
+                pass
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
+            print(f"⚡ LIGHTNING-FAST REACTIONS: {getattr(root, 'name', 'Unit')} is harder to hit this phase.")
+            return True
+
+        # Warhost: SKYBORNE SANCTUARY
+        if s.name.upper() == "SKYBORNE SANCTUARY":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            transport_unit = kwargs.get("transport_unit") or kwargs.get("transport")
+            if unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "SKYBORNE SANCTUARY":
+                        unit = r.get("unit") or r.get("target_unit")
+                        if transport_unit is None:
+                            transport_unit = r.get("transport_unit") or r.get("transport")
+                        break
+            if unit is None:
+                print("❌ Skyborne Sanctuary: no target unit provided")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                return False
+            if not self._is_warhost_detachment():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "fight phase":
+                print("❌ Skyborne Sanctuary: wrong phase")
+                return False
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print("❌ Skyborne Sanctuary: target cannot be selected")
+                    return False
+            except Exception:
+                return False
+            try:
+                if not root.has_any_keyword("ASURYANI"):
+                    return False
+            except Exception:
+                return False
+            try:
+                if not root.is_alive():
+                    return False
+            except Exception:
+                pass
+            try:
+                if not getattr(root, "deployed", False):
+                    return False
+            except Exception:
+                pass
+            try:
+                if getattr(root, "is_in_reserves", lambda: False)():
+                    return False
+            except Exception:
+                pass
+            try:
+                sr = getattr(root, "special_rules", None)
+                owner = str(sr.get("fire_and_fade_no_embark_turn_owner", "") or "") if isinstance(sr, dict) else ""
+                turn = int(sr.get("fire_and_fade_no_embark_turn", 0) or 0) if isinstance(sr, dict) else 0
+                if owner and self.game is not None:
+                    if owner == str(getattr(getattr(self.game, "get_current_player", lambda: None)(), "name", "") or ""):
+                        if int(getattr(self.game, "turn", 0) or 0) == int(turn or 0):
+                            print("❌ Skyborne Sanctuary: unit cannot embark this turn (Fire and Fade)")
+                            return False
+            except Exception:
+                pass
+            try:
+                game_map = getattr(self.game, "map", None)
+                engaged = False
+                for enemy in list(game_map.get_enemy_units(root) or []):
+                    if not getattr(enemy, "is_alive", lambda: True)():
+                        continue
+                    if not getattr(enemy, "deployed", True):
+                        continue
+                    if game_map.is_within_engagement_range(root, enemy):
+                        engaged = True
+                        break
+                if engaged:
+                    return False
+            except Exception:
+                pass
+            if transport_unit is None:
+                try:
+                    mapping = kwargs.get("transport_candidates_by_unit") or {}
+                    transport_unit = (mapping.get(root) or [None])[0]
+                except Exception:
+                    transport_unit = None
+            if transport_unit is None:
+                try:
+                    transports = self._skyborne_transport_candidates(root)
+                    if transports:
+                        transport_unit = transports[0]
+                except Exception:
+                    transport_unit = None
+            if transport_unit is None:
+                print("❌ Skyborne Sanctuary: no transport provided")
+                return False
+            try:
+                if not transport_unit.is_alive():
+                    return False
+            except Exception:
+                pass
+            try:
+                if not getattr(transport_unit, "deployed", False):
+                    return False
+            except Exception:
+                pass
+            try:
+                if not transport_unit.can_transport(root):
+                    return False
+            except Exception:
+                return False
+            try:
+                from ..utility.aura_utils import unit_wholly_within_range_of_unit
+                if not unit_wholly_within_range_of_unit(transport_unit, root, 6.0, use_attached_aggregate=True):
+                    return False
+            except Exception:
+                return False
+            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                game_map = getattr(self.game, "map", None)
+                if not transport_unit.add_passenger(root, game_map=game_map):
+                    print("❌ Skyborne Sanctuary: embark failed")
+                    return False
+            except Exception:
+                return False
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
+            print(f"🛫 Skyborne Sanctuary: {getattr(root, 'name', 'Unit')} embarked within {getattr(transport_unit, 'name', 'Transport')}.")
+            return True
+
+        # Warhost: WEBWAY TUNNEL
+        if s.name.upper() == "WEBWAY TUNNEL":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            if unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "WEBWAY TUNNEL":
+                        unit = r.get("unit") or r.get("target_unit")
+                        break
+            if unit is None:
+                print("❌ Webway Tunnel: no target unit provided")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                return False
+            if not self._is_warhost_detachment():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "fight phase":
+                print("❌ Webway Tunnel: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is self.player:
+                print("❌ Webway Tunnel: not opponent's Fight phase")
+                return False
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print("❌ Webway Tunnel: target cannot be selected")
+                    return False
+            except Exception:
+                return False
+            try:
+                if not root.has_any_keyword("ASURYANI"):
+                    return False
+                if not root.has_keyword("INFANTRY"):
+                    return False
+            except Exception:
+                return False
+            try:
+                if not root.is_alive():
+                    return False
+            except Exception:
+                pass
+            try:
+                if not getattr(root, "deployed", False):
+                    return False
+            except Exception:
+                pass
+            try:
+                if getattr(root, "is_in_reserves", lambda: False)():
+                    return False
+            except Exception:
+                pass
+            try:
+                game_map = getattr(self.game, "map", None)
+                engaged = False
+                for enemy in list(game_map.get_enemy_units(root) or []):
+                    if not getattr(enemy, "is_alive", lambda: True)():
+                        continue
+                    if not getattr(enemy, "deployed", True):
+                        continue
+                    if game_map.is_within_engagement_range(root, enemy):
+                        engaged = True
+                        break
+                if engaged:
+                    return False
+            except Exception:
+                pass
+            if not self._unit_wholly_within_battlefield_edge_distance(root, 9.0):
+                return False
+            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                game_map = getattr(self.game, "map", None)
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = [root]
+            for member in members:
+                try:
+                    if hasattr(member, "set_reserve_status"):
+                        member.set_reserve_status("strategic_reserves")
+                    else:
+                        member.reserve_status = "strategic_reserves"
+                except Exception:
+                    pass
+                try:
+                    if hasattr(member, "mark_entered_reserves_midgame"):
+                        member.mark_entered_reserves_midgame(game=self.game)
+                except Exception:
+                    pass
+                try:
+                    if bool(getattr(member, "is_aircraft", False)) and not bool(getattr(member, "hover_mode", False)):
+                        if self.game is not None:
+                            member._aircraft_return_turn = int(getattr(self.game, "turn", 0) or 0) + 1
+                except Exception:
+                    pass
+                try:
+                    member.deployed = True
+                    member.reserve_turn_deployed = None
+                    member.arrived_from_reserves_this_turn = False
+                except Exception:
+                    pass
+                try:
+                    if game_map is not None and hasattr(game_map, "units") and member in game_map.units:
+                        game_map.units.remove(member)
+                except Exception:
+                    pass
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
+            print(f"🌀 Webway Tunnel: {getattr(root, 'name', 'Unit')} placed into Strategic Reserves.")
+            return True
+
         # Berzerker Warband: BERZERKER'S WRATH (fixed 8" Blood Surge for Khorne Berzerkers)
         if s.name.upper() in ("BERZERKER’S WRATH", "BERZERKER'S WRATH"):
             unit = kwargs.get("unit") or kwargs.get("target_unit")
@@ -3023,6 +5564,463 @@ class StratagemManager:
             except Exception:
                 pass
             print(f"🩸 BERZERKER'S WRATH: {getattr(unit, 'name', 'Unit')} will Blood Surge up to 8\".")
+            return True
+
+        # Khorne Daemonkin: DAEMONIC FURY (grant [LANCE], and [TWIN-LINKED] if Daemonic Rage active)
+        if s.name.upper() == "DAEMONIC FURY":
+            target_unit = kwargs.get("target_unit") or kwargs.get("unit") or kwargs.get("blood_legions_unit")
+            we_unit = kwargs.get("world_eaters_unit") or kwargs.get("support_unit") or kwargs.get("we_unit")
+            candidates = kwargs.get("candidates") or []
+            if target_unit is None and candidates:
+                target_unit = candidates[0]
+            if target_unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "DAEMONIC FURY":
+                        target_unit = r.get("target_unit") or r.get("unit")
+                        we_unit = we_unit or r.get("world_eaters_unit")
+                        break
+            if target_unit is None:
+                try:
+                    army = self.player.get_army()
+                except Exception:
+                    army = None
+                if army is not None:
+                    for u in list(getattr(army, "units", []) or []):
+                        if u is None:
+                            continue
+                        try:
+                            root = u.get_attached_unit_root()
+                        except Exception:
+                            root = u
+                        if root is None:
+                            continue
+                        try:
+                            if not root.is_alive():
+                                continue
+                        except Exception:
+                            pass
+                        target_unit = root
+                        break
+            if target_unit is None:
+                print("❌ Daemonic Fury: no target unit provided")
+                return False
+            try:
+                target_root = target_unit.get_attached_unit_root()
+            except Exception:
+                target_root = target_unit
+            try:
+                if target_root.get_parent_army().player is not self.player:
+                    print("❌ Daemonic Fury: target unit is not yours")
+                    return False
+            except Exception:
+                pass
+            if we_unit is None:
+                try:
+                    army = target_root.get_parent_army()
+                except Exception:
+                    army = None
+                if army is not None and getattr(self.game, "map", None) is not None:
+                    for u in list(getattr(army, "units", []) or []):
+                        try:
+                            root = u.get_attached_unit_root()
+                        except Exception:
+                            root = u
+                        if root is None or root is target_root:
+                            continue
+                        try:
+                            if not root.is_alive():
+                                continue
+                        except Exception:
+                            pass
+                        try:
+                            dist = self.game.map.get_distance_between_units(root, target_root)
+                        except Exception:
+                            dist = None
+                        if dist is None or dist > 6.0:
+                            continue
+                        we_unit = root
+                        break
+            if we_unit is None:
+                print("❌ Daemonic Fury: no WORLD EATERS unit within 6\"")
+                return False
+            try:
+                we_root = we_unit.get_attached_unit_root()
+            except Exception:
+                we_root = we_unit
+            try:
+                if we_root.get_parent_army().player is not self.player:
+                    print("❌ Daemonic Fury: support unit is not yours")
+                    return False
+            except Exception:
+                pass
+
+            try:
+                army = target_root.get_parent_army()
+            except Exception:
+                army = None
+            we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+            if we_mgr is None or not getattr(we_mgr, "is_khorne_daemonkin", lambda: False)():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "fight phase":
+                print("❌ Daemonic Fury: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is not self.player:
+                print("❌ Daemonic Fury: not your turn")
+                return False
+            try:
+                if _unit_cannot_be_target_of_stratagem(target_root):
+                    print("❌ Daemonic Fury: target cannot be selected")
+                    return False
+            except Exception:
+                return False
+            try:
+                if not we_mgr.unit_is_blood_legions(target_root):
+                    print("❌ Daemonic Fury: target is not BLOOD LEGIONS")
+                    return False
+            except Exception:
+                return False
+            try:
+                if not we_mgr.unit_is_world_eaters(we_root):
+                    print("❌ Daemonic Fury: support unit is not WORLD EATERS")
+                    return False
+            except Exception:
+                return False
+            try:
+                if not getattr(target_root, "deployed", False) or getattr(target_root, "is_in_reserves", lambda: False)():
+                    print("❌ Daemonic Fury: target is not on battlefield")
+                    return False
+            except Exception:
+                pass
+            try:
+                if not getattr(we_root, "deployed", False) or getattr(we_root, "is_in_reserves", lambda: False)():
+                    print("❌ Daemonic Fury: support unit is not on battlefield")
+                    return False
+            except Exception:
+                pass
+            try:
+                dist = self.game.map.get_distance_between_units(target_root, we_root) if self.game else None
+            except Exception:
+                dist = None
+            if dist is None or dist > 6.0:
+                print("❌ Daemonic Fury: units are not within 6\"")
+                return False
+
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=target_root).get("cost", s.cp_cost))
+            except Exception:
+                eff_cost = s.cp_cost
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+
+            try:
+                sr = getattr(we_root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["daemonic_fury_lance_active"] = True
+                sr["daemonic_fury_lance_turn_owner"] = str(getattr(self.player, "name", "") or "")
+                sr["daemonic_fury_lance_turn"] = int(getattr(self.game, "turn", 0) or 0)
+                if getattr(we_mgr, "is_blood_tithe_active", None) and we_mgr.is_blood_tithe_active("DAEMONIC_RAGE"):
+                    sr["daemonic_fury_twin_linked_active"] = True
+                    sr["daemonic_fury_twin_linked_expires_phase"] = "FIGHT_PHASE"
+                we_root.special_rules = sr
+            except Exception:
+                pass
+
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
+            print(f"🩸 DAEMONIC FURY: {getattr(we_root, 'name', 'Unit')} gains [LANCE] (and [TWIN-LINKED] if active).")
+            return True
+
+        # Khorne Daemonkin: BLESSING OF BURNING BLOOD (grant invulnerable save to targeted WORLD EATERS unit)
+        if s.name.upper() == "BLESSING OF BURNING BLOOD":
+            target_unit = kwargs.get("target_unit") or kwargs.get("unit") or kwargs.get("blood_legions_unit")
+            we_unit = kwargs.get("world_eaters_unit") or kwargs.get("support_unit") or kwargs.get("we_unit")
+            candidates = kwargs.get("candidates") or []
+            if target_unit is None and candidates:
+                target_unit = candidates[0]
+            if target_unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "BLESSING OF BURNING BLOOD":
+                        target_unit = r.get("target_unit") or r.get("unit")
+                        we_unit = we_unit or r.get("world_eaters_unit")
+                        break
+            if target_unit is None or we_unit is None:
+                print("❌ Blessing of Burning Blood: missing target context")
+                return False
+            try:
+                target_root = target_unit.get_attached_unit_root()
+            except Exception:
+                target_root = target_unit
+            try:
+                we_root = we_unit.get_attached_unit_root()
+            except Exception:
+                we_root = we_unit
+            try:
+                if target_root.get_parent_army().player is not self.player:
+                    print("❌ Blessing of Burning Blood: target unit is not yours")
+                    return False
+            except Exception:
+                pass
+            try:
+                if we_root.get_parent_army().player is not self.player:
+                    print("❌ Blessing of Burning Blood: affected unit is not yours")
+                    return False
+            except Exception:
+                pass
+
+            try:
+                army = we_root.get_parent_army()
+            except Exception:
+                army = None
+            we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+            if we_mgr is None or not getattr(we_mgr, "is_khorne_daemonkin", lambda: False)():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() not in ("shooting phase", "fight phase"):
+                print("❌ Blessing of Burning Blood: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is self.player:
+                print("❌ Blessing of Burning Blood: not opponent's turn")
+                return False
+            try:
+                if _unit_cannot_be_target_of_stratagem(target_root):
+                    print("❌ Blessing of Burning Blood: target cannot be selected")
+                    return False
+            except Exception:
+                return False
+            try:
+                if not we_mgr.unit_is_blood_legions(target_root):
+                    print("❌ Blessing of Burning Blood: target is not BLOOD LEGIONS")
+                    return False
+            except Exception:
+                return False
+            try:
+                if not we_mgr.unit_is_world_eaters(we_root):
+                    print("❌ Blessing of Burning Blood: affected unit is not WORLD EATERS")
+                    return False
+            except Exception:
+                return False
+            try:
+                dist = self.game.map.get_distance_between_units(target_root, we_root) if self.game else None
+            except Exception:
+                dist = None
+            if dist is None or dist > 6.0:
+                print("❌ Blessing of Burning Blood: units are not within 6\"")
+                return False
+
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=target_root).get("cost", s.cp_cost))
+            except Exception:
+                eff_cost = s.cp_cost
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+
+            inv_value = 5
+            try:
+                if getattr(we_mgr, "is_blood_tithe_active", None) and we_mgr.is_blood_tithe_active("BOON_OF_BLOOD"):
+                    inv_value = 4
+            except Exception:
+                inv_value = 5
+            try:
+                entry = {
+                    "value": int(inv_value),
+                    "attack_type": "any",
+                    "attacker_key": None,
+                    "expires_phase": self._phase_key_from_name(phase_name),
+                    "source": str(s.name or "Blessing of Burning Blood"),
+                }
+                self._append_defensive_effect(we_root, "defensive_invuln_overrides", entry)
+            except Exception:
+                pass
+
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
+            print(f"🩸 BLESSING OF BURNING BLOOD: {getattr(we_root, 'name', 'Unit')} gains {inv_value}++.")
+            return True
+
+        # Khorne Daemonkin: DAEMONTIDE (return destroyed BLOOD LEGIONS models)
+        if s.name.upper() == "DAEMONTIDE":
+            we_unit = kwargs.get("target_unit") or kwargs.get("unit") or kwargs.get("world_eaters_unit")
+            bl_unit = kwargs.get("blood_legions_unit") or kwargs.get("support_unit") or kwargs.get("bl_unit")
+            candidates = kwargs.get("candidates") or []
+            if we_unit is None and candidates:
+                we_unit = candidates[0]
+            if we_unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "DAEMONTIDE":
+                        we_unit = r.get("target_unit") or r.get("unit")
+                        bl_unit = bl_unit or r.get("blood_legions_unit")
+                        break
+            if we_unit is None:
+                print("❌ Daemontide: no WORLD EATERS unit provided")
+                return False
+            try:
+                we_root = we_unit.get_attached_unit_root()
+            except Exception:
+                we_root = we_unit
+            try:
+                if we_root.get_parent_army().player is not self.player:
+                    print("❌ Daemontide: target unit is not yours")
+                    return False
+            except Exception:
+                pass
+            if bl_unit is None:
+                try:
+                    army = we_root.get_parent_army()
+                except Exception:
+                    army = None
+                if army is not None and getattr(self.game, "map", None) is not None:
+                    for u in list(getattr(army, "units", []) or []):
+                        try:
+                            root = u.get_attached_unit_root()
+                        except Exception:
+                            root = u
+                        if root is None:
+                            continue
+                        try:
+                            if not root.is_alive():
+                                continue
+                        except Exception:
+                            pass
+                        try:
+                            dist = self.game.map.get_distance_between_units(root, we_root)
+                        except Exception:
+                            dist = None
+                        if dist is None or dist > 6.0:
+                            continue
+                        bl_unit = root
+                        break
+            if bl_unit is None:
+                print("❌ Daemontide: no BLOOD LEGIONS unit within 6\"")
+                return False
+            try:
+                bl_root = bl_unit.get_attached_unit_root()
+            except Exception:
+                bl_root = bl_unit
+            try:
+                if bl_root.get_parent_army().player is not self.player:
+                    print("❌ Daemontide: support unit is not yours")
+                    return False
+            except Exception:
+                pass
+
+            try:
+                army = we_root.get_parent_army()
+            except Exception:
+                army = None
+            we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+            if we_mgr is None or not getattr(we_mgr, "is_khorne_daemonkin", lambda: False)():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "command phase":
+                print("❌ Daemontide: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is not self.player:
+                print("❌ Daemontide: not your turn")
+                return False
+            try:
+                if _unit_cannot_be_target_of_stratagem(we_root):
+                    print("❌ Daemontide: target cannot be selected")
+                    return False
+            except Exception:
+                return False
+            try:
+                if not we_mgr.unit_is_world_eaters(we_root):
+                    print("❌ Daemontide: target is not WORLD EATERS")
+                    return False
+            except Exception:
+                return False
+            try:
+                if not we_mgr.unit_is_blood_legions(bl_root):
+                    print("❌ Daemontide: support unit is not BLOOD LEGIONS")
+                    return False
+            except Exception:
+                return False
+            try:
+                dist = self.game.map.get_distance_between_units(bl_root, we_root) if self.game else None
+            except Exception:
+                dist = None
+            if dist is None or dist > 6.0:
+                print("❌ Daemontide: units are not within 6\"")
+                return False
+
+            try:
+                from ..utility.dice import get_roll
+            except Exception:
+                print("❌ Daemontide: dice roll helper unavailable")
+                return False
+            amount = 0
+            try:
+                if bl_root.has_keyword("MOUNTED"):
+                    amount = 1
+                elif bl_root.has_keyword("BEAST"):
+                    amount = int(get_roll("D3") or 0)
+                elif bl_root.has_keyword("INFANTRY"):
+                    amount = int(get_roll("D6") or 0)
+                else:
+                    print("❌ Daemontide: unsupported BLOOD LEGIONS unit type")
+                    return False
+            except Exception as exc:
+                print(f"❌ Daemontide: failed to determine return amount ({exc})")
+                return False
+            amount = max(0, int(amount or 0))
+
+            try:
+                from ..utility.event_bus import append_dice
+                pname = getattr(self.player, "name", "Player")
+                append_dice(pname, f"Daemontide return: {amount}")
+            except Exception:
+                pass
+
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=we_root).get("cost", s.cp_cost))
+            except Exception:
+                eff_cost = s.cp_cost
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+
+            returned = 0
+            skip_character = False
+            try:
+                members = bl_root.get_attached_unit_members()
+                skip_character = bool(len(list(members or [])) > 1)
+            except Exception:
+                skip_character = False
+            try:
+                returned = self._return_destroyed_models_full(
+                    bl_root,
+                    amount=amount,
+                    game_map=getattr(self.game, "map", None),
+                    skip_character=skip_character,
+                )
+            except Exception:
+                returned = 0
+            print(f"🩸 DAEMONTIDE: {getattr(bl_root, 'name', 'Unit')} returns {returned} model(s).")
+
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
             return True
 
         # Khorne Daemonkin: A WORTHY SKULL (gain D3 BTP and optionally activate Blood Tithe)
@@ -3439,6 +6437,356 @@ class StratagemManager:
             print("🩸 BLOOD OFFERING: objective remains under your control until broken.")
             return True
 
+        # Khorne Daemonkin: MURDER-CALL (return unit to Strategic Reserves)
+        if s.name.upper() == "MURDER-CALL":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            if unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "MURDER-CALL":
+                        unit = r.get("unit") or r.get("target_unit")
+                        break
+            if unit is None:
+                print("❌ Murder-Call: no target unit provided")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            try:
+                if root.get_parent_army().player is not self.player:
+                    print("❌ Murder-Call: target unit is not yours")
+                    return False
+            except Exception:
+                pass
+            try:
+                army = root.get_parent_army()
+            except Exception:
+                army = None
+            we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+            if we_mgr is None or not getattr(we_mgr, "is_khorne_daemonkin", lambda: False)():
+                return False
+            try:
+                if not we_mgr.unit_is_blood_legions(root):
+                    print("❌ Murder-Call: target is not BLOOD LEGIONS")
+                    return False
+            except Exception:
+                return False
+            try:
+                if not root.is_alive():
+                    print("❌ Murder-Call: target is not alive")
+                    return False
+            except Exception:
+                pass
+            try:
+                if getattr(root, "is_in_reserves", lambda: False)():
+                    print("❌ Murder-Call: target is already in reserves")
+                    return False
+            except Exception:
+                pass
+
+            game_map = getattr(self.game, "map", None)
+            if game_map is None:
+                print("❌ Murder-Call: no map context")
+                return False
+            try:
+                for enemy in list(game_map.get_enemy_units(root) or []):
+                    if not getattr(enemy, "is_alive", lambda: True)():
+                        continue
+                    if not getattr(enemy, "deployed", True):
+                        continue
+                    if game_map.is_within_engagement_range(root, enemy):
+                        print("❌ Murder-Call: target is within Engagement Range")
+                        return False
+            except Exception:
+                pass
+
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                eff_cost = s.cp_cost
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = [root]
+            for member in members:
+                try:
+                    if hasattr(member, "set_reserve_status"):
+                        member.set_reserve_status("strategic_reserves")
+                    else:
+                        member.reserve_status = "strategic_reserves"
+                except Exception:
+                    pass
+                try:
+                    member.mark_entered_reserves_midgame(game=self.game)
+                except Exception:
+                    pass
+                try:
+                    if bool(getattr(member, "is_aircraft", False)) and not bool(getattr(member, "hover_mode", False)):
+                        member._aircraft_return_turn = int(getattr(self.game, "turn", 0) or 0) + 1
+                except Exception:
+                    pass
+                try:
+                    member.deployed = True
+                    member.reserve_turn_deployed = None
+                    member.arrived_from_reserves_this_turn = False
+                except Exception:
+                    pass
+                try:
+                    if game_map is not None and hasattr(game_map, "units") and member in game_map.units:
+                        game_map.units.remove(member)
+                except Exception:
+                    pass
+
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
+            print(f"🩸 Murder-Call: {getattr(root, 'name', 'Unit')} placed into Strategic Reserves.")
+            return True
+
+        # Khorne Daemonkin: SUMMONED BY SLAUGHTER (set up Bloodletters from Reserves)
+        if s.name.upper() == "SUMMONED BY SLAUGHTER":
+            target_unit = kwargs.get("target_unit") or kwargs.get("unit")
+            destroyed_base = kwargs.get("destroyed_model_base") or kwargs.get("destroyed_base")
+            destroyed_model = kwargs.get("destroyed_model") or kwargs.get("model")
+            destroyed_unit = kwargs.get("destroyed_unit") or kwargs.get("unit_destroyed")
+            candidates = kwargs.get("candidates") or []
+
+            if target_unit is None:
+                if candidates:
+                    target_unit = candidates[0]
+                else:
+                    for r in reversed(self._pending_reactions):
+                        if r.get("stratagem", "").strip().upper() == "SUMMONED BY SLAUGHTER":
+                            target_unit = r.get("target_unit") or r.get("unit")
+                            destroyed_base = destroyed_base or r.get("destroyed_model_base")
+                            destroyed_model = destroyed_model or r.get("destroyed_model")
+                            destroyed_unit = destroyed_unit or r.get("destroyed_unit")
+                            candidates = candidates or (r.get("candidates") or [])
+                            if target_unit is None and candidates:
+                                target_unit = candidates[0]
+                            break
+            if target_unit is None:
+                print("❌ Summoned by Slaughter: no target unit provided")
+                return False
+            try:
+                root = target_unit.get_attached_unit_root()
+            except Exception:
+                root = target_unit
+            try:
+                if root.get_parent_army().player is not self.player:
+                    print("❌ Summoned by Slaughter: target unit is not yours")
+                    return False
+            except Exception:
+                pass
+
+            try:
+                army = root.get_parent_army()
+            except Exception:
+                army = None
+            we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+            if we_mgr is None or not getattr(we_mgr, "is_khorne_daemonkin", lambda: False)():
+                return False
+            if not self._is_bloodletters_unit(root):
+                print("❌ Summoned by Slaughter: target is not BLOODLETTERS")
+                return False
+            try:
+                if not root.is_in_reserves():
+                    print("❌ Summoned by Slaughter: target is not in Reserves")
+                    return False
+            except Exception:
+                return False
+
+            try:
+                br = int(getattr(self.game, "turn", 0) or 0)
+            except Exception:
+                br = 0
+            if br and int(self._used_battle_round.get("SUMMONED BY SLAUGHTER", 0) or 0) == br:
+                print("❌ Summoned by Slaughter: already used this battle round")
+                return False
+
+            # FAQ: units that started the battle in Reserves cannot deploy in battle round 1.
+            try:
+                if br < 2 and bool(getattr(root, "_started_in_reserves", False)):
+                    print("❌ Summoned by Slaughter: unit started in Reserves and cannot arrive in battle round 1")
+                    return False
+            except Exception:
+                pass
+
+            if destroyed_base is None and destroyed_model is not None:
+                try:
+                    destroyed_base = copy.deepcopy(getattr(destroyed_model, "model_base", None))
+                except Exception:
+                    destroyed_base = None
+            if destroyed_base is None and destroyed_unit is not None:
+                try:
+                    destroyed_base = copy.deepcopy(getattr(destroyed_unit, "_last_known_base", None))
+                except Exception:
+                    destroyed_base = None
+            if destroyed_base is None:
+                print("❌ Summoned by Slaughter: missing destroyed model position")
+                return False
+
+            manual = bool(kwargs.get("manual_placement") or kwargs.get("placement_complete"))
+            game_map = getattr(self.game, "map", None)
+
+            if not manual:
+                # AI fallback: place all models at the destroyed model's base position (best-effort).
+                try:
+                    x = float(getattr(destroyed_base, "x", 0.0))
+                    y = float(getattr(destroyed_base, "y", 0.0))
+                    z = float(getattr(destroyed_base, "z", 0.0))
+                except Exception:
+                    x, y, z = 0.0, 0.0, 0.0
+                try:
+                    for m in list(getattr(root, "models", []) or []):
+                        if not getattr(m, "is_alive", True):
+                            continue
+                        m.set_location(x, y, z, float(getattr(m.model_base, "facing", 0.0)))
+                except Exception:
+                    pass
+
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                eff_cost = s.cp_cost
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+
+            # Finalize reserves arrival state.
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = [root]
+            if game_map is not None:
+                try:
+                    if hasattr(game_map, "place_unit") and root not in getattr(game_map, "units", []):
+                        if not game_map.place_unit(root):
+                            print("❌ Summoned by Slaughter: placement failed on map")
+                            return False
+                except Exception:
+                    pass
+            for member in members:
+                finalize = getattr(member, "_finalize_reserves_arrival", None)
+                if callable(finalize):
+                    finalize(int(getattr(self.game, "turn", 0) or 0), game_map)
+                else:
+                    try:
+                        member.deployed = True
+                        member.reserve_status = "deployed"
+                        member.reserve_turn_deployed = int(getattr(self.game, "turn", 0) or 0)
+                        member.arrived_from_reserves_this_turn = True
+                    except Exception:
+                        pass
+
+            try:
+                self._used_battle_round["SUMMONED BY SLAUGHTER"] = int(getattr(self.game, "turn", 0) or 0)
+            except Exception:
+                pass
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
+            print(f"🩸 Summoned by Slaughter: {getattr(root, 'name', 'Unit')} set up from Reserves.")
+            return True
+
+        # Generic defensive reaction stratagems (after targets selected).
+        spec = self._get_defensive_reaction_spec(s)
+        if spec:
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            attacker_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit")
+            candidates = kwargs.get("candidates") or kwargs.get("target_units") or []
+            if unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == (s.name or "").strip().upper():
+                        unit = unit or r.get("unit") or r.get("target_unit")
+                        attacker_unit = attacker_unit or r.get("attacking_unit")
+                        if not candidates:
+                            candidates = r.get("candidates") or r.get("target_units") or []
+                        break
+            if unit is None:
+                print(f"❌ {s.name}: no target unit provided")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                return False
+            if candidates:
+                try:
+                    if root not in list(candidates or []):
+                        print(f"❌ {s.name}: target was not selected by the attacker")
+                        return False
+                except Exception:
+                    pass
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            phase_key = str(phase_name or "").strip().lower()
+            phase_tag = "shooting" if "shooting" in phase_key else "fight" if "fight" in phase_key else None
+            if phase_tag is None or phase_tag not in set(spec.get("phases") or []):
+                print(f"❌ {s.name}: wrong phase")
+                return False
+            if spec.get("duration") == "attacker" and attacker_unit is None:
+                print(f"❌ {s.name}: missing attacker context")
+                return False
+            try:
+                if attacker_unit is not None and attacker_unit.get_parent_army().player is self.player:
+                    print(f"❌ {s.name}: attacker is not enemy")
+                    return False
+            except Exception:
+                pass
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print(f"❌ {s.name}: target cannot be selected")
+                    return False
+            except Exception:
+                return False
+            try:
+                if not self._unit_matches_defensive_target_spec(root, spec):
+                    print(f"❌ {s.name}: target does not match keywords")
+                    return False
+            except Exception:
+                return False
+
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                eff_cost = s.cp_cost
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            if not self._apply_generic_defensive_effect(
+                root,
+                spec,
+                attacker_unit=attacker_unit,
+                phase_name=phase_name or "",
+                source_name=s.name,
+            ):
+                return False
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
+            try:
+                print(f"🛡️ {s.name}: {defensive_reaction_note(spec)}")
+            except Exception:
+                pass
+            return True
+
         # Provide phase_name for timing checks
         if 'phase_name' not in kwargs:
             kwargs['phase_name'] = self._current_phase_name
@@ -3540,11 +6888,12 @@ class StratagemManager:
             if not s.is_phase_allowed(phase_name or ""):
                 continue
             name_u = (s.name or "").strip().upper()
-            if name_u in pending_names and name_u in REACTION_ONLY_STRATAGEM_NAMES:
+            is_reaction_only = name_u in REACTION_ONLY_STRATAGEM_NAMES or self._get_defensive_reaction_spec(s) is not None
+            if name_u in pending_names and is_reaction_only:
                 continue
             ctx = {"phase_name": phase_name}
             availability = self._evaluate_availability(s, ctx, is_active_turn=is_active_turn)
-            if name_u in REACTION_ONLY_STRATAGEM_NAMES:
+            if is_reaction_only:
                 if availability["available"]:
                     availability["available"] = False
                     availability["reason"] = "No trigger"

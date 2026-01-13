@@ -34,11 +34,13 @@ class IndividualModelMovementDialog(BaseDialog):
 
         # Deployment placement facing (radians). Used for hover silhouette + final placement.
         self._deploy_facing_radians: Optional[float] = None
+        # Optional custom placement validator for deploy-like placement.
+        self.placement_validator = None
         
         # UI elements
         self.model_buttons = []
         
-    def show(self, unit, movement_type: str, callback: Callable, game_map, max_distance: float = None, target_unit=None):
+    def show(self, unit, movement_type: str, callback: Callable, game_map, max_distance: float = None, target_unit=None, placement_validator: Optional[Callable] = None):
         """Show the dialog for the given unit and movement type"""
 
         # Check if unit has already moved this round (prevent multiple movements)
@@ -75,6 +77,7 @@ class IndividualModelMovementDialog(BaseDialog):
         self.game_map = game_map
         self.max_distance = max_distance or unit.movement
         self.target_unit = target_unit
+        self.placement_validator = placement_validator
 
         # Reset movement tracking
         self.model_movements = {}
@@ -128,6 +131,8 @@ class IndividualModelMovementDialog(BaseDialog):
             return False  # For now, allow scout moves
         elif movement_type == 'reactive':
             return False
+        elif movement_type == 'deploy':
+            return False
         elif movement_type in ['pile_in', 'consolidate']:
             # These are fight phase movements, different rules
             return False  # For now, allow these
@@ -153,6 +158,7 @@ class IndividualModelMovementDialog(BaseDialog):
         self.selected_model_index = None
         self.awaiting_battlefield_click = False
         self._deploy_facing_radians = None
+        self.placement_validator = None
         # Hide nested dialogs as well
         if hasattr(self, 'floor_selection_dialog') and self.floor_selection_dialog:
             self.floor_selection_dialog.hide()
@@ -740,7 +746,7 @@ class IndividualModelMovementDialog(BaseDialog):
                 player_name = model.parent_unit.get_parent_army().player.name
             except Exception:
                 player_name = ''
-            validation = game.is_valid_single_model_deployment(model, battlefield_x, battlefield_y, battlefield_z, player_name)
+            validation = self._validate_deploy_like_placement(game, model, battlefield_x, battlefield_y, battlefield_z, player_name)
             if not validation['valid']:
                 try:
                     facing_deg = math.degrees(self.get_deploy_facing_radians())
@@ -845,7 +851,7 @@ class IndividualModelMovementDialog(BaseDialog):
         except Exception:
             player_name = ''
 
-        validation = game.is_valid_single_model_deployment(model, x, y, z, player_name)
+        validation = self._validate_deploy_like_placement(game, model, x, y, z, player_name)
         if not validation['valid']:
             try:
                 facing_deg = math.degrees(self.get_deploy_facing_radians())
@@ -904,6 +910,18 @@ class IndividualModelMovementDialog(BaseDialog):
         else:
             self.selected_model_index = None
             self.awaiting_battlefield_click = False
+
+    def _validate_deploy_like_placement(self, game, model, x: float, y: float, z: float, player_name: str) -> dict:
+        """Validate deployment or custom placement for a single model."""
+        if callable(self.placement_validator):
+            try:
+                return self.placement_validator(model, x, y, z)
+            except Exception:
+                return {"valid": False, "reason": "Custom placement validation failed"}
+        try:
+            return game.is_valid_single_model_deployment(model, x, y, z, player_name)
+        except Exception:
+            return {"valid": False, "reason": "Deployment validation failed"}
 
     def _validate_deployment_no_base_overlap(self, model, x: float, y: float, z: float, facing: Optional[float] = None) -> dict:
         """Ensure deployment placement doesn't overlap any model bases.

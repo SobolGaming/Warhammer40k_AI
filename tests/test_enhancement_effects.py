@@ -173,7 +173,40 @@ class TestEnhancementEffects(unittest.TestCase):
         # Damage is 1, reduced by 1 but min 1 => still 1
         self.assertEqual(target_model.wounds, before - 1)
 
+    def test_reroll_advance_charge_enhancement_sets_flags(self):
+        from warhammer40k_ai.classes.enhancement_effects import parse_enhancement_effects, apply_enhancement_effects
+
+        unit = SimpleNamespace(stats={}, special_rules={}, models=[])
+        effects = parse_enhancement_effects(
+            "Ravenwing model only. You can re-roll Advance and Charge rolls made for the bearer's unit."
+        )
+        apply_enhancement_effects(unit, effects)
+
+        self.assertTrue(unit.special_rules.get("enhancement_reroll_advance"))
+        self.assertTrue(unit.special_rules.get("enhancement_charge_reroll"))
+
+    def test_reroll_charge_objective_enhancement_sets_flag(self):
+        from warhammer40k_ai.classes.enhancement_effects import parse_enhancement_effects, apply_enhancement_effects
+
+        unit = SimpleNamespace(stats={}, special_rules={}, models=[])
+        effects = parse_enhancement_effects(
+            "Adeptus Astartes model only. Each time the bearer's unit declares a charge, if one or more targets of that charge are within range of an objective marker, you can re-roll the Charge roll."
+        )
+        apply_enhancement_effects(unit, effects)
+
+        self.assertTrue(unit.special_rules.get("enhancement_charge_reroll_if_target_on_objective"))
+
+    def test_reroll_charge_setup_turn_enhancement_sets_flag(self):
+        from warhammer40k_ai.classes.enhancement_effects import parse_enhancement_effects, apply_enhancement_effects
+
+        unit = SimpleNamespace(stats={}, special_rules={}, models=[])
+        effects = parse_enhancement_effects(
+            "Adeptus Astartes model only. You can re-roll Charge rolls made for the bearer's unit in a turn in which it was set up on the battlefield."
+        )
+        apply_enhancement_effects(unit, effects)
+
+        self.assertTrue(unit.special_rules.get("enhancement_charge_reroll_on_setup_turn"))
+
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -13,12 +13,16 @@ class DamageAllocationDialog(BaseDialog):
         super().__init__(screen_width, screen_height, width=760, height=460, draggable=True, center=True)
         self.unit = None
         self.models: List[Any] = []
+        self.entries: List[Optional[Any]] = []
         self.title_text = "Allocate Damage"
         self.subtitle_text = ""
         self.instruction_text = ""
         self.on_choice: Optional[Callable[[Optional[Any]], None]] = None
         self.scroll_offset = 0
         self.max_scroll = 0
+        self.include_none = False
+        self.none_label = "None"
+        self.show_wargear = False
 
     def show(
         self,
@@ -29,9 +33,19 @@ class DamageAllocationDialog(BaseDialog):
         subtitle: str = "",
         instruction: str = "",
         on_choice: Callable[[Optional[Any]], None],
+        include_none: bool = False,
+        none_label: str = "None",
+        show_wargear: bool = False,
     ) -> None:
         self.unit = unit
         self.models = list(models or [])
+        self.include_none = bool(include_none)
+        self.none_label = none_label or "None"
+        self.show_wargear = bool(show_wargear)
+        if self.include_none:
+            self.entries = [None] + list(self.models)
+        else:
+            self.entries = list(self.models)
         self.title_text = title or "Allocate Damage"
         self.subtitle_text = subtitle or ""
         self.instruction_text = instruction or ""
@@ -44,9 +58,13 @@ class DamageAllocationDialog(BaseDialog):
         super().hide()
         self.unit = None
         self.models = []
+        self.entries = []
         self.on_choice = None
         self.scroll_offset = 0
         self.max_scroll = 0
+        self.include_none = False
+        self.none_label = "None"
+        self.show_wargear = False
 
     def handle_event(self, event: pygame.event.Event) -> bool:
         if not self.visible:
@@ -66,17 +84,18 @@ class DamageAllocationDialog(BaseDialog):
         self.buttons.clear()
         self.button_states.clear()
 
-        row_h = 52
+        row_h = 84 if self.show_wargear else 52
+        btn_h = 74 if self.show_wargear else 48
         start_y = self.title_bar_height + 100
         visible_h = self.height - (start_y + 30)
 
-        for i, _m in enumerate(self.models):
+        for i, _m in enumerate(self.entries):
             rel_y = start_y + i * row_h - self.scroll_offset
             if rel_y + row_h < start_y or rel_y > start_y + visible_h:
                 continue
-            self.add_button(f"m_{i}", 20, rel_y, self.width - 40, 48, enabled=True)
+            self.add_button(f"m_{i}", 20, rel_y, self.width - 40, btn_h, enabled=True)
 
-        total_h = len(self.models) * row_h
+        total_h = len(self.entries) * row_h
         self.max_scroll = max(0, total_h - visible_h)
 
     def _handle_button_click(self, button_name: str) -> bool:
@@ -85,8 +104,8 @@ class DamageAllocationDialog(BaseDialog):
                 idx = int(button_name.split("_", 1)[1])
             except Exception:
                 return False
-            if 0 <= idx < len(self.models):
-                chosen = self.models[idx]
+            if 0 <= idx < len(self.entries):
+                chosen = self.entries[idx]
                 if self.on_choice:
                     self.on_choice(chosen)
                 self.hide()
@@ -113,9 +132,20 @@ class DamageAllocationDialog(BaseDialog):
         hdr = self.font_small.render("Select a model:", True, TEXT_PRIMARY)
         screen.blit(hdr, (self.x + 20, self.y + self.title_bar_height + 60))
 
-        for i, m in enumerate(self.models):
+        for i, m in enumerate(self.entries):
             btn = f"m_{i}"
             if btn not in self.buttons:
+                continue
+            if m is None:
+                label = self.none_label
+                if self.show_wargear:
+                    self.draw_button(screen, btn, "", color=BUTTON_BG)
+                    rect = self.buttons[btn]
+                    label_surface = self.font_small.render(label, True, TEXT_PRIMARY)
+                    screen.blit(label_surface, (rect.x + 12, rect.y + 8))
+                else:
+                    self.draw_button(screen, btn, label, color=BUTTON_BG)
+                pygame.draw.rect(screen, PANEL_BORDER, self.buttons[btn], 1)
                 continue
             label = getattr(m, "name", f"Model {i+1}")
             # Include parent unit for attached units
@@ -133,7 +163,43 @@ class DamageAllocationDialog(BaseDialog):
                     label = f"{label}  [W {w}/{bw}]"
             except Exception:
                 pass
-            self.draw_button(screen, btn, label, color=BUTTON_BG)
+            if self.show_wargear:
+                self.draw_button(screen, btn, "", color=BUTTON_BG)
+                rect = self.buttons[btn]
+                label_surface = self.font_small.render(label, True, TEXT_PRIMARY)
+                screen.blit(label_surface, (rect.x + 12, rect.y + 8))
+                try:
+                    wargear = list(getattr(m, "wargear", []) or [])
+                except Exception:
+                    wargear = []
+                if wargear:
+                    counts = {}
+                    for wg in wargear:
+                        try:
+                            name = str(getattr(wg, "name", "") or "").strip()
+                        except Exception:
+                            name = ""
+                        if not name:
+                            continue
+                        counts[name] = counts.get(name, 0) + 1
+                    parts = []
+                    for name, count in counts.items():
+                        if count > 1:
+                            parts.append(f"{name} x{count}")
+                        else:
+                            parts.append(name)
+                    wargear_text = "Wargear: " + ", ".join(parts) if parts else ""
+                    if wargear_text:
+                        self.draw_text_wrapped(
+                            screen,
+                            wargear_text,
+                            rect.x + 12,
+                            rect.y + 26,
+                            rect.width - 24,
+                            self.font_tiny,
+                            TEXT_SECONDARY,
+                            line_height=14,
+                        )
+            else:
+                self.draw_button(screen, btn, label, color=BUTTON_BG)
             pygame.draw.rect(screen, PANEL_BORDER, self.buttons[btn], 1)
-
-

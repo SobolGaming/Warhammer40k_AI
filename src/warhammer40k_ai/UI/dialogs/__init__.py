@@ -23,10 +23,12 @@ from .blessings_of_khorne_dialog import BlessingsOfKhorneDialog
 from .blood_tithe_dialog import BloodTitheDialog
 from .battlefield_point_pick_dialog import BattlefieldPointPickDialog
 from .hazard_objective_select_dialog import HazardObjectiveSelectDialog
+from .frenzy_choice_dialog import FrenzyChoiceDialog
 from .yes_no_dialog import YesNoDialog
 from .quarry_selection_dialog import QuarrySelectionDialog
 from .pledge_selection_dialog import PledgeSelectionDialog
 from .roll_reroll_dialog import RollRerollDialog
+from .aspect_shrine_prompt_dialog import AspectShrinePromptDialog
 from .miracle_dice_dialog import MiracleDiceDialog
 from .templar_vows_dialog import TemplarVowsDialog
 from .nurgles_gift_plague_dialog import NurglesGiftPlagueDialog
@@ -65,10 +67,12 @@ __all__ = [
     'BloodTitheDialog',
     'BattlefieldPointPickDialog',
     'HazardObjectiveSelectDialog',
+    'FrenzyChoiceDialog',
     'YesNoDialog',
     'QuarrySelectionDialog',
     'PledgeSelectionDialog',
     'RollRerollDialog',
+    'AspectShrinePromptDialog',
     'MiracleDiceDialog',
     'TemplarVowsDialog',
     'NurglesGiftPlagueDialog',

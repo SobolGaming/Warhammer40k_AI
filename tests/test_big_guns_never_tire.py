@@ -96,7 +96,7 @@ def test_vehicle_engaged_shoots_out_of_combat_allowed_and_hit_penalty(monkeypatc
     # Verify the -1 to hit is applied using the snapshot flag.
     wp = WargearProfile.__new__(WargearProfile)
     wp.skill = 3
-    wp.parent_wargear = None
+    wp.parent_wargear = SimpleNamespace(is_ranged=lambda: True, is_melee=lambda: False)
     wp.is_torrent = lambda: False
     wp.is_heavy = lambda: False
     wp.is_pistol = lambda: False
@@ -190,5 +190,4 @@ def test_locked_vehicle_cannot_overwatch_while_engaged_with_non_pistol():
 
     non_pistol = _DummyProfile(pistol=False, blast=False, indirect=True)
     assert not vehicle._can_shoot_while_engaged(vehicle.models[0], non_pistol, other_enemy, game_map)
-
 
