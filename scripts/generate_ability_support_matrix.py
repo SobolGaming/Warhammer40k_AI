@@ -1054,6 +1054,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("TYR", "Unnatural Resilience"): ("Supported", "Feel No Pain 4+ against mortal wounds."),
         ("TS", "Bounding Leaps"): ("Supported", "Shoot after Falling Back."),
         ("TS", "Servile Pawns"): ("Partial", "Lone Operative applied without 3\" Thousand Sons Infantry proximity requirement."),
+        ("WE", "Furious Onslaught"): ("Supported", "Ranged attacks vs closest eligible target within 18\" allow an optional Hit re-roll."),
         ("WE", "Reborn in Blood"): ("Partial", "Revive + reserves placement; next Movement phase-only not enforced."),
         ("WE", "Lord of Murder"): ("Supported", "Conditional Lone Operative within 3\" of friendly WORLD EATERS INFANTRY."),
         ("WE", "Beacons of Rage (Aura)"): ("Supported", "+1 hit (melee) and +1 wound vs Below Half-strength; excludes Monster/Vehicle."),
@@ -1099,6 +1100,7 @@ def _datasheet_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[str, str
     """
     raw: Dict[Tuple[str, str], Tuple[str, str]] = {
         # ("WE", "Angron"): ("Supported", "Full datasheet support verified."),
+        ("WE", "Furious Onslaught"): ("Supported", "Ranged attacks vs closest eligible target within 18\" allow an optional Hit re-roll."),
     }
     out: Dict[Tuple[str, str], Tuple[str, str]] = {}
     for (fid, name), val in raw.items():
