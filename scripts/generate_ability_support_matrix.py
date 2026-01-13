@@ -1175,6 +1175,7 @@ def _classify_ability(
     desc_support = _warlord_enhancement_restriction_support(description)
     if desc_support:
         return desc_support
+    closest_m_veh_support = _closest_monster_vehicle_reroll_support(description)
     unit_contains_oc_support = _unit_contains_oc_support(description)
     aura_oc_support = _aura_objective_control_support(description)
     common_support = _bearer_unit_common_support(description)
@@ -1209,6 +1210,8 @@ def _classify_ability(
         return ABILITY_SUPPORT_BY_NAME_FACTION[(fid, name_norm)]
     if fid == "DRU" and "(pain)" in str(name or "").lower():
         return ("Supported", "Power from Pain ability effects implemented.")
+    if closest_m_veh_support:
+        return closest_m_veh_support
     if unit_contains_oc_support:
         return unit_contains_oc_support
     if aura_oc_support:
@@ -1375,6 +1378,37 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
     if notes:
         return ("Supported", " ".join(notes))
     return None
+
+
+def _closest_monster_vehicle_reroll_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    low = text.lower()
+    if "ranged attack" not in low:
+        return None
+    if "closest eligible" not in low:
+        return None
+    if "monster" not in low or "vehicle" not in low:
+        return None
+    m = re.search(r"within\s+(\d+)\s*(?:\"|inches)", low)
+    if not m:
+        return None
+    allow_wound = bool(re.search(r"re-?roll\s+the\s+wound\s+roll", low))
+    allow_damage = bool(re.search(r"re-?roll\s+the\s+damage\s+roll", low))
+    if not (allow_wound or allow_damage):
+        return None
+    rng = m.group(1)
+    notes = []
+    if allow_wound:
+        notes.append(f"Ranged attacks vs closest eligible MONSTER/VEHICLE within {rng}\" can re-roll the Wound roll (optional).")
+    if allow_damage:
+        notes.append(f"Ranged attacks vs closest eligible MONSTER/VEHICLE within {rng}\" can re-roll the Damage roll (optional).")
+    return ("Supported", " ".join(notes))
 
 
 def _unit_contains_oc_support(description: str) -> Optional[Tuple[str, str]]:

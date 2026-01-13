@@ -8835,7 +8835,16 @@ class Unit:
             
         return True
 
-    def is_target_closest_eligible(self, model, weapon_profile, target_unit, game_map, *, max_distance: Optional[float] = None) -> bool:
+    def is_target_closest_eligible(
+        self,
+        model,
+        weapon_profile,
+        target_unit,
+        game_map,
+        *,
+        max_distance: Optional[float] = None,
+        require_keywords: Optional[set[str]] = None,
+    ) -> bool:
         """Return True if target_unit is the closest eligible target for this model/weapon."""
         if model is None or weapon_profile is None or target_unit is None or game_map is None:
             return False
@@ -8844,6 +8853,26 @@ class Unit:
             target_root = target_unit.get_attached_unit_root()
         except Exception:
             target_root = target_unit
+        required = None
+        if require_keywords:
+            try:
+                required = {str(k or "").strip() for k in require_keywords if str(k or "").strip()}
+            except Exception:
+                required = None
+
+        def _matches_required(unit) -> bool:
+            if not required:
+                return True
+            for kw in required:
+                try:
+                    if unit.has_any_keyword(kw):
+                        return True
+                except Exception:
+                    continue
+            return False
+
+        if not _matches_required(target_root):
+            return False
 
         try:
             if not self._can_model_shoot_weapon_at_target(model, weapon_profile, target_root, game_map):
@@ -8904,6 +8933,8 @@ class Unit:
                 if not self._can_model_shoot_weapon_at_target(model, weapon_profile, root, game_map):
                     continue
             except Exception:
+                continue
+            if not _matches_required(root):
                 continue
             dist = _min_distance_to_unit(root)
             if dist is None:
@@ -12926,6 +12957,60 @@ class Unit:
             self._ability_cache = {}
         self._ability_cache[cache_key] = bool(found)
         return bool(found)
+
+    def get_closest_monster_vehicle_reroll_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "Each time this model makes a ranged attack that targets the closest eligible MONSTER or VEHICLE target within 18\",
+        you can re-roll the Wound roll and you can re-roll the Damage roll."
+        """
+        if model is None:
+            return None
+        cache_key = f"closest_monster_vehicle_reroll_rule:{getattr(model, '_id', id(model))}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        rule = None
+        try:
+            for name, desc in self._iter_model_specific_ability_entries(model):
+                text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
+                if not text:
+                    continue
+                low = text.lower()
+                if "ranged attack" not in low:
+                    continue
+                if "closest eligible" not in low:
+                    continue
+                if "monster" not in low or "vehicle" not in low:
+                    continue
+                if ("re-roll" not in low) and ("reroll" not in low):
+                    continue
+                m = re.search(r"within\s+(\d+)\s*(?:\"|inches)", low)
+                if not m:
+                    continue
+                allow_wound = bool(re.search(r"re-?roll\s+the\s+wound\s+roll", low))
+                allow_damage = bool(re.search(r"re-?roll\s+the\s+damage\s+roll", low))
+                if not (allow_wound or allow_damage):
+                    continue
+                try:
+                    rng = int(m.group(1))
+                except Exception:
+                    continue
+                source = str(name or "Closest eligible MONSTER/VEHICLE").strip() or "Closest eligible MONSTER/VEHICLE"
+                rule = {
+                    "range": rng,
+                    "reroll_wound": bool(allow_wound),
+                    "reroll_damage": bool(allow_damage),
+                    "source": source,
+                }
+                break
+        except Exception:
+            rule = None
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = rule
+        return rule
 
     def get_two_melee_weapons_attacks_bonus(self, model: Optional['Model'] = None) -> int:
         """

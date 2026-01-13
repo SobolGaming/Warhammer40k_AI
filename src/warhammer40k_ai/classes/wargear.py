@@ -876,6 +876,39 @@ class WargearProfile:
                             )
         except Exception:
             furious_onslaught_applies = False
+        closest_monster_vehicle_rule = None
+        try:
+            is_ranged = bool(getattr(getattr(self, "parent_wargear", None), "is_ranged", lambda: False)())
+            if is_ranged:
+                unit = getattr(attacker, "parent_unit", None)
+                if unit is not None and getattr(unit, "get_closest_monster_vehicle_reroll_rule", None):
+                    rule = unit.get_closest_monster_vehicle_reroll_rule(attacker)
+                    if rule:
+                        gm = game_map
+                        if gm is None:
+                            try:
+                                gm = unit.get_parent_army().player.game.map
+                            except Exception:
+                                gm = None
+                        if gm is not None and getattr(unit, "is_target_closest_eligible", None):
+                            max_dist = None
+                            try:
+                                max_dist = int(rule.get("range", 0) or 0)
+                            except Exception:
+                                max_dist = None
+                            closest_monster_vehicle_rule = None
+                            if max_dist:
+                                if unit.is_target_closest_eligible(
+                                    attacker,
+                                    self,
+                                    target,
+                                    gm,
+                                    max_distance=float(max_dist),
+                                    require_keywords={"monster", "vehicle"},
+                                ):
+                                    closest_monster_vehicle_rule = rule
+        except Exception:
+            closest_monster_vehicle_rule = None
 
         # Apply AP modifiers that depend on attacker/target context (e.g., Plunging Fire)
         effective_ap = self.get_effective_ap(attacker, target)
@@ -977,6 +1010,10 @@ class WargearProfile:
                 attack_instance["attacker_unit"] = attacker_unit
             if attacker_key is not None:
                 attack_instance["attacker_key"] = attacker_key
+            if furious_onslaught_applies:
+                attack_instance["furious_onslaught_applies"] = True
+            if closest_monster_vehicle_rule:
+                attack_instance["closest_monster_vehicle_reroll_rule"] = closest_monster_vehicle_rule
 
             if indirect_fire_no_visible:
                 attack_instance["indirect_fire_no_visible"] = True
@@ -1006,6 +1043,10 @@ class WargearProfile:
                             extra_instance["attacker_unit"] = attacker_unit
                         if attacker_key is not None:
                             extra_instance["attacker_key"] = attacker_key
+                        if furious_onslaught_applies:
+                            extra_instance["furious_onslaught_applies"] = True
+                        if closest_monster_vehicle_rule:
+                            extra_instance["closest_monster_vehicle_reroll_rule"] = closest_monster_vehicle_rule
                         hit_instances.append(extra_instance)
                         attack_result.total_hits += 1
 
@@ -2133,7 +2174,7 @@ class WargearProfile:
 
         # World Eaters: Furious Onslaught (Forgefiend) re-roll Hit roll vs closest eligible target within 18" (optional).
         try:
-            if furious_onslaught_applies and "reroll" not in hit_result:
+            if attack_instance.get("furious_onslaught_applies") and "reroll" not in hit_result:
                 try:
                     success = (dice_roll != 1) and (self.skill > 0) and (dice_roll >= final_needed)
                 except Exception:
@@ -3651,6 +3692,75 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Closest eligible MONSTER/VEHICLE target: re-roll Wound roll (optional).
+        try:
+            rule = attack_instance.get("closest_monster_vehicle_reroll_rule")
+            if rule and rule.get("reroll_wound") and "reroll" not in wound_result:
+                needed = 0
+                try:
+                    s_val = strength
+                    t_val = target_toughness
+                    if isinstance(s_val, int) and isinstance(t_val, int):
+                        if s_val >= 2 * t_val:
+                            needed = 2
+                        elif s_val > t_val:
+                            needed = 3
+                        elif s_val == t_val:
+                            needed = 4
+                        elif s_val * 2 <= t_val:
+                            needed = 6
+                        else:
+                            needed = 5
+                except Exception:
+                    needed = 0
+                final_needed = needed
+                try:
+                    final_needed = int(min(max(int(final_needed) - int(dice_modifier), 2), 6))
+                except Exception:
+                    pass
+                try:
+                    success = (dice_roll != 1) and (bool(final_needed) and dice_roll >= int(final_needed))
+                except Exception:
+                    success = False
+                do_reroll = False
+                try:
+                    unit = attacker.parent_unit
+                    game = unit.get_parent_army().player.game
+                    player = unit.get_parent_army().player
+                    is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                    provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                except Exception:
+                    is_human = False
+                    provider = None
+                    player = None
+                reason = str(rule.get("source", "") or "").strip() or "Closest eligible MONSTER/VEHICLE"
+                if is_human and callable(provider):
+                    try:
+                        do_reroll = bool(provider(
+                            player=player,
+                            unit=unit,
+                            roll_type="wound",
+                            value=dice_roll,
+                            dice=None,
+                            needed=final_needed,
+                            success=success,
+                            reason=reason,
+                        ))
+                    except Exception:
+                        do_reroll = False
+                else:
+                    do_reroll = (not success)
+                if do_reroll:
+                    rr = _reroll_wound()
+                    wound_result.setdefault("special_effects", []).append(
+                        f"{reason}: re-roll Wound roll"
+                    )
+                    wound_result["reroll"] = rr
+                    dice_roll = rr
+                    reroll_used = True
+        except Exception:
+            pass
+
         # Emperor's Children: Pledges to the Dark Prince (3+) re-roll Wound rolls of 1.
         try:
             if dice_roll == 1 and "reroll" not in wound_result:
@@ -4834,6 +4944,52 @@ class WargearProfile:
             damage_value = self.damage
             damage_result['damage_dice_rolls'] = []
         damage_result['damage_rolled'] = damage_value
+
+        # Closest eligible MONSTER/VEHICLE target: re-roll Damage roll (optional).
+        try:
+            rule = attack_instance.get("closest_monster_vehicle_reroll_rule")
+            if rule and rule.get("reroll_damage") and isinstance(self.damage, DiceCollection):
+                do_reroll = False
+                try:
+                    unit = attacker.parent_unit
+                    game = unit.get_parent_army().player.game
+                    player = unit.get_parent_army().player
+                    is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                    provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                except Exception:
+                    is_human = False
+                    provider = None
+                    player = None
+                reason = str(rule.get("source", "") or "").strip() or "Closest eligible MONSTER/VEHICLE"
+                if is_human and callable(provider):
+                    try:
+                        do_reroll = bool(provider(
+                            player=player,
+                            unit=unit,
+                            roll_type="damage",
+                            value=damage_value,
+                            dice=damage_result.get("damage_dice_rolls", None),
+                            reason=reason,
+                        ))
+                    except Exception:
+                        do_reroll = False
+                else:
+                    try:
+                        avg = float(self.damage.stat_average())
+                        do_reroll = float(damage_value) < avg
+                    except Exception:
+                        do_reroll = False
+                if do_reroll:
+                    new_val, new_rolls = _reroll_damage()
+                    damage_value = new_val
+                    damage_result['damage_dice_rolls'] = new_rolls
+                    damage_result['damage_rolled'] = new_val
+                    damage_result.setdefault('special_effects', []).append(
+                        f"{reason}: re-roll Damage roll"
+                    )
+                    damage_result['reroll'] = new_val
+        except Exception:
+            pass
 
         # Core Rules: Damage characteristic modifiers are cumulative and follow ordering:
         # replace -> DIV -> MUL -> ADD -> SUB, then round up.
