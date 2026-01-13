@@ -2698,6 +2698,15 @@ class WargearProfile:
             martial_katah_lethal = False
             martial_katah_sustained = False
 
+        leading_lethal = False
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            root = unit.get_attached_unit_root() if unit is not None else None
+            if root is not None and hasattr(root, "leading_unit_weapons_have_lethal_hits"):
+                leading_lethal = bool(root.leading_unit_weapons_have_lethal_hits())
+        except Exception:
+            leading_lethal = False
+
         pact_lethal = False
         pact_sustained = False
         exquisite_lethal = False
@@ -2829,7 +2838,7 @@ class WargearProfile:
                 hit_result['special_effects'].append(f"Critical hit ({crit_threshold}+)")
             attack_instance['crit_hit'] = True
 
-            if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal or martial_katah_lethal or bondsman_lethal or pact_lethal or exquisite_lethal or pain_lethal:
+            if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal or martial_katah_lethal or bondsman_lethal or pact_lethal or exquisite_lethal or pain_lethal or leading_lethal:
                 hit_result['special_effects'].append("Lethal Hits")
                 attack_instance['lethal_hit'] = True
             # For Sustained Hits, do not override an existing Sustained Hits X on the weapon.

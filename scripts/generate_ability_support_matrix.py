@@ -1345,8 +1345,17 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
     if not text:
         return None
     low = text.lower()
-    if "leading a unit" not in low or "model in that unit" not in low:
+    if "leading a unit" not in low:
         return None
+    if "model in that unit" not in low and "models in that unit" not in low:
+        return None
+    lethal_re = re.search(
+        r"weapons equipped by models in that unit have the \[?lethal hits\]? ability",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if lethal_re:
+        return ("Supported", "Leading: unit weapons gain Lethal Hits.")
     hit_re = re.search(r"re-?roll (?:a|any)?\s*hit roll(?:s)? of 1", low, flags=re.IGNORECASE)
     wound_re = re.search(r"re-?roll (?:a|any)?\s*wound roll(?:s)? of 1", low, flags=re.IGNORECASE)
     if not (hit_re and wound_re):

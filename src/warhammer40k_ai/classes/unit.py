@@ -10016,6 +10016,45 @@ class Unit:
                 continue
         return False
 
+    def leading_unit_weapons_have_lethal_hits(self) -> bool:
+        """
+        Leading-only ability: while a leader is attached, weapons in that unit gain [LETHAL HITS].
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "leading_unit_lethal_hits"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return bool(root._ability_cache[cache_key])
+
+        found = False
+        lethal_re = re.compile(
+            r"weapons equipped by models in that unit have the \[?lethal hits\]? ability",
+            re.IGNORECASE,
+        )
+        for ab, _leader in root._iter_attached_leader_leading_abilities():
+            try:
+                desc = ab if isinstance(ab, str) else (getattr(ab, "description", "") or getattr(ab, "name", ""))
+            except Exception:
+                desc = ""
+            text = self._normalize_rules_text(desc or "")
+            if not text:
+                continue
+            text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+            try:
+                rest = self._LEADING_ABILITY_PREFIX_RE.sub("", text, count=1).strip(" ,:;-")
+            except Exception:
+                rest = text
+            if lethal_re.search(rest):
+                found = True
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = bool(found)
+        return bool(found)
+
     def set_martial_katah_choice(self, choice: str) -> None:
         root = self.get_attached_unit_root()
         sr = getattr(root, "special_rules", None)
