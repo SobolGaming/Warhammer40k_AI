@@ -1,5 +1,6 @@
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 
 class _StubUnit:
@@ -406,6 +407,27 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
             self.assertTrue(any("Sensational Performance" in x for x in wound_res.get("modifiers", [])))
         finally:
             wargear_mod.get_roll = old_get_roll
+
+    def test_sensational_performance_action_log(self):
+        from warhammer40k_ai.classes.army import Army
+        from warhammer40k_ai.classes.game import Game, Battlefield, BattlefieldSize
+        from warhammer40k_ai.classes.player import Player, PlayerType
+        from warhammer40k_ai.utility.event_bus import get_recent_actions
+
+        army = Army("Emperor's Children", detachment_type="Court of the Phoenician")
+        army.faction_id = "EC"
+        player = Player("P1_Sensational_Log", PlayerType.AI, army=army)
+        game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
+        game.add_player(player)
+
+        unit = _StubUnit("Attacker", army)
+        unit.round_state.charged_this_round = True
+
+        with patch("random.choice", return_value=True):
+            game._on_fight_unit_selected_emperors_children(unit=unit)
+
+        actions = get_recent_actions(player.name, limit=5)
+        self.assertTrue(any("Sensational Performance" in entry for entry in actions))
 
     def test_master_of_the_pageant_discount_and_usage(self):
         from warhammer40k_ai.classes.army import Army

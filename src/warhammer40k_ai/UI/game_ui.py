@@ -2377,6 +2377,14 @@ class GameView:
                     unit.special_rules = sr
                 except Exception:
                     pass
+            try:
+                from ..utility.event_bus import append_action
+                pname = getattr(player, "name", "")
+                if pname:
+                    action = "activated" if chosen else "skipped"
+                    append_action(pname, f"Sensational Performance: {getattr(unit, 'name', 'Unit')} {action}.")
+            except Exception:
+                pass
             self._emperors_children_sensational_flow_active = False
             self._open_next_emperors_children_sensational_prompt(game_ctx)
 

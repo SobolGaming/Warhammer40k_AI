@@ -1705,6 +1705,7 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000009899005": "Psychic Destroyer: +1 Damage to bearer ranged Psychic weapons.",
         "000010078002": "Icon of War: BLOOD LEGIONS within 6\" gain Blessings of Khorne; with Might of Khorne active, may re-roll Battle-shock tests.",
         "000010078003": "Blood-forged Armour: set bearer Save to 2+; gain 1 Blood Tithe point when bearer is destroyed.",
+        "000010078004": "Disciple of Khorne: Lord on Juggernaut can attach to Bloodcrushers/Flesh Hounds; bearer gains Deep Strike and BLOOD LEGIONS (instead of WORLD EATERS) while leading; attached unit benefits from Blessings of Khorne (FAQ).",
         "000010078005": "Blade of Endless Bloodshed: +1 A/S/D for bearer melee weapons; melee kill auto-grants 1 Blood Tithe point.",
     }
     if enh_id in explicit:

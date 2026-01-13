@@ -1359,6 +1359,14 @@ class Game:
                     root.special_rules = sr
                 except Exception:
                     pass
+            try:
+                from ..utility.event_bus import append_action
+                pname = getattr(player, "name", "") if player is not None else ""
+                if pname:
+                    action = "activated" if use_it else "skipped"
+                    append_action(pname, f"Sensational Performance: {getattr(root, 'name', 'Unit')} {action}.")
+            except Exception:
+                pass
 
     def _on_fight_targets_selected_tracking(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:

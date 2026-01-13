@@ -334,8 +334,36 @@ class UnitDetailPanel(pygame.sprite.Sprite):
                     for line in desc_wrapped:  # Show all lines
                         desc_text = self.font_tiny.render(line, True, TEXT_SECONDARY)
                         surface.blit(desc_text, (x_left + 10, y_pos))
-                        y_pos += 12
-                    y_pos += 5  # Extra spacing after each ability
+                    y_pos += 12
+                y_pos += 5  # Extra spacing after each ability
+
+        # Derived effects (Disciple of Khorne)
+        try:
+            active_leaders = list(root._disciple_of_khorne_active_leaders() or [])
+        except Exception:
+            active_leaders = []
+        if active_leaders:
+            y_pos += 10
+            effects_header = self.font_medium.render("Active Effects:", True, TEXT_PRIMARY)
+            surface.blit(effects_header, (x_left, y_pos))
+            y_pos += 20
+            leader_names = ", ".join(str(getattr(l, "name", "Leader")) for l in active_leaders if l is not None)
+            if leader_names:
+                leader_line = self.font_small.render(f"• Disciple of Khorne ({leader_names})", True, TEXT_ACCENT)
+                surface.blit(leader_line, (x_left + 5, y_pos))
+                y_pos += 18
+            lines = [
+                "Deep Strike (bearer only; while leading).",
+                "Faction keyword: WORLD EATERS → BLOOD LEGIONS (bearer only; while leading).",
+                "Blessings of Khorne applies to the Attached unit (FAQ).",
+            ]
+            for line in lines:
+                wrapped = self.wrap_text(line, self.font_tiny, self.width - 40)
+                for part in wrapped:
+                    text = self.font_tiny.render(part, True, TEXT_SECONDARY)
+                    surface.blit(text, (x_left + 10, y_pos))
+                    y_pos += 12
+            y_pos += 5
         
         # Enhancement
         if root.enhancement:

@@ -3831,13 +3831,24 @@ class Unit:
         seen: set[str] = set()
         for u in members:
             try:
+                disciple_active = False
+                try:
+                    if u._disciple_of_khorne_active(bodyguard=root):
+                        disciple_active = True
+                except Exception:
+                    disciple_active = False
                 for k in (getattr(u, "faction_keywords", []) or []):
                     ks = str(k)
                     lk = ks.lower()
+                    if disciple_active and lk == "world eaters":
+                        continue
                     if lk in seen:
                         continue
                     seen.add(lk)
                     kws.append(ks)
+                if disciple_active and "blood legions" not in seen:
+                    seen.add("blood legions")
+                    kws.append("Blood Legions")
             except Exception:
                 continue
         return kws
@@ -4000,6 +4011,12 @@ class Unit:
         try:
             if bodyguard.is_leader:
                 return False
+        except Exception:
+            pass
+        # Disciple of Khorne: Lord on Juggernaut can attach to Bloodcrushers/Flesh Hounds.
+        try:
+            if self._disciple_of_khorne_can_attach_to(bodyguard):
+                return True
         except Exception:
             pass
         # Bodyguard datasheet id must be in leader's allowed attached_to list (IDs)
@@ -10618,6 +10635,112 @@ class Unit:
         self._ability_cache[cache_key] = bool(found)
         return bool(found)
 
+    def has_disciple_of_khorne(self) -> bool:
+        """True if this unit has the Disciple of Khorne enhancement."""
+        cache_key = "disciple_of_khorne"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache[cache_key])
+        found = False
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("enhancement_disciple_of_khorne"):
+                found = True
+        except Exception:
+            found = False
+        if not found:
+            try:
+                enh = getattr(self, "enhancement", None)
+                name = str(getattr(enh, "name", "") or "").strip().lower()
+                enh_id = str(getattr(enh, "id", "") or "").strip()
+                if name == "disciple of khorne" or enh_id == "000010078004":
+                    found = True
+            except Exception:
+                found = False
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = bool(found)
+        return bool(found)
+
+    def _is_lord_on_juggernaut(self) -> bool:
+        try:
+            dsid = str(getattr(getattr(self, "_datasheet", None), "id", "") or "").strip()
+        except Exception:
+            dsid = ""
+        if dsid == "000002625":
+            return True
+        try:
+            name = self._normalize_attached_unit_name(getattr(self, "name", ""))
+        except Exception:
+            name = ""
+        return name == "lord on juggernaut"
+
+    def _disciple_of_khorne_bodyguard_allowed(self, bodyguard) -> bool:
+        if bodyguard is None:
+            return False
+        try:
+            dsid = str(getattr(getattr(bodyguard, "_datasheet", None), "id", "") or "").strip()
+        except Exception:
+            dsid = ""
+        if dsid in {"000004107", "000004108"}:
+            return True
+        try:
+            name = self._normalize_attached_unit_name(getattr(bodyguard, "name", ""))
+        except Exception:
+            name = ""
+        return name in {"bloodcrushers", "flesh hounds"}
+
+    def _disciple_of_khorne_is_bearer(self) -> bool:
+        if not self.has_disciple_of_khorne():
+            return False
+        if not self.is_leader:
+            return False
+        if not self._is_lord_on_juggernaut():
+            return False
+        try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+        if mgr is None:
+            return False
+        try:
+            if not mgr.is_khorne_daemonkin():
+                return False
+        except Exception:
+            return False
+        return True
+
+    def _disciple_of_khorne_active(self, bodyguard=None) -> bool:
+        if not self._disciple_of_khorne_is_bearer():
+            return False
+        if bodyguard is None:
+            bodyguard = getattr(self, "attached_to", None)
+        if bodyguard is None:
+            return False
+        return self._disciple_of_khorne_bodyguard_allowed(bodyguard)
+
+    def _disciple_of_khorne_can_attach_to(self, bodyguard) -> bool:
+        if bodyguard is None:
+            return False
+        if not self._disciple_of_khorne_is_bearer():
+            return False
+        return self._disciple_of_khorne_bodyguard_allowed(bodyguard)
+
+    def _disciple_of_khorne_active_leaders(self) -> list["Unit"]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        leaders = list(getattr(root, "attached_leaders", []) or [])
+        active: list["Unit"] = []
+        for leader in leaders:
+            try:
+                if leader._disciple_of_khorne_active(bodyguard=root):
+                    active.append(leader)
+            except Exception:
+                continue
+        return active
+
     def _unit_on_battlefield_for_icon_of_war(self, unit) -> bool:
         if unit is None:
             return False
@@ -11861,16 +11984,38 @@ class Unit:
         # Use cached result if available
         if 'deep_strike' in getattr(self, '_ability_cache', {}):
             return self._ability_cache['deep_strike']
-        
+
         found = False
-        if (
-            self._first_prince_of_chaos_active()
-            and self._is_chaos_undivided()
-            and self.has_any_keyword("HERETIC ASTARTES")
-        ):
-            found = True
-        else:
-            found, _ = self._find_ability_with_patterns(["deep strike", "deepstrike"])
+        try:
+            if self._disciple_of_khorne_active():
+                found = True
+        except Exception:
+            found = False
+        if not found:
+            if (
+                self._first_prince_of_chaos_active()
+                and self._is_chaos_undivided()
+                and self.has_any_keyword("HERETIC ASTARTES")
+            ):
+                found = True
+            else:
+                found, _ = self._find_ability_with_patterns(["deep strike", "deepstrike"])
+
+        # Attached units can only Deep Strike if every model has Deep Strike.
+        try:
+            if found and (not bool(getattr(self, "is_leader", False)) or getattr(self, "attached_to", None) is None):
+                root = self.get_attached_unit_root()
+                leaders = list(getattr(root, "attached_leaders", []) or [])
+                for leader in leaders:
+                    try:
+                        if not leader.has_deep_strike():
+                            found = False
+                            break
+                    except Exception:
+                        found = False
+                        break
+        except Exception:
+            pass
         
         # Cache the result
         if not hasattr(self, '_ability_cache'):
