@@ -1181,6 +1181,7 @@ def _classify_ability(
     unit_hit_reroll_support = _unit_hit_reroll_ones_support(description)
     target_hit_penalty_support = _target_hit_roll_penalty_support(description)
     melee_damage_support = _melee_damage_bonus_support(description)
+    two_melee_weapons_support = _two_melee_weapons_bonus_support(description)
     transport_support = _transport_disembark_support(description)
     sticky_support = _sticky_objective_support(description)
     orders_support = _orders_section_support(name, description)
@@ -1216,6 +1217,8 @@ def _classify_ability(
         return target_hit_penalty_support
     if melee_damage_support:
         return melee_damage_support
+    if two_melee_weapons_support:
+        return two_melee_weapons_support
     if transport_support:
         return transport_support
     if sticky_support:
@@ -1676,6 +1679,29 @@ def _sticky_objective_support(description: str) -> Optional[Tuple[str, str]]:
     if not (legacy_sticky or loc_sticky):
         return None
     return ("Supported", "End of Command phase: objective becomes sticky while you controlled it.")
+
+
+def _two_melee_weapons_bonus_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    low = text.lower()
+    if "two melee weapons" not in low or "close combat weapon" not in low:
+        return None
+    m = re.search(
+        r"add\s+(\d+)\s+to\s+the\s+attacks\s+characteristic\s+of\s+those\s+(?:two\s+)?weapons",
+        low,
+    )
+    if not m:
+        return None
+    return (
+        "Supported",
+        f"If equipped with two melee weapons plus a close combat weapon, those two weapons gain +{m.group(1)} Attacks.",
+    )
 
 
 def _orders_section_support(name: str, description: str) -> Optional[Tuple[str, str]]:

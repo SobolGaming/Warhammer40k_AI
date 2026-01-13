@@ -12537,6 +12537,79 @@ class Unit:
         self._ability_cache[cache_key] = bool(found)
         return bool(found)
 
+    def get_two_melee_weapons_attacks_bonus(self, model: Optional['Model'] = None) -> int:
+        """
+        Return the Attacks bonus for abilities like:
+        "If this model is equipped with two melee weapons in addition to its close combat weapon,
+        add 2 to the Attacks characteristic of those two weapons."
+        """
+        if model is None:
+            return 0
+        cache_key = f"two_melee_weapons_attacks_bonus:{getattr(model, '_id', id(model))}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            try:
+                return int(self._ability_cache[cache_key] or 0)
+            except Exception:
+                return 0
+
+        bonus = 0
+        try:
+            import re
+
+            for name, desc in self._iter_model_specific_ability_entries(model):
+                text = self._normalize_rules_text(f"{name} {desc}")
+                if not text:
+                    continue
+                low = text.lower().replace("\u2019", "'")
+                if "two melee weapons" not in low:
+                    continue
+                if "close combat weapon" not in low:
+                    continue
+                m = re.search(
+                    r"add\s+(\d+)\s+to\s+the\s+attacks\s+characteristic\s+of\s+those\s+(?:two\s+)?weapons",
+                    low,
+                )
+                if not m:
+                    continue
+                bonus = int(m.group(1))
+                break
+        except Exception:
+            bonus = 0
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = int(bonus)
+        return int(bonus)
+
+    def get_two_melee_weapons_bonus(self, model: Optional['Model'] = None):
+        """
+        Return (bonus, eligible_wargear) for the two-melee-weapons clause.
+        Bonus applies only if the model has a close combat weapon and exactly two other melee weapons.
+        """
+        if model is None:
+            return 0, []
+        bonus = int(self.get_two_melee_weapons_attacks_bonus(model) or 0)
+        if bonus <= 0:
+            return 0, []
+
+        ccw_present = False
+        eligible = []
+        for wg in list(getattr(model, "wargear", []) or []):
+            try:
+                if not wg or not wg.is_melee():
+                    continue
+            except Exception:
+                continue
+            name_norm = self._norm_wargear_name(getattr(wg, "name", "") or "")
+            if "close combat weapon" in name_norm:
+                ccw_present = True
+                continue
+            eligible.append(wg)
+
+        if not ccw_present or len(eligible) != 2:
+            return 0, []
+        return bonus, eligible
+
     def can_reroll_blood_surge_roll(self) -> bool:
         """Check for a leader-provided reroll to the Blood Surge D6 (e.g., Forwards, for Blood!)."""
         for t in self._iter_attached_leader_ability_texts():

@@ -822,6 +822,18 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Two melee weapons (plus close combat weapon): add Attacks to those two weapons.
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                unit = getattr(attacker, "parent_unit", None)
+                if unit is not None and getattr(unit, "get_two_melee_weapons_bonus", None):
+                    bonus, bonus_wargear = unit.get_two_melee_weapons_bonus(attacker)
+                    if bonus and bonus_wargear and self.parent_wargear in bonus_wargear:
+                        atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="ability:two_melee_weapons_attacks_add"))
+                        attack_result.attacks_special_modifiers.append(f"Two melee weapons +{bonus}A")
+        except Exception:
+            pass
+
         # Damaged profile: add attacks to a specific named weapon (+N).
         try:
             wname = str(getattr(attacker.parent_unit, "special_rules", {}).get("damaged_attacks_bonus_weapon_name", "") or "").strip().lower()
