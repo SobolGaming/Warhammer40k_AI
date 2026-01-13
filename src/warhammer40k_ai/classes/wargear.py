@@ -1559,6 +1559,21 @@ class WargearProfile:
                 hit_result['modifiers'].append("-1 from Lightning-Fast Reactions")
         except Exception:
             pass
+        # Generic defensive penalty: -1 to hit when targeting this unit/model.
+        try:
+            if hasattr(target, "get_target_hit_roll_penalty"):
+                is_melee = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_melee())
+                attack_type = "melee" if is_melee else "ranged"
+                penalty, reasons = target.get_target_hit_roll_penalty(
+                    attack_type,
+                    target_model=attack_instance.get("target_model"),
+                )
+                if penalty:
+                    dice_modifier -= int(penalty)
+                    if reasons:
+                        hit_result['modifiers'].extend(list(reasons))
+        except Exception:
+            pass
         # First Prince of Chaos (Shadow Legion Tzeentch): -1 to hit when targeting this unit.
         try:
             if hasattr(target, "has_first_prince_tzeentch_defense") and target.has_first_prince_tzeentch_defense():

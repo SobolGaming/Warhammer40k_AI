@@ -1172,6 +1172,7 @@ def _classify_ability(
     leading_support = _leading_unit_common_support(description)
     bearer_invuln_support = _bearer_invulnerable_save_support(description)
     unit_hit_reroll_support = _unit_hit_reroll_ones_support(description)
+    target_hit_penalty_support = _target_hit_roll_penalty_support(description)
     melee_damage_support = _melee_damage_bonus_support(description)
     transport_support = _transport_disembark_support(description)
     sticky_support = _sticky_objective_support(description)
@@ -1203,6 +1204,8 @@ def _classify_ability(
         return bearer_invuln_support
     if unit_hit_reroll_support:
         return unit_hit_reroll_support
+    if target_hit_penalty_support:
+        return target_hit_penalty_support
     if melee_damage_support:
         return melee_damage_support
     if transport_support:
@@ -1461,6 +1464,68 @@ def _unit_hit_reroll_ones_support(description: str) -> Optional[Tuple[str, str]]
         return ("Partial", " ".join(notes))
 
     return ("Supported", " ".join(notes))
+
+
+def _target_hit_roll_penalty_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    text = re.sub(r";\s*", ". ", text)
+    sentences = [part.strip() for part in re.split(r"\.\s*", text) if part.strip()]
+    if not sentences:
+        return None
+
+    unit_re = re.compile(
+        r"^each time (?:a|an) (?:(?P<atype>melee|ranged) )?attack targets this unit, subtract 1 from the hit roll(?P<tail>.*)$",
+        re.IGNORECASE,
+    )
+    model_re = re.compile(
+        r"^each time (?:a|an) (?:(?P<atype>melee|ranged) )?attack targets this model, subtract 1 from the hit roll(?P<tail>.*)$",
+        re.IGNORECASE,
+    )
+
+    matched: List[str] = []
+    notes: List[str] = []
+    partial = False
+
+    def _note(scope: str, atype: Optional[str]) -> None:
+        if atype == "melee":
+            scope_text = "melee"
+        elif atype == "ranged":
+            scope_text = "ranged"
+        else:
+            scope_text = "all"
+        notes.append(f"{scope} targeted: -1 to hit vs {scope_text} attacks.")
+
+    for sentence in sentences:
+        sl = sentence.lower()
+        if not sl.startswith("each time"):
+            continue
+        if any(x in f" {sl} " for x in (" if ", " unless ", " while ", " when ")):
+            continue
+        for scope, pattern in (("Unit", unit_re), ("Model", model_re)):
+            m = pattern.match(sl)
+            if not m:
+                continue
+            matched.append(sentence)
+            _note(scope, (m.group("atype") or "").lower() or None)
+            tail = (m.group("tail") or "").strip().strip(" .;")
+            if tail:
+                partial = True
+            break
+
+    if not matched:
+        return None
+
+    if any(s for s in sentences if s not in matched):
+        partial = True
+
+    status = "Partial" if partial else "Supported"
+    return (status, " ".join(notes) if notes else "-1 to hit when targeted.")
 
 
 def _melee_damage_bonus_support(description: str) -> Optional[Tuple[str, str]]:

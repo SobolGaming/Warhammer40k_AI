@@ -628,6 +628,14 @@ class Unit:
         r"^the bearer has a (\d)\+ invulnerable save\.?$",
         re.IGNORECASE,
     )
+    _TARGET_HIT_ROLL_PENALTY_UNIT_RE = re.compile(
+        r"^each time (?:a|an) (?:(?P<atype>melee|ranged) )?attack targets this unit, subtract 1 from the hit roll",
+        re.IGNORECASE,
+    )
+    _TARGET_HIT_ROLL_PENALTY_MODEL_RE = re.compile(
+        r"^each time (?:a|an) (?:(?P<atype>melee|ranged) )?attack targets this model, subtract 1 from the hit roll",
+        re.IGNORECASE,
+    )
     _SPAWN_ONLY_ABILITY_RE = re.compile(r"^using\s+sir\s+hekhtur$", re.IGNORECASE)
 
     def _parse_warlord_enhancement_restrictions(self) -> None:
@@ -11825,6 +11833,93 @@ class Unit:
             self._ability_cache = {}
         self._ability_cache[cache_key] = (allowed, reason)
         return allowed, reason
+
+    def get_target_hit_roll_penalty(
+        self,
+        attack_type: str,
+        target_model: Optional['Model'] = None,
+    ) -> tuple[int, tuple[str, ...]]:
+        """
+        Return total penalties to Hit rolls for attacks that target this unit/model.
+
+        Supports strict patterns:
+        - Each time an attack targets this unit/model, subtract 1 from the Hit roll.
+        - Each time a melee/ranged attack targets this unit/model, subtract 1 from the Hit roll.
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        atype = str(attack_type or "").strip().lower()
+        if atype not in ("melee", "ranged"):
+            atype = "any"
+
+        model_key = getattr(target_model, "_id", None) if target_model is not None else "unit"
+        cache_key = f"target_hit_penalty:{atype}:{model_key}"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        penalty = 0
+        reasons: list[str] = []
+        seen: set[str] = set()
+
+        def _iter_sentences(text: str) -> list[str]:
+            if not text:
+                return []
+            text = re.sub(r";\s*", ". ", text)
+            return [part.strip() for part in re.split(r"\.\s*", text) if part.strip()]
+
+        def _match_entries(entries, pattern: re.Pattern, scope_key: str) -> None:
+            nonlocal penalty
+            for name, desc in entries:
+                text = root._normalize_rules_text(desc or name or "")
+                if not text:
+                    continue
+                for sentence in _iter_sentences(text):
+                    sl = sentence.lower()
+                    if not sl.startswith("each time"):
+                        continue
+                    if any(x in f" {sl} " for x in (" if ", " unless ", " while ", " when ")):
+                        continue
+                    m = pattern.match(sl)
+                    if not m:
+                        continue
+                    clause_type = (m.group("atype") or "").lower()
+                    if clause_type and atype != "any" and clause_type != atype:
+                        continue
+                    reason_name = str(name or "Ability").strip() or "Ability"
+                    key = f"{scope_key}:{reason_name.lower()}"
+                    if key in seen:
+                        break
+                    seen.add(key)
+                    penalty += 1
+                    reasons.append(f"-1 to hit from {reason_name}")
+                    break
+
+        unit_entries = []
+        for ab in root._iter_active_possible_abilities():
+            if isinstance(ab, str):
+                unit_entries.append((ab, ab))
+            else:
+                unit_entries.append((getattr(ab, "name", "") or "", getattr(ab, "description", "") or ""))
+        _match_entries(unit_entries, root._TARGET_HIT_ROLL_PENALTY_UNIT_RE, "unit")
+
+        model = target_model
+        if model is None:
+            try:
+                models = list(getattr(root, "models", []) or [])
+            except Exception:
+                models = []
+            if len(models) == 1:
+                model = models[0]
+        if model is not None:
+            model_entries = list(root._iter_model_specific_ability_entries(model))
+            _match_entries(model_entries, root._TARGET_HIT_ROLL_PENALTY_MODEL_RE, "model")
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = (int(penalty), tuple(reasons))
+        return int(penalty), tuple(reasons)
 
     def _parse_cp_on_kill_specs_from_text(self, ability_name: str, ability_desc: str) -> List[dict]:
         """Parse partial support for 'gain CP when destroying enemy keyword unit/model' abilities.
