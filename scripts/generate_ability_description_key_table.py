@@ -49,6 +49,17 @@ def _summarize_status(statuses: Iterable[str]) -> str:
     return "P"
 
 
+def _parse_filter_tokens(value: str | None) -> List[str]:
+    if not value:
+        return []
+    tokens: List[str] = []
+    for part in (value or "").split("|"):
+        norm = _normalize_description(part.strip())
+        if norm:
+            tokens.append(norm)
+    return tokens
+
+
 def _load_data() -> dict:
     abilities = gsm._read_json(os.path.join(gsm.WAHA_DIR, "Abilities.json"))
     det_abilities_rows = gsm._read_json(os.path.join(gsm.WAHA_DIR, "Detachment_abilities.json"))
@@ -287,6 +298,16 @@ def main() -> int:
         default=default_out,
         help=f"Output path (default: {default_out})",
     )
+    parser.add_argument(
+        "--must-have",
+        default="",
+        help="Filter: description must contain all of these tokens (use | to separate tokens).",
+    )
+    parser.add_argument(
+        "--must-not-have",
+        default="",
+        help="Filter: description must not contain any of these tokens (use | to separate tokens).",
+    )
     args = parser.parse_args()
 
     gsm._seed_ability_support_maps(
@@ -295,10 +316,17 @@ def main() -> int:
     )
     data = _load_data()
 
+    must_have_tokens = _parse_filter_tokens(args.must_have)
+    must_not_tokens = _parse_filter_tokens(args.must_not_have)
+
     counts: Dict[str, int] = defaultdict(int)
     statuses_by_key: Dict[str, List[str]] = defaultdict(list)
     for desc, status in _iter_faction_ability_entries(data):
         key = _normalize_description(desc)
+        if must_have_tokens and not all(tok in key for tok in must_have_tokens):
+            continue
+        if must_not_tokens and any(tok in key for tok in must_not_tokens):
+            continue
         counts[key] += 1
         statuses_by_key[key].append(status)
 

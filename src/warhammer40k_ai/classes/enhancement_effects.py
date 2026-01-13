@@ -50,6 +50,7 @@ def parse_enhancement_effects(description: str) -> List[EnhancementEffectSpec]:
     """
     rules = _strip_eligibility_prefix(description)
     r = _normalize(rules)
+    low = r.lower()
     out: List[EnhancementEffectSpec] = []
 
     # Add X" to Move characteristic.
@@ -146,6 +147,75 @@ def parse_enhancement_effects(description: str) -> List[EnhancementEffectSpec]:
                 )
             )
 
+    charge_conditional = False
+    # Re-roll Charge rolls if target is within objective range.
+    if re.search(
+        r"bearer'?s\s+unit\s+declares\s+a\s+charge.*?objective\s+marker.*?re-?roll\s+the\s+charge\s+roll",
+        r,
+        flags=re.IGNORECASE,
+    ):
+        out.append(
+            EnhancementEffectSpec(
+                kind="reroll_charge_objective_target",
+                value=1,
+                notes="Re-roll Charge rolls if the charge target is within objective range.",
+            )
+        )
+        charge_conditional = True
+
+    # Re-roll Charge rolls on turns the unit is set up on the battlefield.
+    if re.search(
+        r"re-?roll\s+charge\s+rolls?\s+made\s+for\s+(?:the\s+bearer'?s\s+unit|that\s+unit).*?\bset\s+up\s+on\s+the\s+battlefield\b",
+        r,
+        flags=re.IGNORECASE,
+    ):
+        out.append(
+            EnhancementEffectSpec(
+                kind="reroll_charge_setup_turn",
+                value=1,
+                notes="Re-roll Charge rolls for the bearer's unit on setup turns.",
+            )
+        )
+        charge_conditional = True
+
+    # Re-roll Advance and Charge rolls.
+    m = re.search(
+        r"re-?roll\s+advance\s+and\s+charge\s+rolls?\s+made\s+for\s+(?:this\s+model|the\s+bearer'?s\s+unit|that\s+unit)",
+        r,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        note = "Re-roll Advance and Charge rolls."
+        if "bearer" in low:
+            note = "Re-roll Advance and Charge rolls for the bearer's unit."
+        out.append(
+            EnhancementEffectSpec(
+                kind="reroll_advance_charge",
+                value=1,
+                notes=note,
+            )
+        )
+
+    # Re-roll Charge rolls.
+    m = None
+    if not charge_conditional:
+        m = re.search(
+        r"re-?roll\s+charge\s+rolls?\s+made\s+for\s+(?:this\s+model|the\s+bearer'?s\s+unit|that\s+unit)",
+        r,
+        flags=re.IGNORECASE,
+        )
+    if m:
+        note = "Re-roll Charge rolls."
+        if "bearer" in low:
+            note = "Re-roll Charge rolls for the bearer's unit."
+        out.append(
+            EnhancementEffectSpec(
+                kind="reroll_charge",
+                value=1,
+                notes=note,
+            )
+        )
+
     return out
 
 
@@ -201,6 +271,27 @@ def apply_enhancement_effects(unit, effects: List[EnhancementEffectSpec]) -> Non
 
         if eff.kind == "reduce_damage_taken" and eff.supported:
             unit.special_rules["enhancement_reduce_damage_taken"] = int(unit.special_rules.get("enhancement_reduce_damage_taken", 0)) + eff.value
+            continue
+
+        if eff.kind == "reroll_advance" and eff.supported:
+            unit.special_rules["enhancement_reroll_advance"] = True
+            continue
+
+        if eff.kind == "reroll_charge" and eff.supported:
+            unit.special_rules["enhancement_charge_reroll"] = True
+            continue
+
+        if eff.kind == "reroll_advance_charge" and eff.supported:
+            unit.special_rules["enhancement_reroll_advance"] = True
+            unit.special_rules["enhancement_charge_reroll"] = True
+            continue
+
+        if eff.kind == "reroll_charge_setup_turn" and eff.supported:
+            unit.special_rules["enhancement_charge_reroll_on_setup_turn"] = True
+            continue
+
+        if eff.kind == "reroll_charge_objective_target" and eff.supported:
+            unit.special_rules["enhancement_charge_reroll_if_target_on_objective"] = True
             continue
 
 

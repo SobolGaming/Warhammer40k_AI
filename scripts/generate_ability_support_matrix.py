@@ -1272,7 +1272,36 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
     if m:
         notes.append(f"Charge rolls for bearer's unit get +{m.group(1)}.")
 
-    if re.search(r"re-?roll\s+charge\s+rolls?", low, flags=re.IGNORECASE):
+    advance_charge_re = re.search(r"re-?roll\s+advance\s+and\s+charge\s+rolls?", low, flags=re.IGNORECASE)
+    if advance_charge_re:
+        if "bearer's unit" in low or "that unit" in low:
+            notes.append("Re-roll Advance and Charge rolls for bearer's unit.")
+        elif leading_prefix:
+            notes.append("Leading: re-roll Advance and Charge rolls for the unit.")
+        else:
+            notes.append("Re-roll Advance and Charge rolls.")
+
+    charge_objective_re = re.search(
+        r"bearer'?s\s+unit\s+declares\s+a\s+charge.*?objective\s+marker.*?re-?roll\s+the\s+charge\s+roll",
+        low,
+        flags=re.IGNORECASE,
+    )
+    charge_setup_re = re.search(
+        r"re-?roll\s+charge\s+rolls?.*?\bset\s+up\s+on\s+the\s+battlefield\b",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if charge_objective_re:
+        if leading_prefix:
+            notes.append("Leading: charge reroll if target is within objective range.")
+        else:
+            notes.append("Charge reroll if target is within objective range.")
+    elif charge_setup_re:
+        if leading_prefix:
+            notes.append("Leading: charge reroll on setup turns.")
+        else:
+            notes.append("Charge reroll on setup turns.")
+    elif not advance_charge_re and re.search(r"re-?roll\s+charge\s+rolls?", low, flags=re.IGNORECASE):
         if re.search(r"bearer'?s\s+unit", low, flags=re.IGNORECASE):
             notes.append("Re-roll Charge rolls for bearer's unit.")
         elif leading_prefix:

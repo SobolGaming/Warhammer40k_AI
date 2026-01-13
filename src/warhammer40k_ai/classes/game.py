@@ -6941,7 +6941,7 @@ class Game:
         reroll_used = False
         can_rule_reroll = False
         try:
-            can_rule_reroll = bool(charging_unit.can_reroll_charge_roll())
+            can_rule_reroll = bool(charging_unit.can_reroll_charge_roll(target_unit=target_unit, game_map=self.map, game=self))
         except Exception:
             can_rule_reroll = False
         try:

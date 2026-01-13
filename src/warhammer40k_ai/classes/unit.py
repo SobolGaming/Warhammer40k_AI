@@ -658,6 +658,22 @@ class Unit:
         r"(?:at\s+the\s+)?start\s+of\s+(?:each\s+of\s+)?your\s+command\s+phase[s]?\b.*?\bgain\s+(\d+)\s*(?:cp|command point(?:s)?)",
         re.IGNORECASE,
     )
+    _REROLL_ADVANCE_CHARGE_RE = re.compile(
+        r"re-?roll\s+advance\s+and\s+charge\s+rolls?\s+made\s+for\s+(?:this\s+model|the\s+bearer'?s\s+unit|that\s+unit)",
+        re.IGNORECASE,
+    )
+    _REROLL_CHARGE_BEARER_UNIT_RE = re.compile(
+        r"re-?roll\s+charge\s+rolls?\s+made\s+for\s+(?:this\s+model|the\s+bearer'?s\s+unit|that\s+unit)",
+        re.IGNORECASE,
+    )
+    _REROLL_CHARGE_SETUP_TURN_RE = re.compile(
+        r"re-?roll\s+charge\s+rolls?\s+made\s+for\s+(?:the\s+bearer'?s\s+unit|that\s+unit).*?\bset\s+up\s+on\s+the\s+battlefield\b",
+        re.IGNORECASE,
+    )
+    _REROLL_CHARGE_OBJECTIVE_RE = re.compile(
+        r"bearer'?s\s+unit\s+declares\s+a\s+charge.*?targets?\s+of\s+that\s+charge.*?within\s+range\s+of\s+an?\s+objective\s+marker.*?re-?roll\s+the\s+charge\s+roll",
+        re.IGNORECASE,
+    )
     _TARGETED_STRATAGEM_CP_DISCOUNT_RE = re.compile(
         r"once\s+per\s+battle\s+round.*?\bone\s+(?:unit|model)\s+from\s+your\s+army\s+with\s+this\s+ability\s+can\s+use\s+it\s+when\s+"
         r"(?:its\s+unit|this\s+model'?s\s+unit|that\s+model'?s\s+unit)\s+is\s+targeted\s+with\s+a\s+stratagem.*?"
@@ -5216,6 +5232,32 @@ class Unit:
             for t in iter_leader():
                 yield t
 
+    def _iter_attached_unit_reroll_texts(self):
+        """Yield normalized ability texts for attached unit reroll rules (includes leaders)."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        seen = set()
+        for u in members:
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text = u._normalize_rules_text(desc or name or "")
+                if not text:
+                    continue
+                text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+                text = Unit._strip_eligibility_prefix(text)
+                if "leading a unit" in text.lower() and "bearer's unit" not in text.lower():
+                    text = re.sub(r"\bthat unit\b", "the bearer's unit", text, flags=re.IGNORECASE)
+                key = text.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                yield text
+
     def get_leading_attack_roll_modifiers(self, attack_type: str) -> dict:
         """
         Return leading-only attack roll modifiers from attached leaders for the attached unit.
@@ -5564,6 +5606,49 @@ class Unit:
         root._ability_cache[cache_key] = int(bonus or 0)
         return int(bonus or 0)
 
+    def _was_set_up_this_turn(self, *, game=None) -> bool:
+        try:
+            if bool(getattr(self, "arrived_from_reserves_this_turn", False)):
+                return True
+        except Exception:
+            pass
+        try:
+            if bool(getattr(self.round_state, "reinforced_this_round", False)):
+                return True
+        except Exception:
+            pass
+        try:
+            if game is None:
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+            turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+            if turn and int(getattr(self, "reserve_turn_deployed", 0) or 0) == turn:
+                return True
+        except Exception:
+            pass
+        return False
+
+    def _target_within_objective_range(self, target_unit=None, game_map=None) -> bool:
+        if target_unit is None:
+            return False
+        if game_map is None:
+            try:
+                game_map = getattr(getattr(self.get_parent_army(), "player", None), "game", None).map
+            except Exception:
+                game_map = None
+        objectives = list(getattr(game_map, "objectives", []) or []) if game_map is not None else []
+        if not objectives:
+            return False
+        for obj in objectives:
+            loc = getattr(obj, "location", None)
+            if loc is None:
+                loc = obj
+            try:
+                if target_unit.is_within_objective_range(loc):
+                    return True
+            except Exception:
+                continue
+        return False
+
     def can_reroll_advance_roll(self) -> bool:
         """
         Best-effort detection for abilities that allow re-rolling Advance rolls for this unit/model.
@@ -5597,6 +5682,22 @@ class Unit:
                 return True
         except Exception:
             pass
+        try:
+            for u in list(self.get_attached_unit_members() or []):
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if sr.get("enhancement_reroll_advance") or sr.get("enhancement_reroll_advance_charge"):
+                    return True
+        except Exception:
+            pass
+        for text in self._iter_attached_unit_reroll_texts():
+            low = text.lower()
+            if self._REROLL_ADVANCE_CHARGE_RE.search(low):
+                return True
+            if ("re-roll" in low or "reroll" in low) and "advance roll" in low:
+                if "bearer's unit" in low or "this model" in low or "that unit" in low:
+                    return True
         for t in Unit._iter_reroll_scan_texts(self):
             s = str(t or "").lower()
             if ("re-roll" in s or "reroll" in s) and "advance" in s:
@@ -5706,7 +5807,7 @@ class Unit:
                 pass
         return int(roll)
 
-    def can_reroll_charge_roll(self) -> bool:
+    def can_reroll_charge_roll(self, *, target_unit=None, game_map=None, game=None) -> bool:
         """
         Best-effort detection for abilities that allow re-rolling Charge rolls for this unit/model.
         """
@@ -5742,6 +5843,44 @@ class Unit:
                 return True
         except Exception:
             pass
+        conditional_found = False
+        try:
+            for u in list(self.get_attached_unit_members() or []):
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if sr.get("enhancement_charge_reroll"):
+                    return True
+                if sr.get("enhancement_charge_reroll_on_setup_turn"):
+                    conditional_found = True
+                    if self._was_set_up_this_turn(game=game):
+                        return True
+                if sr.get("enhancement_charge_reroll_if_target_on_objective"):
+                    conditional_found = True
+                    if self._target_within_objective_range(target_unit, game_map):
+                        return True
+        except Exception:
+            pass
+
+        for text in self._iter_attached_unit_reroll_texts():
+            low = text.lower()
+            if self._REROLL_CHARGE_OBJECTIVE_RE.search(low):
+                conditional_found = True
+                if self._target_within_objective_range(target_unit, game_map):
+                    return True
+                continue
+            if self._REROLL_CHARGE_SETUP_TURN_RE.search(low):
+                conditional_found = True
+                if self._was_set_up_this_turn(game=game):
+                    return True
+                continue
+            if self._REROLL_ADVANCE_CHARGE_RE.search(low):
+                return True
+            if self._REROLL_CHARGE_BEARER_UNIT_RE.search(low):
+                return True
+
+        if conditional_found:
+            return False
 
         for t in Unit._iter_reroll_scan_texts(self):
             s = self._normalize_rules_text(str(t or "")).lower()
@@ -12028,6 +12167,20 @@ class Unit:
         text = text.replace("\n", " ").replace("\r", " ")
         text = re.sub(r"\s+", " ", text).strip()
         return text
+
+    @staticmethod
+    def _strip_eligibility_prefix(text: str) -> str:
+        """
+        Strip Wahapedia-style eligibility prefixes like:
+          "<KEYWORDS> model only. <rules text...>"
+        """
+        t = str(text or "")
+        low = t.lower()
+        for marker in (" model only.", " models only."):
+            idx = low.find(marker)
+            if idx != -1:
+                return t[idx + len(marker):].strip()
+        return t
 
     def _iter_ability_entries_for_rules(self, model: Optional['Model'] = None):
         """Yield (name, description) pairs for unit/model abilities."""
