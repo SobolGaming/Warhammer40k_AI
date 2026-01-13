@@ -3,6 +3,7 @@ import copy
 import html
 import re
 from typing import Callable, Optional, Dict, Any, List
+from ..utility.dice import get_roll
 
 
 IMPLEMENTED_STRATAGEM_NAMES = {
@@ -11,8 +12,11 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "APOPLECTIC FRENZY",
     "BERZERKER'S WRATH",
     "BERZERKER’S WRATH",
+    "BLESSING OF BURNING BLOOD",
     "BLITZING FIREPOWER",
     "BLOOD OFFERING",
+    "DAEMONIC FURY",
+    "DAEMONTIDE",
     "FRENZIED RESILIENCE",
     "FEIGNED RETREAT",
     "FIRE AND FADE",
@@ -46,6 +50,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "APOPLECTIC FRENZY",
     "BERZERKER'S WRATH",
     "BERZERKER’S WRATH",
+    "BLESSING OF BURNING BLOOD",
     "BLOOD OFFERING",
     "FRENZIED RESILIENCE",
     "FEIGNED RETREAT",
@@ -1335,6 +1340,117 @@ class StratagemManager:
                 return False
         return True
 
+    def _return_destroyed_models_full(
+        self,
+        unit,
+        *,
+        amount: int,
+        game_map=None,
+        skip_character: bool = False,
+    ) -> int:
+        if unit is None:
+            return 0
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return 0
+        try:
+            destroyed = list(getattr(root, "models_lost", []) or [])
+        except Exception:
+            destroyed = []
+        if not destroyed:
+            return 0
+        if skip_character:
+            filtered = []
+            for m in destroyed:
+                try:
+                    if bool(getattr(m, "is_character", False)):
+                        continue
+                except Exception:
+                    pass
+                filtered.append(m)
+            destroyed = filtered
+        if not destroyed:
+            return 0
+        to_return = destroyed[: max(0, int(amount or 0))]
+        if not to_return:
+            return 0
+        try:
+            alive_models = [m for m in (getattr(root, "models", []) or []) if getattr(m, "is_alive", True)]
+        except Exception:
+            alive_models = []
+        returned = 0
+        for model in to_return:
+            try:
+                if hasattr(root, "models_lost") and model in root.models_lost:
+                    root.models_lost.remove(model)
+            except Exception:
+                pass
+            try:
+                if hasattr(model, "set_parent_unit"):
+                    model.set_parent_unit(root)
+                else:
+                    model.parent_unit = root
+            except Exception:
+                pass
+            try:
+                base_wounds = int(getattr(model, "_base_wounds", getattr(model, "base_wounds", 0)) or 0)
+                if base_wounds:
+                    model.wounds = base_wounds
+            except Exception:
+                pass
+            try:
+                if hasattr(model, "_check_damaged_profile"):
+                    model._check_damaged_profile()
+            except Exception:
+                pass
+            try:
+                setattr(model, "_on_death_reactions_resolved", False)
+                setattr(model, "_fight_on_death_used", False)
+                setattr(model, "_shoot_on_death_used", False)
+            except Exception:
+                pass
+            added = False
+            try:
+                if hasattr(root, "add_model"):
+                    root.add_model(model)
+                    added = True
+                else:
+                    root.models.append(model)
+                    added = True
+            except Exception:
+                added = False
+            if not added:
+                try:
+                    root.models.append(model)
+                except Exception:
+                    pass
+            # Attempt to place the model near the unit coherently
+            try:
+                if alive_models and hasattr(root, "_find_reanimation_position"):
+                    new_count = len(alive_models) + 1
+                    required_neighbors = 0 if new_count <= 1 else (2 if new_count >= 7 else 1)
+                    pos = root._find_reanimation_position(
+                        model,
+                        alive_models,
+                        game_map=game_map,
+                        required_neighbors=required_neighbors,
+                    )
+                    if pos is not None and hasattr(model, "set_location"):
+                        model.set_location(*pos)
+            except Exception:
+                pass
+            alive_models.append(model)
+            try:
+                if hasattr(root, "update_coherency"):
+                    root.update_coherency()
+            except Exception:
+                pass
+            returned += 1
+        return returned
+
     def _skyborne_transport_candidates(self, unit) -> List[Any]:
         if unit is None:
             return []
@@ -1576,7 +1692,14 @@ class StratagemManager:
                         if isinstance(sr, dict) and sr.get("lightning_fast_reactions_active") is True:
                             sr.pop("lightning_fast_reactions_active", None)
                             sr.pop("lightning_fast_reactions_expires_phase", None)
-                            u.special_rules = sr
+                        if isinstance(sr, dict) and sr.get("daemonic_fury_twin_linked_active") is True:
+                            sr.pop("daemonic_fury_twin_linked_active", None)
+                            sr.pop("daemonic_fury_twin_linked_expires_phase", None)
+                        if isinstance(sr, dict) and sr.get("daemonic_fury_lance_active") is True:
+                            sr.pop("daemonic_fury_lance_active", None)
+                            sr.pop("daemonic_fury_lance_turn_owner", None)
+                            sr.pop("daemonic_fury_lance_turn", None)
+                        u.special_rules = sr
                     except Exception:
                         continue
         except Exception:
@@ -2397,6 +2520,111 @@ class StratagemManager:
         except Exception:
             pass
 
+        # Khorne Daemonkin: BLESSING OF BURNING BLOOD (opponent Shooting phase, after targets selected).
+        try:
+            s5 = self.get_by_name("BLESSING OF BURNING BLOOD")
+            if s5 and self.player.command_points >= s5.cp_cost and (s5.name or "").strip().upper() not in self._used_stratagems_this_phase:
+                try:
+                    army = self.player.get_army()
+                except Exception:
+                    army = None
+                we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+                if we_mgr is not None and getattr(we_mgr, "is_khorne_daemonkin", lambda: False)():
+                    game_map = getattr(self.game, "map", None)
+                    if game_map is not None:
+                        for we_unit in list(target_units or []):
+                            try:
+                                if we_unit is None or not we_unit.is_alive():
+                                    continue
+                                if we_unit.get_parent_army().player is not self.player:
+                                    continue
+                                if _unit_cannot_be_target_of_stratagem(we_unit):
+                                    continue
+                                if not we_mgr.unit_is_world_eaters(we_unit):
+                                    continue
+                            except Exception:
+                                continue
+
+                            candidates = []
+                            seen = set()
+                            for bl_unit in list(getattr(army, "units", []) or []):
+                                try:
+                                    root = bl_unit.get_attached_unit_root()
+                                except Exception:
+                                    root = bl_unit
+                                if root is None:
+                                    continue
+                                try:
+                                    uid = getattr(root, "_id", id(root))
+                                except Exception:
+                                    uid = id(root)
+                                if uid in seen:
+                                    continue
+                                seen.add(uid)
+                                try:
+                                    if not root.is_alive():
+                                        continue
+                                except Exception:
+                                    pass
+                                try:
+                                    if not getattr(root, "deployed", False):
+                                        continue
+                                except Exception:
+                                    continue
+                                try:
+                                    if getattr(root, "is_in_reserves", lambda: False)():
+                                        continue
+                                except Exception:
+                                    pass
+                                try:
+                                    if _unit_cannot_be_target_of_stratagem(root):
+                                        continue
+                                except Exception:
+                                    continue
+                                try:
+                                    if not we_mgr.unit_is_blood_legions(root):
+                                        continue
+                                except Exception:
+                                    continue
+                                try:
+                                    dist = game_map.get_distance_between_units(root, we_unit)
+                                except Exception:
+                                    dist = None
+                                if dist is None or dist > 6.0:
+                                    continue
+                                candidates.append(root)
+                            if not candidates:
+                                continue
+                            already = False
+                            for r in self._pending_reactions:
+                                try:
+                                    if (
+                                        r.get("event") == "shooting_targets_selected"
+                                        and r.get("stratagem") == s5.name
+                                        and r.get("attacking_unit") is attacking_unit
+                                        and r.get("world_eaters_unit") is we_unit
+                                    ):
+                                        already = True
+                                        break
+                                except Exception:
+                                    continue
+                            if already:
+                                continue
+                            payload = {
+                                "event": "shooting_targets_selected",
+                                "phase_name": "Shooting phase",
+                                "stratagem": s5.name,
+                                "cp_cost": s5.cp_cost,
+                                "attacking_unit": attacking_unit,
+                                "world_eaters_unit": we_unit,
+                                "candidates": candidates,
+                            }
+                            if len(candidates) == 1:
+                                payload["target_unit"] = candidates[0]
+                            self._queue_reaction(payload)
+        except Exception:
+            pass
+
         # Generic defensive reactions (after targets selected).
         try:
             self._queue_generic_defensive_reactions(
@@ -2712,6 +2940,111 @@ class StratagemManager:
                     "attacking_unit": attacking_unit,
                     "candidates": candidates,
                 })
+        except Exception:
+            pass
+
+        # Khorne Daemonkin: BLESSING OF BURNING BLOOD (opponent Fight phase, after targets selected).
+        try:
+            s5 = self.get_by_name("BLESSING OF BURNING BLOOD")
+            if s5 and self.player.command_points >= s5.cp_cost and (s5.name or "").strip().upper() not in self._used_stratagems_this_phase:
+                try:
+                    army = self.player.get_army()
+                except Exception:
+                    army = None
+                we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+                if we_mgr is not None and getattr(we_mgr, "is_khorne_daemonkin", lambda: False)():
+                    game_map = getattr(self.game, "map", None)
+                    if game_map is not None:
+                        for we_unit in list(target_units or []):
+                            try:
+                                if we_unit is None or not we_unit.is_alive():
+                                    continue
+                                if we_unit.get_parent_army().player is not self.player:
+                                    continue
+                                if _unit_cannot_be_target_of_stratagem(we_unit):
+                                    continue
+                                if not we_mgr.unit_is_world_eaters(we_unit):
+                                    continue
+                            except Exception:
+                                continue
+
+                            candidates = []
+                            seen = set()
+                            for bl_unit in list(getattr(army, "units", []) or []):
+                                try:
+                                    root = bl_unit.get_attached_unit_root()
+                                except Exception:
+                                    root = bl_unit
+                                if root is None:
+                                    continue
+                                try:
+                                    uid = getattr(root, "_id", id(root))
+                                except Exception:
+                                    uid = id(root)
+                                if uid in seen:
+                                    continue
+                                seen.add(uid)
+                                try:
+                                    if not root.is_alive():
+                                        continue
+                                except Exception:
+                                    pass
+                                try:
+                                    if not getattr(root, "deployed", False):
+                                        continue
+                                except Exception:
+                                    continue
+                                try:
+                                    if getattr(root, "is_in_reserves", lambda: False)():
+                                        continue
+                                except Exception:
+                                    pass
+                                try:
+                                    if _unit_cannot_be_target_of_stratagem(root):
+                                        continue
+                                except Exception:
+                                    continue
+                                try:
+                                    if not we_mgr.unit_is_blood_legions(root):
+                                        continue
+                                except Exception:
+                                    continue
+                                try:
+                                    dist = game_map.get_distance_between_units(root, we_unit)
+                                except Exception:
+                                    dist = None
+                                if dist is None or dist > 6.0:
+                                    continue
+                                candidates.append(root)
+                            if not candidates:
+                                continue
+                            already = False
+                            for r in self._pending_reactions:
+                                try:
+                                    if (
+                                        r.get("event") == "fight_targets_selected"
+                                        and r.get("stratagem") == s5.name
+                                        and r.get("attacking_unit") is attacking_unit
+                                        and r.get("world_eaters_unit") is we_unit
+                                    ):
+                                        already = True
+                                        break
+                                except Exception:
+                                    continue
+                            if already:
+                                continue
+                            payload = {
+                                "event": "fight_targets_selected",
+                                "phase_name": "Fight phase",
+                                "stratagem": s5.name,
+                                "cp_cost": s5.cp_cost,
+                                "attacking_unit": attacking_unit,
+                                "world_eaters_unit": we_unit,
+                                "candidates": candidates,
+                            }
+                            if len(candidates) == 1:
+                                payload["target_unit"] = candidates[0]
+                            self._queue_reaction(payload)
         except Exception:
             pass
 
@@ -5214,6 +5547,463 @@ class StratagemManager:
             except Exception:
                 pass
             print(f"🩸 BERZERKER'S WRATH: {getattr(unit, 'name', 'Unit')} will Blood Surge up to 8\".")
+            return True
+
+        # Khorne Daemonkin: DAEMONIC FURY (grant [LANCE], and [TWIN-LINKED] if Daemonic Rage active)
+        if s.name.upper() == "DAEMONIC FURY":
+            target_unit = kwargs.get("target_unit") or kwargs.get("unit") or kwargs.get("blood_legions_unit")
+            we_unit = kwargs.get("world_eaters_unit") or kwargs.get("support_unit") or kwargs.get("we_unit")
+            candidates = kwargs.get("candidates") or []
+            if target_unit is None and candidates:
+                target_unit = candidates[0]
+            if target_unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "DAEMONIC FURY":
+                        target_unit = r.get("target_unit") or r.get("unit")
+                        we_unit = we_unit or r.get("world_eaters_unit")
+                        break
+            if target_unit is None:
+                try:
+                    army = self.player.get_army()
+                except Exception:
+                    army = None
+                if army is not None:
+                    for u in list(getattr(army, "units", []) or []):
+                        if u is None:
+                            continue
+                        try:
+                            root = u.get_attached_unit_root()
+                        except Exception:
+                            root = u
+                        if root is None:
+                            continue
+                        try:
+                            if not root.is_alive():
+                                continue
+                        except Exception:
+                            pass
+                        target_unit = root
+                        break
+            if target_unit is None:
+                print("❌ Daemonic Fury: no target unit provided")
+                return False
+            try:
+                target_root = target_unit.get_attached_unit_root()
+            except Exception:
+                target_root = target_unit
+            try:
+                if target_root.get_parent_army().player is not self.player:
+                    print("❌ Daemonic Fury: target unit is not yours")
+                    return False
+            except Exception:
+                pass
+            if we_unit is None:
+                try:
+                    army = target_root.get_parent_army()
+                except Exception:
+                    army = None
+                if army is not None and getattr(self.game, "map", None) is not None:
+                    for u in list(getattr(army, "units", []) or []):
+                        try:
+                            root = u.get_attached_unit_root()
+                        except Exception:
+                            root = u
+                        if root is None or root is target_root:
+                            continue
+                        try:
+                            if not root.is_alive():
+                                continue
+                        except Exception:
+                            pass
+                        try:
+                            dist = self.game.map.get_distance_between_units(root, target_root)
+                        except Exception:
+                            dist = None
+                        if dist is None or dist > 6.0:
+                            continue
+                        we_unit = root
+                        break
+            if we_unit is None:
+                print("❌ Daemonic Fury: no WORLD EATERS unit within 6\"")
+                return False
+            try:
+                we_root = we_unit.get_attached_unit_root()
+            except Exception:
+                we_root = we_unit
+            try:
+                if we_root.get_parent_army().player is not self.player:
+                    print("❌ Daemonic Fury: support unit is not yours")
+                    return False
+            except Exception:
+                pass
+
+            try:
+                army = target_root.get_parent_army()
+            except Exception:
+                army = None
+            we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+            if we_mgr is None or not getattr(we_mgr, "is_khorne_daemonkin", lambda: False)():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "fight phase":
+                print("❌ Daemonic Fury: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is not self.player:
+                print("❌ Daemonic Fury: not your turn")
+                return False
+            try:
+                if _unit_cannot_be_target_of_stratagem(target_root):
+                    print("❌ Daemonic Fury: target cannot be selected")
+                    return False
+            except Exception:
+                return False
+            try:
+                if not we_mgr.unit_is_blood_legions(target_root):
+                    print("❌ Daemonic Fury: target is not BLOOD LEGIONS")
+                    return False
+            except Exception:
+                return False
+            try:
+                if not we_mgr.unit_is_world_eaters(we_root):
+                    print("❌ Daemonic Fury: support unit is not WORLD EATERS")
+                    return False
+            except Exception:
+                return False
+            try:
+                if not getattr(target_root, "deployed", False) or getattr(target_root, "is_in_reserves", lambda: False)():
+                    print("❌ Daemonic Fury: target is not on battlefield")
+                    return False
+            except Exception:
+                pass
+            try:
+                if not getattr(we_root, "deployed", False) or getattr(we_root, "is_in_reserves", lambda: False)():
+                    print("❌ Daemonic Fury: support unit is not on battlefield")
+                    return False
+            except Exception:
+                pass
+            try:
+                dist = self.game.map.get_distance_between_units(target_root, we_root) if self.game else None
+            except Exception:
+                dist = None
+            if dist is None or dist > 6.0:
+                print("❌ Daemonic Fury: units are not within 6\"")
+                return False
+
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=target_root).get("cost", s.cp_cost))
+            except Exception:
+                eff_cost = s.cp_cost
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+
+            try:
+                sr = getattr(we_root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["daemonic_fury_lance_active"] = True
+                sr["daemonic_fury_lance_turn_owner"] = str(getattr(self.player, "name", "") or "")
+                sr["daemonic_fury_lance_turn"] = int(getattr(self.game, "turn", 0) or 0)
+                if getattr(we_mgr, "is_blood_tithe_active", None) and we_mgr.is_blood_tithe_active("DAEMONIC_RAGE"):
+                    sr["daemonic_fury_twin_linked_active"] = True
+                    sr["daemonic_fury_twin_linked_expires_phase"] = "FIGHT_PHASE"
+                we_root.special_rules = sr
+            except Exception:
+                pass
+
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
+            print(f"🩸 DAEMONIC FURY: {getattr(we_root, 'name', 'Unit')} gains [LANCE] (and [TWIN-LINKED] if active).")
+            return True
+
+        # Khorne Daemonkin: BLESSING OF BURNING BLOOD (grant invulnerable save to targeted WORLD EATERS unit)
+        if s.name.upper() == "BLESSING OF BURNING BLOOD":
+            target_unit = kwargs.get("target_unit") or kwargs.get("unit") or kwargs.get("blood_legions_unit")
+            we_unit = kwargs.get("world_eaters_unit") or kwargs.get("support_unit") or kwargs.get("we_unit")
+            candidates = kwargs.get("candidates") or []
+            if target_unit is None and candidates:
+                target_unit = candidates[0]
+            if target_unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "BLESSING OF BURNING BLOOD":
+                        target_unit = r.get("target_unit") or r.get("unit")
+                        we_unit = we_unit or r.get("world_eaters_unit")
+                        break
+            if target_unit is None or we_unit is None:
+                print("❌ Blessing of Burning Blood: missing target context")
+                return False
+            try:
+                target_root = target_unit.get_attached_unit_root()
+            except Exception:
+                target_root = target_unit
+            try:
+                we_root = we_unit.get_attached_unit_root()
+            except Exception:
+                we_root = we_unit
+            try:
+                if target_root.get_parent_army().player is not self.player:
+                    print("❌ Blessing of Burning Blood: target unit is not yours")
+                    return False
+            except Exception:
+                pass
+            try:
+                if we_root.get_parent_army().player is not self.player:
+                    print("❌ Blessing of Burning Blood: affected unit is not yours")
+                    return False
+            except Exception:
+                pass
+
+            try:
+                army = we_root.get_parent_army()
+            except Exception:
+                army = None
+            we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+            if we_mgr is None or not getattr(we_mgr, "is_khorne_daemonkin", lambda: False)():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() not in ("shooting phase", "fight phase"):
+                print("❌ Blessing of Burning Blood: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is self.player:
+                print("❌ Blessing of Burning Blood: not opponent's turn")
+                return False
+            try:
+                if _unit_cannot_be_target_of_stratagem(target_root):
+                    print("❌ Blessing of Burning Blood: target cannot be selected")
+                    return False
+            except Exception:
+                return False
+            try:
+                if not we_mgr.unit_is_blood_legions(target_root):
+                    print("❌ Blessing of Burning Blood: target is not BLOOD LEGIONS")
+                    return False
+            except Exception:
+                return False
+            try:
+                if not we_mgr.unit_is_world_eaters(we_root):
+                    print("❌ Blessing of Burning Blood: affected unit is not WORLD EATERS")
+                    return False
+            except Exception:
+                return False
+            try:
+                dist = self.game.map.get_distance_between_units(target_root, we_root) if self.game else None
+            except Exception:
+                dist = None
+            if dist is None or dist > 6.0:
+                print("❌ Blessing of Burning Blood: units are not within 6\"")
+                return False
+
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=target_root).get("cost", s.cp_cost))
+            except Exception:
+                eff_cost = s.cp_cost
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+
+            inv_value = 5
+            try:
+                if getattr(we_mgr, "is_blood_tithe_active", None) and we_mgr.is_blood_tithe_active("BOON_OF_BLOOD"):
+                    inv_value = 4
+            except Exception:
+                inv_value = 5
+            try:
+                entry = {
+                    "value": int(inv_value),
+                    "attack_type": "any",
+                    "attacker_key": None,
+                    "expires_phase": self._phase_key_from_name(phase_name),
+                    "source": str(s.name or "Blessing of Burning Blood"),
+                }
+                self._append_defensive_effect(we_root, "defensive_invuln_overrides", entry)
+            except Exception:
+                pass
+
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
+            print(f"🩸 BLESSING OF BURNING BLOOD: {getattr(we_root, 'name', 'Unit')} gains {inv_value}++.")
+            return True
+
+        # Khorne Daemonkin: DAEMONTIDE (return destroyed BLOOD LEGIONS models)
+        if s.name.upper() == "DAEMONTIDE":
+            we_unit = kwargs.get("target_unit") or kwargs.get("unit") or kwargs.get("world_eaters_unit")
+            bl_unit = kwargs.get("blood_legions_unit") or kwargs.get("support_unit") or kwargs.get("bl_unit")
+            candidates = kwargs.get("candidates") or []
+            if we_unit is None and candidates:
+                we_unit = candidates[0]
+            if we_unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "DAEMONTIDE":
+                        we_unit = r.get("target_unit") or r.get("unit")
+                        bl_unit = bl_unit or r.get("blood_legions_unit")
+                        break
+            if we_unit is None:
+                print("❌ Daemontide: no WORLD EATERS unit provided")
+                return False
+            try:
+                we_root = we_unit.get_attached_unit_root()
+            except Exception:
+                we_root = we_unit
+            try:
+                if we_root.get_parent_army().player is not self.player:
+                    print("❌ Daemontide: target unit is not yours")
+                    return False
+            except Exception:
+                pass
+            if bl_unit is None:
+                try:
+                    army = we_root.get_parent_army()
+                except Exception:
+                    army = None
+                if army is not None and getattr(self.game, "map", None) is not None:
+                    for u in list(getattr(army, "units", []) or []):
+                        try:
+                            root = u.get_attached_unit_root()
+                        except Exception:
+                            root = u
+                        if root is None:
+                            continue
+                        try:
+                            if not root.is_alive():
+                                continue
+                        except Exception:
+                            pass
+                        try:
+                            dist = self.game.map.get_distance_between_units(root, we_root)
+                        except Exception:
+                            dist = None
+                        if dist is None or dist > 6.0:
+                            continue
+                        bl_unit = root
+                        break
+            if bl_unit is None:
+                print("❌ Daemontide: no BLOOD LEGIONS unit within 6\"")
+                return False
+            try:
+                bl_root = bl_unit.get_attached_unit_root()
+            except Exception:
+                bl_root = bl_unit
+            try:
+                if bl_root.get_parent_army().player is not self.player:
+                    print("❌ Daemontide: support unit is not yours")
+                    return False
+            except Exception:
+                pass
+
+            try:
+                army = we_root.get_parent_army()
+            except Exception:
+                army = None
+            we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+            if we_mgr is None or not getattr(we_mgr, "is_khorne_daemonkin", lambda: False)():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "command phase":
+                print("❌ Daemontide: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is not self.player:
+                print("❌ Daemontide: not your turn")
+                return False
+            try:
+                if _unit_cannot_be_target_of_stratagem(we_root):
+                    print("❌ Daemontide: target cannot be selected")
+                    return False
+            except Exception:
+                return False
+            try:
+                if not we_mgr.unit_is_world_eaters(we_root):
+                    print("❌ Daemontide: target is not WORLD EATERS")
+                    return False
+            except Exception:
+                return False
+            try:
+                if not we_mgr.unit_is_blood_legions(bl_root):
+                    print("❌ Daemontide: support unit is not BLOOD LEGIONS")
+                    return False
+            except Exception:
+                return False
+            try:
+                dist = self.game.map.get_distance_between_units(bl_root, we_root) if self.game else None
+            except Exception:
+                dist = None
+            if dist is None or dist > 6.0:
+                print("❌ Daemontide: units are not within 6\"")
+                return False
+
+            try:
+                from ..utility.dice import get_roll
+            except Exception:
+                print("❌ Daemontide: dice roll helper unavailable")
+                return False
+            amount = 0
+            try:
+                if bl_root.has_keyword("MOUNTED"):
+                    amount = 1
+                elif bl_root.has_keyword("BEAST"):
+                    amount = int(get_roll("D3") or 0)
+                elif bl_root.has_keyword("INFANTRY"):
+                    amount = int(get_roll("D6") or 0)
+                else:
+                    print("❌ Daemontide: unsupported BLOOD LEGIONS unit type")
+                    return False
+            except Exception as exc:
+                print(f"❌ Daemontide: failed to determine return amount ({exc})")
+                return False
+            amount = max(0, int(amount or 0))
+
+            try:
+                from ..utility.event_bus import append_dice
+                pname = getattr(self.player, "name", "Player")
+                append_dice(pname, f"Daemontide return: {amount}")
+            except Exception:
+                pass
+
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=we_root).get("cost", s.cp_cost))
+            except Exception:
+                eff_cost = s.cp_cost
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+
+            returned = 0
+            skip_character = False
+            try:
+                members = bl_root.get_attached_unit_members()
+                skip_character = bool(len(list(members or [])) > 1)
+            except Exception:
+                skip_character = False
+            try:
+                returned = self._return_destroyed_models_full(
+                    bl_root,
+                    amount=amount,
+                    game_map=getattr(self.game, "map", None),
+                    skip_character=skip_character,
+                )
+            except Exception:
+                returned = 0
+            print(f"🩸 DAEMONTIDE: {getattr(bl_root, 'name', 'Unit')} returns {returned} model(s).")
+
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
             return True
 
         # Khorne Daemonkin: A WORTHY SKULL (gain D3 BTP and optionally activate Blood Tithe)

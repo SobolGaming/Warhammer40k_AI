@@ -891,6 +891,311 @@ class GameView:
                 on_chosen(cand[0])
         self._request_summoned_by_slaughter_unit = _request_summoned_by_slaughter_unit
 
+        def _request_daemonic_fury_targets(player, game, candidates, on_chosen):
+            cand = list(candidates or [])
+            if not cand:
+                try:
+                    from ..classes.stratagems import _unit_cannot_be_target_of_stratagem
+                except Exception:
+                    _unit_cannot_be_target_of_stratagem = None
+                try:
+                    army = player.get_army()
+                    we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+                    if we_mgr is None or not getattr(we_mgr, "is_khorne_daemonkin", lambda: False)():
+                        on_chosen(None, None)
+                        return
+                except Exception:
+                    on_chosen(None, None)
+                    return
+                game_map = getattr(game, "map", None)
+                if game_map is None:
+                    on_chosen(None, None)
+                    return
+                seen = set()
+                for unit in player.get_army().units or []:
+                    try:
+                        root = unit.get_attached_unit_root()
+                    except Exception:
+                        root = unit
+                    if root is None:
+                        continue
+                    try:
+                        uid = getattr(root, "_id", id(root))
+                    except Exception:
+                        uid = id(root)
+                    if uid in seen:
+                        continue
+                    seen.add(uid)
+                    try:
+                        if not root.is_alive():
+                            continue
+                    except Exception:
+                        pass
+                    try:
+                        if not getattr(root, "deployed", False):
+                            continue
+                    except Exception:
+                        continue
+                    try:
+                        if getattr(root, "is_in_reserves", lambda: False)():
+                            continue
+                    except Exception:
+                        pass
+                    if callable(_unit_cannot_be_target_of_stratagem) and _unit_cannot_be_target_of_stratagem(root):
+                        continue
+                    try:
+                        if not we_mgr.unit_is_blood_legions(root):
+                            continue
+                    except Exception:
+                        continue
+                    cand.append(root)
+            if not cand:
+                on_chosen(None, None)
+                return
+
+            def _pick_world_eaters(bl_unit):
+                if bl_unit is None:
+                    on_chosen(None, None)
+                    return
+                we_candidates = []
+                try:
+                    army = player.get_army()
+                    we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+                except Exception:
+                    army = None
+                    we_mgr = None
+                game_map = getattr(game, "map", None)
+                if army is not None and we_mgr is not None and game_map is not None:
+                    seen = set()
+                    for unit in list(getattr(army, "units", []) or []):
+                        try:
+                            root = unit.get_attached_unit_root()
+                        except Exception:
+                            root = unit
+                        if root is None:
+                            continue
+                        try:
+                            uid = getattr(root, "_id", id(root))
+                        except Exception:
+                            uid = id(root)
+                        if uid in seen:
+                            continue
+                        seen.add(uid)
+                        try:
+                            if not root.is_alive():
+                                continue
+                        except Exception:
+                            pass
+                        try:
+                            if not getattr(root, "deployed", False):
+                                continue
+                        except Exception:
+                            continue
+                        try:
+                            if getattr(root, "is_in_reserves", lambda: False)():
+                                continue
+                        except Exception:
+                            pass
+                        try:
+                            if not we_mgr.unit_is_world_eaters(root):
+                                continue
+                        except Exception:
+                            continue
+                        try:
+                            dist = game_map.get_distance_between_units(root, bl_unit)
+                        except Exception:
+                            dist = None
+                        if dist is None or dist > 6.0:
+                            continue
+                        we_candidates.append(root)
+                if not we_candidates:
+                    on_chosen(bl_unit, None)
+                    return
+                if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
+                    self.overwatch_shooter_dialog.show(
+                        we_candidates,
+                        bl_unit,
+                        lambda unit: (self.overwatch_shooter_dialog.hide(), on_chosen(bl_unit, unit)),
+                        title="Select Daemonic Fury World Eaters Unit",
+                        subtitle=f"Within 6\" of {getattr(bl_unit, 'name', 'unit')}",
+                    )
+                else:
+                    on_chosen(bl_unit, we_candidates[0])
+
+            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
+                self.overwatch_shooter_dialog.show(
+                    cand,
+                    None,
+                    lambda unit: (self.overwatch_shooter_dialog.hide(), _pick_world_eaters(unit)),
+                    title="Select Daemonic Fury Blood Legions Unit",
+                    subtitle="BLOOD LEGIONS unit in your army",
+                )
+            else:
+                _pick_world_eaters(cand[0])
+
+        self._request_daemonic_fury_targets = _request_daemonic_fury_targets
+
+        def _request_daemontide_targets(player, game, candidates, on_chosen):
+            cand = list(candidates or [])
+            if not cand:
+                try:
+                    from ..classes.stratagems import _unit_cannot_be_target_of_stratagem
+                except Exception:
+                    _unit_cannot_be_target_of_stratagem = None
+                try:
+                    army = player.get_army()
+                    we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+                    if we_mgr is None or not getattr(we_mgr, "is_khorne_daemonkin", lambda: False)():
+                        on_chosen(None, None)
+                        return
+                except Exception:
+                    on_chosen(None, None)
+                    return
+                seen = set()
+                for unit in player.get_army().units or []:
+                    try:
+                        root = unit.get_attached_unit_root()
+                    except Exception:
+                        root = unit
+                    if root is None:
+                        continue
+                    try:
+                        uid = getattr(root, "_id", id(root))
+                    except Exception:
+                        uid = id(root)
+                    if uid in seen:
+                        continue
+                    seen.add(uid)
+                    try:
+                        if not root.is_alive():
+                            continue
+                    except Exception:
+                        pass
+                    try:
+                        if not getattr(root, "deployed", False):
+                            continue
+                    except Exception:
+                        continue
+                    try:
+                        if getattr(root, "is_in_reserves", lambda: False)():
+                            continue
+                    except Exception:
+                        pass
+                    if callable(_unit_cannot_be_target_of_stratagem) and _unit_cannot_be_target_of_stratagem(root):
+                        continue
+                    try:
+                        if not we_mgr.unit_is_world_eaters(root):
+                            continue
+                    except Exception:
+                        continue
+                    cand.append(root)
+            if not cand:
+                on_chosen(None, None)
+                return
+
+            def _pick_blood_legions(we_unit):
+                if we_unit is None:
+                    on_chosen(None, None)
+                    return
+                bl_candidates = []
+                try:
+                    army = player.get_army()
+                    we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+                except Exception:
+                    army = None
+                    we_mgr = None
+                game_map = getattr(game, "map", None)
+                if army is not None and we_mgr is not None and game_map is not None:
+                    seen = set()
+                    for unit in list(getattr(army, "units", []) or []):
+                        try:
+                            root = unit.get_attached_unit_root()
+                        except Exception:
+                            root = unit
+                        if root is None:
+                            continue
+                        try:
+                            uid = getattr(root, "_id", id(root))
+                        except Exception:
+                            uid = id(root)
+                        if uid in seen:
+                            continue
+                        seen.add(uid)
+                        try:
+                            if not root.is_alive():
+                                continue
+                        except Exception:
+                            pass
+                        try:
+                            if not getattr(root, "deployed", False):
+                                continue
+                        except Exception:
+                            continue
+                        try:
+                            if getattr(root, "is_in_reserves", lambda: False)():
+                                continue
+                        except Exception:
+                            pass
+                        try:
+                            if not we_mgr.unit_is_blood_legions(root):
+                                continue
+                        except Exception:
+                            continue
+                        try:
+                            dist = game_map.get_distance_between_units(root, we_unit)
+                        except Exception:
+                            dist = None
+                        if dist is None or dist > 6.0:
+                            continue
+                        bl_candidates.append(root)
+                if not bl_candidates:
+                    on_chosen(we_unit, None)
+                    return
+                if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
+                    self.overwatch_shooter_dialog.show(
+                        bl_candidates,
+                        we_unit,
+                        lambda unit: (self.overwatch_shooter_dialog.hide(), on_chosen(we_unit, unit)),
+                        title="Select Daemontide Blood Legions Unit",
+                        subtitle=f"Within 6\" of {getattr(we_unit, 'name', 'unit')}",
+                    )
+                else:
+                    on_chosen(we_unit, bl_candidates[0])
+
+            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
+                self.overwatch_shooter_dialog.show(
+                    cand,
+                    None,
+                    lambda unit: (self.overwatch_shooter_dialog.hide(), _pick_blood_legions(unit)),
+                    title="Select Daemontide World Eaters Unit",
+                    subtitle="WORLD EATERS unit in your army",
+                )
+            else:
+                _pick_blood_legions(cand[0])
+
+        self._request_daemontide_targets = _request_daemontide_targets
+
+        def _request_blessing_of_burning_blood_unit(player, game, we_unit, candidates, on_chosen):
+            cand = list(candidates or [])
+            if not cand:
+                on_chosen(None)
+                return
+            subtitle = "Select BLOOD LEGIONS unit"
+            if we_unit is not None:
+                subtitle = f"Within 6\" of {getattr(we_unit, 'name', 'unit')}"
+            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
+                self.overwatch_shooter_dialog.show(
+                    cand,
+                    we_unit,
+                    lambda unit: (self.overwatch_shooter_dialog.hide(), on_chosen(unit)),
+                    title="Select Blessing of Burning Blood Unit",
+                    subtitle=subtitle,
+                )
+            else:
+                on_chosen(cand[0])
+
+        self._request_blessing_of_burning_blood_unit = _request_blessing_of_burning_blood_unit
+
         def _request_blitzing_firepower_unit(player, game, candidates, on_chosen):
             cand = list(candidates or [])
             if not cand:
@@ -7046,6 +7351,41 @@ class GameView:
                 )
             return
 
+        if name_u == "DAEMONIC FURY" and ("target_unit" not in context or "world_eaters_unit" not in context):
+            if callable(getattr(self, "_request_daemonic_fury_targets", None)):
+                candidates = context.get("candidates") or []
+                self._request_daemonic_fury_targets(
+                    player,
+                    self.game,
+                    candidates,
+                    lambda bl_unit, we_unit: self._finalize_daemonic_fury(player, name, context, bl_unit, we_unit),
+                )
+            return
+
+        if name_u == "DAEMONTIDE" and ("target_unit" not in context or "blood_legions_unit" not in context):
+            if callable(getattr(self, "_request_daemontide_targets", None)):
+                candidates = context.get("candidates") or []
+                self._request_daemontide_targets(
+                    player,
+                    self.game,
+                    candidates,
+                    lambda we_unit, bl_unit: self._finalize_daemontide(player, name, context, we_unit, bl_unit),
+                )
+            return
+
+        if name_u == "BLESSING OF BURNING BLOOD" and "target_unit" not in context:
+            if callable(getattr(self, "_request_blessing_of_burning_blood_unit", None)):
+                candidates = context.get("candidates") or []
+                we_unit = context.get("world_eaters_unit")
+                self._request_blessing_of_burning_blood_unit(
+                    player,
+                    self.game,
+                    we_unit,
+                    candidates,
+                    lambda bl_unit: self._finalize_blessing_of_burning_blood(player, name, context, bl_unit),
+                )
+            return
+
         if name_u == "MURDER-CALL" and "target_unit" not in context and "unit" not in context:
             if callable(getattr(self, "_request_murder_call_unit", None)):
                 candidates = context.get("candidates") or []
@@ -7437,6 +7777,53 @@ class GameView:
             return
         ctx = dict(context)
         ctx["unit"] = unit
+        ok = manager.use(name, **ctx)
+        if ok:
+            print(f"Used stratagem: {name}")
+        else:
+            print(f"Could not use stratagem: {name}")
+
+    def _finalize_daemonic_fury(self, player, name: str, context: Dict[str, Any], bl_unit, we_unit) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if bl_unit is None or we_unit is None:
+            print("Daemonic Fury: missing unit selection")
+            return
+        ctx = dict(context)
+        ctx["target_unit"] = bl_unit
+        ctx["world_eaters_unit"] = we_unit
+        ok = manager.use(name, **ctx)
+        if ok:
+            print(f"Used stratagem: {name}")
+        else:
+            print(f"Could not use stratagem: {name}")
+
+    def _finalize_daemontide(self, player, name: str, context: Dict[str, Any], we_unit, bl_unit) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if we_unit is None or bl_unit is None:
+            print("Daemontide: missing unit selection")
+            return
+        ctx = dict(context)
+        ctx["target_unit"] = we_unit
+        ctx["blood_legions_unit"] = bl_unit
+        ok = manager.use(name, **ctx)
+        if ok:
+            print(f"Used stratagem: {name}")
+        else:
+            print(f"Could not use stratagem: {name}")
+
+    def _finalize_blessing_of_burning_blood(self, player, name: str, context: Dict[str, Any], bl_unit) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if bl_unit is None:
+            print("Blessing of Burning Blood: no unit selected")
+            return
+        ctx = dict(context)
+        ctx["target_unit"] = bl_unit
         ok = manager.use(name, **ctx)
         if ok:
             print(f"Used stratagem: {name}")

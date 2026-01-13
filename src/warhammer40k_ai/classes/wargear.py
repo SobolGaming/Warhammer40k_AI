@@ -3205,7 +3205,32 @@ class WargearProfile:
                         blood_tithe_lance = True
             except Exception:
                 blood_tithe_lance = False
-            if is_melee and (self.is_lance() or bondsman_lance or blood_tithe_lance):
+            daemonic_fury_lance = False
+            try:
+                sr = getattr(attacker.parent_unit, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("daemonic_fury_lance_active") is True:
+                    daemonic_fury_lance = True
+                    owner = str(sr.get("daemonic_fury_lance_turn_owner", "") or "")
+                    turn = int(sr.get("daemonic_fury_lance_turn", 0) or 0)
+                    if owner or turn:
+                        try:
+                            army = attacker.parent_unit.get_parent_army()
+                            game = getattr(getattr(army, "player", None), "game", None)
+                        except Exception:
+                            game = None
+                        if game is None:
+                            daemonic_fury_lance = False
+                        else:
+                            cur_turn = int(getattr(game, "turn", 0) or 0)
+                            cur_player = getattr(game, "get_current_player", lambda: None)()
+                            cur_owner = str(getattr(cur_player, "name", "") or "")
+                            if owner and owner != cur_owner:
+                                daemonic_fury_lance = False
+                            if turn and turn != cur_turn:
+                                daemonic_fury_lance = False
+            except Exception:
+                daemonic_fury_lance = False
+            if is_melee and (self.is_lance() or bondsman_lance or blood_tithe_lance or daemonic_fury_lance):
                 charged = bool(getattr(attacker.parent_unit.round_state, "charged_this_round", False))
                 if charged:
                     dice_modifier += 1
@@ -3213,6 +3238,8 @@ class WargearProfile:
                         wound_result['modifiers'].append("+1 to wound from Lance (Bondsman)")
                     elif blood_tithe_lance and not self.is_lance():
                         wound_result['modifiers'].append("+1 to wound from Lance (Blood Tithe)")
+                    elif daemonic_fury_lance and not self.is_lance():
+                        wound_result['modifiers'].append("+1 to wound from Lance (Daemonic Fury)")
                     else:
                         wound_result['modifiers'].append("+1 to wound from Lance (charged)")
         except Exception:
@@ -4312,9 +4339,27 @@ class WargearProfile:
 
         # TWIN-LINKED: re-roll failed wound rolls once.
         try:
-            if (not wound_result['wound']) and self.is_twin_linked():
+            daemonic_fury_twin_linked = False
+            try:
+                unit = getattr(attacker, "parent_unit", None)
+                sr = getattr(unit, "special_rules", None) if unit is not None else None
+                if isinstance(sr, dict) and sr.get("daemonic_fury_twin_linked_active") is True:
+                    is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+                    if is_melee:
+                        daemonic_fury_twin_linked = True
+                        expires_phase = str(sr.get("daemonic_fury_twin_linked_expires_phase", "") or "")
+                        if expires_phase:
+                            phase_key = self._resolve_phase_key(attacker_unit=unit, target_unit=target)
+                            if phase_key and expires_phase != phase_key:
+                                daemonic_fury_twin_linked = False
+            except Exception:
+                daemonic_fury_twin_linked = False
+            if (not wound_result['wound']) and (self.is_twin_linked() or daemonic_fury_twin_linked):
                 reroll = _reroll_wound()
-                wound_result['special_effects'].append("Twin-linked (re-roll failed wound)")
+                if daemonic_fury_twin_linked and not self.is_twin_linked():
+                    wound_result['special_effects'].append("Twin-linked (Daemonic Fury)")
+                else:
+                    wound_result['special_effects'].append("Twin-linked (re-roll failed wound)")
                 wound_result['reroll'] = reroll
                 wound_result['wound'] = _apply_wound_roll(reroll)
         except Exception:
