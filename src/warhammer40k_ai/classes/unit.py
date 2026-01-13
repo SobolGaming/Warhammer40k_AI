@@ -192,6 +192,11 @@ class Unit:
         except Exception:
             # Defensive: never block unit construction due to unsupported/unknown text patterns.
             pass
+        # Parse command-phase CP gains and sticky objective flags.
+        try:
+            self._refresh_command_phase_flags()
+        except Exception:
+            pass
         # Parse common bearer-unit effects (charge bonuses, Leadership set).
         try:
             self._refresh_bearer_unit_common_modifiers()
@@ -624,6 +629,30 @@ class Unit:
         r"models\s+in\s+the\s+bearer'?s\s+unit\s+have\s+a\s+leadership\s+characteristic\s+of\s+(\d+)\+?",
         re.IGNORECASE,
     )
+    _BEARER_UNIT_OC_BONUS_RE = re.compile(
+        r"add\s+(\d+)\s+to\s+the\s+objective\s+control\s+characteristic\s+of\s+(?:models\s+in\s+)?the\s+bearer'?s\s+unit",
+        re.IGNORECASE,
+    )
+    _BEARER_UNIT_FNP_RE = re.compile(
+        r"(?:models\s+in\s+)?the\s+bearer'?s\s+unit.*?\bfeel\s+no\s+pain\b\s*(\d+)\+",
+        re.IGNORECASE,
+    )
+    _BEARER_UNIT_SUSTAINED_HITS_RE = re.compile(
+        r"(?:weapons?\s+equipped\s+by\s+models\s+in|models\s+in)\s+the\s+bearer'?s\s+unit.*?\bsustained\s+hits\b\s*(\d+)",
+        re.IGNORECASE,
+    )
+    _BEARER_UNIT_IGNORES_COVER_RE = re.compile(
+        r"(?:weapons?\s+equipped\s+by\s+models\s+in|attacks?\s+made\s+by\s+models\s+in)\s+the\s+bearer'?s\s+unit.*?\bignores\s+cover\b",
+        re.IGNORECASE,
+    )
+    _BEARER_UNIT_TARGET_HIT_PENALTY_RE = re.compile(
+        r"each\s+time\s+(?:a|an)\s+(?:(?P<atype>melee|ranged)\s+)?attack\s+targets\s+the\s+bearer'?s\s+unit,\s+subtract\s+1\s+from\s+the\s+hit\s+roll",
+        re.IGNORECASE,
+    )
+    _COMMAND_PHASE_BONUS_CP_RE = re.compile(
+        r"(?:at\s+the\s+)?start\s+of\s+(?:each\s+of\s+)?your\s+command\s+phase[s]?\b.*?\bgain\s+(\d+)\s*(?:cp|command point(?:s)?)",
+        re.IGNORECASE,
+    )
     _BEARER_INVULNERABLE_SAVE_RE = re.compile(
         r"^the bearer has a (\d)\+ invulnerable save\.?$",
         re.IGNORECASE,
@@ -713,8 +742,76 @@ class Unit:
                 self.special_rules["spawn_only_reason"] = "USING SIR HEKHTUR + no points data"
                 return
 
+    def _scan_command_phase_sticky_objective(self) -> bool:
+        for ab in self._iter_active_abilities():
+            try:
+                desc = ab if isinstance(ab, str) else (getattr(ab, "description", "") or getattr(ab, "name", ""))
+            except Exception:
+                desc = ""
+            text = self._normalize_rules_text(desc or "")
+            if not text:
+                continue
+            low = text.lower().replace("\u2019", "'").replace("\u0192?T", "'")
+            if "end of your command phase" not in low:
+                continue
+            if "objective marker remains under your control" not in low:
+                continue
+            if "even if you have no models within range of it" not in low:
+                continue
+            if "until your opponent controls it" not in low:
+                continue
+            if "objective marker you control" not in low:
+                continue
+            if "within range of an objective marker" not in low:
+                continue
+            return True
+        return False
+
+    def _refresh_command_phase_flags(self) -> None:
+        """Parse command-phase CP gains and sticky objective flags into special_rules."""
+        if getattr(self, "special_rules", None) is None:
+            self.special_rules = {}
+        sr = self.special_rules
+        try:
+            if "command_phase_bonus_cp" in sr:
+                del sr["command_phase_bonus_cp"]
+            if "sticky_objectives" in sr:
+                del sr["sticky_objectives"]
+        except Exception:
+            pass
+        try:
+            cache = getattr(self, "_ability_cache", None)
+            if isinstance(cache, dict) and "command_phase_sticky_objective" in cache:
+                del cache["command_phase_sticky_objective"]
+        except Exception:
+            pass
+
+        bonus_cp = 0
+        for ab in self._iter_active_abilities():
+            try:
+                desc = ab if isinstance(ab, str) else (getattr(ab, "description", "") or getattr(ab, "name", ""))
+            except Exception:
+                desc = ""
+            text = self._normalize_rules_text(desc or "")
+            if not text:
+                continue
+            m = self._COMMAND_PHASE_BONUS_CP_RE.search(text)
+            if m:
+                try:
+                    bonus_cp += int(m.group(1))
+                except Exception:
+                    continue
+
+        if bonus_cp > 0:
+            sr["command_phase_bonus_cp"] = int(bonus_cp)
+
+        if self._scan_command_phase_sticky_objective():
+            sr["sticky_objectives"] = True
+
+        self.special_rules = sr
+
     def _refresh_bearer_unit_common_modifiers(self) -> None:
-        """Parse common bearer-unit rules that grant charge bonuses or set Leadership."""
+        """Parse common bearer/leading-unit rules that grant simple unit-wide modifiers."""
         try:
             root = self.get_attached_unit_root()
         except Exception:
@@ -728,6 +825,10 @@ class Unit:
         for u in members:
             try:
                 u.remove_characteristic_modifiers_by_source("ability:bearer_unit_leadership")
+            except Exception:
+                pass
+            try:
+                u.remove_characteristic_modifiers_by_source("ability:bearer_unit_objective_control")
             except Exception:
                 pass
             try:
@@ -745,13 +846,40 @@ class Unit:
                         sr["charge_roll_modifiers"] = kept
                     elif "charge_roll_modifiers" in sr:
                         del sr["charge_roll_modifiers"]
+                for key in (
+                    "bearer_unit_fnp",
+                    "bearer_unit_sustained_hits_value",
+                    "bearer_unit_ignores_cover",
+                    "bearer_unit_target_hit_penalties",
+                ):
+                    if key in sr:
+                        del sr[key]
                 u.special_rules = sr
+            except Exception:
+                pass
+            try:
+                cache = getattr(u, "_ability_cache", None)
+                if isinstance(cache, dict):
+                    for k in list(cache.keys()):
+                        if k == "feel_no_pain" or k.startswith("target_hit_penalty:"):
+                            del cache[k]
             except Exception:
                 pass
 
         seen = set()
         charge_mods: list[tuple[int, str]] = []
         leadership_sets: list[tuple[int, str]] = []
+        oc_mods: list[tuple[int, str]] = []
+        fnp_entries: list[dict] = []
+        sustained_hits_value = 0
+        ignores_cover_sources: set[str] = set()
+        hit_penalties: list[dict] = []
+
+        def _iter_sentences(text: str) -> list[str]:
+            if not text:
+                return []
+            cleaned = re.sub(r";\s*", ". ", text)
+            return [part.strip() for part in re.split(r"\.\s*", cleaned) if part.strip()]
 
         for u in members:
             for name, desc in u._iter_ability_entries_for_rules(model=None):
@@ -766,26 +894,82 @@ class Unit:
                 if not text:
                     continue
                 text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+                if "leading a unit" in text.lower() and "bearer's unit" not in text.lower():
+                    text = re.sub(r"\bthat unit\b", "the bearer's unit", text, flags=re.IGNORECASE)
 
-                m = self._BEARER_UNIT_CHARGE_BONUS_RE.search(text)
-                if m:
-                    try:
-                        val = int(m.group(1))
-                    except Exception:
-                        val = None
-                    if val:
-                        source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
-                        charge_mods.append((val, source))
+                for sentence in _iter_sentences(text):
+                    if not sentence:
+                        continue
+                    m = self._BEARER_UNIT_CHARGE_BONUS_RE.search(sentence)
+                    if m:
+                        try:
+                            val = int(m.group(1))
+                        except Exception:
+                            val = None
+                        if val:
+                            source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
+                            charge_mods.append((val, source))
 
-                m = self._BEARER_UNIT_LEADERSHIP_SET_RE.search(text)
-                if m:
-                    try:
-                        val = int(m.group(1))
-                    except Exception:
-                        val = None
-                    if val:
+                    m = self._BEARER_UNIT_LEADERSHIP_SET_RE.search(sentence)
+                    if m:
+                        try:
+                            val = int(m.group(1))
+                        except Exception:
+                            val = None
+                        if val:
+                            source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
+                            leadership_sets.append((val, source))
+
+                    m = self._BEARER_UNIT_OC_BONUS_RE.search(sentence)
+                    if m:
+                        try:
+                            val = int(m.group(1))
+                        except Exception:
+                            val = None
+                        if val:
+                            source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
+                            oc_mods.append((val, source))
+
+                    m = self._BEARER_UNIT_FNP_RE.search(sentence)
+                    if m:
+                        try:
+                            val = int(m.group(1))
+                        except Exception:
+                            val = None
+                        if val:
+                            cond = None
+                            try:
+                                sm = sentence.lower()
+                                cm = re.search(
+                                    r"(?:feel\s+no\s+pain|fnp)\s*\(?\d+\+(?:\)?)\s+(against|while|when)\s+(.+)",
+                                    sm,
+                                    flags=re.IGNORECASE,
+                                )
+                                if cm and cm.group(1) and cm.group(2):
+                                    cond = f"{cm.group(1)} {cm.group(2)}".strip()
+                            except Exception:
+                                cond = None
+                            source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
+                            fnp_entries.append({"value": int(val), "condition": cond, "source": source})
+
+                    m = self._BEARER_UNIT_SUSTAINED_HITS_RE.search(sentence)
+                    if m:
+                        try:
+                            val = int(m.group(1))
+                        except Exception:
+                            val = None
+                        if val:
+                            sustained_hits_value = max(int(sustained_hits_value), int(val))
+
+                    if self._BEARER_UNIT_IGNORES_COVER_RE.search(sentence):
                         source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
-                        leadership_sets.append((val, source))
+                        ignores_cover_sources.add(source)
+
+                    m = self._BEARER_UNIT_TARGET_HIT_PENALTY_RE.search(sentence)
+                    if m:
+                        atype = (m.group("atype") or "any").strip().lower()
+                        source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
+                        hit_penalties.append({"value": 1, "attack_type": atype, "source": source})
 
         if charge_mods:
             for u in members:
@@ -811,6 +995,48 @@ class Unit:
                         "leadership",
                         Modifier(ModifierOp.SET, int(val), source=f"ability:bearer_unit_leadership:{source}"),
                     )
+
+        if oc_mods:
+            from ..utility.modifiers import Modifier, ModifierOp
+
+            for u in members:
+                for val, source in oc_mods:
+                    u.add_characteristic_modifier(
+                        "objective_control",
+                        Modifier(ModifierOp.ADD, int(val), source=f"ability:bearer_unit_objective_control:{source}"),
+                    )
+
+        if fnp_entries:
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["bearer_unit_fnp"] = list(fnp_entries)
+                u.special_rules = sr
+
+        if sustained_hits_value:
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["bearer_unit_sustained_hits_value"] = int(sustained_hits_value)
+                u.special_rules = sr
+
+        if ignores_cover_sources:
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["bearer_unit_ignores_cover"] = True
+                u.special_rules = sr
+
+        if hit_penalties:
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["bearer_unit_target_hit_penalties"] = list(hit_penalties)
+                u.special_rules = sr
 
     def _transport_disembark_rules(self) -> dict:
         """
@@ -1877,6 +2103,10 @@ class Unit:
             pass
         try:
             self._refresh_bearer_unit_common_modifiers()
+        except Exception:
+            pass
+        try:
+            self._refresh_command_phase_flags()
         except Exception:
             pass
 
@@ -3747,6 +3977,14 @@ class Unit:
             bodyguard._refresh_bearer_unit_common_modifiers()
         except Exception:
             pass
+        try:
+            self._refresh_command_phase_flags()
+        except Exception:
+            pass
+        try:
+            bodyguard._refresh_command_phase_flags()
+        except Exception:
+            pass
 
     def detach_from_unit(self) -> None:
         """Detach this Leader from its Bodyguard unit."""
@@ -3789,6 +4027,15 @@ class Unit:
         try:
             if bodyguard is not None:
                 bodyguard._refresh_bearer_unit_common_modifiers()
+        except Exception:
+            pass
+        try:
+            self._refresh_command_phase_flags()
+        except Exception:
+            pass
+        try:
+            if bodyguard is not None:
+                bodyguard._refresh_command_phase_flags()
         except Exception:
             pass
 
@@ -10055,30 +10302,19 @@ class Unit:
         if cache_key in getattr(self, "_ability_cache", {}):
             return bool(self._ability_cache[cache_key])
 
-        found = False
-        for ab in self._iter_active_abilities():
-            try:
-                desc = ab if isinstance(ab, str) else (getattr(ab, "description", "") or getattr(ab, "name", ""))
-            except Exception:
-                desc = ""
-            text = self._normalize_rules_text(desc or "")
-            if not text:
-                continue
-            low = text.lower().replace("\u2019", "'").replace("\u0192?T", "'")
-            if "end of your command phase" not in low:
-                continue
-            if "objective marker remains under your control" not in low:
-                continue
-            if "even if you have no models within range of it" not in low:
-                continue
-            if "until your opponent controls it" not in low:
-                continue
-            if "objective marker you control" not in low:
-                continue
-            if "within range of an objective marker" not in low:
-                continue
-            found = True
-            break
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("sticky_objectives"):
+                found = True
+            else:
+                found = self._scan_command_phase_sticky_objective()
+                if isinstance(sr, dict):
+                    if found:
+                        sr["sticky_objectives"] = True
+                    elif "sticky_objectives" in sr:
+                        del sr["sticky_objectives"]
+        except Exception:
+            found = self._scan_command_phase_sticky_objective()
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
@@ -10099,6 +10335,9 @@ class Unit:
         """Attached unit eligibility: true if any attached member has sticky objective ability."""
         for u in self.get_attached_unit_members():
             try:
+                sr = getattr(u, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("sticky_objectives"):
+                    return True
                 if u.has_command_phase_sticky_objective():
                     return True
             except Exception:
@@ -11869,6 +12108,30 @@ class Unit:
             text = re.sub(r";\s*", ". ", text)
             return [part.strip() for part in re.split(r"\.\s*", text) if part.strip()]
 
+        sr = getattr(root, "special_rules", None)
+        if isinstance(sr, dict):
+            entries = sr.get("bearer_unit_target_hit_penalties")
+            if isinstance(entries, list):
+                for entry in entries:
+                    if isinstance(entry, dict):
+                        at = str(entry.get("attack_type", "any") or "any").lower()
+                        val = int(entry.get("value", 1) or 1)
+                        src = str(entry.get("source", "") or "Bearer unit ability").strip() or "Bearer unit ability"
+                    elif isinstance(entry, (list, tuple)):
+                        at = "any"
+                        val = int(entry[0]) if entry else 1
+                        src = str(entry[1]) if len(entry) > 1 else "Bearer unit ability"
+                    else:
+                        continue
+                    if atype != "any" and at not in ("any", atype):
+                        continue
+                    key = f"bearer_unit:{src.lower()}"
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    penalty += int(val)
+                    reasons.append(f"-{val} to hit from {src}")
+
         def _match_entries(entries, pattern: re.Pattern, scope_key: str) -> None:
             nonlocal penalty
             for name, desc in entries:
@@ -12350,6 +12613,31 @@ class Unit:
             self._ability_cache['feel_no_pain'] = list(cached)
 
         result = list(cached)
+        try:
+            sr = getattr(self, "special_rules", None)
+            entries = sr.get("bearer_unit_fnp") if isinstance(sr, dict) else None
+            if isinstance(entries, list):
+                seen = set((int(v), (c or "")) for v, c in result)
+                for entry in entries:
+                    if isinstance(entry, dict):
+                        val = entry.get("value")
+                        cond = entry.get("condition")
+                    elif isinstance(entry, (list, tuple)):
+                        val = entry[0] if entry else None
+                        cond = entry[1] if len(entry) > 1 else None
+                    else:
+                        continue
+                    try:
+                        val = int(val)
+                    except Exception:
+                        continue
+                    key = (int(val), str(cond or ""))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    result.append((int(val), cond))
+        except Exception:
+            pass
         try:
             army = self.get_parent_army()
             mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None

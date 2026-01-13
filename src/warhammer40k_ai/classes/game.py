@@ -7526,9 +7526,14 @@ class Game:
                 continue
             if "enemy" not in text:
                 continue
-            if ("reinforcement" not in text) and ("reserves" not in text) and ("deep strike" not in text):
-                continue
+            has_reinforcement_terms = (
+                ("reinforcement" in text) or ("reserves" in text) or ("deep strike" in text)
+            )
             if ("cannot be set up" not in text) and ("cannot set up" not in text):
+                continue
+            if not has_reinforcement_terms:
+                if "within 12" in text:
+                    ranges.append(12.0)
                 continue
             distances = []
             for match in re.finditer(r"within\s+(\d+(?:\.\d+)?)\s*(?:\"|inches)", text):

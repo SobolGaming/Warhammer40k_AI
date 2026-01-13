@@ -1,4 +1,6 @@
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
 
 class _MockDatasheet:
@@ -54,6 +56,18 @@ def _make_unit(name, *, ds_id="", abilities=None, attached_to=None, leadership="
 
 
 class TestBearerUnitCommonAbilities(unittest.TestCase):
+    def _aura_stub(self):
+        return SimpleNamespace(
+            hit=0,
+            wound=0,
+            reroll_hit_ones=False,
+            reroll_wound_ones=False,
+            reroll_hit_reasons=(),
+            reroll_wound_reasons=(),
+            target_toughness_delta=0,
+            target_toughness_reasons=(),
+        )
+
     def test_bearer_unit_charge_bonus_applies(self):
         from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, Game
 
@@ -69,6 +83,123 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
 
         game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
         self.assertEqual(game._apply_charge_modifiers(unit, 7), 8)
+
+    def test_bearer_unit_objective_control_bonus_applies(self):
+        ability = {
+            "name": "Banner of Resolve",
+            "description": "Add 1 to the Objective Control characteristic of models in the bearer's unit.",
+            "type": "Wargear",
+            "parameter": "",
+        }
+        unit = _make_unit("Herald", abilities=[ability])
+        unit.models[0].optional_wargear.append("Banner of Resolve")
+        unit._refresh_bearer_unit_common_modifiers()
+
+        self.assertEqual(unit.objective_control, 2)
+
+    def test_bearer_unit_fnp_applies(self):
+        ability = {
+            "name": "Pain Icon",
+            "description": "Models in the bearer's unit have the Feel No Pain 5+ ability.",
+            "type": "Wargear",
+            "parameter": "",
+        }
+        unit = _make_unit("Herald", abilities=[ability])
+        unit.models[0].optional_wargear.append("Pain Icon")
+        unit._refresh_bearer_unit_common_modifiers()
+
+        self.assertIn((5, None), unit.has_feel_no_pain())
+
+    def test_bearer_unit_sustained_hits_applies(self):
+        from warhammer40k_ai.classes.wargear import WargearProfile
+
+        ability = {
+            "name": "Aspect Relic",
+            "description": "Weapons equipped by models in the bearer's unit have Sustained Hits 1.",
+            "type": "Wargear",
+            "parameter": "",
+        }
+        unit = _make_unit("Aspect", abilities=[ability])
+        unit.models[0].optional_wargear.append("Aspect Relic")
+        unit._refresh_bearer_unit_common_modifiers()
+
+        parent = SimpleNamespace(name="Test Gun", is_melee=lambda: False, is_ranged=lambda: True)
+        profile = WargearProfile(
+            profile_name="Ranged",
+            wargear_data={
+                "range": "24",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "4",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            },
+            parent_wargear=parent,
+        )
+        target = SimpleNamespace(
+            toughness=4,
+            models=[SimpleNamespace(is_alive=True)],
+            has_keyword=lambda _k: False,
+        )
+        attack_instance = {"_aura_attack_mods": self._aura_stub()}
+        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=6):
+            profile._hit_target_with_tracking(target, unit.models[0], attack_instance)
+
+        self.assertEqual(int(attack_instance.get("sustained_hit", 0)), 1)
+
+    def test_bearer_unit_ignores_cover_applies(self):
+        from warhammer40k_ai.classes.wargear import WargearProfile
+
+        ability = {
+            "name": "Shadow Weave",
+            "description": "Attacks made by models in the bearer's unit have the Ignores Cover ability.",
+            "type": "Wargear",
+            "parameter": "",
+        }
+        unit = _make_unit("Shadow", abilities=[ability])
+        unit.models[0].optional_wargear.append("Shadow Weave")
+        unit._refresh_bearer_unit_common_modifiers()
+
+        parent = SimpleNamespace(name="Test Gun", is_melee=lambda: False, is_ranged=lambda: True)
+        profile = WargearProfile(
+            profile_name="Ranged",
+            wargear_data={
+                "range": "24",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "4",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            },
+            parent_wargear=parent,
+        )
+        target = SimpleNamespace(
+            toughness=4,
+            models=[SimpleNamespace(is_alive=True)],
+            has_keyword=lambda _k: False,
+        )
+        attack_instance = {"_aura_attack_mods": self._aura_stub()}
+        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=4):
+            profile._hit_target_with_tracking(target, unit.models[0], attack_instance)
+
+        self.assertTrue(attack_instance.get("ignores_cover", False))
+
+    def test_bearer_unit_target_hit_penalty_applies(self):
+        ability = {
+            "name": "Deflective Field",
+            "description": "Each time an attack targets the bearer's unit, subtract 1 from the Hit roll.",
+            "type": "Wargear",
+            "parameter": "",
+        }
+        unit = _make_unit("Shield", abilities=[ability])
+        unit.models[0].optional_wargear.append("Deflective Field")
+        unit._refresh_bearer_unit_common_modifiers()
+
+        penalty, reasons = unit.get_target_hit_roll_penalty("ranged")
+        self.assertEqual(penalty, 1)
+        self.assertIn("-1 to hit from Deflective Field", reasons)
 
     def test_bearer_unit_leadership_set_applies(self):
         ability = {

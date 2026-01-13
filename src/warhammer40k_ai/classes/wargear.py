@@ -1515,6 +1515,12 @@ class WargearProfile:
             except Exception:
                 pass
             try:
+                sr = getattr(attacker.parent_unit, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("bearer_unit_ignores_cover"):
+                    attack_instance["ignores_cover"] = True
+            except Exception:
+                pass
+            try:
                 tsr = getattr(target, "special_rules", None)
                 if isinstance(tsr, dict) and tsr.get("pain_no_cover_active"):
                     attack_instance["ignores_cover"] = True
@@ -2906,6 +2912,15 @@ class WargearProfile:
             pain_sustained_value = 0
         pain_sustained = bool(pain_sustained_value)
 
+        bearer_unit_sustained_value = 0
+        try:
+            sr = getattr(attacker.parent_unit, "special_rules", None)
+            if isinstance(sr, dict):
+                bearer_unit_sustained_value = int(sr.get("bearer_unit_sustained_hits_value", 0) or 0)
+        except Exception:
+            bearer_unit_sustained_value = 0
+        bearer_unit_sustained = bool(bearer_unit_sustained_value)
+
         sustained_base = (
             self.is_sustained_hits()
             or blessings_sustained
@@ -2917,6 +2932,7 @@ class WargearProfile:
             or exquisite_sustained
             or empowered_sustained
             or pain_sustained
+            or bearer_unit_sustained
         )
 
         blitzing_grants_sustained = False
@@ -2967,7 +2983,7 @@ class WargearProfile:
                 hit_result['special_effects'].append("Lethal Hits")
                 attack_instance['lethal_hit'] = True
             # For Sustained Hits, do not override an existing Sustained Hits X on the weapon.
-            if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or blitzing_grants_sustained:
+            if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or bearer_unit_sustained or blitzing_grants_sustained:
                 # Support Sustained Hits X / Sustained Hits D3 / etc. Roll per critical hit.
                 if self.is_sustained_hits():
                     try:
@@ -2986,6 +3002,9 @@ class WargearProfile:
                     elif pain_sustained_value:
                         sustained_val = max(int(sustained_val), int(pain_sustained_value))
                         label = f"Sustained Hits (+{sustained_val}) [Power from Pain]"
+                    elif bearer_unit_sustained_value:
+                        sustained_val = max(int(sustained_val), int(bearer_unit_sustained_value))
+                        label = f"Sustained Hits (+{sustained_val}) [Bearer Unit]"
                     elif blessings_sustained:
                         label += " [Blessings of Khorne]"
                     elif dark_pacts_sustained:

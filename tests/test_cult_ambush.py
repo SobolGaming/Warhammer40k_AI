@@ -279,3 +279,84 @@ class TestCultAmbush(unittest.TestCase):
 
         pos_ok = (25.0, 10.0, 0.0)
         self.assertTrue(game.can_place_unit_arriving_from_reserves(arriving, pos_ok))
+
+    def test_reserve_denial_simple_12_inch_blocks_reserves(self):
+        from warhammer40k_ai.classes.ability import Ability
+        from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.classes.model import Model
+        from warhammer40k_ai.utility.model_base import Base, BaseType
+
+        p1 = _Player("P1")
+        p2 = _Player("P2")
+        army1 = _Army("ALLY", p1)
+        army2 = _Army("ENEMY", p2)
+        p1.army = army1
+        p2.army = army2
+
+        game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[p1, p2])
+
+        ability = Ability(
+            name="No Warp Zone",
+            faction_id="SM",
+            description="Enemy units cannot be set up within 12\" of this unit.",
+            type="Ability",
+        )
+        enemy_model = Model(
+            name="Enemy",
+            movement=6,
+            toughness=4,
+            save=4,
+            wounds=2,
+            leadership=7,
+            objective_control=1,
+            model_base=Base(BaseType.CIRCULAR, 1.0),
+        )
+        enemy_model.set_location(10.0, 10.0, 0.0, 0.0)
+        enemy_unit = SimpleNamespace(
+            models=[enemy_model],
+            possible_abilities=[ability],
+            deployed=True,
+            reserve_status="deployed",
+            embarked_in=None,
+            is_alive=lambda: True,
+        )
+        army2.units.append(enemy_unit)
+
+        class _ArrivingUnit:
+            def __init__(self, army):
+                self._army = army
+                self.models = [
+                    Model(
+                        name="Arriving",
+                        movement=6,
+                        toughness=4,
+                        save=4,
+                        wounds=2,
+                        leadership=7,
+                        objective_control=1,
+                        model_base=Base(BaseType.CIRCULAR, 1.0),
+                    )
+                ]
+
+            def get_parent_army(self):
+                return self._army
+
+            def is_in_strategic_reserves(self):
+                return False
+
+            def has_deep_strike(self):
+                return True
+
+            def calculate_model_positions(self, x, y, _game_map, **_kwargs):
+                return [(x, y, 0.0, 0.0)]
+
+            def _create_potential_base(self, x, y, z, facing, model):
+                base = copy.deepcopy(model.model_base)
+                base.set_position(x, y, z)
+                base.set_facing(facing)
+                return base
+
+        arriving = _ArrivingUnit(army1)
+
+        pos_blocked = (22.0, 10.0, 0.0)
+        self.assertFalse(game.can_place_unit_arriving_from_reserves(arriving, pos_blocked))

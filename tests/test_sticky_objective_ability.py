@@ -56,6 +56,7 @@ class TestStickyObjectiveAbility(unittest.TestCase):
         unit = _make_unit("Sticky Unit", abilities=[ability])
         unit.deployed = True
         unit.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        self.assertTrue(unit.special_rules.get("sticky_objectives"))
 
         army = Army("Test Faction", "Detachment")
         army.faction_id = "TF"
