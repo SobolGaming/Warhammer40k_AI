@@ -8587,14 +8587,14 @@ class Unit:
                     return False
             else:
                 in_phase = self._is_controlling_players_shooting_phase()
-                # BGNT: shoot into own combat (target is in ER of this unit) in-phase.
-                if shooter_in_er_of_target and (self.is_vehicle or self.is_monster) and in_phase:
-                    pass
-                # BGNT target exception: target is a VEHICLE/MONSTER and shooter is in its shooting phase.
-                elif (target_unit.is_vehicle or target_unit.is_monster) and in_phase:
-                    pass
+                if shooter_in_er_of_target:
+                    # BGNT: shoot into own combat (target is in ER of this unit) in-phase.
+                    if not ((self.is_vehicle or self.is_monster) and in_phase):
+                        return False
                 else:
-                    return False
+                    # BGNT target exception: target is a VEHICLE/MONSTER and shooter is in its shooting phase.
+                    if not ((target_unit.is_vehicle or target_unit.is_monster) and in_phase):
+                        return False
 
         # BLAST restriction supersedes BGNT targeting:
         # Blast weapons cannot target a unit that is within Engagement Range of any friendly unit (relative to the shooter).
@@ -8648,6 +8648,88 @@ class Unit:
             return False
             
         return True
+
+    def is_target_closest_eligible(self, model, weapon_profile, target_unit, game_map, *, max_distance: Optional[float] = None) -> bool:
+        """Return True if target_unit is the closest eligible target for this model/weapon."""
+        if model is None or weapon_profile is None or target_unit is None or game_map is None:
+            return False
+
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+
+        try:
+            if not self._can_model_shoot_weapon_at_target(model, weapon_profile, target_root, game_map):
+                return False
+        except Exception:
+            return False
+
+        def _min_distance_to_unit(unit) -> Optional[float]:
+            try:
+                target_models = unit.get_models_for_collision()
+            except Exception:
+                target_models = list(getattr(unit, "models", []) or [])
+            from ..utility.aura_utils import distance_between_models_bases_3d
+            min_dist = float("inf")
+            for tm in target_models:
+                if not getattr(tm, "is_alive", False):
+                    continue
+                dist = float(distance_between_models_bases_3d(model, tm))
+                if dist < min_dist:
+                    min_dist = dist
+            if min_dist == float("inf"):
+                return None
+            return min_dist
+
+        target_dist = _min_distance_to_unit(target_root)
+        if target_dist is None:
+            return False
+        if max_distance is not None and target_dist > max_distance:
+            return False
+
+        closest = None
+        seen = set()
+        for enemy_unit in game_map.get_enemy_units(self):
+            try:
+                root = enemy_unit.get_attached_unit_root()
+            except Exception:
+                root = enemy_unit
+            if root is None:
+                continue
+            try:
+                rid = getattr(root, "_id", None) or id(root)
+            except Exception:
+                rid = id(root)
+            if rid in seen:
+                continue
+            seen.add(rid)
+            try:
+                if hasattr(root, "is_alive") and callable(root.is_alive) and not root.is_alive():
+                    continue
+            except Exception:
+                pass
+            try:
+                if hasattr(root, "deployed") and not bool(getattr(root, "deployed", True)):
+                    continue
+            except Exception:
+                pass
+            try:
+                if not self._can_model_shoot_weapon_at_target(model, weapon_profile, root, game_map):
+                    continue
+            except Exception:
+                continue
+            dist = _min_distance_to_unit(root)
+            if dist is None:
+                continue
+            if max_distance is not None and dist > max_distance:
+                continue
+            if closest is None or dist < closest:
+                closest = dist
+
+        if closest is None:
+            return False
+        return target_dist <= closest + 1e-6
 
     def _attacking_unit_has_any_los_to_target_unit(self, target_unit, game_map) -> bool:
         """Return True if ANY model in this unit has LOS to ANY model in target_unit."""
@@ -12423,6 +12505,33 @@ class Unit:
         if not hasattr(self, '_ability_cache'):
             self._ability_cache = {}
         self._ability_cache['frenzy'] = bool(found)
+        return bool(found)
+
+    def has_furious_onslaught(self, model: Optional['Model'] = None) -> bool:
+        """True if this model has the Furious Onslaught datasheet ability."""
+        if model is None:
+            return False
+        cache_key = f"furious_onslaught:{getattr(model, '_id', id(model))}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache[cache_key])
+
+        found = False
+        try:
+            for name, desc in self._iter_model_specific_ability_entries(model):
+                text = self._normalize_rules_text(name or "")
+                if text and "furious onslaught" in text.lower():
+                    found = True
+                    break
+                text = self._normalize_rules_text(desc or "")
+                if text and "furious onslaught" in text.lower():
+                    found = True
+                    break
+        except Exception:
+            found = False
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = bool(found)
         return bool(found)
 
     def can_reroll_blood_surge_roll(self) -> bool:

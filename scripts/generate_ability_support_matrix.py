@@ -1083,6 +1083,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
 def _datasheet_ability_support_by_name_faction_datasheet() -> Dict[Tuple[str, str, str], Tuple[str, str]]:
     raw = {
         ("WE", "Frenzy", "000002632"): ("Supported", "After being targeted, Helbrute can shoot or fight vs the attacker (eligible target check)."),
+        ("WE", "Furious Onslaught", "000002638"): ("Supported", "Ranged attacks vs closest eligible target within 18\" allow an optional Hit re-roll."),
     }
     out: Dict[Tuple[str, str, str], Tuple[str, str]] = {}
     for (fid, name, dsid), val in raw.items():

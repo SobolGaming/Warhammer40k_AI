@@ -845,6 +845,26 @@ class WargearProfile:
 
         closest_target, closest_dist = attacker.return_closest_model_in_unit(target)
 
+        furious_onslaught_applies = False
+        try:
+            is_ranged = bool(getattr(getattr(self, "parent_wargear", None), "is_ranged", lambda: False)())
+            if is_ranged:
+                unit = getattr(attacker, "parent_unit", None)
+                if unit is not None and getattr(unit, "has_furious_onslaught", None):
+                    if unit.has_furious_onslaught(attacker):
+                        gm = game_map
+                        if gm is None:
+                            try:
+                                gm = unit.get_parent_army().player.game.map
+                            except Exception:
+                                gm = None
+                        if gm is not None and getattr(unit, "is_target_closest_eligible", None):
+                            furious_onslaught_applies = bool(
+                                unit.is_target_closest_eligible(attacker, self, target, gm, max_distance=18.0)
+                            )
+        except Exception:
+            furious_onslaught_applies = False
+
         # Apply AP modifiers that depend on attacker/target context (e.g., Plunging Fire)
         effective_ap = self.get_effective_ap(attacker, target)
         cabal_ap_bonus = self._cabal_twist_of_fate_ap_bonus(attacker, target)
@@ -1622,9 +1642,30 @@ class WargearProfile:
         # apply -1 to Hit unless the attack is made with a Pistol.
         try:
             pu = attacker.parent_unit
-            if getattr(pu, "_bgnt_locked_at_target_selection", False) and (pu.is_vehicle or pu.is_monster) and (not self.is_pistol()):
+            if is_ranged and getattr(pu, "_bgnt_locked_at_target_selection", False) and (pu.is_vehicle or pu.is_monster) and (not self.is_pistol()):
                 dice_modifier -= 1
                 hit_result['modifiers'].append("-1 from Big Guns Never Tire (locked when selecting targets)")
+        except Exception:
+            pass
+
+        # BGNT target exception: ranged attacks vs an engaged enemy MONSTER/VEHICLE are -1 to hit (unless Pistol).
+        try:
+            pu = getattr(attacker, "parent_unit", None)
+            if is_ranged and pu is not None and (not self.is_pistol()) and (target.is_vehicle or target.is_monster):
+                game_map = None
+                try:
+                    game_map = pu.get_parent_army().player.game.map
+                except Exception:
+                    game_map = None
+                if game_map is not None:
+                    engaged_with_friendly = any(
+                        game_map.is_within_engagement_range(friendly, target)
+                        for friendly in game_map.get_friendly_units(pu)
+                        if friendly.is_alive() and getattr(friendly, "deployed", True)
+                    )
+                    if engaged_with_friendly:
+                        dice_modifier -= 1
+                        hit_result['modifiers'].append("-1 from Big Guns Never Tire (target engaged)")
         except Exception:
             pass
         
@@ -2075,6 +2116,49 @@ class WargearProfile:
                             hit_result["reroll"] = rr
                             dice_roll = rr
                             reroll_used = True
+        except Exception:
+            pass
+
+        # World Eaters: Furious Onslaught (Forgefiend) re-roll Hit roll vs closest eligible target within 18" (optional).
+        try:
+            if furious_onslaught_applies and "reroll" not in hit_result:
+                try:
+                    success = (dice_roll != 1) and (self.skill > 0) and (dice_roll >= final_needed)
+                except Exception:
+                    success = False
+                do_reroll = False
+                try:
+                    unit = attacker.parent_unit
+                    game = unit.get_parent_army().player.game
+                    player = unit.get_parent_army().player
+                    is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                    provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                except Exception:
+                    is_human = False
+                    provider = None
+                    player = None
+                if is_human and callable(provider):
+                    try:
+                        do_reroll = bool(provider(
+                            player=player,
+                            unit=unit,
+                            roll_type="hit",
+                            value=dice_roll,
+                            dice=None,
+                            needed=final_needed,
+                            success=success,
+                            reason="Furious Onslaught",
+                        ))
+                    except Exception:
+                        do_reroll = False
+                else:
+                    do_reroll = (not success)
+                if do_reroll:
+                    rr = _reroll_hit()
+                    hit_result.setdefault("special_effects", []).append("Furious Onslaught: re-roll Hit roll")
+                    hit_result["reroll"] = rr
+                    dice_roll = rr
+                    reroll_used = True
         except Exception:
             pass
 
