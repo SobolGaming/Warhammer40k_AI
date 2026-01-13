@@ -1217,6 +1217,11 @@ def _classify_ability(
         return unit_contains_oc_support
     if aura_oc_support:
         return aura_oc_support
+    if common_support and leading_support:
+        if common_support[0] == "Supported" and leading_support[0] == "Supported":
+            notes = " ".join([common_support[1], leading_support[1]]).strip()
+            return ("Supported", notes)
+        return common_support
     if common_support:
         return common_support
     if leading_support:
@@ -1295,6 +1300,28 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
     )
     if m:
         notes.append(f"Charge rolls for bearer's unit get +{m.group(1)}.")
+
+    m = re.search(
+        r"add\s+(\d+)\s+to\s+advance\s+and\s+charge\s+rolls?\s+made\s+for\s+the\s+bearer'?s\s+unit",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        if leading_prefix:
+            notes.append(f"{leading_prefix}Advance and Charge rolls for the unit +{m.group(1)}.")
+        else:
+            notes.append(f"Advance and Charge rolls for bearer's unit +{m.group(1)}.")
+    else:
+        m = re.search(
+            r"add\s+(\d+)\s+to\s+advance\s+rolls?\s+made\s+for\s+the\s+bearer'?s\s+unit",
+            low,
+            flags=re.IGNORECASE,
+        )
+        if m:
+            if leading_prefix:
+                notes.append(f"{leading_prefix}Advance rolls for the unit +{m.group(1)}.")
+            else:
+                notes.append(f"Advance rolls for bearer's unit +{m.group(1)}.")
 
     advance_charge_re = re.search(r"re-?roll\s+advance\s+and\s+charge\s+rolls?", low, flags=re.IGNORECASE)
     if advance_charge_re:
@@ -1572,24 +1599,81 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         return None
     if "model in that unit" not in low and "models in that unit" not in low:
         return None
+    notes: List[str] = []
     lethal_re = re.search(
         r"weapons equipped by models in that unit have the \[?lethal hits\]? ability",
         low,
         flags=re.IGNORECASE,
     )
     if lethal_re:
-        return ("Supported", "Leading: unit weapons gain Lethal Hits.")
-    hit_re = re.search(r"re-?roll (?:a|any)?\s*hit roll(?:s)? of 1", low, flags=re.IGNORECASE)
-    wound_re = re.search(r"re-?roll (?:a|any)?\s*wound roll(?:s)? of 1", low, flags=re.IGNORECASE)
-    if not (hit_re and wound_re):
-        return None
+        notes.append("Leading: unit weapons gain Lethal Hits.")
+
     if "melee attack" in low:
         attack_scope = "melee"
     elif "ranged attack" in low:
         attack_scope = "ranged"
     else:
         attack_scope = "all"
-    return ("Supported", f"Leading: re-roll Hit/Wound rolls of 1 for {attack_scope} attacks.")
+
+    hit_conditional = False
+    wound_conditional = False
+    m = re.search(
+        r"add\s+(\d+)\s+to\s+the\s+hit\s+roll\s+if\s+that\s+unit\s+is\s+below\s+(?:its\s+)?starting\s+strength",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        hit_conditional = True
+        notes.append(f"Leading: +{m.group(1)} to hit for {attack_scope} attacks while below Starting Strength.")
+    m = re.search(
+        r"add\s+(\d+)\s+to\s+the\s+wound\s+roll(?:\s+as\s+well)?\s+if\s+that\s+unit\s+is\s+below\s+half[- ]strength",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        wound_conditional = True
+        notes.append(f"Leading: +{m.group(1)} to wound for {attack_scope} attacks while below Half-strength.")
+    m = re.search(
+        r"add\s+(\d+)\s+to\s+the\s+wound\s+roll(?:\s+as\s+well)?\s+if\s+the\s+target\s+is\s+battle[- ]shocked",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        m = re.search(
+            r"if\s+the\s+target\s+is\s+battle[- ]shocked,\s+add\s+(\d+)\s+to\s+the\s+wound\s+roll",
+            low,
+            flags=re.IGNORECASE,
+        )
+    if m:
+        wound_conditional = True
+        notes.append(f"Leading: +{m.group(1)} to wound for {attack_scope} attacks vs Battle-shocked targets.")
+
+    if not hit_conditional:
+        m = re.search(
+            r"each time a model in that unit makes (?:a|an)\s+(?:melee|ranged)?\s*attack, add\s+(\d+)\s+to\s+the\s+hit\s+roll",
+            low,
+            flags=re.IGNORECASE,
+        )
+        if m:
+            notes.append(f"Leading: +{m.group(1)} to hit for {attack_scope} attacks.")
+
+    if not wound_conditional:
+        m = re.search(
+            r"each time a model in that unit makes (?:a|an)\s+(?:melee|ranged)?\s*attack, add\s+(\d+)\s+to\s+the\s+wound\s+roll",
+            low,
+            flags=re.IGNORECASE,
+        )
+        if m:
+            notes.append(f"Leading: +{m.group(1)} to wound for {attack_scope} attacks.")
+
+    hit_re = re.search(r"re-?roll (?:a|any)?\s*hit roll(?:s)? of 1", low, flags=re.IGNORECASE)
+    wound_re = re.search(r"re-?roll (?:a|any)?\s*wound roll(?:s)? of 1", low, flags=re.IGNORECASE)
+    if hit_re and wound_re:
+        notes.append(f"Leading: re-roll Hit/Wound rolls of 1 for {attack_scope} attacks.")
+
+    if notes:
+        return ("Supported", " ".join(notes))
+    return None
 
 
 def _unit_hit_reroll_ones_support(description: str) -> Optional[Tuple[str, str]]:

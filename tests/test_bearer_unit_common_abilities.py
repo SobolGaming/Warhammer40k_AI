@@ -84,6 +84,27 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
         game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
         self.assertEqual(game._apply_charge_modifiers(unit, 7), 8)
 
+    def test_bearer_unit_advance_and_charge_bonus_applies(self):
+        from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, Game
+
+        ability = {
+            "name": "War Drums",
+            "description": "While this model is leading a unit, add 1 to Advance and Charge rolls made for that unit.",
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        leader = _make_unit("Leader", abilities=[ability])
+        bodyguard = _make_unit("Bodyguard")
+        bodyguard.attached_leaders = [leader]
+        leader.attached_to = bodyguard
+        leader.can_be_attached_to = ["Bodyguard"]
+
+        bodyguard._refresh_bearer_unit_common_modifiers()
+
+        self.assertEqual(bodyguard._apply_advance_roll_modifiers(4), 5)
+        game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
+        self.assertEqual(game._apply_charge_modifiers(bodyguard, 7), 8)
+
     def test_bearer_unit_objective_control_bonus_applies(self):
         ability = {
             "name": "Banner of Resolve",

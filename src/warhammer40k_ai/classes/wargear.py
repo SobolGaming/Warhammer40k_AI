@@ -1933,7 +1933,7 @@ class WargearProfile:
             root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
             is_melee = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_melee())
             attack_type = "melee" if is_melee else "ranged"
-            lead_mods = root.get_leading_attack_roll_modifiers(attack_type)
+            lead_mods = root.get_leading_attack_roll_modifiers(attack_type, target=target)
             if isinstance(lead_mods, dict) and int(lead_mods.get("hit", 0) or 0):
                 bonus = int(lead_mods.get("hit", 0) or 0)
                 dice_modifier += bonus
@@ -3470,7 +3470,7 @@ class WargearProfile:
             root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
             is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
             attack_type = "melee" if is_melee else "ranged"
-            lead_mods = root.get_leading_attack_roll_modifiers(attack_type)
+            lead_mods = root.get_leading_attack_roll_modifiers(attack_type, target=target)
             if isinstance(lead_mods, dict) and int(lead_mods.get("wound", 0) or 0):
                 bonus = int(lead_mods.get("wound", 0) or 0)
                 dice_modifier += bonus
