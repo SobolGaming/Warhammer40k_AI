@@ -1378,6 +1378,23 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         if m:
             notes.append(f"{leading_prefix}Objective Control for the unit +{m.group(1)}.")
 
+    m = re.search(
+        r"models?\s+in\s+the\s+bearer'?s\s+unit\s+have\s+(?:a\s+|the\s+)?feel\s+no\s+pain\s*(\d+)\+",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if not m and leading_prefix:
+        m = re.search(
+            r"models?\s+in\s+that\s+unit\s+have\s+(?:a\s+|the\s+)?feel\s+no\s+pain\s*(\d+)\+",
+            low,
+            flags=re.IGNORECASE,
+        )
+    if m:
+        if leading_prefix:
+            notes.append(f"{leading_prefix}Feel No Pain {m.group(1)}+.")
+        else:
+            notes.append(f"Bearer's unit gains Feel No Pain {m.group(1)}+.")
+
     if notes:
         return ("Supported", " ".join(notes))
     return None

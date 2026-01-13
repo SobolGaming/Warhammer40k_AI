@@ -110,6 +110,18 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
 
         self.assertIn((5, None), unit.has_feel_no_pain())
 
+    def test_leading_unit_fnp_applies(self):
+        ability = {
+            "name": "Grim Guardian",
+            "description": "While this model is leading a unit, models in that unit have the Feel No Pain 5+ ability.",
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        unit = _make_unit("Leader", abilities=[ability])
+        unit._refresh_bearer_unit_common_modifiers()
+
+        self.assertIn((5, None), unit.has_feel_no_pain())
+
     def test_bearer_unit_sustained_hits_applies(self):
         from warhammer40k_ai.classes.wargear import WargearProfile
 
