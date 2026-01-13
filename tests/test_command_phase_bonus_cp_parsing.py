@@ -47,6 +47,16 @@ class TestCommandPhaseBonusCpParsing(unittest.TestCase):
         unit = _make_unit("Commander", abilities=[ability])
         self.assertEqual(int(unit.special_rules.get("command_phase_bonus_cp", 0)), 1)
 
+    def test_command_phase_bonus_cp_on_battlefield(self):
+        ability = {
+            "name": "Strategic Acumen",
+            "description": "At the start of your Command phase, if this model is on the battlefield, you gain 1CP.",
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        unit = _make_unit("Commander", abilities=[ability])
+        self.assertEqual(int(unit.special_rules.get("command_phase_bonus_cp", 0)), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

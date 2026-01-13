@@ -1189,6 +1189,7 @@ def _classify_ability(
     transport_support = _transport_disembark_support(description)
     sticky_support = _sticky_objective_support(description)
     bodyguard_return_support = _command_phase_bodyguard_return_support(description)
+    command_phase_bonus_cp_support = _command_phase_bonus_cp_support(description)
     orders_support = _orders_section_support(name, description)
     attached_unit_support = _attached_unit_support(name, description)
     model_reroll_support = _model_reroll_wound_vs_character_support(description)
@@ -1238,6 +1239,8 @@ def _classify_ability(
         return sticky_support
     if bodyguard_return_support:
         return bodyguard_return_support
+    if command_phase_bonus_cp_support:
+        return command_phase_bonus_cp_support
     if orders_support:
         return orders_support
     if attached_unit_support:
@@ -1838,6 +1841,31 @@ def _command_phase_bodyguard_return_support(description: str) -> Optional[Tuple[
         "Supported",
         f"Command phase: return {amount} destroyed Bodyguard model(s) while leading (capped at starting strength).",
     )
+
+
+def _command_phase_bonus_cp_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    low = text.lower()
+    if "command phase" not in low:
+        return None
+    if "on the battlefield" not in low:
+        return None
+    if "this model" not in low and "this unit" not in low and "the bearer" not in low:
+        return None
+    m = re.search(
+        r"(?:at\s+the\s+)?start\s+of\s+(?:each\s+of\s+)?your\s+command\s+phase[s]?\b.*?\bgain\s+(\d+)\s*(?:cp|command point(?:s)?)",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+    return ("Supported", f"Start of Command phase: gain {m.group(1)} CP while on the battlefield.")
 
 
 def _two_melee_weapons_bonus_support(description: str) -> Optional[Tuple[str, str]]:
