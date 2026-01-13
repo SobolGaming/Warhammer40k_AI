@@ -1175,6 +1175,8 @@ def _classify_ability(
     desc_support = _warlord_enhancement_restriction_support(description)
     if desc_support:
         return desc_support
+    unit_contains_oc_support = _unit_contains_oc_support(description)
+    aura_oc_support = _aura_objective_control_support(description)
     common_support = _bearer_unit_common_support(description)
     leading_support = _leading_unit_common_support(description)
     bearer_invuln_support = _bearer_invulnerable_save_support(description)
@@ -1207,6 +1209,10 @@ def _classify_ability(
         return ABILITY_SUPPORT_BY_NAME_FACTION[(fid, name_norm)]
     if fid == "DRU" and "(pain)" in str(name or "").lower():
         return ("Supported", "Power from Pain ability effects implemented.")
+    if unit_contains_oc_support:
+        return unit_contains_oc_support
+    if aura_oc_support:
+        return aura_oc_support
     if common_support:
         return common_support
     if leading_support:
@@ -1345,9 +1351,73 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
     if m:
         notes.append(f"Bearer's unit Leadership set to {m.group(1)}+.")
 
+    m = re.search(
+        r"add\s+(\d+)\s+to\s+the\s+objective\s+control\s+characteristic\s+of\s+(?:models\s+in\s+)?"
+        r"the\s+bearer'?s\s+unit",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        if leading_prefix:
+            notes.append(f"{leading_prefix}Objective Control for the unit +{m.group(1)}.")
+        else:
+            notes.append(f"Bearer's unit Objective Control +{m.group(1)}.")
+    elif leading_prefix:
+        m = re.search(
+            r"add\s+(\d+)\s+to\s+the\s+objective\s+control\s+characteristic\s+of\s+(?:models\s+in\s+)?"
+            r"that\s+unit",
+            low,
+            flags=re.IGNORECASE,
+        )
+        if m:
+            notes.append(f"{leading_prefix}Objective Control for the unit +{m.group(1)}.")
+
     if notes:
         return ("Supported", " ".join(notes))
     return None
+
+
+def _unit_contains_oc_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    m = re.search(
+        r"while\s+this\s+unit\s+contains\s+an?\s+(.+?),\s*add\s+(\d+)\s+to\s+the\s+objective\s+control\s+"
+        r"characteristic\s+of\s+models\s+in\s+this\s+unit",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+    model_name = m.group(1).strip()
+    amt = m.group(2)
+    return ("Supported", f"Unit Objective Control +{amt} while it contains {model_name}.")
+
+
+def _aura_objective_control_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    m = re.search(
+        r'while\s+a\s+friendly\s+(.+?)\s+unit\s+is\s+within\s+(\d+)"\s+of\s+this\s+(?:model|unit),\s+'
+        r"add\s+(\d+)\s+to\s+the\s+objective\s+control\s+characteristic\s+of\s+models\s+in\s+that\s+unit",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+    faction_kw = m.group(1).strip()
+    rng = m.group(2)
+    amt = m.group(3)
+    return ("Supported", f"Aura: friendly {faction_kw} within {rng}\" gain Objective Control +{amt}.")
 
 
 def _bearer_invulnerable_save_support(description: str) -> Optional[Tuple[str, str]]:

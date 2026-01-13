@@ -638,6 +638,11 @@ class Unit:
         r"add\s+(\d+)\s+to\s+the\s+objective\s+control\s+characteristic\s+of\s+(?:models\s+in\s+)?the\s+bearer'?s\s+unit",
         re.IGNORECASE,
     )
+    _UNIT_CONTAINS_OC_BONUS_RE = re.compile(
+        r"while\s+this\s+unit\s+contains\s+an?\s+(?P<model>.+?),\s*add\s+(?P<amt>\d+)\s+to\s+the\s+objective\s+control\s+"
+        r"characteristic\s+of\s+models\s+in\s+this\s+unit",
+        re.IGNORECASE,
+    )
     _BEARER_UNIT_FNP_RE = re.compile(
         r"(?:models\s+in\s+)?the\s+bearer'?s\s+unit.*?\bfeel\s+no\s+pain\b\s*(\d+)\+",
         re.IGNORECASE,
@@ -972,6 +977,10 @@ class Unit:
             except Exception:
                 pass
             try:
+                u.remove_characteristic_modifiers_by_source("ability:unit_contains_objective_control")
+            except Exception:
+                pass
+            try:
                 sr = getattr(u, "special_rules", None)
                 if not isinstance(sr, dict):
                     sr = {}
@@ -1010,6 +1019,7 @@ class Unit:
         charge_mods: list[tuple[int, str]] = []
         leadership_sets: list[tuple[int, str]] = []
         oc_mods: list[tuple[int, str]] = []
+        contains_oc_mods: list[tuple[int, str]] = []
         fnp_entries: list[dict] = []
         sustained_hits_value = 0
         ignores_cover_sources: set[str] = set()
@@ -1069,6 +1079,18 @@ class Unit:
                         if val:
                             source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
                             oc_mods.append((val, source))
+
+                    m = self._UNIT_CONTAINS_OC_BONUS_RE.search(sentence)
+                    if m:
+                        try:
+                            val = int(m.group("amt"))
+                        except Exception:
+                            val = None
+                        if val:
+                            target = m.group("model")
+                            if u._unit_contains_model_named(target):
+                                source = str(name or "Unit contains ability").strip() or "Unit contains ability"
+                                contains_oc_mods.append((val, source))
 
                     m = self._BEARER_UNIT_FNP_RE.search(sentence)
                     if m:
@@ -1146,6 +1168,16 @@ class Unit:
                         Modifier(ModifierOp.ADD, int(val), source=f"ability:bearer_unit_objective_control:{source}"),
                     )
 
+        if contains_oc_mods:
+            from ..utility.modifiers import Modifier, ModifierOp
+
+            for u in members:
+                for val, source in contains_oc_mods:
+                    u.add_characteristic_modifier(
+                        "objective_control",
+                        Modifier(ModifierOp.ADD, int(val), source=f"ability:unit_contains_objective_control:{source}"),
+                    )
+
         if fnp_entries:
             for u in members:
                 sr = getattr(u, "special_rules", None)
@@ -1177,6 +1209,26 @@ class Unit:
                     sr = {}
                 sr["bearer_unit_target_hit_penalties"] = list(hit_penalties)
                 u.special_rules = sr
+
+    def _unit_contains_model_named(self, target: str) -> bool:
+        norm_target = self._normalize_attached_unit_name(target)
+        if not norm_target:
+            return False
+        for article in ("an ", "a "):
+            if norm_target.startswith(article):
+                norm_target = norm_target[len(article):].strip()
+        if not norm_target:
+            return False
+        target_tokens = set(norm_target.split())
+        for model in list(getattr(self, "models", []) or []):
+            name = self._normalize_attached_unit_name(getattr(model, "name", ""))
+            if not name:
+                continue
+            if norm_target in name:
+                return True
+            if target_tokens and target_tokens.issubset(set(name.split())):
+                return True
+        return False
 
     def _transport_disembark_rules(self) -> dict:
         """
@@ -2623,6 +2675,10 @@ class Unit:
         #        self.callbacks[hook_events.ENEMY_UNIT_KILLED].append(logger.error(self))
         #    self.parent_detachment.removeUnit(self)
         self.update_coherency()
+        try:
+            self._refresh_bearer_unit_common_modifiers()
+        except Exception:
+            pass
 
         # Publish unit destroyed event (best-effort). Note: "destroyed" should not
         # trigger for fleeing/removal-type effects.
