@@ -1749,23 +1749,79 @@ class GameView:
         UI-driven optional ability prompts.
 
         - Possessed Lord: once per battle, start of Fight phase, prompt to activate.
+        - Bodyguard return: Command phase, prompt to return destroyed Bodyguard models.
         """
-        # Only care about Fight phase
         try:
             pname = str(getattr(phase, "name", "") or "").strip().upper()
         except Exception:
             pname = ""
-        if pname != "FIGHT_PHASE":
+        if pname == "FIGHT_PHASE":
+            if player is None:
+                return
+            try:
+                # Only prompt the active player (avoid double prompts from opponent publishes)
+                if player is not self.game.get_current_player():
+                    return
+            except Exception:
+                pass
+            # Only for human players (AI will decide via decision_hook / agent)
+            try:
+                if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                    return
+            except Exception:
+                return
+
+            army = getattr(player, "army", None)
+            if army is None:
+                return
+
+            # Build queue of (unit, model) that can activate Possessed Lord
+            queue = []
+            for unit in list(getattr(army, "units", []) or []):
+                try:
+                    if not unit.is_alive():
+                        continue
+                except Exception:
+                    continue
+                has_possessed_lord = False
+                for ab in (getattr(unit, "possible_abilities", []) or []):
+                    nm = str(getattr(ab, "name", "") or "").strip().lower()
+                    if nm == "possessed lord":
+                        has_possessed_lord = True
+                        break
+                if not has_possessed_lord:
+                    continue
+                for m in list(getattr(unit, "models", []) or []):
+                    try:
+                        if not getattr(m, "is_alive", True):
+                            continue
+                    except Exception:
+                        continue
+                    try:
+                        if getattr(m, "has_used_once_per_battle", lambda _k: False)("possessed_lord"):
+                            continue
+                    except Exception:
+                        pass
+                    queue.append((unit, m))
+                    break  # typical character: prompt once per unit
+
+            if not queue:
+                return
+
+            # Store and process sequentially so we don't stack multiple modals at once.
+            self._pending_optional_ability_queue = list(queue)
+            self._process_next_optional_ability_prompt(player)
+            return
+
+        if pname != "COMMAND_PHASE":
             return
         if player is None:
             return
         try:
-            # Only prompt the active player (avoid double prompts from opponent publishes)
             if player is not self.game.get_current_player():
                 return
         except Exception:
             pass
-        # Only for human players (AI will decide via decision_hook / agent)
         try:
             if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
                 return
@@ -1776,7 +1832,6 @@ class GameView:
         if army is None:
             return
 
-        # Build queue of (unit, model) that can activate Possessed Lord
         queue = []
         for unit in list(getattr(army, "units", []) or []):
             try:
@@ -1784,34 +1839,70 @@ class GameView:
                     continue
             except Exception:
                 continue
-            has_possessed_lord = False
-            for ab in (getattr(unit, "possible_abilities", []) or []):
-                nm = str(getattr(ab, "name", "") or "").strip().lower()
-                if nm == "possessed lord":
-                    has_possessed_lord = True
-                    break
-            if not has_possessed_lord:
-                continue
-            for m in list(getattr(unit, "models", []) or []):
-                try:
-                    if not getattr(m, "is_alive", True):
-                        continue
-                except Exception:
+            try:
+                if not bool(getattr(unit, "is_attached_leader", False)):
                     continue
-                try:
-                    if getattr(m, "has_used_once_per_battle", lambda _k: False)("possessed_lord"):
+            except Exception:
+                continue
+            ability = None
+            try:
+                ability = unit.get_command_phase_bodyguard_return_ability()
+            except Exception:
+                ability = None
+            if not ability:
+                continue
+            try:
+                bodyguard = unit.get_attached_unit_root()
+            except Exception:
+                bodyguard = None
+            if bodyguard is None or bodyguard is unit:
+                continue
+            try:
+                if not getattr(bodyguard, "deployed", True):
+                    continue
+                if str(getattr(bodyguard, "reserve_status", "deployed")) != "deployed":
+                    continue
+                if hasattr(bodyguard, "is_in_reserves") and callable(getattr(bodyguard, "is_in_reserves")):
+                    if bool(bodyguard.is_in_reserves()):
                         continue
-                except Exception:
-                    pass
-                queue.append((unit, m))
-                break  # typical character: prompt once per unit
+                if bool(getattr(bodyguard, "embarked_in", None)):
+                    continue
+                if bool(getattr(bodyguard, "is_embarked", False)):
+                    continue
+            except Exception:
+                pass
+            try:
+                if len(getattr(bodyguard, "models", []) or []) <= 0:
+                    continue
+            except Exception:
+                continue
+            try:
+                if not list(getattr(bodyguard, "models_lost", []) or []):
+                    continue
+            except Exception:
+                continue
+            amount = 0
+            try:
+                amount = int(ability.get("amount", 0) or 0)
+            except Exception:
+                amount = 0
+            if amount <= 0:
+                continue
+            queue.append(
+                {
+                    "unit": unit,
+                    "bodyguard": bodyguard,
+                    "ability": ability,
+                    "remaining": amount,
+                    "returned_any": False,
+                }
+            )
 
         if not queue:
             return
 
-        # Store and process sequentially so we don't stack multiple modals at once.
-        self._pending_optional_ability_queue = list(queue)
-        self._process_next_optional_ability_prompt(player)
+        self._pending_bodyguard_return_prompt_queue = list(queue)
+        self._process_next_bodyguard_return_prompt(player)
 
     def _process_next_optional_ability_prompt(self, player):
         q = list(getattr(self, "_pending_optional_ability_queue", []) or [])
@@ -1840,6 +1931,168 @@ class GameView:
         except Exception:
             # If UI wiring is missing, just skip
             _done(False)
+
+    def _process_next_bodyguard_return_prompt(self, player):
+        q = list(getattr(self, "_pending_bodyguard_return_prompt_queue", []) or [])
+        if not q:
+            self._pending_bodyguard_return_prompt_queue = []
+            return
+        item = q.pop(0)
+        self._pending_bodyguard_return_prompt_queue = q
+
+        if isinstance(item, dict):
+            unit = item.get("unit")
+            bodyguard = item.get("bodyguard")
+            ability = item.get("ability")
+            remaining = int(item.get("remaining", 0) or 0)
+            returned_any = bool(item.get("returned_any", False))
+        else:
+            try:
+                unit, bodyguard, ability = item
+            except Exception:
+                unit = None
+                bodyguard = None
+                ability = None
+            remaining = 0
+            returned_any = False
+        if unit is None or bodyguard is None or ability is None:
+            self._process_next_bodyguard_return_prompt(player)
+            return
+
+        amount = 0
+        try:
+            amount = int(ability.get("amount", 0) or 0)
+        except Exception:
+            amount = 0
+        if amount <= 0:
+            self._process_next_bodyguard_return_prompt(player)
+            return
+        if remaining <= 0:
+            remaining = amount
+
+        ability_name = ability.get("name", "") or "Bodyguard Return"
+        title = ability_name
+        subtitle = getattr(bodyguard, "name", "Unit")
+        instruction = "Select a destroyed Bodyguard model to return, or choose None."
+        if remaining != 1:
+            instruction = f"Select a destroyed Bodyguard model to return ({remaining} remaining), or choose None."
+
+        try:
+            destroyed = list(getattr(bodyguard, "models_lost", []) or [])
+        except Exception:
+            destroyed = []
+        if not destroyed:
+            self._process_next_bodyguard_return_prompt(player)
+            return
+
+        state = {"returned_any": returned_any}
+
+        def _wargear_summary(model):
+            try:
+                wargear = list(getattr(model, "wargear", []) or [])
+            except Exception:
+                wargear = []
+            if not wargear:
+                return ""
+            counts = {}
+            for wg in wargear:
+                try:
+                    name = str(getattr(wg, "name", "") or "").strip()
+                except Exception:
+                    name = ""
+                if not name:
+                    continue
+                counts[name] = counts.get(name, 0) + 1
+            parts = []
+            for name, count in counts.items():
+                if count > 1:
+                    parts.append(f"{name} x{count}")
+                else:
+                    parts.append(name)
+            if not parts:
+                return ""
+            return "Wargear: " + ", ".join(parts)
+
+        def _done(chosen):
+            if chosen is None:
+                try:
+                    from ..utility.event_bus import append_action
+                    pname = str(getattr(player, "name", "") or "")
+                    if pname:
+                        if state["returned_any"]:
+                            append_action(pname, f"{ability_name}: no additional models returned to {subtitle}.")
+                        else:
+                            append_action(pname, f"{ability_name}: no model returned to {subtitle}.")
+                except Exception:
+                    pass
+                self._process_next_bodyguard_return_prompt(player)
+                return
+
+            returned = 0
+            try:
+                returned = unit.return_destroyed_bodyguard_models(
+                    1,
+                    game_map=getattr(self.game, "map", None),
+                    chosen_models=[chosen],
+                )
+            except Exception:
+                returned = 0
+            if returned > 0:
+                try:
+                    from ..utility.event_bus import append_action
+                    pname = str(getattr(player, "name", "") or "")
+                    if pname:
+                        summary = _wargear_summary(chosen)
+                        if summary:
+                            append_action(pname, f"{ability_name}: returned {getattr(chosen, 'name', 'Model')} ({summary}) to {subtitle}.")
+                        else:
+                            append_action(pname, f"{ability_name}: returned {getattr(chosen, 'name', 'Model')} to {subtitle}.")
+                except Exception:
+                    pass
+                state["returned_any"] = True
+
+            remaining_next = remaining - 1
+            try:
+                destroyed_left = list(getattr(bodyguard, "models_lost", []) or [])
+            except Exception:
+                destroyed_left = []
+            if remaining_next > 0 and destroyed_left:
+                next_item = {
+                    "unit": unit,
+                    "bodyguard": bodyguard,
+                    "ability": ability,
+                    "remaining": remaining_next,
+                    "returned_any": state["returned_any"],
+                }
+                self._pending_bodyguard_return_prompt_queue = [next_item] + list(
+                    getattr(self, "_pending_bodyguard_return_prompt_queue", []) or []
+                )
+            self._process_next_bodyguard_return_prompt(player)
+
+        try:
+            from .dialogs import DamageAllocationDialog
+        except Exception:
+            _done(None)
+            return
+
+        if not hasattr(self, "damage_allocation_dialog") or self.damage_allocation_dialog is None:
+            self.damage_allocation_dialog = DamageAllocationDialog(self.screen.get_width(), self.screen.get_height())
+        dlg = self.damage_allocation_dialog
+        try:
+            dlg.show(
+                bodyguard,
+                destroyed,
+                title=title,
+                subtitle=subtitle,
+                instruction=instruction,
+                on_choice=_done,
+                include_none=True,
+                none_label="None",
+                show_wargear=True,
+            )
+            self.dialog_manager.open(dlg, modal=True)
+        except Exception:
+            _done(None)
 
     def _on_dark_pacts_prompt(self, player=None, unit=None, phase_name=None, trigger=None, game=None, **_kwargs):
         if player is None or unit is None:
@@ -6200,6 +6453,7 @@ class GameView:
             subtitle=subtitle,
             instruction=instruction,
             on_choice=_on_choice,
+            show_wargear=True,
         )
         try:
             self.dialog_manager.open(dlg, modal=True)

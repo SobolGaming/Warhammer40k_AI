@@ -1185,6 +1185,7 @@ def _classify_ability(
     attached_possessed_support = _attached_possessed_formation_bonus_support(description)
     transport_support = _transport_disembark_support(description)
     sticky_support = _sticky_objective_support(description)
+    bodyguard_return_support = _command_phase_bodyguard_return_support(description)
     orders_support = _orders_section_support(name, description)
     attached_unit_support = _attached_unit_support(name, description)
     model_reroll_support = _model_reroll_wound_vs_character_support(description)
@@ -1226,6 +1227,8 @@ def _classify_ability(
         return transport_support
     if sticky_support:
         return sticky_support
+    if bodyguard_return_support:
+        return bodyguard_return_support
     if orders_support:
         return orders_support
     if attached_unit_support:
@@ -1682,6 +1685,47 @@ def _sticky_objective_support(description: str) -> Optional[Tuple[str, str]]:
     if not (legacy_sticky or loc_sticky):
         return None
     return ("Supported", "End of Command phase: objective becomes sticky while you controlled it.")
+
+
+def _command_phase_bodyguard_return_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    low = text.lower()
+    if "command phase" not in low:
+        return None
+    if "bodyguard model" not in low:
+        return None
+    if "return" not in low or "destroyed" not in low:
+        return None
+    if "not leading a unit" in low:
+        return None
+    if (
+        "leading a unit" not in low
+        and "leading this unit" not in low
+        and "bearer is leading a unit" not in low
+    ):
+        return None
+    if "can return" not in low:
+        return None
+    m = re.search(r"return\s+(?:up to\s+)?(one|a|\d+)\s+destroyed\s+bodyguard\s+models?", low)
+    if not m:
+        return None
+    token = m.group(1)
+    try:
+        amount = int(token)
+    except Exception:
+        amount = 1 if token in ("one", "a") else 0
+    if amount <= 0:
+        return None
+    return (
+        "Supported",
+        f"Command phase: return {amount} destroyed Bodyguard model(s) while leading (capped at starting strength).",
+    )
 
 
 def _two_melee_weapons_bonus_support(description: str) -> Optional[Tuple[str, str]]:

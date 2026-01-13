@@ -2556,18 +2556,84 @@ class Game:
             pname = str(getattr(phase, "name", "") or "").strip().upper()
         except Exception:
             pname = ""
-        if pname != "FIGHT_PHASE":
+        if pname == "FIGHT_PHASE":
+            if player is None:
+                return
+
+            # Only prompt the current player for their own optional activations at the start of this Fight phase.
+            try:
+                if player is not self.get_current_player():
+                    return
+            except Exception:
+                pass
+
+            army = getattr(player, "army", None)
+            if army is None:
+                return
+
+            for unit in list(getattr(army, "units", []) or []):
+                try:
+                    if not unit.is_alive():
+                        continue
+                except Exception:
+                    pass
+                # Check unit has Possessed Lord ability text (datasheet ability list)
+                has_possessed_lord = False
+                try:
+                    for ab in (getattr(unit, "possible_abilities", []) or []):
+                        nm = str(getattr(ab, "name", "") or "").strip().lower()
+                        if nm == "possessed lord":
+                            has_possessed_lord = True
+                            break
+                except Exception:
+                    has_possessed_lord = False
+                if not has_possessed_lord:
+                    continue
+
+                # Apply to the first alive model in the unit (typical for character datasheets).
+                models = list(getattr(unit, "models", []) or [])
+                for m in models:
+                    try:
+                        if not getattr(m, "is_alive", True):
+                            continue
+                    except Exception:
+                        continue
+                    # If already used, skip.
+                    try:
+                        if getattr(m, "has_used_once_per_battle", lambda _k: False)("possessed_lord"):
+                            break
+                    except Exception:
+                        pass
+
+                    # Decision hook
+                    try:
+                        ctx = {
+                            "ability_name": "Possessed Lord",
+                            "unit": getattr(unit, "name", "") or "",
+                            "model": getattr(m, "name", "") or "",
+                            "phase": "Fight phase",
+                        }
+                        should = bool(getattr(player, "_should_use_optional_ability", lambda *_a, **_k: False)("POSSESSED_LORD", ctx))
+                    except Exception:
+                        should = False
+
+                    if should:
+                        try:
+                            getattr(m, "activate_possessed_lord")()
+                        except Exception:
+                            pass
+                    break
+            return
+
+        if pname != "COMMAND_PHASE":
             return
         if player is None:
             return
-
-        # Only prompt the current player for their own optional activations at the start of this Fight phase.
         try:
             if player is not self.get_current_player():
                 return
         except Exception:
             pass
-
         army = getattr(player, "army", None)
         if army is None:
             return
@@ -2578,52 +2644,93 @@ class Game:
                     continue
             except Exception:
                 pass
-            # Check unit has Possessed Lord ability text (datasheet ability list)
-            has_possessed_lord = False
             try:
-                for ab in (getattr(unit, "possible_abilities", []) or []):
-                    nm = str(getattr(ab, "name", "") or "").strip().lower()
-                    if nm == "possessed lord":
-                        has_possessed_lord = True
-                        break
+                if not bool(getattr(unit, "is_attached_leader", False)):
+                    continue
             except Exception:
-                has_possessed_lord = False
-            if not has_possessed_lord:
                 continue
 
-            # Apply to the first alive model in the unit (typical for character datasheets).
-            models = list(getattr(unit, "models", []) or [])
-            for m in models:
-                try:
-                    if not getattr(m, "is_alive", True):
-                        continue
-                except Exception:
+            ability = None
+            try:
+                ability = unit.get_command_phase_bodyguard_return_ability()
+            except Exception:
+                ability = None
+            if not ability:
+                continue
+            try:
+                bodyguard = unit.get_attached_unit_root()
+            except Exception:
+                bodyguard = None
+            if bodyguard is None or bodyguard is unit:
+                continue
+            try:
+                if not getattr(bodyguard, "deployed", True):
                     continue
-                # If already used, skip.
-                try:
-                    if getattr(m, "has_used_once_per_battle", lambda _k: False)("possessed_lord"):
-                        break
-                except Exception:
-                    pass
+                if str(getattr(bodyguard, "reserve_status", "deployed")) != "deployed":
+                    continue
+                if hasattr(bodyguard, "is_in_reserves") and callable(getattr(bodyguard, "is_in_reserves")):
+                    if bool(bodyguard.is_in_reserves()):
+                        continue
+                if bool(getattr(bodyguard, "embarked_in", None)):
+                    continue
+                if bool(getattr(bodyguard, "is_embarked", False)):
+                    continue
+            except Exception:
+                pass
+            try:
+                if len(getattr(bodyguard, "models", []) or []) <= 0:
+                    continue
+            except Exception:
+                continue
+            try:
+                if not list(getattr(bodyguard, "models_lost", []) or []):
+                    continue
+            except Exception:
+                continue
 
-                # Decision hook
-                try:
-                    ctx = {
-                        "ability_name": "Possessed Lord",
-                        "unit": getattr(unit, "name", "") or "",
-                        "model": getattr(m, "name", "") or "",
-                        "phase": "Fight phase",
-                    }
-                    should = bool(getattr(player, "_should_use_optional_ability", lambda *_a, **_k: False)("POSSESSED_LORD", ctx))
-                except Exception:
-                    should = False
-
-                if should:
-                    try:
-                        getattr(m, "activate_possessed_lord")()
-                    except Exception:
-                        pass
-                break
+            amount = int(ability.get("amount", 0) or 0)
+            if amount <= 0:
+                continue
+            try:
+                ctx = {
+                    "ability_name": ability.get("name", "") or "",
+                    "unit": getattr(unit, "name", "") or "",
+                    "bodyguard": getattr(bodyguard, "name", "") or "",
+                    "amount": amount,
+                    "phase": "Command phase",
+                }
+                should = bool(getattr(player, "_should_use_optional_ability", lambda *_a, **_k: False)("RETURN_BODYGUARD_MODEL", ctx))
+            except Exception:
+                should = False
+            if not should:
+                continue
+            try:
+                destroyed_models = list(getattr(bodyguard, "models_lost", []) or [])
+            except Exception:
+                destroyed_models = []
+            if not destroyed_models:
+                continue
+            chosen_models = destroyed_models[:amount]
+            try:
+                returned = unit.return_destroyed_bodyguard_models(
+                    amount,
+                    game_map=getattr(self, "map", None),
+                    chosen_models=chosen_models,
+                )
+            except Exception:
+                returned = 0
+            try:
+                from ..utility.event_bus import append_action
+                pname = str(getattr(player, "name", "") or "")
+                if pname:
+                    ability_name = ability.get("name", "") or "Bodyguard Return"
+                    if returned > 0:
+                        names = ", ".join(getattr(m, "name", "Model") for m in (chosen_models[:returned] or []))
+                        append_action(pname, f"{ability_name}: returned {names} to {getattr(bodyguard, 'name', 'Unit')}.")
+                    else:
+                        append_action(pname, f"{ability_name}: no model returned to {getattr(bodyguard, 'name', 'Unit')}.")
+            except Exception:
+                pass
 
     def _on_phase_start_cabal_of_sorcerers(self, player=None, phase=None, **_kwargs) -> None:
         """Reset Cabal of Sorcerers usage at the start of the active player's Shooting phase."""

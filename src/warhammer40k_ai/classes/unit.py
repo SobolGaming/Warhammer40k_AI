@@ -797,6 +797,58 @@ class Unit:
             return True
         return False
 
+    def _scan_command_phase_bodyguard_return_ability(self):
+        for ab in self._iter_active_abilities():
+            try:
+                if isinstance(ab, str):
+                    name = ab
+                    desc = ab
+                else:
+                    name = str(getattr(ab, "name", "") or "")
+                    desc = str(getattr(ab, "description", "") or "") or name
+            except Exception:
+                name = ""
+                desc = ""
+            text = self._normalize_rules_text(desc or "")
+            if not text:
+                continue
+            low = text.lower().replace("\u2019", "'").replace("\u0192?T", "'")
+            if "command phase" not in low:
+                continue
+            if "bodyguard model" not in low:
+                continue
+            if "return" not in low or "destroyed" not in low:
+                continue
+            if "not leading a unit" in low:
+                continue
+            if (
+                "leading a unit" not in low
+                and "leading this unit" not in low
+                and "bearer is leading a unit" not in low
+            ):
+                continue
+            if "can return" not in low:
+                continue
+            m = re.search(
+                r"return\s+(?:up to\s+)?(one|a|\d+)\s+destroyed\s+bodyguard\s+models?",
+                low,
+            )
+            if not m:
+                continue
+            token = m.group(1)
+            try:
+                amount = int(token)
+            except Exception:
+                amount = 1 if token in ("one", "a") else 0
+            if amount <= 0:
+                continue
+            return {
+                "amount": amount,
+                "name": name or "Bodyguard Return",
+                "description": desc or "",
+            }
+        return None
+
     def _refresh_command_phase_flags(self) -> None:
         """Parse command-phase CP gains and sticky objective flags into special_rules."""
         if getattr(self, "special_rules", None) is None:
@@ -9834,6 +9886,153 @@ class Unit:
                         return (x, y, z, facing)
         return None
 
+    def return_destroyed_bodyguard_models(
+        self,
+        amount: int,
+        *,
+        game_map: Optional['Map'] = None,
+        chosen_models: Optional[list[Model]] = None,
+    ) -> int:
+        if int(amount or 0) <= 0:
+            return 0
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return 0
+        try:
+            if bool(getattr(root, "is_leader", False)):
+                return 0
+        except Exception:
+            pass
+
+        try:
+            destroyed = list(getattr(root, "models_lost", []) or [])
+        except Exception:
+            destroyed = []
+        if not destroyed:
+            return 0
+
+        try:
+            starting = int(getattr(root, "starting_model_count", 0) or 0)
+        except Exception:
+            starting = 0
+        if starting <= 0:
+            try:
+                starting = len(getattr(root, "models", []) or []) + len(destroyed)
+            except Exception:
+                starting = len(destroyed)
+
+        try:
+            alive_models = [m for m in (getattr(root, "models", []) or []) if getattr(m, "is_alive", True)]
+        except Exception:
+            alive_models = list(getattr(root, "models", []) or [])
+
+        current = len(alive_models)
+        if starting and current >= starting:
+            return 0
+
+        max_return = int(amount or 0)
+        if starting:
+            max_return = min(max_return, max(0, starting - current))
+        if max_return <= 0:
+            return 0
+        if chosen_models is not None:
+            to_return = []
+            seen_ids: set[int] = set()
+            for model in list(chosen_models or []):
+                if model is None:
+                    continue
+                mid = id(model)
+                if mid in seen_ids:
+                    continue
+                if model in destroyed:
+                    to_return.append(model)
+                    seen_ids.add(mid)
+        else:
+            to_return = destroyed[:max_return]
+        if not to_return:
+            return 0
+        if len(to_return) > max_return:
+            to_return = to_return[:max_return]
+
+        returned = 0
+        for model in to_return:
+            try:
+                if hasattr(root, "models_lost") and model in root.models_lost:
+                    root.models_lost.remove(model)
+            except Exception:
+                pass
+            try:
+                if hasattr(model, "set_parent_unit"):
+                    model.set_parent_unit(root)
+                else:
+                    model.parent_unit = root
+            except Exception:
+                pass
+            try:
+                base_wounds = int(getattr(model, "_base_wounds", getattr(model, "base_wounds", 0)) or 0)
+            except Exception:
+                base_wounds = 0
+            if base_wounds <= 0:
+                base_wounds = 1
+            try:
+                model.wounds = base_wounds
+            except Exception:
+                try:
+                    model._wounds = base_wounds
+                except Exception:
+                    pass
+            try:
+                if hasattr(model, "_check_damaged_profile"):
+                    model._check_damaged_profile()
+            except Exception:
+                pass
+            try:
+                setattr(model, "_on_death_reactions_resolved", False)
+                setattr(model, "_fight_on_death_used", False)
+                setattr(model, "_shoot_on_death_used", False)
+            except Exception:
+                pass
+            added = False
+            try:
+                if hasattr(root, "add_model"):
+                    root.add_model(model)
+                    added = True
+                else:
+                    root.models.append(model)
+                    added = True
+            except Exception:
+                added = False
+            if not added:
+                try:
+                    root.models.append(model)
+                except Exception:
+                    pass
+            try:
+                if alive_models and hasattr(root, "_find_reanimation_position"):
+                    new_count = len(alive_models) + 1
+                    required_neighbors = 0 if new_count <= 1 else (2 if new_count >= 7 else 1)
+                    pos = root._find_reanimation_position(
+                        model,
+                        alive_models,
+                        game_map=game_map,
+                        required_neighbors=required_neighbors,
+                    )
+                    if pos is not None and hasattr(model, "set_location"):
+                        model.set_location(*pos)
+            except Exception:
+                pass
+            alive_models.append(model)
+            try:
+                if hasattr(root, "update_coherency"):
+                    root.update_coherency()
+            except Exception:
+                pass
+            returned += 1
+        return returned
+
     def apply_reanimation_protocols(
         self,
         wounds_to_restore: int,
@@ -11041,6 +11240,28 @@ class Unit:
             self._ability_cache = {}
         self._ability_cache[cache_key] = bool(found)
         return bool(found)
+
+    def get_command_phase_bodyguard_return_ability(self):
+        """
+        Return ability info dict for command-phase bodyguard model returns, or None if not available.
+        """
+        cache_key = "command_phase_bodyguard_return_ability"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        ability = None
+        try:
+            if not bool(getattr(self, "is_attached_leader", False)):
+                ability = None
+            else:
+                ability = self._scan_command_phase_bodyguard_return_ability()
+        except Exception:
+            ability = None
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = ability
+        return ability
 
     def attached_unit_has_icon_of_khorne(self) -> bool:
         """Attached unit eligibility: true if any attached member has Icon of Khorne."""
