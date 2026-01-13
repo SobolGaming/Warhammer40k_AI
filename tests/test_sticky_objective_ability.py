@@ -37,7 +37,7 @@ def _make_unit(name, *, abilities=None):
 
 
 class TestStickyObjectiveAbility(unittest.TestCase):
-    def test_command_phase_sticky_objective_applies(self):
+    def _assert_sticky_from_description(self, description: str) -> None:
         from warhammer40k_ai.classes.army import Army
         from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, Game, BattleRoundPhases
         from warhammer40k_ai.classes.map import Objective, ObjectiveCategory, ObjectivePoint
@@ -45,11 +45,7 @@ class TestStickyObjectiveAbility(unittest.TestCase):
 
         ability = {
             "name": "Objective Scouted",
-            "description": (
-                "At the end of your Command phase, if this unit is within range of an objective marker "
-                "you control, that objective marker remains under your control, even if you have no models "
-                "within range of it, until your opponent controls it at the start or end of any turn."
-            ),
+            "description": description,
             "type": "Datasheet",
             "parameter": "",
         }
@@ -79,6 +75,20 @@ class TestStickyObjectiveAbility(unittest.TestCase):
         game.event_system.publish("phase_end", player=player, phase=BattleRoundPhases.COMMAND_PHASE)
 
         self.assertIs(objective_point.sticky_controller, player)
+
+    def test_command_phase_sticky_objective_applies(self):
+        self._assert_sticky_from_description(
+            "At the end of your Command phase, if this unit is within range of an objective marker "
+            "you control, that objective marker remains under your control, even if you have no models "
+            "within range of it, until your opponent controls it at the start or end of any turn."
+        )
+
+    def test_command_phase_sticky_objective_loc_applies(self):
+        self._assert_sticky_from_description(
+            "At the end of your Command phase, if this unit is within range of an objective marker you control, "
+            "that objective marker remains under your control until your opponent's Level of Control over that "
+            "objective marker is greater than yours at the end of a phase."
+        )
 
 
 if __name__ == "__main__":

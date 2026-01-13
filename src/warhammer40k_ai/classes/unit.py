@@ -783,13 +783,16 @@ class Unit:
                 continue
             if "objective marker remains under your control" not in low:
                 continue
-            if "even if you have no models within range of it" not in low:
-                continue
-            if "until your opponent controls it" not in low:
-                continue
             if "objective marker you control" not in low:
                 continue
             if "within range of an objective marker" not in low:
+                continue
+            legacy_sticky = (
+                "even if you have no models within range of it" in low
+                and "until your opponent controls it" in low
+            )
+            loc_sticky = "level of control" in low and "greater than yours" in low
+            if not (legacy_sticky or loc_sticky):
                 continue
             return True
         return False
