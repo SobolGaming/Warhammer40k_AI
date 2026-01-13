@@ -4611,25 +4611,42 @@ class StratagemManager:
         if s.name.upper() == "GRENADE":
             unit = kwargs.get("unit") or kwargs.get("target_unit")
             enemy = kwargs.get("enemy_unit")
+
+            def _grenade_unit_eligible(u) -> bool:
+                try:
+                    if u is None or not u.is_alive() or not getattr(u, "deployed", False):
+                        return False
+                    if not u.has_keyword("Grenades"):
+                        return False
+                    rs = getattr(u, "round_state", None)
+                    if (
+                        getattr(rs, "advanced_this_round", False)
+                        or getattr(rs, "fell_back_this_round", False)
+                        or getattr(rs, "shot_this_round", False)
+                    ):
+                        return False
+                    if self.game and getattr(self.game, "map", None):
+                        if any(
+                            self.game.map.is_within_engagement_range(u, e)
+                            for e in (self.game.map.get_enemy_units(u) or [])
+                            if e.is_alive()
+                        ):
+                            return False
+                except Exception:
+                    return False
+                return True
+
             if unit is None:
                 # Best-effort pick: first eligible GRENADES unit from your army
                 for u in list(getattr(self.player.get_army(), "units", []) or []):
-                    try:
-                        if not u.is_alive() or not getattr(u, "deployed", False):
-                            continue
-                        if not u.has_keyword("Grenades"):
-                            continue
-                        if getattr(u.round_state, "advanced_this_round", False) or getattr(u.round_state, "fell_back_this_round", False) or getattr(u.round_state, "shot_this_round", False):
-                            continue
-                        if self.game and getattr(self.game, "map", None):
-                            if any(self.game.map.is_within_engagement_range(u, e) for e in (self.game.map.get_enemy_units(u) or []) if e.is_alive()):
-                                continue
+                    if _grenade_unit_eligible(u):
                         unit = u
                         break
-                    except Exception:
-                        continue
             if unit is None:
                 print("❌ GRENADE: no eligible friendly GRENADES unit")
+                return False
+            if not _grenade_unit_eligible(unit):
+                print("❌ GRENADE: selected unit is not eligible (already shot/advanced/fell back/engaged or no Grenades)")
                 return False
             if enemy is None and self.game and getattr(self.game, "map", None):
                 # Best-effort: pick the first eligible enemy within 8" and visible, and not in engagement range of any friendly unit.
