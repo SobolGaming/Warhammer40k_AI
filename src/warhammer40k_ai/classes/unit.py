@@ -4061,6 +4061,10 @@ class Unit:
         if self not in current:
             current.append(self)
         bodyguard.attached_leaders = current
+        try:
+            self._apply_attached_possessed_formation_bonus(bodyguard)
+        except Exception:
+            pass
         # Attachment status affects leading-only abilities; refresh caches/rules.
         try:
             self._invalidate_ability_cache()
@@ -4902,6 +4906,12 @@ class Unit:
         elif self._ability_requires_not_leading(ability):
             if bool(getattr(self, "is_attached_leader", False)):
                 return False
+        try:
+            if self._ability_attached_possessed_formation_bonus_distance(ability) is not None:
+                sr = getattr(self, "special_rules", None)
+                return bool(isinstance(sr, dict) and sr.get("attached_possessed_formation_bonus"))
+        except Exception:
+            pass
 
         # Power from Pain: pain abilities only apply while the unit is Empowered.
         try:
@@ -4925,6 +4935,61 @@ class Unit:
         except Exception:
             pass
         return True
+
+    def _ability_attached_possessed_formation_bonus_distance(self, ability) -> Optional[int]:
+        """
+        Return the Scouts distance for the "attached to WORLD EATERS POSSESSED" formation bonus ability.
+        """
+        desc = ""
+        name = ""
+        try:
+            if isinstance(ability, str):
+                desc = ability
+            else:
+                name = str(getattr(ability, "name", "") or "")
+                desc = str(getattr(ability, "description", "") or "")
+        except Exception:
+            desc = ""
+        text = self._normalize_rules_text(f"{name} {desc}")
+        if not text:
+            return None
+        low = text.lower().replace("\u2019", "'").replace("\u0192?T", "'")
+        if "declare battle formations" not in low:
+            return None
+        if "attached to a world eaters possessed unit" not in low:
+            return None
+        if "deep strike" not in low or "scout" not in low:
+            return None
+        m = re.search(r"scouts?\s*(\d+)", low)
+        if not m:
+            return None
+        return int(m.group(1))
+
+    def _apply_attached_possessed_formation_bonus(self, bodyguard: 'Unit') -> None:
+        """Apply the WORLD EATERS POSSESSED formation bonus for Leaders like LORD OF THE EIGHTBOUND."""
+        if bodyguard is None:
+            return
+        dist = None
+        for ab in (getattr(self, "possible_abilities", []) or []):
+            dist = self._ability_attached_possessed_formation_bonus_distance(ab)
+            if dist is not None:
+                break
+        if dist is None:
+            return
+        try:
+            if not bodyguard.has_any_keyword_local("WORLD EATERS"):
+                return
+            if not bodyguard.has_any_keyword_local("POSSESSED"):
+                return
+        except Exception:
+            return
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        if not sr.get("attached_possessed_formation_bonus"):
+            sr["attached_possessed_formation_bonus"] = True
+            sr["attached_possessed_formation_scout_distance"] = int(dist)
+            self.special_rules = sr
 
     def _get_aspect_shrine_root(self) -> 'Unit':
         try:
@@ -5711,13 +5776,18 @@ class Unit:
                     return True
         except Exception:
             pass
-        for text in self._iter_attached_unit_reroll_texts():
-            low = text.lower()
-            if self._REROLL_ADVANCE_CHARGE_RE.search(low):
-                return True
-            if ("re-roll" in low or "reroll" in low) and "advance roll" in low:
-                if "bearer's unit" in low or "this model" in low or "that unit" in low:
-                    return True
+        try:
+            iter_fn = getattr(self, "_iter_attached_unit_reroll_texts", None)
+            if callable(iter_fn):
+                for text in iter_fn():
+                    low = text.lower()
+                    if self._REROLL_ADVANCE_CHARGE_RE.search(low):
+                        return True
+                    if ("re-roll" in low or "reroll" in low) and "advance roll" in low:
+                        if "bearer's unit" in low or "this model" in low or "that unit" in low:
+                            return True
+        except Exception:
+            pass
         for t in Unit._iter_reroll_scan_texts(self):
             s = str(t or "").lower()
             if ("re-roll" in s or "reroll" in s) and "advance" in s:
@@ -5882,22 +5952,27 @@ class Unit:
         except Exception:
             pass
 
-        for text in self._iter_attached_unit_reroll_texts():
-            low = text.lower()
-            if self._REROLL_CHARGE_OBJECTIVE_RE.search(low):
-                conditional_found = True
-                if self._target_within_objective_range(target_unit, game_map):
-                    return True
-                continue
-            if self._REROLL_CHARGE_SETUP_TURN_RE.search(low):
-                conditional_found = True
-                if self._was_set_up_this_turn(game=game):
-                    return True
-                continue
-            if self._REROLL_ADVANCE_CHARGE_RE.search(low):
-                return True
-            if self._REROLL_CHARGE_BEARER_UNIT_RE.search(low):
-                return True
+        try:
+            iter_fn = getattr(self, "_iter_attached_unit_reroll_texts", None)
+            if callable(iter_fn):
+                for text in iter_fn():
+                    low = text.lower()
+                    if self._REROLL_CHARGE_OBJECTIVE_RE.search(low):
+                        conditional_found = True
+                        if self._target_within_objective_range(target_unit, game_map):
+                            return True
+                        continue
+                    if self._REROLL_CHARGE_SETUP_TURN_RE.search(low):
+                        conditional_found = True
+                        if self._was_set_up_this_turn(game=game):
+                            return True
+                        continue
+                    if self._REROLL_ADVANCE_CHARGE_RE.search(low):
+                        return True
+                    if self._REROLL_CHARGE_BEARER_UNIT_RE.search(low):
+                        return True
+        except Exception:
+            pass
 
         if conditional_found:
             return False
@@ -12158,8 +12233,46 @@ class Unit:
         if 'scout' in getattr(self, '_ability_cache', {}):
             return self._ability_cache['scout']
         
-        found, distance_str = self._find_ability_with_patterns(["scout"], extract_value=True, value_pattern=r'(\d+)')
+        try:
+            found, distance_str = self._find_ability_with_patterns(["scout"], extract_value=True, value_pattern=r'(\d+)')
+        except ValueError:
+            found, distance_str = False, None
+            try:
+                for txt in self._iter_active_ability_texts():
+                    low = str(txt or "").lower()
+                    if "scout" not in low:
+                        continue
+                    m = re.search(r"scouts?\s*(\d+)", low)
+                    if m:
+                        found = True
+                        distance_str = m.group(1)
+                        break
+            except Exception:
+                found, distance_str = False, None
         result = (True, float(distance_str)) if found else (False, 0.0)
+
+        # Attached units can only Scout if every model has Scouts (use smallest distance if mixed).
+        try:
+            if result[0] and (not bool(getattr(self, "is_leader", False)) or getattr(self, "attached_to", None) is None):
+                root = self.get_attached_unit_root()
+                leaders = list(getattr(root, "attached_leaders", []) or [])
+                min_dist = float(result[1])
+                for leader in leaders:
+                    try:
+                        l_found, l_dist = leader.has_scout()
+                    except Exception:
+                        l_found, l_dist = False, 0.0
+                    if not l_found:
+                        result = (False, 0.0)
+                        break
+                    try:
+                        min_dist = min(min_dist, float(l_dist))
+                    except Exception:
+                        pass
+                if result[0]:
+                    result = (True, float(min_dist))
+        except Exception:
+            pass
         
         # Cache the result
         if not hasattr(self, '_ability_cache'):

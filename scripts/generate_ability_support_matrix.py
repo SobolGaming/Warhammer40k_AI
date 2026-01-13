@@ -1067,7 +1067,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("WE", "Murderlust"): ("Supported", "Advance-and-charge eligibility."),
         ("WE", "Collar of Khorne"): ("Supported", "Feel No Pain 3+ against Psychic attacks."),
         ("WE", "Possessed Lord"): ("Supported", "Once-per-battle Fight phase: +3 Attacks and Devastating Wounds."),
-        ("WE", "Lord of the Eightbound"): ("Partial", "Deep Strike/Scouts 6\" detected; attachment requirement not enforced."),
+        ("WE", "Lord of the Eightbound"): ("Supported", "Leader gains Deep Strike and Scouts 6\" if attached to WORLD EATERS POSSESSED at battle formations."),
         ("WE", "Rage Embodied (Aura)"): ("Supported", "+1 melee Attacks aura within 6\" for BLOOD LEGIONS."),
         ("WE", "Daemon Lord of Khorne (Aura)"): ("Supported", "+1 to hit in melee aura within 6\" for BLOOD LEGIONS."),
         ("WE", "Blood Surge"): ("Supported", "Opponent Shooting phase: optional D6+2\" move toward closest non-AIRCRAFT enemy; blocked if Battle-shocked/engaged; once per phase."),
@@ -1182,6 +1182,7 @@ def _classify_ability(
     target_hit_penalty_support = _target_hit_roll_penalty_support(description)
     melee_damage_support = _melee_damage_bonus_support(description)
     two_melee_weapons_support = _two_melee_weapons_bonus_support(description)
+    attached_possessed_support = _attached_possessed_formation_bonus_support(description)
     transport_support = _transport_disembark_support(description)
     sticky_support = _sticky_objective_support(description)
     orders_support = _orders_section_support(name, description)
@@ -1219,6 +1220,8 @@ def _classify_ability(
         return melee_damage_support
     if two_melee_weapons_support:
         return two_melee_weapons_support
+    if attached_possessed_support:
+        return attached_possessed_support
     if transport_support:
         return transport_support
     if sticky_support:
@@ -1701,6 +1704,30 @@ def _two_melee_weapons_bonus_support(description: str) -> Optional[Tuple[str, st
     return (
         "Supported",
         f"If equipped with two melee weapons plus a close combat weapon, those two weapons gain +{m.group(1)} Attacks.",
+    )
+
+
+def _attached_possessed_formation_bonus_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    low = text.lower()
+    if "declare battle formations" not in low:
+        return None
+    if "attached to a world eaters possessed unit" not in low:
+        return None
+    if "deep strike" not in low or "scout" not in low:
+        return None
+    m = re.search(r"scouts?\s*(\d+)", low)
+    if not m:
+        return None
+    return (
+        "Supported",
+        f"Leader gains Deep Strike and Scouts {m.group(1)}\" if attached to WORLD EATERS POSSESSED at battle formations.",
     )
 
 
