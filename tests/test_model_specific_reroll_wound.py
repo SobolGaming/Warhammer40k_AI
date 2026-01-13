@@ -176,6 +176,62 @@ class TestModelSpecificRerollWound(unittest.TestCase):
 
         self.assertEqual(result["roll"], 2)
 
+    def test_model_reroll_wound_vs_character_melee_text(self):
+        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.classes import wargear as wargear_module
+
+        ability = {
+            "name": "Storm of Silence",
+            "description": "Each time this model makes a melee attack that targets a CHARACTER unit, you can re-roll the Wound roll.",
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, p1, _p2, army1, army2 = _build_game()
+        attacker = _make_unit("Jain Zar", keywords=["AELDARI"], abilities=[ability])
+        target = _make_unit("Target", keywords=["CHARACTER"])
+        army1.add_unit(attacker)
+        army2.add_unit(target)
+
+        called = {}
+        def _provider(**kwargs):
+            called["reason"] = kwargs.get("reason")
+            return True
+
+        game.map.roll_reroll_provider = _provider
+
+        data = {
+            "range": "Melee",
+            "A": "1",
+            "BS_WS": "3+",
+            "S": "4",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+            "type": "Melee",
+            "name": "Test Blade",
+        }
+        profile = Wargear(data).profiles["default"]
+
+        attack_instance = {
+            "crit_hit": False,
+            "crit_wound": False,
+            "mortal_wound": False,
+            "below_half_distance": False,
+            "damage": 0,
+            "target_toughness_override": None,
+        }
+
+        rolls = iter([2, 6])
+        original_roll = wargear_module.get_roll
+        wargear_module.get_roll = lambda _d: next(rolls)
+        try:
+            result = profile._wound_target_with_tracking(target, attacker.models[0], attack_instance)
+        finally:
+            wargear_module.get_roll = original_roll
+
+        self.assertEqual(result["roll"], 6)
+        self.assertIn("Storm of Silence", called.get("reason", ""))
+
 
 class TestModelSpecificRerollHit(unittest.TestCase):
     def test_model_reroll_hit_vs_character(self):
@@ -211,6 +267,62 @@ class TestModelSpecificRerollHit(unittest.TestCase):
             "description": "",
             "type": "Ranged",
             "name": "Test Gun",
+        }
+        profile = Wargear(data).profiles["default"]
+
+        attack_instance = {
+            "crit_hit": False,
+            "crit_wound": False,
+            "mortal_wound": False,
+            "below_half_distance": False,
+            "damage": 0,
+            "target_toughness_override": None,
+        }
+
+        rolls = iter([2, 6])
+        original_roll = wargear_module.get_roll
+        wargear_module.get_roll = lambda _d: next(rolls)
+        try:
+            result = profile._hit_target_with_tracking(target, attacker.models[0], attack_instance)
+        finally:
+            wargear_module.get_roll = original_roll
+
+        self.assertEqual(result["roll"], 6)
+        self.assertIn("Skulls for Khorne", called.get("reason", ""))
+
+    def test_model_reroll_hit_vs_character_melee_text(self):
+        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.classes import wargear as wargear_module
+
+        ability = {
+            "name": "Skulls for Khorne",
+            "description": "Each time this model makes a melee attack that targets a CHARACTER unit, you can re-roll the Hit roll and you can re-roll the Wound roll.",
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, p1, _p2, army1, army2 = _build_game()
+        attacker = _make_unit("Skulltaker", keywords=["CHAOS", "DAEMON"], abilities=[ability])
+        target = _make_unit("Target", keywords=["CHARACTER"])
+        army1.add_unit(attacker)
+        army2.add_unit(target)
+
+        called = {}
+        def _provider(**kwargs):
+            called["reason"] = kwargs.get("reason")
+            return True
+
+        game.map.roll_reroll_provider = _provider
+
+        data = {
+            "range": "Melee",
+            "A": "1",
+            "BS_WS": "3+",
+            "S": "4",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+            "type": "Melee",
+            "name": "Test Blade",
         }
         profile = Wargear(data).profiles["default"]
 

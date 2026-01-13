@@ -1371,11 +1371,19 @@ def _model_reroll_wound_vs_character_support(description: str) -> Optional[Tuple
     text = _strip_html(description)
     text = text.replace("\u2019", "'")
     low = text.lower()
-    if "this model makes an attack" not in low:
+    attack_re = re.compile(r"this model makes (?:a|an)?\s*(?:melee|ranged)?\s*attacks?", re.IGNORECASE)
+    if not attack_re.search(low):
         return None
     if ("re-roll" not in low) and ("reroll" not in low):
         return None
-    if "targets a character unit" not in low and "targets an character unit" not in low and "targets a character units" not in low:
+    if (
+        "targets a character unit" not in low
+        and "targets an character unit" not in low
+        and "targets a character units" not in low
+        and "targets a character model" not in low
+        and "targets an character model" not in low
+        and "targets a character models" not in low
+    ):
         return None
     hit_reroll = bool(re.search(r"re-?roll\s+(?:the\s+)?hit\s+rolls?", low, flags=re.IGNORECASE))
     if "hit roll of 1" in low or "hit rolls of 1" in low:
@@ -1385,14 +1393,14 @@ def _model_reroll_wound_vs_character_support(description: str) -> Optional[Tuple
         wound_reroll = False
     if not (hit_reroll or wound_reroll):
         return None
-    cp_on_kill = "gain" in low and "cp" in low and "destroys" in low and "enemy" in low
+    cp_on_kill = "gain" in low and "cp" in low and "destroys" in low and "character" in low
     notes = []
     if hit_reroll:
         notes.append("Model attacks vs CHARACTER units can re-roll the Hit roll (optional).")
     if wound_reroll:
         notes.append("Model attacks vs CHARACTER units can re-roll the Wound roll (optional).")
     if cp_on_kill:
-        notes.append("Gain CP on destroying enemy units supported.")
+        notes.append("Gain CP on destroying CHARACTER models supported.")
     return ("Supported", " ".join(notes))
 
 

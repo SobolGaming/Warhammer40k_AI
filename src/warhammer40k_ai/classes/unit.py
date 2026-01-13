@@ -13124,13 +13124,14 @@ class Unit:
         allowed = False
         reason = None
         kw = "character"
-        target_re = re.compile(rf"targets (?:a|an) {re.escape(kw)} units?", re.IGNORECASE)
+        target_re = re.compile(rf"targets (?:a|an) {re.escape(kw)} (?:units?|models?)", re.IGNORECASE)
+        attack_re = re.compile(r"this model makes (?:a|an)?\s*(?:melee|ranged)?\s*attacks?", re.IGNORECASE)
         for name, desc in self._iter_model_specific_ability_entries(model):
             text = self._normalize_rules_text(desc or name or "")
             if not text:
                 continue
             low = text.lower()
-            if "this model makes an attack" not in low:
+            if not attack_re.search(low):
                 continue
             if "wound roll" not in low:
                 continue
@@ -13164,13 +13165,14 @@ class Unit:
         allowed = False
         reason = None
         kw = "character"
-        target_re = re.compile(rf"targets (?:a|an) {re.escape(kw)} units?", re.IGNORECASE)
+        target_re = re.compile(rf"targets (?:a|an) {re.escape(kw)} (?:units?|models?)", re.IGNORECASE)
+        attack_re = re.compile(r"this model makes (?:a|an)?\s*(?:melee|ranged)?\s*attacks?", re.IGNORECASE)
         for name, desc in self._iter_model_specific_ability_entries(model):
             text = self._normalize_rules_text(desc or name or "")
             if not text:
                 continue
             low = text.lower()
-            if "this model makes an attack" not in low:
+            if not attack_re.search(low):
                 continue
             if "hit roll" not in low:
                 continue
@@ -13311,7 +13313,7 @@ class Unit:
         # Must look like a 'destroy' trigger and reference CP gain.
         if "gain" not in txt or "cp" not in txt:
             return []
-        if "destroys" not in txt or "enemy" not in txt:
+        if "destroys" not in txt:
             return []
 
         # Extract CP amount (default 1 if implied)
@@ -13323,14 +13325,28 @@ class Unit:
         except Exception:
             cp = 1
 
+        # Keyword extraction (extendible)
+        keyword_map = {
+            "character": "CHARACTER",
+            "epic hero": "EPIC HERO",
+            "monster": "MONSTER",
+            "vehicle": "VEHICLE",
+            "psyker": "PSYKER",
+        }
+
+        if "enemy" not in txt:
+            has_keyword = any(needle in txt for needle in keyword_map)
+            if not has_keyword:
+                return []
+
         # Detect what is being destroyed: unit vs model (defaults to model_destroyed)
         trigger = "model_destroyed"
         try:
             # If text explicitly says "... destroys an enemy <X> unit", use unit_destroyed
-            if re.search(r"destroys\s+an?\s+enemy\b.*\bunit\b", txt):
+            if re.search(r"destroys\s+an?\s+(?:enemy\s+)?\b.*\bunit\b", txt):
                 trigger = "unit_destroyed"
             # If it explicitly says model, prefer model_destroyed
-            if re.search(r"destroys\s+an?\s+enemy\b.*\bmodel\b", txt):
+            if re.search(r"destroys\s+an?\s+(?:enemy\s+)?\b.*\bmodel\b", txt):
                 trigger = "model_destroyed"
         except Exception:
             trigger = "model_destroyed"
@@ -13343,15 +13359,6 @@ class Unit:
                 requires_melee = True
         except Exception:
             requires_melee = False
-
-        # Keyword extraction (extendible)
-        keyword_map = {
-            "character": "CHARACTER",
-            "epic hero": "EPIC HERO",
-            "monster": "MONSTER",
-            "vehicle": "VEHICLE",
-            "psyker": "PSYKER",
-        }
 
         target_keywords = []
         for needle, kw in keyword_map.items():

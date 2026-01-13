@@ -106,6 +106,63 @@ def test_model_destroyed_event_carries_attacker_and_allows_cp_gain(monkeypatch):
     assert p1.command_points == start_cp + 1
 
 
+def test_unit_destroyed_character_model_without_enemy_keyword_grants_cp(monkeypatch):
+    # Rolls: hit=6, wound=6, save=1 (fail)
+    _install_deterministic_rolls(monkeypatch, [6, 6, 1])
+
+    bf = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
+    game = Game(bf)
+
+    p1 = Player("P1", PlayerType.HUMAN, Army("Army A", "Detachment A"))
+    p2 = Player("P2", PlayerType.AI, Army("Army B", "Detachment B"))
+    game.add_player(p1)
+    game.add_player(p2)
+
+    attacker = Unit(MockDatasheet("Attacker", model_count=1))
+    attacker.deployed = True
+    attacker.models[0].set_location(10.0, 10.0, 0.0, 0.0)
+
+    # Target is a CHARACTER model
+    target = Unit(MockDatasheet("Target", keywords=["CHARACTER"], model_count=1))
+    target.deployed = True
+    target.models[0].set_location(20.0, 10.0, 0.0, 0.0)
+
+    p1.army.add_unit(attacker)
+    p2.army.add_unit(target)
+    game.map.units = [attacker, target]
+
+    gun = Wargear({
+        "name": "Test Gun",
+        "type": "Ranged",
+        "range": "24",
+        "A": "1",
+        "BS_WS": "2",
+        "S": "10",
+        "AP": "0",
+        "D": "1",
+        "description": "",
+    })
+    attacker.models[0].wargear.append(gun)
+
+    attacker.possible_abilities.append(
+        Ability(
+            name="Skull Taker",
+            faction_id="",
+            description="Each time this model's unit destroys a CHARACTER model, you gain 1CP.",
+            type="Datasheet",
+            parameter="",
+        )
+    )
+    attacker._invalidate_ability_cache()
+
+    start_cp = p1.command_points
+    profile = gun.profiles["default"]
+    profile.attack(target, attacker.models[0], game_map=game.map)
+
+    assert target.is_alive() is False
+    assert p1.command_points == start_cp + 1
+
+
 def test_the_great_wolf_gains_cp_on_destroying_enemy_unit(monkeypatch):
     # Rolls: hit=6, wound=6, save=1 (fail)
     _install_deterministic_rolls(monkeypatch, [6, 6, 1])
