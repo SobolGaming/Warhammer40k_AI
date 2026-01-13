@@ -3004,6 +3004,67 @@ class Game:
                     mgr.on_command_phase_end(game=self, player=player)
             except Exception:
                 pass
+            # Datasheet abilities: sticky objectives at end of your Command phase.
+            try:
+                if player is None:
+                    raise ValueError("no player")
+                army = getattr(player, "army", None)
+                if army is None:
+                    raise ValueError("no army")
+                game_map = getattr(self, "map", None)
+                objectives = list(getattr(game_map, "objectives", []) or []) if game_map is not None else []
+                if not objectives:
+                    raise ValueError("no objectives")
+                for obj in objectives:
+                    loc = getattr(obj, "location", None)
+                    if loc is None or getattr(loc, "removed", False):
+                        continue
+                    try:
+                        loc.update_control(self)
+                    except Exception:
+                        continue
+                seen = set()
+                for unit in list(getattr(army, "units", []) or []):
+                    try:
+                        root = unit.get_attached_unit_root()
+                    except Exception:
+                        root = unit
+                    if root is None:
+                        continue
+                    try:
+                        uid = getattr(root, "_id", id(root))
+                    except Exception:
+                        uid = id(root)
+                    if uid in seen:
+                        continue
+                    seen.add(uid)
+                    try:
+                        if not root.attached_unit_has_command_phase_sticky_objective():
+                            continue
+                    except Exception:
+                        continue
+                    for obj in objectives:
+                        loc = getattr(obj, "location", None)
+                        if loc is None or getattr(loc, "removed", False):
+                            continue
+                        if getattr(loc, "controlling_player", None) is not player:
+                            continue
+                        try:
+                            if not root.is_within_objective_range(loc):
+                                continue
+                        except Exception:
+                            continue
+                        try:
+                            if hasattr(loc, "set_sticky_control"):
+                                loc.set_sticky_control(player, source="unit_sticky_objective")
+                            else:
+                                loc.sticky_controller = player
+                                loc.sticky_source = "unit_sticky_objective"
+                                loc.controlling_player = player
+                        except Exception:
+                            continue
+            except Exception:
+                pass
 
         # Cabal of Sorcerers: Temporal Surge charge restriction ends at the end of the turn.
         if pname == "FIGHT_PHASE":

@@ -3376,6 +3376,59 @@ class Unit:
                 return list(getattr(root, "models", []) or [])
         return self.get_attached_unit_models()
 
+    def is_within_objective_range(self, objective_point) -> bool:
+        """Return True if any alive model in this unit is within objective control range."""
+        if objective_point is None:
+            return False
+        try:
+            if not self.is_alive() or not getattr(self, "deployed", False):
+                return False
+        except Exception:
+            return False
+        try:
+            if bool(getattr(self, "is_embarked", False)) or self.is_in_reserves():
+                return False
+        except Exception:
+            pass
+        try:
+            models = list(self.get_models_for_collision() or [])
+        except Exception:
+            models = list(getattr(self, "models", []) or [])
+        models = [m for m in models if bool(getattr(m, "is_alive", True))]
+        if not models:
+            return False
+        try:
+            from shapely.geometry import Point as _ShPoint
+            area = _ShPoint(objective_point.x, objective_point.y).buffer(
+                float(getattr(objective_point, "control_radius", 0.0) or 0.0)
+            )
+        except Exception:
+            area = None
+        for model in models:
+            try:
+                if area is not None:
+                    base = model.model_base.get_base_shape()
+                    if base.intersects(area):
+                        return True
+            except Exception:
+                pass
+            try:
+                pos = model.get_location()
+            except Exception:
+                pos = None
+            if not pos:
+                continue
+            try:
+                dx = float(pos[0]) - float(getattr(objective_point, "x", 0.0))
+                dy = float(pos[1]) - float(getattr(objective_point, "y", 0.0))
+                radius = float(getattr(objective_point, "control_radius", 0.0) or 0.0)
+                base_r = float(getattr(model.model_base, "get_radius", lambda: 1.0)())
+                if (dx * dx + dy * dy) ** 0.5 <= (radius + base_r):
+                    return True
+            except Exception:
+                continue
+        return False
+
     def get_models_for_wound_allocation(self) -> List['Model']:
         """
         Models eligible to be allocated wounds for this unit right now.
@@ -9986,11 +10039,59 @@ class Unit:
         self._ability_cache["icon_of_khorne"] = bool(found)
         return bool(found)
 
+    def has_command_phase_sticky_objective(self) -> bool:
+        """
+        True if this unit has the datasheet ability that makes objectives sticky at end of your Command phase.
+        """
+        cache_key = "command_phase_sticky_objective"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache[cache_key])
+
+        found = False
+        for ab in self._iter_active_abilities():
+            try:
+                desc = ab if isinstance(ab, str) else (getattr(ab, "description", "") or getattr(ab, "name", ""))
+            except Exception:
+                desc = ""
+            text = self._normalize_rules_text(desc or "")
+            if not text:
+                continue
+            low = text.lower().replace("\u2019", "'").replace("\u0192?T", "'")
+            if "end of your command phase" not in low:
+                continue
+            if "objective marker remains under your control" not in low:
+                continue
+            if "even if you have no models within range of it" not in low:
+                continue
+            if "until your opponent controls it" not in low:
+                continue
+            if "objective marker you control" not in low:
+                continue
+            if "within range of an objective marker" not in low:
+                continue
+            found = True
+            break
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = bool(found)
+        return bool(found)
+
     def attached_unit_has_icon_of_khorne(self) -> bool:
         """Attached unit eligibility: true if any attached member has Icon of Khorne."""
         for u in self.get_attached_unit_members():
             try:
                 if u.has_icon_of_khorne():
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def attached_unit_has_command_phase_sticky_objective(self) -> bool:
+        """Attached unit eligibility: true if any attached member has sticky objective ability."""
+        for u in self.get_attached_unit_members():
+            try:
+                if u.has_command_phase_sticky_objective():
                     return True
             except Exception:
                 continue

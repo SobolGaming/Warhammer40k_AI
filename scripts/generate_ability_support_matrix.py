@@ -1174,6 +1174,7 @@ def _classify_ability(
     unit_hit_reroll_support = _unit_hit_reroll_ones_support(description)
     melee_damage_support = _melee_damage_bonus_support(description)
     transport_support = _transport_disembark_support(description)
+    sticky_support = _sticky_objective_support(description)
     orders_support = _orders_section_support(name, description)
     attached_unit_support = _attached_unit_support(name, description)
     model_reroll_support = _model_reroll_wound_vs_character_support(description)
@@ -1206,6 +1207,8 @@ def _classify_ability(
         return melee_damage_support
     if transport_support:
         return transport_support
+    if sticky_support:
+        return sticky_support
     if orders_support:
         return orders_support
     if attached_unit_support:
@@ -1507,6 +1510,28 @@ def _transport_disembark_support(description: str) -> Optional[Tuple[str, str]]:
     if notes:
         return ("Supported", " ".join(notes))
     return None
+
+
+def _sticky_objective_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    low = text.lower()
+    if "end of your command phase" not in low:
+        return None
+    if "objective marker remains under your control" not in low:
+        return None
+    if "even if you have no models within range of it" not in low:
+        return None
+    if "until your opponent controls it" not in low:
+        return None
+    if "objective marker you control" not in low or "within range of an objective marker" not in low:
+        return None
+    return ("Supported", "End of Command phase: objective becomes sticky while you controlled it.")
 
 
 def _orders_section_support(name: str, description: str) -> Optional[Tuple[str, str]]:
