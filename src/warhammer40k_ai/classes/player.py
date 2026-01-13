@@ -344,6 +344,59 @@ class Player:
                 continue
         return 0
 
+    def _target_unit_has_stratagem_target_cp_discount(self, target_unit) -> tuple[bool, list[str]]:
+        if target_unit is None:
+            return False, []
+        try:
+            members = list(target_unit.get_attached_unit_members())
+        except Exception:
+            members = [target_unit]
+        found = False
+        names: list[str] = []
+        for u in members:
+            try:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if not sr.get("stratagem_target_cp_discount"):
+                    continue
+                found = True
+                for nm in list(sr.get("stratagem_target_cp_discount_sources", []) or []):
+                    if nm:
+                        names.append(str(nm))
+            except Exception:
+                continue
+        if found and not names:
+            names.append("Stratagem CP Discount")
+        # Deduplicate while preserving order.
+        seen = set()
+        deduped: list[str] = []
+        for n in names:
+            key = str(n).strip().lower()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            deduped.append(str(n))
+        return bool(found), deduped
+
+    def _preview_targeted_stratagem_cp_discount(self, *, target_unit=None) -> tuple[int, list[str]]:
+        """
+        Generic targeted stratagem CP discount:
+        Once per battle round, one unit from your army with this ability can use it when its unit
+        is targeted with a Stratagem. If it does, reduce the CP cost by 1CP.
+        """
+        if target_unit is None:
+            return 0, []
+        br = self._battle_round()
+        if br <= 0:
+            return 0, []
+        if int(self._ability_used_battle_round.get("TARGETED_STRATAGEM_DISCOUNT", 0) or 0) == br:
+            return 0, []
+        found, names = self._target_unit_has_stratagem_target_cp_discount(target_unit)
+        if not found:
+            return 0, []
+        return 1, names
+
     def _target_unit_has_gift_of_foresight(self, target_unit) -> bool:
         if target_unit is None:
             return False
@@ -537,6 +590,8 @@ class Player:
                     if isinstance(overrides, dict):
                         if "DIRECT_THE_SLAUGHTER" in overrides:
                             assume_optional_discounts = bool(overrides.get("DIRECT_THE_SLAUGHTER", False))
+                        elif "TARGETED_STRATAGEM_DISCOUNT" in overrides:
+                            assume_optional_discounts = bool(overrides.get("TARGETED_STRATAGEM_DISCOUNT", False))
                         elif "GIFT_OF_FORESIGHT" in overrides:
                             assume_optional_discounts = bool(overrides.get("GIFT_OF_FORESIGHT", False))
                         elif "MASTER_OF_THE_PAGEANT" in overrides:
@@ -549,6 +604,12 @@ class Player:
             if dts:
                 discount += int(dts)
                 reasons.append("Direct the Slaughter: -1CP (once per battle round)")
+
+            tsd, tsd_names = self._preview_targeted_stratagem_cp_discount(target_unit=target_unit)
+            if tsd:
+                discount += int(tsd)
+                label = tsd_names[0] if tsd_names else "Stratagem CP Discount"
+                reasons.append(f"Targeted Stratagem Discount ({label}): -1CP (once per battle round)")
 
         gof = self._preview_gift_of_foresight_discount(stratagem=stratagem, target_unit=target_unit)
         if gof:
@@ -590,6 +651,23 @@ class Player:
                 br = self._battle_round()
                 if br > 0:
                     self._ability_used_battle_round["DIRECT_THE_SLAUGHTER"] = br
+
+        # Decide whether to apply targeted stratagem discount if available.
+        tsd_available, tsd_names = self._preview_targeted_stratagem_cp_discount(target_unit=target_unit)
+        if tsd_available:
+            label = tsd_names[0] if tsd_names else "Stratagem CP Discount"
+            ctx = {
+                "ability_name": label,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_use_optional_ability("TARGETED_STRATAGEM_DISCOUNT", ctx):
+                applied_discount += 1
+                reasons.append(f"Targeted Stratagem Discount ({label}): -1CP (used)")
+                br = self._battle_round()
+                if br > 0:
+                    self._ability_used_battle_round["TARGETED_STRATAGEM_DISCOUNT"] = br
 
         # Decide whether to apply Gift of Foresight if available.
         gof_available = bool(self._preview_gift_of_foresight_discount(stratagem=stratagem, target_unit=target_unit))

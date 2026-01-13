@@ -7152,7 +7152,9 @@ class GameView:
                     reasons = list(prev.get("reasons", []) or [])
                     use_mop = any("Master of the Pageant" in str(r) for r in reasons)
                     use_dts = any("Direct the Slaughter" in str(r) for r in reasons)
-                    if use_mop or use_dts:
+                    tsd_reason = next((r for r in reasons if "Targeted Stratagem Discount" in str(r)), None)
+                    use_tsd = bool(tsd_reason)
+                    if use_mop or use_dts or use_tsd:
                         if self._optional_flow_active:
                             return
                         self._optional_flow_active = True
@@ -7161,10 +7163,19 @@ class GameView:
                             title = "Master of the Pageant"
                             msg = f"Use Master of the Pageant to reduce CP cost by 1?\n\n{str(name)}: {base}CP -> {max(0, base-1)}CP"
                             decision_key = "MASTER_OF_THE_PAGEANT"
-                        else:
+                        elif use_dts:
                             title = "Direct the Slaughter"
                             msg = f"Use Direct the Slaughter to reduce CP cost by 1?\n\n{str(name)}: {base}CP -> {max(0, base-1)}CP"
                             decision_key = "DIRECT_THE_SLAUGHTER"
+                        else:
+                            label = "Stratagem CP Discount"
+                            if tsd_reason:
+                                m = re.search(r"Targeted Stratagem Discount\s*\(([^)]+)\)", str(tsd_reason))
+                                if m:
+                                    label = m.group(1).strip() or label
+                            title = label
+                            msg = f"Use {label} to reduce CP cost by 1?\n\n{str(name)}: {base}CP -> {max(0, base-1)}CP"
+                            decision_key = "TARGETED_STRATAGEM_DISCOUNT"
 
                         def _done(chosen: bool):
                             self._optional_flow_active = False

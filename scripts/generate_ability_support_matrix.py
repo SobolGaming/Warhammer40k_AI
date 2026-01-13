@@ -1183,6 +1183,7 @@ def _classify_ability(
     orders_support = _orders_section_support(name, description)
     attached_unit_support = _attached_unit_support(name, description)
     model_reroll_support = _model_reroll_wound_vs_character_support(description)
+    targeted_stratagem_discount_support = _targeted_stratagem_cp_discount_support(description)
 
     fid = str(faction_id or "").strip().upper()
     name_norm = _norm(name)
@@ -1222,6 +1223,8 @@ def _classify_ability(
         return attached_unit_support
     if model_reroll_support:
         return model_reroll_support
+    if targeted_stratagem_discount_support:
+        return targeted_stratagem_discount_support
     return ("Not implemented", "")
 
 
@@ -1350,6 +1353,37 @@ def _model_reroll_wound_vs_character_support(description: str) -> Optional[Tuple
     if cp_on_kill:
         notes.append("Gain CP on destroying enemy units supported.")
     return ("Supported", " ".join(notes))
+
+
+def _targeted_stratagem_cp_discount_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    low = text.lower()
+    if "once per battle round" not in low:
+        return None
+    if "stratagem" not in low:
+        return None
+    if "reduce the cp cost" not in low:
+        return None
+    if "within" in low:
+        return None
+    pattern = re.compile(
+        r"once\s+per\s+battle\s+round.*?\bone\s+(?:unit|model)\s+from\s+your\s+army\s+with\s+this\s+ability\s+can\s+use\s+it\s+when\s+"
+        r"(?:its\s+unit|this\s+model'?s\s+unit|that\s+model'?s\s+unit)\s+is\s+targeted\s+with\s+a\s+stratagem.*?"
+        r"reduce\s+the\s+cp\s+cost\s+of\s+that\s+(?:use|usage)\s+of\s+that\s+stratagem\s+by\s+1cp",
+        flags=re.IGNORECASE,
+    )
+    if not pattern.search(low):
+        return None
+    return (
+        "Supported",
+        "Once per battle round, when this unit is targeted with a Stratagem, you can reduce its CP cost by 1.",
+    )
 
 
 def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:

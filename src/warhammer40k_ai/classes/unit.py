@@ -197,6 +197,11 @@ class Unit:
             self._refresh_command_phase_flags()
         except Exception:
             pass
+        # Parse once-per-battle-round stratagem CP discounts for targeted units.
+        try:
+            self._refresh_targeted_stratagem_cp_discount_flags()
+        except Exception:
+            pass
         # Parse common bearer-unit effects (charge bonuses, Leadership set).
         try:
             self._refresh_bearer_unit_common_modifiers()
@@ -653,6 +658,12 @@ class Unit:
         r"(?:at\s+the\s+)?start\s+of\s+(?:each\s+of\s+)?your\s+command\s+phase[s]?\b.*?\bgain\s+(\d+)\s*(?:cp|command point(?:s)?)",
         re.IGNORECASE,
     )
+    _TARGETED_STRATAGEM_CP_DISCOUNT_RE = re.compile(
+        r"once\s+per\s+battle\s+round.*?\bone\s+(?:unit|model)\s+from\s+your\s+army\s+with\s+this\s+ability\s+can\s+use\s+it\s+when\s+"
+        r"(?:its\s+unit|this\s+model'?s\s+unit|that\s+model'?s\s+unit)\s+is\s+targeted\s+with\s+a\s+stratagem.*?"
+        r"reduce\s+the\s+cp\s+cost\s+of\s+that\s+(?:use|usage)\s+of\s+that\s+stratagem\s+by\s+1cp",
+        re.IGNORECASE,
+    )
     _BEARER_INVULNERABLE_SAVE_RE = re.compile(
         r"^the bearer has a (\d)\+ invulnerable save\.?$",
         re.IGNORECASE,
@@ -807,6 +818,64 @@ class Unit:
 
         if self._scan_command_phase_sticky_objective():
             sr["sticky_objectives"] = True
+
+        self.special_rules = sr
+
+    def _refresh_targeted_stratagem_cp_discount_flags(self) -> None:
+        """Parse unit abilities that reduce Stratagem CP cost when this unit is targeted."""
+        if getattr(self, "special_rules", None) is None:
+            self.special_rules = {}
+        sr = self.special_rules
+        try:
+            if "stratagem_target_cp_discount" in sr:
+                del sr["stratagem_target_cp_discount"]
+            if "stratagem_target_cp_discount_sources" in sr:
+                del sr["stratagem_target_cp_discount_sources"]
+        except Exception:
+            pass
+
+        names: list[str] = []
+        for ab in self._iter_active_abilities():
+            try:
+                if isinstance(ab, str):
+                    name = ab
+                    desc = ab
+                else:
+                    name = str(getattr(ab, "name", "") or "")
+                    desc = str(getattr(ab, "description", "") or "") or name
+            except Exception:
+                continue
+            text = self._normalize_rules_text(desc or "")
+            if not text:
+                continue
+            low = text.lower().replace("\u2019", "'").replace("\u0192?T", "'")
+            if "once per battle round" not in low:
+                continue
+            if "stratagem" not in low:
+                continue
+            if "reduce the cp cost" not in low:
+                continue
+            if "within" in low:
+                continue
+            if not self._TARGETED_STRATAGEM_CP_DISCOUNT_RE.search(low):
+                continue
+            if name:
+                names.append(name)
+            else:
+                names.append("Stratagem CP Discount")
+
+        if names:
+            sr["stratagem_target_cp_discount"] = True
+            seen = set()
+            deduped: list[str] = []
+            for n in names:
+                key = str(n).strip().lower()
+                if not key or key in seen:
+                    continue
+                seen.add(key)
+                deduped.append(str(n))
+            if deduped:
+                sr["stratagem_target_cp_discount_sources"] = deduped
 
         self.special_rules = sr
 
@@ -2107,6 +2176,10 @@ class Unit:
             pass
         try:
             self._refresh_command_phase_flags()
+        except Exception:
+            pass
+        try:
+            self._refresh_targeted_stratagem_cp_discount_flags()
         except Exception:
             pass
 
@@ -3985,6 +4058,14 @@ class Unit:
             bodyguard._refresh_command_phase_flags()
         except Exception:
             pass
+        try:
+            self._refresh_targeted_stratagem_cp_discount_flags()
+        except Exception:
+            pass
+        try:
+            bodyguard._refresh_targeted_stratagem_cp_discount_flags()
+        except Exception:
+            pass
 
     def detach_from_unit(self) -> None:
         """Detach this Leader from its Bodyguard unit."""
@@ -4036,6 +4117,15 @@ class Unit:
         try:
             if bodyguard is not None:
                 bodyguard._refresh_command_phase_flags()
+        except Exception:
+            pass
+        try:
+            self._refresh_targeted_stratagem_cp_discount_flags()
+        except Exception:
+            pass
+        try:
+            if bodyguard is not None:
+                bodyguard._refresh_targeted_stratagem_cp_discount_flags()
         except Exception:
             pass
 
