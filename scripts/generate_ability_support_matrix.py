@@ -1226,9 +1226,15 @@ def _warlord_enhancement_restriction_support(description: str) -> Optional[Tuple
     low = text.lower()
     warlord_re = re.compile(r"\b(?:cannot be your|none of these models can be your)\s+warlord\b", re.IGNORECASE)
     enh_re = re.compile(r"\bcannot be given\s+(?:an?\s+)?enhancements?\b", re.IGNORECASE)
-    if not (warlord_re.search(low) and enh_re.search(low)):
+    has_warlord = bool(warlord_re.search(low))
+    has_enh = bool(enh_re.search(low))
+    if not (has_warlord or has_enh):
         return None
-    return ("Supported", "Unit cannot be your Warlord or be given Enhancements.")
+    if has_warlord and has_enh:
+        return ("Supported", "Unit cannot be your Warlord or be given Enhancements.")
+    if has_warlord:
+        return ("Supported", "Unit cannot be your Warlord.")
+    return ("Supported", "Unit cannot be given Enhancements.")
 
 
 def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
