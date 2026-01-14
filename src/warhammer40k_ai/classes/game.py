@@ -467,6 +467,71 @@ class Game:
             except Exception:
                 continue
 
+    def _apply_command_phase_regain_wounds(self, current_player) -> None:
+        if current_player is None:
+            return
+        try:
+            army = current_player.get_army()
+        except Exception:
+            army = getattr(current_player, "army", None)
+        if army is None:
+            return
+
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            try:
+                if hasattr(unit, "is_alive") and callable(unit.is_alive) and not unit.is_alive():
+                    continue
+            except Exception:
+                pass
+            try:
+                if not bool(getattr(unit, "deployed", True)):
+                    continue
+            except Exception:
+                pass
+            try:
+                if str(getattr(unit, "reserve_status", "deployed")) != "deployed":
+                    continue
+            except Exception:
+                pass
+            try:
+                if hasattr(unit, "is_in_reserves") and callable(unit.is_in_reserves):
+                    if bool(unit.is_in_reserves()):
+                        continue
+            except Exception:
+                pass
+
+            models = list(getattr(unit, "models", []) or [])
+            if not models:
+                continue
+            for model in models:
+                try:
+                    if not bool(getattr(model, "is_alive", True)):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    base_wounds = int(getattr(model, "_base_wounds", getattr(model, "base_wounds", 0)) or 0)
+                    current_wounds = int(getattr(model, "wounds", 0) or 0)
+                except Exception:
+                    continue
+                if base_wounds <= 0 or current_wounds <= 0 or current_wounds >= base_wounds:
+                    continue
+                try:
+                    amount = int(unit.get_command_phase_regain_wound_amount(model) or 0)
+                except Exception:
+                    amount = 0
+                if amount <= 0:
+                    continue
+                try:
+                    model.heal(amount)
+                except Exception:
+                    try:
+                        model.wounds = min(base_wounds, current_wounds + amount)
+                    except Exception:
+                        pass
+
     def _maybe_prompt_shadow_in_the_warp(self) -> None:
         es = getattr(self, "event_system", None)
         subs = getattr(es, "subscribers", {}) if es is not None else {}
@@ -5585,6 +5650,11 @@ class Game:
                 bonus = int(cp_player.get_command_phase_bonus_cp_gain() or 0)
                 if bonus > 0:
                     cp_player.gain_command_points(bonus, reason="Command phase bonus CP")
+        except Exception:
+            pass
+        # Datasheet abilities: start of your Command phase regain lost wounds.
+        try:
+            self._apply_command_phase_regain_wounds(self.get_current_player())
         except Exception:
             pass
         # Drukhari: Power from Pain tokens at start of your Command phase.

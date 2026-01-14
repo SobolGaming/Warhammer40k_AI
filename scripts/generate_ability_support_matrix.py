@@ -1289,6 +1289,7 @@ def _classify_ability(
     bodyguard_return_support = _command_phase_bodyguard_return_support(description)
     enemy_fall_back_desperate_escape_support = _enemy_fall_back_desperate_escape_support(description)
     command_phase_bonus_cp_support = _command_phase_bonus_cp_support(description)
+    command_phase_regain_wound_support = _command_phase_regain_wound_support(description)
     cp_on_destroy_support = _gain_cp_on_destroy_support(description)
     fall_back_shoot_support = _fall_back_shoot_support(description)
     battlesuit_support_system_support = _battlesuit_support_system_support(name, description)
@@ -1363,6 +1364,8 @@ def _classify_ability(
         return enemy_fall_back_desperate_escape_support
     if command_phase_bonus_cp_support:
         return command_phase_bonus_cp_support
+    if command_phase_regain_wound_support:
+        return command_phase_regain_wound_support
     if cp_on_destroy_support:
         return cp_on_destroy_support
     if fall_back_shoot_support:
@@ -2440,6 +2443,22 @@ def _command_phase_bonus_cp_support(description: str) -> Optional[Tuple[str, str
     if not m:
         return None
     return ("Supported", f"Start of Command phase: gain {m.group('cp')} CP while on the battlefield.")
+
+
+def _command_phase_regain_wound_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"(?:at the )?start of (?:each of )?your command phases? "
+        r"this model regains (?P<amt>\d+) lost wounds?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    return ("Supported", f"Start of Command phase: this model regains {m.group('amt')} lost wound(s).")
 
 
 def _gain_cp_on_destroy_support(description: str) -> Optional[Tuple[str, str]]:

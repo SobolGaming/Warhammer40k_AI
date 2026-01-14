@@ -826,6 +826,10 @@ class Unit:
         r"(?:at\s+the\s+)?start\s+of\s+(?:each\s+of\s+)?your\s+command\s+phase[s]?\b.*?\bgain\s+(\d+)\s*(?:cp|command point(?:s)?)",
         re.IGNORECASE,
     )
+    _COMMAND_PHASE_REGAIN_WOUND_RE = re.compile(
+        r"(?:at\s+the\s+)?start\s+of\s+(?:each\s+of\s+)?your\s+command\s+phase[s]?[,.]?\s*this\s+model\s+regains?\s+(\d+)\s+lost\s+wounds?",
+        re.IGNORECASE,
+    )
     _REROLL_ADVANCE_CHARGE_RE = re.compile(
         r"re-?roll\s+advance\s+and\s+charge\s+rolls?\s+made\s+for\s+(?:this\s+model|the\s+bearer'?s\s+unit|that\s+unit)",
         re.IGNORECASE,
@@ -1035,6 +1039,68 @@ class Unit:
                 "description": desc or "",
             }
         return None
+
+    def _parse_command_phase_regain_wound_amount(self, text: str) -> int:
+        if not text:
+            return 0
+        m = self._COMMAND_PHASE_REGAIN_WOUND_RE.search(text)
+        if not m:
+            return 0
+        try:
+            return int(m.group(1))
+        except Exception:
+            return 0
+
+    def get_command_phase_regain_wound_amount(self, model: Optional['Model'] = None) -> int:
+        """
+        Return the number of wounds a model regains at the start of your Command phase.
+
+        - Unit-level abilities apply to every model in the unit.
+        - Model-level abilities only apply to that specific model.
+        """
+        cache_key = "command_phase_regain_wound_unit_amount"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            base_amount = int(self._ability_cache[cache_key] or 0)
+        else:
+            base_amount = 0
+            for ab in self._iter_active_possible_abilities():
+                try:
+                    if isinstance(ab, str):
+                        desc = ab
+                    else:
+                        desc = str(getattr(ab, "description", "") or getattr(ab, "name", "") or "")
+                except Exception:
+                    desc = ""
+                text = self._normalize_rules_text(desc or "")
+                if not text:
+                    continue
+                base_amount += self._parse_command_phase_regain_wound_amount(text)
+            if not hasattr(self, "_ability_cache"):
+                self._ability_cache = {}
+            self._ability_cache[cache_key] = int(base_amount or 0)
+
+        if model is None:
+            return int(base_amount or 0)
+
+        amount = int(base_amount or 0)
+        for ab in list(getattr(model, "abilities", {}) or {}).values():
+            try:
+                if not self._ability_is_active(ab):
+                    continue
+            except Exception:
+                pass
+            try:
+                if isinstance(ab, str):
+                    desc = ab
+                else:
+                    desc = str(getattr(ab, "description", "") or getattr(ab, "name", "") or "")
+            except Exception:
+                desc = ""
+            text = self._normalize_rules_text(desc or "")
+            if not text:
+                continue
+            amount += self._parse_command_phase_regain_wound_amount(text)
+        return int(amount or 0)
 
     def _refresh_command_phase_flags(self) -> None:
         """Parse command-phase CP gains and sticky objective flags into special_rules."""
