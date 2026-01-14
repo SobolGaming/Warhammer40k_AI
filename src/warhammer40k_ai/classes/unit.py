@@ -992,7 +992,8 @@ class Unit:
                 and "until your opponent controls it" in low
             )
             loc_sticky = "level of control" in low and "greater than yours" in low
-            if not (legacy_sticky or loc_sticky):
+            timed_sticky = "start or end of any turn" in low and "until your opponent controls it" in low
+            if not (legacy_sticky or loc_sticky or timed_sticky):
                 continue
             return True
         return False
