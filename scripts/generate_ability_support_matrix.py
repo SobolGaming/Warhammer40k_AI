@@ -1202,6 +1202,7 @@ def _classify_ability(
     targeted_stratagem_discount_support = _targeted_stratagem_cp_discount_support(description)
     charge_end_mortal_support = _charge_end_mortal_wounds_support(description)
     fight_within_3_support = _fight_within_3_support(description)
+    allocated_damage_reduction_support = _allocated_damage_reduction_support(description)
 
     fid = str(faction_id or "").strip().upper()
     name_norm = _norm(name)
@@ -1270,6 +1271,8 @@ def _classify_ability(
         return charge_end_mortal_support
     if fight_within_3_support:
         return fight_within_3_support
+    if allocated_damage_reduction_support:
+        return allocated_damage_reduction_support
     return ("Not implemented", "")
 
 
@@ -1680,6 +1683,33 @@ def _fight_within_3_support(description: str) -> Optional[Tuple[str, str]]:
         "Supported",
         "Optional fight activation: models within 3\" of enemy models can fight eligible engaged targets.",
     )
+
+
+def _allocated_damage_reduction_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    low = text.lower()
+    if "attack is allocated" not in low:
+        return None
+    if "damage characteristic" not in low:
+        return None
+    m = re.search(r"subtract\s+(\d+)\s+from\s+the\s+damage\s+characteristic", low, flags=re.IGNORECASE)
+    if not m:
+        return None
+    if not re.search(r"allocated\s+to\s+(?:this\s+model|a\s+model\s+in\s+this\s+unit)", low, flags=re.IGNORECASE):
+        return None
+    atype = ""
+    m2 = re.search(r"each\s+time\s+(?:an|a)\s+(melee|ranged)\s+attack\s+is\s+allocated", low, flags=re.IGNORECASE)
+    if m2:
+        atype = m2.group(1).lower()
+    if atype:
+        return ("Supported", f"Allocated {atype} attacks have -{m.group(1)} Damage.")
+    return ("Supported", f"Allocated attacks have -{m.group(1)} Damage.")
 
 
 def _targeted_stratagem_cp_discount_support(description: str) -> Optional[Tuple[str, str]]:

@@ -5179,6 +5179,7 @@ class WargearProfile:
 
         damage_mods: list[Modifier] = []
         defensive_damage_entries = []
+        allocated_damage_entries = []
 
         if self.is_melta() and attack_instance.get('below_half_distance', False):
             # Support Melta N / Melta D3 / Melta D6+X, etc.
@@ -5281,6 +5282,25 @@ class WargearProfile:
                 damage_mods.append(Modifier(ModifierOp.SUB, int(red), source="enhancement:reduce_damage_taken"))
         except Exception:
             pass
+        # Unit ability: reduce damage allocated to this model.
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            sr = getattr(t_unit, "special_rules", None) if t_unit is not None else None
+            if isinstance(sr, dict):
+                entries = list(sr.get("allocated_damage_reductions", []) or [])
+                attack_type = "melee" if (self.parent_wargear and self.parent_wargear.is_melee()) else "ranged"
+                for entry in entries:
+                    if not isinstance(entry, dict):
+                        continue
+                    entry_type = str(entry.get("attack_type") or "any").strip().lower()
+                    if entry_type not in ("any", attack_type):
+                        continue
+                    red = int(entry.get("value", 0) or 0)
+                    if red:
+                        damage_mods.append(Modifier(ModifierOp.SUB, int(red), source="ability:allocated_damage_reduction"))
+                        allocated_damage_entries.append((red, entry.get("source") or "Damage reduction"))
+        except Exception:
+            pass
         # Bondsman: Defender's Duty reduces damage by 1.
         try:
             t_unit = getattr(target_model, "parent_unit", None)
@@ -5375,6 +5395,12 @@ class WargearProfile:
             pass
         try:
             for red, src in defensive_damage_entries:
+                if red:
+                    damage_result['special_effects'].append(f"{src} -{red}D taken")
+        except Exception:
+            pass
+        try:
+            for red, src in allocated_damage_entries:
                 if red:
                     damage_result['special_effects'].append(f"{src} -{red}D taken")
         except Exception:

@@ -662,16 +662,23 @@ class Unit:
                 del self.special_rules["armor_save_bonus_vs_damage_characteristic"]
         except Exception:
             pass
+        try:
+            if "allocated_damage_reductions" in self.special_rules:
+                del self.special_rules["allocated_damage_reductions"]
+        except Exception:
+            pass
 
         # Collect all rules text from unit abilities.
         entries = []
         for a in self._iter_active_possible_abilities():
             if isinstance(a, str):
-                entries.append(a)
+                entries.append(("", a))
             else:
-                entries.append(getattr(a, "description", "") or "")
+                name = str(getattr(a, "name", "") or "")
+                desc = str(getattr(a, "description", "") or "")
+                entries.append((name, desc or name))
 
-        for raw in entries:
+        for name, raw in entries:
             t = self._normalize_rules_text(raw)
             if not t:
                 continue
@@ -693,6 +700,34 @@ class Unit:
                     spec = {}
                 spec[int(dmg)] = int(spec.get(int(dmg), 0)) + int(bonus)
                 self.special_rules["armor_save_bonus_vs_damage_characteristic"] = spec
+
+            # Damage reduction when attacks are allocated to this model/unit.
+            m = re.search(
+                r"each\s+time\s+(?:an|a)\s+(?:(?P<atype>melee|ranged)\s+)?attack\s+is\s+allocated\s+to\s+"
+                r"(?:this\s+model|a\s+model\s+in\s+this\s+unit)\s*,\s*"
+                r"subtract\s+(?P<val>\d+)\s+from\s+the\s+damage\s+characteristic\s+of\s+that\s+attack",
+                tl,
+                flags=re.IGNORECASE,
+            )
+            if m:
+                try:
+                    val = int(m.group("val"))
+                except Exception:
+                    val = 0
+                if val:
+                    atype = (m.group("atype") or "any").strip().lower()
+                    label = (name or "Damage reduction ability").strip() or "Damage reduction ability"
+                    sr = self.special_rules
+                    items = list(sr.get("allocated_damage_reductions", []) or [])
+                    items.append(
+                        {
+                            "value": int(val),
+                            "attack_type": atype,
+                            "source": label,
+                        }
+                    )
+                    sr["allocated_damage_reductions"] = items
+                    self.special_rules = sr
 
     _CANNOT_BE_WARLORD_RE = re.compile(r"\bcannot be your\s+warlord\b", re.IGNORECASE)
     _CANNOT_BE_GIVEN_ENHANCEMENTS_RE = re.compile(r"\bcannot be given\s+(?:an?\s+)?enhancements?\b", re.IGNORECASE)
@@ -2683,6 +2718,10 @@ class Unit:
         # Wargear selection can activate/deactivate wargear abilities.
         try:
             self._invalidate_ability_cache()
+        except Exception:
+            pass
+        try:
+            self._parse_against_attack_characteristic_defensive_rules()
         except Exception:
             pass
         try:
