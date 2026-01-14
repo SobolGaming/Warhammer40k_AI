@@ -13713,6 +13713,64 @@ class Unit:
         self._ability_cache[cache_key] = (allowed, reason)
         return allowed, reason
 
+    def model_hit_bonus_vs_fly(self, model: Optional['Model'] = None, *, attack_type: str = "any") -> tuple[int, Optional[str]]:
+        """
+        Model-specific rule: +N to Hit rolls vs targets that can FLY.
+
+        Returns (bonus, reason_name).
+        """
+        if model is None:
+            return 0, None
+        atype = str(attack_type or "").strip().lower()
+        if atype not in ("melee", "ranged"):
+            atype = "any"
+        cache_key = f"model_hit_bonus_vs_fly:{getattr(model, '_id', id(model))}:{atype}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        bonus = 0
+        reason = None
+        attack_re = re.compile(
+            r"this model makes (?:a|an)?\s*(?P<atype>melee|ranged)?\s*attack(?:s)?",
+            re.IGNORECASE,
+        )
+        target_re = re.compile(
+            r"targets? (?:a|an)?\s*unit.*?\b(?:can\s+fly|with\s+fly|fly)\b",
+            re.IGNORECASE,
+        )
+        bonus_re = re.compile(r"add\s+(\d+)\s+to\s+the\s+hit\s+roll", re.IGNORECASE)
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text = self._normalize_rules_text(desc or name or "")
+            if not text:
+                continue
+            low = text.lower()
+            if "hit roll" not in low or "add" not in low or "fly" not in low:
+                continue
+            m_attack = attack_re.search(low)
+            if not m_attack:
+                continue
+            m_target = target_re.search(low)
+            if not m_target:
+                continue
+            m_bonus = bonus_re.search(low)
+            if not m_bonus:
+                continue
+            ab_atype = (m_attack.group("atype") or "any").lower()
+            if atype != "any" and ab_atype not in ("any", atype):
+                continue
+            try:
+                bonus = int(m_bonus.group(1))
+            except Exception:
+                bonus = 0
+            if bonus:
+                reason = str(name or "Model ability")
+                break
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = (bonus, reason)
+        return bonus, reason
+
     def get_target_hit_roll_penalty(
         self,
         attack_type: str,

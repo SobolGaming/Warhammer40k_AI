@@ -1194,6 +1194,7 @@ def _classify_ability(
     orders_support = _orders_section_support(name, description)
     attached_unit_support = _attached_unit_support(name, description)
     model_reroll_support = _model_reroll_wound_vs_character_support(description)
+    model_hit_vs_fly_support = _model_hit_bonus_vs_fly_support(description)
     targeted_stratagem_discount_support = _targeted_stratagem_cp_discount_support(description)
 
     fid = str(faction_id or "").strip().upper()
@@ -1255,6 +1256,8 @@ def _classify_ability(
         return attached_unit_support
     if model_reroll_support:
         return model_reroll_support
+    if model_hit_vs_fly_support:
+        return model_hit_vs_fly_support
     if targeted_stratagem_discount_support:
         return targeted_stratagem_discount_support
     return ("Not implemented", "")
@@ -1556,6 +1559,32 @@ def _model_reroll_wound_vs_character_support(description: str) -> Optional[Tuple
     if cp_on_kill:
         notes.append("Gain CP on destroying CHARACTER models supported.")
     return ("Supported", " ".join(notes))
+
+
+def _model_hit_bonus_vs_fly_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    low = text.lower()
+    attack_re = re.compile(r"this model makes (?:a|an)?\s*(?:melee|ranged)?\s*attacks?", re.IGNORECASE)
+    if not attack_re.search(low):
+        return None
+    if "hit roll" not in low:
+        return None
+    if "fly" not in low:
+        return None
+    if "targets" not in low:
+        return None
+    m = re.search(r"add\s+(\d+)\s+to\s+the\s+hit\s+roll", low, flags=re.IGNORECASE)
+    if not m:
+        return None
+    if not re.search(r"targets?\s+(?:a|an)?\s*unit.*?(?:can\s+fly|with\s+fly|fly)\b", low, flags=re.IGNORECASE):
+        return None
+    return ("Supported", f"Model attacks vs FLY targets gain +{m.group(1)} to hit.")
 
 
 def _targeted_stratagem_cp_discount_support(description: str) -> Optional[Tuple[str, str]]:

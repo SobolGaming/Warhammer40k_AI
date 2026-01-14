@@ -1945,6 +1945,27 @@ class WargearProfile:
             unit_hit_mods = unit.get_unit_hit_reroll_modifiers(attack_type)
         except Exception:
             unit_hit_mods = None
+
+        # Model-specific: +hit vs FLY targets.
+        try:
+            target_can_fly = False
+            try:
+                target_can_fly = bool(getattr(target, "is_flying", False))
+            except Exception:
+                target_can_fly = False
+            if not target_can_fly:
+                try:
+                    target_can_fly = bool(target.has_keyword("Fly") or target.has_any_keyword("Fly"))
+                except Exception:
+                    target_can_fly = False
+            if target_can_fly:
+                unit = attacker.parent_unit
+                bonus, reason = unit.model_hit_bonus_vs_fly(attacker, attack_type=attack_type)
+                if bonus:
+                    dice_modifier += int(bonus)
+                    hit_result['modifiers'].append(f"+{bonus} to hit vs FLY from {reason}")
+        except Exception:
+            pass
         
         dice_modifier = min(max(dice_modifier, -1), 1)  # modifications are capped between -1 and 1
         final_needed = base_skill - dice_modifier  # Note: negative dice_modifier makes it harder (higher final_needed)
