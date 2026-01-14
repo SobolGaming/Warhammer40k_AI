@@ -34,6 +34,7 @@ if SRC_DIR not in sys.path:
     sys.path.insert(0, SRC_DIR)
 
 from warhammer40k_ai.utility.faction_rule_metadata import FACTION_RULE_METADATA
+from warhammer40k_ai.utility.attack_roll_parser import parse_attack_roll_text
 from warhammer40k_ai.classes.army import SUPPORTED_FACTION_IDS
 from warhammer40k_ai.classes.stratagems import (
     IMPLEMENTED_STRATAGEM_NAMES,
@@ -74,6 +75,74 @@ def _norm_rules_text(text: str) -> str:
 
 def _fullmatch_tokens(pattern: str, text: str) -> bool:
     return bool(re.fullmatch(pattern, _norm_rules_text(text)))
+
+
+def _split_attack_roll_chunks(text: str) -> tuple[list[str], list[str]]:
+    cleaned = _strip_html(text or "")
+    cleaned = cleaned.replace("\u2019", "'").replace("\u0192?T", "'")
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if not cleaned:
+        return [], []
+    cleaned = re.sub(r";\s*", ". ", cleaned)
+    sentences = [part.strip() for part in re.split(r"\.\s*", cleaned) if part.strip()]
+    if not sentences:
+        return [], []
+
+    def _effect_start(value: str) -> bool:
+        return bool(
+            re.match(
+                r"^(?:if|add|subtract|improve|you can|reroll|re-?roll|a successful|an unmodified|a critical)\b",
+                value,
+                flags=re.IGNORECASE,
+            )
+        )
+
+    chunks: list[str] = []
+    used: set[int] = set()
+    for idx, sentence in enumerate(sentences):
+        if idx in used:
+            continue
+        sl = sentence.lower()
+        if "each time" not in sl or "attack" not in sl:
+            continue
+        if not any(k in sl for k in ("hit roll", "wound roll", "critical", "reroll", "re-roll", "subtract", "add", "improve")):
+            continue
+        parts = [sentence]
+        used.add(idx)
+        j = idx + 1
+        while j < len(sentences):
+            if j in used:
+                j += 1
+                continue
+            nxt = sentences[j].strip()
+            if not nxt:
+                j += 1
+                continue
+            if _effect_start(nxt):
+                parts.append(nxt)
+                used.add(j)
+                j += 1
+                continue
+            break
+        chunks.append(". ".join(parts))
+
+    remaining = [s for i, s in enumerate(sentences) if i not in used]
+    return chunks, remaining
+
+
+def _cp_on_destroy_sentence(sentence: str) -> Optional[dict]:
+    norm = _norm_rules_text(sentence)
+    if not norm:
+        return None
+    pattern = (
+        r"each time (?:this model|this unit|this models unit) destroys an? (?:enemy )?"
+        r"(?P<kw>character|epic hero|monster|vehicle|psyker)? ?(?:model|unit)? you gain (?P<cp>\d+) ?cp"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    kw = m.group("kw")
+    return {"cp": int(m.group("cp")), "keyword": kw}
 
 
 def _is_kill_team_unit(name: str) -> bool:
@@ -1223,6 +1292,7 @@ def _classify_ability(
     orders_support = _orders_section_support(name, description)
     attached_unit_support = _attached_unit_support(name, description)
     model_reroll_support = _model_reroll_wound_vs_character_support(description)
+    attack_roll_cp_support = _attack_roll_plus_cp_on_destroy_support(description)
     model_hit_vs_fly_support = _model_hit_bonus_vs_fly_support(description)
     targeted_stratagem_discount_support = _targeted_stratagem_cp_discount_support(description)
     charge_end_mortal_support = _charge_end_mortal_wounds_support(description)
@@ -1296,6 +1366,8 @@ def _classify_ability(
         return attached_unit_support
     if model_reroll_support:
         return model_reroll_support
+    if attack_roll_cp_support:
+        return attack_roll_cp_support
     if model_hit_vs_fly_support:
         return model_hit_vs_fly_support
     if targeted_stratagem_discount_support:
@@ -1673,6 +1745,40 @@ def _bearer_invulnerable_save_support(description: str) -> Optional[Tuple[str, s
     return ("Supported", f"Bearer has a {m.group(1)}+ invulnerable save.")
 
 
+def _attack_roll_plus_cp_on_destroy_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    chunks, remaining = _split_attack_roll_chunks(description)
+    if not chunks or not remaining:
+        return None
+    attack_rules = []
+    for chunk in chunks:
+        rule = parse_attack_roll_text(chunk)
+        if rule is None:
+            return None
+        attack_rules.append(rule)
+    cp_specs = []
+    for sentence in remaining:
+        spec = _cp_on_destroy_sentence(sentence)
+        if spec is None:
+            return None
+        cp_specs.append(spec)
+    if not cp_specs:
+        return None
+
+    notes = ["Attack roll modifiers supported."]
+    keywords = []
+    for spec in cp_specs:
+        kw = spec.get("keyword")
+        if kw:
+            keywords.append(str(kw).upper())
+    if keywords:
+        notes.append(f"Gain CP on destroying {', '.join(sorted(set(keywords)))} models supported.")
+    else:
+        notes.append("Gain CP on destroying enemy models supported.")
+    return ("Supported", " ".join(notes))
+
+
 def _model_reroll_wound_vs_character_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -1684,7 +1790,7 @@ def _model_reroll_wound_vs_character_support(description: str) -> Optional[Tuple
         r"you can reroll the (?:hit|wound) roll(?:s)?(?: and you can reroll the (?:hit|wound) roll(?:s)?)?"
     )
     cp_pattern = (
-        r"each time (?:this model|this models unit|this unit) destroys an? (?:enemy )?character (?:model|unit) you gain \d+ cp"
+        r"each time (?:this model|this models unit|this unit) destroys an? (?:enemy )?character (?:model|unit) you gain \d+ ?cp"
     )
     sentences = [s for s in (_norm_rules_text(part) for part in re.split(r"[.;]\s*", _strip_html(description))) if s]
     unsupported = [s for s in sentences if not (re.fullmatch(reroll_pattern, s) or re.fullmatch(cp_pattern, s))]
@@ -1694,7 +1800,7 @@ def _model_reroll_wound_vs_character_support(description: str) -> Optional[Tuple
     wound_reroll = "reroll the wound roll" in norm and "wound roll of 1" not in norm
     if not (hit_reroll or wound_reroll):
         return None
-    cp_on_kill = bool(re.search(r"gain \d+ cp", norm) and "destroy" in norm and "character" in norm)
+    cp_on_kill = bool(re.search(r"gain \d+ ?cp", norm) and "destroy" in norm and "character" in norm)
     notes = []
     if hit_reroll:
         notes.append("Model attacks vs CHARACTER units can re-roll the Hit roll (optional).")
@@ -2278,7 +2384,7 @@ def _command_phase_bonus_cp_support(description: str) -> Optional[Tuple[str, str
         return None
     pattern = (
         r"(?:at the )?start of (?:each of )?your command phases? if (?:this model|this unit|the bearer) is on the battlefield "
-        r"you gain (?P<cp>\d+) (?:cp|command points?)"
+        r"you gain (?P<cp>\d+) ?(?:cp|command points?)"
     )
     m = re.fullmatch(pattern, norm)
     if not m:
@@ -2294,7 +2400,7 @@ def _gain_cp_on_destroy_support(description: str) -> Optional[Tuple[str, str]]:
         return None
     pattern = (
         r"each time (?:this model|this unit|this models unit) destroys an? (?:enemy )?(?:character|epic hero|monster|vehicle|psyker)? ?"
-        r"(?:model|unit)? you gain (?P<cp>\d+) cp"
+        r"(?:model|unit)? you gain (?P<cp>\d+) ?cp"
     )
     m = re.fullmatch(pattern, norm)
     if not m:
