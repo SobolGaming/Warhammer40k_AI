@@ -70,7 +70,10 @@ def _norm_rules_text(text: str) -> str:
     t = re.sub(r"'s\b", "s", t)
     t = t.lower()
     t = re.sub(r"[^a-z0-9]+", " ", t)
-    return re.sub(r"\s+", " ", t).strip()
+    t = re.sub(r"\s+", " ", t).strip()
+    t = re.sub(r"\bre roll\b", "reroll", t)
+    t = re.sub(r"\bre rolls\b", "reroll", t)
+    return t
 
 
 def _fullmatch_tokens(pattern: str, text: str) -> bool:
