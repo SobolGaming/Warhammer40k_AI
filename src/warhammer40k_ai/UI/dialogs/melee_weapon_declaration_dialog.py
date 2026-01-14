@@ -35,6 +35,8 @@ class MeleeWeaponDeclarationDialog(BaseDialog):
         self.unit = None
         self.callback = None
         self.game_map = None
+        self.target_unit = None
+        self.eligible_models = None
         
         # Model-based weapon declarations storage
         self.model_weapon_selections = {}  # {model_index: {weapon_profile_id: weapon_info}}
@@ -59,11 +61,12 @@ class MeleeWeaponDeclarationDialog(BaseDialog):
         
         # Fonts provided by BaseDialog: self.font_large/medium/small
     
-    def show(self, unit: Unit, callback: Callable, game_map=None):
+    def show(self, unit: Unit, callback: Callable, game_map=None, target_unit=None):
         """Show the melee weapon declaration dialog."""
         self.unit = unit
         self.callback = callback
         self.game_map = game_map
+        self.target_unit = target_unit
         # Preserve callback in BaseDialog for button handling
         super().show(callback)
         
@@ -78,6 +81,8 @@ class MeleeWeaponDeclarationDialog(BaseDialog):
         self.unit = None
         self.callback = None
         self.game_map = None
+        self.target_unit = None
+        self.eligible_models = None
         self.model_weapon_selections = {}
         self.available_weapons_by_model = {}
         self.weapon_buttons = []
@@ -89,6 +94,7 @@ class MeleeWeaponDeclarationDialog(BaseDialog):
         self.weapon_buttons = []
         self.model_weapon_selections = {}
         self.available_weapons_by_model = {}
+        self.eligible_models = None
         
         if not self.unit:
             return
@@ -96,10 +102,31 @@ class MeleeWeaponDeclarationDialog(BaseDialog):
         print(f"🔍 DEBUG: Initializing weapon selection for {self.unit.name}")
         print(f"🔍 DEBUG: Unit has {len(self.unit.models)} models")
         
+        if (
+            self.target_unit is not None
+            and self.game_map is not None
+            and hasattr(self.unit, "has_fight_within_3_ability")
+            and self.unit.has_fight_within_3_ability()
+        ):
+            try:
+                self.eligible_models = set(
+                    self.unit.get_fight_eligible_models_for_target(
+                        self.target_unit,
+                        game_map=self.game_map,
+                        allow_within_3=self.unit.fight_within_3_active(),
+                    )
+                )
+            except Exception:
+                self.eligible_models = None
+
+        eligible_indices = []
         # Initialize weapon selections for each model
         for model_index, model in enumerate(self.unit.models):
             if not model.is_alive:
                 continue
+            if self.eligible_models is not None and model not in self.eligible_models:
+                continue
+            eligible_indices.append(model_index)
                 
             # Get available weapons for this model
             model_weapons = self._get_available_melee_weapons_for_model(model)
@@ -122,8 +149,8 @@ class MeleeWeaponDeclarationDialog(BaseDialog):
                     self.model_weapon_selections[model_index][profile_id] = weapon_info
                     primary_selected = True
         
-        # Set first model as selected by default
-        self.selected_model_index = 0
+        # Set first eligible model as selected by default
+        self.selected_model_index = eligible_indices[0] if eligible_indices else None
         self._create_model_and_weapon_buttons()
         
     def _get_available_melee_weapons_for_model(self, model):
@@ -161,6 +188,8 @@ class MeleeWeaponDeclarationDialog(BaseDialog):
         model_button_y = y_offset + 20
         for model_index, model in enumerate(self.unit.models):
             if not model.is_alive:
+                continue
+            if self.eligible_models is not None and model not in self.eligible_models:
                 continue
                 
             col = model_index % models_per_row

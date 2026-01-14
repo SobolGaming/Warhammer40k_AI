@@ -1201,6 +1201,7 @@ def _classify_ability(
     model_hit_vs_fly_support = _model_hit_bonus_vs_fly_support(description)
     targeted_stratagem_discount_support = _targeted_stratagem_cp_discount_support(description)
     charge_end_mortal_support = _charge_end_mortal_wounds_support(description)
+    fight_within_3_support = _fight_within_3_support(description)
 
     fid = str(faction_id or "").strip().upper()
     name_norm = _norm(name)
@@ -1267,6 +1268,8 @@ def _classify_ability(
         return targeted_stratagem_discount_support
     if charge_end_mortal_support:
         return charge_end_mortal_support
+    if fight_within_3_support:
+        return fight_within_3_support
     return ("Not implemented", "")
 
 
@@ -1634,6 +1637,29 @@ def _charge_end_mortal_wounds_support(description: str) -> Optional[Tuple[str, s
         )
 
     return None
+
+
+def _fight_within_3_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    low = text.lower()
+    if "selected to fight" not in low:
+        return None
+    if "eligible to fight" not in low:
+        return None
+    if "engagement range" not in low:
+        return None
+    if not re.search(r"within\s+3\"?", low, flags=re.IGNORECASE):
+        return None
+    return (
+        "Supported",
+        "Optional fight activation: models within 3\" of enemy models can fight eligible engaged targets.",
+    )
 
 
 def _targeted_stratagem_cp_discount_support(description: str) -> Optional[Tuple[str, str]]:

@@ -212,6 +212,11 @@ class Unit:
             self._refresh_charge_end_mortal_wounds_flags()
         except Exception:
             pass
+        # Parse fight-within-3" eligibility abilities.
+        try:
+            self._refresh_fight_within_3_flags()
+        except Exception:
+            pass
         # Parse common bearer-unit effects (charge bonuses, Leadership set).
         try:
             self._refresh_bearer_unit_common_modifiers()
@@ -770,6 +775,10 @@ class Unit:
         r"reduce\s+the\s+cp\s+cost\s+of\s+that\s+(?:use|usage)\s+of\s+that\s+stratagem\s+by\s+1cp",
         re.IGNORECASE,
     )
+    _FIGHT_WITHIN_3_RE = re.compile(
+        r"selected\s+to\s+fight.*?eligible\s+to\s+fight.*?within\s+3\"?.*?engagement\s+range",
+        re.IGNORECASE,
+    )
     _CHARGE_END_MORTAL_PER_MODEL_RE = re.compile(
         r"each\s+time\s+(?:this\s+model'?s\s+unit|this\s+unit)\s+ends?\s+a\s+charge\s+move.*?"
         r"(?:select|choose)\s+one\s+enemy\s+unit\s+within\s+engagement\s+range.*?"
@@ -1196,6 +1205,71 @@ class Unit:
             else:
                 if "charge_end_mortal_wounds" in sr_u:
                     del sr_u["charge_end_mortal_wounds"]
+            u.special_rules = sr_u
+
+    def _refresh_fight_within_3_flags(self) -> None:
+        """Parse fight-within-3\" eligibility abilities into special_rules."""
+        if getattr(self, "special_rules", None) is None:
+            self.special_rules = {}
+
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+
+        specs = []
+        seen = set()
+
+        for u in members:
+            if u is None:
+                continue
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text = u._normalize_rules_text(desc or "")
+                if not text:
+                    continue
+                text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+                low = text.lower()
+                if "selected to fight" not in low:
+                    continue
+                if "eligible to fight" not in low:
+                    continue
+                if "within 3" not in low:
+                    continue
+                if "engagement range" not in low:
+                    continue
+                if not self._FIGHT_WITHIN_3_RE.search(text):
+                    continue
+                source = str(name or "Fight Within 3\"").strip() or "Fight Within 3\""
+                key = source.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "name": source,
+                        "description": str(desc or ""),
+                    }
+                )
+
+        for u in members:
+            if u is None:
+                continue
+            sr_u = getattr(u, "special_rules", None)
+            if not isinstance(sr_u, dict):
+                sr_u = {}
+            if specs:
+                sr_u["fight_within_3"] = list(specs)
+            else:
+                if "fight_within_3" in sr_u:
+                    del sr_u["fight_within_3"]
+            if not specs and "fight_within_3_active" in sr_u:
+                del sr_u["fight_within_3_active"]
+            if not specs and "fight_within_3_active_source" in sr_u:
+                del sr_u["fight_within_3_active_source"]
             u.special_rules = sr_u
 
     def _refresh_bearer_unit_common_modifiers(self) -> None:
@@ -2600,6 +2674,10 @@ class Unit:
             pass
         try:
             self._refresh_charge_end_mortal_wounds_flags()
+        except Exception:
+            pass
+        try:
+            self._refresh_fight_within_3_flags()
         except Exception:
             pass
 
@@ -4527,6 +4605,14 @@ class Unit:
             bodyguard._refresh_charge_end_mortal_wounds_flags()
         except Exception:
             pass
+        try:
+            self._refresh_fight_within_3_flags()
+        except Exception:
+            pass
+        try:
+            bodyguard._refresh_fight_within_3_flags()
+        except Exception:
+            pass
 
     def detach_from_unit(self) -> None:
         """Detach this Leader from its Bodyguard unit."""
@@ -4605,6 +4691,15 @@ class Unit:
         try:
             if bodyguard is not None:
                 bodyguard._refresh_charge_end_mortal_wounds_flags()
+        except Exception:
+            pass
+        try:
+            self._refresh_fight_within_3_flags()
+        except Exception:
+            pass
+        try:
+            if bodyguard is not None:
+                bodyguard._refresh_fight_within_3_flags()
         except Exception:
             pass
 
@@ -14350,6 +14445,134 @@ class Unit:
             return True
         
         return False
+
+    def has_fight_within_3_ability(self) -> bool:
+        """Return True if this unit has a 'fight within 3\"' eligibility ability."""
+        sr = getattr(self, "special_rules", None)
+        if isinstance(sr, dict) and sr.get("fight_within_3"):
+            return True
+        return False
+
+    def get_fight_within_3_sources(self) -> list[str]:
+        """Return ability names that grant fight-within-3\" eligibility."""
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return []
+        specs = sr.get("fight_within_3", []) or []
+        names = []
+        for item in specs:
+            if isinstance(item, dict):
+                name = str(item.get("name", "") or "").strip()
+            else:
+                name = str(item or "").strip()
+            if name:
+                names.append(name)
+        return names
+
+    def fight_within_3_active(self) -> bool:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        return bool(sr.get("fight_within_3_active", False))
+
+    def set_fight_within_3_active(self, active: bool, source: str | None = None) -> None:
+        if getattr(self, "special_rules", None) is None:
+            self.special_rules = {}
+        sr = self.special_rules
+        if bool(active):
+            sr["fight_within_3_active"] = True
+            if source:
+                sr["fight_within_3_active_source"] = str(source)
+        else:
+            if "fight_within_3_active" in sr:
+                del sr["fight_within_3_active"]
+            if "fight_within_3_active_source" in sr:
+                del sr["fight_within_3_active_source"]
+        self.special_rules = sr
+
+    def clear_fight_within_3_active(self) -> None:
+        self.set_fight_within_3_active(False)
+
+    def _model_within_engagement_range_of_unit(self, model, target_unit) -> bool:
+        try:
+            from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
+            from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VERTICAL
+        except Exception:
+            return False
+        try:
+            target_models = list(target_unit.get_models_for_collision() or [])
+        except Exception:
+            target_models = list(getattr(target_unit, "models", []) or [])
+        for tm in target_models:
+            try:
+                if not getattr(tm, "is_alive", False):
+                    continue
+            except Exception:
+                pass
+            try:
+                hd = float(horizontal_distance_between_bases_2d(model.model_base, tm.model_base))
+                vd = float(vertical_distance_between_bases(model.model_base, tm.model_base))
+            except Exception:
+                continue
+            if hd <= ENGAGEMENT_RANGE_HORIZONTAL and vd <= ENGAGEMENT_RANGE_VERTICAL:
+                return True
+        return False
+
+    def _model_within_range_of_unit(self, model, target_unit, radius: float) -> bool:
+        try:
+            from ..utility.aura_utils import distance_between_models_bases_3d
+        except Exception:
+            return False
+        try:
+            target_models = list(target_unit.get_models_for_collision() or [])
+        except Exception:
+            target_models = list(getattr(target_unit, "models", []) or [])
+        for tm in target_models:
+            try:
+                if not getattr(tm, "is_alive", False):
+                    continue
+            except Exception:
+                pass
+            try:
+                if float(distance_between_models_bases_3d(model, tm)) <= float(radius) + 1e-6:
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def get_fight_eligible_models_for_target(self, target_unit, game_map: Optional['Map'] = None, *, allow_within_3: Optional[bool] = None) -> list:
+        """Return models in this unit eligible to fight the given target unit."""
+        try:
+            models = list(self.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(self, "models", []) or [])
+        models = [m for m in models if bool(getattr(m, "is_alive", True))]
+        if not models or target_unit is None:
+            return []
+
+        if not self.has_fight_within_3_ability():
+            return list(models)
+
+        if game_map is None:
+            return list(models)
+
+        try:
+            if not game_map.is_within_engagement_range(self, target_unit):
+                return []
+        except Exception:
+            return []
+
+        if allow_within_3 is None:
+            allow_within_3 = self.fight_within_3_active()
+
+        eligible = []
+        for model in models:
+            if self._model_within_engagement_range_of_unit(model, target_unit):
+                eligible.append(model)
+                continue
+            if allow_within_3 and self._model_within_range_of_unit(model, target_unit, 3.0):
+                eligible.append(model)
+        return eligible
     
     def should_fight_first(self) -> bool:
         """Check if this unit should fight in the Fight First stage.

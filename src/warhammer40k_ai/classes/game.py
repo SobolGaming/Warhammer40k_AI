@@ -1958,7 +1958,7 @@ class Game:
             from .fight_phase_manager import FightPhaseManager
             mgr = FightPhaseManager(self)
             attacker_view = mgr._as_attached_view(frenzy_unit)
-            declarations = mgr._auto_select_melee_weapons(attacker_view)
+            declarations = mgr._auto_select_melee_weapons(attacker_view, attacker_unit)
         except Exception:
             declarations = []
         if not declarations:

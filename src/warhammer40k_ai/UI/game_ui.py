@@ -372,12 +372,12 @@ class HumanUIInterface:
         print(f"⚔️ HumanUIInterface.show_fight_unit_selection_dialog called for {stage_name} stage with {len(eligible_units)} units")
         self.fight_unit_selection_dialog.show(stage_name, eligible_units, on_unit_selected, on_cancel)
 
-    def show_melee_weapon_declaration_dialog(self, unit, callback, game_map=None):
+    def show_melee_weapon_declaration_dialog(self, unit, callback, game_map=None, target_unit=None):
         """Show the melee weapon declaration dialog for a unit."""
         print(f"⚔️ HumanUIInterface.show_melee_weapon_declaration_dialog called for {unit.name}")
         # Delegate to the game view's dialog instance to avoid duplicates
         if hasattr(self, 'game_view') and hasattr(self.game_view, 'melee_weapon_declaration_dialog'):
-            self.game_view.melee_weapon_declaration_dialog.show(unit, callback, game_map)
+            self.game_view.melee_weapon_declaration_dialog.show(unit, callback, game_map, target_unit=target_unit)
         else:
             print(f"❌ Error: melee_weapon_declaration_dialog not found on game_view")
             # Call callback with empty declarations to prevent hanging
@@ -3409,6 +3409,116 @@ class GameView:
         except Exception:
             return
 
+    def _maybe_prompt_fight_within_3(self, unit, target_unit, on_done):
+        if on_done is None:
+            return
+        try:
+            if hasattr(unit, "clear_fight_within_3_active"):
+                unit.clear_fight_within_3_active()
+        except Exception:
+            pass
+        try:
+            if not (hasattr(unit, "has_fight_within_3_ability") and unit.has_fight_within_3_ability()):
+                on_done()
+                return
+        except Exception:
+            on_done()
+            return
+
+        game_map = getattr(self, "game", None)
+        game_map = getattr(game_map, "map", None)
+        if target_unit is None or game_map is None:
+            on_done()
+            return
+
+        try:
+            base_eligible = unit.get_fight_eligible_models_for_target(
+                target_unit,
+                game_map=game_map,
+                allow_within_3=False,
+            )
+            expanded_eligible = unit.get_fight_eligible_models_for_target(
+                target_unit,
+                game_map=game_map,
+                allow_within_3=True,
+            )
+        except Exception:
+            on_done()
+            return
+
+        if set(expanded_eligible) == set(base_eligible):
+            on_done()
+            return
+
+        ability_name = "Fight Within 3\""
+        try:
+            sources = unit.get_fight_within_3_sources()
+            if sources:
+                ability_name = sources[0]
+        except Exception:
+            ability_name = "Fight Within 3\""
+
+        player = None
+        try:
+            player = unit.get_parent_army().player
+        except Exception:
+            player = None
+
+        if player is None:
+            on_done()
+            return
+
+        is_human = False
+        try:
+            is_human = getattr(player, "type", None) is not None and getattr(player.type, "name", "") == "HUMAN"
+        except Exception:
+            is_human = False
+
+        if not is_human:
+            should = False
+            try:
+                ctx = {
+                    "unit": unit,
+                    "target_unit": target_unit,
+                    "ability_sources": list(unit.get_fight_within_3_sources() or []),
+                }
+                should = bool(player._should_use_optional_ability("FIGHT_WITHIN_3", ctx))
+            except Exception:
+                should = False
+            if should:
+                try:
+                    unit.set_fight_within_3_active(True, source=ability_name)
+                except Exception:
+                    pass
+            on_done()
+            return
+
+        title = ability_name
+        msg = f"Use {ability_name} to let models within 3\" of enemy models fight?"
+
+        def _done(chosen: bool):
+            if chosen:
+                try:
+                    unit.set_fight_within_3_active(True, source=ability_name)
+                except Exception:
+                    pass
+                try:
+                    from ..utility.event_bus import append_action
+                    pname = getattr(player, "name", "Player")
+                    append_action(pname, f"{ability_name}: {getattr(unit, 'name', 'Unit')} can fight within 3\".")
+                except Exception:
+                    pass
+            on_done()
+
+        try:
+            if hasattr(self, "_request_yes_no"):
+                self._request_yes_no(title, msg, "Use", "Skip", _done)
+            else:
+                self.yes_no_dialog.show(title, msg, _done, yes_label="Use", no_label="Skip")
+                self.dialog_manager.open(self.yes_no_dialog, modal=True)
+        except Exception:
+            _done(False)
+
     def _start_frenzy_fight_sequence(self, unit, attacker_unit, game_ctx):
         if unit is None or attacker_unit is None or game_ctx is None:
             return
@@ -3445,7 +3555,9 @@ class GameView:
                     return
             except Exception:
                 pass
-            self.melee_weapon_declaration_dialog.show(unit, _on_weapon_selection_complete, game_map)
+            def _show_weapons():
+                self.melee_weapon_declaration_dialog.show(unit, _on_weapon_selection_complete, game_map, target_unit=attacker_unit)
+            self._maybe_prompt_fight_within_3(unit, attacker_unit, _show_weapons)
 
         max_distance = 3.0
         try:
@@ -11990,10 +12102,14 @@ class BattlePhaseHandler(BasePhaseHandler):
         def on_weapon_selection_required(unit: Unit, target_unit: Unit, callback):
             """Handle melee weapon selection using Melee Weapon Declaration Dialog"""
             print(f"⚔️ {unit.name} needs to select melee weapons against {target_unit.name}")
-
-            self.game_view.melee_weapon_declaration_dialog.show(
-                unit, callback, self.game.map
-            )
+            def _show_weapons():
+                self.game_view.melee_weapon_declaration_dialog.show(
+                    unit, callback, self.game.map, target_unit=target_unit
+                )
+            if hasattr(self.game_view, "_maybe_prompt_fight_within_3"):
+                self.game_view._maybe_prompt_fight_within_3(unit, target_unit, _show_weapons)
+            else:
+                _show_weapons()
 
         self.fight_phase_manager.on_unit_selection_required = on_unit_selection_required
         self.fight_phase_manager.on_target_selection_required = on_target_selection_required
@@ -12043,9 +12159,14 @@ class BattlePhaseHandler(BasePhaseHandler):
             self._start_target_model_selection_phase(fighting_unit, target_unit, weapon_declarations, current_player, opponent_player)
         
         # Show melee weapon declaration dialog for weapon allocation
-        self.game_view.melee_weapon_declaration_dialog.show(
-            fighting_unit, on_weapon_allocation_complete, self.game.map
-        )
+        def _show_weapons():
+            self.game_view.melee_weapon_declaration_dialog.show(
+                fighting_unit, on_weapon_allocation_complete, self.game.map, target_unit=target_unit
+            )
+        if hasattr(self.game_view, "_maybe_prompt_fight_within_3"):
+            self.game_view._maybe_prompt_fight_within_3(fighting_unit, target_unit, _show_weapons)
+        else:
+            _show_weapons()
     
     def _start_target_model_selection_phase(self, fighting_unit: Unit, target_unit: Unit, weapon_declarations: List, current_player: Player, opponent_player: Player):
         """Handle target model selection phase."""
