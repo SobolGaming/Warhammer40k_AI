@@ -1189,6 +1189,7 @@ def _classify_ability(
     transport_support = _transport_disembark_support(description)
     sticky_support = _sticky_objective_support(description)
     bodyguard_return_support = _command_phase_bodyguard_return_support(description)
+    enemy_fall_back_desperate_escape_support = _enemy_fall_back_desperate_escape_support(description)
     command_phase_bonus_cp_support = _command_phase_bonus_cp_support(description)
     orders_support = _orders_section_support(name, description)
     attached_unit_support = _attached_unit_support(name, description)
@@ -1244,6 +1245,8 @@ def _classify_ability(
         return sticky_support
     if bodyguard_return_support:
         return bodyguard_return_support
+    if enemy_fall_back_desperate_escape_support:
+        return enemy_fall_back_desperate_escape_support
     if command_phase_bonus_cp_support:
         return command_phase_bonus_cp_support
     if orders_support:
@@ -1942,6 +1945,44 @@ def _command_phase_bodyguard_return_support(description: str) -> Optional[Tuple[
         "Supported",
         f"Command phase: return {amount} destroyed Bodyguard model(s) while leading (capped at starting strength).",
     )
+
+
+def _enemy_fall_back_desperate_escape_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    low = text.lower()
+    if "enemy unit" not in low:
+        return None
+    if "falls back" not in low:
+        return None
+    if "engagement range" not in low:
+        return None
+    if "desperate escape" not in low:
+        return None
+    if "with this ability" not in low:
+        return None
+    exclude = bool(re.search(r"excluding\s+monsters?\s+and\s+vehicles?", low, flags=re.IGNORECASE))
+    penalty = None
+    m = re.search(
+        r"battle[-\s]?shocked.*?subtract\s+(\d+)\s+from\s+each\s+of\s+those\s+desperate\s+escape\s+tests",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        penalty = m.group(1)
+    notes = []
+    if exclude:
+        notes.append("Enemy non-MONSTER/VEHICLE units within Engagement Range that Fall Back take Desperate Escape tests.")
+    else:
+        notes.append("Enemy units within Engagement Range that Fall Back take Desperate Escape tests.")
+    if penalty:
+        notes.append(f"Battle-shocked targets suffer -{penalty} to those tests.")
+    return ("Supported", " ".join(notes))
 
 
 def _command_phase_bonus_cp_support(description: str) -> Optional[Tuple[str, str]]:

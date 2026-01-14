@@ -197,6 +197,11 @@ class Unit:
             self._refresh_command_phase_flags()
         except Exception:
             pass
+        # Parse enemy Fall Back Desperate Escape triggers.
+        try:
+            self._refresh_fall_back_desperate_escape_flags()
+        except Exception:
+            pass
         # Parse once-per-battle-round stratagem CP discounts for targeted units.
         try:
             self._refresh_targeted_stratagem_cp_discount_flags()
@@ -638,6 +643,18 @@ class Unit:
         r"add\s+(\d+)\s+to\s+advance\s+and\s+charge\s+rolls?\s+made\s+for\s+the\s+bearer'?s\s+unit",
         re.IGNORECASE,
     )
+    _ENEMY_FALLBACK_DESPERATE_ESCAPE_RE = re.compile(
+        r"each\s+time\s+an?\s+enemy\s+unit.*?within\s+engagement\s+range.*?falls?\s+back.*?desperate\s+escape",
+        re.IGNORECASE,
+    )
+    _ENEMY_FALLBACK_DESPERATE_ESCAPE_EXCLUDE_RE = re.compile(
+        r"excluding\s+monsters?\s+and\s+vehicles?",
+        re.IGNORECASE,
+    )
+    _ENEMY_FALLBACK_DESPERATE_ESCAPE_BS_PENALTY_RE = re.compile(
+        r"battle[-\s]?shocked.*?subtract\s+(\d+)\s+from\s+each\s+of\s+those\s+desperate\s+escape\s+tests",
+        re.IGNORECASE,
+    )
     _BEARER_UNIT_LEADERSHIP_SET_RE = re.compile(
         r"models\s+in\s+the\s+bearer'?s\s+unit\s+have\s+a\s+leadership\s+characteristic\s+of\s+(\d+)\+?",
         re.IGNORECASE,
@@ -902,6 +919,88 @@ class Unit:
 
         if self._scan_command_phase_sticky_objective():
             sr["sticky_objectives"] = True
+
+        self.special_rules = sr
+
+    def _refresh_fall_back_desperate_escape_flags(self) -> None:
+        """Parse enemy Fall Back Desperate Escape rules into special_rules."""
+        if getattr(self, "special_rules", None) is None:
+            self.special_rules = {}
+        sr = self.special_rules
+        try:
+            for key in (
+                "enemy_fallback_desperate_escape",
+                "enemy_fallback_desperate_escape_exclude_monster_vehicle",
+                "enemy_fallback_desperate_escape_bs_penalty",
+                "enemy_fallback_desperate_escape_sources",
+            ):
+                if key in sr:
+                    del sr[key]
+        except Exception:
+            pass
+
+        sources: list[str] = []
+        exclude_monster_vehicle = None
+        bs_penalty = 0
+
+        for ab in self._iter_active_abilities():
+            try:
+                if isinstance(ab, str):
+                    name = ab
+                    desc = ab
+                else:
+                    name = str(getattr(ab, "name", "") or "")
+                    desc = str(getattr(ab, "description", "") or "") or name
+            except Exception:
+                name = ""
+                desc = ""
+            text = self._normalize_rules_text(desc or "")
+            if not text:
+                continue
+            low = text.lower().replace("\u2019", "'").replace("\u0192?T", "'")
+            if "enemy unit" not in low:
+                continue
+            if "falls back" not in low:
+                continue
+            if "engagement range" not in low:
+                continue
+            if "desperate escape" not in low:
+                continue
+            if not self._ENEMY_FALLBACK_DESPERATE_ESCAPE_RE.search(low):
+                continue
+
+            if name:
+                sources.append(name)
+            clause_exclude = bool(self._ENEMY_FALLBACK_DESPERATE_ESCAPE_EXCLUDE_RE.search(low))
+            if exclude_monster_vehicle is None:
+                exclude_monster_vehicle = clause_exclude
+            else:
+                exclude_monster_vehicle = bool(exclude_monster_vehicle and clause_exclude)
+
+            if "battle-shocked" in low and "subtract" in low:
+                m = self._ENEMY_FALLBACK_DESPERATE_ESCAPE_BS_PENALTY_RE.search(low)
+                if m:
+                    try:
+                        bs_penalty = max(bs_penalty, int(m.group(1)))
+                    except Exception:
+                        pass
+
+        if sources:
+            sr["enemy_fallback_desperate_escape"] = True
+            if exclude_monster_vehicle:
+                sr["enemy_fallback_desperate_escape_exclude_monster_vehicle"] = True
+            if bs_penalty:
+                sr["enemy_fallback_desperate_escape_bs_penalty"] = int(bs_penalty)
+            seen = set()
+            deduped = []
+            for s in sources:
+                key = str(s or "").strip().lower()
+                if not key or key in seen:
+                    continue
+                seen.add(key)
+                deduped.append(str(s))
+            if deduped:
+                sr["enemy_fallback_desperate_escape_sources"] = deduped
 
         self.special_rules = sr
 
@@ -2353,6 +2452,10 @@ class Unit:
             pass
         try:
             self._refresh_command_phase_flags()
+        except Exception:
+            pass
+        try:
+            self._refresh_fall_back_desperate_escape_flags()
         except Exception:
             pass
         try:
@@ -4261,6 +4364,14 @@ class Unit:
         except Exception:
             pass
         try:
+            self._refresh_fall_back_desperate_escape_flags()
+        except Exception:
+            pass
+        try:
+            bodyguard._refresh_fall_back_desperate_escape_flags()
+        except Exception:
+            pass
+        try:
             self._refresh_targeted_stratagem_cp_discount_flags()
         except Exception:
             pass
@@ -4319,6 +4430,15 @@ class Unit:
         try:
             if bodyguard is not None:
                 bodyguard._refresh_command_phase_flags()
+        except Exception:
+            pass
+        try:
+            self._refresh_fall_back_desperate_escape_flags()
+        except Exception:
+            pass
+        try:
+            if bodyguard is not None:
+                bodyguard._refresh_fall_back_desperate_escape_flags()
         except Exception:
             pass
         try:
@@ -7647,10 +7767,76 @@ class Unit:
             return False
         print(f"🏃 {self.name} falls back from combat")
         
-        # Check if unit is Battle-Shocked and must take Desperate Escape Test
-        if self.is_battle_shocked():
-            models_lost = self.take_desperate_escape_test(game_map)
-            
+        extra_desperate_escape = False
+        bs_penalty = 0
+        sources: list[str] = []
+        try:
+            if game_map is not None:
+                for enemy in list(game_map.get_enemy_units(self) or []):
+                    try:
+                        if enemy is None or not enemy.is_alive() or not getattr(enemy, "deployed", False):
+                            continue
+                        if not game_map.is_within_engagement_range(self, enemy):
+                            continue
+                    except Exception:
+                        continue
+                    try:
+                        members = list(enemy.get_attached_unit_members() or [])
+                    except Exception:
+                        members = [enemy]
+                    for member in members:
+                        sr = getattr(member, "special_rules", None)
+                        if not isinstance(sr, dict) or not sr.get("enemy_fallback_desperate_escape"):
+                            continue
+                        if sr.get("enemy_fallback_desperate_escape_exclude_monster_vehicle"):
+                            if self.has_any_keyword("Monster") or self.has_any_keyword("Vehicle"):
+                                continue
+                        extra_desperate_escape = True
+                        try:
+                            val = int(sr.get("enemy_fallback_desperate_escape_bs_penalty", 0) or 0)
+                            if val > 0:
+                                bs_penalty = max(bs_penalty, val)
+                        except Exception:
+                            pass
+                        srcs = sr.get("enemy_fallback_desperate_escape_sources")
+                        if isinstance(srcs, (list, tuple)):
+                            sources.extend([s for s in srcs if str(s or "").strip()])
+                        else:
+                            if getattr(member, "name", ""):
+                                sources.append(member.name)
+        except Exception:
+            pass
+
+        is_battleshocked = self.is_battle_shocked()
+        desperate_escape_required = bool(is_battleshocked or extra_desperate_escape)
+        roll_modifier = 0
+        reason_parts: list[str] = []
+        if is_battleshocked:
+            reason_parts.append("is Battle-Shocked")
+        if extra_desperate_escape:
+            if sources:
+                seen = set()
+                deduped = []
+                for s in sources:
+                    key = str(s or "").strip().lower()
+                    if not key or key in seen:
+                        continue
+                    seen.add(key)
+                    deduped.append(str(s))
+                reason_parts.append(
+                    f"falls back while within Engagement Range of {', '.join(deduped)}"
+                )
+            else:
+                reason_parts.append("falls back while within Engagement Range of enemy units with this ability")
+            if is_battleshocked and bs_penalty:
+                roll_modifier -= int(bs_penalty)
+
+        if desperate_escape_required:
+            models_lost = self.take_desperate_escape_test(
+                game_map,
+                roll_modifier=roll_modifier,
+                reason="; ".join(reason_parts),
+            )
             # Check if unit was wiped out during Desperate Escape Test
             if not self.is_alive():
                 print(f"💀 {self.name} was completely destroyed during Desperate Escape Test!")
@@ -14474,7 +14660,13 @@ class Unit:
         
         return True  # Default: can charge after arriving from reserves
 
-    def take_desperate_escape_test(self, game_map: Optional['Map'] = None) -> int:
+    def take_desperate_escape_test(
+        self,
+        game_map: Optional['Map'] = None,
+        *,
+        roll_modifier: int = 0,
+        reason: str | None = None,
+    ) -> int:
         """
         Take a Desperate Escape Test - rolling D6 for each model, destroying on 1-2.
         This is required for Battle-Shocked units that fall back.
@@ -14482,21 +14674,33 @@ class Unit:
         Returns:
             int: Number of models destroyed during the test
         """
-        print(f"💀 {self.name} is Battle-Shocked and falling back - taking Desperate Escape Test!")
+        note = str(reason or "").strip()
+        if note:
+            print(f"💀 {self.name} {note} - taking Desperate Escape Test!")
+        else:
+            print(f"💀 {self.name} is Battle-Shocked and falling back - taking Desperate Escape Test!")
         
         models_to_test = self.models.copy()  # Copy to avoid modifying list while iterating
         models_destroyed = 0
+        mod = int(roll_modifier or 0)
         
         for i, model in enumerate(models_to_test):
             roll = get_roll("D6")
-            if roll <= 2:
+            final_roll = roll + mod
+            if final_roll <= 2:
                 # Model is destroyed
-                print(f"🎲 Model {i+1}: Rolled {roll} - DESTROYED! 💀")
+                if mod:
+                    print(f"🎲 Model {i+1}: Rolled {roll} ({mod:+d} -> {final_roll}) - DESTROYED! 💀")
+                else:
+                    print(f"🎲 Model {i+1}: Rolled {roll} - DESTROYED! 💀")
                 self.remove_model(model, fleed=True, game_map=game_map)  # Mark as fled, not killed in combat
                 models_destroyed += 1
             else:
                 # Model survives
-                print(f"🎲 Model {i+1}: Rolled {roll} - Survives ✅")
+                if mod:
+                    print(f"🎲 Model {i+1}: Rolled {roll} ({mod:+d} -> {final_roll}) - Survives ✅")
+                else:
+                    print(f"🎲 Model {i+1}: Rolled {roll} - Survives ✅")
         
         if models_destroyed > 0:
             print(f"💥 Desperate Escape Test complete: {models_destroyed} model(s) destroyed, {len(self.models)} remain")
