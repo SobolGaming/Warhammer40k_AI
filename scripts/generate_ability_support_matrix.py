@@ -1881,9 +1881,13 @@ def _allocated_damage_reduction_support(description: str) -> Optional[Tuple[str,
     if not norm:
         return None
     base = r"each time (?:a|an) (?:melee |ranged )?attack is allocated to (?:this model|a model in this unit)"
-    half_pattern = rf"{base} .* damage characteristic .* halved"
+    half_patterns = [
+        rf"{base} (?:halve|half) the damage characteristic of that attack",
+        rf"{base} the damage characteristic of that attack is halved",
+        rf"{base} .* damage characteristic .* halved",
+    ]
     sub_pattern = rf"{base} subtract (?P<val>\d+) from the damage characteristic of that attack"
-    if re.fullmatch(half_pattern, norm):
+    if any(re.fullmatch(p, norm) for p in half_patterns):
         atype = ""
         m2 = re.search(r"each time (?:a|an) (melee|ranged) attack is allocated", norm)
         if m2:
