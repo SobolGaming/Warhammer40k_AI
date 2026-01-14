@@ -1634,7 +1634,7 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         rf"{lead_prefix}add \d+ to the objective control characteristic of (?:models in )?{unit_ref}",
         rf"{lead_prefix}models? in {unit_ref} have (?:a|the)? feel no pain [1-6](?: ability)?",
         rf"{lead_prefix}(?:melee |ranged )?weapons equipped by models in {unit_ref} have the sustained hits \d+ ability",
-        rf"{lead_prefix}(?:melee |ranged )?(?:weapons equipped by models in|attacks made by models in) {unit_ref} .* ignores cover",
+        rf"{lead_prefix}(?:melee |ranged )?(?:weapons equipped by models in|attacks made by models in) {unit_ref} .* ignores cover(?: ability)?",
         rf"{lead_prefix}each time (?:a|an) (?:melee |ranged )?attack targets {unit_ref} subtract 1 from the hit roll",
         rf"{lead_prefix}.*eligible to (?:declare a charge|charge).*",
     ]
