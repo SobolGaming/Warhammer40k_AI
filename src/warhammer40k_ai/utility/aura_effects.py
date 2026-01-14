@@ -19,12 +19,34 @@ class AuraAttackModifiers:
     target_toughness_reasons: tuple[str, ...] = ()
     reroll_hit_ones: bool = False
     reroll_wound_ones: bool = False
+    reroll_hit_values: tuple[int, ...] = ()
+    reroll_wound_values: tuple[int, ...] = ()
+    reroll_hit_full: bool = False
+    reroll_wound_full: bool = False
     reroll_hit_reasons: tuple[str, ...] = ()
     reroll_wound_reasons: tuple[str, ...] = ()
+    reroll_hit_full_reasons: tuple[str, ...] = ()
+    reroll_wound_full_reasons: tuple[str, ...] = ()
+    crit_hit_threshold: Optional[int] = None
+    crit_wound_threshold: Optional[int] = None
+    crit_hit_reasons: tuple[str, ...] = ()
+    crit_wound_reasons: tuple[str, ...] = ()
 
     def merge(self, other: "AuraAttackModifiers") -> "AuraAttackModifiers":
         if other is None:
             return self
+        if self.crit_hit_threshold is None:
+            crit_hit = other.crit_hit_threshold
+        elif other.crit_hit_threshold is None:
+            crit_hit = self.crit_hit_threshold
+        else:
+            crit_hit = min(int(self.crit_hit_threshold), int(other.crit_hit_threshold))
+        if self.crit_wound_threshold is None:
+            crit_wound = other.crit_wound_threshold
+        elif other.crit_wound_threshold is None:
+            crit_wound = self.crit_wound_threshold
+        else:
+            crit_wound = min(int(self.crit_wound_threshold), int(other.crit_wound_threshold))
         return AuraAttackModifiers(
             hit=int(self.hit) + int(other.hit),
             wound=int(self.wound) + int(other.wound),
@@ -34,8 +56,18 @@ class AuraAttackModifiers:
             target_toughness_reasons=tuple(self.target_toughness_reasons) + tuple(other.target_toughness_reasons),
             reroll_hit_ones=bool(self.reroll_hit_ones or other.reroll_hit_ones),
             reroll_wound_ones=bool(self.reroll_wound_ones or other.reroll_wound_ones),
+            reroll_hit_values=tuple(sorted({*self.reroll_hit_values, *other.reroll_hit_values})),
+            reroll_wound_values=tuple(sorted({*self.reroll_wound_values, *other.reroll_wound_values})),
+            reroll_hit_full=bool(self.reroll_hit_full or other.reroll_hit_full),
+            reroll_wound_full=bool(self.reroll_wound_full or other.reroll_wound_full),
             reroll_hit_reasons=tuple(self.reroll_hit_reasons) + tuple(other.reroll_hit_reasons),
             reroll_wound_reasons=tuple(self.reroll_wound_reasons) + tuple(other.reroll_wound_reasons),
+            reroll_hit_full_reasons=tuple(self.reroll_hit_full_reasons) + tuple(other.reroll_hit_full_reasons),
+            reroll_wound_full_reasons=tuple(self.reroll_wound_full_reasons) + tuple(other.reroll_wound_full_reasons),
+            crit_hit_threshold=crit_hit,
+            crit_wound_threshold=crit_wound,
+            crit_hit_reasons=tuple(self.crit_hit_reasons) + tuple(other.crit_hit_reasons),
+            crit_wound_reasons=tuple(self.crit_wound_reasons) + tuple(other.crit_wound_reasons),
         )
 
 
@@ -639,4 +671,3 @@ def get_enemy_engagement_oc_divisors(unit, *, game_map=None) -> tuple[str, ...]:
                 continue
 
     return tuple(reasons)
-

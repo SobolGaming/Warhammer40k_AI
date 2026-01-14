@@ -63,6 +63,19 @@ def _norm(text: str) -> str:
     return re.sub(r"\s+", " ", t).strip()
 
 
+def _norm_rules_text(text: str) -> str:
+    t = _strip_html(text or "")
+    t = t.replace("\u2019", "'").replace("\u0192?T", "'")
+    t = re.sub(r"'s\b", "s", t)
+    t = t.lower()
+    t = re.sub(r"[^a-z0-9]+", " ", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def _fullmatch_tokens(pattern: str, text: str) -> bool:
+    return bool(re.fullmatch(pattern, _norm_rules_text(text)))
+
+
 def _is_kill_team_unit(name: str) -> bool:
     return _norm(name).endswith(" kill team")
 
@@ -1299,18 +1312,16 @@ def _classify_ability(
 def _warlord_enhancement_restriction_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
-    text = _strip_html(description)
-    text = text.replace("\u2019", "'")
-    text = re.sub(r"\s+", " ", text).strip()
-    if not text:
+    norm = _norm_rules_text(description)
+    if not norm:
         return None
-    low = text.lower()
-    warlord_re = re.compile(r"\b(?:cannot be your|none of these models can be your)\s+warlord\b", re.IGNORECASE)
-    enh_re = re.compile(r"\bcannot be given\s+(?:an?\s+)?enhancements?\b", re.IGNORECASE)
-    has_warlord = bool(warlord_re.search(low))
-    has_enh = bool(enh_re.search(low))
-    if not (has_warlord or has_enh):
+    warlord_clause = r"(?:this|that|the)?\s*(?:unit|model|models|bearer)?\s*(?:cannot be your|none of these models can be your)\s+warlord"
+    enh_clause = r"(?:this|that|the)?\s*(?:unit|model|models|bearer)?\s*(?:cannot\s+)?be given (?:an?\s+)?enhancements?"
+    pattern = rf"(?:{warlord_clause}(?:\s+(?:and|or)\s+{enh_clause})?|{enh_clause}(?:\s+(?:and|or)\s+{warlord_clause})?)"
+    if not re.fullmatch(pattern, norm):
         return None
+    has_warlord = "warlord" in norm
+    has_enh = "enhancement" in norm
     if has_warlord and has_enh:
         return ("Supported", "Unit cannot be your Warlord or be given Enhancements.")
     if has_warlord:
@@ -1321,17 +1332,13 @@ def _warlord_enhancement_restriction_support(description: str) -> Optional[Tuple
 def _space_marine_chapter_restriction_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
-    text = _strip_html(description)
-    text = text.replace("\u2019", "'")
-    text = re.sub(r"\s+", " ", text).strip()
-    if not text:
+    norm = _norm_rules_text(description)
+    if not norm:
         return None
-    restriction_re = re.compile(
-        r"\byour army can include\s+.+?\s+units?\s*,?\s*but it cannot include\s+(?:any\s+)?"
-        r"adeptus astartes units drawn from any other chapter",
-        flags=re.IGNORECASE,
+    pattern = (
+        r"your army can include .+ units? but it cannot include (?:any )?adeptus astartes units drawn from any other chapter"
     )
-    if restriction_re.search(text):
+    if re.fullmatch(pattern, norm):
         return ("Supported", "Space Marine chapter restriction enforced during army validation.")
     return None
 
@@ -1532,35 +1539,64 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
             notes.append(f"{leading_prefix}{effect}")
         else:
             notes.append(f"Bearer's unit: {effect}")
+    normalized_sentences = []
+    for sentence in re.split(r"[.;]\s*", _strip_html(description)):
+        norm_sentence = _norm_rules_text(sentence)
+        if norm_sentence:
+            normalized_sentences.append(norm_sentence)
+
+    lead_prefix = r"(?:while this model is leading a unit )?"
+    unit_ref = r"(?:the )?(?:bearers|that|this) unit"
+    patterns = [
+        rf"{lead_prefix}add \d+ to charge rolls made for {unit_ref}",
+        rf"{lead_prefix}add \d+ to advance and charge rolls made for {unit_ref}",
+        rf"{lead_prefix}add \d+ to advance rolls made for {unit_ref}",
+        rf"{lead_prefix}reroll advance and charge rolls made for (?:this model|{unit_ref})",
+        rf"{lead_prefix}reroll charge rolls made for (?:this model|{unit_ref})",
+        rf"{lead_prefix}bearers unit declares a charge .* objective marker .* reroll the charge roll",
+        rf"{lead_prefix}reroll charge rolls .* set up on the battlefield",
+        rf"{lead_prefix}models in {unit_ref} have a leadership characteristic of \d+",
+        rf"{lead_prefix}add \d+ to the objective control characteristic of (?:models in )?{unit_ref}",
+        rf"{lead_prefix}models? in {unit_ref} have (?:a|the)? feel no pain \d+",
+        rf"{lead_prefix}(?:melee |ranged )?weapons equipped by models in {unit_ref} have the sustained hits \d+ ability",
+        rf"{lead_prefix}(?:melee |ranged )?(?:weapons equipped by models in|attacks made by models in) {unit_ref} .* ignores cover",
+        rf"{lead_prefix}each time (?:a|an) (?:melee |ranged )?attack targets {unit_ref} subtract 1 from the hit roll",
+        rf"{lead_prefix}.*eligible to (?:declare a charge|charge).*",
+    ]
+
+    unsupported = [
+        s for s in normalized_sentences
+        if not any(re.fullmatch(p, s) for p in patterns)
+    ]
 
     if notes:
-        return ("Supported", " ".join(notes))
+        status = "Supported" if not unsupported else "Partial"
+        return (status, " ".join(notes))
     return None
 
 
 def _closest_monster_vehicle_reroll_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
-    text = _strip_html(description)
-    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
-    text = re.sub(r"\s+", " ", text).strip()
-    if not text:
+    norm = _norm_rules_text(description)
+    if not norm:
         return None
-    low = text.lower()
-    if "ranged attack" not in low:
-        return None
-    if "closest eligible" not in low:
-        return None
-    if "monster" not in low or "vehicle" not in low:
-        return None
-    m = re.search(r"within\s+(\d+)\s*(?:\"|inches)", low)
-    if not m:
-        return None
-    allow_wound = bool(re.search(r"re-?roll\s+the\s+wound\s+roll", low))
-    allow_damage = bool(re.search(r"re-?roll\s+the\s+damage\s+roll", low))
-    if not (allow_wound or allow_damage):
-        return None
-    rng = m.group(1)
+    base = r"each time this model makes a ranged attack that targets the closest eligible monster or vehicle target within (?P<rng>\d+)"
+    wound_then_damage = rf"{base} you can reroll the wound roll(?: and you can reroll the damage roll)?"
+    damage_then_wound = rf"{base} you can reroll the damage roll(?: and you can reroll the wound roll)?"
+    m = re.fullmatch(wound_then_damage, norm)
+    allow_wound = False
+    allow_damage = False
+    if m:
+        allow_wound = True
+        allow_damage = "damage roll" in norm
+    else:
+        m = re.fullmatch(damage_then_wound, norm)
+        if not m:
+            return None
+        allow_damage = True
+        allow_wound = "wound roll" in norm
+    rng = m.group("rng")
     notes = []
     if allow_wound:
         notes.append(f"Ranged attacks vs closest eligible MONSTER/VEHICLE within {rng}\" can re-roll the Wound roll (optional).")
@@ -1572,59 +1608,47 @@ def _closest_monster_vehicle_reroll_support(description: str) -> Optional[Tuple[
 def _unit_contains_oc_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
-    text = _strip_html(description)
-    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
-    text = re.sub(r"\s+", " ", text).strip()
-    if not text:
+    norm = _norm_rules_text(description)
+    if not norm:
         return None
-    m = re.search(
-        r"while\s+this\s+unit\s+contains\s+an?\s+(.+?),\s*add\s+(\d+)\s+to\s+the\s+objective\s+control\s+"
-        r"characteristic\s+of\s+models\s+in\s+this\s+unit",
-        text,
-        flags=re.IGNORECASE,
+    m = re.fullmatch(
+        r"while this unit contains an? (?P<model>.+) add (?P<amt>\d+) to the objective control characteristic of models in this unit",
+        norm,
     )
     if not m:
         return None
-    model_name = m.group(1).strip()
-    amt = m.group(2)
+    model_name = m.group("model").strip()
+    amt = m.group("amt")
     return ("Supported", f"Unit Objective Control +{amt} while it contains {model_name}.")
 
 
 def _aura_objective_control_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
-    text = _strip_html(description)
-    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
-    text = re.sub(r"\s+", " ", text).strip()
-    if not text:
+    norm = _norm_rules_text(description)
+    if not norm:
         return None
-    m = re.search(
-        r'while\s+a\s+friendly\s+(.+?)\s+unit\s+is\s+within\s+(\d+)"\s+of\s+this\s+(?:model|unit),\s+'
-        r"add\s+(\d+)\s+to\s+the\s+objective\s+control\s+characteristic\s+of\s+models\s+in\s+that\s+unit",
-        text,
-        flags=re.IGNORECASE,
+    m = re.fullmatch(
+        r"while a friendly (?P<kw>.+) unit is within (?P<rng>\d+) of this (?:model|unit) add (?P<amt>\d+) to the objective control characteristic of models in that unit",
+        norm,
     )
     if not m:
         return None
-    faction_kw = m.group(1).strip()
-    rng = m.group(2)
-    amt = m.group(3)
+    faction_kw = m.group("kw").strip()
+    rng = m.group("rng")
+    amt = m.group("amt")
     return ("Supported", f"Aura: friendly {faction_kw} within {rng}\" gain Objective Control +{amt}.")
 
 
 def _aura_advance_charge_roll_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
-    text = _strip_html(description)
-    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
-    text = re.sub(r"\s+", " ", text).strip()
-    if not text:
+    norm = _norm_rules_text(description)
+    if not norm:
         return None
-    m = re.search(
-        r'While a friendly (?P<faction_kw>.+?) units? is within (?P<rng>\d+)" of this (?:model|unit), '
-        r"add (?P<amt>\d+) to Advance and Charge rolls made for (?:that|the) unit",
-        text,
-        flags=re.IGNORECASE,
+    m = re.fullmatch(
+        r"while a friendly (?P<faction_kw>.+) units? is within (?P<rng>\d+) of this (?:model|unit) add (?P<amt>\d+) to advance and charge rolls made for (?:that|the) unit",
+        norm,
     )
     if not m:
         return None
@@ -1652,32 +1676,25 @@ def _bearer_invulnerable_save_support(description: str) -> Optional[Tuple[str, s
 def _model_reroll_wound_vs_character_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
-    text = _strip_html(description)
-    text = text.replace("\u2019", "'")
-    low = text.lower()
-    attack_re = re.compile(r"this model makes (?:a|an)?\s*(?:melee|ranged)?\s*attacks?", re.IGNORECASE)
-    if not attack_re.search(low):
+    norm = _norm_rules_text(description)
+    if not norm:
         return None
-    if ("re-roll" not in low) and ("reroll" not in low):
+    reroll_pattern = (
+        r"each time this model makes (?:a|an)?(?: melee| ranged)? attacks? that targets a character (?:unit|model) "
+        r"you can reroll the (?:hit|wound) roll(?:s)?(?: and you can reroll the (?:hit|wound) roll(?:s)?)?"
+    )
+    cp_pattern = (
+        r"each time (?:this model|this models unit|this unit) destroys an? (?:enemy )?character (?:model|unit) you gain \d+ cp"
+    )
+    sentences = [s for s in (_norm_rules_text(part) for part in re.split(r"[.;]\s*", _strip_html(description))) if s]
+    unsupported = [s for s in sentences if not (re.fullmatch(reroll_pattern, s) or re.fullmatch(cp_pattern, s))]
+    if unsupported:
         return None
-    if (
-        "targets a character unit" not in low
-        and "targets an character unit" not in low
-        and "targets a character units" not in low
-        and "targets a character model" not in low
-        and "targets an character model" not in low
-        and "targets a character models" not in low
-    ):
-        return None
-    hit_reroll = bool(re.search(r"re-?roll\s+(?:the\s+)?hit\s+rolls?", low, flags=re.IGNORECASE))
-    if "hit roll of 1" in low or "hit rolls of 1" in low:
-        hit_reroll = False
-    wound_reroll = bool(re.search(r"re-?roll\s+(?:the\s+)?wound\s+rolls?", low, flags=re.IGNORECASE))
-    if "wound roll of 1" in low or "wound rolls of 1" in low:
-        wound_reroll = False
+    hit_reroll = "reroll the hit roll" in norm and "hit roll of 1" not in norm
+    wound_reroll = "reroll the wound roll" in norm and "wound roll of 1" not in norm
     if not (hit_reroll or wound_reroll):
         return None
-    cp_on_kill = "gain" in low and "cp" in low and "destroys" in low and "character" in low
+    cp_on_kill = bool(re.search(r"gain \d+ cp", norm) and "destroy" in norm and "character" in norm)
     notes = []
     if hit_reroll:
         notes.append("Model attacks vs CHARACTER units can re-roll the Hit roll (optional).")
@@ -1691,87 +1708,56 @@ def _model_reroll_wound_vs_character_support(description: str) -> Optional[Tuple
 def _model_hit_bonus_vs_fly_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
-    text = _strip_html(description)
-    text = text.replace("\u2019", "'")
-    text = re.sub(r"\s+", " ", text).strip()
-    if not text:
+    norm = _norm_rules_text(description)
+    if not norm:
         return None
-    low = text.lower()
-    attack_re = re.compile(r"this model makes (?:a|an)?\s*(?:melee|ranged)?\s*attacks?", re.IGNORECASE)
-    if not attack_re.search(low):
-        return None
-    if "hit roll" not in low:
-        return None
-    if "fly" not in low:
-        return None
-    if "targets" not in low:
-        return None
-    m = re.search(r"add\s+(\d+)\s+to\s+the\s+hit\s+roll", low, flags=re.IGNORECASE)
+    m = re.fullmatch(
+        r"each time this model makes (?:a|an)?(?: melee| ranged)? attacks? that targets? a unit that can fly add (?P<amt>\d+) to the hit roll",
+        norm,
+    )
     if not m:
         return None
-    if not re.search(r"targets?\s+(?:a|an)?\s*unit.*?(?:can\s+fly|with\s+fly|fly)\b", low, flags=re.IGNORECASE):
-        return None
-    return ("Supported", f"Model attacks vs FLY targets gain +{m.group(1)} to hit.")
+    return ("Supported", f"Model attacks vs FLY targets gain +{m.group('amt')} to hit.")
 
 
 def _charge_end_mortal_wounds_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
-    text = _strip_html(description)
-    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
-    text = re.sub(r"\s+", " ", text).strip()
-    if not text:
-        return None
-    low = text.lower()
-    if "ends a charge move" not in low:
-        return None
-    if "engagement range" not in low or "enemy unit" not in low:
-        return None
-    if "mortal wound" not in low:
+    norm = _norm_rules_text(description)
+    if not norm:
         return None
 
     per_model = (
-        re.search(r"roll\s+one\s+d6\s+for\s+each\s+model\s+in\s+(?:this|that|the)\s+unit", low, flags=re.IGNORECASE)
-        and re.search(r"for\s+each\s+4\+", low, flags=re.IGNORECASE)
-        and re.search(r"d3\s+mortal\s+wounds?", low, flags=re.IGNORECASE)
+        r"each time (?:this models unit|this unit) ends a charge move select one enemy unit within engagement range of (?:this unit|this model) "
+        r"(?:then )?roll one d6 for each model in (?:this unit|that unit|this models unit) for each 4\+? that enemy unit suffers d3 mortal wounds?"
     )
-    if per_model:
+    table = (
+        r"each time (?:this models unit|this unit) ends a charge move select one enemy unit within engagement range of (?:this unit|this model) "
+        r"(?:then )?roll one d6 on a 2 3 that enemy unit suffers 1 mortal wounds? on a 4 5 that enemy unit suffers d3 mortal wounds? on a 6 that enemy unit suffers d3 3 mortal wounds?"
+    )
+    if re.fullmatch(per_model, norm):
         return (
             "Supported",
             "Charge end: pick an engaged enemy; D6 per model, each 4+ inflicts D3 mortal wounds.",
         )
-
-    table = (
-        re.search(r"roll\s+one\s+d6", low, flags=re.IGNORECASE)
-        and re.search(r"\b2\s*-\s*3\b", low, flags=re.IGNORECASE)
-        and re.search(r"\b4\s*-\s*5\b", low, flags=re.IGNORECASE)
-        and re.search(r"d3\s*\+\s*3\s+mortal\s+wounds?", low, flags=re.IGNORECASE)
-    )
-    if table:
+    if re.fullmatch(table, norm):
         return (
             "Supported",
             "Charge end: pick an engaged enemy; D6 table for mortal wounds (2-3=1, 4-5=D3, 6=D3+3).",
         )
-
     return None
 
 
 def _fight_within_3_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
-    text = _strip_html(description)
-    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
-    text = re.sub(r"\s+", " ", text).strip()
-    if not text:
+    norm = _norm_rules_text(description)
+    if not norm:
         return None
-    low = text.lower()
-    if "selected to fight" not in low:
-        return None
-    if "eligible to fight" not in low:
-        return None
-    if "engagement range" not in low:
-        return None
-    if not re.search(r"within\s+3\"?", low, flags=re.IGNORECASE):
+    pattern = (
+        r"each time this models unit is selected to fight you can use this ability .* eligible to fight .* within 3 .* eligible to fight .* within engagement range .*"
+    )
+    if not re.fullmatch(pattern, norm):
         return None
     return (
         "Supported",
@@ -1782,67 +1768,46 @@ def _fight_within_3_support(description: str) -> Optional[Tuple[str, str]]:
 def _allocated_damage_reduction_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
-    text = _strip_html(description)
-    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
-    text = re.sub(r"\s+", " ", text).strip()
-    if not text:
+    norm = _norm_rules_text(description)
+    if not norm:
         return None
-    low = text.lower()
-    if "attack is allocated" not in low:
-        return None
-    if "damage characteristic" not in low:
-        return None
-    if not re.search(r"allocated\s+to\s+(?:this\s+model|a\s+model\s+in\s+this\s+unit)", low, flags=re.IGNORECASE):
-        return None
-    m_half = re.search(
-        r"(?:halve|half)\s+the\s+damage\s+characteristic|damage\s+characteristic\s+of\s+that\s+attack\s+is\s+halved",
-        low,
-        flags=re.IGNORECASE,
-    )
-    if m_half:
+    base = r"each time (?:a|an) (?:melee |ranged )?attack is allocated to (?:this model|a model in this unit)"
+    half_pattern = rf"{base} .* damage characteristic .* halved"
+    sub_pattern = rf"{base} subtract (?P<val>\d+) from the damage characteristic of that attack"
+    if re.fullmatch(half_pattern, norm):
         atype = ""
-        m2 = re.search(r"each\s+time\s+(?:an|a)\s+(melee|ranged)\s+attack\s+is\s+allocated", low, flags=re.IGNORECASE)
+        m2 = re.search(r"each time (?:a|an) (melee|ranged) attack is allocated", norm)
         if m2:
             atype = m2.group(1).lower()
         if atype:
             return ("Supported", f"Allocated {atype} attacks have Damage halved.")
         return ("Supported", "Allocated attacks have Damage halved.")
-    m = re.search(r"subtract\s+(\d+)\s+from\s+the\s+damage\s+characteristic", low, flags=re.IGNORECASE)
+    m = re.fullmatch(sub_pattern, norm)
     if not m:
         return None
     atype = ""
-    m2 = re.search(r"each\s+time\s+(?:an|a)\s+(melee|ranged)\s+attack\s+is\s+allocated", low, flags=re.IGNORECASE)
+    m2 = re.search(r"each time (?:a|an) (melee|ranged) attack is allocated", norm)
     if m2:
         atype = m2.group(1).lower()
     if atype:
-        return ("Supported", f"Allocated {atype} attacks have -{m.group(1)} Damage.")
-    return ("Supported", f"Allocated attacks have -{m.group(1)} Damage.")
+        return ("Supported", f"Allocated {atype} attacks have -{m.group('val')} Damage.")
+    return ("Supported", f"Allocated attacks have -{m.group('val')} Damage.")
 
 
 def _targeted_stratagem_cp_discount_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
-    text = _strip_html(description)
-    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
-    text = re.sub(r"\s+", " ", text).strip()
-    if not text:
+    norm = _norm_rules_text(description)
+    if not norm:
         return None
-    low = text.lower()
-    if "once per battle round" not in low:
+    if "within" in norm:
         return None
-    if "stratagem" not in low:
-        return None
-    if "reduce the cp cost" not in low:
-        return None
-    if "within" in low:
-        return None
-    pattern = re.compile(
-        r"once\s+per\s+battle\s+round.*?\bone\s+(?:unit|model)\s+from\s+your\s+army\s+with\s+this\s+ability\s+can\s+use\s+it\s+when\s+"
-        r"(?:its\s+unit|this\s+model'?s\s+unit|that\s+model'?s\s+unit)\s+is\s+targeted\s+with\s+a\s+stratagem.*?"
-        r"reduce\s+the\s+cp\s+cost\s+of\s+that\s+(?:use|usage)\s+of\s+that\s+stratagem\s+by\s+1cp",
-        flags=re.IGNORECASE,
+    pattern = (
+        r"once per battle round one (?:unit|model) from your army with this ability can use it when "
+        r"(?:its unit|this models unit|that models unit) is targeted with a stratagem reduce the cp cost of that "
+        r"(?:use|usage) of that stratagem by 1cp"
     )
-    if not pattern.search(low):
+    if not re.fullmatch(pattern, norm):
         return None
     return (
         "Supported",
@@ -1935,8 +1900,33 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
     if hit_re and wound_re:
         notes.append(f"Leading: re-roll Hit/Wound rolls of 1 for {attack_scope} attacks.")
 
+    normalized_sentences = []
+    for sentence in re.split(r"[.;]\s*", _strip_html(description)):
+        norm_sentence = _norm_rules_text(sentence)
+        if norm_sentence:
+            normalized_sentences.append(norm_sentence)
+
+    lead_prefix = r"(?:while this model is leading a unit )?"
+    patterns = [
+        rf"{lead_prefix}weapons equipped by models in that unit have the lethal hits ability",
+        rf"{lead_prefix}each time a model in that unit makes (?:a|an)?(?: melee| ranged)? attack add \d+ to the hit roll",
+        rf"{lead_prefix}each time a model in that unit makes (?:a|an)?(?: melee| ranged)? attack add \d+ to the wound roll",
+        rf"{lead_prefix}add \d+ to the hit roll if that unit is below (?:its )?starting strength",
+        rf"{lead_prefix}add \d+ to the wound roll(?: as well)? if that unit is below half strength",
+        rf"{lead_prefix}add \d+ to the wound roll(?: as well)? if the target is battle shocked",
+        rf"{lead_prefix}if the target is battle shocked add \d+ to the wound roll",
+        rf"{lead_prefix}.*reroll .*hit roll.* of 1.*",
+        rf"{lead_prefix}.*reroll .*wound roll.* of 1.*",
+    ]
+
+    unsupported = [
+        s for s in normalized_sentences
+        if not any(re.fullmatch(p, s) for p in patterns)
+    ]
+
     if notes:
-        return ("Supported", " ".join(notes))
+        status = "Supported" if not unsupported else "Partial"
+        return (status, " ".join(notes))
     return None
 
 
@@ -2175,53 +2165,31 @@ def _target_hit_roll_penalty_support(description: str) -> Optional[Tuple[str, st
 def _melee_damage_bonus_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
-    text = _strip_html(description)
-    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
-    text = re.sub(r"\s+", " ", text).strip()
-    if not text:
+    norm = _norm_rules_text(description)
+    if not norm:
         return None
-    low = text.lower()
-    if "melee attack" not in low:
-        return None
-    if "damage characteristic" not in low:
-        return None
-    if "monster" not in low or "vehicle" not in low:
-        return None
-    if "target" not in low:
-        return None
-    m = re.search(r"damage characteristic[^.]*?by\s+(\d+)", low, flags=re.IGNORECASE)
-    if not m:
-        m = re.search(r"add\s+(\d+)\s+to\s+the\s+damage characteristic", low, flags=re.IGNORECASE)
+    pattern = (
+        r"each time (?:this model|a model in this unit) makes a melee attack that targets a monster or vehicle unit add (?P<val>\d+) to the damage characteristic of that attack"
+    )
+    m = re.fullmatch(pattern, norm)
     if not m:
         return None
-    return ("Supported", f"Melee attacks vs MONSTER/VEHICLE get +{m.group(1)} Damage.")
+    return ("Supported", f"Melee attacks vs MONSTER/VEHICLE get +{m.group('val')} Damage.")
 
 
 def _transport_disembark_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
-    text = _strip_html(description)
-    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
-    text = re.sub(r"\s+", " ", text).strip()
-    if not text:
+    norm = _norm_rules_text(description)
+    if not norm:
         return None
-    low = text.lower()
     notes: List[str] = []
-
-    if (
-        "disembark" in low
-        and "after it has made a normal move" in low
-        and ("eligible to declare a charge" in low or "can declare a charge" in low)
-    ):
+    normal_move = r".*disembark.*after it has made a normal move.*(?:eligible to declare a charge|can declare a charge).*"
+    after_advance = r".*disembark.*after it has advanced.*cannot declare a charge.*"
+    if re.fullmatch(normal_move, norm):
         notes.append("Disembark after Normal move and still eligible to charge.")
-
-    if (
-        "disembark" in low
-        and "after it has advanced" in low
-        and "cannot declare a charge" in low
-    ):
+    if re.fullmatch(after_advance, norm):
         notes.append("Disembark after Advance; counts as Normal move; cannot charge.")
-
     if notes:
         return ("Supported", " ".join(notes))
     return None
@@ -2230,24 +2198,20 @@ def _transport_disembark_support(description: str) -> Optional[Tuple[str, str]]:
 def _sticky_objective_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
-    text = _strip_html(description)
-    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
-    text = re.sub(r"\s+", " ", text).strip()
-    if not text:
+    norm = _norm_rules_text(description)
+    if not norm:
         return None
-    low = text.lower()
-    if "end of your command phase" not in low:
-        return None
-    if "objective marker remains under your control" not in low:
-        return None
-    if "objective marker you control" not in low or "within range of an objective marker" not in low:
-        return None
-    legacy_sticky = (
-        "even if you have no models within range of it" in low
-        and "until your opponent controls it" in low
+    legacy = (
+        r"at the end of your command phase if this unit is within range of an objective marker you control "
+        r"that objective marker remains under your control even if you have no models within range of it "
+        r"until your opponent controls it"
     )
-    loc_sticky = "level of control" in low and "greater than yours" in low
-    if not (legacy_sticky or loc_sticky):
+    loc = (
+        r"at the end of your command phase if this unit is within range of an objective marker you control "
+        r"that objective marker remains under your control until your opponents level of control over that "
+        r"objective marker is greater than yours at the end of a phase"
+    )
+    if not (re.fullmatch(legacy, norm) or re.fullmatch(loc, norm)):
         return None
     return ("Supported", "End of Command phase: objective becomes sticky while you controlled it.")
 
@@ -2255,29 +2219,13 @@ def _sticky_objective_support(description: str) -> Optional[Tuple[str, str]]:
 def _command_phase_bodyguard_return_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
-    text = _strip_html(description)
-    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
-    text = re.sub(r"\s+", " ", text).strip()
-    if not text:
+    norm = _norm_rules_text(description)
+    if not norm:
         return None
-    low = text.lower()
-    if "command phase" not in low:
-        return None
-    if "bodyguard model" not in low:
-        return None
-    if "return" not in low or "destroyed" not in low:
-        return None
-    if "not leading a unit" in low:
-        return None
-    if (
-        "leading a unit" not in low
-        and "leading this unit" not in low
-        and "bearer is leading a unit" not in low
-    ):
-        return None
-    if "can return" not in low:
-        return None
-    m = re.search(r"return\s+(?:up to\s+)?(one|a|\d+)\s+destroyed\s+bodyguard\s+models?", low)
+    pattern = (
+        r"while this model is leading (?:a|this) unit in your command phase you can return (?:up to )?(one|a|\d+) destroyed bodyguard models? to that unit"
+    )
+    m = re.fullmatch(pattern, norm)
     if not m:
         return None
     token = m.group(1)
@@ -2296,31 +2244,19 @@ def _command_phase_bodyguard_return_support(description: str) -> Optional[Tuple[
 def _enemy_fall_back_desperate_escape_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
-    text = _strip_html(description)
-    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
-    text = re.sub(r"\s+", " ", text).strip()
-    if not text:
+    norm = _norm_rules_text(description)
+    if not norm:
         return None
-    low = text.lower()
-    if "enemy unit" not in low:
-        return None
-    if "falls back" not in low:
-        return None
-    if "engagement range" not in low:
-        return None
-    if "desperate escape" not in low:
-        return None
-    if "with this ability" not in low:
-        return None
-    exclude = bool(re.search(r"excluding\s+monsters?\s+and\s+vehicles?", low, flags=re.IGNORECASE))
-    penalty = None
-    m = re.search(
-        r"battle[-\s]?shocked.*?subtract\s+(\d+)\s+from\s+each\s+of\s+those\s+desperate\s+escape\s+tests",
-        low,
-        flags=re.IGNORECASE,
+    base = (
+        r"each time an enemy unit(?: excluding monsters and vehicles)? within engagement range of one or more units from your army with this ability falls back "
+        r"models in that enemy unit must take desperate escape tests?"
     )
-    if m:
-        penalty = m.group(1)
+    penalty_clause = r"(?: when doing so if that enemy unit is also battle shocked subtract (?P<pen>\d+) from each of those desperate escape tests)?"
+    m = re.fullmatch(base + penalty_clause, norm)
+    if not m:
+        return None
+    exclude = "excluding monsters and vehicles" in norm
+    penalty = m.group("pen") if m.groupdict().get("pen") else None
     notes = []
     if exclude:
         notes.append("Enemy non-MONSTER/VEHICLE units within Engagement Range that Fall Back take Desperate Escape tests.")
@@ -2334,46 +2270,33 @@ def _enemy_fall_back_desperate_escape_support(description: str) -> Optional[Tupl
 def _command_phase_bonus_cp_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
-    text = _strip_html(description)
-    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
-    text = re.sub(r"\s+", " ", text).strip()
-    if not text:
+    norm = _norm_rules_text(description)
+    if not norm:
         return None
-    low = text.lower()
-    if "command phase" not in low:
-        return None
-    if "on the battlefield" not in low:
-        return None
-    if "this model" not in low and "this unit" not in low and "the bearer" not in low:
-        return None
-    m = re.search(
-        r"(?:at\s+the\s+)?start\s+of\s+(?:each\s+of\s+)?your\s+command\s+phase[s]?\b.*?\bgain\s+(\d+)\s*(?:cp|command point(?:s)?)",
-        low,
-        flags=re.IGNORECASE,
+    pattern = (
+        r"(?:at the )?start of (?:each of )?your command phases? if (?:this model|this unit|the bearer) is on the battlefield "
+        r"you gain (?P<cp>\d+) (?:cp|command points?)"
     )
+    m = re.fullmatch(pattern, norm)
     if not m:
         return None
-    return ("Supported", f"Start of Command phase: gain {m.group(1)} CP while on the battlefield.")
+    return ("Supported", f"Start of Command phase: gain {m.group('cp')} CP while on the battlefield.")
 
 
 def _gain_cp_on_destroy_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
-    text = _strip_html(description)
-    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
-    text = re.sub(r"\s+", " ", text).strip()
-    if not text:
+    norm = _norm_rules_text(description)
+    if not norm:
         return None
-    low = text.lower()
-    if "gain" not in low or "cp" not in low:
+    pattern = (
+        r"each time (?:this model|this unit|this models unit) destroys an? (?:enemy )?(?:character|epic hero|monster|vehicle|psyker)? ?"
+        r"(?:model|unit)? you gain (?P<cp>\d+) cp"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
         return None
-    if "destroys" not in low:
-        return None
-    if "this model" not in low and "this unit" not in low and "this model's unit" not in low:
-        return None
-
-    m = re.search(r"gain\s+(\d+)\s*cp", low, flags=re.IGNORECASE)
-    cp = m.group(1) if m else "1"
+    cp = m.group("cp")
 
     keyword_map = {
         "character": "CHARACTER",
@@ -2382,24 +2305,21 @@ def _gain_cp_on_destroy_support(description: str) -> Optional[Tuple[str, str]]:
         "vehicle": "VEHICLE",
         "psyker": "PSYKER",
     }
-    target_keywords = [kw for needle, kw in keyword_map.items() if needle in low]
+    target_keywords = [kw for needle, kw in keyword_map.items() if needle in norm]
     kw_text = ""
     if target_keywords:
-        if len(target_keywords) > 1 and " or " in low:
+        if len(target_keywords) > 1 and " or " in norm:
             kw_text = " or ".join(target_keywords)
         else:
             kw_text = " ".join(target_keywords)
 
     trigger = "target"
-    if re.search(r"destroys\s+an?\s+(?:enemy\s+)?\b.*\bmodel\b", low, flags=re.IGNORECASE):
+    if "model" in norm:
         trigger = "model"
-    elif re.search(r"destroys\s+an?\s+(?:enemy\s+)?\b.*\bunit\b", low, flags=re.IGNORECASE):
+    elif "unit" in norm:
         trigger = "unit"
 
-    if "this model" in low:
-        subject = "this model"
-    else:
-        subject = "this unit"
+    subject = "this model" if "this model" in norm else "this unit"
 
     if kw_text:
         if trigger in ("model", "unit"):
@@ -2415,28 +2335,22 @@ def _gain_cp_on_destroy_support(description: str) -> Optional[Tuple[str, str]]:
 def _fall_back_shoot_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
-    text = _strip_html(description)
-    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
-    text = re.sub(r"\s+", " ", text).strip()
-    if not text:
+    norm = _norm_rules_text(description)
+    if not norm:
         return None
-    low = text.lower()
-    if "eligible to shoot" not in low:
+    base = r"this unit is eligible to shoot in a turn in which it (?:advanced or )?(?:fell back|fall back)"
+    charge = r"this unit is eligible to shoot and (?:declare a charge|charge) in a turn in which it (?:advanced or )?(?:fell back|fall back)"
+    if not (re.fullmatch(base, norm) or re.fullmatch(charge, norm)):
         return None
-    if "not eligible to shoot" in low:
-        return None
-    has_fall_back = ("fell back" in low) or ("fall back" in low) or ("falling back" in low)
-    if not has_fall_back:
-        return None
-    has_advance = ("advance" in low) or ("advanced" in low) or ("advancing" in low)
-    has_charge = ("declare a charge" in low) or ("eligible to charge" in low) or ("eligible to shoot and declare a charge" in low) or ("eligible to shoot and charge" in low)
+    has_advance = "advanced or" in norm
+    has_charge = "declare a charge" in norm or "shoot and charge" in norm
     notes = []
-    if has_advance and has_fall_back:
+    if has_advance:
         notes.append("Shoot-after-Advance/Fall Back eligibility.")
     else:
         notes.append("Shoot-after-Fall-Back eligibility.")
     if has_charge:
-        if has_advance and has_fall_back:
+        if has_advance:
             notes.append("Charge-after-Advance/Fall Back eligibility.")
         else:
             notes.append("Charge-after-Fall-Back eligibility.")
@@ -2446,47 +2360,36 @@ def _fall_back_shoot_support(description: str) -> Optional[Tuple[str, str]]:
 def _two_melee_weapons_bonus_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
-    text = _strip_html(description)
-    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
-    text = re.sub(r"\s+", " ", text).strip()
-    if not text:
+    norm = _norm_rules_text(description)
+    if not norm:
         return None
-    low = text.lower()
-    if "two melee weapons" not in low or "close combat weapon" not in low:
-        return None
-    m = re.search(
-        r"add\s+(\d+)\s+to\s+the\s+attacks\s+characteristic\s+of\s+those\s+(?:two\s+)?weapons",
-        low,
+    m = re.fullmatch(
+        r"if this model is equipped with two melee weapons in addition to its close combat weapon add (?P<amt>\d+) to the attacks characteristic of those two weapons",
+        norm,
     )
     if not m:
         return None
     return (
         "Supported",
-        f"If equipped with two melee weapons plus a close combat weapon, those two weapons gain +{m.group(1)} Attacks.",
+        f"If equipped with two melee weapons plus a close combat weapon, those two weapons gain +{m.group('amt')} Attacks.",
     )
 
 
 def _attached_possessed_formation_bonus_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
-    text = _strip_html(description)
-    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
-    text = re.sub(r"\s+", " ", text).strip()
-    if not text:
+    norm = _norm_rules_text(description)
+    if not norm:
         return None
-    low = text.lower()
-    if "declare battle formations" not in low:
-        return None
-    if "attached to a world eaters possessed unit" not in low:
-        return None
-    if "deep strike" not in low or "scout" not in low:
-        return None
-    m = re.search(r"scouts?\s*(\d+)", low)
+    m = re.fullmatch(
+        r"if this model is attached to a world eaters possessed unit during the declare battle formations step until the end of the battle this model has the deep strike and scouts (?P<rng>\d+) abilities",
+        norm,
+    )
     if not m:
         return None
     return (
         "Supported",
-        f"Leader gains Deep Strike and Scouts {m.group(1)}\" if attached to WORLD EATERS POSSESSED at battle formations.",
+        f"Leader gains Deep Strike and Scouts {m.group('rng')}\" if attached to WORLD EATERS POSSESSED at battle formations.",
     )
 
 

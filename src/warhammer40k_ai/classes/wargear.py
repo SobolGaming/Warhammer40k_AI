@@ -1956,7 +1956,10 @@ class WargearProfile:
             lead_mods = None
         try:
             unit = attacker.parent_unit
-            unit_hit_mods = unit.get_unit_hit_reroll_modifiers(attack_type)
+            unit_hit_mods = unit.get_unit_hit_reroll_modifiers(attack_type, target=target)
+            if isinstance(unit_hit_mods, dict) and int(unit_hit_mods.get("hit", 0) or 0):
+                bonus = int(unit_hit_mods.get("hit", 0) or 0)
+                _add_hit_mod(bonus, list(unit_hit_mods.get("hit_reasons", ()) or ()))
         except Exception:
             unit_hit_mods = None
 
@@ -2089,111 +2092,109 @@ class WargearProfile:
         except Exception:
             pass
 
-        # Strict aura support: re-roll Hit rolls of 1 (applied before resolving auto-miss/constraints)
+        # Value-based and full rerolls from aura/leading/unit rules.
         reroll_used = False
+        reroll_hit_values = set()
+        reroll_value_reasons: list[str] = []
+        reroll_full_reasons: list[str] = []
         try:
-            if dice_roll == 1 and bool(getattr(aura_mods, "reroll_hit_ones", False)):
+            if aura_mods is not None:
+                for v in list(getattr(aura_mods, "reroll_hit_values", ()) or ()):
+                    try:
+                        reroll_hit_values.add(int(v))
+                    except Exception:
+                        continue
+                if bool(getattr(aura_mods, "reroll_hit_ones", False)):
+                    reroll_hit_values.add(1)
+                reroll_value_reasons.extend(list(getattr(aura_mods, "reroll_hit_reasons", ()) or ()))
+                if bool(getattr(aura_mods, "reroll_hit_full", False)):
+                    reroll_full_reasons.extend(list(getattr(aura_mods, "reroll_hit_full_reasons", ()) or ()))
+        except Exception:
+            pass
+        try:
+            if isinstance(lead_mods, dict):
+                for v in list(lead_mods.get("reroll_hit_values", ()) or ()):
+                    try:
+                        reroll_hit_values.add(int(v))
+                    except Exception:
+                        continue
+                if bool(lead_mods.get("reroll_hit_ones", False)):
+                    reroll_hit_values.add(1)
+                reroll_value_reasons.extend(list(lead_mods.get("reroll_hit_reasons", ()) or ()))
+                if bool(lead_mods.get("reroll_hit_full", False)):
+                    reroll_full_reasons.extend(list(lead_mods.get("reroll_hit_full_reasons", ()) or ()))
+        except Exception:
+            pass
+        try:
+            if isinstance(unit_hit_mods, dict):
+                for v in list(unit_hit_mods.get("reroll_hit_values", ()) or ()):
+                    try:
+                        reroll_hit_values.add(int(v))
+                    except Exception:
+                        continue
+                if bool(unit_hit_mods.get("reroll_hit_ones", False)):
+                    reroll_hit_values.add(1)
+                reroll_value_reasons.extend(list(unit_hit_mods.get("reroll_hit_reasons", ()) or ()))
+                if bool(unit_hit_mods.get("reroll_hit_full", False)):
+                    reroll_full_reasons.extend(list(unit_hit_mods.get("reroll_hit_full_reasons", ()) or ()))
+        except Exception:
+            pass
+
+        try:
+            if dice_roll in reroll_hit_values and "reroll" not in hit_result:
                 rr = _reroll_hit()
-                hit_result.setdefault("special_effects", []).append("Aura: re-roll Hit rolls of 1")
-                hit_result.setdefault("special_effects", []).extend(list(getattr(aura_mods, "reroll_hit_reasons", ()) or ()))
-                hit_result["reroll_of_one"] = 1
+                if reroll_value_reasons:
+                    hit_result.setdefault("special_effects", []).extend(reroll_value_reasons)
+                else:
+                    hit_result.setdefault("special_effects", []).append("Re-roll Hit roll")
+                if dice_roll == 1:
+                    hit_result["reroll_of_one"] = 1
                 hit_result["reroll"] = rr
                 dice_roll = rr
                 reroll_used = True
         except Exception:
             pass
 
-        # Leading abilities: re-roll Hit rolls of 1
         try:
-            if dice_roll == 1 and "reroll" not in hit_result:
-                if isinstance(lead_mods, dict) and bool(lead_mods.get("reroll_hit_ones", False)):
+            if reroll_full_reasons and "reroll" not in hit_result:
+                try:
+                    success = (dice_roll != 1) and (self.skill > 0) and (dice_roll >= final_needed)
+                except Exception:
+                    success = False
+                do_reroll = False
+                try:
+                    unit = attacker.parent_unit
+                    game = unit.get_parent_army().player.game
+                    player = unit.get_parent_army().player
+                    is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                    provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                except Exception:
+                    is_human = False
+                    provider = None
+                    player = None
+                reason = reroll_full_reasons[0] if reroll_full_reasons else "Unit ability"
+                if is_human and callable(provider):
+                    try:
+                        do_reroll = bool(provider(
+                            player=player,
+                            unit=unit,
+                            roll_type="hit",
+                            value=dice_roll,
+                            dice=None,
+                            needed=final_needed,
+                            success=success,
+                            reason=reason,
+                        ))
+                    except Exception:
+                        do_reroll = False
+                else:
+                    do_reroll = (not success)
+                if do_reroll:
                     rr = _reroll_hit()
-                    hit_result.setdefault("special_effects", []).append("Leading: re-roll Hit rolls of 1")
-                    hit_result.setdefault("special_effects", []).extend(list(lead_mods.get("reroll_hit_reasons", ()) or ()))
-                    hit_result["reroll_of_one"] = 1
+                    hit_result.setdefault("special_effects", []).extend(reroll_full_reasons)
                     hit_result["reroll"] = rr
                     dice_roll = rr
                     reroll_used = True
-        except Exception:
-            pass
-
-        objective_in_range = False
-        try:
-            if isinstance(unit_hit_mods, dict) and unit_hit_mods.get("reroll_hit_full_if_objective"):
-                unit = attacker.parent_unit
-                army = unit.get_parent_army() if unit is not None else None
-                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
-                if game is not None and hasattr(game, "_unit_within_range_of_objective"):
-                    objective_in_range = bool(game._unit_within_range_of_objective(target))
-        except Exception:
-            objective_in_range = False
-
-        # Unit abilities: objective upgrade to re-roll the Hit roll instead of re-rolling 1s.
-        try:
-            if objective_in_range and "reroll" not in hit_result:
-                if isinstance(unit_hit_mods, dict) and unit_hit_mods.get("reroll_hit_full_if_objective"):
-                    try:
-                        success = (dice_roll != 1) and (self.skill > 0) and (dice_roll >= final_needed)
-                    except Exception:
-                        success = False
-                    do_reroll = False
-                    try:
-                        unit = attacker.parent_unit
-                        game = unit.get_parent_army().player.game
-                        player = unit.get_parent_army().player
-                        is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
-                        provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
-                    except Exception:
-                        is_human = False
-                        provider = None
-                        player = None
-                    reason = None
-                    try:
-                        reasons = list(unit_hit_mods.get("reroll_hit_full_reasons", ()) or ())
-                        if reasons:
-                            reason = reasons[0]
-                    except Exception:
-                        reason = None
-                    if is_human and callable(provider):
-                        try:
-                            do_reroll = bool(provider(
-                                player=player,
-                                unit=unit,
-                                roll_type="hit",
-                                value=dice_roll,
-                                dice=None,
-                                needed=final_needed,
-                                success=success,
-                                reason=reason or "Unit ability (objective)",
-                            ))
-                        except Exception:
-                            do_reroll = False
-                    else:
-                        do_reroll = (not success)
-                    if do_reroll:
-                        rr = _reroll_hit()
-                        reasons = list(unit_hit_mods.get("reroll_hit_full_reasons", ()) or ())
-                        if reasons:
-                            hit_result.setdefault("special_effects", []).extend(reasons)
-                        elif reason:
-                            hit_result.setdefault("special_effects", []).append(reason)
-                        hit_result["reroll"] = rr
-                        dice_roll = rr
-                        reroll_used = True
-        except Exception:
-            pass
-
-        # Unit abilities: re-roll Hit rolls of 1 (skip if objective upgrade is present).
-        try:
-            if dice_roll == 1 and "reroll" not in hit_result:
-                if isinstance(unit_hit_mods, dict) and unit_hit_mods.get("reroll_hit_ones", False):
-                    if not (objective_in_range and unit_hit_mods.get("reroll_hit_full_if_objective")):
-                        rr = _reroll_hit()
-                        hit_result.setdefault("special_effects", []).extend(list(unit_hit_mods.get("reroll_hit_reasons", ()) or ()))
-                        hit_result["reroll_of_one"] = 1
-                        hit_result["reroll"] = rr
-                        dice_roll = rr
-                        reroll_used = True
         except Exception:
             pass
 
@@ -2966,7 +2967,26 @@ class WargearProfile:
 
         # Determine critical hit threshold (default 6).
         crit_threshold = 6
+        crit_hit_reasons: list[str] = []
         empowered_sustained = False
+        try:
+            if aura_mods is not None and getattr(aura_mods, "crit_hit_threshold", None):
+                crit_threshold = min(int(crit_threshold), int(aura_mods.crit_hit_threshold))
+                crit_hit_reasons.extend(list(getattr(aura_mods, "crit_hit_reasons", ()) or ()))
+        except Exception:
+            pass
+        try:
+            if isinstance(lead_mods, dict) and lead_mods.get("crit_hit_threshold"):
+                crit_threshold = min(int(crit_threshold), int(lead_mods.get("crit_hit_threshold")))
+                crit_hit_reasons.extend(list(lead_mods.get("crit_hit_reasons", ()) or ()))
+        except Exception:
+            pass
+        try:
+            if isinstance(unit_hit_mods, dict) and unit_hit_mods.get("crit_hit_threshold"):
+                crit_threshold = min(int(crit_threshold), int(unit_hit_mods.get("crit_hit_threshold")))
+                crit_hit_reasons.extend(list(unit_hit_mods.get("crit_hit_reasons", ()) or ()))
+        except Exception:
+            pass
         try:
             unit = attacker.parent_unit
             army = unit.get_parent_army() if unit is not None else None
@@ -3229,6 +3249,8 @@ class WargearProfile:
                 hit_result['special_effects'].append("Natural 6 (auto-hit)")
             elif crit_threshold < 6:
                 hit_result['special_effects'].append(f"Critical hit ({crit_threshold}+)")
+            if crit_hit_reasons:
+                hit_result['special_effects'].extend(crit_hit_reasons)
             attack_instance['crit_hit'] = True
 
             if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal or martial_katah_lethal or bondsman_lethal or pact_lethal or exquisite_lethal or pain_lethal or leading_lethal:
@@ -3655,10 +3677,37 @@ class WargearProfile:
                 bonus = int(lead_mods.get("wound", 0) or 0)
                 dice_modifier += bonus
                 wound_result['modifiers'].extend(list(lead_mods.get("wound_reasons", ()) or ()))
-            unit_wound_mods = unit.get_unit_wound_reroll_modifiers(attack_type)
+            unit_wound_mods = unit.get_unit_wound_reroll_modifiers(attack_type, target=target)
+            if isinstance(unit_wound_mods, dict) and int(unit_wound_mods.get("wound", 0) or 0):
+                bonus = int(unit_wound_mods.get("wound", 0) or 0)
+                dice_modifier += bonus
+                wound_result['modifiers'].extend(list(unit_wound_mods.get("wound_reasons", ()) or ()))
         except Exception:
             lead_mods = None
             unit_wound_mods = None
+
+        crit_wound_threshold = None
+        crit_wound_reasons: list[str] = []
+        try:
+            if aura_mods is not None and getattr(aura_mods, "crit_wound_threshold", None):
+                crit_wound_threshold = int(aura_mods.crit_wound_threshold)
+                crit_wound_reasons.extend(list(getattr(aura_mods, "crit_wound_reasons", ()) or ()))
+        except Exception:
+            pass
+        try:
+            if isinstance(lead_mods, dict) and lead_mods.get("crit_wound_threshold"):
+                val = int(lead_mods.get("crit_wound_threshold"))
+                crit_wound_threshold = val if crit_wound_threshold is None else min(int(crit_wound_threshold), val)
+                crit_wound_reasons.extend(list(lead_mods.get("crit_wound_reasons", ()) or ()))
+        except Exception:
+            pass
+        try:
+            if isinstance(unit_wound_mods, dict) and unit_wound_mods.get("crit_wound_threshold"):
+                val = int(unit_wound_mods.get("crit_wound_threshold"))
+                crit_wound_threshold = val if crit_wound_threshold is None else min(int(crit_wound_threshold), val)
+                crit_wound_reasons.extend(list(unit_wound_mods.get("crit_wound_reasons", ()) or ()))
+        except Exception:
+            pass
 
         # First Prince of Chaos (Shadow Legion Nurgle): -1 to wound if Strength > Toughness.
         try:
@@ -3752,133 +3801,131 @@ class WargearProfile:
         if miracle_used:
             wound_result['special_effects'].append("Miracle die")
 
-        # Strict aura support: re-roll Wound rolls of 1
+        # Value-based and full rerolls from aura/leading/unit rules.
         reroll_used = False
+        reroll_wound_values = set()
+        reroll_value_reasons: list[str] = []
+        reroll_full_reasons: list[str] = []
         try:
-            if dice_roll == 1 and bool(getattr(aura_mods, "reroll_wound_ones", False)):
+            if aura_mods is not None:
+                for v in list(getattr(aura_mods, "reroll_wound_values", ()) or ()):
+                    try:
+                        reroll_wound_values.add(int(v))
+                    except Exception:
+                        continue
+                if bool(getattr(aura_mods, "reroll_wound_ones", False)):
+                    reroll_wound_values.add(1)
+                reroll_value_reasons.extend(list(getattr(aura_mods, "reroll_wound_reasons", ()) or ()))
+                if bool(getattr(aura_mods, "reroll_wound_full", False)):
+                    reroll_full_reasons.extend(list(getattr(aura_mods, "reroll_wound_full_reasons", ()) or ()))
+        except Exception:
+            pass
+        try:
+            if isinstance(lead_mods, dict):
+                for v in list(lead_mods.get("reroll_wound_values", ()) or ()):
+                    try:
+                        reroll_wound_values.add(int(v))
+                    except Exception:
+                        continue
+                if bool(lead_mods.get("reroll_wound_ones", False)):
+                    reroll_wound_values.add(1)
+                reroll_value_reasons.extend(list(lead_mods.get("reroll_wound_reasons", ()) or ()))
+                if bool(lead_mods.get("reroll_wound_full", False)):
+                    reroll_full_reasons.extend(list(lead_mods.get("reroll_wound_full_reasons", ()) or ()))
+        except Exception:
+            pass
+        try:
+            if isinstance(unit_wound_mods, dict):
+                for v in list(unit_wound_mods.get("reroll_wound_values", ()) or ()):
+                    try:
+                        reroll_wound_values.add(int(v))
+                    except Exception:
+                        continue
+                if bool(unit_wound_mods.get("reroll_wound_ones", False)):
+                    reroll_wound_values.add(1)
+                reroll_value_reasons.extend(list(unit_wound_mods.get("reroll_wound_reasons", ()) or ()))
+                if bool(unit_wound_mods.get("reroll_wound_full", False)):
+                    reroll_full_reasons.extend(list(unit_wound_mods.get("reroll_wound_full_reasons", ()) or ()))
+        except Exception:
+            pass
+
+        try:
+            if dice_roll in reroll_wound_values and "reroll" not in wound_result:
                 rr = _reroll_wound()
-                wound_result.setdefault("special_effects", []).append("Aura: re-roll Wound rolls of 1")
-                wound_result.setdefault("special_effects", []).extend(list(getattr(aura_mods, "reroll_wound_reasons", ()) or ()))
-                wound_result["reroll_of_one"] = 1
+                if reroll_value_reasons:
+                    wound_result.setdefault("special_effects", []).extend(reroll_value_reasons)
+                else:
+                    wound_result.setdefault("special_effects", []).append("Re-roll Wound roll")
+                if dice_roll == 1:
+                    wound_result["reroll_of_one"] = 1
                 wound_result["reroll"] = rr
                 dice_roll = rr
                 reroll_used = True
         except Exception:
             pass
 
-        # Leading abilities: re-roll Wound rolls of 1
         try:
-            if dice_roll == 1 and "reroll" not in wound_result:
-                if isinstance(lead_mods, dict) and bool(lead_mods.get("reroll_wound_ones", False)):
+            if reroll_full_reasons and "reroll" not in wound_result:
+                needed = 0
+                try:
+                    s_val = strength
+                    t_val = target_toughness
+                    if isinstance(s_val, int) and isinstance(t_val, int):
+                        if s_val >= 2 * t_val:
+                            needed = 2
+                        elif s_val > t_val:
+                            needed = 3
+                        elif s_val == t_val:
+                            needed = 4
+                        elif s_val * 2 <= t_val:
+                            needed = 6
+                        else:
+                            needed = 5
+                except Exception:
+                    needed = 0
+                final_needed = needed
+                try:
+                    final_needed = int(min(max(int(final_needed) - int(dice_modifier), 2), 6))
+                except Exception:
+                    pass
+                try:
+                    success = (dice_roll != 1) and (bool(final_needed) and dice_roll >= int(final_needed))
+                except Exception:
+                    success = False
+                do_reroll = False
+                try:
+                    unit = attacker.parent_unit
+                    game = unit.get_parent_army().player.game
+                    player = unit.get_parent_army().player
+                    is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                    provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                except Exception:
+                    is_human = False
+                    provider = None
+                    player = None
+                reason = reroll_full_reasons[0] if reroll_full_reasons else "Unit ability"
+                if is_human and callable(provider):
+                    try:
+                        do_reroll = bool(provider(
+                            player=player,
+                            unit=unit,
+                            roll_type="wound",
+                            value=dice_roll,
+                            dice=None,
+                            needed=final_needed,
+                            success=success,
+                            reason=reason,
+                        ))
+                    except Exception:
+                        do_reroll = False
+                else:
+                    do_reroll = (not success)
+                if do_reroll:
                     rr = _reroll_wound()
-                    wound_result.setdefault("special_effects", []).append("Leading: re-roll Wound rolls of 1")
-                    wound_result.setdefault("special_effects", []).extend(list(lead_mods.get("reroll_wound_reasons", ()) or ()))
-                    wound_result["reroll_of_one"] = 1
+                    wound_result.setdefault("special_effects", []).extend(reroll_full_reasons)
                     wound_result["reroll"] = rr
                     dice_roll = rr
                     reroll_used = True
-        except Exception:
-            pass
-
-        objective_in_range = False
-        try:
-            if isinstance(unit_wound_mods, dict) and unit_wound_mods.get("reroll_wound_full_if_objective"):
-                unit = attacker.parent_unit
-                army = unit.get_parent_army() if unit is not None else None
-                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
-                if game is not None and hasattr(game, "_unit_within_range_of_objective"):
-                    objective_in_range = bool(game._unit_within_range_of_objective(target))
-        except Exception:
-            objective_in_range = False
-
-        # Unit abilities: objective upgrade to re-roll the Wound roll instead of re-rolling 1s.
-        try:
-            if objective_in_range and "reroll" not in wound_result:
-                if isinstance(unit_wound_mods, dict) and unit_wound_mods.get("reroll_wound_full_if_objective"):
-                    needed = 0
-                    try:
-                        s_val = strength
-                        t_val = target_toughness
-                        if isinstance(s_val, int) and isinstance(t_val, int):
-                            if s_val >= 2 * t_val:
-                                needed = 2
-                            elif s_val > t_val:
-                                needed = 3
-                            elif s_val == t_val:
-                                needed = 4
-                            elif s_val * 2 <= t_val:
-                                needed = 6
-                            else:
-                                needed = 5
-                    except Exception:
-                        needed = 0
-                    final_needed = needed
-                    try:
-                        final_needed = int(min(max(int(final_needed) - int(dice_modifier), 2), 6))
-                    except Exception:
-                        pass
-                    try:
-                        success = (dice_roll != 1) and (bool(final_needed) and dice_roll >= int(final_needed))
-                    except Exception:
-                        success = False
-                    do_reroll = False
-                    try:
-                        unit = attacker.parent_unit
-                        game = unit.get_parent_army().player.game
-                        player = unit.get_parent_army().player
-                        is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
-                        provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
-                    except Exception:
-                        is_human = False
-                        provider = None
-                        player = None
-                    reason = None
-                    try:
-                        reasons = list(unit_wound_mods.get("reroll_wound_full_reasons", ()) or ())
-                        if reasons:
-                            reason = reasons[0]
-                    except Exception:
-                        reason = None
-                    if is_human and callable(provider):
-                        try:
-                            do_reroll = bool(provider(
-                                player=player,
-                                unit=unit,
-                                roll_type="wound",
-                                value=dice_roll,
-                                dice=None,
-                                needed=final_needed,
-                                success=success,
-                                reason=reason or "Unit ability (objective)",
-                            ))
-                        except Exception:
-                            do_reroll = False
-                    else:
-                        do_reroll = (not success)
-                    if do_reroll:
-                        rr = _reroll_wound()
-                        reasons = list(unit_wound_mods.get("reroll_wound_full_reasons", ()) or ())
-                        if reasons:
-                            wound_result.setdefault("special_effects", []).extend(reasons)
-                        elif reason:
-                            wound_result.setdefault("special_effects", []).append(reason)
-                        wound_result["reroll"] = rr
-                        dice_roll = rr
-                        reroll_used = True
-        except Exception:
-            pass
-
-        # Unit abilities: re-roll Wound rolls of 1 (skip if objective upgrade is present).
-        try:
-            if dice_roll == 1 and "reroll" not in wound_result:
-                if isinstance(unit_wound_mods, dict) and unit_wound_mods.get("reroll_wound_ones", False):
-                    if not (objective_in_range and unit_wound_mods.get("reroll_wound_full_if_objective")):
-                        rr = _reroll_wound()
-                        wound_result.setdefault("special_effects", []).extend(list(unit_wound_mods.get("reroll_wound_reasons", ()) or ()))
-                        wound_result["reroll_of_one"] = 1
-                        wound_result["reroll"] = rr
-                        dice_roll = rr
-                        reroll_used = True
         except Exception:
             pass
 
@@ -4818,6 +4865,28 @@ class WargearProfile:
             wound_result['final_needed'] = final_needed
             if strength_comparison:
                 wound_result.setdefault('strength_comparison', strength_comparison)
+            if crit_wound_threshold is not None:
+                try:
+                    threshold = int(crit_wound_threshold)
+                except Exception:
+                    threshold = None
+                if threshold is not None and roll >= threshold and roll >= final_needed:
+                    wound_result['special_effects'].append(f"Critical wound ({threshold}+)")
+                    if crit_wound_reasons:
+                        wound_result['special_effects'].extend(list(crit_wound_reasons))
+                    attack_instance['crit_wound'] = True
+                    has_temp_dev = False
+                    try:
+                        has_temp_dev = bool(getattr(attacker, "has_temporary_devastating_wounds_melee", lambda: False)())
+                        if has_temp_dev:
+                            is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+                            has_temp_dev = bool(is_melee)
+                    except Exception:
+                        has_temp_dev = False
+                    if self.is_devastating_wounds() or _devastating_from_blessings() or _devastating_from_pain() or has_temp_dev:
+                        wound_result['special_effects'].append("Devastating Wounds")
+                        attack_instance['mortal_wound'] = True
+                    return True
             return roll >= final_needed
 
         # First attempt
