@@ -1545,13 +1545,13 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
             notes.append(f"{leading_prefix}Objective Control for the unit +{m.group(1)}.")
 
     m = re.search(
-        r"models?\s+in\s+the\s+bearer'?s\s+unit\s+have\s+(?:a\s+|the\s+)?feel\s+no\s+pain\s*(\d+)\+",
+        r"models?\s+in\s+the\s+bearer'?s\s+unit\s+have\s+(?:a\s+|the\s+)?feel\s+no\s+pain\s*([1-6])\+?(?:\s+ability)?",
         low,
         flags=re.IGNORECASE,
     )
     if not m and leading_prefix:
         m = re.search(
-            r"models?\s+in\s+that\s+unit\s+have\s+(?:a\s+|the\s+)?feel\s+no\s+pain\s*(\d+)\+",
+            r"models?\s+in\s+that\s+unit\s+have\s+(?:a\s+|the\s+)?feel\s+no\s+pain\s*([1-6])\+?(?:\s+ability)?",
             low,
             flags=re.IGNORECASE,
         )
@@ -1632,7 +1632,7 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         rf"{lead_prefix}reroll charge rolls .* set up on the battlefield",
         rf"{lead_prefix}models in {unit_ref} have a leadership characteristic of \d+",
         rf"{lead_prefix}add \d+ to the objective control characteristic of (?:models in )?{unit_ref}",
-        rf"{lead_prefix}models? in {unit_ref} have (?:a|the)? feel no pain \d+",
+        rf"{lead_prefix}models? in {unit_ref} have (?:a|the)? feel no pain [1-6](?: ability)?",
         rf"{lead_prefix}(?:melee |ranged )?weapons equipped by models in {unit_ref} have the sustained hits \d+ ability",
         rf"{lead_prefix}(?:melee |ranged )?(?:weapons equipped by models in|attacks made by models in) {unit_ref} .* ignores cover",
         rf"{lead_prefix}each time (?:a|an) (?:melee |ranged )?attack targets {unit_ref} subtract 1 from the hit roll",

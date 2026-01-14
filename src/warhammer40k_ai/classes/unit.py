@@ -803,7 +803,7 @@ class Unit:
         re.IGNORECASE,
     )
     _BEARER_UNIT_FNP_RE = re.compile(
-        r"(?:models\s+in\s+)?the\s+bearer'?s\s+unit.*?\bfeel\s+no\s+pain\b\s*(\d+)\+",
+        r"(?:models\s+in\s+)?the\s+bearer'?s\s+unit.*?\bfeel\s+no\s+pain\b\s*([1-6])\+",
         re.IGNORECASE,
     )
     _BEARER_UNIT_SUSTAINED_HITS_RE = re.compile(
@@ -1446,7 +1446,11 @@ class Unit:
                 if not text:
                     continue
                 text = text.replace("\u2019", "'").replace("\u0192?T", "'")
-                if "leading a unit" in text.lower() and "bearer's unit" not in text.lower():
+                text_lower = text.lower()
+                requires_attached_leader = bool(re.search(r"\bthis model is leading\b", text_lower))
+                if requires_attached_leader and not getattr(u, "is_attached_leader", False):
+                    continue
+                if "leading a unit" in text_lower and "bearer's unit" not in text_lower:
                     text = re.sub(r"\bthat unit\b", "the bearer's unit", text, flags=re.IGNORECASE)
 
                 for sentence in _iter_sentences(text):
@@ -1524,7 +1528,7 @@ class Unit:
                             try:
                                 sm = sentence.lower()
                                 cm = re.search(
-                                    r"(?:feel\s+no\s+pain|fnp)\s*\(?\d+\+(?:\)?)\s+(against|while|when)\s+(.+)",
+                                    r"(?:feel\s+no\s+pain|fnp)\s*\(?[1-6]\+(?:\)?)\s+(?:ability\s+)?(against|while|when)\s+(.+)",
                                     sm,
                                     flags=re.IGNORECASE,
                                 )
