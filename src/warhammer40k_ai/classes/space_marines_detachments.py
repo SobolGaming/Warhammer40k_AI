@@ -46,6 +46,12 @@ DETACHMENT_CHAPTER_OVERRIDES = {
     "lion's blade task force": "DARK ANGELS",
 }
 
+_CHAPTER_RESTRICTION_RE = re.compile(
+    r"\byour army can include\s+(.+?)\s+units?\s*,?\s*but it cannot include\s+(?:any\s+)?"
+    r"adeptus astartes units drawn from any other chapter",
+    flags=re.IGNORECASE,
+)
+
 
 def _strip_html(text: str) -> str:
     if not text:
@@ -53,6 +59,34 @@ def _strip_html(text: str) -> str:
     t = html.unescape(str(text))
     t = re.sub(r"<[^>]+>", " ", t)
     return re.sub(r"\s+", " ", t).strip()
+
+
+def _chapter_from_restriction(text: str) -> str | None:
+    if not text:
+        return None
+    text = text.replace("\u2019", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    matches = _CHAPTER_RESTRICTION_RE.findall(text)
+    if not matches:
+        return None
+    chapters = set()
+    for raw in matches:
+        cleaned = re.sub(r"\badeptus astartes\b", "", raw, flags=re.IGNORECASE).strip()
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        if not cleaned:
+            cleaned = raw.strip()
+        cleaned = cleaned.strip(" .")
+        if not cleaned:
+            continue
+        upper = cleaned.upper()
+        if upper in ("ADEPTUS ASTARTES", "SPACE MARINES"):
+            continue
+        chapters.add(upper)
+    if len(chapters) == 1:
+        return next(iter(chapters))
+    return None
 
 
 @lru_cache(maxsize=1)
@@ -76,6 +110,12 @@ def _chapter_detachment_map() -> dict[str, str]:
             continue
         desc = _strip_html(row.get("description") or "")
         if not desc:
+            continue
+        chapter = _chapter_from_restriction(desc)
+        if chapter:
+            det_key = _normalize_detachment_name(det)
+            if det_key not in out:
+                out[det_key] = chapter
             continue
         found = set()
         upper = desc.upper()

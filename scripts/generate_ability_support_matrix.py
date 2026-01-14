@@ -1177,8 +1177,16 @@ def _classify_ability(
             return mapped
 
     desc_support = _warlord_enhancement_restriction_support(description)
+    chapter_restriction_support = None
+    if description:
+        if "RESTRICTIONS" not in description.upper():
+            chapter_restriction_support = _space_marine_chapter_restriction_support(description)
+    else:
+        chapter_restriction_support = _space_marine_chapter_restriction_support(name)
     if desc_support:
         return desc_support
+    if chapter_restriction_support:
+        return chapter_restriction_support
     closest_m_veh_support = _closest_monster_vehicle_reroll_support(description)
     unit_contains_oc_support = _unit_contains_oc_support(description)
     aura_oc_support = _aura_objective_control_support(description)
@@ -1308,6 +1316,24 @@ def _warlord_enhancement_restriction_support(description: str) -> Optional[Tuple
     if has_warlord:
         return ("Supported", "Unit cannot be your Warlord.")
     return ("Supported", "Unit cannot be given Enhancements.")
+
+
+def _space_marine_chapter_restriction_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    restriction_re = re.compile(
+        r"\byour army can include\s+.+?\s+units?\s*,?\s*but it cannot include\s+(?:any\s+)?"
+        r"adeptus astartes units drawn from any other chapter",
+        flags=re.IGNORECASE,
+    )
+    if restriction_re.search(text):
+        return ("Supported", "Space Marine chapter restriction enforced during army validation.")
+    return None
 
 
 def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
