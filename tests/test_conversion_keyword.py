@@ -63,8 +63,75 @@ class TestConversionKeyword(unittest.TestCase):
         """Test that Conversion keyword is properly detected."""
         profile = self._make_ranged_profile("conversion")
         self.assertTrue(profile.is_conversion())
+        # Without attacker, should default to 12.0
         self.assertEqual(profile.get_conversion_distance(), 12.0)
         self.assertEqual(profile.get_conversion_crit_threshold(), 4)
+
+    def test_conversion_distance_parsing_12_inches(self):
+        """Test that Conversion distance is parsed from unit ability (12\")."""
+        # Create a mock datasheet with Conversion ability at 12"
+        class MockDatasheet:
+            datasheets_abilities = [{
+                "name": "Conversion",
+                "description": 'Each time an attack made with this weapon targets a unit more than 12" from the bearer, an unmodified successful Hit roll of 4+ scores a Critical Hit.',
+                "type": "Wargear profile"
+            }]
+
+        class MockUnit:
+            datasheet = MockDatasheet()
+
+        attacker = SimpleNamespace(
+            name="Test Model",
+            parent_unit=MockUnit()
+        )
+
+        profile = self._make_ranged_profile("conversion")
+        distance = profile.get_conversion_distance(attacker)
+        self.assertEqual(distance, 12.0)
+
+    def test_conversion_distance_parsing_18_inches(self):
+        """Test that Conversion distance is parsed from unit ability (18\")."""
+        # Create a mock datasheet with Conversion ability at 18"
+        class MockDatasheet:
+            datasheets_abilities = [{
+                "name": "Conversion",
+                "description": 'Each time an attack made with this weapon targets a unit more than 18" from the bearer, an unmodified successful Hit roll of 4+ scores a Critical Hit.',
+                "type": "Wargear profile"
+            }]
+
+        class MockUnit:
+            datasheet = MockDatasheet()
+
+        attacker = SimpleNamespace(
+            name="Test Model",
+            parent_unit=MockUnit()
+        )
+
+        profile = self._make_ranged_profile("conversion")
+        distance = profile.get_conversion_distance(attacker)
+        self.assertEqual(distance, 18.0)
+
+    def test_conversion_distance_parsing_24_inches(self):
+        """Test that Conversion distance is parsed from unit ability (24\")."""
+        # Create a mock datasheet with Conversion ability at 24"
+        class MockDatasheet:
+            datasheets_abilities = [{
+                "name": "Conversion",
+                "description": 'Each time an attack is made with this weapon, if the target is more than 24" from the bearer, an unmodified successful Hit roll of 4+ scores a Critical Hit.',
+                "type": "Wargear profile"
+            }]
+
+        class MockUnit:
+            datasheet = MockDatasheet()
+
+        attacker = SimpleNamespace(
+            name="Test Model",
+            parent_unit=MockUnit()
+        )
+
+        profile = self._make_ranged_profile("conversion")
+        distance = profile.get_conversion_distance(attacker)
+        self.assertEqual(distance, 24.0)
     
     def test_conversion_inactive_within_threshold(self):
         """Test that Conversion does not activate when target is within 12"."""
@@ -230,6 +297,83 @@ class TestConversionKeyword(unittest.TestCase):
         effects_str = str(res.get("special_effects", []))
         # Should mention Natural 6, not Conversion
         self.assertIn("Natural 6", effects_str)
+
+    def test_conversion_with_dark_pacts_lethal_hits(self):
+        """Test that Conversion-upgraded crits apply Dark Pacts Lethal Hits."""
+        profile = self._make_ranged_profile("conversion")
+
+        # Create attacker with Dark Pacts active
+        class _Unit:
+            special_rules = {
+                "dark_pacts_active": True,
+                "dark_pacts_choice": "LETHAL HITS"
+            }
+            def get_parent_army(self):
+                return None
+            def get_attached_unit_root(self):
+                return self
+
+        unit = _Unit()
+        attacker = SimpleNamespace(
+            name="Attacker",
+            parent_unit=unit,
+        )
+
+        def mock_closest(target_unit):
+            return (SimpleNamespace(is_alive=True), 13.0)
+
+        attacker.return_closest_model_in_unit = mock_closest
+
+        target = self._make_target()
+        attack_instance = {'conversion_active': True}
+
+        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=4):
+            res = profile._hit_target_with_tracking(target, attacker, attack_instance)
+
+        # Should be critical from Conversion, and Dark Pacts Lethal Hits should apply
+        self.assertTrue(res["hit"])
+        self.assertTrue(attack_instance.get("crit_hit", False))
+        self.assertTrue(attack_instance.get("lethal_hit", False))
+        self.assertIn("Conversion", str(res.get("special_effects", [])))
+        self.assertIn("Lethal Hits", str(res.get("special_effects", [])))
+
+    def test_conversion_with_bondsman_sustained_hits(self):
+        """Test that Conversion-upgraded crits apply Bondsman Sustained Hits."""
+        profile = self._make_ranged_profile("conversion")
+
+        # Create attacker with Bondsman Sustained Hits
+        class _Unit:
+            special_rules = {
+                "bondsman_sustained_hits": True
+            }
+            def get_parent_army(self):
+                return None
+            def get_attached_unit_root(self):
+                return self
+
+        unit = _Unit()
+        attacker = SimpleNamespace(
+            name="Attacker",
+            parent_unit=unit,
+        )
+
+        def mock_closest(target_unit):
+            return (SimpleNamespace(is_alive=True), 13.0)
+
+        attacker.return_closest_model_in_unit = mock_closest
+
+        target = self._make_target()
+        attack_instance = {'conversion_active': True}
+
+        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=5):
+            res = profile._hit_target_with_tracking(target, attacker, attack_instance)
+
+        # Should be critical from Conversion, and Bondsman Sustained Hits should apply
+        self.assertTrue(res["hit"])
+        self.assertTrue(attack_instance.get("crit_hit", False))
+        self.assertGreater(attack_instance.get("sustained_hit", 0), 0)
+        self.assertIn("Conversion", str(res.get("special_effects", [])))
+        self.assertIn("Sustained Hits", str(res.get("special_effects", [])))
 
 
 if __name__ == "__main__":

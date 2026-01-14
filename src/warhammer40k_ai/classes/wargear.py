@@ -926,11 +926,11 @@ class WargearProfile:
 
         # CONVERSION: Determine if Conversion is active for this attack sequence
         # Conversion grants critical hits on unmodified successful hit rolls of 4+
-        # when the target is more than a specified distance (usually 12") from the bearer
+        # when the target is more than a specified distance (12"/18"/24") from the bearer
         conversion_active = False
         conversion_distance_threshold = 0.0
         if self.is_conversion():
-            conversion_distance_threshold = self.get_conversion_distance()
+            conversion_distance_threshold = self.get_conversion_distance(attacker)
             # Strict greater-than check per rules ("more than X")
             conversion_active = closest_dist > conversion_distance_threshold
             if conversion_active:
@@ -3205,34 +3205,53 @@ class WargearProfile:
                     f"Conversion: Critical Hit (unmodified {unmod}+ successful hit)"
                 )
 
-                # Apply Lethal Hits if present (same logic as baseline critical above)
-                # Note: We need to check all the same sources as the baseline critical section
-                is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+                # Apply ALL critical hit effects (same logic as baseline critical section)
+                # This includes weapon-native AND unit/ability-based Lethal/Sustained hits
 
-                # Check for Lethal Hits from various sources
-                conversion_lethal = False
-                conversion_sustained = False
-
-                if self.is_lethal_hits():
-                    conversion_lethal = True
-                if self.is_sustained_hits():
-                    conversion_sustained = True
-
-                # Apply Lethal Hits if weapon has it
-                if conversion_lethal and not attack_instance.get('lethal_hit', False):
+                # Apply Lethal Hits from all sources (same as baseline critical)
+                if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal or martial_katah_lethal or bondsman_lethal or pact_lethal or exquisite_lethal or pain_lethal or leading_lethal:
                     hit_result['special_effects'].append("Lethal Hits")
                     attack_instance['lethal_hit'] = True
 
-                # Apply Sustained Hits if weapon has it
-                if conversion_sustained and not attack_instance.get('sustained_hit', 0):
-                    try:
-                        sh = self.get_sustained_hits_bonus()
-                        sh_val = int(sh.resolve())
-                        hit_result['special_effects'].append(f"Sustained Hits {sh} (+{sh_val})")
-                        attack_instance['sustained_hit'] = sh_val
-                    except Exception:
-                        hit_result['special_effects'].append("Sustained Hits (+1)")
-                        attack_instance['sustained_hit'] = 1
+                # Apply Sustained Hits from all sources (same as baseline critical)
+                if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or bearer_unit_sustained or blitzing_grants_sustained:
+                    # Support Sustained Hits X / Sustained Hits D3 / etc. Roll per critical hit.
+                    if self.is_sustained_hits():
+                        try:
+                            sh = self.get_sustained_hits_bonus()
+                            sh_val = int(sh.resolve())
+                            hit_result['special_effects'].append(f"Sustained Hits {sh} (+{sh_val})")
+                            attack_instance['sustained_hit'] = sh_val
+                        except Exception:
+                            hit_result['special_effects'].append("Sustained Hits (+1)")
+                            attack_instance['sustained_hit'] = 1
+                    else:
+                        label = "Sustained Hits (+1)"
+                        if blessings_sustained:
+                            label += " [Blessings of Khorne]"
+                        elif dark_pacts_sustained:
+                            label += " [Dark Pacts]"
+                        elif martial_katah_sustained:
+                            label += " [Martial Ka'tah]"
+                        elif bondsman_sustained or bondsman_sustained_ranged:
+                            label += " [Bondsman]"
+                        elif pact_sustained:
+                            label += " [Pact Points]"
+                        elif exquisite_sustained:
+                            label += " [Exquisite Swordsmanship]"
+                        elif empowered_sustained:
+                            label += " [Daemonic Empowerment]"
+                        elif pain_sustained:
+                            label += " [Power from Pain]"
+                        elif bearer_unit_sustained:
+                            if bearer_unit_sustained_value > 1:
+                                label = f"Sustained Hits (+{bearer_unit_sustained_value}) [Bearer Unit]"
+                            else:
+                                label += " [Bearer Unit]"
+                        elif blitzing_grants_sustained:
+                            label += " [Blitzing Firepower]"
+                        hit_result['special_effects'].append(label)
+                        attack_instance['sustained_hit'] = max(bearer_unit_sustained_value, pain_sustained_value) if (bearer_unit_sustained or pain_sustained) else 1
 
         return hit_result
 
@@ -5693,18 +5712,41 @@ class WargearProfile:
         """Check if weapon has Conversion keyword."""
         return 'conversion' in [keyword.lower() for keyword in self.get_keywords()]
 
-    def get_conversion_distance(self) -> float:
+    def get_conversion_distance(self, attacker: Optional['Model'] = None) -> float:
         """
-        Extract distance threshold from Conversion keyword.
-        Returns 12.0 by default (most common), or 24.0 if specified.
+        Extract distance threshold from Conversion keyword by parsing the unit's
+        Conversion ability description from Datasheets_abilities.json.
 
-        Note: Wahapedia data shows "conversion" without explicit distance parameter,
-        so we default to 12.0 (the most common threshold). Some weapons use 24.0,
-        which may need to be handled via weapon description parsing or a lookup table.
+        The Conversion ability description contains text like:
+        "more than 12\" from the bearer" or "more than 24\" from the bearer"
+
+        Args:
+            attacker: Optional Model to get the unit's datasheet abilities from
+
+        Returns:
+            Distance threshold in inches (12.0, 18.0, or 24.0). Defaults to 12.0 if parsing fails.
         """
-        # Most Conversion weapons use 12", some use 24"
-        # Since Wahapedia doesn't parameterize this in the keyword string,
-        # we default to 12.0 (conservative and most common)
+        # Try to parse distance from unit's Conversion ability
+        if attacker is not None:
+            try:
+                unit = getattr(attacker, "parent_unit", None)
+                if unit is not None:
+                    datasheet = getattr(unit, "datasheet", None)
+                    if datasheet is not None:
+                        abilities = getattr(datasheet, "datasheets_abilities", [])
+                        for ability in abilities:
+                            if isinstance(ability, dict) and ability.get("name", "").lower() == "conversion":
+                                description = ability.get("description", "")
+                                # Parse "more than XX" from description
+                                import re
+                                match = re.search(r'more than (\d+)"', description)
+                                if match:
+                                    distance = float(match.group(1))
+                                    return distance
+            except Exception:
+                pass
+
+        # Default to 12.0 if parsing fails or no attacker provided
         return 12.0
 
     def get_conversion_crit_threshold(self) -> int:
