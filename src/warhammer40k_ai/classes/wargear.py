@@ -834,6 +834,28 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Dead Choppy: +1 Attacks for each additional dread klaw equipped
+        try:
+            if self.is_dead_choppy():
+                # Count how many dread klaws this model has
+                dread_klaw_count = 0
+                try:
+                    model_wargear = getattr(attacker, "wargear", []) or []
+                    for wg in model_wargear:
+                        wg_name = str(getattr(wg, "name", "") or "").strip().lower()
+                        if "dread klaw" in wg_name:
+                            dread_klaw_count += 1
+                except Exception:
+                    dread_klaw_count = 0
+
+                # Add +1A for each additional dread klaw (beyond the first)
+                if dread_klaw_count > 1:
+                    bonus = dread_klaw_count - 1
+                    atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="weapon:dead_choppy"))
+                    attack_result.attacks_special_modifiers.append(f"Dead Choppy +{bonus}A ({dread_klaw_count} dread klaws)")
+        except Exception:
+            pass
+
         # Damaged profile: add attacks to a specific named weapon (+N).
         try:
             wname = str(getattr(attacker.parent_unit, "special_rules", {}).get("damaged_attacks_bonus_weapon_name", "") or "").strip().lower()
@@ -3240,7 +3262,41 @@ class WargearProfile:
 
         # Normal hit resolution
         hit_result['hit'] = self.skill > 0 and dice_roll >= final_needed
-        
+
+        # Ork charge-related keywords: track hits against MONSTER/VEHICLE units
+        # These keywords grant +2 to charge rolls and some prevent Overwatch
+        if hit_result['hit']:
+            try:
+                # Check if target is MONSTER or VEHICLE
+                is_monster_or_vehicle = False
+                try:
+                    is_monster_or_vehicle = target.has_keyword("Monster") or target.has_keyword("Vehicle")
+                except Exception:
+                    is_monster_or_vehicle = False
+
+                if is_monster_or_vehicle:
+                    # Harpooned: +2 to charge rolls against hit MONSTER/VEHICLE
+                    if self.is_harpooned():
+                        attack_instance['harpooned_target'] = True
+                        hit_result['special_effects'].append("Harpooned (charge bonus)")
+
+                    # Hooked: +2 to charge rolls and prevents Overwatch
+                    if self.is_hooked():
+                        attack_instance['hooked_target'] = True
+                        hit_result['special_effects'].append("Hooked (charge bonus + no Overwatch)")
+
+                    # Impaled: +2 to charge rolls against hit MONSTER/VEHICLE
+                    if self.is_impaled():
+                        attack_instance['impaled_target'] = True
+                        hit_result['special_effects'].append("Impaled (charge bonus)")
+
+                    # Snagged: +2 to charge rolls and prevents Overwatch
+                    if self.is_snagged():
+                        attack_instance['snagged_target'] = True
+                        hit_result['special_effects'].append("Snagged (charge bonus + no Overwatch)")
+            except Exception:
+                pass
+
         return hit_result
 
     def _wound_target_with_tracking(self, target: 'Unit', attacker: 'Model', attack_instance: Dict) -> Dict:
@@ -5736,6 +5792,33 @@ class WargearProfile:
     def get_melta_bonus(self) -> Count:
         # Defaults to Melta 1 when unspecified
         return self._get_keyword_suffix_count("melta", default=1)
+
+    ###########################################################################
+    ### Ork-specific keyword detection methods
+    ###########################################################################
+    def is_bubblechukka(self) -> bool:
+        """Check if this weapon has the Bubblechukka keyword."""
+        return 'bubblechukka' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def is_dead_choppy(self) -> bool:
+        """Check if this weapon has the Dead Choppy keyword."""
+        return 'dead choppy' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def is_harpooned(self) -> bool:
+        """Check if this weapon has the Harpooned keyword."""
+        return 'harpooned' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def is_hooked(self) -> bool:
+        """Check if this weapon has the Hooked keyword."""
+        return 'hooked' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def is_impaled(self) -> bool:
+        """Check if this weapon has the Impaled keyword."""
+        return 'impaled' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def is_snagged(self) -> bool:
+        """Check if this weapon has the Snagged keyword."""
+        return 'snagged' in [keyword.lower() for keyword in self.get_keywords()]
 
     def get_anti_specs(self) -> list[tuple[str, int]]:
         """Return all Anti-<keyword> <value>+ specs present on this profile (best-effort)."""
