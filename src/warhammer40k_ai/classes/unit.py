@@ -6115,7 +6115,35 @@ class Unit:
         if condition.target_within_range is not None:
             try:
                 from ..utility.aura_utils import unit_within_range_of_unit
-                if target is None or not unit_within_range_of_unit(unit, target, float(condition.target_within_range), use_attached_aggregate=True):
+                t_unit = target
+                if t_unit is not None and not hasattr(t_unit, "get_attached_unit_root"):
+                    t_unit = getattr(t_unit, "parent_unit", t_unit)
+                if t_unit is None:
+                    return False
+                game = None
+                try:
+                    game = getattr(getattr(unit.get_parent_army(), "player", None), "game", None)
+                except Exception:
+                    game = None
+                if game is None:
+                    try:
+                        game = getattr(getattr(t_unit.get_parent_army(), "player", None), "game", None)
+                    except Exception:
+                        game = None
+                game_map = getattr(game, "map", None) if game is not None else None
+                if game_map is not None:
+                    placed = list(getattr(game_map, "units", []) or [])
+                    try:
+                        s_root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+                    except Exception:
+                        s_root = unit
+                    try:
+                        t_root = t_unit.get_attached_unit_root() if hasattr(t_unit, "get_attached_unit_root") else t_unit
+                    except Exception:
+                        t_root = t_unit
+                    if s_root not in placed or t_root not in placed:
+                        return False
+                if not unit_within_range_of_unit(unit, t_unit, float(condition.target_within_range), use_attached_aggregate=True):
                     return False
             except Exception:
                 return False
@@ -6130,6 +6158,12 @@ class Unit:
                 except Exception:
                     can_fly = False
             if bool(condition.target_can_fly) != bool(can_fly):
+                return False
+        if condition.target_below_starting_strength:
+            try:
+                if not (target is not None and target.is_below_starting_strength()):
+                    return False
+            except Exception:
                 return False
         if condition.target_below_half_strength:
             try:
@@ -6263,6 +6297,8 @@ class Unit:
                     parts.append("vs CHARACTER targets")
                 elif set(cond.target_keywords_any) == {"monster", "vehicle"}:
                     parts.append("vs MONSTER/VEHICLE targets")
+            if cond.target_below_starting_strength:
+                parts.append("vs targets below Starting Strength")
             if cond.target_below_half_strength:
                 parts.append("vs targets below Half-strength")
             if cond.target_exclude_keywords_any:
@@ -6364,6 +6400,39 @@ class Unit:
         reroll_hit_values: set[int] = set()
         crit_hit_threshold = None
 
+        def _cond_suffix(cond: Optional[AttackRollCondition]) -> str:
+            if not cond:
+                return ""
+            parts = []
+            if cond.target_battleshocked:
+                parts.append("vs Battle-shocked targets")
+            if cond.attacker_below_starting_strength:
+                parts.append("while below Starting Strength")
+            if cond.attacker_below_half_strength:
+                parts.append("while below Half-strength")
+            if cond.target_within_objective:
+                parts.append("vs targets within objective range")
+            if cond.target_within_range is not None:
+                parts.append(f"vs targets within {cond.target_within_range}\"")
+            if cond.target_can_fly is True:
+                parts.append("vs FLY targets")
+            if cond.target_can_fly is False:
+                parts.append("vs non-FLY targets")
+            if cond.target_keywords_any:
+                if set(cond.target_keywords_any) == {"character"}:
+                    parts.append("vs CHARACTER targets")
+                elif set(cond.target_keywords_any) == {"monster", "vehicle"}:
+                    parts.append("vs MONSTER/VEHICLE targets")
+            if cond.target_below_starting_strength:
+                parts.append("vs targets below Starting Strength")
+            if cond.target_below_half_strength:
+                parts.append("vs targets below Half-strength")
+            if cond.target_exclude_keywords_any:
+                parts.append("excluding " + ", ".join(cond.target_exclude_keywords_any))
+            if not parts:
+                return ""
+            return " (" + "; ".join(parts) + ")"
+
         for rule, name in list(rules or []):
             if atype != "any" and rule.attack_type not in ("any", atype):
                 continue
@@ -6378,19 +6447,19 @@ class Unit:
                     if eff.kind == "sub":
                         val = -val
                     mods["hit"] += val
-                    hit_reasons.append(f"{val:+d} to hit from {label}")
+                    hit_reasons.append(f"{val:+d} to hit from {label}{_cond_suffix(eff.condition)}")
                 elif eff.kind == "reroll":
                     if eff.reroll_full:
                         mods["reroll_hit_full"] = True
-                        reroll_hit_full_reasons.append(f"{label}: re-roll Hit roll")
+                        reroll_hit_full_reasons.append(f"{label}: re-roll Hit roll{_cond_suffix(eff.condition)}")
                     if eff.reroll_values:
                         reroll_hit_values.update(int(v) for v in eff.reroll_values)
                         reroll_hit_reasons.append(
-                            f"{label}: re-roll Hit rolls of {', '.join(str(v) for v in sorted(eff.reroll_values))}"
+                            f"{label}: re-roll Hit rolls of {', '.join(str(v) for v in sorted(eff.reroll_values))}{_cond_suffix(eff.condition)}"
                         )
                 elif eff.kind == "crit" and eff.critical_threshold:
                     crit_hit_threshold = eff.critical_threshold if crit_hit_threshold is None else min(crit_hit_threshold, eff.critical_threshold)
-                    crit_hit_reasons.append(f"{label}: critical hit on {eff.critical_threshold}+")
+                    crit_hit_reasons.append(f"{label}: critical hit on {eff.critical_threshold}+{_cond_suffix(eff.condition)}")
 
         mods["reroll_hit_values"] = tuple(sorted(reroll_hit_values))
         mods["reroll_hit_ones"] = bool(1 in reroll_hit_values)
@@ -6434,6 +6503,39 @@ class Unit:
         reroll_wound_values: set[int] = set()
         crit_wound_threshold = None
 
+        def _cond_suffix(cond: Optional[AttackRollCondition]) -> str:
+            if not cond:
+                return ""
+            parts = []
+            if cond.target_battleshocked:
+                parts.append("vs Battle-shocked targets")
+            if cond.attacker_below_starting_strength:
+                parts.append("while below Starting Strength")
+            if cond.attacker_below_half_strength:
+                parts.append("while below Half-strength")
+            if cond.target_within_objective:
+                parts.append("vs targets within objective range")
+            if cond.target_within_range is not None:
+                parts.append(f"vs targets within {cond.target_within_range}\"")
+            if cond.target_can_fly is True:
+                parts.append("vs FLY targets")
+            if cond.target_can_fly is False:
+                parts.append("vs non-FLY targets")
+            if cond.target_keywords_any:
+                if set(cond.target_keywords_any) == {"character"}:
+                    parts.append("vs CHARACTER targets")
+                elif set(cond.target_keywords_any) == {"monster", "vehicle"}:
+                    parts.append("vs MONSTER/VEHICLE targets")
+            if cond.target_below_starting_strength:
+                parts.append("vs targets below Starting Strength")
+            if cond.target_below_half_strength:
+                parts.append("vs targets below Half-strength")
+            if cond.target_exclude_keywords_any:
+                parts.append("excluding " + ", ".join(cond.target_exclude_keywords_any))
+            if not parts:
+                return ""
+            return " (" + "; ".join(parts) + ")"
+
         for rule, name in list(rules or []):
             if atype != "any" and rule.attack_type not in ("any", atype):
                 continue
@@ -6448,19 +6550,19 @@ class Unit:
                     if eff.kind == "sub":
                         val = -val
                     mods["wound"] += val
-                    wound_reasons.append(f"{val:+d} to wound from {label}")
+                    wound_reasons.append(f"{val:+d} to wound from {label}{_cond_suffix(eff.condition)}")
                 elif eff.kind == "reroll":
                     if eff.reroll_full:
                         mods["reroll_wound_full"] = True
-                        reroll_wound_full_reasons.append(f"{label}: re-roll Wound roll")
+                        reroll_wound_full_reasons.append(f"{label}: re-roll Wound roll{_cond_suffix(eff.condition)}")
                     if eff.reroll_values:
                         reroll_wound_values.update(int(v) for v in eff.reroll_values)
                         reroll_wound_reasons.append(
-                            f"{label}: re-roll Wound rolls of {', '.join(str(v) for v in sorted(eff.reroll_values))}"
+                            f"{label}: re-roll Wound rolls of {', '.join(str(v) for v in sorted(eff.reroll_values))}{_cond_suffix(eff.condition)}"
                         )
                 elif eff.kind == "crit" and eff.critical_threshold:
                     crit_wound_threshold = eff.critical_threshold if crit_wound_threshold is None else min(crit_wound_threshold, eff.critical_threshold)
-                    crit_wound_reasons.append(f"{label}: critical wound on {eff.critical_threshold}+")
+                    crit_wound_reasons.append(f"{label}: critical wound on {eff.critical_threshold}+{_cond_suffix(eff.condition)}")
 
         mods["reroll_wound_values"] = tuple(sorted(reroll_wound_values))
         mods["reroll_wound_ones"] = bool(1 in reroll_wound_values)
@@ -6486,6 +6588,26 @@ class Unit:
         bonus = 0
         seen: set[tuple[str, str]] = set()
 
+        def _monster_vehicle_only_condition(cond: Optional[AttackRollCondition]) -> bool:
+            if cond is None:
+                return False
+            if cond.attacker_below_starting_strength or cond.attacker_below_half_strength:
+                return False
+            if cond.target_below_starting_strength:
+                return False
+            if cond.target_battleshocked or cond.target_within_objective:
+                return False
+            if cond.target_within_range is not None:
+                return False
+            if cond.target_can_fly is not None:
+                return False
+            if cond.target_below_half_strength:
+                return False
+            if cond.target_keywords_all or cond.target_exclude_keywords_any:
+                return False
+            kw_any = {k.strip().lower() for k in (cond.target_keywords_any or ()) if k}
+            return bool({"monster", "vehicle"}.issubset(kw_any))
+
         def _scan(text: str, name: str = "") -> int:
             if not text:
                 return 0
@@ -6496,24 +6618,26 @@ class Unit:
             if key in seen:
                 return 0
             seen.add(key)
-            low = norm.lower()
-            if "melee attack" not in low:
-                return 0
-            if "damage characteristic" not in low:
-                return 0
-            if "monster" not in low or "vehicle" not in low:
-                return 0
-            if "target" not in low:
-                return 0
-            m = re.search(r"damage characteristic[^.]*?by\s+(\d+)", low)
-            if not m:
-                m = re.search(r"add\s+(\d+)\s+to\s+the\s+damage characteristic", low)
-            if not m:
-                return 0
-            try:
-                return int(m.group(1))
-            except Exception:
-                return 0
+            total = 0
+            for rule in self._parse_attack_roll_rules_from_text(text):
+                if rule.scope not in ("unit", "leading"):
+                    continue
+                if rule.subject not in ("model_in_this_unit", "model_in_that_unit", "this_model"):
+                    continue
+                if rule.attack_type not in ("melee", "any"):
+                    continue
+                for eff in rule.effects:
+                    if eff.roll != "damage" or eff.kind != "add":
+                        continue
+                    if not _monster_vehicle_only_condition(eff.condition):
+                        continue
+                    try:
+                        val = int(eff.value or 0)
+                    except Exception:
+                        val = 0
+                    if val:
+                        total += val
+            return total
 
         for ab in root._iter_active_abilities():
             try:
@@ -6583,6 +6707,11 @@ class Unit:
         objectives = list(getattr(game_map, "objectives", []) or []) if game_map is not None else []
         if not objectives:
             return False
+        try:
+            if bool(getattr(target_unit, "is_embarked", False)) or target_unit.is_in_reserves():
+                return False
+        except Exception:
+            pass
         for obj in objectives:
             loc = getattr(obj, "location", None)
             if loc is None:
@@ -6592,6 +6721,41 @@ class Unit:
                     return True
             except Exception:
                 continue
+            try:
+                models = list(target_unit.get_models_for_collision() or [])
+            except Exception:
+                models = list(getattr(target_unit, "models", []) or [])
+            models = [m for m in models if bool(getattr(m, "is_alive", True))]
+            if not models:
+                continue
+            try:
+                from shapely.geometry import Point as _ShPoint
+                area = _ShPoint(loc.x, loc.y).buffer(float(getattr(loc, "control_radius", 0.0) or 0.0))
+            except Exception:
+                area = None
+            for model in models:
+                try:
+                    if area is not None:
+                        base = model.model_base.get_base_shape()
+                        if base.intersects(area):
+                            return True
+                except Exception:
+                    pass
+                try:
+                    pos = model.get_location()
+                except Exception:
+                    pos = None
+                if not pos:
+                    continue
+                try:
+                    dx = float(pos[0]) - float(getattr(loc, "x", 0.0))
+                    dy = float(pos[1]) - float(getattr(loc, "y", 0.0))
+                    radius = float(getattr(loc, "control_radius", 0.0) or 0.0)
+                    base_r = float(getattr(model.model_base, "get_radius", lambda: 1.0)())
+                    if (dx * dx + dy * dy) ** 0.5 <= (radius + base_r):
+                        return True
+                except Exception:
+                    continue
         return False
 
     def can_reroll_advance_roll(self) -> bool:
@@ -14260,6 +14424,8 @@ class Unit:
             if cond.target_battleshocked or cond.target_within_objective or cond.target_within_range is not None:
                 return False
             if cond.target_keywords_any or cond.target_keywords_all or cond.target_exclude_keywords_any:
+                return False
+            if cond.target_below_starting_strength:
                 return False
             if cond.target_below_half_strength:
                 return False

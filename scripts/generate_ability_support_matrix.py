@@ -2169,12 +2169,15 @@ def _melee_damage_bonus_support(description: str) -> Optional[Tuple[str, str]]:
     if not norm:
         return None
     pattern = (
-        r"each time (?:this model|a model in this unit) makes a melee attack that targets a monster or vehicle unit add (?P<val>\d+) to the damage characteristic of that attack"
+        r"each time (?:this model|a model in this unit) makes a melee attack that targets a monster or vehicle unit"
+        r"(?: until the end of the phase)? "
+        r"(?:add (?P<val>\d+) to the damage characteristic of that attack|improve the damage characteristic of that attack by (?P<val2>\d+))"
     )
     m = re.fullmatch(pattern, norm)
     if not m:
         return None
-    return ("Supported", f"Melee attacks vs MONSTER/VEHICLE get +{m.group('val')} Damage.")
+    val = m.group("val") or m.group("val2")
+    return ("Supported", f"Melee attacks vs MONSTER/VEHICLE get +{val} Damage.")
 
 
 def _transport_disembark_support(description: str) -> Optional[Tuple[str, str]]:

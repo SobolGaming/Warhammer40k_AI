@@ -413,7 +413,7 @@ def get_aura_attack_modifiers(attacker_unit, target_unit, weapon_profile, *, gam
                 out = out.merge(
                     AuraAttackModifiers(
                         reroll_hit_ones=True,
-                        reroll_hit_reasons=(f"Aura: re-roll Hit rolls of 1 from {ab_name}",),
+                        reroll_hit_reasons=("Aura: re-roll Hit rolls of 1",),
                     )
                 )
                 continue
@@ -462,14 +462,14 @@ def get_aura_attack_modifiers(attacker_unit, target_unit, weapon_profile, *, gam
                     out = out.merge(
                         AuraAttackModifiers(
                             reroll_hit_ones=True,
-                            reroll_hit_reasons=(f"Aura: re-roll Hit rolls of 1 from {ab_name}",),
+                            reroll_hit_reasons=("Aura: re-roll Hit rolls of 1",),
                         )
                     )
                 elif rr["reroll_type"] == "wound":
                     out = out.merge(
                         AuraAttackModifiers(
                             reroll_wound_ones=True,
-                            reroll_wound_reasons=(f"Aura: re-roll Wound rolls of 1 from {ab_name}",),
+                            reroll_wound_reasons=("Aura: re-roll Wound rolls of 1",),
                         )
                     )
 

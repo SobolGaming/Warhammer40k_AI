@@ -9,6 +9,7 @@ from typing import Optional, Tuple
 class AttackRollCondition:
     attacker_below_starting_strength: bool = False
     attacker_below_half_strength: bool = False
+    target_below_starting_strength: bool = False
     target_battleshocked: bool = False
     target_within_objective: bool = False
     target_within_range: Optional[float] = None
@@ -31,6 +32,9 @@ class AttackRollCondition:
             attacker_below_half_strength=bool(
                 self.attacker_below_half_strength or other.attacker_below_half_strength
             ),
+            target_below_starting_strength=bool(
+                self.target_below_starting_strength or other.target_below_starting_strength
+            ),
             target_battleshocked=bool(self.target_battleshocked or other.target_battleshocked),
             target_within_objective=bool(self.target_within_objective or other.target_within_objective),
             target_within_range=merged_range,
@@ -44,7 +48,7 @@ class AttackRollCondition:
 
 @dataclass(frozen=True)
 class AttackRollEffect:
-    roll: str  # "hit" | "wound"
+    roll: str  # "hit" | "wound" | "damage"
     kind: str  # "add" | "sub" | "reroll" | "crit"
     value: int = 0
     reroll_values: Tuple[int, ...] = ()
@@ -93,9 +97,10 @@ _TRIGGER_TARGET_WITH_ATTACK_RE = re.compile(
 )
 
 _EFFECT_START_RE = re.compile(
-    r"^(?:if\b|add\b|subtract\b|(?:you can )?reroll\b|a successful\b|an unmodified\b|a critical\b)",
+    r"^(?:if\b|add\b|subtract\b|improve\b|(?:you can )?reroll\b|a successful\b|an unmodified\b|a critical\b)",
     flags=re.IGNORECASE,
 )
+_EFFECT_PREAMBLE_RE = re.compile(r"^until (?:the )?end of the phase[,;:]?\s*", flags=re.IGNORECASE)
 
 
 def _normalize_text(text: str) -> str:
@@ -118,6 +123,16 @@ def _has_tokens(text: str) -> bool:
     return bool(_WORD_RE.search(text or ""))
 
 
+def _strip_effect_preamble(text: str) -> str:
+    t = text.strip()
+    while True:
+        m = _EFFECT_PREAMBLE_RE.match(t)
+        if not m:
+            break
+        t = t[m.end():].lstrip(" ,;:")
+    return t
+
+
 def _split_effect_clauses(text: str) -> Optional[list[str]]:
     parts: list[str] = []
     for segment in re.split(r"[.;]+", text):
@@ -128,11 +143,15 @@ def _split_effect_clauses(text: str) -> Optional[list[str]]:
             s = s.lstrip(" ,;:")
             if not s:
                 break
+            s = _strip_effect_preamble(s)
+            if not s:
+                break
             if not _EFFECT_START_RE.match(s):
                 return None
             next_idx = None
             for m in re.finditer(r"\band\b", s):
                 rest = s[m.end():].lstrip(" ,;:")
+                rest = _strip_effect_preamble(rest)
                 if _EFFECT_START_RE.match(rest):
                     next_idx = m.start()
                     break
@@ -158,9 +177,18 @@ def _parse_condition(text: str) -> Optional[AttackRollCondition]:
         return AttackRollCondition(attacker_below_starting_strength=True)
     if re.fullmatch(r"that unit is below half[- ]strength", t):
         return AttackRollCondition(attacker_below_half_strength=True)
+    if re.fullmatch(r"that enemy unit is below (?:its )?starting strength", t):
+        return AttackRollCondition(target_below_starting_strength=True)
+    if re.fullmatch(r"that enemy unit is below half[- ]strength", t):
+        return AttackRollCondition(target_below_half_strength=True)
 
     if re.fullmatch(
         r"(?:the target of that attack|that attack) targets (?:a|an)?\s*unit within range of (?:an|one or more) objective marker(?:s)?",
+        t,
+    ):
+        return AttackRollCondition(target_within_objective=True)
+    if re.fullmatch(
+        r"(?:the target of that attack|that attack) targets (?:a|an)?\s*unit that is within range of (?:an|one or more) objective marker(?:s)?",
         t,
     ):
         return AttackRollCondition(target_within_objective=True)
@@ -169,11 +197,28 @@ def _parse_condition(text: str) -> Optional[AttackRollCondition]:
         t,
     ):
         return AttackRollCondition(target_within_objective=True)
+    if re.fullmatch(
+        r"(?:the target of that attack|that attack) targets (?:a|an)?\s*enemy unit that is within range of (?:an|one or more) objective marker(?:s)?",
+        t,
+    ):
+        return AttackRollCondition(target_within_objective=True)
+
+    if re.fullmatch(r"that (?:enemy )?unit is within range of (?:an|one or more) objective marker(?:s)?", t):
+        return AttackRollCondition(target_within_objective=True)
 
     m = re.fullmatch(
         r"(?:the target of that attack|that attack) targets (?:a|an)?\s*unit within (?P<rng>\d+)\"",
         t,
     )
+    if m:
+        return AttackRollCondition(target_within_range=float(m.group("rng")))
+    m = re.fullmatch(
+        r"(?:the target of that attack|that attack) targets (?:a|an)?\s*unit that is within (?P<rng>\d+)\"",
+        t,
+    )
+    if m:
+        return AttackRollCondition(target_within_range=float(m.group("rng")))
+    m = re.fullmatch(r"that (?:enemy )?unit is within (?P<rng>\d+)\"", t)
     if m:
         return AttackRollCondition(target_within_range=float(m.group("rng")))
 
@@ -200,7 +245,13 @@ def _parse_condition(text: str) -> Optional[AttackRollCondition]:
         return AttackRollCondition(target_keywords_any=("monster", "vehicle"))
 
     m = re.fullmatch(
-        r"(?:the target of that attack|that attack) targets (?:a|an)?\s*unit that is below half[- ]strength",
+        r"(?:the target of that attack|that attack) targets (?:a|an)?\s*(?:enemy\s+)?unit that is below (?:its )?starting strength",
+        t,
+    )
+    if m:
+        return AttackRollCondition(target_below_starting_strength=True)
+    m = re.fullmatch(
+        r"(?:the target of that attack|that attack) targets (?:a|an)?\s*(?:enemy\s+)?unit that is below half[- ]strength",
         t,
     )
     if m:
@@ -240,9 +291,17 @@ def _parse_target_clause(text: str) -> Optional[AttackRollCondition]:
         return AttackRollCondition(target_keywords_any=("monster", "vehicle"))
     if re.fullmatch(r"unit within range of (?:an|one or more) objective marker(?:s)?", t):
         return AttackRollCondition(target_within_objective=True)
+    if re.fullmatch(r"unit that is within range of (?:an|one or more) objective marker(?:s)?", t):
+        return AttackRollCondition(target_within_objective=True)
     m = re.fullmatch(r"unit within (?P<rng>\d+)\"", t)
     if m:
         return AttackRollCondition(target_within_range=float(m.group("rng")))
+    m = re.fullmatch(r"unit that is within (?P<rng>\d+)\"", t)
+    if m:
+        return AttackRollCondition(target_within_range=float(m.group("rng")))
+    m = re.fullmatch(r"unit that is below (?:its )?starting strength", t)
+    if m:
+        return AttackRollCondition(target_below_starting_strength=True)
     m = re.fullmatch(r"unit that is below half[- ]strength", t)
     if m:
         return AttackRollCondition(target_below_half_strength=True)
@@ -279,6 +338,7 @@ def _parse_effect_clause(text: str) -> Optional[AttackRollEffect]:
             clause = _strip_punct(effect_text.strip())
 
     clause = clause.replace(" as well", "").strip()
+    clause = _strip_effect_preamble(clause)
 
     m = re.fullmatch(r"add (?P<val>\d+) to the (?P<roll>hit|wound) roll", clause)
     if m:
@@ -292,6 +352,31 @@ def _parse_effect_clause(text: str) -> Optional[AttackRollEffect]:
     if m:
         return AttackRollEffect(
             roll=m.group("roll"),
+            kind="sub",
+            value=int(m.group("val")),
+            condition=condition,
+        )
+
+    m = re.fullmatch(r"add (?P<val>\d+) to the damage characteristic of that attack", clause)
+    if m:
+        return AttackRollEffect(
+            roll="damage",
+            kind="add",
+            value=int(m.group("val")),
+            condition=condition,
+        )
+    m = re.fullmatch(r"improve the damage characteristic of that attack by (?P<val>\d+)", clause)
+    if m:
+        return AttackRollEffect(
+            roll="damage",
+            kind="add",
+            value=int(m.group("val")),
+            condition=condition,
+        )
+    m = re.fullmatch(r"subtract (?P<val>\d+) from the damage characteristic of that attack", clause)
+    if m:
+        return AttackRollEffect(
+            roll="damage",
             kind="sub",
             value=int(m.group("val")),
             condition=condition,
