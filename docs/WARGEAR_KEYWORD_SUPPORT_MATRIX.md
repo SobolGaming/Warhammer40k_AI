@@ -63,7 +63,7 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <td bgcolor="#d4edda"><b>🟩 Supported</b></td>
 <td bgcolor="#d4edda">16</td>
 <td bgcolor="#d4edda">conversion</td>
-<td bgcolor="#d4edda">Unmodified successful Hit rolls of 4+ score Critical Hits when target is more than 12" from bearer.</td>
+<td bgcolor="#d4edda">Unmodified successful Hit rolls of 4+ score Critical Hits when target is more than the Conversion distance (12&quot;/18&quot;/24&quot; per datasheet).</td>
 </tr>
 <tr>
 <td bgcolor="#f8d7da"><code>dead choppy</code></td>

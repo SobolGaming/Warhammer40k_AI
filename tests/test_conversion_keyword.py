@@ -167,19 +167,18 @@ class TestConversionKeyword(unittest.TestCase):
         profile = self._make_ranged_profile("conversion", bs="4+")  # BS 4+
         attacker = self._make_attacker(distance_to_target=13.0)
         target = self._make_target()
+        # Apply a -1 to hit modifier via Stealth
+        target.has_stealth = lambda: True
         attack_instance = {'conversion_active': True}
         
         # Unmodified 4, but with -1 to hit modifier (final needed would be 5+)
-        # So modified roll is 3, which misses against BS 4+
         # This test simulates the scenario where modifiers cause a miss
         with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=4):
-            # We need to inject a hit modifier somehow
-            # For now, let's test the opposite: a successful hit
             res = profile._hit_target_with_tracking(target, attacker, attack_instance)
         
-        # With BS 4+ and roll of 4, should hit and be critical
-        self.assertTrue(res["hit"])
-        self.assertTrue(attack_instance.get("crit_hit", False))
+        # With BS 4+ and -1 to hit, roll of 4 should miss and not become critical
+        self.assertFalse(res["hit"])
+        self.assertFalse(attack_instance.get("crit_hit", False))
 
     def test_conversion_with_unmodified_6_baseline(self):
         """Test that unmodified 6 is always critical (baseline rule)."""
@@ -378,5 +377,4 @@ class TestConversionKeyword(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
 

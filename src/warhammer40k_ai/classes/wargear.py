@@ -2835,8 +2835,6 @@ class WargearProfile:
         except Exception:
             pass
         hit_result['roll'] = dice_roll
-        # Store unmodified roll (after rerolls, before modifiers) for Conversion and other rules
-        hit_result['unmodified_roll'] = dice_roll
         if miracle_used:
             hit_result['special_effects'].append("Miracle die")
         # Publish roll_made for hit
@@ -2876,6 +2874,9 @@ class WargearProfile:
             dice_roll = int(new_roll)
             hit_result['roll'] = dice_roll
             hit_result['special_effects'].append("Aspect Shrine Token: set roll to 6")
+
+        # Store unmodified roll (after rerolls/roll replacement, before modifiers) for Conversion and other rules
+        hit_result['unmodified_roll'] = dice_roll
         
         # INDIRECT FIRE: if no target models were visible at selection time,
         # an unmodified hit roll of 1, 2, or 3 always fails.
@@ -3183,7 +3184,7 @@ class WargearProfile:
                     elif empowered_sustained:
                         label += " [Daemonic Empowerment]"
                     hit_result['special_effects'].append(label)
-                    attack_instance['sustained_hit'] = 1
+                    attack_instance['sustained_hit'] = sustained_val
             # Don't return yet - we may need to apply Conversion logic below
 
         # Normal hit resolution (if not already determined by baseline critical)
