@@ -7907,8 +7907,8 @@ class Game:
         raw = re.sub(r"\s+", " ", raw).strip().lower()
         return raw
 
-    def _reserves_denial_ranges_for_unit(self, unit) -> list[float]:
-        ranges: list[float] = []
+    def _reserves_denial_ranges_for_unit(self, unit) -> list[dict]:
+        ranges: list[dict] = []
         for ab in list(getattr(unit, "possible_abilities", []) or []):
             try:
                 name = str(getattr(ab, "name", "") or "")
@@ -7919,25 +7919,32 @@ class Game:
             text = self._normalize_ability_text(f"{name} {desc}")
             if not text:
                 continue
-            if "enemy" not in text:
+            flat = re.sub(r"[^a-z0-9.]+", " ", text).strip()
+            if "enemy" not in flat:
                 continue
             has_reinforcement_terms = (
-                ("reinforcement" in text) or ("reserves" in text) or ("deep strike" in text)
+                ("reinforcement" in flat)
+                or ("reserve" in flat)
+                or ("deep strike" in flat)
+                or ("deepstrike" in flat)
             )
-            if ("cannot be set up" not in text) and ("cannot set up" not in text):
+            if ("cannot be set up" not in flat) and ("cannot set up" not in flat):
                 continue
-            if not has_reinforcement_terms:
-                if "within 12" in text:
-                    ranges.append(12.0)
-                continue
+            horizontal_only = ("horizontally" in flat) or ("horizontal" in flat)
             distances = []
-            for match in re.finditer(r"within\s+(\d+(?:\.\d+)?)\s*(?:\"|inches)", text):
+            for match in re.finditer(r"within\s+(\d+(?:\.\d+)?)\b", flat):
                 try:
                     distances.append(float(match.group(1)))
                 except Exception:
                     continue
-            if distances:
-                ranges.append(max(distances))
+            if not distances:
+                continue
+            ranges.append(
+                {
+                    "range": max(distances),
+                    "horizontal_only": horizontal_only,
+                }
+            )
         return ranges
 
     def _reserves_denial_violated(self, unit, prospective: list[Tuple[float, float, float, float]]) -> bool:
@@ -7953,7 +7960,10 @@ class Game:
         if not enemy_units:
             return False
 
-        from ..utility.aura_utils import horizontal_distance_between_bases_2d
+        from ..utility.aura_utils import (
+            distance_between_bases_3d,
+            horizontal_distance_between_bases_2d,
+        )
 
         for enemy in enemy_units:
             try:
@@ -7989,9 +7999,27 @@ class Game:
                     break
                 base = unit._create_potential_base(x, y, z, facing, model=unit.models[idx])
                 for em in enemy_models:
-                    dist = float(horizontal_distance_between_bases_2d(base, em.model_base))
-                    for r in ranges:
-                        if dist < float(r):
+                    for rinfo in ranges:
+                        horizontal_only = False
+                        try:
+                            if isinstance(rinfo, dict):
+                                r = float(rinfo.get("range", 0) or 0)
+                                horizontal_only = bool(rinfo.get("horizontal_only", False))
+                            elif isinstance(rinfo, (list, tuple)) and rinfo:
+                                r = float(rinfo[0])
+                                if len(rinfo) > 1:
+                                    horizontal_only = bool(rinfo[1])
+                            else:
+                                r = float(rinfo)
+                        except Exception:
+                            continue
+                        if r <= 0:
+                            continue
+                        if horizontal_only:
+                            dist = float(horizontal_distance_between_bases_2d(base, em.model_base))
+                        else:
+                            dist = float(distance_between_bases_3d(base, em.model_base))
+                        if dist < r:
                             return True
         return False
     

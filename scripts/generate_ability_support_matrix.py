@@ -1290,6 +1290,7 @@ def _classify_ability(
     enemy_fall_back_desperate_escape_support = _enemy_fall_back_desperate_escape_support(description)
     command_phase_bonus_cp_support = _command_phase_bonus_cp_support(description)
     command_phase_regain_wound_support = _command_phase_regain_wound_support(description)
+    reinforcements_denial_support = _reinforcements_denial_support(description)
     cp_on_destroy_support = _gain_cp_on_destroy_support(description)
     fall_back_shoot_support = _fall_back_shoot_support(description)
     battlesuit_support_system_support = _battlesuit_support_system_support(name, description)
@@ -1366,6 +1367,8 @@ def _classify_ability(
         return command_phase_bonus_cp_support
     if command_phase_regain_wound_support:
         return command_phase_regain_wound_support
+    if reinforcements_denial_support:
+        return reinforcements_denial_support
     if cp_on_destroy_support:
         return cp_on_destroy_support
     if fall_back_shoot_support:
@@ -2459,6 +2462,24 @@ def _command_phase_regain_wound_support(description: str) -> Optional[Tuple[str,
     if not m:
         return None
     return ("Supported", f"Start of Command phase: this model regains {m.group('amt')} lost wound(s).")
+
+
+def _reinforcements_denial_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"enemy units that are set up (?:on the battlefield )?(?:as reinforcement(?:s)?|from reserve(?:s)?) cannot be set up within "
+        r"(?P<dist>\d+(?:\.\d+)?) (?:horizontally )?of this (?:model|unit)"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    horiz = "horizontally" in norm
+    horiz_note = " horizontally" if horiz else ""
+    return ("Supported", f"Reinforcements cannot be set up within {m.group('dist')}\"{horiz_note} of this model/unit.")
 
 
 def _gain_cp_on_destroy_support(description: str) -> Optional[Tuple[str, str]]:
