@@ -1196,6 +1196,8 @@ def _classify_ability(
     bodyguard_return_support = _command_phase_bodyguard_return_support(description)
     enemy_fall_back_desperate_escape_support = _enemy_fall_back_desperate_escape_support(description)
     command_phase_bonus_cp_support = _command_phase_bonus_cp_support(description)
+    cp_on_destroy_support = _gain_cp_on_destroy_support(description)
+    fall_back_shoot_support = _fall_back_shoot_support(description)
     orders_support = _orders_section_support(name, description)
     attached_unit_support = _attached_unit_support(name, description)
     model_reroll_support = _model_reroll_wound_vs_character_support(description)
@@ -1260,6 +1262,10 @@ def _classify_ability(
         return enemy_fall_back_desperate_escape_support
     if command_phase_bonus_cp_support:
         return command_phase_bonus_cp_support
+    if cp_on_destroy_support:
+        return cp_on_destroy_support
+    if fall_back_shoot_support:
+        return fall_back_shoot_support
     if orders_support:
         return orders_support
     if attached_unit_support:
@@ -2297,6 +2303,93 @@ def _command_phase_bonus_cp_support(description: str) -> Optional[Tuple[str, str
     if not m:
         return None
     return ("Supported", f"Start of Command phase: gain {m.group(1)} CP while on the battlefield.")
+
+
+def _gain_cp_on_destroy_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    low = text.lower()
+    if "gain" not in low or "cp" not in low:
+        return None
+    if "destroys" not in low:
+        return None
+    if "this model" not in low and "this unit" not in low and "this model's unit" not in low:
+        return None
+
+    m = re.search(r"gain\s+(\d+)\s*cp", low, flags=re.IGNORECASE)
+    cp = m.group(1) if m else "1"
+
+    keyword_map = {
+        "character": "CHARACTER",
+        "epic hero": "EPIC HERO",
+        "monster": "MONSTER",
+        "vehicle": "VEHICLE",
+        "psyker": "PSYKER",
+    }
+    target_keywords = [kw for needle, kw in keyword_map.items() if needle in low]
+    kw_text = ""
+    if target_keywords:
+        if len(target_keywords) > 1 and " or " in low:
+            kw_text = " or ".join(target_keywords)
+        else:
+            kw_text = " ".join(target_keywords)
+
+    trigger = "target"
+    if re.search(r"destroys\s+an?\s+(?:enemy\s+)?\b.*\bmodel\b", low, flags=re.IGNORECASE):
+        trigger = "model"
+    elif re.search(r"destroys\s+an?\s+(?:enemy\s+)?\b.*\bunit\b", low, flags=re.IGNORECASE):
+        trigger = "unit"
+
+    if "this model" in low:
+        subject = "this model"
+    else:
+        subject = "this unit"
+
+    if kw_text:
+        if trigger in ("model", "unit"):
+            target_text = f"enemy {kw_text} {trigger}"
+        else:
+            target_text = f"enemy {kw_text} target"
+    else:
+        target_text = f"enemy {trigger}" if trigger in ("model", "unit") else "enemy unit/model"
+
+    return ("Supported", f"Gain {cp} CP when {subject} destroys an {target_text}.")
+
+
+def _fall_back_shoot_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    low = text.lower()
+    if "eligible to shoot" not in low:
+        return None
+    if "not eligible to shoot" in low:
+        return None
+    has_fall_back = ("fell back" in low) or ("fall back" in low) or ("falling back" in low)
+    if not has_fall_back:
+        return None
+    has_advance = ("advance" in low) or ("advanced" in low) or ("advancing" in low)
+    has_charge = ("declare a charge" in low) or ("eligible to charge" in low) or ("eligible to shoot and declare a charge" in low) or ("eligible to shoot and charge" in low)
+    notes = []
+    if has_advance and has_fall_back:
+        notes.append("Shoot-after-Advance/Fall Back eligibility.")
+    else:
+        notes.append("Shoot-after-Fall-Back eligibility.")
+    if has_charge:
+        if has_advance and has_fall_back:
+            notes.append("Charge-after-Advance/Fall Back eligibility.")
+        else:
+            notes.append("Charge-after-Fall-Back eligibility.")
+    return ("Supported", " ".join(notes))
 
 
 def _two_melee_weapons_bonus_support(description: str) -> Optional[Tuple[str, str]]:
