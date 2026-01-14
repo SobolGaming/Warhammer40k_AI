@@ -181,6 +181,63 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
 
         self.assertEqual(int(attack_instance.get("sustained_hit", 0)), 1)
 
+    def test_leading_unit_melee_sustained_hits_applies_to_melee_only(self):
+        from warhammer40k_ai.classes.wargear import WargearProfile
+
+        ability = {
+            "name": "Bloody Example",
+            "description": "While this model is leading a unit, melee weapons equipped by models in that unit have the [Sustained Hits 1] ability.",
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        unit = _make_unit("Leader", abilities=[ability])
+        unit._refresh_bearer_unit_common_modifiers()
+
+        melee_parent = SimpleNamespace(name="Melee Blade", is_melee=lambda: True, is_ranged=lambda: False)
+        melee_profile = WargearProfile(
+            profile_name="Melee",
+            wargear_data={
+                "range": "Melee",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "4",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            },
+            parent_wargear=melee_parent,
+        )
+        ranged_parent = SimpleNamespace(name="Rifle", is_melee=lambda: False, is_ranged=lambda: True)
+        ranged_profile = WargearProfile(
+            profile_name="Ranged",
+            wargear_data={
+                "range": "24",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "4",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            },
+            parent_wargear=ranged_parent,
+        )
+
+        target = SimpleNamespace(
+            toughness=4,
+            models=[SimpleNamespace(is_alive=True)],
+            has_keyword=lambda _k: False,
+        )
+
+        attack_instance = {"_aura_attack_mods": self._aura_stub()}
+        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=6):
+            melee_profile._hit_target_with_tracking(target, unit.models[0], attack_instance)
+        self.assertEqual(int(attack_instance.get("sustained_hit", 0)), 1)
+
+        attack_instance = {"_aura_attack_mods": self._aura_stub()}
+        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=6):
+            ranged_profile._hit_target_with_tracking(target, unit.models[0], attack_instance)
+        self.assertEqual(int(attack_instance.get("sustained_hit", 0)), 0)
+
     def test_bearer_unit_ignores_cover_applies(self):
         from warhammer40k_ai.classes.wargear import WargearProfile
 

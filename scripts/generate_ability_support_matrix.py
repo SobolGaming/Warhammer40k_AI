@@ -1438,6 +1438,26 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         else:
             notes.append(f"Bearer's unit gains Feel No Pain {m.group(1)}+.")
 
+    m = re.search(
+        r"(?:(melee|ranged)\s+)?weapons?\s+equipped\s+by\s+models\s+in\s+(?:the\s+bearer'?s\s+unit|that\s+unit).*?"
+        r"sustained\s+hits\s*(\d+)",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        scope = (m.group(1) or "").strip().lower()
+        val = m.group(2)
+        if scope:
+            if leading_prefix:
+                notes.append(f"{leading_prefix}{scope} weapons gain Sustained Hits {val}.")
+            else:
+                notes.append(f"Bearer's unit {scope} weapons gain Sustained Hits {val}.")
+        else:
+            if leading_prefix:
+                notes.append(f"{leading_prefix}weapons gain Sustained Hits {val}.")
+            else:
+                notes.append(f"Bearer's unit weapons gain Sustained Hits {val}.")
+
     if notes:
         return ("Supported", " ".join(notes))
     return None

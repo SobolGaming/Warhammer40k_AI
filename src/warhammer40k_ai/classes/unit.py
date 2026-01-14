@@ -1326,6 +1326,8 @@ class Unit:
                 for key in (
                     "bearer_unit_fnp",
                     "bearer_unit_sustained_hits_value",
+                    "bearer_unit_sustained_hits_value_melee",
+                    "bearer_unit_sustained_hits_value_ranged",
                     "bearer_unit_ignores_cover",
                     "bearer_unit_target_hit_penalties",
                 ):
@@ -1351,6 +1353,8 @@ class Unit:
         contains_oc_mods: list[tuple[int, str]] = []
         fnp_entries: list[dict] = []
         sustained_hits_value = 0
+        sustained_hits_value_melee = 0
+        sustained_hits_value_ranged = 0
         ignores_cover_sources: set[str] = set()
         hit_penalties: list[dict] = []
 
@@ -1469,7 +1473,18 @@ class Unit:
                         except Exception:
                             val = None
                         if val:
-                            sustained_hits_value = max(int(sustained_hits_value), int(val))
+                            scope = sentence.lower()
+                            has_melee = "melee" in scope
+                            has_ranged = "ranged" in scope
+                            if has_melee and not has_ranged:
+                                sustained_hits_value_melee = max(int(sustained_hits_value_melee), int(val))
+                            elif has_ranged and not has_melee:
+                                sustained_hits_value_ranged = max(int(sustained_hits_value_ranged), int(val))
+                            elif has_melee and has_ranged:
+                                sustained_hits_value_melee = max(int(sustained_hits_value_melee), int(val))
+                                sustained_hits_value_ranged = max(int(sustained_hits_value_ranged), int(val))
+                            else:
+                                sustained_hits_value = max(int(sustained_hits_value), int(val))
 
                     if self._BEARER_UNIT_IGNORES_COVER_RE.search(sentence):
                         source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
@@ -1555,6 +1570,20 @@ class Unit:
                 if not isinstance(sr, dict):
                     sr = {}
                 sr["bearer_unit_sustained_hits_value"] = int(sustained_hits_value)
+                u.special_rules = sr
+        if sustained_hits_value_melee:
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["bearer_unit_sustained_hits_value_melee"] = int(sustained_hits_value_melee)
+                u.special_rules = sr
+        if sustained_hits_value_ranged:
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["bearer_unit_sustained_hits_value_ranged"] = int(sustained_hits_value_ranged)
                 u.special_rules = sr
 
         if ignores_cover_sources:

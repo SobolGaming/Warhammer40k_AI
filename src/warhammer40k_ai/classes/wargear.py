@@ -3155,6 +3155,16 @@ class WargearProfile:
             sr = getattr(attacker.parent_unit, "special_rules", None)
             if isinstance(sr, dict):
                 bearer_unit_sustained_value = int(sr.get("bearer_unit_sustained_hits_value", 0) or 0)
+                if is_melee:
+                    bearer_unit_sustained_value = max(
+                        bearer_unit_sustained_value,
+                        int(sr.get("bearer_unit_sustained_hits_value_melee", 0) or 0),
+                    )
+                if is_ranged:
+                    bearer_unit_sustained_value = max(
+                        bearer_unit_sustained_value,
+                        int(sr.get("bearer_unit_sustained_hits_value_ranged", 0) or 0),
+                    )
         except Exception:
             bearer_unit_sustained_value = 0
         bearer_unit_sustained = bool(bearer_unit_sustained_value)
