@@ -243,7 +243,7 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
 
         ability = {
             "name": "Shadow Weave",
-            "description": "Attacks made by models in the bearer's unit have the Ignores Cover ability.",
+            "description": "Ranged weapons equipped by models in the bearer's unit have the [Ignores Cover] ability.",
             "type": "Wargear",
             "parameter": "",
         }
@@ -290,6 +290,29 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
         penalty, reasons = unit.get_target_hit_roll_penalty("ranged")
         self.assertEqual(penalty, 1)
         self.assertIn("-1 to hit from Deflective Field", reasons)
+
+    def test_leading_unit_target_hit_penalty_applies(self):
+        from warhammer40k_ai.classes.army import Army
+
+        ability = {
+            "name": "Shield of Duty",
+            "description": "While this model is leading a unit, each time an attack targets that unit, subtract 1 from the Hit roll.",
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        bodyguard = _make_unit("Bodyguard", ds_id="BG2")
+        leader = _make_unit("Leader", ds_id="LD2", abilities=[ability], attached_to=["BG2"])
+
+        army = Army("Chaos Daemons", "Detachment")
+        army.faction_id = "CD"
+        army.add_unit(bodyguard)
+        army.add_unit(leader)
+
+        leader.attach_to_unit(bodyguard)
+
+        penalty, reasons = bodyguard.get_target_hit_roll_penalty("ranged")
+        self.assertEqual(penalty, 1)
+        self.assertIn("-1 to hit from Shield of Duty", reasons)
 
     def test_bearer_unit_leadership_set_applies(self):
         ability = {

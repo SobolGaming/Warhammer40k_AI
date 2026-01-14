@@ -63,3 +63,36 @@ def test_allocated_damage_reduction_applies():
     attack_instance = {"mortal_wound": False, "mortal_wound_in_addition": False}
     result = profile._damage_target_with_tracking(target_unit.models[0], attacker_unit.models[0], attack_instance)
     assert result["damage_applied"] == 1
+
+
+def test_allocated_damage_halving_rounds_up():
+    from types import SimpleNamespace
+    from warhammer40k_ai.classes.wargear import WargearProfile
+
+    ability = {
+        "name": "Stoic Endurance",
+        "description": "Each time an attack is allocated to this model, halve the Damage characteristic of that attack.",
+        "type": "Datasheet",
+        "parameter": "",
+    }
+    target_unit = _make_unit("Target", abilities=[ability])
+    attacker_unit = _make_unit("Attacker")
+
+    parent = SimpleNamespace(name="Heavy Blade", is_melee=lambda: True, is_ranged=lambda: False)
+    profile = WargearProfile(
+        profile_name="Melee",
+        wargear_data={
+            "range": "Melee",
+            "A": "1",
+            "BS_WS": "3+",
+            "S": "6",
+            "AP": "0",
+            "D": "5",
+            "description": "",
+        },
+        parent_wargear=parent,
+    )
+
+    attack_instance = {"mortal_wound": False, "mortal_wound_in_addition": False}
+    result = profile._damage_target_with_tracking(target_unit.models[0], attacker_unit.models[0], attack_instance)
+    assert result["damage_applied"] == 3

@@ -1461,6 +1461,40 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
             else:
                 notes.append(f"Bearer's unit weapons gain Sustained Hits {val}.")
 
+    m = re.search(
+        r"(?:(melee|ranged)\s+)?(?:weapons?\s+equipped\s+by\s+models\s+in|attacks?\s+made\s+by\s+models\s+in)\s+"
+        r"(?:the\s+bearer'?s\s+unit|that\s+unit).*?ignores\s+cover",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        scope = (m.group(1) or "").strip().lower()
+        uses_attacks = bool(re.search(r"attacks?\s+made\s+by\s+models\s+in", low, flags=re.IGNORECASE))
+        subject = "attacks" if uses_attacks else "weapons"
+        if scope:
+            phrase = f"{scope} {subject} ignore cover."
+        else:
+            phrase = f"{subject.capitalize()} ignore cover."
+        if leading_prefix:
+            notes.append(f"{leading_prefix}{phrase}")
+        else:
+            notes.append(f"Bearer's unit {phrase[0].lower() + phrase[1:]}")
+
+    m = re.search(
+        r"each\s+time\s+(?:a|an)\s+(?:(melee|ranged)\s+)?attack\s+targets\s+(?:the\s+bearer'?s\s+unit|that\s+unit),\s*"
+        r"subtract\s+1\s+from\s+the\s+hit\s+roll",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        scope = (m.group(1) or "").strip().lower()
+        scope_text = scope if scope in ("melee", "ranged") else "all"
+        effect = f"-1 to hit vs {scope_text} attacks that target the unit."
+        if leading_prefix:
+            notes.append(f"{leading_prefix}{effect}")
+        else:
+            notes.append(f"Bearer's unit: {effect}")
+
     if notes:
         return ("Supported", " ".join(notes))
     return None
@@ -1698,10 +1732,23 @@ def _allocated_damage_reduction_support(description: str) -> Optional[Tuple[str,
         return None
     if "damage characteristic" not in low:
         return None
+    if not re.search(r"allocated\s+to\s+(?:this\s+model|a\s+model\s+in\s+this\s+unit)", low, flags=re.IGNORECASE):
+        return None
+    m_half = re.search(
+        r"(?:halve|half)\s+the\s+damage\s+characteristic|damage\s+characteristic\s+of\s+that\s+attack\s+is\s+halved",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if m_half:
+        atype = ""
+        m2 = re.search(r"each\s+time\s+(?:an|a)\s+(melee|ranged)\s+attack\s+is\s+allocated", low, flags=re.IGNORECASE)
+        if m2:
+            atype = m2.group(1).lower()
+        if atype:
+            return ("Supported", f"Allocated {atype} attacks have Damage halved.")
+        return ("Supported", "Allocated attacks have Damage halved.")
     m = re.search(r"subtract\s+(\d+)\s+from\s+the\s+damage\s+characteristic", low, flags=re.IGNORECASE)
     if not m:
-        return None
-    if not re.search(r"allocated\s+to\s+(?:this\s+model|a\s+model\s+in\s+this\s+unit)", low, flags=re.IGNORECASE):
         return None
     atype = ""
     m2 = re.search(r"each\s+time\s+(?:an|a)\s+(melee|ranged)\s+attack\s+is\s+allocated", low, flags=re.IGNORECASE)

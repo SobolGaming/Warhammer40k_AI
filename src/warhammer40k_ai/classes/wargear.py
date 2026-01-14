@@ -5295,10 +5295,20 @@ class WargearProfile:
                     entry_type = str(entry.get("attack_type") or "any").strip().lower()
                     if entry_type not in ("any", attack_type):
                         continue
-                    red = int(entry.get("value", 0) or 0)
-                    if red:
-                        damage_mods.append(Modifier(ModifierOp.SUB, int(red), source="ability:allocated_damage_reduction"))
-                        allocated_damage_entries.append((red, entry.get("source") or "Damage reduction"))
+                    entry_op = str(entry.get("op") or "sub").strip().lower()
+                    if entry_op in ("div", "divide", "halve", "half"):
+                        div = int(entry.get("value", 0) or 0) or 2
+                        damage_mods.append(Modifier(ModifierOp.DIV, int(div), source="ability:allocated_damage_halving"))
+                        allocated_damage_entries.append(
+                            {"op": "div", "value": int(div), "source": entry.get("source") or "Damage halving"}
+                        )
+                    else:
+                        red = int(entry.get("value", 0) or 0)
+                        if red:
+                            damage_mods.append(Modifier(ModifierOp.SUB, int(red), source="ability:allocated_damage_reduction"))
+                            allocated_damage_entries.append(
+                                {"op": "sub", "value": int(red), "source": entry.get("source") or "Damage reduction"}
+                            )
         except Exception:
             pass
         # Bondsman: Defender's Duty reduces damage by 1.
@@ -5400,9 +5410,23 @@ class WargearProfile:
         except Exception:
             pass
         try:
-            for red, src in allocated_damage_entries:
-                if red:
-                    damage_result['special_effects'].append(f"{src} -{red}D taken")
+            for entry in allocated_damage_entries:
+                if isinstance(entry, dict):
+                    val = int(entry.get("value", 0) or 0)
+                    src = entry.get("source") or "Damage modifier"
+                    op = str(entry.get("op") or "sub").strip().lower()
+                    if op == "div":
+                        if val == 2:
+                            damage_result['special_effects'].append(f"{src}: Damage halved")
+                        elif val:
+                            damage_result['special_effects'].append(f"{src}: Damage /{val}")
+                    elif val:
+                        damage_result['special_effects'].append(f"{src} -{val}D taken")
+                elif isinstance(entry, (list, tuple)) and entry:
+                    red = int(entry[0])
+                    src = entry[1] if len(entry) > 1 else "Damage reduction"
+                    if red:
+                        damage_result['special_effects'].append(f"{src} -{red}D taken")
         except Exception:
             pass
         

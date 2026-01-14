@@ -724,10 +724,43 @@ class Unit:
                             "value": int(val),
                             "attack_type": atype,
                             "source": label,
+                            "op": "sub",
                         }
                     )
                     sr["allocated_damage_reductions"] = items
                     self.special_rules = sr
+
+            # Damage halving when attacks are allocated to this model/unit.
+            m = re.search(
+                r"each\s+time\s+(?:an|a)\s+(?:(?P<atype>melee|ranged)\s+)?attack\s+is\s+allocated\s+to\s+"
+                r"(?:this\s+model|a\s+model\s+in\s+this\s+unit)\s*,\s*"
+                r"(?:halve|half)\s+the\s+damage\s+characteristic\s+of\s+that\s+attack",
+                tl,
+                flags=re.IGNORECASE,
+            )
+            if not m:
+                m = re.search(
+                    r"each\s+time\s+(?:an|a)\s+(?:(?P<atype>melee|ranged)\s+)?attack\s+is\s+allocated\s+to\s+"
+                    r"(?:this\s+model|a\s+model\s+in\s+this\s+unit).*?"
+                    r"damage\s+characteristic\s+of\s+that\s+attack\s+is\s+halved",
+                    tl,
+                    flags=re.IGNORECASE,
+                )
+            if m:
+                atype = (m.group("atype") or "any").strip().lower()
+                label = (name or "Damage halving ability").strip() or "Damage halving ability"
+                sr = self.special_rules
+                items = list(sr.get("allocated_damage_reductions", []) or [])
+                items.append(
+                    {
+                        "value": 2,
+                        "attack_type": atype,
+                        "source": label,
+                        "op": "div",
+                    }
+                )
+                sr["allocated_damage_reductions"] = items
+                self.special_rules = sr
 
     _CANNOT_BE_WARLORD_RE = re.compile(r"\bcannot be your\s+warlord\b", re.IGNORECASE)
     _CANNOT_BE_GIVEN_ENHANCEMENTS_RE = re.compile(r"\bcannot be given\s+(?:an?\s+)?enhancements?\b", re.IGNORECASE)
