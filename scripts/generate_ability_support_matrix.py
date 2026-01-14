@@ -1984,6 +1984,14 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
     if lethal_re:
         notes.append("Leading: unit weapons gain Lethal Hits.")
 
+    invuln_match = re.search(
+        r"models in that unit have (?:a|the)?\s*(\d)\+\s*invulnerable save",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if invuln_match:
+        notes.append(f"Leading: unit models gain {invuln_match.group(1)}+ invulnerable save.")
+
     if "melee attack" in low:
         attack_scope = "melee"
     elif "ranged attack" in low:
@@ -2062,6 +2070,7 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         rf"{lead_prefix}add \d+ to the wound roll(?: as well)? if that unit is below half strength",
         rf"{lead_prefix}add \d+ to the wound roll(?: as well)? if the target is battle shocked",
         rf"{lead_prefix}if the target is battle shocked add \d+ to the wound roll",
+        rf"{lead_prefix}models in that unit have (?:a|the)?\s*\d+ invulnerable save",
         rf"{lead_prefix}.*reroll .*hit roll.* of 1.*",
         rf"{lead_prefix}.*reroll .*wound roll.* of 1.*",
     ]

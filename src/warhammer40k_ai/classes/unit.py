@@ -806,6 +806,10 @@ class Unit:
         r"(?:models\s+in\s+)?the\s+bearer'?s\s+unit.*?\bfeel\s+no\s+pain\b\s*([1-6])\+",
         re.IGNORECASE,
     )
+    _BEARER_UNIT_INVULNERABLE_SAVE_RE = re.compile(
+        r"models\s+in\s+the\s+bearer'?s\s+unit\s+have\s+(?:a|the)?\s*([1-6])\+?\s*invulnerable\s+save",
+        re.IGNORECASE,
+    )
     _BEARER_UNIT_SUSTAINED_HITS_RE = re.compile(
         r"(?:weapons?\s+equipped\s+by\s+models\s+in|models\s+in)\s+the\s+bearer'?s\s+unit.*?\bsustained\s+hits\b\s*(\d+)",
         re.IGNORECASE,
@@ -1394,6 +1398,7 @@ class Unit:
                         del sr["advance_roll_modifiers"]
                 for key in (
                     "bearer_unit_fnp",
+                    "bearer_unit_invulnerable_save",
                     "bearer_unit_sustained_hits_value",
                     "bearer_unit_sustained_hits_value_melee",
                     "bearer_unit_sustained_hits_value_ranged",
@@ -1409,7 +1414,7 @@ class Unit:
                 cache = getattr(u, "_ability_cache", None)
                 if isinstance(cache, dict):
                     for k in list(cache.keys()):
-                        if k == "feel_no_pain" or k.startswith("target_hit_penalty:"):
+                        if k == "feel_no_pain" or k.startswith("target_hit_penalty:") or k.startswith("model_invulnerable_save:"):
                             del cache[k]
             except Exception:
                 pass
@@ -1421,6 +1426,7 @@ class Unit:
         oc_mods: list[tuple[int, str]] = []
         contains_oc_mods: list[tuple[int, str]] = []
         fnp_entries: list[dict] = []
+        invuln_entries: list[dict] = []
         sustained_hits_value = 0
         sustained_hits_value_melee = 0
         sustained_hits_value_ranged = 0
@@ -1539,6 +1545,16 @@ class Unit:
                             source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
                             fnp_entries.append({"value": int(val), "condition": cond, "source": source})
 
+                    m = self._BEARER_UNIT_INVULNERABLE_SAVE_RE.search(sentence)
+                    if m:
+                        try:
+                            val = int(m.group(1))
+                        except Exception:
+                            val = None
+                        if val:
+                            source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
+                            invuln_entries.append({"value": int(val), "source": source})
+
                     m = self._BEARER_UNIT_SUSTAINED_HITS_RE.search(sentence)
                     if m:
                         try:
@@ -1635,6 +1651,27 @@ class Unit:
                 if not isinstance(sr, dict):
                     sr = {}
                 sr["bearer_unit_fnp"] = list(fnp_entries)
+                u.special_rules = sr
+
+        if invuln_entries:
+            deduped = []
+            seen_invuln = set()
+            for entry in invuln_entries:
+                try:
+                    val = int(entry.get("value"))
+                except Exception:
+                    continue
+                source = str(entry.get("source", "") or "")
+                key = (val, source)
+                if key in seen_invuln:
+                    continue
+                seen_invuln.add(key)
+                deduped.append({"value": val, "source": source})
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["bearer_unit_invulnerable_save"] = list(deduped)
                 u.special_rules = sr
 
         if sustained_hits_value:
@@ -5836,6 +5873,30 @@ class Unit:
                     best_source = str(name)
             except Exception:
                 continue
+
+        # Leading/bearer unit abilities that grant an invulnerable save to the unit.
+        try:
+            sr = getattr(self, "special_rules", None)
+            entries = sr.get("bearer_unit_invulnerable_save") if isinstance(sr, dict) else None
+            if isinstance(entries, list):
+                for entry in entries:
+                    if isinstance(entry, dict):
+                        val = entry.get("value")
+                        source = entry.get("source")
+                    elif isinstance(entry, (list, tuple)):
+                        val = entry[0] if entry else None
+                        source = entry[1] if len(entry) > 1 else None
+                    else:
+                        continue
+                    try:
+                        val = int(val)
+                    except Exception:
+                        continue
+                    if best_value is None or val < best_value:
+                        best_value = int(val)
+                        best_source = str(source or "Bearer unit ability")
+        except Exception:
+            pass
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}

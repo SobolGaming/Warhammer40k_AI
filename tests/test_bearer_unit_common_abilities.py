@@ -148,6 +148,24 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
 
         self.assertIn((5, None), bodyguard.has_feel_no_pain())
 
+    def test_leading_unit_invulnerable_save_applies(self):
+        ability = {
+            "name": "Aegis Ward",
+            "description": "While this model is leading a unit, models in that unit have a 4+ invulnerable save.",
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        leader = _make_unit("Leader", abilities=[ability])
+        bodyguard = _make_unit("Bodyguard")
+        bodyguard.attached_leaders = [leader]
+        leader.attached_to = bodyguard
+        leader.can_be_attached_to = ["Bodyguard"]
+
+        bodyguard._refresh_bearer_unit_common_modifiers()
+
+        inv_val, _source = bodyguard.get_model_invulnerable_save_override(bodyguard.models[0])
+        self.assertEqual(inv_val, 4)
+
     def test_bearer_unit_sustained_hits_applies(self):
         from warhammer40k_ai.classes.wargear import WargearProfile
 
