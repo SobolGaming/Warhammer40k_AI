@@ -1292,6 +1292,7 @@ def _classify_ability(
     cp_on_destroy_support = _gain_cp_on_destroy_support(description)
     fall_back_shoot_support = _fall_back_shoot_support(description)
     battlesuit_support_system_support = _battlesuit_support_system_support(name, description)
+    attack_roll_rule_support = _attack_roll_rule_support(description)
     orders_support = _orders_section_support(name, description)
     attached_unit_support = _attached_unit_support(name, description)
     model_reroll_support = _model_reroll_wound_vs_character_support(description)
@@ -1366,6 +1367,8 @@ def _classify_ability(
         return cp_on_destroy_support
     if fall_back_shoot_support:
         return fall_back_shoot_support
+    if attack_roll_rule_support:
+        return attack_roll_rule_support
     if orders_support:
         return orders_support
     if attached_unit_support:
@@ -1783,6 +1786,34 @@ def _attack_roll_plus_cp_on_destroy_support(description: str) -> Optional[Tuple[
     else:
         notes.append("Gain CP on destroying enemy models supported.")
     return ("Supported", " ".join(notes))
+
+
+def _attack_roll_rule_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    chunks, remaining = _split_attack_roll_chunks(description)
+    if not chunks or remaining:
+        return None
+    rules = []
+    for chunk in chunks:
+        rule = parse_attack_roll_text(chunk)
+        if rule is None:
+            return None
+        if rule.scope not in ("unit", "leading"):
+            return None
+        if rule.subject not in ("model_in_this_unit", "model_in_that_unit"):
+            return None
+        rules.append(rule)
+    if not rules:
+        return None
+    scopes = {r.scope for r in rules}
+    if scopes == {"leading"}:
+        note = "Leading: attack roll modifiers supported."
+    elif scopes == {"unit"}:
+        note = "Unit attack roll modifiers supported."
+    else:
+        note = "Attack roll modifiers supported."
+    return ("Supported", note)
 
 
 def _model_reroll_wound_vs_character_support(description: str) -> Optional[Tuple[str, str]]:
