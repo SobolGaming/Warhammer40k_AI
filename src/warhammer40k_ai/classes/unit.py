@@ -19,6 +19,7 @@ from ..utility.calcs import (
     movement_segment_cost,
 )
 from ..utility.dice import get_roll, DiceCollection
+from ..utility.attack_roll_parser import AttackRollCondition, parse_attack_roll_text
 from .status_effects import StatusEffect, BattleShockEffect
 import uuid
 import copy
@@ -205,6 +206,16 @@ class Unit:
         # Parse once-per-battle-round stratagem CP discounts for targeted units.
         try:
             self._refresh_targeted_stratagem_cp_discount_flags()
+        except Exception:
+            pass
+        # Parse charge-end mortal wound triggers.
+        try:
+            self._refresh_charge_end_mortal_wounds_flags()
+        except Exception:
+            pass
+        # Parse fight-within-3" eligibility abilities.
+        try:
+            self._refresh_fight_within_3_flags()
         except Exception:
             pass
         # Parse common bearer-unit effects (charge bonuses, Leadership set).
@@ -652,16 +663,23 @@ class Unit:
                 del self.special_rules["armor_save_bonus_vs_damage_characteristic"]
         except Exception:
             pass
+        try:
+            if "allocated_damage_reductions" in self.special_rules:
+                del self.special_rules["allocated_damage_reductions"]
+        except Exception:
+            pass
 
         # Collect all rules text from unit abilities.
         entries = []
         for a in self._iter_active_possible_abilities():
             if isinstance(a, str):
-                entries.append(a)
+                entries.append(("", a))
             else:
-                entries.append(getattr(a, "description", "") or "")
+                name = str(getattr(a, "name", "") or "")
+                desc = str(getattr(a, "description", "") or "")
+                entries.append((name, desc or name))
 
-        for raw in entries:
+        for name, raw in entries:
             t = self._normalize_rules_text(raw)
             if not t:
                 continue
@@ -683,6 +701,67 @@ class Unit:
                     spec = {}
                 spec[int(dmg)] = int(spec.get(int(dmg), 0)) + int(bonus)
                 self.special_rules["armor_save_bonus_vs_damage_characteristic"] = spec
+
+            # Damage reduction when attacks are allocated to this model/unit.
+            m = re.search(
+                r"each\s+time\s+(?:an|a)\s+(?:(?P<atype>melee|ranged)\s+)?attack\s+is\s+allocated\s+to\s+"
+                r"(?:this\s+model|a\s+model\s+in\s+this\s+unit)\s*,\s*"
+                r"subtract\s+(?P<val>\d+)\s+from\s+the\s+damage\s+characteristic\s+of\s+that\s+attack",
+                tl,
+                flags=re.IGNORECASE,
+            )
+            if m:
+                try:
+                    val = int(m.group("val"))
+                except Exception:
+                    val = 0
+                if val:
+                    atype = (m.group("atype") or "any").strip().lower()
+                    label = (name or "Damage reduction ability").strip() or "Damage reduction ability"
+                    sr = self.special_rules
+                    items = list(sr.get("allocated_damage_reductions", []) or [])
+                    items.append(
+                        {
+                            "value": int(val),
+                            "attack_type": atype,
+                            "source": label,
+                            "op": "sub",
+                        }
+                    )
+                    sr["allocated_damage_reductions"] = items
+                    self.special_rules = sr
+
+            # Damage halving when attacks are allocated to this model/unit.
+            m = re.search(
+                r"each\s+time\s+(?:an|a)\s+(?:(?P<atype>melee|ranged)\s+)?attack\s+is\s+allocated\s+to\s+"
+                r"(?:this\s+model|a\s+model\s+in\s+this\s+unit)\s*,\s*"
+                r"(?:halve|half)\s+the\s+damage\s+characteristic\s+of\s+that\s+attack",
+                tl,
+                flags=re.IGNORECASE,
+            )
+            if not m:
+                m = re.search(
+                    r"each\s+time\s+(?:an|a)\s+(?:(?P<atype>melee|ranged)\s+)?attack\s+is\s+allocated\s+to\s+"
+                    r"(?:this\s+model|a\s+model\s+in\s+this\s+unit).*?"
+                    r"damage\s+characteristic\s+of\s+that\s+attack\s+is\s+halved",
+                    tl,
+                    flags=re.IGNORECASE,
+                )
+            if m:
+                atype = (m.group("atype") or "any").strip().lower()
+                label = (name or "Damage halving ability").strip() or "Damage halving ability"
+                sr = self.special_rules
+                items = list(sr.get("allocated_damage_reductions", []) or [])
+                items.append(
+                    {
+                        "value": 2,
+                        "attack_type": atype,
+                        "source": label,
+                        "op": "div",
+                    }
+                )
+                sr["allocated_damage_reductions"] = items
+                self.special_rules = sr
 
     _CANNOT_BE_WARLORD_RE = re.compile(r"\bcannot be your\s+warlord\b", re.IGNORECASE)
     _CANNOT_BE_GIVEN_ENHANCEMENTS_RE = re.compile(r"\bcannot be given\s+(?:an?\s+)?enhancements?\b", re.IGNORECASE)
@@ -724,7 +803,11 @@ class Unit:
         re.IGNORECASE,
     )
     _BEARER_UNIT_FNP_RE = re.compile(
-        r"(?:models\s+in\s+)?the\s+bearer'?s\s+unit.*?\bfeel\s+no\s+pain\b\s*(\d+)\+",
+        r"(?:models\s+in\s+)?the\s+bearer'?s\s+unit.*?\bfeel\s+no\s+pain\b\s*([1-6])\+",
+        re.IGNORECASE,
+    )
+    _BEARER_UNIT_INVULNERABLE_SAVE_RE = re.compile(
+        r"models\s+in\s+the\s+bearer'?s\s+unit\s+have\s+(?:a|the)?\s*([1-6])\+?\s*invulnerable\s+save",
         re.IGNORECASE,
     )
     _BEARER_UNIT_SUSTAINED_HITS_RE = re.compile(
@@ -741,6 +824,10 @@ class Unit:
     )
     _COMMAND_PHASE_BONUS_CP_RE = re.compile(
         r"(?:at\s+the\s+)?start\s+of\s+(?:each\s+of\s+)?your\s+command\s+phase[s]?\b.*?\bgain\s+(\d+)\s*(?:cp|command point(?:s)?)",
+        re.IGNORECASE,
+    )
+    _COMMAND_PHASE_REGAIN_WOUND_RE = re.compile(
+        r"(?:at\s+the\s+)?start\s+of\s+(?:each\s+of\s+)?your\s+command\s+phase[s]?[,.]?\s*this\s+model\s+regains?\s+(\d+)\s+lost\s+wounds?",
         re.IGNORECASE,
     )
     _REROLL_ADVANCE_CHARGE_RE = re.compile(
@@ -763,6 +850,25 @@ class Unit:
         r"once\s+per\s+battle\s+round.*?\bone\s+(?:unit|model)\s+from\s+your\s+army\s+with\s+this\s+ability\s+can\s+use\s+it\s+when\s+"
         r"(?:its\s+unit|this\s+model'?s\s+unit|that\s+model'?s\s+unit)\s+is\s+targeted\s+with\s+a\s+stratagem.*?"
         r"reduce\s+the\s+cp\s+cost\s+of\s+that\s+(?:use|usage)\s+of\s+that\s+stratagem\s+by\s+1cp",
+        re.IGNORECASE,
+    )
+    _FIGHT_WITHIN_3_RE = re.compile(
+        r"selected\s+to\s+fight.*?eligible\s+to\s+fight.*?within\s+3\"?.*?engagement\s+range",
+        re.IGNORECASE,
+    )
+    _CHARGE_END_MORTAL_PER_MODEL_RE = re.compile(
+        r"each\s+time\s+(?:this\s+model'?s\s+unit|this\s+unit)\s+ends?\s+a\s+charge\s+move.*?"
+        r"(?:select|choose)\s+one\s+enemy\s+unit\s+within\s+engagement\s+range.*?"
+        r"roll\s+one\s+d6\s+for\s+each\s+model\s+in\s+(?:this\s+unit|that\s+unit|this\s+model'?s\s+unit).*?"
+        r"for\s+each\s+4\+.*?d3\s+mortal\s+wounds?",
+        re.IGNORECASE,
+    )
+    _CHARGE_END_MORTAL_TABLE_RE = re.compile(
+        r"each\s+time\s+(?:this\s+model'?s\s+unit|this\s+unit)\s+ends?\s+a\s+charge\s+move.*?"
+        r"(?:select|choose)\s+one\s+enemy\s+unit\s+within\s+engagement\s+range.*?"
+        r"roll\s+one\s+d6.*?on\s+a\s+2\s*-\s*3.*?mortal\s+wound.*?"
+        r"on\s+a\s+4\s*-\s*5.*?d3\s+mortal\s+wounds?.*?"
+        r"on\s+a\s+6.*?d3\s*\+\s*3\s+mortal\s+wounds?",
         re.IGNORECASE,
     )
     _BEARER_INVULNERABLE_SAVE_RE = re.compile(
@@ -933,6 +1039,68 @@ class Unit:
                 "description": desc or "",
             }
         return None
+
+    def _parse_command_phase_regain_wound_amount(self, text: str) -> int:
+        if not text:
+            return 0
+        m = self._COMMAND_PHASE_REGAIN_WOUND_RE.search(text)
+        if not m:
+            return 0
+        try:
+            return int(m.group(1))
+        except Exception:
+            return 0
+
+    def get_command_phase_regain_wound_amount(self, model: Optional['Model'] = None) -> int:
+        """
+        Return the number of wounds a model regains at the start of your Command phase.
+
+        - Unit-level abilities apply to every model in the unit.
+        - Model-level abilities only apply to that specific model.
+        """
+        cache_key = "command_phase_regain_wound_unit_amount"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            base_amount = int(self._ability_cache[cache_key] or 0)
+        else:
+            base_amount = 0
+            for ab in self._iter_active_possible_abilities():
+                try:
+                    if isinstance(ab, str):
+                        desc = ab
+                    else:
+                        desc = str(getattr(ab, "description", "") or getattr(ab, "name", "") or "")
+                except Exception:
+                    desc = ""
+                text = self._normalize_rules_text(desc or "")
+                if not text:
+                    continue
+                base_amount += self._parse_command_phase_regain_wound_amount(text)
+            if not hasattr(self, "_ability_cache"):
+                self._ability_cache = {}
+            self._ability_cache[cache_key] = int(base_amount or 0)
+
+        if model is None:
+            return int(base_amount or 0)
+
+        amount = int(base_amount or 0)
+        for ab in list(getattr(model, "abilities", {}) or {}).values():
+            try:
+                if not self._ability_is_active(ab):
+                    continue
+            except Exception:
+                pass
+            try:
+                if isinstance(ab, str):
+                    desc = ab
+                else:
+                    desc = str(getattr(ab, "description", "") or getattr(ab, "name", "") or "")
+            except Exception:
+                desc = ""
+            text = self._normalize_rules_text(desc or "")
+            if not text:
+                continue
+            amount += self._parse_command_phase_regain_wound_amount(text)
+        return int(amount or 0)
 
     def _refresh_command_phase_flags(self) -> None:
         """Parse command-phase CP gains and sticky objective flags into special_rules."""
@@ -1117,6 +1285,132 @@ class Unit:
 
         self.special_rules = sr
 
+    def _refresh_charge_end_mortal_wounds_flags(self) -> None:
+        """Parse charge-move mortal wound triggers into special_rules."""
+        if getattr(self, "special_rules", None) is None:
+            self.special_rules = {}
+
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+
+        specs = []
+        seen = set()
+
+        for u in members:
+            if u is None:
+                continue
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text = u._normalize_rules_text(desc or "")
+                if not text:
+                    continue
+                text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+                low = text.lower()
+                if "charge move" not in low or "mortal wound" not in low:
+                    continue
+                kind = None
+                if self._CHARGE_END_MORTAL_PER_MODEL_RE.search(text):
+                    kind = "per_model_4plus_d3"
+                elif self._CHARGE_END_MORTAL_TABLE_RE.search(text):
+                    kind = "table_d6_2_3_4_5_6"
+                if not kind:
+                    continue
+                source = str(name or "Charge Mortals").strip() or "Charge Mortals"
+                key = (kind, source.lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "kind": kind,
+                        "name": source,
+                        "description": str(desc or ""),
+                    }
+                )
+
+        for u in members:
+            if u is None:
+                continue
+            sr_u = getattr(u, "special_rules", None)
+            if not isinstance(sr_u, dict):
+                sr_u = {}
+            if specs:
+                sr_u["charge_end_mortal_wounds"] = list(specs)
+            else:
+                if "charge_end_mortal_wounds" in sr_u:
+                    del sr_u["charge_end_mortal_wounds"]
+            u.special_rules = sr_u
+
+    def _refresh_fight_within_3_flags(self) -> None:
+        """Parse fight-within-3\" eligibility abilities into special_rules."""
+        if getattr(self, "special_rules", None) is None:
+            self.special_rules = {}
+
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+
+        specs = []
+        seen = set()
+
+        for u in members:
+            if u is None:
+                continue
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text = u._normalize_rules_text(desc or "")
+                if not text:
+                    continue
+                text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+                low = text.lower()
+                if "selected to fight" not in low:
+                    continue
+                if "eligible to fight" not in low:
+                    continue
+                if "within 3" not in low:
+                    continue
+                if "engagement range" not in low:
+                    continue
+                if not self._FIGHT_WITHIN_3_RE.search(text):
+                    continue
+                source = str(name or "Fight Within 3\"").strip() or "Fight Within 3\""
+                key = source.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "name": source,
+                        "description": str(desc or ""),
+                    }
+                )
+
+        for u in members:
+            if u is None:
+                continue
+            sr_u = getattr(u, "special_rules", None)
+            if not isinstance(sr_u, dict):
+                sr_u = {}
+            if specs:
+                sr_u["fight_within_3"] = list(specs)
+            else:
+                if "fight_within_3" in sr_u:
+                    del sr_u["fight_within_3"]
+            if not specs and "fight_within_3_active" in sr_u:
+                del sr_u["fight_within_3_active"]
+            if not specs and "fight_within_3_active_source" in sr_u:
+                del sr_u["fight_within_3_active_source"]
+            u.special_rules = sr_u
+
     def _refresh_bearer_unit_common_modifiers(self) -> None:
         """Parse common bearer/leading-unit rules that grant simple unit-wide modifiers."""
         try:
@@ -1170,7 +1464,10 @@ class Unit:
                         del sr["advance_roll_modifiers"]
                 for key in (
                     "bearer_unit_fnp",
+                    "bearer_unit_invulnerable_save",
                     "bearer_unit_sustained_hits_value",
+                    "bearer_unit_sustained_hits_value_melee",
+                    "bearer_unit_sustained_hits_value_ranged",
                     "bearer_unit_ignores_cover",
                     "bearer_unit_target_hit_penalties",
                 ):
@@ -1183,7 +1480,7 @@ class Unit:
                 cache = getattr(u, "_ability_cache", None)
                 if isinstance(cache, dict):
                     for k in list(cache.keys()):
-                        if k == "feel_no_pain" or k.startswith("target_hit_penalty:"):
+                        if k == "feel_no_pain" or k.startswith("target_hit_penalty:") or k.startswith("model_invulnerable_save:"):
                             del cache[k]
             except Exception:
                 pass
@@ -1195,7 +1492,10 @@ class Unit:
         oc_mods: list[tuple[int, str]] = []
         contains_oc_mods: list[tuple[int, str]] = []
         fnp_entries: list[dict] = []
+        invuln_entries: list[dict] = []
         sustained_hits_value = 0
+        sustained_hits_value_melee = 0
+        sustained_hits_value_ranged = 0
         ignores_cover_sources: set[str] = set()
         hit_penalties: list[dict] = []
 
@@ -1218,7 +1518,11 @@ class Unit:
                 if not text:
                     continue
                 text = text.replace("\u2019", "'").replace("\u0192?T", "'")
-                if "leading a unit" in text.lower() and "bearer's unit" not in text.lower():
+                text_lower = text.lower()
+                requires_attached_leader = bool(re.search(r"\bthis model is leading\b", text_lower))
+                if requires_attached_leader and not getattr(u, "is_attached_leader", False):
+                    continue
+                if "leading a unit" in text_lower and "bearer's unit" not in text_lower:
                     text = re.sub(r"\bthat unit\b", "the bearer's unit", text, flags=re.IGNORECASE)
 
                 for sentence in _iter_sentences(text):
@@ -1296,7 +1600,7 @@ class Unit:
                             try:
                                 sm = sentence.lower()
                                 cm = re.search(
-                                    r"(?:feel\s+no\s+pain|fnp)\s*\(?\d+\+(?:\)?)\s+(against|while|when)\s+(.+)",
+                                    r"(?:feel\s+no\s+pain|fnp)\s*\(?[1-6]\+(?:\)?)\s+(?:ability\s+)?(against|while|when)\s+(.+)",
                                     sm,
                                     flags=re.IGNORECASE,
                                 )
@@ -1307,6 +1611,16 @@ class Unit:
                             source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
                             fnp_entries.append({"value": int(val), "condition": cond, "source": source})
 
+                    m = self._BEARER_UNIT_INVULNERABLE_SAVE_RE.search(sentence)
+                    if m:
+                        try:
+                            val = int(m.group(1))
+                        except Exception:
+                            val = None
+                        if val:
+                            source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
+                            invuln_entries.append({"value": int(val), "source": source})
+
                     m = self._BEARER_UNIT_SUSTAINED_HITS_RE.search(sentence)
                     if m:
                         try:
@@ -1314,7 +1628,18 @@ class Unit:
                         except Exception:
                             val = None
                         if val:
-                            sustained_hits_value = max(int(sustained_hits_value), int(val))
+                            scope = sentence.lower()
+                            has_melee = "melee" in scope
+                            has_ranged = "ranged" in scope
+                            if has_melee and not has_ranged:
+                                sustained_hits_value_melee = max(int(sustained_hits_value_melee), int(val))
+                            elif has_ranged and not has_melee:
+                                sustained_hits_value_ranged = max(int(sustained_hits_value_ranged), int(val))
+                            elif has_melee and has_ranged:
+                                sustained_hits_value_melee = max(int(sustained_hits_value_melee), int(val))
+                                sustained_hits_value_ranged = max(int(sustained_hits_value_ranged), int(val))
+                            else:
+                                sustained_hits_value = max(int(sustained_hits_value), int(val))
 
                     if self._BEARER_UNIT_IGNORES_COVER_RE.search(sentence):
                         source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
@@ -1394,12 +1719,47 @@ class Unit:
                 sr["bearer_unit_fnp"] = list(fnp_entries)
                 u.special_rules = sr
 
+        if invuln_entries:
+            deduped = []
+            seen_invuln = set()
+            for entry in invuln_entries:
+                try:
+                    val = int(entry.get("value"))
+                except Exception:
+                    continue
+                source = str(entry.get("source", "") or "")
+                key = (val, source)
+                if key in seen_invuln:
+                    continue
+                seen_invuln.add(key)
+                deduped.append({"value": val, "source": source})
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["bearer_unit_invulnerable_save"] = list(deduped)
+                u.special_rules = sr
+
         if sustained_hits_value:
             for u in members:
                 sr = getattr(u, "special_rules", None)
                 if not isinstance(sr, dict):
                     sr = {}
                 sr["bearer_unit_sustained_hits_value"] = int(sustained_hits_value)
+                u.special_rules = sr
+        if sustained_hits_value_melee:
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["bearer_unit_sustained_hits_value_melee"] = int(sustained_hits_value_melee)
+                u.special_rules = sr
+        if sustained_hits_value_ranged:
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["bearer_unit_sustained_hits_value_ranged"] = int(sustained_hits_value_ranged)
                 u.special_rules = sr
 
         if ignores_cover_sources:
@@ -2502,6 +2862,10 @@ class Unit:
         except Exception:
             pass
         try:
+            self._parse_against_attack_characteristic_defensive_rules()
+        except Exception:
+            pass
+        try:
             self._refresh_bearer_unit_common_modifiers()
         except Exception:
             pass
@@ -2515,6 +2879,14 @@ class Unit:
             pass
         try:
             self._refresh_targeted_stratagem_cp_discount_flags()
+        except Exception:
+            pass
+        try:
+            self._refresh_charge_end_mortal_wounds_flags()
+        except Exception:
+            pass
+        try:
+            self._refresh_fight_within_3_flags()
         except Exception:
             pass
 
@@ -4434,6 +4806,22 @@ class Unit:
             bodyguard._refresh_targeted_stratagem_cp_discount_flags()
         except Exception:
             pass
+        try:
+            self._refresh_charge_end_mortal_wounds_flags()
+        except Exception:
+            pass
+        try:
+            bodyguard._refresh_charge_end_mortal_wounds_flags()
+        except Exception:
+            pass
+        try:
+            self._refresh_fight_within_3_flags()
+        except Exception:
+            pass
+        try:
+            bodyguard._refresh_fight_within_3_flags()
+        except Exception:
+            pass
 
     def detach_from_unit(self) -> None:
         """Detach this Leader from its Bodyguard unit."""
@@ -4503,6 +4891,24 @@ class Unit:
         try:
             if bodyguard is not None:
                 bodyguard._refresh_targeted_stratagem_cp_discount_flags()
+        except Exception:
+            pass
+        try:
+            self._refresh_charge_end_mortal_wounds_flags()
+        except Exception:
+            pass
+        try:
+            if bodyguard is not None:
+                bodyguard._refresh_charge_end_mortal_wounds_flags()
+        except Exception:
+            pass
+        try:
+            self._refresh_fight_within_3_flags()
+        except Exception:
+            pass
+        try:
+            if bodyguard is not None:
+                bodyguard._refresh_fight_within_3_flags()
         except Exception:
             pass
 
@@ -5534,6 +5940,30 @@ class Unit:
             except Exception:
                 continue
 
+        # Leading/bearer unit abilities that grant an invulnerable save to the unit.
+        try:
+            sr = getattr(self, "special_rules", None)
+            entries = sr.get("bearer_unit_invulnerable_save") if isinstance(sr, dict) else None
+            if isinstance(entries, list):
+                for entry in entries:
+                    if isinstance(entry, dict):
+                        val = entry.get("value")
+                        source = entry.get("source")
+                    elif isinstance(entry, (list, tuple)):
+                        val = entry[0] if entry else None
+                        source = entry[1] if len(entry) > 1 else None
+                    else:
+                        continue
+                    try:
+                        val = int(val)
+                    except Exception:
+                        continue
+                    if best_value is None or val < best_value:
+                        best_value = int(val)
+                        best_source = str(source or "Bearer unit ability")
+        except Exception:
+            pass
+
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
         self._ability_cache[cache_key] = (best_value, best_source)
@@ -5689,350 +6119,70 @@ class Unit:
                 seen.add(key)
                 yield text
 
-    def get_leading_attack_roll_modifiers(self, attack_type: str, *, target=None) -> dict:
-        """
-        Return leading-only attack roll modifiers from attached leaders for the attached unit.
+    def _iter_attack_roll_rule_texts(self, text: str) -> list[str]:
+        """Extract attack-roll rule clauses from a rules text (best-effort)."""
+        if not text:
+            return []
+        cleaned = self._normalize_rules_text(text)
+        if not cleaned:
+            return []
+        cleaned = Unit._strip_eligibility_prefix(cleaned)
+        cleaned = re.sub(r";\s*", ". ", cleaned)
+        sentences = [part.strip() for part in re.split(r"\.\s*", cleaned) if part.strip()]
+        if not sentences:
+            return []
+        candidates: list[str] = []
 
-        Supports strict patterns:
-        - add N to Hit/Wound rolls for melee/ranged/any attacks
-        - conditional Hit/Wound bonuses vs battle-shocked targets or below strength thresholds
-        - re-roll Hit/Wound rolls of 1 for melee/ranged/any attacks
-        """
+        def _effect_start(value: str) -> bool:
+            return bool(re.match(r"^(?:if|add|subtract|you can|reroll|re-?roll|a successful|an unmodified|a critical)\b", value, flags=re.IGNORECASE))
+
+        for idx, sentence in enumerate(sentences):
+            sl = sentence.lower()
+            if "each time" not in sl or "attack" not in sl:
+                continue
+            if not any(k in sl for k in ("hit roll", "wound roll", "critical", "reroll", "re-roll", "subtract", "add")):
+                continue
+            parts = [sentence]
+            j = idx + 1
+            while j < len(sentences):
+                nxt = sentences[j].strip()
+                if not nxt:
+                    j += 1
+                    continue
+                if _effect_start(nxt):
+                    parts.append(nxt)
+                    j += 1
+                    continue
+                break
+            candidates.append(". ".join(parts))
+
+        if not candidates:
+            candidates = [cleaned]
+        return candidates
+
+    def _parse_attack_roll_rules_from_text(self, text: str):
+        """Parse attack-roll rules from text into structured rules."""
+        rules = []
+        for chunk in self._iter_attack_roll_rule_texts(text):
+            try:
+                rule = parse_attack_roll_text(chunk)
+            except Exception:
+                rule = None
+            if rule is not None:
+                rules.append(rule)
+        return rules
+
+    def _get_unit_attack_roll_rules(self):
+        """Collect and cache unit-level attack roll rules for this attached unit."""
         try:
             root = self.get_attached_unit_root()
         except Exception:
             root = self
-        atype = str(attack_type or "").strip().lower()
-        if atype not in ("melee", "ranged"):
-            atype = "any"
-        cache_key = "leading_attack_roll_specs"
-        if cache_key in getattr(root, "_ability_cache", {}):
-            specs = root._ability_cache[cache_key]
-        else:
-            specs = {
-                "hit": [],
-                "wound": [],
-                "reroll_hit": [],
-                "reroll_wound": [],
-            }
-
-            def _norm_atype(val: str | None) -> str:
-                v = str(val or "").strip().lower()
-                return v if v in ("melee", "ranged") else "any"
-
-            def _split_sentences(text: str) -> list[str]:
-                return [part.strip() for part in re.split(r"[.;]", text) if part.strip()]
-
-            def _immediate_conditional_suffix(text: str, end_idx: int) -> bool:
-                tail = text[end_idx:]
-                return bool(re.match(r"\s*(?:,|;)?\s*(?:as well\s+|also\s+)?if\b", tail))
-
-            hit_re = re.compile(
-                r"each time a model in that unit makes (?:a|an) (?P<atype>melee|ranged) attack, add (?P<val>\d+) to the hit roll",
-                re.IGNORECASE,
-            )
-            hit_any_re = re.compile(
-                r"each time a model in that unit makes (?:a|an) attack, add (?P<val>\d+) to the hit roll",
-                re.IGNORECASE,
-            )
-            wound_re = re.compile(
-                r"each time a model in that unit makes (?:a|an) (?P<atype>melee|ranged) attack, add (?P<val>\d+) to the wound roll",
-                re.IGNORECASE,
-            )
-            wound_any_re = re.compile(
-                r"each time a model in that unit makes (?:a|an) attack, add (?P<val>\d+) to the wound roll",
-                re.IGNORECASE,
-            )
-            hit_below_start_re = re.compile(
-                r"each time a model in that unit makes (?:a|an) (?P<atype>melee|ranged) attack, add (?P<val>\d+) to the hit roll if that unit is below (?:its )?starting strength",
-                re.IGNORECASE,
-            )
-            hit_below_start_any_re = re.compile(
-                r"each time a model in that unit makes (?:a|an) attack, add (?P<val>\d+) to the hit roll if that unit is below (?:its )?starting strength",
-                re.IGNORECASE,
-            )
-            wound_below_half_re = re.compile(
-                r"add (?P<val>\d+) to the wound roll(?: as well)? if that unit is below half[- ]strength",
-                re.IGNORECASE,
-            )
-            wound_battle_shocked_prefix_re = re.compile(
-                r"if the target is battle[- ]shocked, add (?P<val>\d+) to the wound roll",
-                re.IGNORECASE,
-            )
-            wound_battle_shocked_suffix_re = re.compile(
-                r"add (?P<val>\d+) to the wound roll(?: as well)? if the target is battle[- ]shocked",
-                re.IGNORECASE,
-            )
-            reroll_hit_re = re.compile(
-                r"each time a model in that unit makes (?:a|an) (?P<atype>melee|ranged) attack, .*?re-?roll (?:a|any)?\s*hit roll(?:s)? of 1",
-                re.IGNORECASE,
-            )
-            reroll_hit_any_re = re.compile(
-                r"each time a model in that unit makes (?:a|an) attack, .*?re-?roll (?:a|any)?\s*hit roll(?:s)? of 1",
-                re.IGNORECASE,
-            )
-            reroll_wound_re = re.compile(
-                r"each time a model in that unit makes (?:a|an) (?P<atype>melee|ranged) attack, .*?re-?roll (?:a|any)?\s*wound roll(?:s)? of 1",
-                re.IGNORECASE,
-            )
-            reroll_wound_any_re = re.compile(
-                r"each time a model in that unit makes (?:a|an) attack, .*?re-?roll (?:a|any)?\s*wound roll(?:s)? of 1",
-                re.IGNORECASE,
-            )
-
-            def _add_spec(kind: str, val: int, atype_val: str, cond: str | None, source: str) -> None:
-                specs[kind].append(
-                    {
-                        "value": int(val),
-                        "attack_type": _norm_atype(atype_val),
-                        "condition": cond,
-                        "source": source,
-                    }
-                )
-
-            seen_names: set[str] = set()
-            for ab, _leader in root._iter_attached_leader_leading_abilities():
-                try:
-                    name = str(getattr(ab, "name", "") or "Leading ability").replace("’", "'")
-                    name_key = name.strip().lower()
-                    if name_key and name_key != "leading ability" and name_key in seen_names:
-                        continue
-                    if name_key and name_key != "leading ability":
-                        seen_names.add(name_key)
-                    desc = str(getattr(ab, "description", "") or "")
-                except Exception:
-                    name = "Leading ability"
-                    desc = ""
-                text = self._normalize_rules_text(desc)
-                if not text:
-                    continue
-                try:
-                    rest = self._LEADING_ABILITY_PREFIX_RE.sub("", text, count=1).strip(" ,:;-")
-                except Exception:
-                    rest = text
-                if not rest:
-                    continue
-
-                sentences = _split_sentences(rest)
-                if not sentences:
-                    continue
-                attack_clause_types: set[str] = set()
-                for sentence in sentences:
-                    sl = sentence.lower()
-                    if "each time a model in that unit makes" in sl and "attack" in sl:
-                        if "melee attack" in sl:
-                            attack_clause_types.add("melee")
-                        elif "ranged attack" in sl:
-                            attack_clause_types.add("ranged")
-                        else:
-                            attack_clause_types.add("any")
-
-                def _resolve_clause_atype(sl: str) -> str:
-                    if "melee attack" in sl:
-                        return "melee"
-                    if "ranged attack" in sl:
-                        return "ranged"
-                    if not attack_clause_types:
-                        return "any"
-                    if "any" in attack_clause_types or len(attack_clause_types) > 1:
-                        return "any"
-                    return next(iter(attack_clause_types))
-
-                for sentence in sentences:
-                    s = (sentence or "").strip()
-                    if not s:
-                        continue
-                    sl = s.lower()
-
-                    m = hit_below_start_re.search(sl)
-                    if m:
-                        _add_spec("hit", int(m.group("val")), m.group("atype"), "below_starting_strength", name)
-                    else:
-                        m = hit_below_start_any_re.search(sl)
-                        if m:
-                            _add_spec("hit", int(m.group("val")), _resolve_clause_atype(sl), "below_starting_strength", name)
-
-                    m = wound_below_half_re.search(sl)
-                    if m:
-                        _add_spec("wound", int(m.group("val")), _resolve_clause_atype(sl), "below_half_strength", name)
-
-                    m = wound_battle_shocked_prefix_re.search(sl) or wound_battle_shocked_suffix_re.search(sl)
-                    if m:
-                        _add_spec("wound", int(m.group("val")), _resolve_clause_atype(sl), "target_battleshocked", name)
-
-                    m = hit_re.search(sl)
-                    if m:
-                        if not _immediate_conditional_suffix(sl, m.end()):
-                            _add_spec("hit", int(m.group("val")), m.group("atype"), None, name)
-                    else:
-                        m = hit_any_re.search(sl)
-                        if m and not _immediate_conditional_suffix(sl, m.end()):
-                            _add_spec("hit", int(m.group("val")), "any", None, name)
-
-                    m = wound_re.search(sl)
-                    if m:
-                        if not _immediate_conditional_suffix(sl, m.end()):
-                            _add_spec("wound", int(m.group("val")), m.group("atype"), None, name)
-                    else:
-                        m = wound_any_re.search(sl)
-                        if m and not _immediate_conditional_suffix(sl, m.end()):
-                            _add_spec("wound", int(m.group("val")), "any", None, name)
-
-                    if " if " in f" {sl} " or " unless " in f" {sl} " or " while " in f" {sl} " or " when " in f" {sl} ":
-                        continue
-
-                    m = reroll_hit_re.search(sl)
-                    if m:
-                        specs["reroll_hit"].append({"attack_type": _norm_atype(m.group("atype")), "source": name})
-                    elif reroll_hit_any_re.search(sl):
-                        specs["reroll_hit"].append({"attack_type": "any", "source": name})
-
-                    m = reroll_wound_re.search(sl)
-                    if m:
-                        specs["reroll_wound"].append({"attack_type": _norm_atype(m.group("atype")), "source": name})
-                    elif reroll_wound_any_re.search(sl):
-                        specs["reroll_wound"].append({"attack_type": "any", "source": name})
-
-            if not hasattr(root, "_ability_cache"):
-                root._ability_cache = {}
-            root._ability_cache[cache_key] = specs
-
-        mods = {
-            "hit": 0,
-            "wound": 0,
-            "reroll_hit_ones": False,
-            "reroll_wound_ones": False,
-            "hit_reasons": (),
-            "wound_reasons": (),
-            "reroll_hit_reasons": (),
-            "reroll_wound_reasons": (),
-        }
-
-        hit_reasons: list[str] = []
-        wound_reasons: list[str] = []
-        reroll_hit_reasons: list[str] = []
-        reroll_wound_reasons: list[str] = []
-
-        def _condition_met(cond: str | None) -> bool:
-            if not cond:
-                return True
-            if cond == "target_battleshocked":
-                try:
-                    return bool(target is not None and target.is_battle_shocked())
-                except Exception:
-                    return False
-            if cond == "below_starting_strength":
-                try:
-                    return bool(root.is_below_starting_strength())
-                except Exception:
-                    return False
-            if cond == "below_half_strength":
-                try:
-                    return bool(root.is_below_half_strength())
-                except Exception:
-                    return False
-            return False
-
-        def _cond_suffix(cond: str | None) -> str:
-            if cond == "target_battleshocked":
-                return " vs Battle-shocked targets"
-            if cond == "below_starting_strength":
-                return " while below Starting Strength"
-            if cond == "below_half_strength":
-                return " while below Half-strength"
-            return ""
-
-        for spec in list(specs.get("hit", []) or []):
-            if atype != "any" and spec.get("attack_type") not in ("any", atype):
-                continue
-            cond = spec.get("condition")
-            if not _condition_met(cond):
-                continue
-            val = int(spec.get("value", 0) or 0)
-            if val:
-                mods["hit"] += val
-                hit_reasons.append(f"+{val} to hit from {spec.get('source')}{_cond_suffix(cond)}")
-
-        for spec in list(specs.get("wound", []) or []):
-            if atype != "any" and spec.get("attack_type") not in ("any", atype):
-                continue
-            cond = spec.get("condition")
-            if not _condition_met(cond):
-                continue
-            val = int(spec.get("value", 0) or 0)
-            if val:
-                mods["wound"] += val
-                wound_reasons.append(f"+{val} to wound from {spec.get('source')}{_cond_suffix(cond)}")
-
-        for spec in list(specs.get("reroll_hit", []) or []):
-            if atype != "any" and spec.get("attack_type") not in ("any", atype):
-                continue
-            mods["reroll_hit_ones"] = True
-            reroll_hit_reasons.append(f"Leading: re-roll Hit rolls of 1 from {spec.get('source')}")
-
-        for spec in list(specs.get("reroll_wound", []) or []):
-            if atype != "any" and spec.get("attack_type") not in ("any", atype):
-                continue
-            mods["reroll_wound_ones"] = True
-            reroll_wound_reasons.append(f"Leading: re-roll Wound rolls of 1 from {spec.get('source')}")
-
-        mods["hit_reasons"] = tuple(hit_reasons)
-        mods["wound_reasons"] = tuple(wound_reasons)
-        mods["reroll_hit_reasons"] = tuple(reroll_hit_reasons)
-        mods["reroll_wound_reasons"] = tuple(reroll_wound_reasons)
-        return mods
-
-    def get_unit_hit_reroll_modifiers(self, attack_type: str) -> dict:
-        """
-        Return unit-level hit re-roll modifiers for this attached unit.
-
-        Supports strict patterns:
-        - Each time a model in this unit makes a ranged/melee/any attack, re-roll a Hit roll of 1.
-        - If that attack targets a unit within range of an objective marker, you can re-roll the Hit roll instead.
-        """
-        try:
-            root = self.get_attached_unit_root()
-        except Exception:
-            root = self
-        atype = str(attack_type or "").strip().lower()
-        if atype not in ("melee", "ranged"):
-            atype = "any"
-        cache_key = f"unit_hit_reroll_mods:{atype}"
+        cache_key = "unit_attack_roll_rules"
         if cache_key in getattr(root, "_ability_cache", {}):
             return root._ability_cache[cache_key]
-
-        mods = {
-            "reroll_hit_ones": False,
-            "reroll_hit_full_if_objective": False,
-            "reroll_hit_reasons": (),
-            "reroll_hit_full_reasons": (),
-        }
-
-        reroll_hit_reasons: list[str] = []
-        reroll_hit_full_reasons: list[str] = []
+        rules = []
         seen_names: set[str] = set()
-
-        def _split_sentences(text: str) -> list[str]:
-            cleaned = re.sub(r";\s*", ". ", text)
-            return [part.strip() for part in re.split(r"\.\s*", cleaned) if part.strip()]
-
-        reroll_hit_typed_re = re.compile(
-            r"^each time a model in this unit makes (?:a|an) (?P<atype>melee|ranged) attack(?:s)?"
-            r"[,;:]?\s*(?:you can\s*)?re-?roll (?:a|any)?\s*hit roll(?:s)? of 1$",
-            re.IGNORECASE,
-        )
-        reroll_hit_any_re = re.compile(
-            r"^each time a model in this unit makes (?:a|an) attack(?:s)?"
-            r"[,;:]?\s*(?:you can\s*)?re-?roll (?:a|any)?\s*hit roll(?:s)? of 1$",
-            re.IGNORECASE,
-        )
-        objective_clause_re = re.compile(
-            r"^if (?:that attack targets|the target of that attack is) (?:a unit )?(?:that is )?"
-            r"within range of (?:an|one or more) objective marker(?:s)?"
-            r"\s*[,;:]?\s*(?:you can\s*)?re-?roll the hit roll instead$",
-            re.IGNORECASE,
-        )
-
         try:
             members = list(root.get_attached_unit_members() or [])
         except Exception:
@@ -6049,53 +6199,509 @@ class Unit:
                 if name_key:
                     seen_names.add(name_key)
                 text_src = desc or name or ""
-                text = member._normalize_rules_text(text_src)
-                if not text:
-                    continue
-                low = text.lower()
-                if "model in this unit" not in low:
-                    continue
-                if "leading a unit" in low:
-                    continue
-                if ("re-roll" not in low) and ("reroll" not in low):
-                    continue
-
-                sentences = _split_sentences(text)
-                if not sentences:
-                    continue
-
-                base_atype = None
-                for sentence in sentences:
-                    s_low = sentence.lower()
-                    if "model in this unit" not in s_low:
+                for rule in self._parse_attack_roll_rules_from_text(text_src):
+                    if rule.scope != "unit":
                         continue
-                    m = reroll_hit_typed_re.match(s_low)
-                    if m:
-                        base_atype = m.group("atype").lower()
-                        break
-                    if reroll_hit_any_re.match(s_low):
-                        base_atype = "any"
-                        break
-
-                if base_atype is None:
-                    continue
-                if atype != "any" and base_atype not in ("any", atype):
-                    continue
-
-                mods["reroll_hit_ones"] = True
-                label = ability_name or "Unit ability"
-                reroll_hit_reasons.append(f"{label}: re-roll Hit rolls of 1")
-
-                if any(objective_clause_re.match(s.lower()) for s in sentences):
-                    mods["reroll_hit_full_if_objective"] = True
-                    reroll_hit_full_reasons.append(f"{label}: re-roll Hit roll (objective)")
-
-        mods["reroll_hit_reasons"] = tuple(reroll_hit_reasons)
-        mods["reroll_hit_full_reasons"] = tuple(reroll_hit_full_reasons)
-
+                    if rule.subject not in ("model_in_this_unit", "model_in_that_unit"):
+                        continue
+                    rules.append((rule, ability_name or "Unit ability"))
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}
-        root._ability_cache[cache_key] = mods
+        root._ability_cache[cache_key] = rules
+        return rules
+
+    def _attack_condition_met(self, condition: Optional[AttackRollCondition], *, target=None, source_unit=None) -> bool:
+        """Evaluate attack-roll conditions against the current unit/target."""
+        if condition is None:
+            return True
+        unit = source_unit or self
+        try:
+            unit = unit.get_attached_unit_root()
+        except Exception:
+            pass
+        if condition.attacker_below_starting_strength:
+            try:
+                if not unit.is_below_starting_strength():
+                    return False
+            except Exception:
+                return False
+        if condition.attacker_below_half_strength:
+            try:
+                if not unit.is_below_half_strength():
+                    return False
+            except Exception:
+                return False
+        if condition.target_battleshocked:
+            try:
+                if not (target is not None and target.is_battle_shocked()):
+                    return False
+            except Exception:
+                return False
+        if condition.target_within_objective:
+            try:
+                if not self._target_within_objective_range(target):
+                    return False
+            except Exception:
+                return False
+        if condition.target_within_range is not None:
+            try:
+                from ..utility.aura_utils import unit_within_range_of_unit
+                t_unit = target
+                if t_unit is not None and not hasattr(t_unit, "get_attached_unit_root"):
+                    t_unit = getattr(t_unit, "parent_unit", t_unit)
+                if t_unit is None:
+                    return False
+                game = None
+                try:
+                    game = getattr(getattr(unit.get_parent_army(), "player", None), "game", None)
+                except Exception:
+                    game = None
+                if game is None:
+                    try:
+                        game = getattr(getattr(t_unit.get_parent_army(), "player", None), "game", None)
+                    except Exception:
+                        game = None
+                game_map = getattr(game, "map", None) if game is not None else None
+                if game_map is not None:
+                    placed = list(getattr(game_map, "units", []) or [])
+                    try:
+                        s_root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+                    except Exception:
+                        s_root = unit
+                    try:
+                        t_root = t_unit.get_attached_unit_root() if hasattr(t_unit, "get_attached_unit_root") else t_unit
+                    except Exception:
+                        t_root = t_unit
+                    if s_root not in placed or t_root not in placed:
+                        return False
+                if not unit_within_range_of_unit(unit, t_unit, float(condition.target_within_range), use_attached_aggregate=True):
+                    return False
+            except Exception:
+                return False
+        if condition.target_can_fly is not None:
+            try:
+                can_fly = bool(getattr(target, "is_flying", False))
+            except Exception:
+                can_fly = False
+            if not can_fly:
+                try:
+                    can_fly = bool(target.has_keyword("FLY") or target.has_any_keyword("FLY"))
+                except Exception:
+                    can_fly = False
+            if bool(condition.target_can_fly) != bool(can_fly):
+                return False
+        if condition.target_below_starting_strength:
+            try:
+                if not (target is not None and target.is_below_starting_strength()):
+                    return False
+            except Exception:
+                return False
+        if condition.target_below_half_strength:
+            try:
+                if not (target is not None and target.is_below_half_strength()):
+                    return False
+            except Exception:
+                return False
+
+        def _target_has_keyword(keyword: str) -> bool:
+            if target is None:
+                return False
+            kw = str(keyword or "").strip()
+            if not kw:
+                return False
+            try:
+                return bool(target.has_keyword(kw.upper()))
+            except Exception:
+                try:
+                    return bool(target.has_any_keyword(kw.upper()))
+                except Exception:
+                    return False
+
+        if condition.target_keywords_any:
+            if not any(_target_has_keyword(k) for k in condition.target_keywords_any):
+                return False
+        if condition.target_keywords_all:
+            if not all(_target_has_keyword(k) for k in condition.target_keywords_all):
+                return False
+        if condition.target_exclude_keywords_any:
+            if any(_target_has_keyword(k) for k in condition.target_exclude_keywords_any):
+                return False
+        return True
+
+    def get_leading_attack_roll_modifiers(self, attack_type: str, *, target=None) -> dict:
+        """
+        Return leading-only attack roll modifiers from attached leaders for the attached unit.
+
+        Supports strict patterns parsed by attack_roll_parser (full clause matching).
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        atype = str(attack_type or "").strip().lower()
+        if atype not in ("melee", "ranged"):
+            atype = "any"
+
+        cache_key = "leading_attack_roll_rules"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            rules = root._ability_cache[cache_key]
+        else:
+            rules = []
+            seen_names: set[str] = set()
+            for ab, _leader in root._iter_attached_leader_leading_abilities():
+                try:
+                    name = str(getattr(ab, "name", "") or "Leading ability").replace("’", "'")
+                    desc = str(getattr(ab, "description", "") or "")
+                except Exception:
+                    name = "Leading ability"
+                    desc = ""
+                name_key = name.strip().lower()
+                if name_key and name_key != "leading ability" and name_key in seen_names:
+                    continue
+                if name_key and name_key != "leading ability":
+                    seen_names.add(name_key)
+                text_src = desc or name or ""
+                for rule in self._parse_attack_roll_rules_from_text(text_src):
+                    if rule.scope != "leading":
+                        continue
+                    if rule.subject not in ("model_in_that_unit", "model_in_this_unit"):
+                        continue
+                    rules.append((rule, name or "Leading ability"))
+            if not hasattr(root, "_ability_cache"):
+                root._ability_cache = {}
+            root._ability_cache[cache_key] = rules
+
+        mods = {
+            "hit": 0,
+            "wound": 0,
+            "reroll_hit_ones": False,
+            "reroll_wound_ones": False,
+            "reroll_hit_values": (),
+            "reroll_wound_values": (),
+            "reroll_hit_full": False,
+            "reroll_wound_full": False,
+            "crit_hit_threshold": None,
+            "crit_wound_threshold": None,
+            "hit_reasons": (),
+            "wound_reasons": (),
+            "reroll_hit_reasons": (),
+            "reroll_wound_reasons": (),
+            "reroll_hit_full_reasons": (),
+            "reroll_wound_full_reasons": (),
+            "crit_hit_reasons": (),
+            "crit_wound_reasons": (),
+        }
+
+        hit_reasons: list[str] = []
+        wound_reasons: list[str] = []
+        reroll_hit_reasons: list[str] = []
+        reroll_wound_reasons: list[str] = []
+        reroll_hit_full_reasons: list[str] = []
+        reroll_wound_full_reasons: list[str] = []
+        crit_hit_reasons: list[str] = []
+        crit_wound_reasons: list[str] = []
+        reroll_hit_values: set[int] = set()
+        reroll_wound_values: set[int] = set()
+        crit_hit_threshold = None
+        crit_wound_threshold = None
+
+        def _cond_suffix(cond: Optional[AttackRollCondition]) -> str:
+            if not cond:
+                return ""
+            parts = []
+            if cond.target_battleshocked:
+                parts.append("vs Battle-shocked targets")
+            if cond.attacker_below_starting_strength:
+                parts.append("while below Starting Strength")
+            if cond.attacker_below_half_strength:
+                parts.append("while below Half-strength")
+            if cond.target_within_objective:
+                parts.append("vs targets within objective range")
+            if cond.target_within_range is not None:
+                parts.append(f"vs targets within {cond.target_within_range}\"")
+            if cond.target_can_fly is True:
+                parts.append("vs FLY targets")
+            if cond.target_can_fly is False:
+                parts.append("vs non-FLY targets")
+            if cond.target_keywords_any:
+                if set(cond.target_keywords_any) == {"character"}:
+                    parts.append("vs CHARACTER targets")
+                elif set(cond.target_keywords_any) == {"monster", "vehicle"}:
+                    parts.append("vs MONSTER/VEHICLE targets")
+            if cond.target_below_starting_strength:
+                parts.append("vs targets below Starting Strength")
+            if cond.target_below_half_strength:
+                parts.append("vs targets below Half-strength")
+            if cond.target_exclude_keywords_any:
+                parts.append("excluding " + ", ".join(cond.target_exclude_keywords_any))
+            if not parts:
+                return ""
+            return " (" + "; ".join(parts) + ")"
+
+        for rule, name in list(rules or []):
+            if atype != "any" and rule.attack_type not in ("any", atype):
+                continue
+            for eff in rule.effects:
+                if not self._attack_condition_met(eff.condition, target=target, source_unit=root):
+                    continue
+                label = name or "Leading ability"
+                if eff.kind in ("add", "sub") and eff.roll in ("hit", "wound"):
+                    val = int(eff.value or 0)
+                    if eff.kind == "sub":
+                        val = -val
+                    if eff.roll == "hit":
+                        mods["hit"] += val
+                        hit_reasons.append(f"{val:+d} to hit from {label}{_cond_suffix(eff.condition)}")
+                    else:
+                        mods["wound"] += val
+                        wound_reasons.append(f"{val:+d} to wound from {label}{_cond_suffix(eff.condition)}")
+                elif eff.kind == "reroll":
+                    if eff.roll == "hit":
+                        if eff.reroll_full:
+                            mods["reroll_hit_full"] = True
+                            reroll_hit_full_reasons.append(f"Leading: re-roll Hit roll from {label}{_cond_suffix(eff.condition)}")
+                        if eff.reroll_values:
+                            reroll_hit_values.update(int(v) for v in eff.reroll_values)
+                            reroll_hit_reasons.append(
+                                f"Leading: re-roll Hit rolls of {', '.join(str(v) for v in sorted(eff.reroll_values))} from {label}{_cond_suffix(eff.condition)}"
+                            )
+                    elif eff.roll == "wound":
+                        if eff.reroll_full:
+                            mods["reroll_wound_full"] = True
+                            reroll_wound_full_reasons.append(f"Leading: re-roll Wound roll from {label}{_cond_suffix(eff.condition)}")
+                        if eff.reroll_values:
+                            reroll_wound_values.update(int(v) for v in eff.reroll_values)
+                            reroll_wound_reasons.append(
+                                f"Leading: re-roll Wound rolls of {', '.join(str(v) for v in sorted(eff.reroll_values))} from {label}{_cond_suffix(eff.condition)}"
+                            )
+                elif eff.kind == "crit" and eff.critical_threshold:
+                    if eff.roll == "hit":
+                        crit_hit_threshold = eff.critical_threshold if crit_hit_threshold is None else min(crit_hit_threshold, eff.critical_threshold)
+                        crit_hit_reasons.append(f"Leading: critical hit on {eff.critical_threshold}+ from {label}{_cond_suffix(eff.condition)}")
+                    elif eff.roll == "wound":
+                        crit_wound_threshold = eff.critical_threshold if crit_wound_threshold is None else min(crit_wound_threshold, eff.critical_threshold)
+                        crit_wound_reasons.append(f"Leading: critical wound on {eff.critical_threshold}+ from {label}{_cond_suffix(eff.condition)}")
+
+        mods["reroll_hit_values"] = tuple(sorted(reroll_hit_values))
+        mods["reroll_wound_values"] = tuple(sorted(reroll_wound_values))
+        mods["reroll_hit_ones"] = bool(1 in reroll_hit_values)
+        mods["reroll_wound_ones"] = bool(1 in reroll_wound_values)
+        mods["crit_hit_threshold"] = crit_hit_threshold
+        mods["crit_wound_threshold"] = crit_wound_threshold
+        mods["hit_reasons"] = tuple(hit_reasons)
+        mods["wound_reasons"] = tuple(wound_reasons)
+        mods["reroll_hit_reasons"] = tuple(reroll_hit_reasons)
+        mods["reroll_wound_reasons"] = tuple(reroll_wound_reasons)
+        mods["reroll_hit_full_reasons"] = tuple(reroll_hit_full_reasons)
+        mods["reroll_wound_full_reasons"] = tuple(reroll_wound_full_reasons)
+        mods["crit_hit_reasons"] = tuple(crit_hit_reasons)
+        mods["crit_wound_reasons"] = tuple(crit_wound_reasons)
+        return mods
+
+    def get_unit_hit_reroll_modifiers(self, attack_type: str, *, target=None) -> dict:
+        """
+        Return unit-level hit modifiers for this attached unit, parsed via attack_roll_parser.
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        atype = str(attack_type or "").strip().lower()
+        if atype not in ("melee", "ranged"):
+            atype = "any"
+
+        rules = self._get_unit_attack_roll_rules()
+
+        mods = {
+            "hit": 0,
+            "reroll_hit_ones": False,
+            "reroll_hit_values": (),
+            "reroll_hit_full": False,
+            "crit_hit_threshold": None,
+            "hit_reasons": (),
+            "reroll_hit_reasons": (),
+            "reroll_hit_full_reasons": (),
+            "crit_hit_reasons": (),
+        }
+
+        hit_reasons: list[str] = []
+        reroll_hit_reasons: list[str] = []
+        reroll_hit_full_reasons: list[str] = []
+        crit_hit_reasons: list[str] = []
+        reroll_hit_values: set[int] = set()
+        crit_hit_threshold = None
+
+        def _cond_suffix(cond: Optional[AttackRollCondition]) -> str:
+            if not cond:
+                return ""
+            parts = []
+            if cond.target_battleshocked:
+                parts.append("vs Battle-shocked targets")
+            if cond.attacker_below_starting_strength:
+                parts.append("while below Starting Strength")
+            if cond.attacker_below_half_strength:
+                parts.append("while below Half-strength")
+            if cond.target_within_objective:
+                parts.append("vs targets within objective range")
+            if cond.target_within_range is not None:
+                parts.append(f"vs targets within {cond.target_within_range}\"")
+            if cond.target_can_fly is True:
+                parts.append("vs FLY targets")
+            if cond.target_can_fly is False:
+                parts.append("vs non-FLY targets")
+            if cond.target_keywords_any:
+                if set(cond.target_keywords_any) == {"character"}:
+                    parts.append("vs CHARACTER targets")
+                elif set(cond.target_keywords_any) == {"monster", "vehicle"}:
+                    parts.append("vs MONSTER/VEHICLE targets")
+            if cond.target_below_starting_strength:
+                parts.append("vs targets below Starting Strength")
+            if cond.target_below_half_strength:
+                parts.append("vs targets below Half-strength")
+            if cond.target_exclude_keywords_any:
+                parts.append("excluding " + ", ".join(cond.target_exclude_keywords_any))
+            if not parts:
+                return ""
+            return " (" + "; ".join(parts) + ")"
+
+        for rule, name in list(rules or []):
+            if atype != "any" and rule.attack_type not in ("any", atype):
+                continue
+            for eff in rule.effects:
+                if not self._attack_condition_met(eff.condition, target=target, source_unit=root):
+                    continue
+                if eff.roll != "hit":
+                    continue
+                label = name or "Unit ability"
+                if eff.kind in ("add", "sub"):
+                    val = int(eff.value or 0)
+                    if eff.kind == "sub":
+                        val = -val
+                    mods["hit"] += val
+                    hit_reasons.append(f"{val:+d} to hit from {label}{_cond_suffix(eff.condition)}")
+                elif eff.kind == "reroll":
+                    if eff.reroll_full:
+                        mods["reroll_hit_full"] = True
+                        reroll_hit_full_reasons.append(f"{label}: re-roll Hit roll{_cond_suffix(eff.condition)}")
+                    if eff.reroll_values:
+                        reroll_hit_values.update(int(v) for v in eff.reroll_values)
+                        reroll_hit_reasons.append(
+                            f"{label}: re-roll Hit rolls of {', '.join(str(v) for v in sorted(eff.reroll_values))}{_cond_suffix(eff.condition)}"
+                        )
+                elif eff.kind == "crit" and eff.critical_threshold:
+                    crit_hit_threshold = eff.critical_threshold if crit_hit_threshold is None else min(crit_hit_threshold, eff.critical_threshold)
+                    crit_hit_reasons.append(f"{label}: critical hit on {eff.critical_threshold}+{_cond_suffix(eff.condition)}")
+
+        mods["reroll_hit_values"] = tuple(sorted(reroll_hit_values))
+        mods["reroll_hit_ones"] = bool(1 in reroll_hit_values)
+        mods["crit_hit_threshold"] = crit_hit_threshold
+        mods["hit_reasons"] = tuple(hit_reasons)
+        mods["reroll_hit_reasons"] = tuple(reroll_hit_reasons)
+        mods["reroll_hit_full_reasons"] = tuple(reroll_hit_full_reasons)
+        mods["crit_hit_reasons"] = tuple(crit_hit_reasons)
+        return mods
+
+    def get_unit_wound_reroll_modifiers(self, attack_type: str, *, target=None) -> dict:
+        """
+        Return unit-level wound modifiers for this attached unit, parsed via attack_roll_parser.
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        atype = str(attack_type or "").strip().lower()
+        if atype not in ("melee", "ranged"):
+            atype = "any"
+
+        rules = self._get_unit_attack_roll_rules()
+
+        mods = {
+            "wound": 0,
+            "reroll_wound_ones": False,
+            "reroll_wound_values": (),
+            "reroll_wound_full": False,
+            "crit_wound_threshold": None,
+            "wound_reasons": (),
+            "reroll_wound_reasons": (),
+            "reroll_wound_full_reasons": (),
+            "crit_wound_reasons": (),
+        }
+
+        wound_reasons: list[str] = []
+        reroll_wound_reasons: list[str] = []
+        reroll_wound_full_reasons: list[str] = []
+        crit_wound_reasons: list[str] = []
+        reroll_wound_values: set[int] = set()
+        crit_wound_threshold = None
+
+        def _cond_suffix(cond: Optional[AttackRollCondition]) -> str:
+            if not cond:
+                return ""
+            parts = []
+            if cond.target_battleshocked:
+                parts.append("vs Battle-shocked targets")
+            if cond.attacker_below_starting_strength:
+                parts.append("while below Starting Strength")
+            if cond.attacker_below_half_strength:
+                parts.append("while below Half-strength")
+            if cond.target_within_objective:
+                parts.append("vs targets within objective range")
+            if cond.target_within_range is not None:
+                parts.append(f"vs targets within {cond.target_within_range}\"")
+            if cond.target_can_fly is True:
+                parts.append("vs FLY targets")
+            if cond.target_can_fly is False:
+                parts.append("vs non-FLY targets")
+            if cond.target_keywords_any:
+                if set(cond.target_keywords_any) == {"character"}:
+                    parts.append("vs CHARACTER targets")
+                elif set(cond.target_keywords_any) == {"monster", "vehicle"}:
+                    parts.append("vs MONSTER/VEHICLE targets")
+            if cond.target_below_starting_strength:
+                parts.append("vs targets below Starting Strength")
+            if cond.target_below_half_strength:
+                parts.append("vs targets below Half-strength")
+            if cond.target_exclude_keywords_any:
+                parts.append("excluding " + ", ".join(cond.target_exclude_keywords_any))
+            if not parts:
+                return ""
+            return " (" + "; ".join(parts) + ")"
+
+        for rule, name in list(rules or []):
+            if atype != "any" and rule.attack_type not in ("any", atype):
+                continue
+            for eff in rule.effects:
+                if not self._attack_condition_met(eff.condition, target=target, source_unit=root):
+                    continue
+                if eff.roll != "wound":
+                    continue
+                label = name or "Unit ability"
+                if eff.kind in ("add", "sub"):
+                    val = int(eff.value or 0)
+                    if eff.kind == "sub":
+                        val = -val
+                    mods["wound"] += val
+                    wound_reasons.append(f"{val:+d} to wound from {label}{_cond_suffix(eff.condition)}")
+                elif eff.kind == "reroll":
+                    if eff.reroll_full:
+                        mods["reroll_wound_full"] = True
+                        reroll_wound_full_reasons.append(f"{label}: re-roll Wound roll{_cond_suffix(eff.condition)}")
+                    if eff.reroll_values:
+                        reroll_wound_values.update(int(v) for v in eff.reroll_values)
+                        reroll_wound_reasons.append(
+                            f"{label}: re-roll Wound rolls of {', '.join(str(v) for v in sorted(eff.reroll_values))}{_cond_suffix(eff.condition)}"
+                        )
+                elif eff.kind == "crit" and eff.critical_threshold:
+                    crit_wound_threshold = eff.critical_threshold if crit_wound_threshold is None else min(crit_wound_threshold, eff.critical_threshold)
+                    crit_wound_reasons.append(f"{label}: critical wound on {eff.critical_threshold}+{_cond_suffix(eff.condition)}")
+
+        mods["reroll_wound_values"] = tuple(sorted(reroll_wound_values))
+        mods["reroll_wound_ones"] = bool(1 in reroll_wound_values)
+        mods["crit_wound_threshold"] = crit_wound_threshold
+        mods["wound_reasons"] = tuple(wound_reasons)
+        mods["reroll_wound_reasons"] = tuple(reroll_wound_reasons)
+        mods["reroll_wound_full_reasons"] = tuple(reroll_wound_full_reasons)
+        mods["crit_wound_reasons"] = tuple(crit_wound_reasons)
         return mods
 
     def get_melee_damage_bonus_vs_monster_vehicle(self) -> int:
@@ -6113,6 +6719,26 @@ class Unit:
         bonus = 0
         seen: set[tuple[str, str]] = set()
 
+        def _monster_vehicle_only_condition(cond: Optional[AttackRollCondition]) -> bool:
+            if cond is None:
+                return False
+            if cond.attacker_below_starting_strength or cond.attacker_below_half_strength:
+                return False
+            if cond.target_below_starting_strength:
+                return False
+            if cond.target_battleshocked or cond.target_within_objective:
+                return False
+            if cond.target_within_range is not None:
+                return False
+            if cond.target_can_fly is not None:
+                return False
+            if cond.target_below_half_strength:
+                return False
+            if cond.target_keywords_all or cond.target_exclude_keywords_any:
+                return False
+            kw_any = {k.strip().lower() for k in (cond.target_keywords_any or ()) if k}
+            return bool({"monster", "vehicle"}.issubset(kw_any))
+
         def _scan(text: str, name: str = "") -> int:
             if not text:
                 return 0
@@ -6123,24 +6749,26 @@ class Unit:
             if key in seen:
                 return 0
             seen.add(key)
-            low = norm.lower()
-            if "melee attack" not in low:
-                return 0
-            if "damage characteristic" not in low:
-                return 0
-            if "monster" not in low or "vehicle" not in low:
-                return 0
-            if "target" not in low:
-                return 0
-            m = re.search(r"damage characteristic[^.]*?by\s+(\d+)", low)
-            if not m:
-                m = re.search(r"add\s+(\d+)\s+to\s+the\s+damage characteristic", low)
-            if not m:
-                return 0
-            try:
-                return int(m.group(1))
-            except Exception:
-                return 0
+            total = 0
+            for rule in self._parse_attack_roll_rules_from_text(text):
+                if rule.scope not in ("unit", "leading"):
+                    continue
+                if rule.subject not in ("model_in_this_unit", "model_in_that_unit", "this_model"):
+                    continue
+                if rule.attack_type not in ("melee", "any"):
+                    continue
+                for eff in rule.effects:
+                    if eff.roll != "damage" or eff.kind != "add":
+                        continue
+                    if not _monster_vehicle_only_condition(eff.condition):
+                        continue
+                    try:
+                        val = int(eff.value or 0)
+                    except Exception:
+                        val = 0
+                    if val:
+                        total += val
+            return total
 
         for ab in root._iter_active_abilities():
             try:
@@ -6210,6 +6838,11 @@ class Unit:
         objectives = list(getattr(game_map, "objectives", []) or []) if game_map is not None else []
         if not objectives:
             return False
+        try:
+            if bool(getattr(target_unit, "is_embarked", False)) or target_unit.is_in_reserves():
+                return False
+        except Exception:
+            pass
         for obj in objectives:
             loc = getattr(obj, "location", None)
             if loc is None:
@@ -6219,6 +6852,41 @@ class Unit:
                     return True
             except Exception:
                 continue
+            try:
+                models = list(target_unit.get_models_for_collision() or [])
+            except Exception:
+                models = list(getattr(target_unit, "models", []) or [])
+            models = [m for m in models if bool(getattr(m, "is_alive", True))]
+            if not models:
+                continue
+            try:
+                from shapely.geometry import Point as _ShPoint
+                area = _ShPoint(loc.x, loc.y).buffer(float(getattr(loc, "control_radius", 0.0) or 0.0))
+            except Exception:
+                area = None
+            for model in models:
+                try:
+                    if area is not None:
+                        base = model.model_base.get_base_shape()
+                        if base.intersects(area):
+                            return True
+                except Exception:
+                    pass
+                try:
+                    pos = model.get_location()
+                except Exception:
+                    pos = None
+                if not pos:
+                    continue
+                try:
+                    dx = float(pos[0]) - float(getattr(loc, "x", 0.0))
+                    dy = float(pos[1]) - float(getattr(loc, "y", 0.0))
+                    radius = float(getattr(loc, "control_radius", 0.0) or 0.0)
+                    base_r = float(getattr(model.model_base, "get_radius", lambda: 1.0)())
+                    if (dx * dx + dy * dy) ** 0.5 <= (radius + base_r):
+                        return True
+                except Exception:
+                    continue
         return False
 
     def can_reroll_advance_roll(self) -> bool:
@@ -6414,6 +7082,14 @@ class Unit:
                         continue
                     if val:
                         mods.append((val, source))
+        try:
+            from ..utility.aura_effects import get_aura_advance_charge_roll_modifiers
+            aura_mods, _ = get_aura_advance_charge_roll_modifiers(self)
+            for val, source in list(aura_mods or []):
+                if val:
+                    mods.append((int(val), source))
+        except Exception:
+            pass
         return mods
 
     def _apply_advance_roll_modifiers(self, roll: int) -> int:
@@ -13783,27 +14459,27 @@ class Unit:
 
         allowed = False
         reason = None
-        kw = "character"
-        target_re = re.compile(rf"targets (?:a|an) {re.escape(kw)} (?:units?|models?)", re.IGNORECASE)
-        attack_re = re.compile(r"this model makes (?:a|an)?\s*(?:melee|ranged)?\s*attacks?", re.IGNORECASE)
         for name, desc in self._iter_model_specific_ability_entries(model):
-            text = self._normalize_rules_text(desc or name or "")
-            if not text:
-                continue
-            low = text.lower()
-            if not attack_re.search(low):
-                continue
-            if "wound roll" not in low:
-                continue
-            if ("re-roll" not in low) and ("reroll" not in low):
-                continue
-            if "wound roll of 1" in low or "wound rolls of 1" in low:
-                continue
-            if not target_re.search(low):
-                continue
-            allowed = True
-            reason = str(name or "Model ability")
-            break
+            text_src = desc or name or ""
+            for rule in self._parse_attack_roll_rules_from_text(text_src):
+                if rule.subject not in ("this_model", "model_in_this_unit"):
+                    continue
+                for eff in rule.effects:
+                    if eff.roll != "wound" or eff.kind != "reroll" or not eff.reroll_full:
+                        continue
+                    cond = eff.condition
+                    if not cond or (
+                        "character" not in set(cond.target_keywords_any or ())
+                        and "character" not in set(cond.target_keywords_all or ())
+                    ):
+                        continue
+                    allowed = True
+                    reason = str(name or "Model ability")
+                    break
+                if allowed:
+                    break
+            if allowed:
+                break
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
@@ -13824,27 +14500,27 @@ class Unit:
 
         allowed = False
         reason = None
-        kw = "character"
-        target_re = re.compile(rf"targets (?:a|an) {re.escape(kw)} (?:units?|models?)", re.IGNORECASE)
-        attack_re = re.compile(r"this model makes (?:a|an)?\s*(?:melee|ranged)?\s*attacks?", re.IGNORECASE)
         for name, desc in self._iter_model_specific_ability_entries(model):
-            text = self._normalize_rules_text(desc or name or "")
-            if not text:
-                continue
-            low = text.lower()
-            if not attack_re.search(low):
-                continue
-            if "hit roll" not in low:
-                continue
-            if ("re-roll" not in low) and ("reroll" not in low):
-                continue
-            if "hit roll of 1" in low or "hit rolls of 1" in low:
-                continue
-            if not target_re.search(low):
-                continue
-            allowed = True
-            reason = str(name or "Model ability")
-            break
+            text_src = desc or name or ""
+            for rule in self._parse_attack_roll_rules_from_text(text_src):
+                if rule.subject not in ("this_model", "model_in_this_unit"):
+                    continue
+                for eff in rule.effects:
+                    if eff.roll != "hit" or eff.kind != "reroll" or not eff.reroll_full:
+                        continue
+                    cond = eff.condition
+                    if not cond or (
+                        "character" not in set(cond.target_keywords_any or ())
+                        and "character" not in set(cond.target_keywords_all or ())
+                    ):
+                        continue
+                    allowed = True
+                    reason = str(name or "Model ability")
+                    break
+                if allowed:
+                    break
+            if allowed:
+                break
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
@@ -13868,40 +14544,47 @@ class Unit:
 
         bonus = 0
         reason = None
-        attack_re = re.compile(
-            r"this model makes (?:a|an)?\s*(?P<atype>melee|ranged)?\s*attack(?:s)?",
-            re.IGNORECASE,
-        )
-        target_re = re.compile(
-            r"targets? (?:a|an)?\s*unit.*?\b(?:can\s+fly|with\s+fly|fly)\b",
-            re.IGNORECASE,
-        )
-        bonus_re = re.compile(r"add\s+(\d+)\s+to\s+the\s+hit\s+roll", re.IGNORECASE)
+
+        def _fly_only_condition(cond: Optional[AttackRollCondition]) -> bool:
+            if cond is None:
+                return False
+            if cond.target_can_fly is not True:
+                return False
+            if cond.attacker_below_starting_strength or cond.attacker_below_half_strength:
+                return False
+            if cond.target_battleshocked or cond.target_within_objective or cond.target_within_range is not None:
+                return False
+            if cond.target_keywords_any or cond.target_keywords_all or cond.target_exclude_keywords_any:
+                return False
+            if cond.target_below_starting_strength:
+                return False
+            if cond.target_below_half_strength:
+                return False
+            return True
+
         for name, desc in self._iter_model_specific_ability_entries(model):
-            text = self._normalize_rules_text(desc or name or "")
-            if not text:
-                continue
-            low = text.lower()
-            if "hit roll" not in low or "add" not in low or "fly" not in low:
-                continue
-            m_attack = attack_re.search(low)
-            if not m_attack:
-                continue
-            m_target = target_re.search(low)
-            if not m_target:
-                continue
-            m_bonus = bonus_re.search(low)
-            if not m_bonus:
-                continue
-            ab_atype = (m_attack.group("atype") or "any").lower()
-            if atype != "any" and ab_atype not in ("any", atype):
-                continue
-            try:
-                bonus = int(m_bonus.group(1))
-            except Exception:
-                bonus = 0
+            text_src = desc or name or ""
+            for rule in self._parse_attack_roll_rules_from_text(text_src):
+                if rule.subject not in ("this_model", "model_in_this_unit"):
+                    continue
+                if atype != "any" and rule.attack_type not in ("any", atype):
+                    continue
+                for eff in rule.effects:
+                    if eff.roll != "hit" or eff.kind != "add":
+                        continue
+                    if not _fly_only_condition(eff.condition):
+                        continue
+                    try:
+                        val = int(eff.value or 0)
+                    except Exception:
+                        val = 0
+                    if val:
+                        bonus = val
+                        reason = str(name or "Model ability")
+                        break
+                if bonus:
+                    break
             if bonus:
-                reason = str(name or "Model ability")
                 break
 
         if not hasattr(self, "_ability_cache"):
@@ -13938,12 +14621,6 @@ class Unit:
         reasons: list[str] = []
         seen: set[str] = set()
 
-        def _iter_sentences(text: str) -> list[str]:
-            if not text:
-                return []
-            text = re.sub(r";\s*", ". ", text)
-            return [part.strip() for part in re.split(r"\.\s*", text) if part.strip()]
-
         sr = getattr(root, "special_rules", None)
         if isinstance(sr, dict):
             entries = sr.get("bearer_unit_target_hit_penalties")
@@ -13968,32 +14645,35 @@ class Unit:
                     penalty += int(val)
                     reasons.append(f"-{val} to hit from {src}")
 
-        def _match_entries(entries, pattern: re.Pattern, scope_key: str) -> None:
+        def _match_entries(entries, scope_key: str) -> None:
             nonlocal penalty
             for name, desc in entries:
-                text = root._normalize_rules_text(desc or name or "")
-                if not text:
+                text_src = desc or name or ""
+                if not text_src:
                     continue
-                for sentence in _iter_sentences(text):
-                    sl = sentence.lower()
-                    if not sl.startswith("each time"):
+                for rule in self._parse_attack_roll_rules_from_text(text_src):
+                    if rule.scope != "defensive":
                         continue
-                    if any(x in f" {sl} " for x in (" if ", " unless ", " while ", " when ")):
-                        continue
-                    m = pattern.match(sl)
-                    if not m:
-                        continue
-                    clause_type = (m.group("atype") or "").lower()
-                    if clause_type and atype != "any" and clause_type != atype:
+                    if atype != "any" and rule.attack_type not in ("any", atype):
                         continue
                     reason_name = str(name or "Ability").strip() or "Ability"
                     key = f"{scope_key}:{reason_name.lower()}"
                     if key in seen:
                         break
-                    seen.add(key)
-                    penalty += 1
-                    reasons.append(f"-1 to hit from {reason_name}")
-                    break
+                    for eff in rule.effects:
+                        if eff.roll != "hit" or eff.kind != "sub":
+                            continue
+                        if eff.condition and not self._attack_condition_met(eff.condition, target=root, source_unit=root):
+                            continue
+                        val = int(eff.value or 0)
+                        if val <= 0:
+                            continue
+                        seen.add(key)
+                        penalty += val
+                        reasons.append(f"-{val} to hit from {reason_name}")
+                        break
+                    if key in seen:
+                        break
 
         unit_entries = []
         for ab in root._iter_active_possible_abilities():
@@ -14001,7 +14681,7 @@ class Unit:
                 unit_entries.append((ab, ab))
             else:
                 unit_entries.append((getattr(ab, "name", "") or "", getattr(ab, "description", "") or ""))
-        _match_entries(unit_entries, root._TARGET_HIT_ROLL_PENALTY_UNIT_RE, "unit")
+        _match_entries(unit_entries, "unit")
 
         model = target_model
         if model is None:
@@ -14013,7 +14693,7 @@ class Unit:
                 model = models[0]
         if model is not None:
             model_entries = list(root._iter_model_specific_ability_entries(model))
-            _match_entries(model_entries, root._TARGET_HIT_ROLL_PENALTY_MODEL_RE, "model")
+            _match_entries(model_entries, "model")
 
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}
@@ -14248,6 +14928,134 @@ class Unit:
             return True
         
         return False
+
+    def has_fight_within_3_ability(self) -> bool:
+        """Return True if this unit has a 'fight within 3\"' eligibility ability."""
+        sr = getattr(self, "special_rules", None)
+        if isinstance(sr, dict) and sr.get("fight_within_3"):
+            return True
+        return False
+
+    def get_fight_within_3_sources(self) -> list[str]:
+        """Return ability names that grant fight-within-3\" eligibility."""
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return []
+        specs = sr.get("fight_within_3", []) or []
+        names = []
+        for item in specs:
+            if isinstance(item, dict):
+                name = str(item.get("name", "") or "").strip()
+            else:
+                name = str(item or "").strip()
+            if name:
+                names.append(name)
+        return names
+
+    def fight_within_3_active(self) -> bool:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        return bool(sr.get("fight_within_3_active", False))
+
+    def set_fight_within_3_active(self, active: bool, source: str | None = None) -> None:
+        if getattr(self, "special_rules", None) is None:
+            self.special_rules = {}
+        sr = self.special_rules
+        if bool(active):
+            sr["fight_within_3_active"] = True
+            if source:
+                sr["fight_within_3_active_source"] = str(source)
+        else:
+            if "fight_within_3_active" in sr:
+                del sr["fight_within_3_active"]
+            if "fight_within_3_active_source" in sr:
+                del sr["fight_within_3_active_source"]
+        self.special_rules = sr
+
+    def clear_fight_within_3_active(self) -> None:
+        self.set_fight_within_3_active(False)
+
+    def _model_within_engagement_range_of_unit(self, model, target_unit) -> bool:
+        try:
+            from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
+            from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VERTICAL
+        except Exception:
+            return False
+        try:
+            target_models = list(target_unit.get_models_for_collision() or [])
+        except Exception:
+            target_models = list(getattr(target_unit, "models", []) or [])
+        for tm in target_models:
+            try:
+                if not getattr(tm, "is_alive", False):
+                    continue
+            except Exception:
+                pass
+            try:
+                hd = float(horizontal_distance_between_bases_2d(model.model_base, tm.model_base))
+                vd = float(vertical_distance_between_bases(model.model_base, tm.model_base))
+            except Exception:
+                continue
+            if hd <= ENGAGEMENT_RANGE_HORIZONTAL and vd <= ENGAGEMENT_RANGE_VERTICAL:
+                return True
+        return False
+
+    def _model_within_range_of_unit(self, model, target_unit, radius: float) -> bool:
+        try:
+            from ..utility.aura_utils import distance_between_models_bases_3d
+        except Exception:
+            return False
+        try:
+            target_models = list(target_unit.get_models_for_collision() or [])
+        except Exception:
+            target_models = list(getattr(target_unit, "models", []) or [])
+        for tm in target_models:
+            try:
+                if not getattr(tm, "is_alive", False):
+                    continue
+            except Exception:
+                pass
+            try:
+                if float(distance_between_models_bases_3d(model, tm)) <= float(radius) + 1e-6:
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def get_fight_eligible_models_for_target(self, target_unit, game_map: Optional['Map'] = None, *, allow_within_3: Optional[bool] = None) -> list:
+        """Return models in this unit eligible to fight the given target unit."""
+        try:
+            models = list(self.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(self, "models", []) or [])
+        models = [m for m in models if bool(getattr(m, "is_alive", True))]
+        if not models or target_unit is None:
+            return []
+
+        if not self.has_fight_within_3_ability():
+            return list(models)
+
+        if game_map is None:
+            return list(models)
+
+        try:
+            if not game_map.is_within_engagement_range(self, target_unit):
+                return []
+        except Exception:
+            return []
+
+        if allow_within_3 is None:
+            allow_within_3 = self.fight_within_3_active()
+
+        eligible = []
+        for model in models:
+            if self._model_within_engagement_range_of_unit(model, target_unit):
+                eligible.append(model)
+                continue
+            if allow_within_3 and self._model_within_range_of_unit(model, target_unit, 3.0):
+                eligible.append(model)
+        return eligible
     
     def should_fight_first(self) -> bool:
         """Check if this unit should fight in the Fight First stage.

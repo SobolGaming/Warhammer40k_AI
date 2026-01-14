@@ -945,7 +945,21 @@ class WargearProfile:
             attack_result.attacks_special_modifiers.append(
                 f"Twist of Fate (AP improved by {int(cabal_ap_bonus)})"
             )
-        
+
+        # CONVERSION: Determine if Conversion is active for this attack sequence
+        # Conversion grants critical hits on unmodified successful hit rolls of 4+
+        # when the target is more than a specified distance (12"/18"/24") from the bearer
+        conversion_active = False
+        conversion_distance_threshold = 0.0
+        if self.is_conversion():
+            conversion_distance_threshold = self.get_conversion_distance(attacker)
+            # Strict greater-than check per rules ("more than X")
+            conversion_active = closest_dist > conversion_distance_threshold
+            if conversion_active:
+                attack_result.attacks_special_modifiers.append(
+                    f"Conversion active (target >{conversion_distance_threshold}\")"
+                )
+
         # Apply attack modifiers
         applied_pain_rapid_fire = False
         try:
@@ -1027,6 +1041,8 @@ class WargearProfile:
                 'below_half_distance': closest_dist <= (self.range.max / 2),
                 'damage': 0,
                 'target_toughness_override': kill_team_toughness,
+                'conversion_active': conversion_active,
+                'distance_to_target': closest_dist,
             }
             if attacker_unit is not None:
                 attack_instance["attacker_unit"] = attacker_unit
@@ -1542,7 +1558,10 @@ class WargearProfile:
             'modifiers': [],
             'final_needed': None,
             'hit': False,
-            'special_effects': []
+            'special_effects': [],
+            'unmodified_roll': None,  # Track unmodified roll (after rerolls, before modifiers)
+            'modified_roll': None,    # Track final modified roll
+            'hit_modifier_total': 0,  # Track total modifier applied
         }
 
         base_skill = self.skill
@@ -1959,7 +1978,10 @@ class WargearProfile:
             lead_mods = None
         try:
             unit = attacker.parent_unit
-            unit_hit_mods = unit.get_unit_hit_reroll_modifiers(attack_type)
+            unit_hit_mods = unit.get_unit_hit_reroll_modifiers(attack_type, target=target)
+            if isinstance(unit_hit_mods, dict) and int(unit_hit_mods.get("hit", 0) or 0):
+                bonus = int(unit_hit_mods.get("hit", 0) or 0)
+                _add_hit_mod(bonus, list(unit_hit_mods.get("hit_reasons", ()) or ()))
         except Exception:
             unit_hit_mods = None
 
@@ -2092,111 +2114,109 @@ class WargearProfile:
         except Exception:
             pass
 
-        # Strict aura support: re-roll Hit rolls of 1 (applied before resolving auto-miss/constraints)
+        # Value-based and full rerolls from aura/leading/unit rules.
         reroll_used = False
+        reroll_hit_values = set()
+        reroll_value_reasons: list[str] = []
+        reroll_full_reasons: list[str] = []
         try:
-            if dice_roll == 1 and bool(getattr(aura_mods, "reroll_hit_ones", False)):
+            if aura_mods is not None:
+                for v in list(getattr(aura_mods, "reroll_hit_values", ()) or ()):
+                    try:
+                        reroll_hit_values.add(int(v))
+                    except Exception:
+                        continue
+                if bool(getattr(aura_mods, "reroll_hit_ones", False)):
+                    reroll_hit_values.add(1)
+                reroll_value_reasons.extend(list(getattr(aura_mods, "reroll_hit_reasons", ()) or ()))
+                if bool(getattr(aura_mods, "reroll_hit_full", False)):
+                    reroll_full_reasons.extend(list(getattr(aura_mods, "reroll_hit_full_reasons", ()) or ()))
+        except Exception:
+            pass
+        try:
+            if isinstance(lead_mods, dict):
+                for v in list(lead_mods.get("reroll_hit_values", ()) or ()):
+                    try:
+                        reroll_hit_values.add(int(v))
+                    except Exception:
+                        continue
+                if bool(lead_mods.get("reroll_hit_ones", False)):
+                    reroll_hit_values.add(1)
+                reroll_value_reasons.extend(list(lead_mods.get("reroll_hit_reasons", ()) or ()))
+                if bool(lead_mods.get("reroll_hit_full", False)):
+                    reroll_full_reasons.extend(list(lead_mods.get("reroll_hit_full_reasons", ()) or ()))
+        except Exception:
+            pass
+        try:
+            if isinstance(unit_hit_mods, dict):
+                for v in list(unit_hit_mods.get("reroll_hit_values", ()) or ()):
+                    try:
+                        reroll_hit_values.add(int(v))
+                    except Exception:
+                        continue
+                if bool(unit_hit_mods.get("reroll_hit_ones", False)):
+                    reroll_hit_values.add(1)
+                reroll_value_reasons.extend(list(unit_hit_mods.get("reroll_hit_reasons", ()) or ()))
+                if bool(unit_hit_mods.get("reroll_hit_full", False)):
+                    reroll_full_reasons.extend(list(unit_hit_mods.get("reroll_hit_full_reasons", ()) or ()))
+        except Exception:
+            pass
+
+        try:
+            if dice_roll in reroll_hit_values and "reroll" not in hit_result:
                 rr = _reroll_hit()
-                hit_result.setdefault("special_effects", []).append("Aura: re-roll Hit rolls of 1")
-                hit_result.setdefault("special_effects", []).extend(list(getattr(aura_mods, "reroll_hit_reasons", ()) or ()))
-                hit_result["reroll_of_one"] = 1
+                if reroll_value_reasons:
+                    hit_result.setdefault("special_effects", []).extend(reroll_value_reasons)
+                else:
+                    hit_result.setdefault("special_effects", []).append("Re-roll Hit roll")
+                if dice_roll == 1:
+                    hit_result["reroll_of_one"] = 1
                 hit_result["reroll"] = rr
                 dice_roll = rr
                 reroll_used = True
         except Exception:
             pass
 
-        # Leading abilities: re-roll Hit rolls of 1
         try:
-            if dice_roll == 1 and "reroll" not in hit_result:
-                if isinstance(lead_mods, dict) and bool(lead_mods.get("reroll_hit_ones", False)):
+            if reroll_full_reasons and "reroll" not in hit_result:
+                try:
+                    success = (dice_roll != 1) and (self.skill > 0) and (dice_roll >= final_needed)
+                except Exception:
+                    success = False
+                do_reroll = False
+                try:
+                    unit = attacker.parent_unit
+                    game = unit.get_parent_army().player.game
+                    player = unit.get_parent_army().player
+                    is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                    provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                except Exception:
+                    is_human = False
+                    provider = None
+                    player = None
+                reason = reroll_full_reasons[0] if reroll_full_reasons else "Unit ability"
+                if is_human and callable(provider):
+                    try:
+                        do_reroll = bool(provider(
+                            player=player,
+                            unit=unit,
+                            roll_type="hit",
+                            value=dice_roll,
+                            dice=None,
+                            needed=final_needed,
+                            success=success,
+                            reason=reason,
+                        ))
+                    except Exception:
+                        do_reroll = False
+                else:
+                    do_reroll = (not success)
+                if do_reroll:
                     rr = _reroll_hit()
-                    hit_result.setdefault("special_effects", []).append("Leading: re-roll Hit rolls of 1")
-                    hit_result.setdefault("special_effects", []).extend(list(lead_mods.get("reroll_hit_reasons", ()) or ()))
-                    hit_result["reroll_of_one"] = 1
+                    hit_result.setdefault("special_effects", []).extend(reroll_full_reasons)
                     hit_result["reroll"] = rr
                     dice_roll = rr
                     reroll_used = True
-        except Exception:
-            pass
-
-        objective_in_range = False
-        try:
-            if isinstance(unit_hit_mods, dict) and unit_hit_mods.get("reroll_hit_full_if_objective"):
-                unit = attacker.parent_unit
-                army = unit.get_parent_army() if unit is not None else None
-                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
-                if game is not None and hasattr(game, "_unit_within_range_of_objective"):
-                    objective_in_range = bool(game._unit_within_range_of_objective(target))
-        except Exception:
-            objective_in_range = False
-
-        # Unit abilities: objective upgrade to re-roll the Hit roll instead of re-rolling 1s.
-        try:
-            if objective_in_range and "reroll" not in hit_result:
-                if isinstance(unit_hit_mods, dict) and unit_hit_mods.get("reroll_hit_full_if_objective"):
-                    try:
-                        success = (dice_roll != 1) and (self.skill > 0) and (dice_roll >= final_needed)
-                    except Exception:
-                        success = False
-                    do_reroll = False
-                    try:
-                        unit = attacker.parent_unit
-                        game = unit.get_parent_army().player.game
-                        player = unit.get_parent_army().player
-                        is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
-                        provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
-                    except Exception:
-                        is_human = False
-                        provider = None
-                        player = None
-                    reason = None
-                    try:
-                        reasons = list(unit_hit_mods.get("reroll_hit_full_reasons", ()) or ())
-                        if reasons:
-                            reason = reasons[0]
-                    except Exception:
-                        reason = None
-                    if is_human and callable(provider):
-                        try:
-                            do_reroll = bool(provider(
-                                player=player,
-                                unit=unit,
-                                roll_type="hit",
-                                value=dice_roll,
-                                dice=None,
-                                needed=final_needed,
-                                success=success,
-                                reason=reason or "Unit ability (objective)",
-                            ))
-                        except Exception:
-                            do_reroll = False
-                    else:
-                        do_reroll = (not success)
-                    if do_reroll:
-                        rr = _reroll_hit()
-                        reasons = list(unit_hit_mods.get("reroll_hit_full_reasons", ()) or ())
-                        if reasons:
-                            hit_result.setdefault("special_effects", []).extend(reasons)
-                        elif reason:
-                            hit_result.setdefault("special_effects", []).append(reason)
-                        hit_result["reroll"] = rr
-                        dice_roll = rr
-                        reroll_used = True
-        except Exception:
-            pass
-
-        # Unit abilities: re-roll Hit rolls of 1 (skip if objective upgrade is present).
-        try:
-            if dice_roll == 1 and "reroll" not in hit_result:
-                if isinstance(unit_hit_mods, dict) and unit_hit_mods.get("reroll_hit_ones", False):
-                    if not (objective_in_range and unit_hit_mods.get("reroll_hit_full_if_objective")):
-                        rr = _reroll_hit()
-                        hit_result.setdefault("special_effects", []).extend(list(unit_hit_mods.get("reroll_hit_reasons", ()) or ()))
-                        hit_result["reroll_of_one"] = 1
-                        hit_result["reroll"] = rr
-                        dice_roll = rr
-                        reroll_used = True
         except Exception:
             pass
 
@@ -2955,17 +2975,40 @@ class WargearProfile:
             dice_roll = int(new_roll)
             hit_result['roll'] = dice_roll
             hit_result['special_effects'].append("Aspect Shrine Token: set roll to 6")
+
+        # Store unmodified roll (after rerolls/roll replacement, before modifiers) for Conversion and other rules
+        hit_result['unmodified_roll'] = dice_roll
         
         # INDIRECT FIRE: if no target models were visible at selection time,
         # an unmodified hit roll of 1, 2, or 3 always fails.
         if attack_instance.get("indirect_fire_no_visible", False) and dice_roll in (1, 2, 3):
             hit_result['hit'] = False
+            hit_result['unmodified_roll'] = dice_roll
             hit_result['special_effects'].append("Indirect Fire: 1-3 always fail (no target models visible)")
             return hit_result
 
         # Determine critical hit threshold (default 6).
         crit_threshold = 6
+        crit_hit_reasons: list[str] = []
         empowered_sustained = False
+        try:
+            if aura_mods is not None and getattr(aura_mods, "crit_hit_threshold", None):
+                crit_threshold = min(int(crit_threshold), int(aura_mods.crit_hit_threshold))
+                crit_hit_reasons.extend(list(getattr(aura_mods, "crit_hit_reasons", ()) or ()))
+        except Exception:
+            pass
+        try:
+            if isinstance(lead_mods, dict) and lead_mods.get("crit_hit_threshold"):
+                crit_threshold = min(int(crit_threshold), int(lead_mods.get("crit_hit_threshold")))
+                crit_hit_reasons.extend(list(lead_mods.get("crit_hit_reasons", ()) or ()))
+        except Exception:
+            pass
+        try:
+            if isinstance(unit_hit_mods, dict) and unit_hit_mods.get("crit_hit_threshold"):
+                crit_threshold = min(int(crit_threshold), int(unit_hit_mods.get("crit_hit_threshold")))
+                crit_hit_reasons.extend(list(unit_hit_mods.get("crit_hit_reasons", ()) or ()))
+        except Exception:
+            pass
         try:
             unit = attacker.parent_unit
             army = unit.get_parent_army() if unit is not None else None
@@ -3154,6 +3197,16 @@ class WargearProfile:
             sr = getattr(attacker.parent_unit, "special_rules", None)
             if isinstance(sr, dict):
                 bearer_unit_sustained_value = int(sr.get("bearer_unit_sustained_hits_value", 0) or 0)
+                if is_melee:
+                    bearer_unit_sustained_value = max(
+                        bearer_unit_sustained_value,
+                        int(sr.get("bearer_unit_sustained_hits_value_melee", 0) or 0),
+                    )
+                if is_ranged:
+                    bearer_unit_sustained_value = max(
+                        bearer_unit_sustained_value,
+                        int(sr.get("bearer_unit_sustained_hits_value_ranged", 0) or 0),
+                    )
         except Exception:
             bearer_unit_sustained_value = 0
         bearer_unit_sustained = bool(bearer_unit_sustained_value)
@@ -3206,14 +3259,20 @@ class WargearProfile:
 
         if dice_roll == 1:  # unmodified dice roll of 1 is always a miss
             hit_result['hit'] = False
+            hit_result['unmodified_roll'] = dice_roll
             hit_result['special_effects'].append("Natural 1 (auto-miss)")
             return hit_result
-        elif dice_roll >= crit_threshold:  # unmodified critical hit
+
+        # Check for baseline critical hit (unmodified 6, or lower threshold from abilities)
+        baseline_critical = dice_roll >= crit_threshold
+        if baseline_critical:
             hit_result['hit'] = True
             if dice_roll == 6:
                 hit_result['special_effects'].append("Natural 6 (auto-hit)")
             elif crit_threshold < 6:
                 hit_result['special_effects'].append(f"Critical hit ({crit_threshold}+)")
+            if crit_hit_reasons:
+                hit_result['special_effects'].extend(crit_hit_reasons)
             attack_instance['crit_hit'] = True
 
             if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal or martial_katah_lethal or bondsman_lethal or pact_lethal or exquisite_lethal or pain_lethal or leading_lethal:
@@ -3258,7 +3317,74 @@ class WargearProfile:
                         label += " [Daemonic Empowerment]"
                     hit_result['special_effects'].append(label)
                     attack_instance['sustained_hit'] = sustained_val
-            return hit_result
+            # Don't return yet - we may need to apply Conversion logic below
+
+        # Normal hit resolution (if not already determined by baseline critical)
+        if not baseline_critical:
+            hit_result['hit'] = self.skill > 0 and dice_roll >= final_needed
+
+        # CONVERSION: Upgrade to critical hit if conditions are met
+        # Must happen AFTER hit success is determined
+        # Conversion grants critical hits on unmodified successful hit rolls of 4+
+        # when the target is more than the specified distance from the bearer
+        if attack_instance.get('conversion_active', False) and hit_result['hit']:
+            unmod = hit_result.get('unmodified_roll', dice_roll)
+            conversion_threshold = self.get_conversion_crit_threshold()  # Always 4
+            # Only upgrade if not already a critical and unmodified roll meets threshold
+            if unmod >= conversion_threshold and not attack_instance.get('crit_hit', False):
+                # Upgrade to critical hit
+                attack_instance['crit_hit'] = True
+                hit_result['special_effects'].append(
+                    f"Conversion: Critical Hit (unmodified {unmod}+ successful hit)"
+                )
+
+                # Apply ALL critical hit effects (same logic as baseline critical section)
+                # This includes weapon-native AND unit/ability-based Lethal/Sustained hits
+
+                # Apply Lethal Hits from all sources (same as baseline critical)
+                if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal or martial_katah_lethal or bondsman_lethal or pact_lethal or exquisite_lethal or pain_lethal or leading_lethal:
+                    hit_result['special_effects'].append("Lethal Hits")
+                    attack_instance['lethal_hit'] = True
+
+                # Apply Sustained Hits from all sources (same as baseline critical)
+                if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or bearer_unit_sustained or blitzing_grants_sustained:
+                    # Support Sustained Hits X / Sustained Hits D3 / etc. Roll per critical hit.
+                    if self.is_sustained_hits():
+                        try:
+                            sh = self.get_sustained_hits_bonus()
+                            sh_val = int(sh.resolve())
+                            hit_result['special_effects'].append(f"Sustained Hits {sh} (+{sh_val})")
+                            attack_instance['sustained_hit'] = sh_val
+                        except Exception:
+                            hit_result['special_effects'].append("Sustained Hits (+1)")
+                            attack_instance['sustained_hit'] = 1
+                    else:
+                        label = "Sustained Hits (+1)"
+                        if blessings_sustained:
+                            label += " [Blessings of Khorne]"
+                        elif dark_pacts_sustained:
+                            label += " [Dark Pacts]"
+                        elif martial_katah_sustained:
+                            label += " [Martial Ka'tah]"
+                        elif bondsman_sustained or bondsman_sustained_ranged:
+                            label += " [Bondsman]"
+                        elif pact_sustained:
+                            label += " [Pact Points]"
+                        elif exquisite_sustained:
+                            label += " [Exquisite Swordsmanship]"
+                        elif empowered_sustained:
+                            label += " [Daemonic Empowerment]"
+                        elif pain_sustained:
+                            label += " [Power from Pain]"
+                        elif bearer_unit_sustained:
+                            if bearer_unit_sustained_value > 1:
+                                label = f"Sustained Hits (+{bearer_unit_sustained_value}) [Bearer Unit]"
+                            else:
+                                label += " [Bearer Unit]"
+                        elif blitzing_grants_sustained:
+                            label += " [Blitzing Firepower]"
+                        hit_result['special_effects'].append(label)
+                        attack_instance['sustained_hit'] = max(bearer_unit_sustained_value, pain_sustained_value) if (bearer_unit_sustained or pain_sustained) else 1
 
         # Normal hit resolution
         hit_result['hit'] = self.skill > 0 and dice_roll >= final_needed
@@ -3599,6 +3725,7 @@ class WargearProfile:
 
         # Attached leader leading bonuses (e.g., leading melee/ranged wound buffs)
         lead_mods = None
+        unit_wound_mods = None
         try:
             unit = attacker.parent_unit
             root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
@@ -3609,8 +3736,37 @@ class WargearProfile:
                 bonus = int(lead_mods.get("wound", 0) or 0)
                 dice_modifier += bonus
                 wound_result['modifiers'].extend(list(lead_mods.get("wound_reasons", ()) or ()))
+            unit_wound_mods = unit.get_unit_wound_reroll_modifiers(attack_type, target=target)
+            if isinstance(unit_wound_mods, dict) and int(unit_wound_mods.get("wound", 0) or 0):
+                bonus = int(unit_wound_mods.get("wound", 0) or 0)
+                dice_modifier += bonus
+                wound_result['modifiers'].extend(list(unit_wound_mods.get("wound_reasons", ()) or ()))
         except Exception:
             lead_mods = None
+            unit_wound_mods = None
+
+        crit_wound_threshold = None
+        crit_wound_reasons: list[str] = []
+        try:
+            if aura_mods is not None and getattr(aura_mods, "crit_wound_threshold", None):
+                crit_wound_threshold = int(aura_mods.crit_wound_threshold)
+                crit_wound_reasons.extend(list(getattr(aura_mods, "crit_wound_reasons", ()) or ()))
+        except Exception:
+            pass
+        try:
+            if isinstance(lead_mods, dict) and lead_mods.get("crit_wound_threshold"):
+                val = int(lead_mods.get("crit_wound_threshold"))
+                crit_wound_threshold = val if crit_wound_threshold is None else min(int(crit_wound_threshold), val)
+                crit_wound_reasons.extend(list(lead_mods.get("crit_wound_reasons", ()) or ()))
+        except Exception:
+            pass
+        try:
+            if isinstance(unit_wound_mods, dict) and unit_wound_mods.get("crit_wound_threshold"):
+                val = int(unit_wound_mods.get("crit_wound_threshold"))
+                crit_wound_threshold = val if crit_wound_threshold is None else min(int(crit_wound_threshold), val)
+                crit_wound_reasons.extend(list(unit_wound_mods.get("crit_wound_reasons", ()) or ()))
+        except Exception:
+            pass
 
         # First Prince of Chaos (Shadow Legion Nurgle): -1 to wound if Strength > Toughness.
         try:
@@ -3704,28 +3860,128 @@ class WargearProfile:
         if miracle_used:
             wound_result['special_effects'].append("Miracle die")
 
-        # Strict aura support: re-roll Wound rolls of 1
+        # Value-based and full rerolls from aura/leading/unit rules.
         reroll_used = False
+        reroll_wound_values = set()
+        reroll_value_reasons: list[str] = []
+        reroll_full_reasons: list[str] = []
         try:
-            if dice_roll == 1 and bool(getattr(aura_mods, "reroll_wound_ones", False)):
+            if aura_mods is not None:
+                for v in list(getattr(aura_mods, "reroll_wound_values", ()) or ()):
+                    try:
+                        reroll_wound_values.add(int(v))
+                    except Exception:
+                        continue
+                if bool(getattr(aura_mods, "reroll_wound_ones", False)):
+                    reroll_wound_values.add(1)
+                reroll_value_reasons.extend(list(getattr(aura_mods, "reroll_wound_reasons", ()) or ()))
+                if bool(getattr(aura_mods, "reroll_wound_full", False)):
+                    reroll_full_reasons.extend(list(getattr(aura_mods, "reroll_wound_full_reasons", ()) or ()))
+        except Exception:
+            pass
+        try:
+            if isinstance(lead_mods, dict):
+                for v in list(lead_mods.get("reroll_wound_values", ()) or ()):
+                    try:
+                        reroll_wound_values.add(int(v))
+                    except Exception:
+                        continue
+                if bool(lead_mods.get("reroll_wound_ones", False)):
+                    reroll_wound_values.add(1)
+                reroll_value_reasons.extend(list(lead_mods.get("reroll_wound_reasons", ()) or ()))
+                if bool(lead_mods.get("reroll_wound_full", False)):
+                    reroll_full_reasons.extend(list(lead_mods.get("reroll_wound_full_reasons", ()) or ()))
+        except Exception:
+            pass
+        try:
+            if isinstance(unit_wound_mods, dict):
+                for v in list(unit_wound_mods.get("reroll_wound_values", ()) or ()):
+                    try:
+                        reroll_wound_values.add(int(v))
+                    except Exception:
+                        continue
+                if bool(unit_wound_mods.get("reroll_wound_ones", False)):
+                    reroll_wound_values.add(1)
+                reroll_value_reasons.extend(list(unit_wound_mods.get("reroll_wound_reasons", ()) or ()))
+                if bool(unit_wound_mods.get("reroll_wound_full", False)):
+                    reroll_full_reasons.extend(list(unit_wound_mods.get("reroll_wound_full_reasons", ()) or ()))
+        except Exception:
+            pass
+
+        try:
+            if dice_roll in reroll_wound_values and "reroll" not in wound_result:
                 rr = _reroll_wound()
-                wound_result.setdefault("special_effects", []).append("Aura: re-roll Wound rolls of 1")
-                wound_result.setdefault("special_effects", []).extend(list(getattr(aura_mods, "reroll_wound_reasons", ()) or ()))
-                wound_result["reroll_of_one"] = 1
+                if reroll_value_reasons:
+                    wound_result.setdefault("special_effects", []).extend(reroll_value_reasons)
+                else:
+                    wound_result.setdefault("special_effects", []).append("Re-roll Wound roll")
+                if dice_roll == 1:
+                    wound_result["reroll_of_one"] = 1
                 wound_result["reroll"] = rr
                 dice_roll = rr
                 reroll_used = True
         except Exception:
             pass
 
-        # Leading abilities: re-roll Wound rolls of 1
         try:
-            if dice_roll == 1 and "reroll" not in wound_result:
-                if isinstance(lead_mods, dict) and bool(lead_mods.get("reroll_wound_ones", False)):
+            if reroll_full_reasons and "reroll" not in wound_result:
+                needed = 0
+                try:
+                    s_val = strength
+                    t_val = target_toughness
+                    if isinstance(s_val, int) and isinstance(t_val, int):
+                        if s_val >= 2 * t_val:
+                            needed = 2
+                        elif s_val > t_val:
+                            needed = 3
+                        elif s_val == t_val:
+                            needed = 4
+                        elif s_val * 2 <= t_val:
+                            needed = 6
+                        else:
+                            needed = 5
+                except Exception:
+                    needed = 0
+                final_needed = needed
+                try:
+                    final_needed = int(min(max(int(final_needed) - int(dice_modifier), 2), 6))
+                except Exception:
+                    pass
+                try:
+                    success = (dice_roll != 1) and (bool(final_needed) and dice_roll >= int(final_needed))
+                except Exception:
+                    success = False
+                do_reroll = False
+                try:
+                    unit = attacker.parent_unit
+                    game = unit.get_parent_army().player.game
+                    player = unit.get_parent_army().player
+                    is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                    provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                except Exception:
+                    is_human = False
+                    provider = None
+                    player = None
+                reason = reroll_full_reasons[0] if reroll_full_reasons else "Unit ability"
+                if is_human and callable(provider):
+                    try:
+                        do_reroll = bool(provider(
+                            player=player,
+                            unit=unit,
+                            roll_type="wound",
+                            value=dice_roll,
+                            dice=None,
+                            needed=final_needed,
+                            success=success,
+                            reason=reason,
+                        ))
+                    except Exception:
+                        do_reroll = False
+                else:
+                    do_reroll = (not success)
+                if do_reroll:
                     rr = _reroll_wound()
-                    wound_result.setdefault("special_effects", []).append("Leading: re-roll Wound rolls of 1")
-                    wound_result.setdefault("special_effects", []).extend(list(lead_mods.get("reroll_wound_reasons", ()) or ()))
-                    wound_result["reroll_of_one"] = 1
+                    wound_result.setdefault("special_effects", []).extend(reroll_full_reasons)
                     wound_result["reroll"] = rr
                     dice_roll = rr
                     reroll_used = True
@@ -4668,6 +4924,28 @@ class WargearProfile:
             wound_result['final_needed'] = final_needed
             if strength_comparison:
                 wound_result.setdefault('strength_comparison', strength_comparison)
+            if crit_wound_threshold is not None:
+                try:
+                    threshold = int(crit_wound_threshold)
+                except Exception:
+                    threshold = None
+                if threshold is not None and roll >= threshold and roll >= final_needed:
+                    wound_result['special_effects'].append(f"Critical wound ({threshold}+)")
+                    if crit_wound_reasons:
+                        wound_result['special_effects'].extend(list(crit_wound_reasons))
+                    attack_instance['crit_wound'] = True
+                    has_temp_dev = False
+                    try:
+                        has_temp_dev = bool(getattr(attacker, "has_temporary_devastating_wounds_melee", lambda: False)())
+                        if has_temp_dev:
+                            is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+                            has_temp_dev = bool(is_melee)
+                    except Exception:
+                        has_temp_dev = False
+                    if self.is_devastating_wounds() or _devastating_from_blessings() or _devastating_from_pain() or has_temp_dev:
+                        wound_result['special_effects'].append("Devastating Wounds")
+                        attack_instance['mortal_wound'] = True
+                    return True
             return roll >= final_needed
 
         # First attempt
@@ -5134,6 +5412,7 @@ class WargearProfile:
 
         damage_mods: list[Modifier] = []
         defensive_damage_entries = []
+        allocated_damage_entries = []
 
         if self.is_melta() and attack_instance.get('below_half_distance', False):
             # Support Melta N / Melta D3 / Melta D6+X, etc.
@@ -5236,6 +5515,35 @@ class WargearProfile:
                 damage_mods.append(Modifier(ModifierOp.SUB, int(red), source="enhancement:reduce_damage_taken"))
         except Exception:
             pass
+        # Unit ability: reduce damage allocated to this model.
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            sr = getattr(t_unit, "special_rules", None) if t_unit is not None else None
+            if isinstance(sr, dict):
+                entries = list(sr.get("allocated_damage_reductions", []) or [])
+                attack_type = "melee" if (self.parent_wargear and self.parent_wargear.is_melee()) else "ranged"
+                for entry in entries:
+                    if not isinstance(entry, dict):
+                        continue
+                    entry_type = str(entry.get("attack_type") or "any").strip().lower()
+                    if entry_type not in ("any", attack_type):
+                        continue
+                    entry_op = str(entry.get("op") or "sub").strip().lower()
+                    if entry_op in ("div", "divide", "halve", "half"):
+                        div = int(entry.get("value", 0) or 0) or 2
+                        damage_mods.append(Modifier(ModifierOp.DIV, int(div), source="ability:allocated_damage_halving"))
+                        allocated_damage_entries.append(
+                            {"op": "div", "value": int(div), "source": entry.get("source") or "Damage halving"}
+                        )
+                    else:
+                        red = int(entry.get("value", 0) or 0)
+                        if red:
+                            damage_mods.append(Modifier(ModifierOp.SUB, int(red), source="ability:allocated_damage_reduction"))
+                            allocated_damage_entries.append(
+                                {"op": "sub", "value": int(red), "source": entry.get("source") or "Damage reduction"}
+                            )
+        except Exception:
+            pass
         # Bondsman: Defender's Duty reduces damage by 1.
         try:
             t_unit = getattr(target_model, "parent_unit", None)
@@ -5332,6 +5640,26 @@ class WargearProfile:
             for red, src in defensive_damage_entries:
                 if red:
                     damage_result['special_effects'].append(f"{src} -{red}D taken")
+        except Exception:
+            pass
+        try:
+            for entry in allocated_damage_entries:
+                if isinstance(entry, dict):
+                    val = int(entry.get("value", 0) or 0)
+                    src = entry.get("source") or "Damage modifier"
+                    op = str(entry.get("op") or "sub").strip().lower()
+                    if op == "div":
+                        if val == 2:
+                            damage_result['special_effects'].append(f"{src}: Damage halved")
+                        elif val:
+                            damage_result['special_effects'].append(f"{src}: Damage /{val}")
+                    elif val:
+                        damage_result['special_effects'].append(f"{src} -{val}D taken")
+                elif isinstance(entry, (list, tuple)) and entry:
+                    red = int(entry[0])
+                    src = entry[1] if len(entry) > 1 else "Damage reduction"
+                    if red:
+                        damage_result['special_effects'].append(f"{src} -{red}D taken")
         except Exception:
             pass
         
@@ -5751,6 +6079,55 @@ class WargearProfile:
 
     def is_one_shot(self) -> bool:
         return 'one shot' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def is_conversion(self) -> bool:
+        """Check if weapon has Conversion keyword."""
+        return 'conversion' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def get_conversion_distance(self, attacker: Optional['Model'] = None) -> float:
+        """
+        Extract distance threshold from Conversion keyword by parsing the unit's
+        Conversion ability description from Datasheets_abilities.json.
+
+        The Conversion ability description contains text like:
+        "more than 12\" from the bearer" or "more than 24\" from the bearer"
+
+        Args:
+            attacker: Optional Model to get the unit's datasheet abilities from
+
+        Returns:
+            Distance threshold in inches (12.0, 18.0, or 24.0). Defaults to 12.0 if parsing fails.
+        """
+        # Try to parse distance from unit's Conversion ability
+        if attacker is not None:
+            try:
+                unit = getattr(attacker, "parent_unit", None)
+                if unit is not None:
+                    datasheet = getattr(unit, "datasheet", None)
+                    if datasheet is not None:
+                        abilities = getattr(datasheet, "datasheets_abilities", [])
+                        for ability in abilities:
+                            if isinstance(ability, dict) and ability.get("name", "").lower() == "conversion":
+                                description = ability.get("description", "")
+                                # Parse "more than XX" from description
+                                import re
+                                match = re.search(r'more than (\d+)"', description)
+                                if match:
+                                    distance = float(match.group(1))
+                                    return distance
+            except Exception:
+                pass
+
+        # Default to 12.0 if parsing fails or no attacker provided
+        return 12.0
+
+    def get_conversion_crit_threshold(self) -> int:
+        """Return the unmodified hit roll threshold for Conversion critical hits.
+
+        Per the rules, Conversion always uses 4+ as the threshold for upgrading
+        successful hits to critical hits.
+        """
+        return 4
 
     def one_shot_key(self) -> str:
         """Stable-ish identifier for per-model one-shot tracking."""

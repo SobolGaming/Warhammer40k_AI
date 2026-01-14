@@ -185,6 +185,8 @@ class Game:
         self.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_transport_rules)
         # Detachment abilities that trigger on unit movement events
         self.event_system.subscribe("unit_move_ended", self._on_unit_move_ended_detachment_rules)
+        # Datasheet abilities that trigger on charge-move end
+        self.event_system.subscribe("unit_move_ended", self._on_unit_move_ended_charge_mortal_wounds)
         # Battle Focus triggers (fall back reactions, fight selection, shooting reactions)
         self.event_system.subscribe("unit_move_started", self._on_unit_move_started_battle_focus)
         self.event_system.subscribe("unit_move_ended", self._on_unit_move_ended_battle_focus)
@@ -464,6 +466,71 @@ class Game:
                 root.apply_reanimation_protocols(d3, game_map=game_map, is_human=is_human, provider=provider)
             except Exception:
                 continue
+
+    def _apply_command_phase_regain_wounds(self, current_player) -> None:
+        if current_player is None:
+            return
+        try:
+            army = current_player.get_army()
+        except Exception:
+            army = getattr(current_player, "army", None)
+        if army is None:
+            return
+
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            try:
+                if hasattr(unit, "is_alive") and callable(unit.is_alive) and not unit.is_alive():
+                    continue
+            except Exception:
+                pass
+            try:
+                if not bool(getattr(unit, "deployed", True)):
+                    continue
+            except Exception:
+                pass
+            try:
+                if str(getattr(unit, "reserve_status", "deployed")) != "deployed":
+                    continue
+            except Exception:
+                pass
+            try:
+                if hasattr(unit, "is_in_reserves") and callable(unit.is_in_reserves):
+                    if bool(unit.is_in_reserves()):
+                        continue
+            except Exception:
+                pass
+
+            models = list(getattr(unit, "models", []) or [])
+            if not models:
+                continue
+            for model in models:
+                try:
+                    if not bool(getattr(model, "is_alive", True)):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    base_wounds = int(getattr(model, "_base_wounds", getattr(model, "base_wounds", 0)) or 0)
+                    current_wounds = int(getattr(model, "wounds", 0) or 0)
+                except Exception:
+                    continue
+                if base_wounds <= 0 or current_wounds <= 0 or current_wounds >= base_wounds:
+                    continue
+                try:
+                    amount = int(unit.get_command_phase_regain_wound_amount(model) or 0)
+                except Exception:
+                    amount = 0
+                if amount <= 0:
+                    continue
+                try:
+                    model.heal(amount)
+                except Exception:
+                    try:
+                        model.wounds = min(base_wounds, current_wounds + amount)
+                    except Exception:
+                        pass
 
     def _maybe_prompt_shadow_in_the_warp(self) -> None:
         es = getattr(self, "event_system", None)
@@ -1956,7 +2023,7 @@ class Game:
             from .fight_phase_manager import FightPhaseManager
             mgr = FightPhaseManager(self)
             attacker_view = mgr._as_attached_view(frenzy_unit)
-            declarations = mgr._auto_select_melee_weapons(attacker_view)
+            declarations = mgr._auto_select_melee_weapons(attacker_view, attacker_unit)
         except Exception:
             declarations = []
         if not declarations:
@@ -3458,6 +3525,202 @@ class Game:
                 sr["seductive_gambit_active"] = True
                 sr["seductive_gambit_expires_phase"] = "FIGHT_PHASE"
                 unit.special_rules = sr
+
+    def _choose_charge_mortal_wounds_target(self, player, unit, candidates, spec):
+        if not candidates:
+            return None
+        choice = None
+        if player is not None and hasattr(player, "_choose_optional_value"):
+            try:
+                ctx = {
+                    "unit": getattr(unit, "name", "") or "",
+                    "ability": str((spec or {}).get("name", "") or ""),
+                    "candidates": [getattr(c, "name", "") for c in candidates],
+                }
+                choice = player._choose_optional_value("CHARGE_MORTAL_WOUNDS_TARGET", list(candidates), ctx)
+            except Exception:
+                choice = None
+        if choice in candidates:
+            return choice
+        if isinstance(choice, str):
+            wanted = choice.strip().lower()
+            for cand in candidates:
+                try:
+                    if str(getattr(cand, "name", "") or "").strip().lower() == wanted:
+                        return cand
+                except Exception:
+                    continue
+        return candidates[0]
+
+    def resolve_charge_end_mortal_wounds(self, unit, target_unit, spec) -> None:
+        if unit is None or target_unit is None or not isinstance(spec, dict):
+            return
+        kind = str(spec.get("kind", "") or "").strip().lower()
+        if not kind:
+            return
+        game_map = getattr(self, "map", None)
+        ability_name = str(spec.get("name", "") or "Charge Mortals").strip() or "Charge Mortals"
+
+        try:
+            from ..utility.dice import get_roll
+        except Exception:
+            return
+
+        total_mw = 0
+        roll_summary = ""
+        if kind == "per_model_4plus_d3":
+            try:
+                models = list(unit.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(unit, "models", []) or [])
+            rolls = []
+            d3_rolls = []
+            for m in models:
+                try:
+                    if not getattr(m, "is_alive", False):
+                        continue
+                except Exception:
+                    pass
+                try:
+                    r = int(get_roll("D6") or 0)
+                except Exception:
+                    r = 0
+                rolls.append(r)
+                if r >= 4:
+                    try:
+                        d3 = int(get_roll("D3") or 0)
+                    except Exception:
+                        d3 = 0
+                    d3_rolls.append(d3)
+                    total_mw += d3
+            if rolls:
+                roll_summary = f"rolls={rolls}"
+                if d3_rolls:
+                    roll_summary += f", d3={d3_rolls}"
+        elif kind == "table_d6_2_3_4_5_6":
+            try:
+                roll = int(get_roll("D6") or 0)
+            except Exception:
+                roll = 0
+            if 2 <= roll <= 3:
+                total_mw = 1
+            elif 4 <= roll <= 5:
+                try:
+                    total_mw = int(get_roll("D3") or 0)
+                except Exception:
+                    total_mw = 0
+            elif roll >= 6:
+                try:
+                    total_mw = int(get_roll("D3") or 0) + 3
+                except Exception:
+                    total_mw = 3
+            roll_summary = f"roll={roll}"
+        else:
+            return
+
+        try:
+            print(f"{ability_name}: {getattr(unit, 'name', 'Unit')} -> {getattr(target_unit, 'name', 'Target')} ({roll_summary}) => {total_mw} mortal wounds")
+        except Exception:
+            pass
+
+        if total_mw > 0:
+            try:
+                unit._apply_mortal_wounds_to_unit(target_unit, int(total_mw), game_map=game_map)
+            except Exception:
+                pass
+        try:
+            from ..utility.event_bus import append_action
+            pname = str(getattr(getattr(unit.get_parent_army(), "player", None), "name", "") or "")
+            if pname:
+                append_action(
+                    pname,
+                    f"{ability_name}: {getattr(unit, 'name', 'Unit')} dealt {int(total_mw)} mortal wounds to {getattr(target_unit, 'name', 'Target')}.",
+                )
+        except Exception:
+            pass
+
+    def _on_unit_move_ended_charge_mortal_wounds(self, unit=None, action: str | None = None, **_kwargs) -> None:
+        if unit is None:
+            return
+        if (action or "").strip().lower() != "charge":
+            return
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        try:
+            if not root.is_alive():
+                return
+        except Exception:
+            pass
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        specs = list(sr.get("charge_end_mortal_wounds", []) or [])
+        if not specs:
+            return
+
+        try:
+            enemies = list(game_map.get_enemy_units(root) or [])
+        except Exception:
+            enemies = []
+        engaged = []
+        for enemy in enemies:
+            if enemy is None:
+                continue
+            try:
+                if not getattr(enemy, "deployed", True):
+                    continue
+                if hasattr(enemy, "is_alive") and not enemy.is_alive():
+                    continue
+                if not game_map.is_within_engagement_range(root, enemy):
+                    continue
+            except Exception:
+                continue
+            engaged.append(enemy)
+
+        if not engaged:
+            return
+
+        try:
+            player = root.get_parent_army().player
+        except Exception:
+            player = None
+        try:
+            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+        except Exception:
+            is_human = False
+
+        for spec in specs:
+            if len(engaged) == 1 or not is_human:
+                target = engaged[0] if len(engaged) == 1 else self._choose_charge_mortal_wounds_target(player, root, engaged, spec)
+                if target is None:
+                    continue
+                self.resolve_charge_end_mortal_wounds(root, target, spec)
+                continue
+
+            def _on_select(target_unit, _spec=spec, _root=root):
+                if target_unit is None:
+                    return
+                self.resolve_charge_end_mortal_wounds(_root, target_unit, _spec)
+
+            try:
+                self.event_system.publish(
+                    "charge_mortal_wounds_prompt",
+                    player=player,
+                    unit=root,
+                    candidates=list(engaged),
+                    ability=spec,
+                    on_select=_on_select,
+                )
+            except Exception:
+                self.resolve_charge_end_mortal_wounds(root, engaged[0], spec)
 
     def _on_model_destroyed_rules(self, attacker_model=None, attacker_unit=None, target_model=None, target_unit=None, **_kwargs) -> None:
         # Generic partial support for "gain CP when this model destroys an enemy KEYWORD unit/model".
@@ -5387,6 +5650,11 @@ class Game:
                 bonus = int(cp_player.get_command_phase_bonus_cp_gain() or 0)
                 if bonus > 0:
                     cp_player.gain_command_points(bonus, reason="Command phase bonus CP")
+        except Exception:
+            pass
+        # Datasheet abilities: start of your Command phase regain lost wounds.
+        try:
+            self._apply_command_phase_regain_wounds(self.get_current_player())
         except Exception:
             pass
         # Drukhari: Power from Pain tokens at start of your Command phase.
@@ -7425,6 +7693,14 @@ class Game:
                             continue
                         if val:
                             modifiers.append((val, source))
+        except Exception:
+            pass
+        try:
+            from ..utility.aura_effects import get_aura_advance_charge_roll_modifiers
+            _adv_mods, aura_charge_mods = get_aura_advance_charge_roll_modifiers(charging_unit, game_map=self.map)
+            for val, source in list(aura_charge_mods or []):
+                if val:
+                    modifiers.append((int(val), source))
         except Exception:
             pass
 

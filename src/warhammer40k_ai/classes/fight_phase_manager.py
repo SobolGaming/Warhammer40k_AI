@@ -284,6 +284,11 @@ class FightPhaseManager:
             fighting_unit.clear_martial_katah_choice()
         except Exception:
             pass
+        try:
+            if hasattr(fighting_unit, "clear_fight_within_3_active"):
+                fighting_unit.clear_fight_within_3_active()
+        except Exception:
+            pass
         # Publish event for reaction stratagems (e.g. Counter-Offensive)
         try:
             if hasattr(self.game, "event_system"):
@@ -458,7 +463,7 @@ class FightPhaseManager:
             else:
                 # Fallback: auto-select all melee weapons
                 print("⚠️ No weapon selection callback - auto-selecting all melee weapons")
-                weapon_declarations = self._auto_select_melee_weapons(self._as_attached_view(fighting_unit))
+                weapon_declarations = self._auto_select_melee_weapons(self._as_attached_view(fighting_unit), target_unit)
                 on_weapon_selection_complete(weapon_declarations)
 
         # Show pile-in dialog
@@ -615,6 +620,20 @@ class FightPhaseManager:
             pass
         print(f"⚔️ Resolving melee attacks: {attacking_unit.name} vs {target_unit.name}")
 
+        eligible_models = None
+        try:
+            if hasattr(attacking_unit, "has_fight_within_3_ability") and attacking_unit.has_fight_within_3_ability():
+                game_map = getattr(self.game, "map", None)
+                eligible_models = set(
+                    attacking_unit.get_fight_eligible_models_for_target(
+                        target_unit,
+                        game_map=game_map,
+                        allow_within_3=attacking_unit.fight_within_3_active(),
+                    )
+                )
+        except Exception:
+            eligible_models = None
+
         # Begin attack resolution window so attached leaders don't separate mid-melee sequence.
         try:
             if hasattr(target_unit, "begin_attack_resolution"):
@@ -627,6 +646,9 @@ class FightPhaseManager:
             weapon_profile = declaration.get('weapon_profile')
 
             if not model or not weapon_profile:
+                continue
+            if eligible_models is not None and model not in eligible_models:
+                print(f"⚠️ {getattr(model, 'name', 'Model')} is not eligible to fight {getattr(target_unit, 'name', 'Target')}")
                 continue
 
             print(f"🗡️ {model.name} attacks with {weapon_profile.name}")
@@ -695,7 +717,7 @@ class FightPhaseManager:
         except Exception:
             pass
 
-    def _auto_select_melee_weapons(self, unit: Unit) -> List:
+    def _auto_select_melee_weapons(self, unit: Unit, target_unit: Optional[Unit] = None) -> List:
         """Auto-select melee weapons for a unit (fallback).
 
         Respects the EXTRA ATTACKS rule:
@@ -703,9 +725,57 @@ class FightPhaseManager:
         - Also select ALL melee weapons that DO have EXTRA ATTACKS
         """
         weapon_declarations = []
+        eligible_models = None
+        try:
+            if target_unit is not None and hasattr(unit, "has_fight_within_3_ability") and unit.has_fight_within_3_ability():
+                game_map = getattr(self.game, "map", None)
+                if game_map is not None and not unit.fight_within_3_active():
+                    base_eligible = unit.get_fight_eligible_models_for_target(
+                        target_unit,
+                        game_map=game_map,
+                        allow_within_3=False,
+                    )
+                    expanded_eligible = unit.get_fight_eligible_models_for_target(
+                        target_unit,
+                        game_map=game_map,
+                        allow_within_3=True,
+                    )
+                    if set(expanded_eligible) != set(base_eligible):
+                        player = None
+                        try:
+                            player = unit.get_parent_army().player
+                        except Exception:
+                            player = None
+                        if player is not None and hasattr(player, "_should_use_optional_ability"):
+                            ctx = {
+                                "unit": unit,
+                                "target_unit": target_unit,
+                                "ability_sources": list(unit.get_fight_within_3_sources() or []),
+                            }
+                            should = bool(player._should_use_optional_ability("FIGHT_WITHIN_3", ctx))
+                            if should:
+                                source = None
+                                try:
+                                    sources = unit.get_fight_within_3_sources()
+                                    if sources:
+                                        source = sources[0]
+                                except Exception:
+                                    source = None
+                                unit.set_fight_within_3_active(True, source=source)
+                eligible_models = set(
+                    unit.get_fight_eligible_models_for_target(
+                        target_unit,
+                        game_map=game_map,
+                        allow_within_3=unit.fight_within_3_active(),
+                    )
+                )
+        except Exception:
+            eligible_models = None
 
         for model in unit.models:
             if not model.is_alive:
+                continue
+            if eligible_models is not None and model not in eligible_models:
                 continue
 
             # Collect melee profiles by category

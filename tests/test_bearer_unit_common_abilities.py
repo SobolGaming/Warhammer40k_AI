@@ -138,10 +138,33 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
             "type": "Datasheet",
             "parameter": "",
         }
-        unit = _make_unit("Leader", abilities=[ability])
-        unit._refresh_bearer_unit_common_modifiers()
+        leader = _make_unit("Leader", abilities=[ability])
+        bodyguard = _make_unit("Bodyguard")
+        bodyguard.attached_leaders = [leader]
+        leader.attached_to = bodyguard
+        leader.can_be_attached_to = ["Bodyguard"]
 
-        self.assertIn((5, None), unit.has_feel_no_pain())
+        bodyguard._refresh_bearer_unit_common_modifiers()
+
+        self.assertIn((5, None), bodyguard.has_feel_no_pain())
+
+    def test_leading_unit_invulnerable_save_applies(self):
+        ability = {
+            "name": "Aegis Ward",
+            "description": "While this model is leading a unit, models in that unit have a 4+ invulnerable save.",
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        leader = _make_unit("Leader", abilities=[ability])
+        bodyguard = _make_unit("Bodyguard")
+        bodyguard.attached_leaders = [leader]
+        leader.attached_to = bodyguard
+        leader.can_be_attached_to = ["Bodyguard"]
+
+        bodyguard._refresh_bearer_unit_common_modifiers()
+
+        inv_val, _source = bodyguard.get_model_invulnerable_save_override(bodyguard.models[0])
+        self.assertEqual(inv_val, 4)
 
     def test_bearer_unit_sustained_hits_applies(self):
         from warhammer40k_ai.classes.wargear import WargearProfile
@@ -181,12 +204,73 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
 
         self.assertEqual(int(attack_instance.get("sustained_hit", 0)), 1)
 
+    def test_leading_unit_melee_sustained_hits_applies_to_melee_only(self):
+        from warhammer40k_ai.classes.wargear import WargearProfile
+
+        ability = {
+            "name": "Bloody Example",
+            "description": "While this model is leading a unit, melee weapons equipped by models in that unit have the [Sustained Hits 1] ability.",
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        leader = _make_unit("Leader", abilities=[ability])
+        bodyguard = _make_unit("Bodyguard")
+        bodyguard.attached_leaders = [leader]
+        leader.attached_to = bodyguard
+        leader.can_be_attached_to = ["Bodyguard"]
+        bodyguard._refresh_bearer_unit_common_modifiers()
+
+        melee_parent = SimpleNamespace(name="Melee Blade", is_melee=lambda: True, is_ranged=lambda: False)
+        melee_profile = WargearProfile(
+            profile_name="Melee",
+            wargear_data={
+                "range": "Melee",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "4",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            },
+            parent_wargear=melee_parent,
+        )
+        ranged_parent = SimpleNamespace(name="Rifle", is_melee=lambda: False, is_ranged=lambda: True)
+        ranged_profile = WargearProfile(
+            profile_name="Ranged",
+            wargear_data={
+                "range": "24",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "4",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            },
+            parent_wargear=ranged_parent,
+        )
+
+        target = SimpleNamespace(
+            toughness=4,
+            models=[SimpleNamespace(is_alive=True)],
+            has_keyword=lambda _k: False,
+        )
+
+        attack_instance = {"_aura_attack_mods": self._aura_stub()}
+        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=6):
+            melee_profile._hit_target_with_tracking(target, bodyguard.models[0], attack_instance)
+        self.assertEqual(int(attack_instance.get("sustained_hit", 0)), 1)
+
+        attack_instance = {"_aura_attack_mods": self._aura_stub()}
+        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=6):
+            ranged_profile._hit_target_with_tracking(target, bodyguard.models[0], attack_instance)
+        self.assertEqual(int(attack_instance.get("sustained_hit", 0)), 0)
+
     def test_bearer_unit_ignores_cover_applies(self):
         from warhammer40k_ai.classes.wargear import WargearProfile
 
         ability = {
             "name": "Shadow Weave",
-            "description": "Attacks made by models in the bearer's unit have the Ignores Cover ability.",
+            "description": "Ranged weapons equipped by models in the bearer's unit have the [Ignores Cover] ability.",
             "type": "Wargear",
             "parameter": "",
         }
@@ -233,6 +317,29 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
         penalty, reasons = unit.get_target_hit_roll_penalty("ranged")
         self.assertEqual(penalty, 1)
         self.assertIn("-1 to hit from Deflective Field", reasons)
+
+    def test_leading_unit_target_hit_penalty_applies(self):
+        from warhammer40k_ai.classes.army import Army
+
+        ability = {
+            "name": "Shield of Duty",
+            "description": "While this model is leading a unit, each time an attack targets that unit, subtract 1 from the Hit roll.",
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        bodyguard = _make_unit("Bodyguard", ds_id="BG2")
+        leader = _make_unit("Leader", ds_id="LD2", abilities=[ability], attached_to=["BG2"])
+
+        army = Army("Chaos Daemons", "Detachment")
+        army.faction_id = "CD"
+        army.add_unit(bodyguard)
+        army.add_unit(leader)
+
+        leader.attach_to_unit(bodyguard)
+
+        penalty, reasons = bodyguard.get_target_hit_roll_penalty("ranged")
+        self.assertEqual(penalty, 1)
+        self.assertIn("-1 to hit from Shield of Duty", reasons)
 
     def test_bearer_unit_leadership_set_applies(self):
         ability = {
