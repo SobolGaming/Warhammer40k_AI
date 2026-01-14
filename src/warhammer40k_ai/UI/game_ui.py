@@ -1554,6 +1554,9 @@ class GameView:
         # World Eaters: Blood Surge prompt queue
         self._pending_blood_surge_queue = []
         self._blood_surge_flow_active = False
+        # Charge-end mortal wound prompts
+        self._pending_charge_mortal_wounds_queue = []
+        self._charge_mortal_wounds_flow_active = False
         try:
             if self.game and getattr(self.game, "event_system", None) is not None:
                 self.game.event_system.subscribe("battle_round_started", self._on_battle_round_started)
@@ -1593,6 +1596,8 @@ class GameView:
                 self.game.event_system.subscribe("blood_surge_prompt", self._on_blood_surge_prompt)
                 # World Eaters: Frenzy prompt (Helbrute reactive shoot/fight)
                 self.game.event_system.subscribe("frenzy_prompt", self._on_frenzy_prompt)
+                # Charge-end mortal wound target selection
+                self.game.event_system.subscribe("charge_mortal_wounds_prompt", self._on_charge_mortal_wounds_prompt)
                 # Quarry re-pick when quarry is destroyed
                 self.game.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_for_monarch_of_the_hunt)
                 # Battle Focus reactive prompts (Opportunity Seized / Fade Back)
@@ -3452,6 +3457,82 @@ class GameView:
         self.individual_model_movement_dialog.show(
             unit, 'pile_in', _on_pile_in_complete, game_map, max_distance
         )
+
+    # ---------------- Charge-end mortal wound prompts ----------------
+
+    def _on_charge_mortal_wounds_prompt(self, player=None, unit=None, candidates=None, ability=None, on_select=None, **_kwargs):
+        if player is None or unit is None:
+            return
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return
+        except Exception:
+            return
+
+        cand = list(candidates or [])
+        if not cand:
+            return
+
+        if self._charge_mortal_wounds_flow_active:
+            self._pending_charge_mortal_wounds_queue.append((player, unit, cand, ability, on_select))
+            return
+        self._pending_charge_mortal_wounds_queue.append((player, unit, cand, ability, on_select))
+        self._open_next_charge_mortal_wounds_prompt(self.game)
+
+    def _open_next_charge_mortal_wounds_prompt(self, game):
+        q = list(getattr(self, "_pending_charge_mortal_wounds_queue", []) or [])
+        if not q:
+            self._pending_charge_mortal_wounds_queue = []
+            self._charge_mortal_wounds_flow_active = False
+            return
+        player, unit, candidates, ability, on_select = q.pop(0)
+        self._pending_charge_mortal_wounds_queue = q
+
+        if player is None or unit is None:
+            self._open_next_charge_mortal_wounds_prompt(game)
+            return
+        cand = list(candidates or [])
+        if not cand:
+            self._open_next_charge_mortal_wounds_prompt(game)
+            return
+
+        ability_name = str((ability or {}).get("name", "") or "Charge Mortals")
+        title = ability_name
+        subtitle = f"{getattr(unit, 'name', 'Unit')} ended a charge. Select a target."
+
+        def _finish(chosen):
+            try:
+                self.overwatch_shooter_dialog.hide()
+            except Exception:
+                pass
+            if chosen is None and cand:
+                chosen = cand[0]
+            if callable(on_select) and chosen is not None:
+                try:
+                    on_select(chosen)
+                except Exception:
+                    pass
+            self._charge_mortal_wounds_flow_active = False
+            self._open_next_charge_mortal_wounds_prompt(game)
+
+        def _on_cancel():
+            _finish(cand[0] if cand else None)
+
+        self._charge_mortal_wounds_flow_active = True
+        try:
+            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
+                self.overwatch_shooter_dialog.show(
+                    cand,
+                    unit,
+                    _finish,
+                    title=title,
+                    subtitle=subtitle,
+                    on_cancel=_on_cancel,
+                )
+                self.dialog_manager.open(self.overwatch_shooter_dialog, modal=True)
+        except Exception:
+            self._charge_mortal_wounds_flow_active = False
+            self._open_next_charge_mortal_wounds_prompt(game)
 
     def _on_oath_of_moment_prompt(self, player=None, game=None, **_kwargs):
         """Prompt human players to select an Oath of Moment target at Command phase start."""

@@ -1200,6 +1200,7 @@ def _classify_ability(
     model_reroll_support = _model_reroll_wound_vs_character_support(description)
     model_hit_vs_fly_support = _model_hit_bonus_vs_fly_support(description)
     targeted_stratagem_discount_support = _targeted_stratagem_cp_discount_support(description)
+    charge_end_mortal_support = _charge_end_mortal_wounds_support(description)
 
     fid = str(faction_id or "").strip().upper()
     name_norm = _norm(name)
@@ -1264,6 +1265,8 @@ def _classify_ability(
         return model_hit_vs_fly_support
     if targeted_stratagem_discount_support:
         return targeted_stratagem_discount_support
+    if charge_end_mortal_support:
+        return charge_end_mortal_support
     return ("Not implemented", "")
 
 
@@ -1589,6 +1592,48 @@ def _model_hit_bonus_vs_fly_support(description: str) -> Optional[Tuple[str, str
     if not re.search(r"targets?\s+(?:a|an)?\s*unit.*?(?:can\s+fly|with\s+fly|fly)\b", low, flags=re.IGNORECASE):
         return None
     return ("Supported", f"Model attacks vs FLY targets gain +{m.group(1)} to hit.")
+
+
+def _charge_end_mortal_wounds_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    low = text.lower()
+    if "ends a charge move" not in low:
+        return None
+    if "engagement range" not in low or "enemy unit" not in low:
+        return None
+    if "mortal wound" not in low:
+        return None
+
+    per_model = (
+        re.search(r"roll\s+one\s+d6\s+for\s+each\s+model\s+in\s+(?:this|that|the)\s+unit", low, flags=re.IGNORECASE)
+        and re.search(r"for\s+each\s+4\+", low, flags=re.IGNORECASE)
+        and re.search(r"d3\s+mortal\s+wounds?", low, flags=re.IGNORECASE)
+    )
+    if per_model:
+        return (
+            "Supported",
+            "Charge end: pick an engaged enemy; D6 per model, each 4+ inflicts D3 mortal wounds.",
+        )
+
+    table = (
+        re.search(r"roll\s+one\s+d6", low, flags=re.IGNORECASE)
+        and re.search(r"\b2\s*-\s*3\b", low, flags=re.IGNORECASE)
+        and re.search(r"\b4\s*-\s*5\b", low, flags=re.IGNORECASE)
+        and re.search(r"d3\s*\+\s*3\s+mortal\s+wounds?", low, flags=re.IGNORECASE)
+    )
+    if table:
+        return (
+            "Supported",
+            "Charge end: pick an engaged enemy; D6 table for mortal wounds (2-3=1, 4-5=D3, 6=D3+3).",
+        )
+
+    return None
 
 
 def _targeted_stratagem_cp_discount_support(description: str) -> Optional[Tuple[str, str]]:

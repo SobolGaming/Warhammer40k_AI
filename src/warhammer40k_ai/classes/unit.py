@@ -207,6 +207,11 @@ class Unit:
             self._refresh_targeted_stratagem_cp_discount_flags()
         except Exception:
             pass
+        # Parse charge-end mortal wound triggers.
+        try:
+            self._refresh_charge_end_mortal_wounds_flags()
+        except Exception:
+            pass
         # Parse common bearer-unit effects (charge bonuses, Leadership set).
         try:
             self._refresh_bearer_unit_common_modifiers()
@@ -765,6 +770,21 @@ class Unit:
         r"reduce\s+the\s+cp\s+cost\s+of\s+that\s+(?:use|usage)\s+of\s+that\s+stratagem\s+by\s+1cp",
         re.IGNORECASE,
     )
+    _CHARGE_END_MORTAL_PER_MODEL_RE = re.compile(
+        r"each\s+time\s+(?:this\s+model'?s\s+unit|this\s+unit)\s+ends?\s+a\s+charge\s+move.*?"
+        r"(?:select|choose)\s+one\s+enemy\s+unit\s+within\s+engagement\s+range.*?"
+        r"roll\s+one\s+d6\s+for\s+each\s+model\s+in\s+(?:this\s+unit|that\s+unit|this\s+model'?s\s+unit).*?"
+        r"for\s+each\s+4\+.*?d3\s+mortal\s+wounds?",
+        re.IGNORECASE,
+    )
+    _CHARGE_END_MORTAL_TABLE_RE = re.compile(
+        r"each\s+time\s+(?:this\s+model'?s\s+unit|this\s+unit)\s+ends?\s+a\s+charge\s+move.*?"
+        r"(?:select|choose)\s+one\s+enemy\s+unit\s+within\s+engagement\s+range.*?"
+        r"roll\s+one\s+d6.*?on\s+a\s+2\s*-\s*3.*?mortal\s+wound.*?"
+        r"on\s+a\s+4\s*-\s*5.*?d3\s+mortal\s+wounds?.*?"
+        r"on\s+a\s+6.*?d3\s*\+\s*3\s+mortal\s+wounds?",
+        re.IGNORECASE,
+    )
     _BEARER_INVULNERABLE_SAVE_RE = re.compile(
         r"^the bearer has a (\d)\+ invulnerable save\.?$",
         re.IGNORECASE,
@@ -1116,6 +1136,67 @@ class Unit:
                 sr["stratagem_target_cp_discount_sources"] = deduped
 
         self.special_rules = sr
+
+    def _refresh_charge_end_mortal_wounds_flags(self) -> None:
+        """Parse charge-move mortal wound triggers into special_rules."""
+        if getattr(self, "special_rules", None) is None:
+            self.special_rules = {}
+
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+
+        specs = []
+        seen = set()
+
+        for u in members:
+            if u is None:
+                continue
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text = u._normalize_rules_text(desc or "")
+                if not text:
+                    continue
+                text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+                low = text.lower()
+                if "charge move" not in low or "mortal wound" not in low:
+                    continue
+                kind = None
+                if self._CHARGE_END_MORTAL_PER_MODEL_RE.search(text):
+                    kind = "per_model_4plus_d3"
+                elif self._CHARGE_END_MORTAL_TABLE_RE.search(text):
+                    kind = "table_d6_2_3_4_5_6"
+                if not kind:
+                    continue
+                source = str(name or "Charge Mortals").strip() or "Charge Mortals"
+                key = (kind, source.lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "kind": kind,
+                        "name": source,
+                        "description": str(desc or ""),
+                    }
+                )
+
+        for u in members:
+            if u is None:
+                continue
+            sr_u = getattr(u, "special_rules", None)
+            if not isinstance(sr_u, dict):
+                sr_u = {}
+            if specs:
+                sr_u["charge_end_mortal_wounds"] = list(specs)
+            else:
+                if "charge_end_mortal_wounds" in sr_u:
+                    del sr_u["charge_end_mortal_wounds"]
+            u.special_rules = sr_u
 
     def _refresh_bearer_unit_common_modifiers(self) -> None:
         """Parse common bearer/leading-unit rules that grant simple unit-wide modifiers."""
@@ -2515,6 +2596,10 @@ class Unit:
             pass
         try:
             self._refresh_targeted_stratagem_cp_discount_flags()
+        except Exception:
+            pass
+        try:
+            self._refresh_charge_end_mortal_wounds_flags()
         except Exception:
             pass
 
@@ -4434,6 +4519,14 @@ class Unit:
             bodyguard._refresh_targeted_stratagem_cp_discount_flags()
         except Exception:
             pass
+        try:
+            self._refresh_charge_end_mortal_wounds_flags()
+        except Exception:
+            pass
+        try:
+            bodyguard._refresh_charge_end_mortal_wounds_flags()
+        except Exception:
+            pass
 
     def detach_from_unit(self) -> None:
         """Detach this Leader from its Bodyguard unit."""
@@ -4503,6 +4596,15 @@ class Unit:
         try:
             if bodyguard is not None:
                 bodyguard._refresh_targeted_stratagem_cp_discount_flags()
+        except Exception:
+            pass
+        try:
+            self._refresh_charge_end_mortal_wounds_flags()
+        except Exception:
+            pass
+        try:
+            if bodyguard is not None:
+                bodyguard._refresh_charge_end_mortal_wounds_flags()
         except Exception:
             pass
 
