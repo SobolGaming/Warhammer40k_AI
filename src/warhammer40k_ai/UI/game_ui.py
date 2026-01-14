@@ -1533,6 +1533,9 @@ class GameView:
         self._pending_voice_of_command_queue = []
         # Grey Knights: Gate of Infinity prompt queue
         self._pending_gate_of_infinity_queue = []
+        # End of opponent's turn: Strategic Reserves prompt queue
+        self._pending_opponent_turn_reserves_queue = []
+        self._opponent_turn_reserves_flow_active = False
         # Adeptus Custodes: Martial Ka'tah selection queue
         self._pending_martial_katah_queue = []
         # Emperor's Children: Pledge/Exquisite/Sensational prompt queues
@@ -1580,6 +1583,11 @@ class GameView:
                 self.game.event_system.subscribe("voice_of_command_prompt", self._on_voice_of_command_prompt)
                 # Grey Knights: Gate of Infinity prompt at end of opponent's Fight phase
                 self.game.event_system.subscribe("gate_of_infinity_prompt", self._on_gate_of_infinity_prompt)
+                # End of opponent's turn: Strategic Reserves prompt
+                self.game.event_system.subscribe(
+                    "opponent_turn_strategic_reserves_prompt",
+                    self._on_opponent_turn_strategic_reserves_prompt,
+                )
                 # Adeptus Custodes: Martial Ka'tah stance selection
                 self.game.event_system.subscribe("martial_katah_prompt", self._on_martial_katah_prompt)
                 # Emperor's Children: Detachment prompts
@@ -2656,6 +2664,121 @@ class GameView:
             self.dialog_manager.open(self.gate_of_infinity_dialog, modal=True)
         except Exception:
             self._finish_gate_of_infinity_flow(game)
+
+    # ---------------- End of Opponent Turn: Strategic Reserves prompts ----------------
+
+    def _on_opponent_turn_strategic_reserves_prompt(self, player=None, units=None, game=None, **_kwargs):
+        if player is None:
+            return
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return
+        except Exception:
+            return
+
+        entries = []
+        for item in list(units or []):
+            if isinstance(item, dict):
+                unit = item.get("unit")
+                ability = item.get("ability")
+            else:
+                unit = item
+                ability = None
+            if unit is None:
+                continue
+            entries.append((player, unit, ability))
+        if not entries:
+            return
+
+        if self._opponent_turn_reserves_flow_active:
+            self._pending_opponent_turn_reserves_queue.extend(entries)
+            return
+
+        self._pending_opponent_turn_reserves_queue.extend(entries)
+        self._open_next_opponent_turn_strategic_reserves_prompt(game or self.game)
+
+    def _open_next_opponent_turn_strategic_reserves_prompt(self, game):
+        q = list(getattr(self, "_pending_opponent_turn_reserves_queue", []) or [])
+        if not q:
+            self._pending_opponent_turn_reserves_queue = []
+            self._opponent_turn_reserves_flow_active = False
+            return
+        player, unit, ability = q.pop(0)
+        self._pending_opponent_turn_reserves_queue = q
+
+        if player is None or unit is None:
+            self._open_next_opponent_turn_strategic_reserves_prompt(game)
+            return
+
+        def _eligible(u):
+            try:
+                if not u.is_alive():
+                    return False
+            except Exception:
+                pass
+            try:
+                if not getattr(u, "deployed", False):
+                    return False
+                if str(getattr(u, "reserve_status", "deployed")) != "deployed":
+                    return False
+                if bool(getattr(u, "embarked_in", None)) or bool(getattr(u, "is_embarked", False)):
+                    return False
+            except Exception:
+                return False
+            gm = getattr(game, "map", None) if game is not None else None
+            if gm is None:
+                return False
+            try:
+                for enemy in list(gm.get_enemy_units(u) or []):
+                    if not getattr(enemy, "is_alive", lambda: True)():
+                        continue
+                    if not getattr(enemy, "deployed", True):
+                        continue
+                    if gm.is_within_engagement_range(u, enemy):
+                        return False
+            except Exception:
+                return False
+            return True
+
+        if not _eligible(unit):
+            self._open_next_opponent_turn_strategic_reserves_prompt(game)
+            return
+
+        self._opponent_turn_reserves_flow_active = True
+        ability_name = None
+        if isinstance(ability, dict):
+            ability_name = ability.get("name")
+        title = ability_name or "Strategic Reserves"
+        msg = (
+            f"{getattr(unit, 'name', 'Unit')} is not within Engagement Range.\n"
+            "Remove it from the battlefield and place it into Strategic Reserves?"
+        )
+
+        def _done(chosen: bool):
+            if chosen:
+                try:
+                    unit.enter_strategic_reserves_midgame(
+                        game=game,
+                        game_map=getattr(game, "map", None),
+                        reason="end of opponent turn",
+                    )
+                except Exception:
+                    pass
+                try:
+                    from ..utility.event_bus import append_action
+                    pname = str(getattr(player, "name", "") or "")
+                    if pname:
+                        ab_name = ability_name or "Strategic Reserves"
+                        append_action(pname, f"{ab_name}: {getattr(unit, 'name', 'Unit')} placed into Strategic Reserves.")
+                except Exception:
+                    pass
+            self._open_next_opponent_turn_strategic_reserves_prompt(game)
+
+        try:
+            self.yes_no_dialog.show(title, msg, _done, yes_label="Yes", no_label="No")
+            self.dialog_manager.open(self.yes_no_dialog, modal=True)
+        except Exception:
+            _done(False)
 
     # ---------------- Martial Ka'tah prompts ----------------
 

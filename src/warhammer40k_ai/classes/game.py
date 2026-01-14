@@ -3018,6 +3018,131 @@ class Game:
             except Exception:
                 continue
 
+    def _maybe_prompt_end_of_opponent_turn_strategic_reserves(self, turn_ending_player=None) -> None:
+        """Optional end-of-opponent-turn: remove eligible units to Strategic Reserves."""
+        if turn_ending_player is None:
+            return
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+        es = getattr(self, "event_system", None)
+        subs = getattr(es, "subscribers", {}) if es is not None else {}
+
+        for opp in list(getattr(self, "players", []) or []):
+            if opp is None or opp is turn_ending_player:
+                continue
+            try:
+                army = opp.get_army()
+            except Exception:
+                army = None
+            if army is None:
+                continue
+
+            eligible = []
+            seen = set()
+            for unit in list(getattr(army, "units", []) or []):
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None:
+                    continue
+                try:
+                    rid = getattr(root, "_id", None) or id(root)
+                except Exception:
+                    rid = id(root)
+                if rid in seen:
+                    continue
+                seen.add(rid)
+                try:
+                    if not root.is_alive():
+                        continue
+                except Exception:
+                    pass
+                try:
+                    if not getattr(root, "deployed", False):
+                        continue
+                    if str(getattr(root, "reserve_status", "deployed")) != "deployed":
+                        continue
+                    if bool(getattr(root, "embarked_in", None)) or bool(getattr(root, "is_embarked", False)):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    ability = root.get_end_of_opponent_turn_strategic_reserves_ability()
+                except Exception:
+                    ability = None
+                if not ability:
+                    continue
+                engaged = False
+                try:
+                    for enemy in list(game_map.get_enemy_units(root) or []):
+                        if not getattr(enemy, "is_alive", lambda: True)():
+                            continue
+                        if not getattr(enemy, "deployed", True):
+                            continue
+                        if game_map.is_within_engagement_range(root, enemy):
+                            engaged = True
+                            break
+                except Exception:
+                    engaged = True
+                if engaged:
+                    continue
+                eligible.append({"unit": root, "ability": ability})
+
+            if not eligible:
+                continue
+
+            try:
+                is_human = bool(getattr(getattr(opp, "type", None), "name", "") == "HUMAN")
+            except Exception:
+                is_human = False
+            if is_human and es is not None and isinstance(subs, dict) and subs.get("opponent_turn_strategic_reserves_prompt"):
+                try:
+                    es.publish(
+                        "opponent_turn_strategic_reserves_prompt",
+                        player=opp,
+                        units=list(eligible),
+                        game=self,
+                    )
+                except Exception:
+                    pass
+                continue
+
+            for entry in eligible:
+                unit = entry.get("unit")
+                ability = entry.get("ability") or {}
+                if unit is None:
+                    continue
+                try:
+                    ctx = {
+                        "ability_name": ability.get("name", "") or "",
+                        "unit": getattr(unit, "name", "") or "",
+                        "phase": "End of opponent's turn",
+                    }
+                    should = bool(opp._should_use_optional_ability("OPPONENT_TURN_STRATEGIC_RESERVES", ctx))
+                except Exception:
+                    should = False
+                if not should:
+                    continue
+                try:
+                    used = unit.enter_strategic_reserves_midgame(
+                        game=self,
+                        game_map=game_map,
+                        reason="end of opponent turn",
+                    )
+                except Exception:
+                    used = False
+                if used:
+                    try:
+                        from ..utility.event_bus import append_action
+                        pname = str(getattr(opp, "name", "") or "")
+                        if pname:
+                            ability_name = ability.get("name", "") or "Strategic Reserves"
+                            append_action(pname, f"{ability_name}: {getattr(unit, 'name', 'Unit')} placed into Strategic Reserves.")
+                    except Exception:
+                        pass
+
     def _on_phase_end_for_the_greater_good(self, player=None, phase=None, **_kwargs) -> None:
         """Clear For the Greater Good state at the end of the Shooting phase."""
         try:
@@ -6307,6 +6432,12 @@ class Game:
         # b) Allow voluntary discard for current player to gain 1CP (UI/AI should call explicitly). Here we do nothing automatically.
 
         # c) If deck runs out, player cannot generate additional secondaries (handled by deck empty check during draws)
+
+        # End of opponent's turn: optional abilities to move units into Strategic Reserves.
+        try:
+            self._maybe_prompt_end_of_opponent_turn_strategic_reserves(turn_ending_player)
+        except Exception:
+            pass
 
         # Clear per-turn event lists
         self.destroyed_units_this_turn = []

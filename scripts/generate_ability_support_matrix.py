@@ -1290,6 +1290,7 @@ def _classify_ability(
     transport_support = _transport_disembark_support(description)
     sticky_support = _sticky_objective_support(description)
     bodyguard_return_support = _command_phase_bodyguard_return_support(description)
+    opponent_turn_reserves_support = _opponent_turn_strategic_reserves_support(description)
     enemy_fall_back_desperate_escape_support = _enemy_fall_back_desperate_escape_support(description)
     command_phase_bonus_cp_support = _command_phase_bonus_cp_support(description)
     command_phase_regain_wound_support = _command_phase_regain_wound_support(description)
@@ -1365,6 +1366,8 @@ def _classify_ability(
         return sticky_support
     if bodyguard_return_support:
         return bodyguard_return_support
+    if opponent_turn_reserves_support:
+        return opponent_turn_reserves_support
     if enemy_fall_back_desperate_escape_support:
         return enemy_fall_back_desperate_escape_support
     if command_phase_bonus_cp_support:
@@ -2428,6 +2431,24 @@ def _command_phase_bodyguard_return_support(description: str) -> Optional[Tuple[
     return (
         "Supported",
         f"Command phase: return {amount} destroyed Bodyguard model(s) while leading (capped at starting strength).",
+    )
+
+
+def _opponent_turn_strategic_reserves_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"at the end of your opponents turn if this unit is not within engagement range of one or more enemy units "
+        r"you can remove it from the battlefield and place it into strategic reserves"
+    )
+    if not re.fullmatch(pattern, norm):
+        return None
+    return (
+        "Supported",
+        "End of opponent's turn: if not in Engagement Range, may enter Strategic Reserves.",
     )
 
 

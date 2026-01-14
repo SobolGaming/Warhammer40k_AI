@@ -830,6 +830,11 @@ class Unit:
         r"(?:at\s+the\s+)?start\s+of\s+(?:each\s+of\s+)?your\s+command\s+phase[s]?[,.]?\s*this\s+model\s+regains?\s+(\d+)\s+lost\s+wounds?",
         re.IGNORECASE,
     )
+    _OPPONENT_TURN_STRATEGIC_RESERVES_RE = re.compile(
+        r"at the end of your opponents turn if this unit is not within engagement range of one or more enemy units? "
+        r"you can remove it from the battlefield and place it into strategic reserves?",
+        re.IGNORECASE,
+    )
     _REROLL_ADVANCE_CHARGE_RE = re.compile(
         r"re-?roll\s+advance\s+and\s+charge\s+rolls?\s+made\s+for\s+(?:this\s+model|the\s+bearer'?s\s+unit|that\s+unit)",
         re.IGNORECASE,
@@ -1042,6 +1047,33 @@ class Unit:
                 "name": name or "Bodyguard Return",
                 "description": desc or "",
             }
+        return None
+
+    def _scan_end_of_opponent_turn_strategic_reserves_ability(self):
+        pattern = self._OPPONENT_TURN_STRATEGIC_RESERVES_RE
+        for ab in self._iter_active_abilities():
+            try:
+                if isinstance(ab, str):
+                    name = ab
+                    desc = ab
+                else:
+                    name = str(getattr(ab, "name", "") or "")
+                    desc = str(getattr(ab, "description", "") or "") or name
+            except Exception:
+                name = ""
+                desc = ""
+            text = self._normalize_rules_text(desc or "")
+            if not text:
+                continue
+            norm = text.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+            norm = re.sub(r"'s\b", "s", norm)
+            norm = re.sub(r"[^a-z0-9]+", " ", norm)
+            norm = re.sub(r"\s+", " ", norm).strip()
+            if pattern.fullmatch(norm):
+                return {
+                    "name": name or "Strategic Reserves",
+                    "description": desc or "",
+                }
         return None
 
     def _parse_command_phase_regain_wound_amount(self, text: str) -> int:
@@ -12653,6 +12685,36 @@ class Unit:
         self._ability_cache[cache_key] = ability
         return ability
 
+    def get_end_of_opponent_turn_strategic_reserves_ability(self):
+        """
+        Return ability info dict for end-of-opponent-turn Strategic Reserves removal, or None if not available.
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "opponent_turn_strategic_reserves_ability"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        ability = None
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        for member in members:
+            try:
+                ability = member._scan_end_of_opponent_turn_strategic_reserves_ability()
+            except Exception:
+                ability = None
+            if ability:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = ability
+        return ability
+
     def attached_unit_has_icon_of_khorne(self) -> bool:
         """Attached unit eligibility: true if any attached member has Icon of Khorne."""
         for u in self.get_attached_unit_members():
@@ -15503,6 +15565,66 @@ class Unit:
             setattr(self, "_entered_reserves_midgame", True)
         except Exception:
             pass
+
+    def enter_strategic_reserves_midgame(self, *, game=None, game_map=None, reason: str = "") -> bool:
+        """Place this unit (and any attached members) into Strategic Reserves mid-battle."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        if game is None:
+            try:
+                game = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+            except Exception:
+                game = None
+        if game_map is None and game is not None:
+            try:
+                game_map = getattr(game, "map", None)
+            except Exception:
+                game_map = None
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+
+        for member in members:
+            try:
+                member.set_reserve_status("strategic_reserves")
+            except Exception:
+                try:
+                    member.reserve_status = "strategic_reserves"
+                except Exception:
+                    pass
+            try:
+                member.mark_entered_reserves_midgame(game=game)
+            except Exception:
+                pass
+            try:
+                if bool(getattr(member, "is_aircraft", False)) and not bool(getattr(member, "hover_mode", False)):
+                    if game is not None:
+                        member._aircraft_return_turn = int(getattr(game, "turn", 0) or 0) + 1
+            except Exception:
+                pass
+            try:
+                member.deployed = True
+                member.reserve_turn_deployed = None
+                member.arrived_from_reserves_this_turn = False
+            except Exception:
+                pass
+            try:
+                if game_map is not None and hasattr(game_map, "units") and member in game_map.units:
+                    game_map.units.remove(member)
+            except Exception:
+                pass
+
+        label = reason or "mid-battle ability"
+        try:
+            print(f"🌀 {root.name} placed into Strategic Reserves ({label})")
+        except Exception:
+            pass
+        return True
         
     def is_in_reserves(self) -> bool:
         """Check if the unit is currently in reserves (any type)."""
