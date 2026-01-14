@@ -1186,6 +1186,7 @@ def _classify_ability(
     leading_support = _leading_unit_common_support(description)
     bearer_invuln_support = _bearer_invulnerable_save_support(description)
     unit_hit_reroll_support = _unit_hit_reroll_ones_support(description)
+    unit_wound_reroll_support = _unit_wound_reroll_ones_support(description)
     target_hit_penalty_support = _target_hit_roll_penalty_support(description)
     melee_damage_support = _melee_damage_bonus_support(description)
     two_melee_weapons_support = _two_melee_weapons_bonus_support(description)
@@ -1239,6 +1240,8 @@ def _classify_ability(
         return bearer_invuln_support
     if unit_hit_reroll_support:
         return unit_hit_reroll_support
+    if unit_wound_reroll_support:
+        return unit_wound_reroll_support
     if target_hit_penalty_support:
         return target_hit_penalty_support
     if melee_damage_support:
@@ -1957,6 +1960,91 @@ def _unit_hit_reroll_ones_support(description: str) -> Optional[Tuple[str, str]]
 
     if objective_sentences:
         notes.append("If the target is within range of an objective marker, the Hit roll can be re-rolled instead (optional).")
+
+    if multiple_bases or unsupported:
+        notes.append("Additional clauses not handled.")
+        return ("Partial", " ".join(notes))
+
+    return ("Supported", " ".join(notes))
+
+
+def _unit_wound_reroll_ones_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    low = text.lower()
+    if "model in this unit" not in low:
+        return None
+    if "leading a unit" in low:
+        return None
+    text = re.sub(r";\s*", ". ", text)
+
+    def _split_sentences(text_value: str) -> List[str]:
+        return [part.strip() for part in re.split(r"\.\s*", text_value) if part.strip()]
+
+    sentences = _split_sentences(text)
+    if not sentences:
+        return None
+
+    base_typed_re = re.compile(
+        r"^each time a model in this unit (?:makes (?:a|an) |targets (?:an?|the)?\s*(?:enemy\s+)?unit with (?:a|an) )"
+        r"(?P<atype>melee|ranged) attack(?:s)?[,;:]?\s*(?:you can\s*)?re-?roll (?:a|any)?\s*wound roll(?:s)? of 1$",
+        re.IGNORECASE,
+    )
+    base_any_re = re.compile(
+        r"^each time a model in this unit (?:makes (?:a|an) attack|targets (?:an?|the)?\s*(?:enemy\s+)?unit with an attack)"
+        r"[,;:]?\s*(?:you can\s*)?re-?roll (?:a|any)?\s*wound roll(?:s)? of 1$",
+        re.IGNORECASE,
+    )
+    objective_clause_re = re.compile(
+        r"^if (?:that attack targets|the target of that attack is|that enemy unit is) (?:a unit )?(?:that is )?"
+        r"within range of (?:an|one or more) objective marker(?:s)?"
+        r"\s*[,;:]?\s*(?:you can\s*)?re-?roll the wound roll instead$",
+        re.IGNORECASE,
+    )
+
+    base_sentences: List[str] = []
+    base_atype = None
+    multiple_bases = False
+    for sentence in sentences:
+        s_low = sentence.lower()
+        if "model in this unit" not in s_low:
+            continue
+        m = base_typed_re.match(s_low)
+        if m:
+            base_sentences.append(sentence)
+            if base_atype is None:
+                base_atype = m.group("atype").lower()
+            else:
+                multiple_bases = True
+            continue
+        if base_any_re.match(s_low):
+            base_sentences.append(sentence)
+            if base_atype is None:
+                base_atype = "all"
+            else:
+                multiple_bases = True
+
+    if not base_sentences:
+        return None
+
+    if base_atype == "melee":
+        attack_scope = "melee"
+    elif base_atype == "ranged":
+        attack_scope = "ranged"
+    else:
+        attack_scope = "all"
+
+    notes = [f"Unit attacks re-roll Wound rolls of 1 for {attack_scope} attacks."]
+    objective_sentences = [s for s in sentences if objective_clause_re.match(s.lower())]
+    unsupported = [s for s in sentences if s not in base_sentences and not objective_clause_re.match(s.lower())]
+
+    if objective_sentences:
+        notes.append("If the target is within range of an objective marker, the Wound roll can be re-rolled instead (optional).")
 
     if multiple_bases or unsupported:
         notes.append("Additional clauses not handled.")

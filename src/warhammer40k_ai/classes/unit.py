@@ -6396,6 +6396,123 @@ class Unit:
         root._ability_cache[cache_key] = mods
         return mods
 
+    def get_unit_wound_reroll_modifiers(self, attack_type: str) -> dict:
+        """
+        Return unit-level wound re-roll modifiers for this attached unit.
+
+        Supports strict patterns:
+        - Each time a model in this unit makes a ranged/melee/any attack, re-roll a Wound roll of 1.
+        - Each time a model in this unit targets an enemy unit with a melee/ranged attack, re-roll a Wound roll of 1.
+        - If that enemy unit is within range of an objective marker, you can re-roll the Wound roll instead.
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        atype = str(attack_type or "").strip().lower()
+        if atype not in ("melee", "ranged"):
+            atype = "any"
+        cache_key = f"unit_wound_reroll_mods:{atype}"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        mods = {
+            "reroll_wound_ones": False,
+            "reroll_wound_full_if_objective": False,
+            "reroll_wound_reasons": (),
+            "reroll_wound_full_reasons": (),
+        }
+
+        reroll_wound_reasons: list[str] = []
+        reroll_wound_full_reasons: list[str] = []
+        seen_names: set[str] = set()
+
+        def _split_sentences(text: str) -> list[str]:
+            cleaned = re.sub(r";\s*", ". ", text)
+            return [part.strip() for part in re.split(r"\.\s*", cleaned) if part.strip()]
+
+        reroll_wound_typed_re = re.compile(
+            r"^each time a model in this unit (?:makes (?:a|an) |targets (?:an?|the)?\s*(?:enemy\s+)?unit with (?:a|an) )"
+            r"(?P<atype>melee|ranged) attack(?:s)?[,;:]?\s*(?:you can\s*)?re-?roll (?:a|any)?\s*wound roll(?:s)? of 1$",
+            re.IGNORECASE,
+        )
+        reroll_wound_any_re = re.compile(
+            r"^each time a model in this unit (?:makes (?:a|an) attack|targets (?:an?|the)?\s*(?:enemy\s+)?unit with an attack)"
+            r"[,;:]?\s*(?:you can\s*)?re-?roll (?:a|any)?\s*wound roll(?:s)? of 1$",
+            re.IGNORECASE,
+        )
+        objective_clause_re = re.compile(
+            r"^if (?:that attack targets|the target of that attack is|that enemy unit is) (?:a unit )?(?:that is )?"
+            r"within range of (?:an|one or more) objective marker(?:s)?"
+            r"\s*[,;:]?\s*(?:you can\s*)?re-?roll the wound roll instead$",
+            re.IGNORECASE,
+        )
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        for member in members:
+            for name, desc in member._iter_ability_entries_for_rules():
+                try:
+                    ability_name = str(name or "").replace("’", "'").strip()
+                except Exception:
+                    ability_name = ""
+                name_key = ability_name.lower().strip()
+                if name_key and name_key in seen_names:
+                    continue
+                if name_key:
+                    seen_names.add(name_key)
+                text_src = desc or name or ""
+                text = member._normalize_rules_text(text_src)
+                if not text:
+                    continue
+                low = text.lower()
+                if "model in this unit" not in low:
+                    continue
+                if "leading a unit" in low:
+                    continue
+                if ("re-roll" not in low) and ("reroll" not in low):
+                    continue
+
+                sentences = _split_sentences(text)
+                if not sentences:
+                    continue
+
+                base_atype = None
+                for sentence in sentences:
+                    s_low = sentence.lower()
+                    if "model in this unit" not in s_low:
+                        continue
+                    m = reroll_wound_typed_re.match(s_low)
+                    if m:
+                        base_atype = m.group("atype").lower()
+                        break
+                    if reroll_wound_any_re.match(s_low):
+                        base_atype = "any"
+                        break
+
+                if base_atype is None:
+                    continue
+                if atype != "any" and base_atype not in ("any", atype):
+                    continue
+
+                mods["reroll_wound_ones"] = True
+                label = ability_name or "Unit ability"
+                reroll_wound_reasons.append(f"{label}: re-roll Wound rolls of 1")
+
+                if any(objective_clause_re.match(s.lower()) for s in sentences):
+                    mods["reroll_wound_full_if_objective"] = True
+                    reroll_wound_full_reasons.append(f"{label}: re-roll Wound roll (objective)")
+
+        mods["reroll_wound_reasons"] = tuple(reroll_wound_reasons)
+        mods["reroll_wound_full_reasons"] = tuple(reroll_wound_full_reasons)
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = mods
+        return mods
+
     def get_melee_damage_bonus_vs_monster_vehicle(self) -> int:
         """
         Return bonus Damage for melee attacks that target MONSTER or VEHICLE units.
