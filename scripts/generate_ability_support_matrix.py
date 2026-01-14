@@ -1130,7 +1130,6 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("ORK", "Drill Boss"): ("Supported", "Leading: +1 to hit for melee attacks in the unit."),
         ("TAU", "Advanced Armour"): ("Supported", "Feel No Pain 4+ against mortal wounds."),
         ("TAU", "Agile Combatant"): ("Supported", "Shoot after Falling Back."),
-        ("TAU", "Battlesuit Support System"): ("Partial", "Shoot after Falling Back; wargear-only restriction and SMOKE loss not enforced."),
         ("TAU", "Recon Drone"): ("Supported", "Infiltrators."),
         ("TYR", "Adaptable Predators"): ("Supported", "Shoot and charge after Falling Back."),
         ("TYR", "Bounding Leap"): ("Supported", "Charge-after-Advance eligibility."),
@@ -1292,6 +1291,7 @@ def _classify_ability(
     command_phase_bonus_cp_support = _command_phase_bonus_cp_support(description)
     cp_on_destroy_support = _gain_cp_on_destroy_support(description)
     fall_back_shoot_support = _fall_back_shoot_support(description)
+    battlesuit_support_system_support = _battlesuit_support_system_support(name, description)
     orders_support = _orders_section_support(name, description)
     attached_unit_support = _attached_unit_support(name, description)
     model_reroll_support = _model_reroll_wound_vs_character_support(description)
@@ -1301,6 +1301,9 @@ def _classify_ability(
     charge_end_mortal_support = _charge_end_mortal_wounds_support(description)
     fight_within_3_support = _fight_within_3_support(description)
     allocated_damage_reduction_support = _allocated_damage_reduction_support(description)
+
+    if battlesuit_support_system_support:
+        return battlesuit_support_system_support
 
     fid = str(faction_id or "").strip().upper()
     name_norm = _norm(name)
@@ -2471,6 +2474,28 @@ def _fall_back_shoot_support(description: str) -> Optional[Tuple[str, str]]:
         else:
             notes.append("Charge-after-Fall-Back eligibility.")
     return ("Supported", " ".join(notes))
+
+
+def _battlesuit_support_system_support(name: str, description: str) -> Optional[Tuple[str, str]]:
+    if _norm(name) != "battlesuit support system":
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    simple_patterns = (
+        r"this unit is eligible to shoot in a turn in which it (?:fell back|fall back)",
+        r"this model is eligible to shoot in a turn in which it (?:fell back|fall back)",
+        r"the bearer is eligible to shoot in a turn in which it (?:fell back|fall back)",
+        r"the bearers unit is eligible to shoot in a turn in which it (?:fell back|fall back)",
+    )
+    for pattern in simple_patterns:
+        if re.fullmatch(pattern, norm):
+            return ("Supported", "Shoot-after-Fall-Back eligibility.")
+    if "only models equipped with this wargear can make ranged attacks" in norm:
+        return ("Partial", "Shoot after Falling Back; wargear-only restriction not enforced.")
+    if "loses the smoke keyword" in norm:
+        return ("Partial", "Shoot after Falling Back; SMOKE loss not enforced.")
+    return None
 
 
 def _two_melee_weapons_bonus_support(description: str) -> Optional[Tuple[str, str]]:
