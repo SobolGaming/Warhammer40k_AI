@@ -49,7 +49,7 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <td bgcolor="#d4edda"><b>🟩 Supported</b></td>
 <td bgcolor="#d4edda">3</td>
 <td bgcolor="#d4edda">bubblechukka</td>
-<td bgcolor="#d4edda">Random profile selection (requires higher-level implementation).</td>
+<td bgcolor="#d4edda">Random profile selection via D6 roll (1-2: big bubble, 3-4: wobbly bubble, 5-6: dense bubble).</td>
 </tr>
 <tr>
 <td bgcolor="#f8d7da"><code>c'tan power</code></td>

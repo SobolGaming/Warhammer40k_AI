@@ -5820,6 +5820,41 @@ class WargearProfile:
         """Check if this weapon has the Snagged keyword."""
         return 'snagged' in [keyword.lower() for keyword in self.get_keywords()]
 
+    def get_bubblechukka_profile_for_roll(self, roll: int) -> Optional['WargearProfile']:
+        """
+        Get the appropriate Bubblechukka profile based on a D6 roll.
+
+        Args:
+            roll: D6 roll result (1-6)
+
+        Returns:
+            The appropriate WargearProfile based on the roll:
+            - 1-2: big bubble
+            - 3-4: wobbly bubble
+            - 5-6: dense bubble
+            Returns None if this is not a Bubblechukka weapon or roll is invalid.
+        """
+        if not self.is_bubblechukka():
+            return None
+
+        if roll < 1 or roll > 6:
+            return None
+
+        # Need to access parent wargear's profiles
+        if not self.parent_wargear:
+            return None
+
+        # Map roll to profile name
+        if roll <= 2:
+            profile_name = "big bubble"
+        elif roll <= 4:
+            profile_name = "wobbly bubble"
+        else:  # 5-6
+            profile_name = "dense bubble"
+
+        # Return the matching profile if it exists
+        return self.parent_wargear.profiles.get(profile_name, None)
+
     def get_anti_specs(self) -> list[tuple[str, int]]:
         """Return all Anti-<keyword> <value>+ specs present on this profile (best-effort)."""
         out: list[tuple[str, int]] = []
@@ -5949,6 +5984,37 @@ class Wargear:
         else:
             max_range = self.profiles[profile_name].range.max
         return max_range
+
+    def is_bubblechukka(self) -> bool:
+        """Check if this wargear is a Bubblechukka weapon."""
+        # Check if any profile has the bubblechukka keyword
+        for profile in self.profiles.values():
+            if profile.is_bubblechukka():
+                return True
+        return False
+
+    def select_bubblechukka_profile(self) -> Optional[WargearProfile]:
+        """
+        Select a random Bubblechukka profile based on a D6 roll.
+
+        Returns:
+            The selected WargearProfile, or None if this is not a Bubblechukka weapon.
+        """
+        if not self.is_bubblechukka():
+            return None
+
+        # Roll D6 to determine which profile to use
+        from ..utility.dice import get_roll
+        roll = int(get_roll("D6"))
+
+        # Get the first profile (they all have the same method)
+        first_profile = next(iter(self.profiles.values()))
+        selected_profile = first_profile.get_bubblechukka_profile_for_roll(roll)
+
+        if selected_profile:
+            print(f"🎲 Bubblechukka rolled {roll}: using {selected_profile.name} profile")
+
+        return selected_profile
 
 
 class WargearOptionType(Enum):
