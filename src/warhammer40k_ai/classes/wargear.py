@@ -923,7 +923,21 @@ class WargearProfile:
             attack_result.attacks_special_modifiers.append(
                 f"Twist of Fate (AP improved by {int(cabal_ap_bonus)})"
             )
-        
+
+        # CONVERSION: Determine if Conversion is active for this attack sequence
+        # Conversion grants critical hits on unmodified successful hit rolls of 4+
+        # when the target is more than a specified distance (12"/18"/24") from the bearer
+        conversion_active = False
+        conversion_distance_threshold = 0.0
+        if self.is_conversion():
+            conversion_distance_threshold = self.get_conversion_distance(attacker)
+            # Strict greater-than check per rules ("more than X")
+            conversion_active = closest_dist > conversion_distance_threshold
+            if conversion_active:
+                attack_result.attacks_special_modifiers.append(
+                    f"Conversion active (target >{conversion_distance_threshold}\")"
+                )
+
         # Apply attack modifiers
         applied_pain_rapid_fire = False
         try:
@@ -1005,6 +1019,8 @@ class WargearProfile:
                 'below_half_distance': closest_dist <= (self.range.max / 2),
                 'damage': 0,
                 'target_toughness_override': kill_team_toughness,
+                'conversion_active': conversion_active,
+                'distance_to_target': closest_dist,
             }
             if attacker_unit is not None:
                 attack_instance["attacker_unit"] = attacker_unit
@@ -1520,7 +1536,10 @@ class WargearProfile:
             'modifiers': [],
             'final_needed': None,
             'hit': False,
-            'special_effects': []
+            'special_effects': [],
+            'unmodified_roll': None,  # Track unmodified roll (after rerolls, before modifiers)
+            'modified_roll': None,    # Track final modified roll
+            'hit_modifier_total': 0,  # Track total modifier applied
         }
 
         base_skill = self.skill
@@ -2933,11 +2952,15 @@ class WargearProfile:
             dice_roll = int(new_roll)
             hit_result['roll'] = dice_roll
             hit_result['special_effects'].append("Aspect Shrine Token: set roll to 6")
+
+        # Store unmodified roll (after rerolls/roll replacement, before modifiers) for Conversion and other rules
+        hit_result['unmodified_roll'] = dice_roll
         
         # INDIRECT FIRE: if no target models were visible at selection time,
         # an unmodified hit roll of 1, 2, or 3 always fails.
         if attack_instance.get("indirect_fire_no_visible", False) and dice_roll in (1, 2, 3):
             hit_result['hit'] = False
+            hit_result['unmodified_roll'] = dice_roll
             hit_result['special_effects'].append("Indirect Fire: 1-3 always fail (no target models visible)")
             return hit_result
 
@@ -3184,9 +3207,13 @@ class WargearProfile:
 
         if dice_roll == 1:  # unmodified dice roll of 1 is always a miss
             hit_result['hit'] = False
+            hit_result['unmodified_roll'] = dice_roll
             hit_result['special_effects'].append("Natural 1 (auto-miss)")
             return hit_result
-        elif dice_roll >= crit_threshold:  # unmodified critical hit
+
+        # Check for baseline critical hit (unmodified 6, or lower threshold from abilities)
+        baseline_critical = dice_roll >= crit_threshold
+        if baseline_critical:
             hit_result['hit'] = True
             if dice_roll == 6:
                 hit_result['special_effects'].append("Natural 6 (auto-hit)")
@@ -3236,11 +3263,75 @@ class WargearProfile:
                         label += " [Daemonic Empowerment]"
                     hit_result['special_effects'].append(label)
                     attack_instance['sustained_hit'] = sustained_val
-            return hit_result
+            # Don't return yet - we may need to apply Conversion logic below
 
-        # Normal hit resolution
-        hit_result['hit'] = self.skill > 0 and dice_roll >= final_needed
-        
+        # Normal hit resolution (if not already determined by baseline critical)
+        if not baseline_critical:
+            hit_result['hit'] = self.skill > 0 and dice_roll >= final_needed
+
+        # CONVERSION: Upgrade to critical hit if conditions are met
+        # Must happen AFTER hit success is determined
+        # Conversion grants critical hits on unmodified successful hit rolls of 4+
+        # when the target is more than the specified distance from the bearer
+        if attack_instance.get('conversion_active', False) and hit_result['hit']:
+            unmod = hit_result.get('unmodified_roll', dice_roll)
+            conversion_threshold = self.get_conversion_crit_threshold()  # Always 4
+            # Only upgrade if not already a critical and unmodified roll meets threshold
+            if unmod >= conversion_threshold and not attack_instance.get('crit_hit', False):
+                # Upgrade to critical hit
+                attack_instance['crit_hit'] = True
+                hit_result['special_effects'].append(
+                    f"Conversion: Critical Hit (unmodified {unmod}+ successful hit)"
+                )
+
+                # Apply ALL critical hit effects (same logic as baseline critical section)
+                # This includes weapon-native AND unit/ability-based Lethal/Sustained hits
+
+                # Apply Lethal Hits from all sources (same as baseline critical)
+                if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal or martial_katah_lethal or bondsman_lethal or pact_lethal or exquisite_lethal or pain_lethal or leading_lethal:
+                    hit_result['special_effects'].append("Lethal Hits")
+                    attack_instance['lethal_hit'] = True
+
+                # Apply Sustained Hits from all sources (same as baseline critical)
+                if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or bearer_unit_sustained or blitzing_grants_sustained:
+                    # Support Sustained Hits X / Sustained Hits D3 / etc. Roll per critical hit.
+                    if self.is_sustained_hits():
+                        try:
+                            sh = self.get_sustained_hits_bonus()
+                            sh_val = int(sh.resolve())
+                            hit_result['special_effects'].append(f"Sustained Hits {sh} (+{sh_val})")
+                            attack_instance['sustained_hit'] = sh_val
+                        except Exception:
+                            hit_result['special_effects'].append("Sustained Hits (+1)")
+                            attack_instance['sustained_hit'] = 1
+                    else:
+                        label = "Sustained Hits (+1)"
+                        if blessings_sustained:
+                            label += " [Blessings of Khorne]"
+                        elif dark_pacts_sustained:
+                            label += " [Dark Pacts]"
+                        elif martial_katah_sustained:
+                            label += " [Martial Ka'tah]"
+                        elif bondsman_sustained or bondsman_sustained_ranged:
+                            label += " [Bondsman]"
+                        elif pact_sustained:
+                            label += " [Pact Points]"
+                        elif exquisite_sustained:
+                            label += " [Exquisite Swordsmanship]"
+                        elif empowered_sustained:
+                            label += " [Daemonic Empowerment]"
+                        elif pain_sustained:
+                            label += " [Power from Pain]"
+                        elif bearer_unit_sustained:
+                            if bearer_unit_sustained_value > 1:
+                                label = f"Sustained Hits (+{bearer_unit_sustained_value}) [Bearer Unit]"
+                            else:
+                                label += " [Bearer Unit]"
+                        elif blitzing_grants_sustained:
+                            label += " [Blitzing Firepower]"
+                        hit_result['special_effects'].append(label)
+                        attack_instance['sustained_hit'] = max(bearer_unit_sustained_value, pain_sustained_value) if (bearer_unit_sustained or pain_sustained) else 1
+
         return hit_result
 
     def _wound_target_with_tracking(self, target: 'Unit', attacker: 'Model', attack_instance: Dict) -> Dict:
@@ -5695,6 +5786,55 @@ class WargearProfile:
 
     def is_one_shot(self) -> bool:
         return 'one shot' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def is_conversion(self) -> bool:
+        """Check if weapon has Conversion keyword."""
+        return 'conversion' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def get_conversion_distance(self, attacker: Optional['Model'] = None) -> float:
+        """
+        Extract distance threshold from Conversion keyword by parsing the unit's
+        Conversion ability description from Datasheets_abilities.json.
+
+        The Conversion ability description contains text like:
+        "more than 12\" from the bearer" or "more than 24\" from the bearer"
+
+        Args:
+            attacker: Optional Model to get the unit's datasheet abilities from
+
+        Returns:
+            Distance threshold in inches (12.0, 18.0, or 24.0). Defaults to 12.0 if parsing fails.
+        """
+        # Try to parse distance from unit's Conversion ability
+        if attacker is not None:
+            try:
+                unit = getattr(attacker, "parent_unit", None)
+                if unit is not None:
+                    datasheet = getattr(unit, "datasheet", None)
+                    if datasheet is not None:
+                        abilities = getattr(datasheet, "datasheets_abilities", [])
+                        for ability in abilities:
+                            if isinstance(ability, dict) and ability.get("name", "").lower() == "conversion":
+                                description = ability.get("description", "")
+                                # Parse "more than XX" from description
+                                import re
+                                match = re.search(r'more than (\d+)"', description)
+                                if match:
+                                    distance = float(match.group(1))
+                                    return distance
+            except Exception:
+                pass
+
+        # Default to 12.0 if parsing fails or no attacker provided
+        return 12.0
+
+    def get_conversion_crit_threshold(self) -> int:
+        """Return the unmodified hit roll threshold for Conversion critical hits.
+
+        Per the rules, Conversion always uses 4+ as the threshold for upgrading
+        successful hits to critical hits.
+        """
+        return 4
 
     def one_shot_key(self) -> str:
         """Stable-ish identifier for per-model one-shot tracking."""
