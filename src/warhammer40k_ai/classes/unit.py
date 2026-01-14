@@ -469,6 +469,61 @@ class Unit:
         except Exception:
             pass
 
+        # World Eaters: Driven by Ultimate Rage (Aura) - ignore negative Move modifiers.
+        try:
+            if ckey == "movement":
+                from .wrathful_presence import driven_by_ultimate_rage_applies
+                if driven_by_ultimate_rage_applies(self, game_map=game_map):
+                    kept = []
+                    ignored = []
+                    for m in list(mods or []):
+                        try:
+                            val = int(getattr(m, "value", 0) or 0)
+                        except Exception:
+                            val = 0
+                        try:
+                            op = getattr(m, "op", None)
+                        except Exception:
+                            op = None
+                        negative = False
+                        if op == ModifierOp.ADD and val < 0:
+                            negative = True
+                        elif op == ModifierOp.SUB and val > 0:
+                            negative = True
+                        elif op == ModifierOp.MUL and val < 1:
+                            negative = True
+                        elif op == ModifierOp.DIV and val > 1:
+                            negative = True
+                        if negative:
+                            ignored.append(m)
+                        else:
+                            kept.append(m)
+                    if ignored:
+                        mods = kept
+                        try:
+                            sr = getattr(self, "special_rules", None)
+                            if not isinstance(sr, dict):
+                                sr = {}
+                            ignored_sources = tuple(sorted(str(getattr(m, "source", "") or "") for m in ignored))
+                            kept_sources = tuple(sorted(str(getattr(m, "source", "") or "") for m in kept))
+                            sig = (ignored_sources, kept_sources)
+                            if sr.get("driven_by_ultimate_rage_move_mod_signature") != sig:
+                                sr["driven_by_ultimate_rage_move_mod_signature"] = sig
+                                self.special_rules = sr
+                                from ..utility.event_bus import append_action
+                                pn = self.get_parent_army().player.name
+                                ignored_text = ", ".join(s for s in ignored_sources if s) or "unnamed sources"
+                                msg = f"Driven by Ultimate Rage: ignored negative Move modifiers ({ignored_text})."
+                                append_action(pn, msg)
+                                if kept_sources:
+                                    kept_text = ", ".join(s for s in kept_sources if s)
+                                    if kept_text:
+                                        append_action(pn, f"Driven by Ultimate Rage: applied Move modifiers ({kept_text}).")
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+
         # Apply core ordering + rounding.
         interim, dbg = apply_numeric_modifiers(int(base_val), mods, base_raw=base_raw)
 
@@ -5183,7 +5238,8 @@ class Unit:
     def _ability_is_active(self, ability) -> bool:
         """Return True if the ability is currently active for this unit."""
         if self._ability_requires_leading(ability):
-            if not bool(getattr(self, "is_attached_leader", False)):
+            # Only enforce leading attachment when this unit is actually a Leader datasheet.
+            if bool(getattr(self, "is_leader", False)) and not bool(getattr(self, "is_attached_leader", False)):
                 return False
         elif self._ability_requires_not_leading(ability):
             if bool(getattr(self, "is_attached_leader", False)):
@@ -5192,6 +5248,14 @@ class Unit:
             if self._ability_attached_possessed_formation_bonus_distance(ability) is not None:
                 sr = getattr(self, "special_rules", None)
                 return bool(isinstance(sr, dict) and sr.get("attached_possessed_formation_bonus"))
+        except Exception:
+            pass
+        try:
+            from .wrathful_presence import ability_name_to_key, unit_has_active_wrathful_presence
+            name = ability if isinstance(ability, str) else getattr(ability, "name", "")
+            key = ability_name_to_key(name)
+            if key:
+                return bool(unit_has_active_wrathful_presence(self, key))
         except Exception:
             pass
 
@@ -6266,6 +6330,54 @@ class Unit:
 
         return kept
 
+    def _filter_driven_by_ultimate_rage_roll_modifiers(self, modifiers, *, kind: str) -> list[tuple[int, str]]:
+        if not modifiers:
+            return list(modifiers or [])
+        try:
+            from .wrathful_presence import driven_by_ultimate_rage_applies
+            if not driven_by_ultimate_rage_applies(self):
+                return list(modifiers or [])
+        except Exception:
+            return list(modifiers or [])
+
+        kept = []
+        ignored = []
+        for val, source in list(modifiers or []):
+            try:
+                v = int(val or 0)
+            except Exception:
+                v = 0
+            if v < 0:
+                ignored.append((v, source))
+            else:
+                kept.append((v, source))
+
+        if ignored:
+            try:
+                sr = getattr(self, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                ignored_sources = tuple(sorted(str(s or "") for _v, s in ignored if str(s or "").strip()))
+                kept_sources = tuple(sorted(str(s or "") for _v, s in kept if str(s or "").strip()))
+                sig = (ignored_sources, kept_sources)
+                key = f"driven_by_ultimate_rage_{str(kind or '').strip().lower()}_mod_signature"
+                if sr.get(key) != sig:
+                    sr[key] = sig
+                    self.special_rules = sr
+                    from ..utility.event_bus import append_action
+                    pn = self.get_parent_army().player.name
+                    label = "Advance roll" if str(kind or "").strip().lower() == "advance" else "Charge roll"
+                    ignored_text = ", ".join(s for s in ignored_sources if s) or "unnamed sources"
+                    append_action(pn, f"Driven by Ultimate Rage: ignored negative {label} modifiers ({ignored_text}).")
+                    if kept_sources:
+                        kept_text = ", ".join(s for s in kept_sources if s)
+                        if kept_text:
+                            append_action(pn, f"Driven by Ultimate Rage: applied {label} modifiers ({kept_text}).")
+            except Exception:
+                pass
+
+        return kept
+
     def _collect_advance_roll_modifiers(self) -> list[tuple[int, str]]:
         mods: list[tuple[int, str]] = []
         sr = getattr(self, "special_rules", None)
@@ -6307,6 +6419,7 @@ class Unit:
     def _apply_advance_roll_modifiers(self, roll: int) -> int:
         mods = self._collect_advance_roll_modifiers()
         mods = self._filter_internal_rivalries_roll_modifiers(mods, kind="advance")
+        mods = self._filter_driven_by_ultimate_rage_roll_modifiers(mods, kind="advance")
         for val, source in mods:
             if not val:
                 continue
@@ -7766,6 +7879,31 @@ class Unit:
             print(f"❌ {self.name} cannot Fall Back (AIRCRAFT)")
             return False
         print(f"🏃 {self.name} falls back from combat")
+
+        try:
+            from .wrathful_presence import overwhelming_wrath_sources_for_unit
+            sources = overwhelming_wrath_sources_for_unit(self, game_map=game_map)
+        except Exception:
+            sources = []
+        if sources:
+            try:
+                passed = bool(self.pass_leadership_check())
+            except Exception:
+                passed = True
+            if not passed:
+                try:
+                    self.round_state.remained_stationary_this_round = True
+                except Exception:
+                    pass
+                try:
+                    from ..utility.event_bus import append_action
+                    pn = self.get_parent_army().player.name
+                    src_names = [getattr(s, "name", "") for s in sources if getattr(s, "name", "")]
+                    src_text = ", ".join(src_names) if src_names else "Overwhelming Wrath"
+                    append_action(pn, f"Overwhelming Wrath: {self.name} failed a Leadership test and remains stationary ({src_text}).")
+                except Exception:
+                    pass
+                return False
         
         extra_desperate_escape = False
         bs_penalty = 0
@@ -14435,6 +14573,25 @@ class Unit:
         """
         if not self.is_in_reserves():
             return False
+
+        # Reborn in Blood: only the next Movement phase is eligible.
+        try:
+            if bool(getattr(self, "_reborn_in_blood_pending", False)):
+                allowed_round = getattr(self, "_reborn_in_blood_arrival_round", None)
+                if allowed_round is not None and int(current_turn) != int(allowed_round):
+                    return False
+                try:
+                    army = self.get_parent_army()
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    if game is not None:
+                        if not getattr(game, "is_movement_phase", lambda: False)():
+                            return False
+                        if getattr(game, "get_current_player", lambda: None)() is not getattr(army, "player", None):
+                            return False
+                except Exception:
+                    pass
+        except Exception:
+            pass
         
         # Units cannot arrive from reserves on Turn 1
         if current_turn < 2:
@@ -14485,6 +14642,16 @@ class Unit:
         self.reserve_status = 'deployed'
         self.reserve_turn_deployed = turn
         self.arrived_from_reserves_this_turn = True
+        try:
+            if hasattr(self, "_reborn_in_blood_pending"):
+                delattr(self, "_reborn_in_blood_pending")
+        except Exception:
+            pass
+        try:
+            if hasattr(self, "_reborn_in_blood_arrival_round"):
+                delattr(self, "_reborn_in_blood_arrival_round")
+        except Exception:
+            pass
         try:
             if hasattr(self, "_aircraft_return_turn"):
                 delattr(self, "_aircraft_return_turn")
@@ -14603,6 +14770,21 @@ class Unit:
         Returns:
             bool: True if the unit must arrive this turn or be destroyed
         """
+        try:
+            if bool(getattr(self, "_reborn_in_blood_pending", False)):
+                allowed_round = getattr(self, "_reborn_in_blood_arrival_round", None)
+                if allowed_round is None or int(current_turn) != int(allowed_round):
+                    return False
+                try:
+                    army = self.get_parent_army()
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    if game is not None and not getattr(game, "is_movement_phase", lambda: False)():
+                        return False
+                except Exception:
+                    pass
+                return True
+        except Exception:
+            pass
         # AIRCRAFT returning next turn is mandatory.
         try:
             aircraft_return_turn = getattr(self, "_aircraft_return_turn", None)

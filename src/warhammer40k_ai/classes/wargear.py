@@ -1665,7 +1665,23 @@ class WargearProfile:
             return hit_result
 
         # Calculate modifiers first (always do this)
-        dice_modifier = 0
+        hit_mods: list[tuple[int, tuple[str, ...]]] = []
+        def _add_hit_mod(delta, reason=None):
+            try:
+                val = int(delta)
+            except Exception:
+                return
+            if val == 0:
+                return
+            reasons = []
+            if isinstance(reason, (list, tuple)):
+                reasons = [str(r) for r in reason if str(r or "").strip()]
+            else:
+                r = str(reason or "").strip()
+                if r:
+                    reasons = [r]
+            hit_mods.append((val, tuple(reasons)))
+
         heavy_from_doctrina = False
         try:
             unit = getattr(attacker, "parent_unit", None)
@@ -1679,16 +1695,14 @@ class WargearProfile:
         except Exception:
             heavy_from_doctrina = False
         if (self.is_heavy() or heavy_from_doctrina) and attacker.parent_unit.round_state.remained_stationary_this_round:
-            dice_modifier += 1
             if heavy_from_doctrina and not self.is_heavy():
-                hit_result['modifiers'].append("+1 from Protector Imperative (counts as Heavy)")
+                _add_hit_mod(1, "+1 from Protector Imperative (counts as Heavy)")
             else:
-                hit_result['modifiers'].append("+1 from Heavy (stationary)")
+                _add_hit_mod(1, "+1 from Heavy (stationary)")
 
         # INDIRECT FIRE: if no target models were visible at selection time, -1 to hit
         if attack_instance.get("indirect_fire_no_visible", False):
-            dice_modifier -= 1
-            hit_result['modifiers'].append("-1 from Indirect Fire (no target models visible)")
+            _add_hit_mod(-1, "-1 from Indirect Fire (no target models visible)")
 
         # BIG GUNS NEVER TIRE (BGNT):
         # When a VEHICLE/MONSTER makes ranged attacks and it was Locked in Combat when it selected targets,
@@ -1696,8 +1710,7 @@ class WargearProfile:
         try:
             pu = attacker.parent_unit
             if is_ranged and getattr(pu, "_bgnt_locked_at_target_selection", False) and (pu.is_vehicle or pu.is_monster) and (not self.is_pistol()):
-                dice_modifier -= 1
-                hit_result['modifiers'].append("-1 from Big Guns Never Tire (locked when selecting targets)")
+                _add_hit_mod(-1, "-1 from Big Guns Never Tire (locked when selecting targets)")
         except Exception:
             pass
 
@@ -1717,15 +1730,13 @@ class WargearProfile:
                         if friendly.is_alive() and getattr(friendly, "deployed", True)
                     )
                     if engaged_with_friendly:
-                        dice_modifier -= 1
-                        hit_result['modifiers'].append("-1 from Big Guns Never Tire (target engaged)")
+                        _add_hit_mod(-1, "-1 from Big Guns Never Tire (target engaged)")
         except Exception:
             pass
         
         # Check for target modifiers (like Stealth)
         if hasattr(target, 'has_stealth') and target.has_stealth():
-            dice_modifier -= 1
-            hit_result['modifiers'].append("-1 from target Stealth")
+            _add_hit_mod(-1, "-1 from target Stealth")
         # Warhost: Lightning-Fast Reactions (-1 to hit while active).
         try:
             try:
@@ -1734,8 +1745,7 @@ class WargearProfile:
                 troot = target
             sr = getattr(troot, "special_rules", None)
             if isinstance(sr, dict) and sr.get("lightning_fast_reactions_active") is True:
-                dice_modifier -= 1
-                hit_result['modifiers'].append("-1 from Lightning-Fast Reactions")
+                _add_hit_mod(-1, "-1 from Lightning-Fast Reactions")
         except Exception:
             pass
         # Generic defensive penalty: -1 to hit when targeting this unit/model.
@@ -1748,9 +1758,7 @@ class WargearProfile:
                     target_model=attack_instance.get("target_model"),
                 )
                 if penalty:
-                    dice_modifier -= int(penalty)
-                    if reasons:
-                        hit_result['modifiers'].extend(list(reasons))
+                    _add_hit_mod(-int(penalty), reasons or f"-{int(penalty)} to hit")
         except Exception:
             pass
         # Defensive reaction stratagems: -1 to hit (generic template).
@@ -1779,24 +1787,21 @@ class WargearProfile:
             ):
                 penalty = int(entry.get("value", 0) or 0)
                 if penalty:
-                    dice_modifier -= penalty
                     src = entry.get("source") or "Defensive stratagem"
-                    hit_result['modifiers'].append(f"-{penalty} to hit from {src}")
+                    _add_hit_mod(-penalty, f"-{penalty} to hit from {src}")
         except Exception:
             pass
         # First Prince of Chaos (Shadow Legion Tzeentch): -1 to hit when targeting this unit.
         try:
             if hasattr(target, "has_first_prince_tzeentch_defense") and target.has_first_prince_tzeentch_defense():
-                dice_modifier -= 1
-                hit_result['modifiers'].append("-1 from First Prince of Chaos (Tzeentch)")
+                _add_hit_mod(-1, "-1 from First Prince of Chaos (Tzeentch)")
         except Exception:
             pass
         # Drukhari: Agonising Suppression (Pain) applies -1 to hit for suppressed units.
         try:
             sr = getattr(attacker.parent_unit, "special_rules", None)
             if isinstance(sr, dict) and sr.get("pain_suppressed_active"):
-                dice_modifier -= 1
-                hit_result['modifiers'].append("-1 from Agonising Suppression (suppressed)")
+                _add_hit_mod(-1, "-1 from Agonising Suppression (suppressed)")
         except Exception:
             pass
         try:
@@ -1807,8 +1812,7 @@ class WargearProfile:
                 game = getattr(getattr(target_army, "player", None), "game", None)
                 game_map = getattr(game, "map", None) if game is not None else None
                 if mgr.protector_melee_hit_penalty_applies(target, game=game, game_map=game_map):
-                    dice_modifier -= 1
-                    hit_result['modifiers'].append("-1 from Protector Imperative (battleline screen)")
+                    _add_hit_mod(-1, "-1 from Protector Imperative (battleline screen)")
         except Exception:
             pass
         # Nurgle's Gift (Aura): Skullsquirm Blight (-1 to hit for afflicted units).
@@ -1826,8 +1830,7 @@ class WargearProfile:
             from ..classes.nurgles_gift import NurglesGiftManager, PLAGUE_SKULLSQUIRM
             plague = NurglesGiftManager.get_afflicted_plague_for_unit(unit, game=game, game_map=game_map)
             if plague is not None and plague.key == PLAGUE_SKULLSQUIRM.key:
-                dice_modifier -= 1
-                hit_result['modifiers'].append("-1 to hit from Skullsquirm Blight (Nurgle's Gift)")
+                _add_hit_mod(-1, "-1 to hit from Skullsquirm Blight (Nurgle's Gift)")
         except Exception:
             pass
         # Leagues of Votann: Prioritised Efficiency (Hostile/Fortify hit bonus).
@@ -1844,9 +1847,7 @@ class WargearProfile:
             if mgr is not None:
                 bonus, reason = mgr.hit_roll_bonus(unit, target, game=game)
                 if bonus:
-                    dice_modifier += int(bonus)
-                    if reason:
-                        hit_result['modifiers'].append(reason)
+                    _add_hit_mod(int(bonus), reason)
         except Exception:
             pass
         # Harbingers of Dread: Darkness (-1 to hit against Chaos Knights).
@@ -1878,8 +1879,7 @@ class WargearProfile:
                             except Exception:
                                 apply_darkness = False
                     if apply_darkness:
-                        dice_modifier -= 1
-                        hit_result['modifiers'].append("-1 to hit from Darkness (Harbingers of Dread)")
+                        _add_hit_mod(-1, "-1 to hit from Darkness (Harbingers of Dread)")
         except Exception:
             pass
 
@@ -1892,8 +1892,7 @@ class WargearProfile:
                 if is_ranged and sr.get("bondsman_ranged_hit_bonus"):
                     bonus = int(sr.get("bondsman_ranged_hit_bonus", 0) or 0)
                     if bonus:
-                        dice_modifier += bonus
-                        hit_result['modifiers'].append("+1 to hit from Bondsman (Crusader's Duty)")
+                        _add_hit_mod(bonus, "+1 to hit from Bondsman (Crusader's Duty)")
                 if is_ranged and sr.get("bondsman_ignores_cover_ranged"):
                     attack_instance["ignores_cover"] = True
         except Exception:
@@ -1903,11 +1902,10 @@ class WargearProfile:
         try:
             dm = int(getattr(attacker.parent_unit, "special_rules", {}).get("damaged_hit_roll_modifier", 0) or 0)
             if dm:
-                dice_modifier += dm
                 if dm < 0:
-                    hit_result['modifiers'].append(f"{dm} from Damaged profile (to hit)")
+                    _add_hit_mod(dm, f"{dm} from Damaged profile (to hit)")
                 else:
-                    hit_result['modifiers'].append(f"+{dm} from Damaged profile (to hit)")
+                    _add_hit_mod(dm, f"+{dm} from Damaged profile (to hit)")
         except Exception:
             pass
         
@@ -1921,23 +1919,20 @@ class WargearProfile:
             aura_mods = get_aura_attack_modifiers(attacker.parent_unit, target, self)
             attack_instance["_aura_attack_mods"] = aura_mods
         if getattr(aura_mods, "hit", 0):
-            dice_modifier += int(aura_mods.hit)
-            hit_result['modifiers'].extend(list(getattr(aura_mods, "hit_reasons", ()) or ()))
+            _add_hit_mod(int(aura_mods.hit), list(getattr(aura_mods, "hit_reasons", ()) or ()))
 
         # Attached leader leading bonuses (e.g., Drill Boss)
         lead_mods = None
         unit_hit_mods = None
-        attack_type = "ranged"
+        is_melee = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_melee())
+        attack_type = "melee" if is_melee else "ranged"
         try:
             unit = attacker.parent_unit
             root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
-            is_melee = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_melee())
-            attack_type = "melee" if is_melee else "ranged"
             lead_mods = root.get_leading_attack_roll_modifiers(attack_type, target=target)
             if isinstance(lead_mods, dict) and int(lead_mods.get("hit", 0) or 0):
                 bonus = int(lead_mods.get("hit", 0) or 0)
-                dice_modifier += bonus
-                hit_result['modifiers'].extend(list(lead_mods.get("hit_reasons", ()) or ()))
+                _add_hit_mod(bonus, list(lead_mods.get("hit_reasons", ()) or ()))
         except Exception:
             lead_mods = None
         try:
@@ -1962,11 +1957,73 @@ class WargearProfile:
                 unit = attacker.parent_unit
                 bonus, reason = unit.model_hit_bonus_vs_fly(attacker, attack_type=attack_type)
                 if bonus:
-                    dice_modifier += int(bonus)
-                    hit_result['modifiers'].append(f"+{bonus} to hit vs FLY from {reason}")
+                    _add_hit_mod(int(bonus), f"+{bonus} to hit vs FLY from {reason}")
         except Exception:
             pass
-        
+
+        # Driven by Ultimate Rage (Aura): ignore negative Hit roll modifiers for melee attacks.
+        try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+        except Exception:
+            attacker_unit = None
+        try:
+            if is_melee and attacker_unit is not None:
+                from ..classes.wrathful_presence import driven_by_ultimate_rage_applies
+                game_map = None
+                try:
+                    army = attacker_unit.get_parent_army()
+                    game = getattr(getattr(army, "player", None), "game", None)
+                    game_map = getattr(game, "map", None) if game is not None else None
+                except Exception:
+                    game_map = None
+                if driven_by_ultimate_rage_applies(attacker_unit, game_map=game_map):
+                    kept = []
+                    ignored = []
+                    for val, reasons in hit_mods:
+                        if int(val) < 0:
+                            ignored.append((val, reasons))
+                        else:
+                            kept.append((val, reasons))
+                    if ignored:
+                        hit_mods = kept
+                        try:
+                            sr = getattr(attacker_unit, "special_rules", None)
+                            if not isinstance(sr, dict):
+                                sr = {}
+                            ignored_sources = []
+                            for _v, rs in ignored:
+                                ignored_sources.extend([r for r in rs if str(r or "").strip()])
+                            kept_sources = []
+                            for _v, rs in kept:
+                                kept_sources.extend([r for r in rs if str(r or "").strip()])
+                            ignored_sources = tuple(sorted(set(ignored_sources)))
+                            kept_sources = tuple(sorted(set(kept_sources)))
+                            sig = (ignored_sources, kept_sources)
+                            if sr.get("driven_by_ultimate_rage_hit_mod_signature") != sig:
+                                sr["driven_by_ultimate_rage_hit_mod_signature"] = sig
+                                attacker_unit.special_rules = sr
+                                from ..utility.event_bus import append_action
+                                pn = attacker_unit.get_parent_army().player.name
+                                ignored_text = ", ".join(s for s in ignored_sources if s) or "unnamed sources"
+                                append_action(pn, f"Driven by Ultimate Rage: ignored negative Hit roll modifiers ({ignored_text}).")
+                                if kept_sources:
+                                    kept_text = ", ".join(s for s in kept_sources if s)
+                                    if kept_text:
+                                        append_action(pn, f"Driven by Ultimate Rage: applied Hit roll modifiers ({kept_text}).")
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+
+        modifiers_list = []
+        for val, reasons in hit_mods:
+            if reasons:
+                modifiers_list.extend(list(reasons))
+            else:
+                modifiers_list.append(f"{int(val):+d} to hit")
+        hit_result['modifiers'] = modifiers_list
+
+        dice_modifier = sum(int(val) for val, _ in hit_mods)
         dice_modifier = min(max(dice_modifier, -1), 1)  # modifications are capped between -1 and 1
         final_needed = base_skill - dice_modifier  # Note: negative dice_modifier makes it harder (higher final_needed)
         

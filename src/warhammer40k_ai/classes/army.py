@@ -282,6 +282,13 @@ class Army:
         except Exception:
             self.shadow_form = None
 
+        # World Eaters: Angron Wrathful Presence selection (safe to attach, no-op if not applicable).
+        try:
+            from .wrathful_presence import WrathfulPresenceManager
+            self.wrathful_presence = WrathfulPresenceManager(self)
+        except Exception:
+            self.wrathful_presence = None
+
         # Chaos Knights: Harbingers of Dread (safe to attach, no-op if not applicable).
         try:
             from .harbingers_of_dread import HarbingersOfDreadManager
@@ -1859,6 +1866,13 @@ class Army:
             except Exception:
                 game = None
             mgr.on_battle_round_start(int(battle_round), game=game)
+        mgr = getattr(self, "wrathful_presence", None)
+        if mgr is not None:
+            try:
+                game = getattr(getattr(self, "player", None), "game", None)
+            except Exception:
+                game = None
+            mgr.on_battle_round_start(int(battle_round), game=game)
         mgr = getattr(self, "harbingers_of_dread", None)
         if mgr is not None:
             try:
@@ -1970,6 +1984,11 @@ class Army:
             target.reserve_turn_deployed = None
             target.arrived_from_reserves_this_turn = False
             setattr(target, "_reborn_in_blood_pending", True)
+            try:
+                turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+            except Exception:
+                turn = 0
+            setattr(target, "_reborn_in_blood_arrival_round", int(turn))
         except Exception:
             pass
 

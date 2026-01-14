@@ -7432,6 +7432,10 @@ class Game:
             modifiers = charging_unit._filter_internal_rivalries_roll_modifiers(modifiers, kind="charge")
         except Exception:
             modifiers = list(modifiers or [])
+        try:
+            modifiers = charging_unit._filter_driven_by_ultimate_rage_roll_modifiers(modifiers, kind="charge")
+        except Exception:
+            modifiers = list(modifiers or [])
 
         for val, source in modifiers:
             if not val:

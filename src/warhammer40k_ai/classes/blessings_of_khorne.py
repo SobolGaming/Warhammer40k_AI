@@ -210,11 +210,12 @@ class BlessingsOfKhorneManager:
 
     def favoured_of_khorne_rerolls_for_army(self, army) -> int:
         """
-        Return the number of Blessings rerolls granted by Favoured of Khorne.
-        Bearer must be on the battlefield.
+        Return the number of Blessings rerolls granted by Favoured of Khorne
+        and any active Blood God's Favour selection. Bearer must be on the battlefield.
         """
         if army is None:
             return 0
+        favoured = 0
         try:
             units = list(getattr(army, "units", []) or [])
         except Exception:
@@ -228,16 +229,22 @@ class BlessingsOfKhorneManager:
             try:
                 sr = getattr(u, "special_rules", None)
                 if isinstance(sr, dict) and int(sr.get("enhancement_favoured_of_khorne_rerolls", 0) or 0) >= 2:
-                    return 2
+                    favoured = max(favoured, 2)
             except Exception:
                 pass
             try:
                 enh = getattr(u, "enhancement", None)
                 if enh is not None and str(getattr(enh, "name", "") or "").strip().lower() == "favoured of khorne":
-                    return 2
+                    favoured = max(favoured, 2)
             except Exception:
                 continue
-        return 0
+        extra = 0
+        try:
+            from .wrathful_presence import blood_gods_favour_rerolls_for_army
+            extra = int(blood_gods_favour_rerolls_for_army(army) or 0)
+        except Exception:
+            extra = 0
+        return max(favoured, extra)
 
     # ---------------- Roll + choose ----------------
     def create_roll_context(
@@ -561,4 +568,3 @@ class BlessingsOfKhorneManager:
             if len(idxs) >= int(count):
                 out.append(tuple(idxs[: int(count)]))
         return out
-

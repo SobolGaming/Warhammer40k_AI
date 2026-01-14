@@ -1517,6 +1517,8 @@ class GameView:
         self._pending_templar_vows_queue = []
         # Belakor Shadow Form selection queue
         self._pending_shadow_form_queue = []
+        # Angron Wrathful Presence selection queue
+        self._pending_wrathful_presence_queue = []
         # Chaos Knights: Harbingers of Dread selection queue
         self._pending_harbingers_queue = []
         # Adeptus Mechanicus: Doctrina Imperatives selection queue
@@ -1737,6 +1739,34 @@ class GameView:
         if queue:
             self._pending_shadow_form_queue = list(queue)
             self._open_next_shadow_form_prompt()
+
+        # ANGRON: Wrathful Presence is chosen at the start of each battle round.
+        queue = []
+        for p in order:
+            try:
+                if p is None or p.type.name != "HUMAN":
+                    continue
+                army = p.get_army()
+                mgr = getattr(army, "wrathful_presence", None) if army is not None else None
+                if mgr is None:
+                    continue
+                units = list(getattr(mgr, "get_wrathful_presence_units", lambda: [])() or [])
+                if not units:
+                    continue
+                try:
+                    from ..classes.wrathful_presence import get_active_wrathful_presence_key
+                except Exception:
+                    get_active_wrathful_presence_key = None
+                for unit in units:
+                    if get_active_wrathful_presence_key is not None:
+                        if get_active_wrathful_presence_key(unit, battle_round=br):
+                            continue
+                    queue.append((p, unit, br))
+            except Exception:
+                continue
+        if queue:
+            self._pending_wrathful_presence_queue = list(queue)
+            self._open_next_wrathful_presence_prompt()
 
         # SHALAXI: Monarch of the Hunt triggers at the start of the first battle round.
         if br == 1:
@@ -6220,6 +6250,81 @@ class GameView:
         )
         try:
             self.dialog_manager.open(self.shadow_form_dialog, modal=True)
+        except Exception:
+            pass
+
+    def _open_next_wrathful_presence_prompt(self) -> None:
+        if not self._pending_wrathful_presence_queue:
+            return
+        try:
+            player, unit, br = self._pending_wrathful_presence_queue.pop(0)
+        except Exception:
+            return
+        army = player.get_army()
+        mgr = getattr(army, "wrathful_presence", None)
+        if mgr is None or unit is None:
+            self._open_next_wrathful_presence_prompt()
+            return
+        try:
+            from ..classes.wrathful_presence import (
+                WRATHFUL_PRESENCE_OPTIONS,
+                set_active_wrathful_presence,
+                get_active_wrathful_presence_key,
+            )
+        except Exception:
+            self._open_next_wrathful_presence_prompt()
+            return
+
+        try:
+            if get_active_wrathful_presence_key(unit, battle_round=br):
+                self._open_next_wrathful_presence_prompt()
+                return
+        except Exception:
+            pass
+
+        if not hasattr(self, "wrathful_presence_dialog") or self.wrathful_presence_dialog is None:
+            try:
+                from .dialogs import WrathfulPresenceDialog
+                sw, sh = self.screen.get_size()
+                self.wrathful_presence_dialog = WrathfulPresenceDialog(sw, sh)
+            except Exception:
+                self.wrathful_presence_dialog = None
+        if self.wrathful_presence_dialog is None:
+            self._open_next_wrathful_presence_prompt()
+            return
+
+        options = list(WRATHFUL_PRESENCE_OPTIONS)
+
+        def _on_confirm(opt):
+            try:
+                set_active_wrathful_presence(unit, getattr(opt, "key", None), battle_round=int(br or 0))
+            except Exception:
+                pass
+            try:
+                from ..utility.event_bus import append_action
+                if opt is not None:
+                    append_action(player.name, f"Wrathful Presence: {getattr(opt, 'name', '')} (Battle Round {br})")
+            except Exception:
+                pass
+            self._open_next_wrathful_presence_prompt()
+
+        def _on_cancel():
+            try:
+                if options:
+                    set_active_wrathful_presence(unit, getattr(options[0], "key", None), battle_round=int(br or 0))
+            except Exception:
+                pass
+            self._open_next_wrathful_presence_prompt()
+
+        self.wrathful_presence_dialog.show(
+            options=options,
+            unit_name=getattr(unit, "name", ""),
+            battle_round=br,
+            on_confirm=_on_confirm,
+            on_cancel=_on_cancel,
+        )
+        try:
+            self.dialog_manager.open(self.wrathful_presence_dialog, modal=True)
         except Exception:
             pass
 
