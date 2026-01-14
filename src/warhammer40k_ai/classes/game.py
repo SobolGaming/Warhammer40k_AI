@@ -7625,6 +7625,14 @@ class Game:
                             modifiers.append((val, source))
         except Exception:
             pass
+        try:
+            from ..utility.aura_effects import get_aura_advance_charge_roll_modifiers
+            _adv_mods, aura_charge_mods = get_aura_advance_charge_roll_modifiers(charging_unit, game_map=self.map)
+            for val, source in list(aura_charge_mods or []):
+                if val:
+                    modifiers.append((int(val), source))
+        except Exception:
+            pass
 
         try:
             modifiers = charging_unit._filter_internal_rivalries_roll_modifiers(modifiers, kind="charge")

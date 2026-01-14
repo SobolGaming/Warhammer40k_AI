@@ -247,6 +247,29 @@ def _parse_add_oc_aura(ability) -> Optional[dict]:
     }
 
 
+def _parse_advance_charge_roll_aura(ability) -> Optional[dict]:
+    """
+    Strict parser for:
+      "While a friendly X unit is within N\" of this model/unit, add Y to Advance and Charge rolls made for that unit."
+    """
+    desc = str(getattr(ability, "description", "") or "").strip()
+    if not desc:
+        return None
+    m = re.search(
+        r'While a friendly (?P<faction_kw>.+?) units? is within (?P<rng>\d+)" of this (?:unit|model), '
+        r"add (?P<amt>\d+) to Advance and Charge rolls made for (?:that|the) unit",
+        desc,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+    return {
+        "faction_keyword": str(m.group("faction_kw") or "").strip(),
+        "range": float(m.group("rng")),
+        "amount": int(m.group("amt")),
+    }
+
+
 def _nurgles_gift_contagion_range(battle_round: int) -> float:
     # 10e baseline: BR1=3", BR2=6", BR3+=9"
     br = int(battle_round or 0)
@@ -454,6 +477,44 @@ def get_aura_objective_control_bonus(unit, *, game_map=None) -> int:
     return int(total)
 
 
+def get_aura_advance_charge_roll_modifiers(unit, *, game_map=None) -> tuple[list[tuple[int, str]], list[tuple[int, str]]]:
+    """
+    Return (advance_mods, charge_mods) from friendly Advance/Charge roll auras affecting this unit.
+    Dedupe by Aura name (same aura never double-applies).
+    """
+    if unit is None:
+        return [], []
+    if game_map is None:
+        game_map = _get_map_from_attacker_unit(unit)
+    if game_map is None:
+        return [], []
+
+    advance_mods: list[tuple[int, str]] = []
+    charge_mods: list[tuple[int, str]] = []
+    applied_aura_names: set[str] = set()
+
+    for source in list(game_map.get_friendly_units(unit)):
+        for ab in _iter_possible_abilities(source):
+            spec = _parse_advance_charge_roll_aura(ab)
+            if not spec:
+                continue
+            ab_name = str(getattr(ab, "name", "") or "")
+            aura_key = _norm_name(ab_name)
+            if aura_key:
+                if aura_key in applied_aura_names:
+                    continue
+                applied_aura_names.add(aura_key)
+            if spec["faction_keyword"] and not unit.has_any_keyword(spec["faction_keyword"]):
+                continue
+            if not unit_within_range_of_unit(source, unit, float(spec["range"]), use_attached_aggregate=True):
+                continue
+            amt = int(spec["amount"])
+            advance_mods.append((amt, f"Aura: +{amt} to Advance rolls from {ab_name}"))
+            charge_mods.append((amt, f"Aura: +{amt} to Charge rolls from {ab_name}"))
+
+    return advance_mods, charge_mods
+
+
 def _parse_melee_attacks_aura(ability) -> Optional[dict]:
     """
     Strict parser for:
@@ -578,5 +639,4 @@ def get_enemy_engagement_oc_divisors(unit, *, game_map=None) -> tuple[str, ...]:
                 continue
 
     return tuple(reasons)
-
 

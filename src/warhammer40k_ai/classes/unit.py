@@ -6829,6 +6829,14 @@ class Unit:
                         continue
                     if val:
                         mods.append((val, source))
+        try:
+            from ..utility.aura_effects import get_aura_advance_charge_roll_modifiers
+            aura_mods, _ = get_aura_advance_charge_roll_modifiers(self)
+            for val, source in list(aura_mods or []):
+                if val:
+                    mods.append((int(val), source))
+        except Exception:
+            pass
         return mods
 
     def _apply_advance_roll_modifiers(self, roll: int) -> int:

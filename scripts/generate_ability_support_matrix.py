@@ -1182,6 +1182,7 @@ def _classify_ability(
     closest_m_veh_support = _closest_monster_vehicle_reroll_support(description)
     unit_contains_oc_support = _unit_contains_oc_support(description)
     aura_oc_support = _aura_objective_control_support(description)
+    aura_adv_charge_support = _aura_advance_charge_roll_support(description)
     common_support = _bearer_unit_common_support(description)
     leading_support = _leading_unit_common_support(description)
     bearer_invuln_support = _bearer_invulnerable_save_support(description)
@@ -1229,6 +1230,8 @@ def _classify_ability(
         return unit_contains_oc_support
     if aura_oc_support:
         return aura_oc_support
+    if aura_adv_charge_support:
+        return aura_adv_charge_support
     if common_support and leading_support:
         if common_support[0] == "Supported" and leading_support[0] == "Supported":
             notes = " ".join([common_support[1], leading_support[1]]).strip()
@@ -1581,6 +1584,28 @@ def _aura_objective_control_support(description: str) -> Optional[Tuple[str, str
     rng = m.group(2)
     amt = m.group(3)
     return ("Supported", f"Aura: friendly {faction_kw} within {rng}\" gain Objective Control +{amt}.")
+
+
+def _aura_advance_charge_roll_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    m = re.search(
+        r'While a friendly (?P<faction_kw>.+?) units? is within (?P<rng>\d+)" of this (?:model|unit), '
+        r"add (?P<amt>\d+) to Advance and Charge rolls made for (?:that|the) unit",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+    faction_kw = m.group("faction_kw").strip()
+    rng = m.group("rng")
+    amt = m.group("amt")
+    return ("Supported", f"Aura: friendly {faction_kw} within {rng}\" gain +{amt} to Advance and Charge rolls.")
 
 
 def _bearer_invulnerable_save_support(description: str) -> Optional[Tuple[str, str]]:
