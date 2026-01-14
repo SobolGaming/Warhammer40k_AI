@@ -876,6 +876,25 @@ class WargearProfile:
                             )
         except Exception:
             furious_onslaught_applies = False
+        closest_enemy_hit_reroll_rule = None
+        try:
+            is_ranged = bool(getattr(getattr(self, "parent_wargear", None), "is_ranged", lambda: False)())
+            if is_ranged:
+                unit = getattr(attacker, "parent_unit", None)
+                if unit is not None and getattr(unit, "get_closest_enemy_hit_reroll_rule", None):
+                    rule = unit.get_closest_enemy_hit_reroll_rule(attacker)
+                    if rule:
+                        gm = game_map
+                        if gm is None:
+                            try:
+                                gm = unit.get_parent_army().player.game.map
+                            except Exception:
+                                gm = None
+                        if gm is not None and getattr(unit, "is_target_closest_eligible", None):
+                            if unit.is_target_closest_eligible(attacker, self, target, gm):
+                                closest_enemy_hit_reroll_rule = rule
+        except Exception:
+            closest_enemy_hit_reroll_rule = None
         closest_monster_vehicle_rule = None
         try:
             is_ranged = bool(getattr(getattr(self, "parent_wargear", None), "is_ranged", lambda: False)())
@@ -1028,6 +1047,8 @@ class WargearProfile:
                 attack_instance["attacker_key"] = attacker_key
             if furious_onslaught_applies:
                 attack_instance["furious_onslaught_applies"] = True
+            if closest_enemy_hit_reroll_rule:
+                attack_instance["closest_enemy_hit_reroll_rule"] = closest_enemy_hit_reroll_rule
             if closest_monster_vehicle_rule:
                 attack_instance["closest_monster_vehicle_reroll_rule"] = closest_monster_vehicle_rule
 
@@ -1061,6 +1082,8 @@ class WargearProfile:
                             extra_instance["attacker_key"] = attacker_key
                         if furious_onslaught_applies:
                             extra_instance["furious_onslaught_applies"] = True
+                        if closest_enemy_hit_reroll_rule:
+                            extra_instance["closest_enemy_hit_reroll_rule"] = closest_enemy_hit_reroll_rule
                         if closest_monster_vehicle_rule:
                             extra_instance["closest_monster_vehicle_reroll_rule"] = closest_monster_vehicle_rule
                         hit_instances.append(extra_instance)
@@ -2307,6 +2330,53 @@ class WargearProfile:
                 if do_reroll:
                     rr = _reroll_hit()
                     hit_result.setdefault("special_effects", []).append("Furious Onslaught: re-roll Hit roll")
+                    hit_result["reroll"] = rr
+                    dice_roll = rr
+                    reroll_used = True
+        except Exception:
+            pass
+        # Closest enemy unit: re-roll Hit roll (optional).
+        try:
+            rule = attack_instance.get("closest_enemy_hit_reroll_rule")
+            if rule and "reroll" not in hit_result:
+                try:
+                    success = (dice_roll != 1) and (self.skill > 0) and (dice_roll >= final_needed)
+                except Exception:
+                    success = False
+                do_reroll = False
+                try:
+                    reason = str(rule.get("source", "") or "Closest enemy unit").strip() or "Closest enemy unit"
+                except Exception:
+                    reason = "Closest enemy unit"
+                try:
+                    unit = attacker.parent_unit
+                    game = unit.get_parent_army().player.game
+                    player = unit.get_parent_army().player
+                    is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                    provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                except Exception:
+                    is_human = False
+                    provider = None
+                    player = None
+                if is_human and callable(provider):
+                    try:
+                        do_reroll = bool(provider(
+                            player=player,
+                            unit=unit,
+                            roll_type="hit",
+                            value=dice_roll,
+                            dice=None,
+                            needed=final_needed,
+                            success=success,
+                            reason=reason,
+                        ))
+                    except Exception:
+                        do_reroll = False
+                else:
+                    do_reroll = (not success)
+                if do_reroll:
+                    rr = _reroll_hit()
+                    hit_result.setdefault("special_effects", []).append(f"{reason}: re-roll Hit roll")
                     hit_result["reroll"] = rr
                     dice_roll = rr
                     reroll_used = True

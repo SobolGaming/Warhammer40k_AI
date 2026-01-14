@@ -372,6 +372,135 @@ class TestUnitHitRerollOnes(unittest.TestCase):
         self.assertEqual(int(result["roll"]), 2)
         self.assertFalse(called)
 
+    def test_ranged_hit_reroll_closest_enemy_unit(self):
+        from warhammer40k_ai.classes.wargear import WargearProfile
+        from warhammer40k_ai.classes import wargear as wargear_mod
+
+        ability = {
+            "name": "Surgical Advance",
+            "description": (
+                "Each time a model in this unit makes a ranged attack that targets the closest enemy unit, "
+                "you can re-roll the Hit roll. Each time this unit declares a charge that targets the "
+                "closest eligible enemy unit, you can re-roll the Charge roll."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, army2, _p1 = _build_game()
+        attacker = _make_unit("Shooters", abilities=[ability])
+        target = _make_unit("Target")
+        other = _make_unit("Other Target")
+        army1.add_unit(attacker)
+        army2.add_unit(target)
+        army2.add_unit(other)
+
+        attacker.deployed = True
+        target.deployed = True
+        other.deployed = True
+
+        attacker.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        target.models[0].set_location(10.0, 0.0, 0.0, 0.0)
+        other.models[0].set_location(20.0, 0.0, 0.0, 0.0)
+
+        game.map.units = [attacker, target, other]
+
+        called = {}
+        def _provider(**_kwargs):
+            called["called"] = True
+            return True
+
+        game.map.roll_reroll_provider = _provider
+
+        parent = SimpleNamespace(name="Test Gun", is_melee=lambda: False, is_ranged=lambda: True)
+        profile = WargearProfile(
+            profile_name="Ranged",
+            wargear_data={
+                "range": "24",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "4",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            },
+            parent_wargear=parent,
+        )
+
+        rolls = iter([1, 6, 6, 6, 6])
+        original_roll = wargear_mod.get_roll
+        wargear_mod.get_roll = lambda _d: next(rolls, 6)
+        try:
+            result = profile.attack(target, attacker.models[0], game_map=game.map)
+        finally:
+            wargear_mod.get_roll = original_roll
+
+        self.assertTrue(called.get("called"))
+        self.assertIsNotNone(result.hit_results[0].get("reroll"))
+
+    def test_ranged_hit_reroll_not_closest_enemy_unit(self):
+        from warhammer40k_ai.classes.wargear import WargearProfile
+        from warhammer40k_ai.classes import wargear as wargear_mod
+
+        ability = {
+            "name": "Surgical Advance",
+            "description": (
+                "Each time a model in this unit makes a ranged attack that targets the closest enemy unit, "
+                "you can re-roll the Hit roll. Each time this unit declares a charge that targets the "
+                "closest eligible enemy unit, you can re-roll the Charge roll."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, army2, _p1 = _build_game()
+        attacker = _make_unit("Shooters", abilities=[ability])
+        target = _make_unit("Target")
+        other = _make_unit("Other Target")
+        army1.add_unit(attacker)
+        army2.add_unit(target)
+        army2.add_unit(other)
+
+        attacker.deployed = True
+        target.deployed = True
+        other.deployed = True
+
+        attacker.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        target.models[0].set_location(20.0, 0.0, 0.0, 0.0)
+        other.models[0].set_location(10.0, 0.0, 0.0, 0.0)
+
+        game.map.units = [attacker, target, other]
+
+        called = {}
+        def _provider(**_kwargs):
+            called["called"] = True
+            return True
+
+        game.map.roll_reroll_provider = _provider
+
+        parent = SimpleNamespace(name="Test Gun", is_melee=lambda: False, is_ranged=lambda: True)
+        profile = WargearProfile(
+            profile_name="Ranged",
+            wargear_data={
+                "range": "24",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "4",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            },
+            parent_wargear=parent,
+        )
+
+        rolls = iter([1, 6, 6, 6, 6])
+        original_roll = wargear_mod.get_roll
+        wargear_mod.get_roll = lambda _d: next(rolls, 6)
+        try:
+            profile.attack(target, attacker.models[0], game_map=game.map)
+        finally:
+            wargear_mod.get_roll = original_roll
+
+        self.assertFalse(called.get("called"))
+
 
 if __name__ == "__main__":
     unittest.main()

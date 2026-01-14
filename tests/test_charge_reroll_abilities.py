@@ -164,6 +164,64 @@ class TestChargeRerollAbilities(unittest.TestCase):
             target.models[0].set_location(50, 50, 0, 0)
         self.assertFalse(charger.can_reroll_charge_roll(target_unit=target, game_map=game_map))
 
+    def test_charge_reroll_requires_closest_eligible_target(self):
+        from warhammer40k_ai.classes.army import Army
+        from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.classes.player import Player, PlayerType
+
+        ability = {
+            "name": "Surgical Advance",
+            "description": (
+                "Each time a model in this unit makes a ranged attack that targets the closest enemy unit, "
+                "you can re-roll the Hit roll. Each time this unit declares a charge that targets the "
+                "closest eligible enemy unit, you can re-roll the Charge roll."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+
+        game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
+        army1 = Army("Test", "Det")
+        army1.faction_id = "TST"
+        army2 = Army("Enemy", "Det")
+        army2.faction_id = "EN"
+
+        p1 = Player("P1", player_type=PlayerType.HUMAN, army=army1)
+        p2 = Player("P2", player_type=PlayerType.AI, army=army2)
+        game.add_player(p1)
+        game.add_player(p2)
+
+        charger = _make_unit("Charger", abilities=[ability])
+        target_close = _make_unit("Target Close")
+        target_far = _make_unit("Target Far")
+
+        army1.add_unit(charger)
+        army2.add_unit(target_close)
+        army2.add_unit(target_far)
+
+        charger.deployed = True
+        target_close.deployed = True
+        target_far.deployed = True
+
+        charger.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        target_close.models[0].set_location(8.0, 0.0, 0.0, 0.0)
+        target_far.models[0].set_location(10.0, 0.0, 0.0, 0.0)
+
+        self.assertTrue(
+            charger.can_reroll_charge_roll(
+                target_unit=target_close,
+                game_map=game.map,
+                game=game,
+            )
+        )
+        self.assertFalse(
+            charger.can_reroll_charge_roll(
+                target_unit=target_far,
+                game_map=game.map,
+                game=game,
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

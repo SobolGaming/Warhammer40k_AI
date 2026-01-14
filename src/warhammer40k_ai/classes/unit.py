@@ -838,6 +838,10 @@ class Unit:
         r"re-?roll\s+charge\s+rolls?\s+made\s+for\s+(?:this\s+model|the\s+bearer'?s\s+unit|that\s+unit)",
         re.IGNORECASE,
     )
+    _REROLL_CHARGE_CLOSEST_ELIGIBLE_RE = re.compile(
+        r"each\s+time\s+this\s+unit\s+declares\s+a\s+charge\s+that\s+targets?\s+the\s+closest\s+(?:eligible\s+)?enemy\s+unit.*?re-?roll\s+the\s+charge\s+roll",
+        re.IGNORECASE,
+    )
     _REROLL_CHARGE_SETUP_TURN_RE = re.compile(
         r"re-?roll\s+charge\s+rolls?\s+made\s+for\s+(?:the\s+bearer'?s\s+unit|that\s+unit).*?\bset\s+up\s+on\s+the\s+battlefield\b",
         re.IGNORECASE,
@@ -7109,6 +7113,101 @@ class Unit:
                 pass
         return int(roll)
 
+    def _is_charge_target_closest_eligible(self, target_unit, *, game_map=None, game=None) -> bool:
+        if target_unit is None:
+            return False
+        if game is None:
+            try:
+                game = self.get_parent_army().player.game
+            except Exception:
+                game = None
+        if game_map is None:
+            try:
+                game_map = getattr(game, "map", None)
+            except Exception:
+                game_map = None
+        if game_map is None or game is None:
+            return False
+
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+
+        try:
+            if not self.can_declare_charge_against(target_root, game, out_of_turn=True):
+                return False
+        except Exception:
+            return False
+
+        try:
+            target_dist = float(game_map.get_distance_between_units(self, target_root))
+        except Exception:
+            target_dist = None
+        if target_dist is None:
+            return False
+
+        enemies = None
+        try:
+            player = self.get_parent_army().player
+        except Exception:
+            player = None
+        if player is not None and game is not None:
+            try:
+                enemies = list(game.get_enemy_units(player) or [])
+            except Exception:
+                enemies = None
+        if enemies is None:
+            try:
+                enemies = list(game_map.get_enemy_units(self) or [])
+            except Exception:
+                enemies = []
+
+        if not enemies:
+            return False
+
+        closest = None
+        seen = set()
+        for enemy_unit in enemies:
+            try:
+                root = enemy_unit.get_attached_unit_root()
+            except Exception:
+                root = enemy_unit
+            if root is None:
+                continue
+            try:
+                rid = getattr(root, "_id", None) or id(root)
+            except Exception:
+                rid = id(root)
+            if rid in seen:
+                continue
+            seen.add(rid)
+            try:
+                if hasattr(root, "is_alive") and callable(root.is_alive) and not root.is_alive():
+                    continue
+            except Exception:
+                pass
+            try:
+                if hasattr(root, "deployed") and not bool(getattr(root, "deployed", True)):
+                    continue
+            except Exception:
+                pass
+            try:
+                if not self.can_declare_charge_against(root, game, out_of_turn=True):
+                    continue
+            except Exception:
+                continue
+            try:
+                dist = float(game_map.get_distance_between_units(self, root))
+            except Exception:
+                continue
+            if closest is None or dist < closest:
+                closest = dist
+
+        if closest is None:
+            return False
+        return target_dist <= closest + 1e-6
+
     def can_reroll_charge_roll(self, *, target_unit=None, game_map=None, game=None) -> bool:
         """
         Best-effort detection for abilities that allow re-rolling Charge rolls for this unit/model.
@@ -7177,6 +7276,15 @@ class Unit:
                     if self._REROLL_CHARGE_SETUP_TURN_RE.search(low):
                         conditional_found = True
                         if self._was_set_up_this_turn(game=game):
+                            return True
+                        continue
+                    if self._REROLL_CHARGE_CLOSEST_ELIGIBLE_RE.search(low):
+                        conditional_found = True
+                        if self._is_charge_target_closest_eligible(
+                            target_unit,
+                            game_map=game_map,
+                            game=game,
+                        ):
                             return True
                         continue
                     if self._REROLL_ADVANCE_CHARGE_RE.search(low):
@@ -14152,6 +14260,44 @@ class Unit:
             self._ability_cache = {}
         self._ability_cache[cache_key] = bool(found)
         return bool(found)
+
+    def get_closest_enemy_hit_reroll_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "Each time a model in this unit makes a ranged attack that targets the closest enemy unit,
+        you can re-roll the Hit roll."
+        """
+        if model is None:
+            return None
+        cache_key = f"closest_enemy_hit_reroll_rule:{getattr(model, '_id', id(model))}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        rule = None
+        try:
+            for name, desc in self._iter_ability_entries_for_rules(model=model):
+                text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
+                if not text:
+                    continue
+                low = text.lower()
+                if "ranged attack" not in low:
+                    continue
+                if not re.search(r"closest\s+(?:eligible\s+)?enemy\s+unit", low):
+                    continue
+                if "hit roll" not in low:
+                    continue
+                if ("re-roll" not in low) and ("reroll" not in low):
+                    continue
+                source = str(name or "Closest enemy unit").strip() or "Closest enemy unit"
+                rule = {"source": source}
+                break
+        except Exception:
+            rule = None
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = rule
+        return rule
 
     def get_closest_monster_vehicle_reroll_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
         """

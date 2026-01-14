@@ -1148,7 +1148,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("WE", "Beacons of Rage (Aura)"): ("Supported", "+1 hit (melee) and +1 wound vs Below Half-strength; excludes Monster/Vehicle."),
         ("WE", "Fire Riders"): ("Partial", "Deep Strike detected; movement/leading-only clauses not enforced."),
         ("WE", "Forwards, for Blood!"): ("Supported", "Leading: re-roll Advance rolls and the Blood Surge D6."),
-        ("WE", "Bloody Fury"): ("Partial", "Charge reroll detected; closest-target/ranged reroll clauses not enforced."),
+        ("WE", "Bloody Fury"): (
+            "Supported",
+            "Ranged attacks vs closest enemy unit: re-roll Hit roll. Charges vs closest eligible enemy unit: re-roll Charge roll.",
+        ),
         ("WE", "To Slake its Rage"): ("Supported", "Advance-and-charge eligibility."),
         ("WE", "Idol of Blessed Blood"): ("Supported", "Adds an extra Blessings die for each on-battlefield model with this ability."),
         ("WE", "Icon of Khorne"): ("Supported", "Enemy unit destroyed by bearer grants +1 Bloodshed point."),
@@ -1295,6 +1298,7 @@ def _classify_ability(
     fall_back_shoot_support = _fall_back_shoot_support(description)
     battlesuit_support_system_support = _battlesuit_support_system_support(name, description)
     attack_roll_rule_support = _attack_roll_rule_support(description)
+    closest_enemy_hit_charge_support = _closest_enemy_hit_and_charge_reroll_support(description)
     orders_support = _orders_section_support(name, description)
     attached_unit_support = _attached_unit_support(name, description)
     model_reroll_support = _model_reroll_wound_vs_character_support(description)
@@ -1375,6 +1379,8 @@ def _classify_ability(
         return fall_back_shoot_support
     if attack_roll_rule_support:
         return attack_roll_rule_support
+    if closest_enemy_hit_charge_support:
+        return closest_enemy_hit_charge_support
     if orders_support:
         return orders_support
     if attached_unit_support:
@@ -1792,6 +1798,25 @@ def _attack_roll_plus_cp_on_destroy_support(description: str) -> Optional[Tuple[
     else:
         notes.append("Gain CP on destroying enemy models supported.")
     return ("Supported", " ".join(notes))
+
+
+def _closest_enemy_hit_and_charge_reroll_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time a models? in this unit makes a ranged attack that targets the closest (?:eligible )?enemy unit "
+        r"you can reroll the hit roll "
+        r"each time this unit declares a charge that targets the closest (?:eligible )?enemy unit you can reroll the charge roll"
+    )
+    if not re.fullmatch(pattern, norm):
+        return None
+    return (
+        "Supported",
+        "Ranged attacks vs closest enemy unit: re-roll Hit roll. Charges vs closest eligible enemy unit: re-roll Charge roll.",
+    )
 
 
 def _attack_roll_rule_support(description: str) -> Optional[Tuple[str, str]]:
