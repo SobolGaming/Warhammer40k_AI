@@ -66,6 +66,11 @@ class WorldEatersDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Khorne Daemonkin")
 
+    def is_goretrack_onslaught(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Goretrack Onslaught")
+
     def _unit_has_keyword(self, unit, keyword: str) -> bool:
         if unit is None:
             return False
@@ -109,6 +114,11 @@ class WorldEatersDetachmentManager(DetachmentManagerBase):
 
     def unit_is_world_eaters(self, unit) -> bool:
         return self._attached_unit_has_keyword(unit, "WORLD EATERS")
+
+    def goretrack_onslaught_applies(self, unit) -> bool:
+        if not self.is_goretrack_onslaught():
+            return False
+        return self.unit_is_world_eaters(unit)
 
     def unit_is_blood_tithe_eligible(self, unit) -> bool:
         return self.unit_is_blood_legions(unit) or self.unit_is_world_eaters(unit)

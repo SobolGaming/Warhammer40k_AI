@@ -13061,6 +13061,66 @@ class Unit:
 
         return None
 
+    def _apply_goretrack_onslaught_disembark_effect(self, *, game=None, current_turn: int = 0) -> None:
+        try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        if army is None:
+            return
+        mgr = getattr(army, "world_eaters_detachments", None)
+        if mgr is None or not getattr(mgr, "goretrack_onslaught_applies", None):
+            return
+        try:
+            if not mgr.goretrack_onslaught_applies(self):
+                return
+        except Exception:
+            return
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return
+        if game is None:
+            try:
+                game = getattr(getattr(army, "player", None), "game", None)
+            except Exception:
+                game = None
+        try:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+        except Exception:
+            current_player = None
+        try:
+            owner = str(getattr(current_player, "name", "") or "")
+        except Exception:
+            owner = ""
+        if not owner:
+            try:
+                owner = str(getattr(getattr(army, "player", None), "name", "") or "")
+            except Exception:
+                owner = ""
+        try:
+            turn = int(getattr(game, "turn", current_turn) or current_turn)
+        except Exception:
+            turn = int(current_turn or 0)
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        for unit in members:
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["goretrack_onslaught_active"] = True
+            if owner:
+                sr["goretrack_onslaught_turn_owner"] = owner
+            if turn:
+                sr["goretrack_onslaught_turn"] = int(turn)
+            unit.special_rules = sr
+
     def disembark(
         self,
         game_map: Optional['Map'] = None,
@@ -13222,6 +13282,7 @@ class Unit:
                 self.round_state.disembarked_cannot_charge = True
                 self.round_state.moved_this_round = True
                 self.round_state.remained_stationary_this_round = False
+                game = None
                 try:
                     army = self.get_parent_army()
                     game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
@@ -13236,6 +13297,10 @@ class Unit:
                         except Exception:
                             sr["voice_of_command_disembark_round"] = int(current_turn or 0)
                     self.special_rules = sr
+                except Exception:
+                    pass
+                try:
+                    self._apply_goretrack_onslaught_disembark_effect(game=game, current_turn=current_turn)
                 except Exception:
                     pass
 
@@ -13287,6 +13352,7 @@ class Unit:
             pass
 
         self.round_state.disembarked_this_round = True
+        game = None
         try:
             army = self.get_parent_army()
             game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
@@ -13301,6 +13367,10 @@ class Unit:
                 except Exception:
                     sr["voice_of_command_disembark_round"] = int(current_turn or 0)
             self.special_rules = sr
+        except Exception:
+            pass
+        try:
+            self._apply_goretrack_onslaught_disembark_effect(game=game, current_turn=current_turn)
         except Exception:
             pass
 
@@ -13519,6 +13589,7 @@ class Unit:
             pass
 
         self.round_state.disembarked_this_round = True
+        game = None
         try:
             army = self.get_parent_army()
             game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
@@ -13533,6 +13604,10 @@ class Unit:
                 except Exception:
                     sr["voice_of_command_disembark_round"] = int(current_turn or 0)
             self.special_rules = sr
+        except Exception:
+            pass
+        try:
+            self._apply_goretrack_onslaught_disembark_effect(game=game, current_turn=current_turn)
         except Exception:
             pass
 

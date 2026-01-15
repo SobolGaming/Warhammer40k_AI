@@ -3634,6 +3634,9 @@ class Game:
                         if str(sr.get("fire_and_fade_no_embark_turn_owner", "") or "") == owner_name:
                             for k in ("fire_and_fade_no_embark_turn_owner", "fire_and_fade_no_embark_turn"):
                                 sr.pop(k, None)
+                        if str(sr.get("goretrack_onslaught_turn_owner", "") or "") == owner_name:
+                            for k in ("goretrack_onslaught_active", "goretrack_onslaught_turn_owner", "goretrack_onslaught_turn"):
+                                sr.pop(k, None)
             except Exception:
                 pass
 
@@ -8970,6 +8973,24 @@ class Game:
                             continue
                         if val:
                             modifiers.append((val, source))
+        except Exception:
+            pass
+        try:
+            sr = getattr(charging_unit, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("goretrack_onslaught_active") is True:
+                goretrack_active = True
+                owner = str(sr.get("goretrack_onslaught_turn_owner", "") or "")
+                turn = int(sr.get("goretrack_onslaught_turn", 0) or 0)
+                if owner or turn:
+                    cur_turn = int(getattr(self, "turn", 0) or 0)
+                    cur_player = getattr(self, "get_current_player", lambda: None)()
+                    cur_owner = str(getattr(cur_player, "name", "") or "")
+                    if owner and owner != cur_owner:
+                        goretrack_active = False
+                    if turn and turn != cur_turn:
+                        goretrack_active = False
+                if goretrack_active:
+                    modifiers.append((1, "Goretrack Onslaught"))
         except Exception:
             pass
         try:

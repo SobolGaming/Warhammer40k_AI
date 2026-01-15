@@ -3659,7 +3659,32 @@ class WargearProfile:
                                 daemonic_fury_lance = False
             except Exception:
                 daemonic_fury_lance = False
-            if is_melee and (self.is_lance() or bondsman_lance or blood_tithe_lance or daemonic_fury_lance):
+            goretrack_lance = False
+            try:
+                sr = getattr(attacker.parent_unit, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("goretrack_onslaught_active") is True:
+                    goretrack_lance = True
+                    owner = str(sr.get("goretrack_onslaught_turn_owner", "") or "")
+                    turn = int(sr.get("goretrack_onslaught_turn", 0) or 0)
+                    if owner or turn:
+                        try:
+                            army = attacker.parent_unit.get_parent_army()
+                            game = getattr(getattr(army, "player", None), "game", None)
+                        except Exception:
+                            game = None
+                        if game is None:
+                            goretrack_lance = False
+                        else:
+                            cur_turn = int(getattr(game, "turn", 0) or 0)
+                            cur_player = getattr(game, "get_current_player", lambda: None)()
+                            cur_owner = str(getattr(cur_player, "name", "") or "")
+                            if owner and owner != cur_owner:
+                                goretrack_lance = False
+                            if turn and turn != cur_turn:
+                                goretrack_lance = False
+            except Exception:
+                goretrack_lance = False
+            if is_melee and (self.is_lance() or bondsman_lance or blood_tithe_lance or daemonic_fury_lance or goretrack_lance):
                 charged = bool(getattr(attacker.parent_unit.round_state, "charged_this_round", False))
                 if charged:
                     dice_modifier += 1
@@ -3669,6 +3694,8 @@ class WargearProfile:
                         wound_result['modifiers'].append("+1 to wound from Lance (Blood Tithe)")
                     elif daemonic_fury_lance and not self.is_lance():
                         wound_result['modifiers'].append("+1 to wound from Lance (Daemonic Fury)")
+                    elif goretrack_lance and not self.is_lance():
+                        wound_result['modifiers'].append("+1 to wound from Lance (Goretrack Onslaught)")
                     else:
                         wound_result['modifiers'].append("+1 to wound from Lance (charged)")
         except Exception:
