@@ -1301,6 +1301,7 @@ def _classify_ability(
     transport_reactive_disembark_support = _transport_reactive_disembark_support(description)
     sticky_support = _sticky_objective_support(description)
     bodyguard_return_support = _command_phase_bodyguard_return_support(description)
+    charge_phase_bodyguard_loss_support = _charge_phase_bodyguard_loss_support(description)
     opponent_turn_reserves_support = _opponent_turn_strategic_reserves_support(description)
     enemy_fall_back_desperate_escape_support = _enemy_fall_back_desperate_escape_support(description)
     command_phase_bonus_cp_support = _command_phase_bonus_cp_support(description)
@@ -1400,6 +1401,8 @@ def _classify_ability(
         return sticky_support
     if bodyguard_return_support:
         return bodyguard_return_support
+    if charge_phase_bodyguard_loss_support:
+        return charge_phase_bodyguard_loss_support
     if opponent_turn_reserves_support:
         return opponent_turn_reserves_support
     if enemy_fall_back_desperate_escape_support:
@@ -2610,6 +2613,25 @@ def _command_phase_bodyguard_return_support(description: str) -> Optional[Tuple[
     return (
         "Supported",
         f"Command phase: return {amount} destroyed Bodyguard model(s) while leading (capped at starting strength).",
+    )
+
+
+def _charge_phase_bodyguard_loss_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"at the end of your charge phase if this model is leading a unit and that unit is not within engagement range "
+        r"of (?:one or more|any) enemy units? you must take a leadership test for this model if that test is failed "
+        r"one bodyguard model in that unit is destroyed"
+    )
+    if not re.fullmatch(pattern, norm):
+        return None
+    return (
+        "Supported",
+        "End of Charge phase: if leading and not engaged, test Leadership; on fail, destroy 1 Bodyguard model.",
     )
 
 

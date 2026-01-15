@@ -949,6 +949,12 @@ class Unit:
         r"and roll (?:eight|8) d6 for each 4 that enemy unit suffers 1 mortal wounds?",
         re.IGNORECASE,
     )
+    _CHARGE_PHASE_BODYGUARD_LOSS_RE = re.compile(
+        r"at the end of your charge phase if this model is leading a unit and that unit is not within "
+        r"engagement range of (?:one or more|any) enemy units? you must take a leadership test for this model "
+        r"if that test is failed one bodyguard model in that unit is destroyed",
+        re.IGNORECASE,
+    )
     _RETURN_ON_DEATH_RE = re.compile(
         r"the first time (?:this model|the bearer) is destroyed(?: remove it from play without resolving its deadly demise ability)?(?: then)? "
         r"(?:at the end of the phase roll one d6|roll one d6 at the end of the phase) on a (?P<roll>\d+) "
@@ -1360,6 +1366,34 @@ class Unit:
                 "name": name or "Bodyguard Return",
                 "description": desc or "",
             }
+        return None
+
+    def _scan_charge_phase_bodyguard_loss_ability(self):
+        pattern = self._CHARGE_PHASE_BODYGUARD_LOSS_RE
+        for ab in self._iter_active_abilities():
+            try:
+                if isinstance(ab, str):
+                    name = ab
+                    desc = ab
+                else:
+                    name = str(getattr(ab, "name", "") or "")
+                    desc = str(getattr(ab, "description", "") or "") or name
+            except Exception:
+                name = ""
+                desc = ""
+            text_src = self._strip_eligibility_prefix(desc or "")
+            text = self._normalize_rules_text(text_src or "")
+            if not text:
+                continue
+            norm = text.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+            norm = re.sub(r"'s\b", "s", norm)
+            norm = re.sub(r"[^a-z0-9]+", " ", norm)
+            norm = re.sub(r"\s+", " ", norm).strip()
+            if pattern.fullmatch(norm):
+                return {
+                    "name": name or "Charge Phase Leadership Test",
+                    "description": desc or "",
+                }
         return None
 
     def _scan_end_of_opponent_turn_strategic_reserves_ability(self):
@@ -4835,6 +4869,49 @@ class Unit:
         else:
             print(f"🎲 {self.name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - FAILED! ❌")
         
+        return passed
+
+    def pass_leadership_check_for_model(self, model: Optional['Model']) -> bool:
+        """Perform a Leadership test for a specific model (2D6 vs that model's Leadership characteristic)."""
+        if model is None:
+            return False
+        roll_result = None
+        dice_rolls = None
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "acts_of_faith", None) if army is not None else None
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            if mgr is not None and mgr.can_use_act_of_faith(self, game=game):
+                roll_result, dice_rolls, _miracle_used = mgr.resolve_roll(
+                    self,
+                    roll_type="battle-shock",
+                    game=game,
+                    dice_count=2,
+                    die_faces=6,
+                )
+        except Exception:
+            roll_result = None
+            dice_rolls = None
+        if roll_result is None:
+            roll_result = get_roll("2D6")
+        try:
+            leadership_value = int(getattr(model, "leadership", self.leadership))
+        except Exception:
+            leadership_value = self.leadership
+        passed = roll_result <= leadership_value
+
+        dice_note = ""
+        try:
+            if dice_rolls and isinstance(dice_rolls, list):
+                dice_note = f" (dice {list(dice_rolls)})"
+        except Exception:
+            dice_note = ""
+        model_name = getattr(model, "name", "Model")
+        if passed:
+            print(f"🎲 {model_name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - PASSED! ✅")
+        else:
+            print(f"🎲 {model_name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - FAILED! ❌")
+
         return passed
 
     @property
@@ -13922,6 +13999,28 @@ class Unit:
                 ability = None
             else:
                 ability = self._scan_command_phase_bodyguard_return_ability()
+        except Exception:
+            ability = None
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = ability
+        return ability
+
+    def get_charge_phase_bodyguard_loss_ability(self):
+        """
+        Return ability info dict for end-of-Charge-phase Leadership test bodyguard losses, or None.
+        """
+        cache_key = "charge_phase_bodyguard_loss_ability"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        ability = None
+        try:
+            if not bool(getattr(self, "is_attached_leader", False)):
+                ability = None
+            else:
+                ability = self._scan_charge_phase_bodyguard_loss_ability()
         except Exception:
             ability = None
 

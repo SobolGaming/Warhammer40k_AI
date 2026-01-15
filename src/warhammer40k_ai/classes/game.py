@@ -210,6 +210,8 @@ class Game:
         self.event_system.subscribe("phase_start", self._on_phase_start_engagement_battleshock)
         # Fight phase: end-of-phase engagement mortal wounds
         self.event_system.subscribe("phase_end", self._on_phase_end_fight_phase_mortal_wounds)
+        # Charge phase: end-of-phase leadership test bodyguard loss
+        self.event_system.subscribe("phase_end", self._on_phase_end_charge_phase_bodyguard_loss)
         # Dark Pacts trigger windows
         self.event_system.subscribe("shooting_targets_selected", self._on_shooting_targets_selected_dark_pacts)
         self.event_system.subscribe("fight_unit_selected", self._on_fight_unit_selected_dark_pacts)
@@ -4228,7 +4230,7 @@ class Game:
                 choice = player._choose_optional_value("CHARGE_MORTAL_WOUNDS_TARGET", list(candidates), ctx)
             except Exception:
                 choice = None
-        if choice in candidates:
+        if choice is not None and choice in candidates:
             return choice
         if isinstance(choice, str):
             wanted = choice.strip().lower()
@@ -4409,6 +4411,207 @@ class Game:
                 )
             except Exception:
                 self.resolve_charge_end_mortal_wounds(root, engaged[0], spec)
+
+    def _choose_charge_phase_bodyguard_loss_model(self, player, bodyguard, candidates, ability):
+        if not candidates:
+            return None
+        choice = None
+        if player is not None and hasattr(player, "_choose_optional_value"):
+            try:
+                ctx = {
+                    "unit": getattr(bodyguard, "name", "") or "",
+                    "ability": str((ability or {}).get("name", "") or ""),
+                    "candidates": [getattr(c, "name", "") for c in candidates],
+                    "phase": "Charge phase",
+                }
+                choice = player._choose_optional_value("CHARGE_PHASE_BODYGUARD_LOSS_MODEL", list(candidates), ctx)
+            except Exception:
+                choice = None
+        if choice is not None and choice in candidates:
+            return choice
+        if isinstance(choice, str):
+            wanted = choice.strip().lower()
+            for cand in candidates:
+                try:
+                    if str(getattr(cand, "name", "") or "").strip().lower() == wanted:
+                        return cand
+                except Exception:
+                    continue
+        return candidates[0]
+
+    def _resolve_charge_phase_bodyguard_loss(self, leader_unit, bodyguard, model, ability):
+        if model is None:
+            return
+        ability_name = str((ability or {}).get("name", "") or "Leadership Test").strip() or "Leadership Test"
+        try:
+            model.die(game_map=getattr(self, "map", None))
+        except Exception:
+            return
+        try:
+            from ..utility.event_bus import append_action
+            pname = str(getattr(getattr(leader_unit.get_parent_army(), "player", None), "name", "") or "")
+            if pname:
+                append_action(
+                    pname,
+                    f"{ability_name}: {getattr(model, 'name', 'Bodyguard model')} destroyed in {getattr(bodyguard, 'name', 'Unit')}.",
+                )
+        except Exception:
+            pass
+
+    def _on_phase_end_charge_phase_bodyguard_loss(self, player=None, phase=None, **_kwargs) -> None:
+        """Charge phase end: failed Leadership test can destroy a Bodyguard model while leading."""
+        try:
+            pname = str(getattr(phase, "name", "") or "").strip().upper()
+        except Exception:
+            pname = ""
+        if pname != "CHARGE_PHASE":
+            return
+        if player is None:
+            return
+        try:
+            if player is not self.get_current_player():
+                return
+        except Exception:
+            pass
+
+        try:
+            army = player.get_army()
+        except Exception:
+            army = getattr(player, "army", None)
+        if army is None:
+            return
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+
+        try:
+            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+        except Exception:
+            is_human = False
+        es = getattr(self, "event_system", None)
+        subs = getattr(es, "subscribers", {}) if es is not None else {}
+
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            try:
+                if not unit.is_alive() or not getattr(unit, "deployed", True):
+                    continue
+            except Exception:
+                continue
+            try:
+                if not bool(getattr(unit, "is_attached_leader", False)):
+                    continue
+            except Exception:
+                continue
+            try:
+                ability = unit.get_charge_phase_bodyguard_loss_ability()
+            except Exception:
+                ability = None
+            if not ability:
+                continue
+            try:
+                bodyguard = unit.get_attached_unit_root()
+            except Exception:
+                bodyguard = None
+            if bodyguard is None or bodyguard is unit:
+                continue
+            try:
+                if not getattr(bodyguard, "deployed", True):
+                    continue
+                if str(getattr(bodyguard, "reserve_status", "deployed")) != "deployed":
+                    continue
+                if hasattr(bodyguard, "is_in_reserves") and callable(getattr(bodyguard, "is_in_reserves")):
+                    if bool(bodyguard.is_in_reserves()):
+                        continue
+                if bool(getattr(bodyguard, "embarked_in", None)):
+                    continue
+                if bool(getattr(bodyguard, "is_embarked", False)):
+                    continue
+            except Exception:
+                pass
+            try:
+                if len(getattr(bodyguard, "models", []) or []) <= 0:
+                    continue
+            except Exception:
+                continue
+
+            engaged = False
+            try:
+                enemies = list(game_map.get_enemy_units(bodyguard) or [])
+            except Exception:
+                enemies = []
+            for enemy in enemies:
+                if enemy is None:
+                    continue
+                try:
+                    if not getattr(enemy, "deployed", True):
+                        continue
+                    if hasattr(enemy, "is_alive") and not enemy.is_alive():
+                        continue
+                    if not game_map.is_within_engagement_range(bodyguard, enemy):
+                        continue
+                except Exception:
+                    continue
+                engaged = True
+                break
+            if engaged:
+                continue
+
+            leader_model = None
+            for m in list(getattr(unit, "models", []) or []):
+                try:
+                    if not getattr(m, "is_alive", True):
+                        continue
+                except Exception:
+                    continue
+                leader_model = m
+                break
+            if leader_model is None:
+                continue
+
+            try:
+                passed = bool(unit.pass_leadership_check_for_model(leader_model))
+            except Exception:
+                passed = False
+            if passed:
+                continue
+
+            try:
+                candidates = [m for m in (getattr(bodyguard, "models", []) or []) if getattr(m, "is_alive", True)]
+            except Exception:
+                candidates = []
+            if not candidates:
+                continue
+
+            if len(candidates) == 1 or not is_human or not (isinstance(subs, dict) and subs.get("charge_phase_bodyguard_loss_prompt")):
+                chosen = candidates[0] if len(candidates) == 1 else self._choose_charge_phase_bodyguard_loss_model(
+                    player, bodyguard, candidates, ability
+                )
+                if chosen is None:
+                    continue
+                self._resolve_charge_phase_bodyguard_loss(unit, bodyguard, chosen, ability)
+                continue
+
+            def _on_select(chosen_model, _unit=unit, _bodyguard=bodyguard, _ability=ability):
+                if chosen_model is None:
+                    return
+                self._resolve_charge_phase_bodyguard_loss(_unit, _bodyguard, chosen_model, _ability)
+
+            try:
+                self.event_system.publish(
+                    "charge_phase_bodyguard_loss_prompt",
+                    player=player,
+                    unit=unit,
+                    bodyguard=bodyguard,
+                    candidates=list(candidates),
+                    ability=ability,
+                    on_select=_on_select,
+                )
+            except Exception:
+                chosen = self._choose_charge_phase_bodyguard_loss_model(player, bodyguard, candidates, ability)
+                if chosen is not None:
+                    self._resolve_charge_phase_bodyguard_loss(unit, bodyguard, chosen, ability)
 
     def _choose_fight_phase_end_mortal_wounds_target(self, player, unit, model, candidates, spec):
         if not candidates:

@@ -1562,6 +1562,9 @@ class GameView:
         # Charge-end mortal wound prompts
         self._pending_charge_mortal_wounds_queue = []
         self._charge_mortal_wounds_flow_active = False
+        # Charge phase end bodyguard loss prompts
+        self._pending_charge_phase_bodyguard_loss_queue = []
+        self._charge_phase_bodyguard_loss_flow_active = False
         # Fight phase end mortal wound prompts
         self._pending_fight_end_mortal_wounds_queue = []
         self._fight_end_mortal_wounds_flow_active = False
@@ -1622,6 +1625,11 @@ class GameView:
                 self.game.event_system.subscribe("frenzy_prompt", self._on_frenzy_prompt)
                 # Charge-end mortal wound target selection
                 self.game.event_system.subscribe("charge_mortal_wounds_prompt", self._on_charge_mortal_wounds_prompt)
+                # Charge phase end leadership test bodyguard loss
+                self.game.event_system.subscribe(
+                    "charge_phase_bodyguard_loss_prompt",
+                    self._on_charge_phase_bodyguard_loss_prompt,
+                )
                 self.game.event_system.subscribe(
                     "fight_phase_end_mortal_wounds_prompt",
                     self._on_fight_phase_end_mortal_wounds_prompt,
@@ -3794,6 +3802,96 @@ class GameView:
         except Exception:
             self._charge_mortal_wounds_flow_active = False
             self._open_next_charge_mortal_wounds_prompt(game)
+
+    # ---------------- Charge phase bodyguard loss prompts ----------------
+
+    def _on_charge_phase_bodyguard_loss_prompt(
+        self,
+        player=None,
+        unit=None,
+        bodyguard=None,
+        candidates=None,
+        ability=None,
+        on_select=None,
+        **_kwargs,
+    ):
+        if player is None or unit is None or bodyguard is None:
+            return
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return
+        except Exception:
+            return
+
+        cand = list(candidates or [])
+        if not cand:
+            return
+
+        if self._charge_phase_bodyguard_loss_flow_active:
+            self._pending_charge_phase_bodyguard_loss_queue.append((player, unit, bodyguard, cand, ability, on_select))
+            return
+        self._pending_charge_phase_bodyguard_loss_queue.append((player, unit, bodyguard, cand, ability, on_select))
+        self._open_next_charge_phase_bodyguard_loss_prompt(self.game)
+
+    def _open_next_charge_phase_bodyguard_loss_prompt(self, game):
+        q = list(getattr(self, "_pending_charge_phase_bodyguard_loss_queue", []) or [])
+        if not q:
+            self._pending_charge_phase_bodyguard_loss_queue = []
+            self._charge_phase_bodyguard_loss_flow_active = False
+            return
+        player, unit, bodyguard, candidates, ability, on_select = q.pop(0)
+        self._pending_charge_phase_bodyguard_loss_queue = q
+
+        if player is None or unit is None or bodyguard is None:
+            self._open_next_charge_phase_bodyguard_loss_prompt(game)
+            return
+        cand = list(candidates or [])
+        if not cand:
+            self._open_next_charge_phase_bodyguard_loss_prompt(game)
+            return
+
+        ability_name = str((ability or {}).get("name", "") or "Leadership Test")
+        title = ability_name
+        subtitle = getattr(bodyguard, "name", "Unit")
+        instruction = "Leadership test failed. Select a Bodyguard model to destroy."
+
+        def _finish(chosen):
+            if chosen is None and cand:
+                chosen = cand[0]
+            if callable(on_select) and chosen is not None:
+                try:
+                    on_select(chosen)
+                except Exception:
+                    pass
+            self._charge_phase_bodyguard_loss_flow_active = False
+            self._open_next_charge_phase_bodyguard_loss_prompt(game)
+
+        self._charge_phase_bodyguard_loss_flow_active = True
+        try:
+            from .dialogs import DamageAllocationDialog
+        except Exception:
+            self._charge_phase_bodyguard_loss_flow_active = False
+            self._open_next_charge_phase_bodyguard_loss_prompt(game)
+            return
+
+        if not hasattr(self, "damage_allocation_dialog") or self.damage_allocation_dialog is None:
+            self.damage_allocation_dialog = DamageAllocationDialog(self.screen.get_width(), self.screen.get_height())
+        dlg = self.damage_allocation_dialog
+        try:
+            dlg.show(
+                bodyguard,
+                cand,
+                title=title,
+                subtitle=subtitle,
+                instruction=instruction,
+                on_choice=_finish,
+                include_none=False,
+                show_wargear=True,
+            )
+            self.dialog_manager.open(dlg, modal=True)
+        except Exception:
+            self._charge_phase_bodyguard_loss_flow_active = False
+            self._open_next_charge_phase_bodyguard_loss_prompt(game)
 
     # ---------------- Fight phase end mortal wound prompts ----------------
 
