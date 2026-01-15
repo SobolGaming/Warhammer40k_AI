@@ -7741,6 +7741,10 @@ class Game:
             if final_distance <= 1.0:
                 if count_as_charged:
                     charging_unit.round_state.charged_this_round = True
+                try:
+                    charging_unit._apply_charge_move_devastating_wounds()
+                except Exception:
+                    pass
                 print(f"✅ Charge successful: {charging_unit.name} achieved {final_distance:.1f}\" edge-to-edge distance with {target_unit.name}")
                 return True
             else:

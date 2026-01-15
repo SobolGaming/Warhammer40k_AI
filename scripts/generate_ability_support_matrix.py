@@ -1279,6 +1279,7 @@ def _classify_ability(
     aura_oc_support = _aura_objective_control_support(description)
     aura_adv_charge_support = _aura_advance_charge_roll_support(description)
     fall_back_shoot_support = _fall_back_shoot_support(description)
+    charge_move_devastating_support = _charge_move_devastating_wounds_support(description)
     common_support = _bearer_unit_common_support(description)
     leading_support = _leading_unit_common_support(description)
     bearer_invuln_support = _bearer_invulnerable_save_support(description)
@@ -1340,6 +1341,8 @@ def _classify_ability(
         return aura_adv_charge_support
     if fall_back_shoot_support:
         return fall_back_shoot_support
+    if charge_move_devastating_support:
+        return charge_move_devastating_support
     if common_support and leading_support:
         if common_support[0] == "Supported" and leading_support[0] == "Supported":
             notes = " ".join([common_support[1], leading_support[1]]).strip()
@@ -2639,6 +2642,31 @@ def _fall_back_shoot_support(description: str) -> Optional[Tuple[str, str]]:
         else:
             notes.append("Charge-after-Fall-Back eligibility.")
     return ("Supported", " ".join(notes))
+
+
+def _charge_move_devastating_wounds_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    model_patterns = (
+        r"each time this model makes a charge move until the end of the turn its melee weapons have the devastating wounds ability",
+        r"each time this model makes a charge move until the end of the turn melee weapons equipped by this model have the devastating wounds ability",
+        r"each time this model makes a charge move until the end of the turn melee weapons it is equipped with have the devastating wounds ability",
+    )
+    unit_patterns = (
+        r"each time this unit makes a charge move until the end of the turn melee weapons equipped by models in this unit have the devastating wounds ability",
+        r"each time this models unit makes a charge move until the end of the turn melee weapons equipped by models in that unit have the devastating wounds ability",
+        r"each time this unit makes a charge move until the end of the turn its melee weapons have the devastating wounds ability",
+    )
+    for pattern in model_patterns:
+        if re.fullmatch(pattern, norm):
+            return ("Supported", "On charge: model melee weapons gain Devastating Wounds until end of turn.")
+    for pattern in unit_patterns:
+        if re.fullmatch(pattern, norm):
+            return ("Supported", "On charge: unit melee weapons gain Devastating Wounds until end of turn.")
+    return None
 
 
 def _battlesuit_support_system_support(name: str, description: str) -> Optional[Tuple[str, str]]:

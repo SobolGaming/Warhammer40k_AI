@@ -203,11 +203,15 @@ class Model:
 
     def has_temporary_devastating_wounds_melee(self) -> bool:
         eff = getattr(self, "_temporary_effects", {}) or {}
-        try:
-            v = eff.get("possessed_lord", {})
-            return bool(v.get("devastating_wounds_melee", False))
-        except Exception:
+        if not isinstance(eff, dict):
             return False
+        for v in eff.values():
+            try:
+                if bool(v.get("devastating_wounds_melee", False)):
+                    return True
+            except Exception:
+                continue
+        return False
 
     # ---------------- Code Chivalric helpers ----------------
 

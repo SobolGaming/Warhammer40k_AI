@@ -878,6 +878,12 @@ class Unit:
         r"for\s+each\s+4\+.*?d3\s+mortal\s+wounds?",
         re.IGNORECASE,
     )
+    _CHARGE_MOVE_DEVASTATING_WOUNDS_RE = re.compile(
+        r"each\s+time\s+this\s+(?:model|unit|model'?s\s+unit)\s+makes?\s+a\s+charge\s+move.*?"
+        r"until\s+the\s+end\s+of\s+(?:the\s+)?turn.*?"
+        r"melee\s+weapons.*?devastating\s+wounds",
+        re.IGNORECASE,
+    )
     _CHARGE_END_MORTAL_TABLE_RE = re.compile(
         r"each\s+time\s+(?:this\s+model'?s\s+unit|this\s+unit)\s+ends?\s+a\s+charge\s+move.*?"
         r"(?:select|choose)\s+one\s+enemy\s+unit\s+within\s+engagement\s+range.*?"
@@ -8785,6 +8791,73 @@ class Unit:
         except Exception:
             pass
         return True
+
+    def _grant_charge_move_devastating_wounds(self, model: 'Model', source: str = "") -> None:
+        """Apply temporary Devastating Wounds (melee) to a model until end of turn."""
+        if model is None:
+            return
+        if not isinstance(getattr(model, "_temporary_effects", None), dict):
+            model._temporary_effects = {}
+        model._temporary_effects["charge_move_devastating_wounds"] = {
+            "devastating_wounds_melee": True,
+            "expires_phase": "FIGHT_PHASE",
+            "source": str(source or "Charge move ability"),
+        }
+
+    def _apply_charge_move_devastating_wounds(self) -> bool:
+        """
+        Apply temporary Devastating Wounds (melee) to models when the unit completes a charge move.
+
+        Supports rules like:
+          "Each time this model makes a Charge move, until the end of the turn, its melee weapons have the
+          [DEVASTATING WOUNDS] ability."
+        """
+        applied = False
+
+        def _iter_sentences(text: str) -> list[str]:
+            if not text:
+                return []
+            cleaned = re.sub(r";\s*", ". ", text)
+            return [part.strip() for part in re.split(r"\.\s*", cleaned) if part.strip()]
+
+        try:
+            members = list(self.get_attached_unit_members() or [])
+        except Exception:
+            members = [self]
+
+        # Unit-level abilities (apply to all models in that unit member).
+        for unit in members:
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text = unit._normalize_rules_text(desc or name or "")
+                if not text:
+                    continue
+                text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+                for sentence in _iter_sentences(text):
+                    if self._CHARGE_MOVE_DEVASTATING_WOUNDS_RE.search(sentence):
+                        for model in list(getattr(unit, "models", []) or []):
+                            if not getattr(model, "is_alive", True):
+                                continue
+                            self._grant_charge_move_devastating_wounds(model, source=name or "Charge move ability")
+                        applied = True
+                        break
+
+        # Model-level abilities (apply only to that model).
+        for unit in members:
+            for model in list(getattr(unit, "models", []) or []):
+                if model is None or not getattr(model, "is_alive", True):
+                    continue
+                for name, desc in unit._iter_model_specific_ability_entries(model):
+                    text = unit._normalize_rules_text(desc or name or "")
+                    if not text:
+                        continue
+                    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+                    for sentence in _iter_sentences(text):
+                        if self._CHARGE_MOVE_DEVASTATING_WOUNDS_RE.search(sentence):
+                            self._grant_charge_move_devastating_wounds(model, source=name or "Charge move ability")
+                            applied = True
+                            break
+
+        return applied
 
     def fall_back(self, destination: Tuple[float, float, float], path: List[Tuple[float, float, float]], game_map: 'Map') -> bool:
         """Falls back from close combat.
