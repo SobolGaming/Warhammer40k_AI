@@ -8862,6 +8862,31 @@ class Game:
             player2_units = len(self.players[1].get_army().units)
             print(f"✅ {self.players[0].name}: {player1_units} units loaded from {player1_army_file}")
             print(f"✅ {self.players[1].name}: {player2_units} units loaded from {player2_army_file}")
+            try:
+                for player in list(self.players[:2]):
+                    if player is None:
+                        continue
+                    army = getattr(player, "get_army", lambda: None)()
+                    if army is None:
+                        continue
+                    pending = list(army.get_pending_daemonic_allegiance_units() or [])
+                    if not pending:
+                        continue
+                    try:
+                        is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+                    except Exception:
+                        is_human = False
+                    if is_human and getattr(self, "event_system", None) is not None:
+                        self.event_system.publish(
+                            "daemonic_allegiance_prompt",
+                            player=player,
+                            units=pending,
+                            game=self,
+                        )
+                    else:
+                        army.resolve_daemonic_allegiances(player=player)
+            except Exception:
+                pass
         else:
             print("⚠️ Not enough players loaded")
     

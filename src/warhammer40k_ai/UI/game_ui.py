@@ -1519,6 +1519,8 @@ class GameView:
         self._pending_shadow_form_queue = []
         # Angron Wrathful Presence selection queue
         self._pending_wrathful_presence_queue = []
+        # Daemonic Allegiance selection queue (Soul Grinder)
+        self._pending_daemonic_allegiance_queue = []
         # Chaos Knights: Harbingers of Dread selection queue
         self._pending_harbingers_queue = []
         # Adeptus Mechanicus: Doctrina Imperatives selection queue
@@ -1572,6 +1574,8 @@ class GameView:
                 self.game.event_system.subscribe("oath_of_moment_prompt", self._on_oath_of_moment_prompt)
                 # Imperial Knights: Code Chivalric selection (setup)
                 self.game.event_system.subscribe("code_chivalric_prompt", self._on_code_chivalric_prompt)
+                # Daemonic Allegiance selection (muster phase)
+                self.game.event_system.subscribe("daemonic_allegiance_prompt", self._on_daemonic_allegiance_prompt)
                 # Imperial Knights: Bondsman selection (Command phase)
                 self.game.event_system.subscribe("bondsman_prompt", self._on_bondsman_prompt)
                 # Tyranids: Shadow in the Warp prompt (either Command phase)
@@ -6864,6 +6868,82 @@ class GameView:
         )
         try:
             self.dialog_manager.open(self.wrathful_presence_dialog, modal=True)
+        except Exception:
+            pass
+
+    def _on_daemonic_allegiance_prompt(self, player=None, units=None, game=None, **_kwargs):
+        if player is None:
+            return
+        for unit in list(units or []):
+            self._pending_daemonic_allegiance_queue.append((player, unit))
+        self._open_next_daemonic_allegiance_prompt(game or self.game)
+
+    def _open_next_daemonic_allegiance_prompt(self, game) -> None:
+        queue = list(getattr(self, "_pending_daemonic_allegiance_queue", []) or [])
+        if not queue:
+            return
+        try:
+            player, unit = queue.pop(0)
+        except Exception:
+            return
+        self._pending_daemonic_allegiance_queue = queue
+        if unit is None:
+            self._open_next_daemonic_allegiance_prompt(game)
+            return
+        try:
+            if unit.get_daemonic_allegiance_selection():
+                self._open_next_daemonic_allegiance_prompt(game)
+                return
+        except Exception:
+            pass
+        try:
+            options = list(unit.get_daemonic_allegiance_options() or [])
+        except Exception:
+            options = []
+        if not options:
+            self._open_next_daemonic_allegiance_prompt(game)
+            return
+
+        if not hasattr(self, "daemonic_allegiance_dialog") or self.daemonic_allegiance_dialog is None:
+            try:
+                from .dialogs import DaemonicAllegianceDialog
+                sw, sh = self.screen.get_size()
+                self.daemonic_allegiance_dialog = DaemonicAllegianceDialog(sw, sh)
+            except Exception:
+                self.daemonic_allegiance_dialog = None
+        if self.daemonic_allegiance_dialog is None:
+            self._open_next_daemonic_allegiance_prompt(game)
+            return
+
+        def _on_confirm(opt):
+            try:
+                keyword = opt[0] if isinstance(opt, (list, tuple)) else str(opt)
+                unit.apply_daemonic_allegiance_selection(keyword)
+            except Exception:
+                pass
+            try:
+                from ..utility.event_bus import append_action
+                append_action(player.name, f"Daemonic Allegiance: {getattr(unit, 'daemonic_allegiance', '')} ({unit.name})")
+            except Exception:
+                pass
+            self._open_next_daemonic_allegiance_prompt(game)
+
+        def _on_cancel():
+            try:
+                if options:
+                    unit.apply_daemonic_allegiance_selection(options[0][0])
+            except Exception:
+                pass
+            self._open_next_daemonic_allegiance_prompt(game)
+
+        self.daemonic_allegiance_dialog.show(
+            options=options,
+            unit_name=getattr(unit, "name", ""),
+            on_confirm=_on_confirm,
+            on_cancel=_on_cancel,
+        )
+        try:
+            self.dialog_manager.open(self.daemonic_allegiance_dialog, modal=True)
         except Exception:
             pass
 

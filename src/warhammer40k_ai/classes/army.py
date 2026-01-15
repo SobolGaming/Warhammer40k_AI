@@ -440,6 +440,10 @@ class Army:
         #elif unit.faction_keywords != self.faction_keyword:
         #    raise ArmyValidationError(f"Unit {unit.name} does not match army faction {self.faction}.")
         unit.set_parent_army(self)
+        try:
+            unit.apply_daemonic_allegiance_selection()
+        except ValueError as exc:
+            raise ArmyValidationError(str(exc))
         self.units.append(unit)
         return True
 
@@ -860,6 +864,90 @@ class Army:
                 raise ArmyValidationError(
                     f"Unit '{unit.name}' is spawn-only and cannot be mustered; it is created by other rules."
                 )
+
+    def get_pending_daemonic_allegiance_units(self) -> List[Unit]:
+        pending: list[Unit] = []
+        for unit in list(getattr(self, "units", []) or []):
+            try:
+                options = list(unit.get_daemonic_allegiance_options() or [])
+            except Exception:
+                options = []
+            if not options:
+                continue
+            try:
+                selection = unit.get_daemonic_allegiance_selection()
+            except Exception:
+                selection = None
+            if selection:
+                continue
+            pending.append(unit)
+        return pending
+
+    def resolve_daemonic_allegiances(self, *, player=None) -> None:
+        for unit in list(getattr(self, "units", []) or []):
+            try:
+                options = list(unit.get_daemonic_allegiance_options() or [])
+            except Exception:
+                options = []
+            if not options:
+                continue
+            try:
+                selection = unit.get_daemonic_allegiance_selection()
+            except Exception:
+                selection = None
+            if not selection and player is not None:
+                try:
+                    choice = player._choose_optional_value(
+                        "DAEMONIC_ALLEGIANCE",
+                        [kw for kw, _ in options],
+                        {"unit": unit.name, "options": [kw for kw, _ in options]},
+                    )
+                except Exception:
+                    choice = None
+                if isinstance(choice, str) and choice.strip():
+                    selection = choice
+            if not selection and options:
+                selection = options[0][0]
+            if selection:
+                try:
+                    unit.apply_daemonic_allegiance_selection(selection)
+                except ValueError:
+                    raise ArmyValidationError(
+                        f"Daemonic Allegiance selection '{selection}' is not valid for unit '{unit.name}'."
+                    )
+
+    def validate_daemonic_allegiances(self) -> None:
+        missing: list[str] = []
+        for unit in list(getattr(self, "units", []) or []):
+            try:
+                options = list(unit.get_daemonic_allegiance_options() or [])
+            except Exception:
+                options = []
+            if not options:
+                continue
+            try:
+                selection = unit.get_daemonic_allegiance_selection()
+            except Exception:
+                selection = None
+            if not selection:
+                missing.append(getattr(unit, "name", "Unknown"))
+                continue
+            valid = {kw.lower() for kw, _ in options}
+            if str(selection).strip().lower() not in valid:
+                raise ArmyValidationError(
+                    f"Daemonic Allegiance selection '{selection}' is not valid for unit '{unit.name}'."
+                )
+            try:
+                unit.apply_daemonic_allegiance_selection(selection)
+            except ValueError:
+                raise ArmyValidationError(
+                    f"Daemonic Allegiance selection '{selection}' is not valid for unit '{unit.name}'."
+                )
+        if missing:
+            names = ", ".join(missing)
+            raise ArmyValidationError(
+                f"Daemonic Allegiance requires a keyword selection for: {names}."
+            )
 
     def add_enhancement(self, enhancement, character_unit):
         # Assign an Enhancement to a Character unit
@@ -1772,6 +1860,7 @@ class Army:
         self.validate_enhancements()
         self.validate_warlord()
         self.validate_spawn_only_units()
+        self.validate_daemonic_allegiances()
         self.validate_detachment_rules()
         self.validate_space_marine_chapters()
         self.validate_dreadblades()
@@ -2142,7 +2231,7 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
                 current_enhancement = waha_helper.get_enhancement_by_name(enhancement_name)
                 if not current_enhancement:
                     print(f"Warning: Enhancement not found for {enhancement_name}")
-            elif data.startswith('Daemonic Allegiance:'):
+            elif data.lower().startswith('daemonic allegiance:'):
                 allegiance = data.split(':', 1)[1].strip()
                 current_unit.daemonic_allegiance = allegiance
             else:
@@ -2237,6 +2326,12 @@ def add_unit_to_army(army: Army, unit: Unit, model_count: int, wargear_dict: Dic
                             print(f"  - {gear.name}")
                         for ability in unit.possible_abilities:
                             print(f"  - {ability.name} (Ability Wargear)")
+
+    # Apply Daemonic Allegiance selection (keyword + wargear) if present.
+    try:
+        unit.apply_daemonic_allegiance_selection()
+    except ValueError as exc:
+        raise ArmyValidationError(str(exc))
 
     # Validate final wargear loadout for models in this unit (critical for army-list parsing correctness)
     unit.validate_wargear_selection()

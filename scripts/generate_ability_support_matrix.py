@@ -1303,6 +1303,7 @@ def _classify_ability(
     enemy_fall_back_desperate_escape_support = _enemy_fall_back_desperate_escape_support(description)
     command_phase_bonus_cp_support = _command_phase_bonus_cp_support(description)
     command_phase_regain_wound_support = _command_phase_regain_wound_support(description)
+    daemonic_allegiance_support = _daemonic_allegiance_wargear_support(description)
     reinforcements_denial_support = _reinforcements_denial_support(description)
     cp_on_destroy_support = _gain_cp_on_destroy_support(description)
     battlesuit_support_system_support = _battlesuit_support_system_support(name, description)
@@ -1394,6 +1395,8 @@ def _classify_ability(
         return command_phase_bonus_cp_support
     if command_phase_regain_wound_support:
         return command_phase_regain_wound_support
+    if daemonic_allegiance_support:
+        return daemonic_allegiance_support
     if reinforcements_denial_support:
         return reinforcements_denial_support
     if cp_on_destroy_support:
@@ -2581,6 +2584,87 @@ def _command_phase_regain_wound_support(description: str) -> Optional[Tuple[str,
     if not m:
         return None
     return ("Supported", f"Start of Command phase: this model regains {m.group('amt')} lost wound(s).")
+
+
+def _daemonic_allegiance_wargear_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    header = [
+        "when",
+        "you",
+        "select",
+        "this",
+        "model",
+        "to",
+        "include",
+        "in",
+        "your",
+        "army",
+        "you",
+        "must",
+        "select",
+        "one",
+        "of",
+        "the",
+        "keywords",
+        "below",
+        "until",
+        "the",
+        "end",
+        "of",
+        "the",
+        "battle",
+        "this",
+        "model",
+        "has",
+        "that",
+        "keyword",
+        "and",
+        "the",
+        "additional",
+        "wargear",
+        "stated",
+        "for",
+        "that",
+        "keyword",
+        "below",
+    ]
+    tokens = norm.split()
+    if tokens[:len(header)] != header:
+        return None
+    idx = len(header)
+    if idx >= len(tokens):
+        return None
+    keywords = {"khorne", "tzeentch", "nurgle", "slaanesh"}
+    effect = ["this", "model", "is", "additionally", "equipped", "with"]
+    options: list[tuple[str, str]] = []
+    seen = set()
+    while idx < len(tokens):
+        kw = tokens[idx]
+        if kw not in keywords:
+            return None
+        idx += 1
+        if tokens[idx:idx + len(effect)] != effect:
+            return None
+        idx += len(effect)
+        start = idx
+        while idx < len(tokens) and tokens[idx] not in keywords:
+            idx += 1
+        if start == idx:
+            return None
+        wargear = " ".join(tokens[start:idx]).strip()
+        if not wargear:
+            return None
+        if kw in seen:
+            return None
+        seen.add(kw)
+        options.append((kw, wargear))
+    if not options:
+        return None
+    return ("Supported", "Selects one god keyword at muster and adds the matching wargear to the model.")
 
 
 def _reinforcements_denial_support(description: str) -> Optional[Tuple[str, str]]:

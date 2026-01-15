@@ -130,6 +130,7 @@ class Unit:
         self.is_warlord = False
         self.parent_army = None
         self.spawned_in_battle = False  # Spawn-only units should not be mustered.
+        self.daemonic_allegiance = None
 
         # Game State specific attributes
         self.models_lost = []
@@ -918,6 +919,55 @@ class Unit:
         r"on\s+a\s+6.*?d3\s*\+\s*3\s+mortal\s+wounds?",
         re.IGNORECASE,
     )
+    _DAEMONIC_ALLEGIANCE_WARGEAR_HEADER_TOKENS = (
+        "when",
+        "you",
+        "select",
+        "this",
+        "model",
+        "to",
+        "include",
+        "in",
+        "your",
+        "army",
+        "you",
+        "must",
+        "select",
+        "one",
+        "of",
+        "the",
+        "keywords",
+        "below",
+        "until",
+        "the",
+        "end",
+        "of",
+        "the",
+        "battle",
+        "this",
+        "model",
+        "has",
+        "that",
+        "keyword",
+        "and",
+        "the",
+        "additional",
+        "wargear",
+        "stated",
+        "for",
+        "that",
+        "keyword",
+        "below",
+    )
+    _DAEMONIC_ALLEGIANCE_WARGEAR_KEYWORDS = ("khorne", "tzeentch", "nurgle", "slaanesh")
+    _DAEMONIC_ALLEGIANCE_WARGEAR_EFFECT_TOKENS = (
+        "this",
+        "model",
+        "is",
+        "additionally",
+        "equipped",
+        "with",
+    )
     _BEARER_INVULNERABLE_SAVE_RE = re.compile(
         r"^the bearer has a (\d)\+ invulnerable save\.?$",
         re.IGNORECASE,
@@ -1006,6 +1056,155 @@ class Unit:
                 self.special_rules["spawn_only"] = True
                 self.special_rules["spawn_only_reason"] = "USING SIR HEKHTUR + no points data"
                 return
+
+    def _parse_daemonic_allegiance_wargear_options(self, text: str) -> list[tuple[str, str]]:
+        norm = self._normalize_rules_text(text or "")
+        if not norm:
+            return []
+        tokens = re.sub(r"[^a-z0-9]+", " ", norm.lower()).split()
+        header = list(self._DAEMONIC_ALLEGIANCE_WARGEAR_HEADER_TOKENS)
+        if tokens[:len(header)] != header:
+            return []
+        idx = len(header)
+        if idx >= len(tokens):
+            return []
+        keywords = set(self._DAEMONIC_ALLEGIANCE_WARGEAR_KEYWORDS)
+        effect = list(self._DAEMONIC_ALLEGIANCE_WARGEAR_EFFECT_TOKENS)
+        options: list[tuple[str, str]] = []
+        seen = set()
+        while idx < len(tokens):
+            kw = tokens[idx]
+            if kw not in keywords:
+                return []
+            idx += 1
+            if tokens[idx:idx + len(effect)] != effect:
+                return []
+            idx += len(effect)
+            start = idx
+            while idx < len(tokens) and tokens[idx] not in keywords:
+                idx += 1
+            if start == idx:
+                return []
+            wargear_raw = " ".join(tokens[start:idx]).strip()
+            if not wargear_raw:
+                return []
+            kw_upper = kw.upper()
+            if kw_upper in seen:
+                return []
+            seen.add(kw_upper)
+            resolved = wargear_raw
+            try:
+                want = Unit._norm_wargear_name(wargear_raw)
+                for wg in list(getattr(self, "possible_wargear", []) or []):
+                    try:
+                        if Unit._norm_wargear_name(getattr(wg, "name", "")) == want:
+                            resolved = str(getattr(wg, "name", "") or wargear_raw)
+                            break
+                    except Exception:
+                        continue
+            except Exception:
+                resolved = wargear_raw
+            options.append((kw_upper, resolved))
+        return options
+
+    def get_daemonic_allegiance_options(self) -> list[tuple[str, str]]:
+        cache = getattr(self, "_ability_cache", None)
+        if isinstance(cache, dict) and "daemonic_allegiance_options" in cache:
+            return list(cache.get("daemonic_allegiance_options") or [])
+        options: list[tuple[str, str]] = []
+        for ab in self._iter_active_abilities():
+            try:
+                desc = ab if isinstance(ab, str) else (getattr(ab, "description", "") or getattr(ab, "name", ""))
+            except Exception:
+                desc = ""
+            parsed = self._parse_daemonic_allegiance_wargear_options(desc or "")
+            if parsed:
+                options = parsed
+                break
+        if not isinstance(cache, dict):
+            cache = {}
+        cache["daemonic_allegiance_options"] = list(options)
+        self._ability_cache = cache
+        return list(options)
+
+    def get_daemonic_allegiance_selection(self) -> Optional[str]:
+        choice = getattr(self, "daemonic_allegiance", None)
+        if choice:
+            return str(choice).strip()
+        try:
+            sr = getattr(self, "special_rules", None)
+        except Exception:
+            sr = None
+        if isinstance(sr, dict):
+            choice = sr.get("daemonic_allegiance")
+        return str(choice).strip() if choice else None
+
+    def apply_daemonic_allegiance_selection(self, selection: Optional[str] = None) -> bool:
+        options = list(self.get_daemonic_allegiance_options() or [])
+        if not options:
+            return False
+        if not selection:
+            selection = self.get_daemonic_allegiance_selection()
+        if not selection:
+            sr = getattr(self, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["daemonic_allegiance_pending"] = True
+            self.special_rules = sr
+            return False
+        matched = None
+        for kw, wargear_name in options:
+            if kw.strip().lower() == str(selection).strip().lower():
+                matched = (kw, wargear_name)
+                break
+        if matched is None:
+            raise ValueError(f"Daemonic Allegiance selection '{selection}' is not valid for unit '{self.name}'.")
+        kw, wargear_name = matched
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        if sr.get("daemonic_allegiance_applied") and sr.get("daemonic_allegiance") == kw:
+            return True
+        self.daemonic_allegiance = kw
+        sr["daemonic_allegiance"] = kw
+        sr["daemonic_allegiance_wargear"] = wargear_name
+        sr.pop("daemonic_allegiance_pending", None)
+        if kw not in list(getattr(self, "keywords", []) or []):
+            try:
+                self.keywords.append(kw)
+            except Exception:
+                pass
+        target_norm = Unit._norm_wargear_name(wargear_name)
+        matching = None
+        for wg in list(getattr(self, "possible_wargear", []) or []):
+            try:
+                if Unit._norm_wargear_name(getattr(wg, "name", "")) == target_norm:
+                    matching = wg
+                    break
+            except Exception:
+                continue
+        for model in list(getattr(self, "models", []) or []):
+            try:
+                wargear_list = list(getattr(model, "wargear", []) or [])
+            except Exception:
+                wargear_list = []
+            if any(Unit._norm_wargear_name(getattr(wg, "name", "")) == target_norm for wg in wargear_list if wg):
+                continue
+            if matching is not None:
+                wargear_list.append(matching)
+                model.wargear = wargear_list
+            else:
+                try:
+                    optional = list(getattr(model, "optional_wargear", []) or [])
+                    optional.append(str(wargear_name))
+                    model.optional_wargear = optional
+                except Exception:
+                    pass
+        if matching is None:
+            sr["daemonic_allegiance_wargear_missing"] = wargear_name
+        sr["daemonic_allegiance_applied"] = True
+        self.special_rules = sr
+        return True
 
     def _scan_command_phase_sticky_objective(self) -> bool:
         for ab in self._iter_active_abilities():
