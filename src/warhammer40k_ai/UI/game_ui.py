@@ -1560,6 +1560,9 @@ class GameView:
         # Charge-end mortal wound prompts
         self._pending_charge_mortal_wounds_queue = []
         self._charge_mortal_wounds_flow_active = False
+        # Transport reactive disembark prompts
+        self._pending_transport_reactive_disembark_queue = []
+        self._transport_reactive_disembark_flow_active = False
         try:
             if self.game and getattr(self.game, "event_system", None) is not None:
                 self.game.event_system.subscribe("battle_round_started", self._on_battle_round_started)
@@ -1606,6 +1609,8 @@ class GameView:
                 self.game.event_system.subscribe("frenzy_prompt", self._on_frenzy_prompt)
                 # Charge-end mortal wound target selection
                 self.game.event_system.subscribe("charge_mortal_wounds_prompt", self._on_charge_mortal_wounds_prompt)
+                # Transport reactive disembark prompt
+                self.game.event_system.subscribe("transport_reactive_disembark_prompt", self._on_transport_reactive_disembark_prompt)
                 # Quarry re-pick when quarry is destroyed
                 self.game.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_for_monarch_of_the_hunt)
                 # Battle Focus reactive prompts (Opportunity Seized / Fade Back)
@@ -3768,6 +3773,224 @@ class GameView:
         except Exception:
             self._charge_mortal_wounds_flow_active = False
             self._open_next_charge_mortal_wounds_prompt(game)
+
+    # ---------------- Transport reactive disembark prompts ----------------
+
+    def _on_transport_reactive_disembark_prompt(self, player=None, transport=None, enemy_unit=None, ability=None, game=None, **_kwargs):
+        if player is None or transport is None:
+            return
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return
+        except Exception:
+            return
+
+        entry = (player, transport, enemy_unit, ability)
+        if self._transport_reactive_disembark_flow_active:
+            self._pending_transport_reactive_disembark_queue.append(entry)
+            return
+        self._pending_transport_reactive_disembark_queue.append(entry)
+        self._open_next_transport_reactive_disembark_prompt(game or self.game)
+
+    def _open_next_transport_reactive_disembark_prompt(self, game):
+        q = list(getattr(self, "_pending_transport_reactive_disembark_queue", []) or [])
+        if not q:
+            self._pending_transport_reactive_disembark_queue = []
+            self._transport_reactive_disembark_flow_active = False
+            return
+        player, transport, enemy_unit, ability = q.pop(0)
+        self._pending_transport_reactive_disembark_queue = q
+
+        if player is None or transport is None:
+            self._open_next_transport_reactive_disembark_prompt(game)
+            return
+
+        try:
+            if hasattr(transport, "is_alive") and not transport.is_alive():
+                self._open_next_transport_reactive_disembark_prompt(game)
+                return
+        except Exception:
+            pass
+
+        try:
+            if not getattr(transport, "deployed", True):
+                self._open_next_transport_reactive_disembark_prompt(game)
+                return
+        except Exception:
+            pass
+
+        try:
+            ability_range = float((ability or {}).get("range", 0) or 0)
+        except Exception:
+            ability_range = 0.0
+        if ability_range > 0 and enemy_unit is not None:
+            try:
+                from ..utility.aura_utils import unit_within_range_of_unit
+                if not unit_within_range_of_unit(transport, enemy_unit, ability_range):
+                    self._open_next_transport_reactive_disembark_prompt(game)
+                    return
+            except Exception:
+                pass
+
+        passengers = list(getattr(transport, "transport_passengers", []) or [])
+        if not passengers:
+            self._open_next_transport_reactive_disembark_prompt(game)
+            return
+
+        eligible = []
+        for u in passengers:
+            if u is None:
+                continue
+            try:
+                if not u.is_alive():
+                    continue
+            except Exception:
+                pass
+            try:
+                if getattr(u, "embarked_in", None) is not transport:
+                    continue
+            except Exception:
+                pass
+            try:
+                if getattr(u.round_state, "embarked_this_round", False):
+                    continue
+                if getattr(u.round_state, "disembarked_this_round", False):
+                    continue
+            except Exception:
+                pass
+            eligible.append(u)
+
+        if not eligible:
+            self._open_next_transport_reactive_disembark_prompt(game)
+            return
+
+        self._transport_reactive_disembark_flow_active = True
+
+        def _restore_positions(unit, positions):
+            if not unit or not positions:
+                return
+            for m, pos in positions.items():
+                if pos is None:
+                    continue
+                try:
+                    m.set_location(*pos)
+                except Exception:
+                    pass
+
+        def _disembark_units(selected_units):
+            if not selected_units:
+                self._transport_reactive_disembark_flow_active = False
+                self._open_next_transport_reactive_disembark_prompt(game)
+                return
+
+            queue_units = list(selected_units)
+
+            def _open_next_unit():
+                if not queue_units:
+                    self._transport_reactive_disembark_flow_active = False
+                    self._open_next_transport_reactive_disembark_prompt(game)
+                    return
+                unit = queue_units.pop(0)
+                if unit is None:
+                    _open_next_unit()
+                    return
+                try:
+                    if getattr(unit, "embarked_in", None) is not transport:
+                        _open_next_unit()
+                        return
+                except Exception:
+                    pass
+
+                try:
+                    models = list(unit.get_models_for_collision() or [])
+                except Exception:
+                    models = list(getattr(unit, "models", []) or [])
+                original_positions = {m: m.get_location() for m in models}
+
+                def _placement_validator(model, x: float, y: float, z: float) -> dict:
+                    try:
+                        return unit.validate_disembark_placement(
+                            model,
+                            x,
+                            y,
+                            z,
+                            transport_unit=transport,
+                            game_map=self.game.map,
+                            max_distance=3.0,
+                            require_not_in_engagement=True,
+                        )
+                    except Exception:
+                        return {"valid": False, "reason": "Disembark validation failed"}
+
+                def _on_complete(completed: bool):
+                    if completed:
+                        ok = False
+                        try:
+                            ok = unit.finalize_manual_disembark(
+                                game_map=self.game.map,
+                                transport_unit=transport,
+                                destroyed_transport=False,
+                                emergency=False,
+                                current_turn=self.game.turn,
+                            )
+                        except Exception:
+                            ok = False
+                        if not ok:
+                            _restore_positions(unit, original_positions)
+                    else:
+                        _restore_positions(unit, original_positions)
+                    _open_next_unit()
+
+                try:
+                    if not (hasattr(self, 'individual_model_movement_dialog') and self.individual_model_movement_dialog):
+                        from .dialogs.individual_model_movement_dialog import IndividualModelMovementDialog
+                        self.individual_model_movement_dialog = IndividualModelMovementDialog(
+                            self.game_view.screen.get_width(),
+                            self.game_view.screen.get_height(),
+                        )
+                except Exception:
+                    _open_next_unit()
+                    return
+
+                try:
+                    self.individual_model_movement_dialog.show(
+                        unit,
+                        "deploy",
+                        _on_complete,
+                        self.game.map,
+                        max_distance=0.0,
+                        placement_validator=_placement_validator,
+                    )
+                    self.dialog_manager.open(self.individual_model_movement_dialog, modal=True)
+                except Exception:
+                    _restore_positions(unit, original_positions)
+                    _open_next_unit()
+
+            _open_next_unit()
+
+        def _on_cancel():
+            self._transport_reactive_disembark_flow_active = False
+            self._open_next_transport_reactive_disembark_prompt(game)
+
+        try:
+            if not hasattr(self.game_view, "transport_disembark_dialog"):
+                from .dialogs import TransportDisembarkDialog
+                self.game_view.transport_disembark_dialog = TransportDisembarkDialog(
+                    self.game_view.screen.get_width(),
+                    self.game_view.screen.get_height(),
+                )
+            self.game_view.transport_disembark_dialog.show(
+                transport,
+                eligible,
+                _disembark_units,
+                on_cancel=_on_cancel,
+                confirm_label="Disembark",
+                show_cancel=False,
+            )
+            self.dialog_manager.open(self.game_view.transport_disembark_dialog, modal=True)
+        except Exception:
+            self._transport_reactive_disembark_flow_active = False
+            self._open_next_transport_reactive_disembark_prompt(game)
 
     def _on_oath_of_moment_prompt(self, player=None, game=None, **_kwargs):
         """Prompt human players to select an Oath of Moment target at Command phase start."""

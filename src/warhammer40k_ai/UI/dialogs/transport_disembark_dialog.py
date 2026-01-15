@@ -14,16 +14,32 @@ class TransportDisembarkDialog(BaseDialog):
         self.selected_indices: Set[int] = set()
         self.on_confirm: Optional[Callable[[List], None]] = None
         self.on_cancel: Optional[Callable[[], None]] = None
+        self.confirm_label = "Disembark"
+        self.cancel_label = "Cancel"
+        self.show_cancel = True
 
         self.scroll_offset = 0
         self.max_scroll = 0
 
-    def show(self, transport_unit, passengers: List, on_confirm: Callable[[List], None], on_cancel: Optional[Callable[[], None]] = None) -> None:
+    def show(
+        self,
+        transport_unit,
+        passengers: List,
+        on_confirm: Callable[[List], None],
+        on_cancel: Optional[Callable[[], None]] = None,
+        *,
+        confirm_label: str = "Disembark",
+        cancel_label: str = "Cancel",
+        show_cancel: bool = True,
+    ) -> None:
         self.transport_unit = transport_unit
         self.passengers = list(passengers or [])
         self.selected_indices = set()
         self.on_confirm = on_confirm
         self.on_cancel = on_cancel
+        self.confirm_label = str(confirm_label or "Disembark")
+        self.cancel_label = str(cancel_label or "Cancel")
+        self.show_cancel = bool(show_cancel)
         self.scroll_offset = 0
         super().show()
         self._create_buttons()
@@ -35,6 +51,9 @@ class TransportDisembarkDialog(BaseDialog):
         self.selected_indices = set()
         self.on_confirm = None
         self.on_cancel = None
+        self.confirm_label = "Disembark"
+        self.cancel_label = "Cancel"
+        self.show_cancel = True
         self.scroll_offset = 0
         self.max_scroll = 0
 
@@ -71,8 +90,11 @@ class TransportDisembarkDialog(BaseDialog):
         available_height = self.height - (self.title_bar_height + 120)
         self.max_scroll = max(0, total_height - available_height)
 
-        self.add_button("confirm", self.width - 280, self.height - 55, 120, 38, enabled=True)
-        self.add_button("cancel", self.width - 150, self.height - 55, 120, 38, enabled=True)
+        if self.show_cancel:
+            self.add_button("confirm", self.width - 280, self.height - 55, 120, 38, enabled=True)
+            self.add_button("cancel", self.width - 150, self.height - 55, 120, 38, enabled=True)
+        else:
+            self.add_button("confirm", self.width - 150, self.height - 55, 120, 38, enabled=True)
 
     def _handle_button_click(self, button_name: str) -> bool:
         if button_name == "cancel":
@@ -134,6 +156,6 @@ class TransportDisembarkDialog(BaseDialog):
             else:
                 pygame.draw.rect(screen, PANEL_BORDER, rect, 1)
 
-        self.draw_button(screen, "confirm", "Disembark")
-        self.draw_button(screen, "cancel", "Cancel")
-
+        self.draw_button(screen, "confirm", self.confirm_label or "Disembark")
+        if self.show_cancel:
+            self.draw_button(screen, "cancel", self.cancel_label or "Cancel")

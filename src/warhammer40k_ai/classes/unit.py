@@ -862,6 +862,11 @@ class Unit:
         r"you can remove it from the battlefield and place it into strategic reserves?",
         re.IGNORECASE,
     )
+    _TRANSPORT_REACTIVE_DISEMBARK_RE = re.compile(
+        r"in your opponents movement phase each time an enemy unit is set up(?: on the battlefield)? or ends (?:a )?normal "
+        r"advance or fall back move within (\d+) of this (?:model|unit) any units embarked within it can disembark",
+        re.IGNORECASE,
+    )
     _REROLL_ADVANCE_CHARGE_RE = re.compile(
         r"re-?roll\s+advance\s+and\s+charge\s+rolls?\s+made\s+for\s+(?:this\s+model|the\s+bearer'?s\s+unit|that\s+unit)",
         re.IGNORECASE,
@@ -1108,6 +1113,42 @@ class Unit:
                     "name": name or "Strategic Reserves",
                     "description": desc or "",
                 }
+        return None
+
+    def _scan_transport_reactive_disembark_ability(self):
+        pattern = self._TRANSPORT_REACTIVE_DISEMBARK_RE
+        for ab in self._iter_active_abilities():
+            try:
+                if isinstance(ab, str):
+                    name = ab
+                    desc = ab
+                else:
+                    name = str(getattr(ab, "name", "") or "")
+                    desc = str(getattr(ab, "description", "") or "") or name
+            except Exception:
+                name = ""
+                desc = ""
+            text = self._normalize_rules_text(desc or "")
+            if not text:
+                continue
+            norm = text.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+            norm = re.sub(r"'s\b", "s", norm)
+            norm = re.sub(r"[^a-z0-9]+", " ", norm)
+            norm = re.sub(r"\s+", " ", norm).strip()
+            m = pattern.fullmatch(norm)
+            if not m:
+                continue
+            try:
+                rng = int(m.group(1))
+            except Exception:
+                rng = 0
+            if rng <= 0:
+                continue
+            return {
+                "name": name or "Reactive Disembark",
+                "description": desc or "",
+                "range": rng,
+            }
         return None
 
     def _parse_command_phase_regain_wound_amount(self, text: str) -> int:
@@ -12561,6 +12602,231 @@ class Unit:
 
         return True
 
+    def validate_disembark_placement(
+        self,
+        model: 'Model',
+        x: float,
+        y: float,
+        z: float,
+        *,
+        transport_unit: Optional['Unit'] = None,
+        game_map: Optional['Map'] = None,
+        max_distance: float = 3.0,
+        require_not_in_engagement: bool = True,
+    ) -> dict:
+        """Validate manual disembark placement for a single model."""
+        if game_map is None:
+            return {"valid": False, "reason": "No map context"}
+        if transport_unit is None:
+            transport_unit = self.embarked_in
+        if transport_unit is None:
+            return {"valid": False, "reason": "No transport"}
+
+        transport_base = None
+        try:
+            if transport_unit.models and transport_unit.models[0].is_alive:
+                transport_base = transport_unit.models[0].model_base
+        except Exception:
+            transport_base = None
+        if transport_base is None:
+            transport_base = getattr(transport_unit, "_last_known_base", None)
+        if transport_base is None:
+            return {"valid": False, "reason": "Missing transport position"}
+
+        try:
+            facing = float(getattr(getattr(model, "model_base", None), "facing", 0.0) or 0.0)
+        except Exception:
+            facing = 0.0
+        try:
+            candidate_base = self._create_potential_base(float(x), float(y), float(z), facing, model=model)
+        except Exception:
+            return {"valid": False, "reason": "Invalid base"}
+
+        try:
+            from ..utility.aura_utils import distance_between_bases_3d
+            edge = float(distance_between_bases_3d(candidate_base, transport_base))
+            if edge > float(max_distance) + 1e-6:
+                return {"valid": False, "reason": "Too far from transport"}
+        except Exception:
+            return {"valid": False, "reason": "Range check failed"}
+
+        try:
+            if not game_map.is_within_boundary(model, destination=(float(x), float(y))):
+                return {"valid": False, "reason": "Outside battlefield"}
+        except Exception:
+            pass
+        try:
+            if game_map.check_collision_with_obstacles(model, destination=(float(x), float(y))):
+                return {"valid": False, "reason": "Blocked by terrain"}
+        except Exception:
+            pass
+        try:
+            if game_map.check_collision_with_other_friendly_units(model, destination=(float(x), float(y))):
+                return {"valid": False, "reason": "Collides with friendly unit"}
+        except Exception:
+            pass
+        try:
+            if game_map.check_collision_with_other_enemy_units(model, destination=(float(x), float(y))):
+                return {"valid": False, "reason": "Collides with enemy unit"}
+        except Exception:
+            pass
+
+        if require_not_in_engagement:
+            try:
+                from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
+                for enemy in list(game_map.get_enemy_units(self) or []):
+                    try:
+                        if not getattr(enemy, "deployed", True):
+                            continue
+                        if hasattr(enemy, "is_alive") and not enemy.is_alive():
+                            continue
+                    except Exception:
+                        continue
+                    try:
+                        models = list(enemy.get_models_for_collision() or [])
+                    except Exception:
+                        models = list(getattr(enemy, "models", []) or [])
+                    for em in models:
+                        if not getattr(em, "is_alive", True):
+                            continue
+                        horizontal = float(horizontal_distance_between_bases_2d(candidate_base, em.model_base))
+                        vertical = float(vertical_distance_between_bases(candidate_base, em.model_base))
+                        if horizontal <= 1.0 + 1e-6 and vertical <= 5.0 + 1e-6:
+                            return {"valid": False, "reason": "Within Engagement Range"}
+            except Exception:
+                pass
+
+        return {"valid": True, "reason": "OK"}
+
+    def finalize_manual_disembark(
+        self,
+        game_map: Optional['Map'] = None,
+        transport_unit: Optional['Unit'] = None,
+        *,
+        destroyed_transport: bool = False,
+        emergency: bool = False,
+        current_turn: int = 1,
+    ) -> bool:
+        """Finalize disembark bookkeeping after manual placement."""
+        if game_map is None:
+            print(f"❌ {self.name} cannot disembark (no map context)")
+            return False
+
+        if self.round_state.embarked_this_round and not destroyed_transport:
+            print(f"❌ {self.name} cannot disembark after embarking this turn")
+            return False
+
+        if self.round_state.disembarked_this_round:
+            return False
+
+        if transport_unit is None:
+            transport_unit = self.embarked_in
+        if transport_unit is None:
+            print(f"❌ {self.name} is not embarked in a transport")
+            return False
+
+        transport_rules = {}
+        try:
+            transport_rules = transport_unit._transport_disembark_rules()
+        except Exception:
+            transport_rules = {}
+        allow_after_advance = bool(transport_rules.get("allow_after_advance", False))
+        allow_charge_after_normal_move = bool(transport_rules.get("allow_charge_after_normal_move", False))
+        try:
+            sr = getattr(transport_unit, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("pain_rapid_deployment_active"):
+                allow_after_advance = True
+        except Exception:
+            pass
+
+        if not destroyed_transport:
+            if getattr(transport_unit.round_state, "advanced_this_round", False):
+                if not allow_after_advance:
+                    print(f"??O {self.name} cannot disembark: {transport_unit.name} Advanced this turn")
+                    return False
+            if getattr(transport_unit.round_state, "fell_back_this_round", False):
+                print(f"??O {self.name} cannot disembark: {transport_unit.name} Fell Back this turn")
+                return False
+
+        try:
+            if hasattr(game_map, "units") and self in game_map.units:
+                game_map.units.remove(self)
+        except Exception:
+            pass
+
+        if hasattr(game_map, "place_unit"):
+            if not game_map.place_unit(self):
+                print(f"❌ {self.name} disembark failed: map placement validation failed")
+                return False
+        else:
+            try:
+                game_map.units.append(self)
+            except Exception:
+                pass
+
+        try:
+            transport_unit.remove_passenger(self)
+        except Exception:
+            pass
+
+        self.round_state.disembarked_this_round = True
+        try:
+            army = self.get_parent_army()
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            sr = getattr(self, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            if pname:
+                sr["voice_of_command_disembark_phase"] = pname
+                try:
+                    sr["voice_of_command_disembark_round"] = int(getattr(game, "turn", current_turn) or current_turn)
+                except Exception:
+                    sr["voice_of_command_disembark_round"] = int(current_turn or 0)
+            self.special_rules = sr
+        except Exception:
+            pass
+
+        if destroyed_transport:
+            self.round_state.disembarked_from_destroyed_transport = True
+            self.round_state.disembarked_cannot_charge = True
+            self.round_state.moved_this_round = True
+            self.round_state.remained_stationary_this_round = False
+            try:
+                if not self.is_battle_shocked():
+                    self.apply_status_effect(BattleShockEffect(current_turn))
+            except Exception:
+                pass
+            try:
+                threshold = 3 if emergency else 1
+                for m in list(self.models):
+                    if not getattr(m, "is_alive", False):
+                        continue
+                    roll = get_roll("D6")
+                    if roll <= threshold:
+                        m.take_damage(1, is_mortal=True, game_map=game_map)
+            except Exception:
+                pass
+        else:
+            moved_this_round = bool(getattr(transport_unit.round_state, "moved_this_round", False))
+            remained_stationary = bool(getattr(transport_unit.round_state, "remained_stationary_this_round", False))
+            advanced = bool(getattr(transport_unit.round_state, "advanced_this_round", False))
+            fell_back = bool(getattr(transport_unit.round_state, "fell_back_this_round", False))
+
+            if advanced and allow_after_advance:
+                self.round_state.disembarked_from_moved_transport = True
+                self.round_state.disembarked_cannot_charge = True
+                self.round_state.moved_this_round = True
+                self.round_state.remained_stationary_this_round = False
+            elif moved_this_round and not remained_stationary and not advanced and not fell_back:
+                self.round_state.disembarked_from_moved_transport = True
+                self.round_state.moved_this_round = True
+                self.round_state.remained_stationary_this_round = False
+                if not allow_charge_after_normal_move:
+                    self.round_state.disembarked_cannot_charge = True
+
+        return True
+
     def take_damage(self, amount: int):
         pass
     
@@ -13020,6 +13286,28 @@ class Unit:
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}
         root._ability_cache[cache_key] = ability
+        return ability
+
+    def get_transport_reactive_disembark_ability(self):
+        """
+        Return ability info dict for reactive transport disembark triggers, or None if not available.
+        """
+        cache_key = "transport_reactive_disembark_ability"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        ability = None
+        try:
+            if not bool(getattr(self, "is_transport", False)):
+                ability = None
+            else:
+                ability = self._scan_transport_reactive_disembark_ability()
+        except Exception:
+            ability = None
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = ability
         return ability
 
     def attached_unit_has_icon_of_khorne(self) -> bool:
@@ -16175,6 +16463,13 @@ class Unit:
             game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
             if mgr is not None and game is not None:
                 mgr.maybe_trigger_setup_maneuver(self, game)
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            if game is not None and hasattr(game, "event_system"):
+                game.event_system.publish("unit_set_up", unit=self)
         except Exception:
             pass
         return True

@@ -187,6 +187,9 @@ class Game:
         self.event_system.subscribe("unit_move_ended", self._on_unit_move_ended_detachment_rules)
         # Datasheet abilities that trigger on charge-move end
         self.event_system.subscribe("unit_move_ended", self._on_unit_move_ended_charge_mortal_wounds)
+        # Transport abilities that trigger on enemy movement/setup
+        self.event_system.subscribe("unit_move_ended", self._on_unit_move_ended_transport_reactive_disembark)
+        self.event_system.subscribe("unit_set_up", self._on_unit_set_up_transport_reactive_disembark)
         # Battle Focus triggers (fall back reactions, fight selection, shooting reactions)
         self.event_system.subscribe("unit_move_started", self._on_unit_move_started_battle_focus)
         self.event_system.subscribe("unit_move_ended", self._on_unit_move_ended_battle_focus)
@@ -3846,6 +3849,127 @@ class Game:
                 )
             except Exception:
                 self.resolve_charge_end_mortal_wounds(root, engaged[0], spec)
+
+    def _maybe_prompt_transport_reactive_disembark(self, unit=None) -> None:
+        if unit is None:
+            return
+        try:
+            if not self.is_movement_phase():
+                return
+        except Exception:
+            return
+
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+
+        try:
+            if hasattr(unit, "is_alive") and not unit.is_alive():
+                return
+        except Exception:
+            pass
+        try:
+            if not getattr(unit, "deployed", True):
+                return
+        except Exception:
+            pass
+
+        try:
+            current_player = self.get_current_player()
+        except Exception:
+            current_player = None
+        try:
+            moving_army = unit.get_parent_army()
+        except Exception:
+            moving_army = None
+
+        if current_player is not None and moving_army is not None:
+            try:
+                if current_player.get_army() != moving_army:
+                    return
+            except Exception:
+                pass
+
+        try:
+            from ..utility.aura_utils import unit_within_range_of_unit
+        except Exception:
+            return
+
+        transports = list(getattr(game_map, "units", []) or [])
+        for transport in transports:
+            if transport is None:
+                continue
+            try:
+                if not getattr(transport, "is_transport", False):
+                    continue
+                if hasattr(transport, "is_alive") and not transport.is_alive():
+                    continue
+                if not getattr(transport, "deployed", True):
+                    continue
+            except Exception:
+                continue
+            try:
+                if moving_army is not None and transport.get_parent_army() == moving_army:
+                    continue
+            except Exception:
+                continue
+
+            try:
+                ability = transport.get_transport_reactive_disembark_ability()
+            except Exception:
+                ability = None
+            if not isinstance(ability, dict):
+                continue
+
+            passengers = list(getattr(transport, "transport_passengers", []) or [])
+            if not passengers:
+                continue
+
+            try:
+                rng = float(ability.get("range", 0) or 0)
+            except Exception:
+                rng = 0.0
+            if rng <= 0:
+                continue
+
+            try:
+                if not unit_within_range_of_unit(transport, unit, rng):
+                    continue
+            except Exception:
+                continue
+
+            try:
+                player = transport.get_parent_army().player
+            except Exception:
+                player = None
+            if player is None:
+                continue
+
+            try:
+                if getattr(self, "event_system", None) is not None:
+                    self.event_system.publish(
+                        "transport_reactive_disembark_prompt",
+                        player=player,
+                        transport=transport,
+                        enemy_unit=unit,
+                        ability=ability,
+                        game=self,
+                    )
+            except Exception:
+                continue
+
+    def _on_unit_move_ended_transport_reactive_disembark(self, unit=None, action: str | None = None, **_kwargs) -> None:
+        if unit is None:
+            return
+        action_name = (action or "").strip().lower()
+        if action_name not in ("move", "advance", "fall_back"):
+            return
+        self._maybe_prompt_transport_reactive_disembark(unit)
+
+    def _on_unit_set_up_transport_reactive_disembark(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        self._maybe_prompt_transport_reactive_disembark(unit)
 
     def _on_model_destroyed_rules(self, attacker_model=None, attacker_unit=None, target_model=None, target_unit=None, **_kwargs) -> None:
         # Generic partial support for "gain CP when this model destroys an enemy KEYWORD unit/model".
