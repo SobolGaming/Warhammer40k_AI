@@ -1192,10 +1192,18 @@ def get_validation_rules(movement_type: MovementType, target_unit: 'Unit' = None
 
     elif movement_type == MovementType.PILE_IN:
         from .constants import PILE_IN_DISTANCE
+        pile_in_distance = PILE_IN_DISTANCE
+        try:
+            if moving_unit is not None and hasattr(moving_unit, "get_fight_phase_move_distance_override"):
+                override = moving_unit.get_fight_phase_move_distance_override("pile_in")
+                if override is not None:
+                    pile_in_distance = float(override)
+        except Exception:
+            pass
         base_rules.update({
             'must_end_closer_to_enemies': True,
             'prefer_base_contact': True,  # Prefer ending in base-to-base contact
-            'max_distance_override': PILE_IN_DISTANCE,  # Standard pile-in distance
+            'max_distance_override': pile_in_distance,  # Standard pile-in distance (or override)
             # Fight phase moves should not pay pivot cost; this was causing valid 3" moves to be rejected.
             'apply_pivot_cost': False,
             # Pathfinding is discretized; allow a tiny epsilon so an intended 3.0" move doesn't get rejected as 3.04".
@@ -1217,15 +1225,30 @@ def get_validation_rules(movement_type: MovementType, target_unit: 'Unit' = None
 
     elif movement_type == MovementType.CONSOLIDATE:
         from .constants import CONSOLIDATE_DISTANCE
+        consolidate_distance = CONSOLIDATE_DISTANCE
+        try:
+            if moving_unit is not None and hasattr(moving_unit, "get_fight_phase_move_distance_override"):
+                override = moving_unit.get_fight_phase_move_distance_override("consolidate")
+                if override is not None:
+                    consolidate_distance = float(override)
+        except Exception:
+            pass
         base_rules.update({
             'must_end_closer_to_enemies_or_objectives': True,
             'prefer_base_contact': True,  # Prefer ending in base-to-base contact
-            'max_distance_override': CONSOLIDATE_DISTANCE,  # Standard consolidate distance
+            'max_distance_override': consolidate_distance,  # Standard consolidate distance (or override)
             # Fight phase moves should not pay pivot cost; this was causing valid 3" moves to be rejected.
             'apply_pivot_cost': False,
             # Pathfinding is discretized; allow a tiny epsilon so an intended 3.0" move doesn't get rejected as 3.04".
             'distance_tolerance': 0.05,
         })
+        try:
+            if moving_unit is not None:
+                sr = getattr(moving_unit, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("stratagem_consolidate_requires_engagement"):
+                    base_rules['consolidate_requires_engagement'] = True
+        except Exception:
+            pass
         try:
             if moving_unit is not None and not bool(getattr(moving_unit, "is_flying", False)):
                 base_rules['closest_enemy_unit_exclude_keywords'] = {"AIRCRAFT"}
@@ -2653,6 +2676,11 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
         from .constants import CONSOLIDATE_DISTANCE, BASE_CONTACT_EPSILON
         from ..utility.constants import ENGAGEMENT_RANGE_VERTICAL
         from shapely.geometry import Point as _ShPoint
+        try:
+            max_dist = float(validation_rules.get('max_distance_override', CONSOLIDATE_DISTANCE) or CONSOLIDATE_DISTANCE)
+        except Exception:
+            max_dist = CONSOLIDATE_DISTANCE
+        requires_engagement = bool(validation_rules.get('consolidate_requires_engagement', False))
 
         # Helper: determine if new position is within engagement range of ANY enemy model
         def _is_in_engagement_range_of_any_enemy(enemy_models: list) -> bool:
@@ -2665,7 +2693,7 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
             return False
 
         # Find relevant enemy models (optimize to those that could be reached into engagement)
-        max_relevant_distance = ENGAGEMENT_RANGE_HORIZONTAL + CONSOLIDATE_DISTANCE
+        max_relevant_distance = ENGAGEMENT_RANGE_HORIZONTAL + max_dist
         try:
             exclude_keywords = set(validation_rules.get('closest_enemy_unit_exclude_keywords', []) or [])
         except Exception:
@@ -2694,6 +2722,12 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
                     enemy_models.append(enemy_model)
 
         use_unit = bool(validation_rules.get('closest_enemy_unit', False))
+
+        if requires_engagement and not _is_in_engagement_range_of_any_enemy(enemy_models):
+            return {
+                'valid': False,
+                'reason': 'Consolidate must end within engagement range of an enemy unit'
+            }
 
         if enemy_models:
             if use_unit:
@@ -2744,7 +2778,7 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
                         }
 
                     if validation_rules.get('prefer_base_contact', False):
-                        if closest_distance <= CONSOLIDATE_DISTANCE and new_distance_to_unit > BASE_CONTACT_EPSILON:
+                        if closest_distance <= max_dist and new_distance_to_unit > BASE_CONTACT_EPSILON:
                             return {
                                 'valid': False,
                                 'reason': f'Consolidate must end in base contact with closest enemy unit ({closest_unit.name}) when possible'
@@ -2785,7 +2819,7 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
 
                 # Prefer base contact if achievable within consolidate distance
                 if validation_rules.get('prefer_base_contact', False):
-                    if closest_distance <= CONSOLIDATE_DISTANCE and new_distance_to_closest > BASE_CONTACT_EPSILON:
+                    if closest_distance <= max_dist and new_distance_to_closest > BASE_CONTACT_EPSILON:
                         return {
                             'valid': False,
                             'reason': f'Consolidate must end in base contact with closest enemy ({closest_enemy.name}) when possible'

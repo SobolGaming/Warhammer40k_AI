@@ -425,6 +425,71 @@ def parse_charge_melee_ap_stratagem(name: str, description: str) -> Optional[Dic
     }
 
 
+def parse_consolidate_move_stratagem(name: str, description: str) -> Optional[Dict[str, Any]]:
+    """
+    Parse stratagems that extend Consolidation moves within the Fight phase.
+
+    Pattern (strict):
+    - WHEN: Fight phase, just before a unit Consolidates
+    - TARGET: that unit
+    - EFFECT: each time a model consolidates, it can move up to X" instead of up to 3"
+      Optional: provided the unit ends that Consolidation move within Engagement Range of one or more enemy units
+    """
+    if not description:
+        return None
+
+    when_html = _extract_stratagem_section(description, "WHEN")
+    target_html = _extract_stratagem_section(description, "TARGET")
+    effect_html = _extract_stratagem_section(description, "EFFECT")
+    if not (when_html and target_html and effect_html):
+        return None
+
+    when_text = _strip_html(when_html).lower()
+    if "fight phase" not in when_text:
+        return None
+    if "just before" not in when_text or "consolidat" not in when_text:
+        return None
+
+    effect_text = _strip_html(effect_html).lower().strip().rstrip(".")
+    prefix = "until the end of the phase,"
+    if not effect_text.startswith(prefix):
+        return None
+    rest = effect_text[len(prefix) :].strip()
+
+    m = re.match(
+        r"each time a model in (?:your|that) unit makes a consolidation move, "
+        r"it can move up to (\d+)\" instead of up to (\d+)\"",
+        rest,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+    try:
+        max_dist = int(m.group(1))
+    except Exception:
+        return None
+    tail = rest[m.end() :].strip().rstrip(".")
+    requires_engagement = False
+    if tail:
+        if re.fullmatch(
+            r"provided your unit ends that consolidation move within engagement range of one or more enemy units",
+            tail,
+        ):
+            requires_engagement = True
+        else:
+            return None
+
+    keywords = _extract_kwb_keywords(target_html)
+    return {
+        "max_distance": max_dist,
+        "requires_engagement": requires_engagement,
+        "phases": ["fight"],
+        "target_keywords": keywords,
+        "target_keyword_mode": "all",
+        "name": name or "",
+    }
+
+
 def defensive_reaction_note(spec: Dict[str, Any]) -> str:
     if not spec:
         return "Generic defensive reaction."
@@ -724,6 +789,8 @@ class StratagemManager:
         self._defensive_reaction_cache: Dict[str, Optional[Dict[str, Any]]] = {}
         # Cache parsed generic charge-based melee AP stratagem specs by stratagem id/name.
         self._charge_melee_ap_cache: Dict[str, Optional[Dict[str, Any]]] = {}
+        # Cache parsed consolidate move stratagem specs by stratagem id/name.
+        self._consolidate_move_cache: Dict[str, Optional[Dict[str, Any]]] = {}
 
     def _dequeue_reaction_by_name(self, stratagem_name: str) -> None:
         """Remove the first pending reaction matching this stratagem name."""
@@ -781,6 +848,19 @@ class StratagemManager:
             return self._charge_melee_ap_cache[key]
         spec = parse_charge_melee_ap_stratagem(stratagem.name or "", stratagem.description or "")
         self._charge_melee_ap_cache[key] = spec
+        return spec
+
+    def _get_consolidate_move_spec(self, stratagem: Stratagem) -> Optional[Dict[str, Any]]:
+        if stratagem is None:
+            return None
+        name_u = (str(getattr(stratagem, "name", "") or "")).strip().upper()
+        if name_u in IMPLEMENTED_STRATAGEM_NAMES:
+            return None
+        key = str(getattr(stratagem, "id", "") or name_u)
+        if key in self._consolidate_move_cache:
+            return self._consolidate_move_cache[key]
+        spec = parse_consolidate_move_stratagem(stratagem.name or "", stratagem.description or "")
+        self._consolidate_move_cache[key] = spec
         return spec
 
     def _unit_matches_defensive_target_spec(self, unit: Any, spec: Dict[str, Any]) -> bool:
@@ -1111,7 +1191,9 @@ class StratagemManager:
                 return True
             if self._get_defensive_reaction_spec(stratagem) is not None:
                 return True
-            return self._get_charge_melee_ap_spec(stratagem) is not None
+            if self._get_charge_melee_ap_spec(stratagem) is not None:
+                return True
+            return self._get_consolidate_move_spec(stratagem) is not None
         except Exception:
             return False
 
@@ -1638,6 +1720,7 @@ class StratagemManager:
         es.subscribe("fight_sequence_complete", self._on_fight_sequence_complete)
         # Fight attacks resolved (for A WORTHY SKULL).
         es.subscribe("fight_attacks_resolved", self._on_fight_attacks_resolved)
+        es.subscribe("fight_attacks_resolved", self._on_fight_attacks_resolved_consolidate_stratagems)
         es.subscribe("fight_attacks_resolved", self._on_fight_attacks_resolved_armour_of_contempt_cleanup)
         # Unit destroyed hooks for faction stratagems
         es.subscribe("unit_destroyed", self._on_unit_destroyed)
@@ -1805,6 +1888,14 @@ class StratagemManager:
                             sr.pop("charge_melee_ap_bonus", None)
                             sr.pop("charge_melee_ap_bonus_expires_phase", None)
                             sr.pop("charge_melee_ap_bonus_source", None)
+                        if (
+                            "stratagem_consolidate_distance_override" in sr
+                            or sr.get("stratagem_consolidate_requires_engagement")
+                        ):
+                            sr.pop("stratagem_consolidate_distance_override", None)
+                            sr.pop("stratagem_consolidate_requires_engagement", None)
+                            sr.pop("stratagem_consolidate_expires_phase", None)
+                            sr.pop("stratagem_consolidate_source", None)
                         if sr.get("frenzied_resilience_active") is True:
                             sr.pop("frenzied_resilience_active", None)
                             sr.pop("frenzied_resilience_damage_reduction", None)
@@ -3336,6 +3427,74 @@ class StratagemManager:
                     self._worthy_skull_kills.pop(root, None)
                 except Exception:
                     pass
+
+    def _on_fight_attacks_resolved_consolidate_stratagems(self, unit=None, target_unit=None, **_kwargs) -> None:
+        """
+        Reaction window for consolidate-extension stratagems:
+        Fight phase, just before a unit Consolidates.
+        """
+        try:
+            if unit is None or not self.game:
+                return
+            if (self._current_phase_name or "").strip().lower() != "fight phase":
+                return
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                return
+            try:
+                if not root.is_alive():
+                    return
+            except Exception:
+                pass
+            try:
+                if root.get_parent_army().player is not self.player:
+                    return
+            except Exception:
+                return
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    return
+            except Exception:
+                return
+
+            phase_name = self._current_phase_name or "Fight phase"
+            for s in list(self.available or []):
+                spec = self._get_consolidate_move_spec(s)
+                if not spec:
+                    continue
+                if "fight" not in set(spec.get("phases") or []):
+                    continue
+                if not self._unit_matches_defensive_target_spec(root, spec):
+                    continue
+                if (s.name or "").strip().upper() in self._used_stratagems_this_phase:
+                    continue
+                if not s.can_use(self.player, self.game, target_unit=root, phase_name=phase_name):
+                    continue
+                already = False
+                for r in self._pending_reactions:
+                    try:
+                        if r.get("event") == "before_consolidate" and r.get("stratagem") == s.name and r.get("unit") is root:
+                            already = True
+                            break
+                    except Exception:
+                        continue
+                if already:
+                    continue
+                payload = {
+                    "event": "before_consolidate",
+                    "phase_name": phase_name,
+                    "stratagem": s.name,
+                    "cp_cost": s.cp_cost,
+                    "unit": root,
+                    "target_unit": root,
+                    "last_target_unit": target_unit,
+                }
+                self._queue_reaction(payload)
+        except Exception:
+            return
 
     def _on_fight_attacks_resolved_armour_of_contempt_cleanup(self, unit=None, **_kwargs) -> None:
         if unit is None:
@@ -6342,6 +6501,75 @@ class StratagemManager:
             print(f"⚔️ {s.name}: {getattr(root, 'name', 'Unit')} gains +{int(spec.get('ap_bonus', 1) or 1)} AP on melee weapons this phase.")
             return True
 
+        # Generic: extend Consolidation move distance with an engagement-range requirement (e.g., INCESSANT VIOLENCE).
+        spec = self._get_consolidate_move_spec(s)
+        if spec:
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            if unit is None:
+                print(f"❌ {s.name}: no target unit provided")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if "fight" not in str(phase_name or "").strip().lower():
+                print(f"❌ {s.name}: wrong phase")
+                return False
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print(f"❌ {s.name}: target cannot be selected")
+                    return False
+            except Exception:
+                return False
+            try:
+                if not self._unit_matches_defensive_target_spec(root, spec):
+                    print(f"❌ {s.name}: target does not match keywords")
+                    return False
+            except Exception:
+                return False
+
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                eff_cost = s.cp_cost
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                try:
+                    max_dist = float(spec.get("max_distance", 0) or 0)
+                except Exception:
+                    max_dist = 0.0
+                if max_dist > 0:
+                    try:
+                        current = float(sr.get("stratagem_consolidate_distance_override", 0) or 0)
+                    except Exception:
+                        current = 0.0
+                    if max_dist > current:
+                        sr["stratagem_consolidate_distance_override"] = max_dist
+                if bool(spec.get("requires_engagement", False)):
+                    sr["stratagem_consolidate_requires_engagement"] = True
+                sr["stratagem_consolidate_expires_phase"] = "FIGHT_PHASE"
+                sr["stratagem_consolidate_source"] = s.name
+                root.special_rules = sr
+            except Exception:
+                pass
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
+            print(f"🏃 {s.name}: {getattr(root, 'name', 'Unit')} consolidates up to {int(spec.get('max_distance', 0) or 0)}\" this phase.")
+            return True
+
         # Berzerker Warband: FRENZIED RESILIENCE (-1 Damage allocated this phase)
         if s.name.upper() == "FRENZIED RESILIENCE":
             unit = kwargs.get("unit") or kwargs.get("target_unit")
@@ -6998,6 +7226,8 @@ class StratagemManager:
                     trigger_label = "Trigger: after enemy shooting"
                 elif r.get("event") == "fight_sequence_complete":
                     trigger_label = "Trigger: after enemy fought"
+                elif r.get("event") == "before_consolidate":
+                    trigger_label = "Trigger: before consolidate"
                 elif r.get("event") == "roll_made":
                     trigger_label = "Trigger: roll made"
                 elif r.get("event") == "battle_shock_test_started":
@@ -7030,7 +7260,11 @@ class StratagemManager:
             if not s.is_phase_allowed(phase_name or ""):
                 continue
             name_u = (s.name or "").strip().upper()
-            is_reaction_only = name_u in REACTION_ONLY_STRATAGEM_NAMES or self._get_defensive_reaction_spec(s) is not None
+            is_reaction_only = (
+                name_u in REACTION_ONLY_STRATAGEM_NAMES
+                or self._get_defensive_reaction_spec(s) is not None
+                or self._get_consolidate_move_spec(s) is not None
+            )
             if name_u in pending_names and is_reaction_only:
                 continue
             ctx = {"phase_name": phase_name}

@@ -11913,7 +11913,18 @@ class Unit:
             use_objective = False
             if getattr(movement_type, 'value', None) == 'consolidate':
                 engagement_reachable = target_enemy_edge <= (max_distance + ENGAGEMENT_RANGE_HORIZONTAL)
-                if not engagement_reachable and objectives:
+                requires_engagement = False
+                try:
+                    root = self.get_attached_unit_root()
+                except Exception:
+                    root = self
+                try:
+                    sr = getattr(root, "special_rules", None)
+                    if isinstance(sr, dict) and sr.get("stratagem_consolidate_requires_engagement"):
+                        requires_engagement = True
+                except Exception:
+                    requires_engagement = False
+                if not engagement_reachable and objectives and not requires_engagement:
                     use_objective = True
 
             # Candidate endpoints (in priority order)
@@ -14321,40 +14332,58 @@ class Unit:
         Return a fight-phase move distance override (pile-in / consolidate) if a rule modifies it.
         movement_kind: 'pile_in' or 'consolidate'
         """
+        kind = str(movement_kind).strip().lower()
+        if kind not in ("pile_in", "consolidate"):
+            return None
+
         try:
-            sr = getattr(self, "special_rules", None)
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+
+        override = None
+
+        try:
+            sr = getattr(root, "special_rules", None)
             if isinstance(sr, dict):
                 exp = str(sr.get("battle_focus_sudden_strike_expires_phase", "") or "").strip().upper()
                 if exp:
                     pname = ""
                     try:
-                        army = self.get_parent_army()
+                        army = root.get_parent_army()
                         game = army.player.game if (army is not None and getattr(army, "player", None) is not None) else None
                         phase = getattr(game, "phase", None) if game is not None else None
                         pname = str(getattr(phase, "name", "") or phase or "").strip().upper()
                     except Exception:
                         pname = ""
                     if not pname or pname == exp:
-                        if str(movement_kind).strip().lower() in ("pile_in", "consolidate"):
-                            return 6.0
+                        override = max(float(override or 0.0), 6.0)
         except Exception:
             pass
+
         try:
-            army = self.get_parent_army()
+            army = root.get_parent_army()
             mgr = getattr(army, "blessings_of_khorne", None) if army is not None else None
             game = army.player.game if (army is not None and getattr(army, "player", None) is not None) else None
             br = int(getattr(game, "turn", 0) or 0) if game is not None else 0
-            if mgr is None or br <= 0:
-                return None
-            # Only units that qualify for Blessings benefit
-            if not self.get_attached_unit_root().attached_unit_has_blessings_of_khorne():
-                return None
-            if mgr.is_blessing_active_for_unit("RAGE_FUELLED_INVIGORATION", self, battle_round=br):
-                if str(movement_kind).strip().lower() in ("pile_in", "consolidate"):
-                    return 6.0
+            if mgr is not None and br > 0:
+                if root.attached_unit_has_blessings_of_khorne():
+                    if mgr.is_blessing_active_for_unit("RAGE_FUELLED_INVIGORATION", root, battle_round=br):
+                        override = max(float(override or 0.0), 6.0)
         except Exception:
-            return None
-        return None
+            pass
+
+        if kind == "consolidate":
+            try:
+                sr = getattr(root, "special_rules", None)
+                if isinstance(sr, dict):
+                    dist = sr.get("stratagem_consolidate_distance_override")
+                    if dist is not None:
+                        override = max(float(override or 0.0), float(dist))
+            except Exception:
+                pass
+
+        return float(override) if override else None
 
     def maybe_resolve_pending_separation(self, game_map: Optional['Map'] = None) -> None:
         """Resolve pending separation only if no attack resolution window is active."""
