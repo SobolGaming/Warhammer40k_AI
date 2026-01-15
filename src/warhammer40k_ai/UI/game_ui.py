@@ -1562,6 +1562,9 @@ class GameView:
         # Charge-end mortal wound prompts
         self._pending_charge_mortal_wounds_queue = []
         self._charge_mortal_wounds_flow_active = False
+        # Fight phase end mortal wound prompts
+        self._pending_fight_end_mortal_wounds_queue = []
+        self._fight_end_mortal_wounds_flow_active = False
         # Post-shoot Battle-shock prompts
         self._pending_post_shoot_battleshock_queue = []
         self._post_shoot_battleshock_flow_active = False
@@ -1619,6 +1622,10 @@ class GameView:
                 self.game.event_system.subscribe("frenzy_prompt", self._on_frenzy_prompt)
                 # Charge-end mortal wound target selection
                 self.game.event_system.subscribe("charge_mortal_wounds_prompt", self._on_charge_mortal_wounds_prompt)
+                self.game.event_system.subscribe(
+                    "fight_phase_end_mortal_wounds_prompt",
+                    self._on_fight_phase_end_mortal_wounds_prompt,
+                )
                 # Post-shoot Battle-shock target selection
                 self.game.event_system.subscribe("post_shoot_battleshock_prompt", self._on_post_shoot_battleshock_prompt)
                 # Post-shoot suppression target selection
@@ -3787,6 +3794,89 @@ class GameView:
         except Exception:
             self._charge_mortal_wounds_flow_active = False
             self._open_next_charge_mortal_wounds_prompt(game)
+
+    # ---------------- Fight phase end mortal wound prompts ----------------
+
+    def _on_fight_phase_end_mortal_wounds_prompt(
+        self,
+        player=None,
+        unit=None,
+        model=None,
+        candidates=None,
+        ability=None,
+        on_select=None,
+        **_kwargs,
+    ):
+        if player is None or unit is None or model is None:
+            return
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return
+        except Exception:
+            return
+
+        cand = list(candidates or [])
+        if not cand:
+            return
+
+        if self._fight_end_mortal_wounds_flow_active:
+            self._pending_fight_end_mortal_wounds_queue.append((player, unit, model, cand, ability, on_select))
+            return
+        self._pending_fight_end_mortal_wounds_queue.append((player, unit, model, cand, ability, on_select))
+        self._open_next_fight_end_mortal_wounds_prompt(self.game)
+
+    def _open_next_fight_end_mortal_wounds_prompt(self, game):
+        q = list(getattr(self, "_pending_fight_end_mortal_wounds_queue", []) or [])
+        if not q:
+            self._pending_fight_end_mortal_wounds_queue = []
+            self._fight_end_mortal_wounds_flow_active = False
+            return
+        player, unit, model, candidates, ability, on_select = q.pop(0)
+        self._pending_fight_end_mortal_wounds_queue = q
+
+        if player is None or unit is None or model is None:
+            self._open_next_fight_end_mortal_wounds_prompt(game)
+            return
+        cand = list(candidates or [])
+        if not cand:
+            self._open_next_fight_end_mortal_wounds_prompt(game)
+            return
+
+        ability_name = str((ability or {}).get("source", "") or "Fight phase mortals")
+        title = ability_name
+        subtitle = f"{getattr(model, 'name', 'Model')} ({getattr(unit, 'name', 'Unit')}): select target or cancel."
+
+        def _finish(chosen):
+            try:
+                self.overwatch_shooter_dialog.hide()
+            except Exception:
+                pass
+            if callable(on_select):
+                try:
+                    on_select(chosen)
+                except Exception:
+                    pass
+            self._fight_end_mortal_wounds_flow_active = False
+            self._open_next_fight_end_mortal_wounds_prompt(game)
+
+        def _on_cancel():
+            _finish(None)
+
+        self._fight_end_mortal_wounds_flow_active = True
+        try:
+            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
+                self.overwatch_shooter_dialog.show(
+                    cand,
+                    unit,
+                    _finish,
+                    title=title,
+                    subtitle=subtitle,
+                    on_cancel=_on_cancel,
+                )
+                self.dialog_manager.open(self.overwatch_shooter_dialog, modal=True)
+        except Exception:
+            self._fight_end_mortal_wounds_flow_active = False
+            self._open_next_fight_end_mortal_wounds_prompt(game)
 
     # ---------------- Post-shoot battle-shock prompts ----------------
 

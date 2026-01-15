@@ -1308,6 +1308,7 @@ def _classify_ability(
     post_shoot_battleshock_support = _post_shoot_battleshock_support(description)
     post_shoot_suppression_support = _post_shoot_suppression_support(description)
     fight_phase_engagement_battleshock_support = _fight_phase_engagement_battleshock_support(description)
+    fight_phase_end_mortal_support = _fight_phase_end_mortal_wounds_support(description)
     charge_target_strength_bonus_support = _charge_target_strength_bonus_support(description)
     daemonic_allegiance_support = _daemonic_allegiance_wargear_support(description)
     reinforcements_denial_support = _reinforcements_denial_support(description)
@@ -1412,6 +1413,8 @@ def _classify_ability(
         return post_shoot_suppression_support
     if fight_phase_engagement_battleshock_support:
         return fight_phase_engagement_battleshock_support
+    if fight_phase_end_mortal_support:
+        return fight_phase_end_mortal_support
     if charge_target_strength_bonus_support:
         return charge_target_strength_bonus_support
     if daemonic_allegiance_support:
@@ -2718,6 +2721,21 @@ def _fight_phase_engagement_battleshock_support(description: str) -> Optional[Tu
             f"Start of Fight phase: each enemy unit in Engagement Range takes a Battle-shock test; Below Half-strength suffers -{m.group('penalty')}.",
         )
     return ("Supported", "Start of Fight phase: each enemy unit in Engagement Range takes a Battle-shock test.")
+
+
+def _fight_phase_end_mortal_wounds_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"at the end of the fight phase you can select one enemy unit within engagement range of this model "
+        r"and roll (?:eight|8) d6 for each 4 that enemy unit suffers 1 mortal wounds?"
+    )
+    if not re.fullmatch(pattern, norm):
+        return None
+    return ("Supported", "End of Fight phase: pick an engaged enemy; roll 8D6, each 4+ inflicts 1 mortal wound.")
 
 
 def _charge_target_strength_bonus_support(description: str) -> Optional[Tuple[str, str]]:

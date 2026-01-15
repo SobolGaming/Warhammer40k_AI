@@ -921,6 +921,11 @@ class Unit:
         r"subtracting 1 from that test if that enemy unit is below half strength",
         re.IGNORECASE,
     )
+    _FIGHT_PHASE_END_ENGAGEMENT_MORTAL_EIGHT_D6_RE = re.compile(
+        r"at the end of the fight phase you can select one enemy unit within engagement range of this model "
+        r"and roll (?:eight|8) d6 for each 4 that enemy unit suffers 1 mortal wounds?",
+        re.IGNORECASE,
+    )
     _FIGHT_WITHIN_3_RE = re.compile(
         r"selected\s+to\s+fight.*?eligible\s+to\s+fight.*?within\s+3\"?.*?engagement\s+range",
         re.IGNORECASE,
@@ -16099,6 +16104,56 @@ class Unit:
                 continue
             seen.add(key)
             specs.append({"source": source})
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_end_fight_phase_engagement_mortal_wounds_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: end of Fight phase, select an engaged enemy and roll eight D6 for mortal wounds.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - dice: int
+            - threshold: int
+            - mortal_per_success: int
+        """
+        if model is None:
+            return []
+        cache_key = f"model_fight_phase_end_mortal_wounds:{getattr(model, '_id', id(model))}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[str] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            if not self._FIGHT_PHASE_END_ENGAGEMENT_MORTAL_EIGHT_D6_RE.fullmatch(normalized):
+                continue
+            source = str(name or "Fight phase mortals").strip() or "Fight phase mortals"
+            key = source.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "dice": 8,
+                    "threshold": 4,
+                    "mortal_per_success": 1,
+                }
+            )
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}

@@ -208,6 +208,8 @@ class Game:
         self.event_system.subscribe("charge_declared", self._on_charge_declared_tracking)
         # Fight phase: engagement-range Battle-shock tests
         self.event_system.subscribe("phase_start", self._on_phase_start_engagement_battleshock)
+        # Fight phase: end-of-phase engagement mortal wounds
+        self.event_system.subscribe("phase_end", self._on_phase_end_fight_phase_mortal_wounds)
         # Dark Pacts trigger windows
         self.event_system.subscribe("shooting_targets_selected", self._on_shooting_targets_selected_dark_pacts)
         self.event_system.subscribe("fight_unit_selected", self._on_fight_unit_selected_dark_pacts)
@@ -4346,6 +4348,261 @@ class Game:
                 )
             except Exception:
                 self.resolve_charge_end_mortal_wounds(root, engaged[0], spec)
+
+    def _choose_fight_phase_end_mortal_wounds_target(self, player, unit, model, candidates, spec):
+        if not candidates:
+            return None
+        choice = None
+        if player is not None and hasattr(player, "_choose_optional_value"):
+            try:
+                ctx = {
+                    "unit": getattr(unit, "name", "") or "",
+                    "model": getattr(model, "name", "") or "",
+                    "ability": str((spec or {}).get("source", "") or ""),
+                    "candidates": [getattr(c, "name", "") for c in candidates],
+                }
+                choice = player._choose_optional_value("FIGHT_PHASE_END_MORTAL_WOUNDS_TARGET", list(candidates), ctx)
+            except Exception:
+                choice = None
+        if choice in candidates:
+            return choice
+        if isinstance(choice, str):
+            wanted = choice.strip().lower()
+            for cand in candidates:
+                try:
+                    if str(getattr(cand, "name", "") or "").strip().lower() == wanted:
+                        return cand
+                except Exception:
+                    continue
+        return candidates[0]
+
+    def resolve_fight_phase_end_mortal_wounds(self, unit, model, target_unit, spec) -> None:
+        if unit is None or target_unit is None or not isinstance(spec, dict):
+            return
+        try:
+            dice_count = int(spec.get("dice", 8) or 0)
+        except Exception:
+            dice_count = 0
+        try:
+            threshold = int(spec.get("threshold", 4) or 0)
+        except Exception:
+            threshold = 0
+        try:
+            mortal_per = int(spec.get("mortal_per_success", 1) or 0)
+        except Exception:
+            mortal_per = 0
+        if dice_count <= 0 or threshold <= 0 or mortal_per <= 0:
+            return
+
+        try:
+            from ..utility.dice import get_roll
+        except Exception:
+            return
+
+        rolls = []
+        successes = 0
+        for _ in range(dice_count):
+            try:
+                r = int(get_roll("D6") or 0)
+            except Exception:
+                r = 0
+            rolls.append(r)
+            if r >= threshold:
+                successes += 1
+        total_mw = int(successes * mortal_per)
+
+        ability_name = str(spec.get("source", "") or "Fight phase mortals").strip() or "Fight phase mortals"
+        try:
+            print(
+                f"{ability_name}: {getattr(model, 'name', 'Model')} -> {getattr(target_unit, 'name', 'Target')} "
+                f"(rolls={rolls}) => {total_mw} mortal wounds"
+            )
+        except Exception:
+            pass
+
+        if total_mw > 0:
+            try:
+                unit._apply_mortal_wounds_to_unit(target_unit, total_mw, game_map=getattr(self, "map", None))
+            except Exception:
+                pass
+        try:
+            from ..utility.event_bus import append_action, append_dice
+            pname = str(getattr(getattr(unit.get_parent_army(), "player", None), "name", "") or "")
+            if pname:
+                append_dice(
+                    pname,
+                    f"{ability_name}: rolls {rolls} => {int(total_mw)} mortal wounds to {getattr(target_unit, 'name', 'Target')}.",
+                )
+                append_action(
+                    pname,
+                    f"{ability_name}: {getattr(model, 'name', 'Model')} dealt {int(total_mw)} mortal wounds to {getattr(target_unit, 'name', 'Target')}.",
+                )
+        except Exception:
+            pass
+
+    def _on_phase_end_fight_phase_mortal_wounds(self, player=None, phase=None, **_kwargs) -> None:
+        """Fight phase end: optional mortal wounds against an engaged enemy unit."""
+        try:
+            pname = str(getattr(phase, "name", "") or "").strip().upper()
+        except Exception:
+            pname = ""
+        if pname != "FIGHT_PHASE":
+            return
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+        try:
+            from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
+        except Exception:
+            return
+
+        def _model_in_engagement_with_unit(model, target_unit) -> bool:
+            try:
+                if not getattr(model, "is_alive", False):
+                    return False
+            except Exception:
+                return False
+            try:
+                t_models = list(target_unit.get_models_for_collision() or [])
+            except Exception:
+                t_models = list(getattr(target_unit, "models", []) or [])
+            for t_model in t_models:
+                try:
+                    if not getattr(t_model, "is_alive", False):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    horizontal = float(horizontal_distance_between_bases_2d(model.model_base, t_model.model_base))
+                    vertical = float(vertical_distance_between_bases(model.model_base, t_model.model_base))
+                except Exception:
+                    continue
+                if horizontal <= ENGAGEMENT_RANGE_HORIZONTAL and vertical <= ENGAGEMENT_RANGE_VERTICAL:
+                    return True
+            return False
+
+        for p in list(getattr(self, "players", []) or []):
+            army = getattr(p, "army", None)
+            if army is None:
+                continue
+            for unit in list(getattr(army, "units", []) or []):
+                if unit is None:
+                    continue
+                try:
+                    if not unit.is_alive() or not getattr(unit, "deployed", True):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    if hasattr(unit, "is_in_reserves") and unit.is_in_reserves():
+                        continue
+                    if bool(getattr(unit, "is_embarked", False)):
+                        continue
+                except Exception:
+                    pass
+
+                try:
+                    enemies = list(game_map.get_enemy_units(unit) or [])
+                except Exception:
+                    enemies = []
+                if not enemies:
+                    continue
+
+                for model in list(getattr(unit, "models", []) or []):
+                    try:
+                        if not getattr(model, "is_alive", False):
+                            continue
+                    except Exception:
+                        continue
+                    try:
+                        specs = unit.model_end_fight_phase_engagement_mortal_wounds_specs(model)
+                    except Exception:
+                        specs = []
+                    if not specs:
+                        continue
+
+                    candidates = []
+                    seen_enemy = set()
+                    for enemy in enemies:
+                        if enemy is None:
+                            continue
+                        try:
+                            root = enemy.get_attached_unit_root()
+                        except Exception:
+                            root = enemy
+                        try:
+                            key = str(getattr(root, "_id", None) or id(root))
+                        except Exception:
+                            key = str(id(root))
+                        if key in seen_enemy:
+                            continue
+                        seen_enemy.add(key)
+                        try:
+                            if not root.is_alive() or not getattr(root, "deployed", True):
+                                continue
+                        except Exception:
+                            continue
+                        try:
+                            if hasattr(root, "is_in_reserves") and root.is_in_reserves():
+                                continue
+                            if bool(getattr(root, "is_embarked", False)):
+                                continue
+                        except Exception:
+                            pass
+                        if _model_in_engagement_with_unit(model, root):
+                            candidates.append(root)
+
+                    if not candidates:
+                        continue
+
+                    try:
+                        is_human = bool(getattr(getattr(p, "type", None), "name", "") == "HUMAN")
+                    except Exception:
+                        is_human = False
+
+                    for spec in specs:
+                        ability_name = str(spec.get("source", "") or "Fight phase mortals").strip() or "Fight phase mortals"
+                        ctx = {
+                            "unit": getattr(unit, "name", "") or "",
+                            "model": getattr(model, "name", "") or "",
+                            "ability_name": ability_name,
+                            "phase": "Fight phase",
+                            "candidates": [getattr(c, "name", "") for c in candidates],
+                        }
+                        if is_human:
+                            def _on_select(target_unit, _spec=spec, _unit=unit, _model=model):
+                                if target_unit is None:
+                                    return
+                                self.resolve_fight_phase_end_mortal_wounds(_unit, _model, target_unit, _spec)
+
+                            try:
+                                self.event_system.publish(
+                                    "fight_phase_end_mortal_wounds_prompt",
+                                    player=p,
+                                    unit=unit,
+                                    model=model,
+                                    candidates=list(candidates),
+                                    ability=spec,
+                                    on_select=_on_select,
+                                )
+                            except Exception:
+                                pass
+                            continue
+
+                        should = False
+                        try:
+                            should = bool(getattr(p, "_should_use_optional_ability", lambda *_a, **_k: False)(
+                                "FIGHT_PHASE_END_MORTAL_WOUNDS",
+                                ctx,
+                            ))
+                        except Exception:
+                            should = False
+                        if not should:
+                            continue
+                        target = self._choose_fight_phase_end_mortal_wounds_target(p, unit, model, candidates, spec)
+                        if target is None:
+                            continue
+                        self.resolve_fight_phase_end_mortal_wounds(unit, model, target, spec)
 
     def _maybe_prompt_transport_reactive_disembark(self, unit=None) -> None:
         if unit is None:
