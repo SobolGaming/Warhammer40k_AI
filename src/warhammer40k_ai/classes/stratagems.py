@@ -376,6 +376,55 @@ def parse_defensive_reaction_stratagem(name: str, description: str) -> Optional[
     return None
 
 
+def parse_charge_melee_ap_stratagem(name: str, description: str) -> Optional[Dict[str, Any]]:
+    """
+    Parse stratagems that grant +AP to melee weapons for a unit that charged and has not fought yet.
+
+    Pattern (strict):
+    - WHEN: Fight phase
+    - TARGET: unit that made a Charge move this turn and has not been selected to fight this phase
+    - EFFECT: improve the Armour Penetration characteristic of melee weapons equipped by models in your unit by X
+    """
+    if not description:
+        return None
+
+    when_html = _extract_stratagem_section(description, "WHEN")
+    target_html = _extract_stratagem_section(description, "TARGET")
+    effect_html = _extract_stratagem_section(description, "EFFECT")
+    if not (when_html and target_html and effect_html):
+        return None
+
+    when_text = _strip_html(when_html).lower()
+    if "fight phase" not in when_text:
+        return None
+
+    target_text = _strip_html(target_html).lower()
+    if "charge move" not in target_text or "this turn" not in target_text:
+        return None
+    if not re.search(r"not\s+been\s+selected\s+to\s+fight\s+this\s+phase", target_text):
+        return None
+
+    effect_text = _strip_html(effect_html).lower()
+    m = re.search(
+        r"improve\s+the\s+armou?r\s+penetration\s+characteristic\s+of\s+melee\s+weapons\s+equipped\s+"
+        r"by\s+models\s+in\s+(?:your|that)\s+unit\s+by\s+(\d+)",
+        effect_text,
+    )
+    if not m:
+        return None
+
+    keywords = _extract_kwb_keywords(target_html)
+    return {
+        "ap_bonus": int(m.group(1)),
+        "phases": ["fight"],
+        "requires_charge": True,
+        "requires_not_fought": True,
+        "target_keywords": keywords,
+        "target_keyword_mode": "all",
+        "name": name or "",
+    }
+
+
 def defensive_reaction_note(spec: Dict[str, Any]) -> str:
     if not spec:
         return "Generic defensive reaction."
@@ -673,6 +722,8 @@ class StratagemManager:
         self._used_battle_round: Dict[str, int] = {}
         # Cache parsed generic defensive reaction specs by stratagem id/name.
         self._defensive_reaction_cache: Dict[str, Optional[Dict[str, Any]]] = {}
+        # Cache parsed generic charge-based melee AP stratagem specs by stratagem id/name.
+        self._charge_melee_ap_cache: Dict[str, Optional[Dict[str, Any]]] = {}
 
     def _dequeue_reaction_by_name(self, stratagem_name: str) -> None:
         """Remove the first pending reaction matching this stratagem name."""
@@ -717,6 +768,19 @@ class StratagemManager:
             return self._defensive_reaction_cache[key]
         spec = parse_defensive_reaction_stratagem(stratagem.name or "", stratagem.description or "")
         self._defensive_reaction_cache[key] = spec
+        return spec
+
+    def _get_charge_melee_ap_spec(self, stratagem: Stratagem) -> Optional[Dict[str, Any]]:
+        if stratagem is None:
+            return None
+        name_u = (str(getattr(stratagem, "name", "") or "")).strip().upper()
+        if name_u in IMPLEMENTED_STRATAGEM_NAMES:
+            return None
+        key = str(getattr(stratagem, "id", "") or name_u)
+        if key in self._charge_melee_ap_cache:
+            return self._charge_melee_ap_cache[key]
+        spec = parse_charge_melee_ap_stratagem(stratagem.name or "", stratagem.description or "")
+        self._charge_melee_ap_cache[key] = spec
         return spec
 
     def _unit_matches_defensive_target_spec(self, unit: Any, spec: Dict[str, Any]) -> bool:
@@ -1045,7 +1109,9 @@ class StratagemManager:
             name_u = (stratagem.name or "").strip().upper()
             if name_u in IMPLEMENTED_STRATAGEM_NAMES:
                 return True
-            return self._get_defensive_reaction_spec(stratagem) is not None
+            if self._get_defensive_reaction_spec(stratagem) is not None:
+                return True
+            return self._get_charge_melee_ap_spec(stratagem) is not None
         except Exception:
             return False
 
@@ -1735,6 +1801,10 @@ class StratagemManager:
                             sr.pop("hack_and_slash_active", None)
                             sr.pop("hack_and_slash_ap_bonus", None)
                             sr.pop("hack_and_slash_expires_phase", None)
+                        if sr.get("charge_melee_ap_bonus", 0):
+                            sr.pop("charge_melee_ap_bonus", None)
+                            sr.pop("charge_melee_ap_bonus_expires_phase", None)
+                            sr.pop("charge_melee_ap_bonus_source", None)
                         if sr.get("frenzied_resilience_active") is True:
                             sr.pop("frenzied_resilience_active", None)
                             sr.pop("frenzied_resilience_damage_reduction", None)
@@ -6198,6 +6268,78 @@ class StratagemManager:
             except Exception:
                 pass
             print(f"dYc, HACK AND SLASH: {getattr(unit, 'name', 'Unit')} gains +1 AP on melee weapons this phase.")
+            return True
+
+        # Generic: +AP on melee weapons for a unit that charged and has not fought yet (e.g., CRUEL BLADESMAN).
+        spec = self._get_charge_melee_ap_spec(s)
+        if spec:
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            if unit is None:
+                print(f"❌ {s.name}: no target unit provided")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if "fight" not in str(phase_name or "").strip().lower():
+                print(f"❌ {s.name}: wrong phase")
+                return False
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print(f"❌ {s.name}: target cannot be selected")
+                    return False
+            except Exception:
+                return False
+            try:
+                if not self._unit_matches_defensive_target_spec(root, spec):
+                    print(f"❌ {s.name}: target does not match keywords")
+                    return False
+            except Exception:
+                return False
+            try:
+                charged = bool(getattr(getattr(root, "round_state", None), "charged_this_round", False))
+            except Exception:
+                charged = False
+            if spec.get("requires_charge") and not charged:
+                print(f"❌ {s.name}: target did not charge this turn")
+                return False
+            try:
+                fought = bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False))
+            except Exception:
+                fought = False
+            if spec.get("requires_not_fought") and fought:
+                print(f"❌ {s.name}: target already fought this phase")
+                return False
+
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                eff_cost = s.cp_cost
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                bonus = int(spec.get("ap_bonus", 1) or 1)
+                sr["charge_melee_ap_bonus"] = int(sr.get("charge_melee_ap_bonus", 0) or 0) + bonus
+                sr["charge_melee_ap_bonus_expires_phase"] = "FIGHT_PHASE"
+                sr["charge_melee_ap_bonus_source"] = s.name
+                root.special_rules = sr
+            except Exception:
+                pass
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                pass
+            print(f"⚔️ {s.name}: {getattr(root, 'name', 'Unit')} gains +{int(spec.get('ap_bonus', 1) or 1)} AP on melee weapons this phase.")
             return True
 
         # Berzerker Warband: FRENZIED RESILIENCE (-1 Damage allocated this phase)

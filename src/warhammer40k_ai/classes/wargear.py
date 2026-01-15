@@ -494,6 +494,26 @@ class WargearProfile:
         except Exception:
             pass
         try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                sr = getattr(attacker.parent_unit, "special_rules", None)
+                bonus = int(sr.get("charge_melee_ap_bonus", 0) or 0) if isinstance(sr, dict) else 0
+                if bonus:
+                    apply_bonus = True
+                    exp = str(sr.get("charge_melee_ap_bonus_expires_phase", "") or "").strip().upper() if isinstance(sr, dict) else ""
+                    if exp:
+                        try:
+                            army = attacker.parent_unit.get_parent_army()
+                            game = getattr(getattr(army, "player", None), "game", None)
+                            pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                        except Exception:
+                            pname = ""
+                        if pname and pname != exp:
+                            apply_bonus = False
+                    if apply_bonus:
+                        ap_val -= bonus
+        except Exception:
+            pass
+        try:
             unit = getattr(attacker, "parent_unit", None)
             army = unit.get_parent_army() if unit is not None else None
             mgr = getattr(army, "doctrina_imperatives", None) if army is not None else None
