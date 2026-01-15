@@ -1281,6 +1281,7 @@ def _classify_ability(
     common_support = _bearer_unit_common_support(description)
     leading_support = _leading_unit_common_support(description)
     bearer_invuln_support = _bearer_invulnerable_save_support(description)
+    bearer_smoke_support = _bearer_smoke_keyword_support(description)
     unit_hit_reroll_support = _unit_hit_reroll_ones_support(description)
     unit_wound_reroll_support = _unit_wound_reroll_ones_support(description)
     target_hit_penalty_support = _target_hit_roll_penalty_support(description)
@@ -1348,6 +1349,8 @@ def _classify_ability(
         return leading_support
     if bearer_invuln_support:
         return bearer_invuln_support
+    if bearer_smoke_support:
+        return bearer_smoke_support
     if unit_hit_reroll_support:
         return unit_hit_reroll_support
     if unit_wound_reroll_support:
@@ -1767,6 +1770,17 @@ def _bearer_invulnerable_save_support(description: str) -> Optional[Tuple[str, s
     if not m:
         return None
     return ("Supported", f"Bearer has a {m.group(1)}+ invulnerable save.")
+
+
+def _bearer_smoke_keyword_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    if not re.fullmatch(r"(?:the )?bearer has the smoke keyword", norm):
+        return None
+    return ("Supported", "Bearer gains the SMOKE keyword.")
 
 
 def _attack_roll_plus_cp_on_destroy_support(description: str) -> Optional[Tuple[str, str]]:

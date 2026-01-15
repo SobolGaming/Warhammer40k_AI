@@ -224,6 +224,11 @@ class Unit:
         except Exception:
             # Defensive: never block unit construction due to unsupported/unknown text patterns.
             pass
+        # Parse bearer-only keyword additions (e.g., SMOKE).
+        try:
+            self._refresh_bearer_keyword_flags()
+        except Exception:
+            pass
 
     def _add_stat_additive(self, key: str, delta: int) -> None:
         """Apply an additive stat delta, tracking it for later removal (damaged profiles)."""
@@ -822,6 +827,7 @@ class Unit:
         r"each\s+time\s+(?:a|an)\s+(?:(?P<atype>melee|ranged)\s+)?attack\s+targets\s+the\s+bearer'?s\s+unit,\s+subtract\s+1\s+from\s+the\s+hit\s+roll",
         re.IGNORECASE,
     )
+    _BEARER_SMOKE_KEYWORD_TOKENS = "bearer has the smoke keyword"
     _COMMAND_PHASE_BONUS_CP_RE = re.compile(
         r"(?:at\s+the\s+)?start\s+of\s+(?:each\s+of\s+)?your\s+command\s+phase[s]?\b.*?\bgain\s+(\d+)\s*(?:cp|command point(?:s)?)",
         re.IGNORECASE,
@@ -1813,6 +1819,64 @@ class Unit:
                 if not isinstance(sr, dict):
                     sr = {}
                 sr["bearer_unit_target_hit_penalties"] = list(hit_penalties)
+                u.special_rules = sr
+
+    def _refresh_bearer_keyword_flags(self) -> None:
+        """Parse bearer-only keyword additions (e.g., SMOKE) into special_rules."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+
+        for u in members:
+            try:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                if "ability_added_keywords" in sr:
+                    del sr["ability_added_keywords"]
+                u.special_rules = sr
+            except Exception:
+                continue
+
+        for u in members:
+            added: list[str] = []
+            for ab in u._iter_active_abilities():
+                try:
+                    if isinstance(ab, str):
+                        desc = ab
+                    else:
+                        desc = str(getattr(ab, "description", "") or getattr(ab, "name", "") or "")
+                except Exception:
+                    desc = ""
+                text = u._normalize_rules_text(desc or "")
+                if not text:
+                    continue
+                norm = text.lower().replace("\u2019", "'").replace("\u0192?T", "'")
+                norm = re.sub(r"'s\b", "s", norm)
+                norm = re.sub(r"[^a-z0-9]+", " ", norm)
+                norm = re.sub(r"\s+", " ", norm).strip()
+                if re.fullmatch(r"(?:the )?" + re.escape(self._BEARER_SMOKE_KEYWORD_TOKENS), norm):
+                    added.append("Smoke")
+            if added:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                seen = set()
+                unique = []
+                for kw in added:
+                    k = str(kw).strip()
+                    lk = k.lower()
+                    if not k or lk in seen:
+                        continue
+                    seen.add(lk)
+                    unique.append(k)
+                if unique:
+                    sr["ability_added_keywords"] = unique
                 u.special_rules = sr
 
     def _unit_contains_model_named(self, target: str) -> bool:
@@ -2907,6 +2971,10 @@ class Unit:
         except Exception:
             pass
         try:
+            self._refresh_bearer_keyword_flags()
+        except Exception:
+            pass
+        try:
             self._refresh_command_phase_flags()
         except Exception:
             pass
@@ -3298,6 +3366,10 @@ class Unit:
         self.update_coherency()
         try:
             self._refresh_bearer_unit_common_modifiers()
+        except Exception:
+            pass
+        try:
+            self._refresh_bearer_keyword_flags()
         except Exception:
             pass
 
@@ -4545,6 +4617,18 @@ class Unit:
                         continue
                     seen.add(lk)
                     kws.append(ks)
+                sr = getattr(u, "special_rules", None)
+                if isinstance(sr, dict):
+                    extra = list(sr.get("ability_added_keywords", []) or [])
+                else:
+                    extra = []
+                for k in extra:
+                    ks = str(k)
+                    lk = ks.lower()
+                    if lk in seen:
+                        continue
+                    seen.add(lk)
+                    kws.append(ks)
             except Exception:
                 continue
         return kws
@@ -4820,6 +4904,14 @@ class Unit:
         except Exception:
             pass
         try:
+            self._refresh_bearer_keyword_flags()
+        except Exception:
+            pass
+        try:
+            bodyguard._refresh_bearer_keyword_flags()
+        except Exception:
+            pass
+        try:
             self._refresh_command_phase_flags()
         except Exception:
             pass
@@ -4901,6 +4993,15 @@ class Unit:
         try:
             if bodyguard is not None:
                 bodyguard._refresh_bearer_unit_common_modifiers()
+        except Exception:
+            pass
+        try:
+            self._refresh_bearer_keyword_flags()
+        except Exception:
+            pass
+        try:
+            if bodyguard is not None:
+                bodyguard._refresh_bearer_keyword_flags()
         except Exception:
             pass
         try:
