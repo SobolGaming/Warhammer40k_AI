@@ -2703,6 +2703,7 @@ class Game:
 
         Currently supported:
         - Possessed Lord (Once per battle, start of Fight phase): prompt to activate.
+        - Enhancements that grant Fight First (Once per battle, start of Fight phase).
         """
         try:
             pname = str(getattr(phase, "name", "") or "").strip().upper()
@@ -2775,6 +2776,41 @@ class Game:
                         except Exception:
                             pass
                     break
+            # Enhancement: once per battle, start of Fight phase -> Fight First for bearer's unit.
+            for unit in list(getattr(army, "units", []) or []):
+                try:
+                    if not unit.is_alive():
+                        continue
+                except Exception:
+                    pass
+                try:
+                    if not unit.has_enhancement_fight_first_once_per_battle():
+                        continue
+                except Exception:
+                    continue
+                try:
+                    if not unit.can_use_enhancement_fight_first():
+                        continue
+                except Exception:
+                    continue
+                try:
+                    enh_name = str(getattr(getattr(unit, "enhancement", None), "name", "") or "")
+                except Exception:
+                    enh_name = ""
+                ctx = {
+                    "ability_name": enh_name or "Fight First Enhancement",
+                    "unit": getattr(unit, "name", "") or "",
+                    "phase": "Fight phase",
+                }
+                try:
+                    should = bool(getattr(player, "_should_use_optional_ability", lambda *_a, **_k: False)("ENHANCEMENT_FIGHT_FIRST", ctx))
+                except Exception:
+                    should = False
+                if should:
+                    try:
+                        unit.activate_enhancement_fight_first()
+                    except Exception:
+                        pass
             return
 
         if pname != "COMMAND_PHASE":
@@ -3455,6 +3491,14 @@ class Game:
                             "sensational_performance_expires_phase",
                             "sensational_performance_strength_bonus",
                             "sensational_performance_ap_bonus",
+                        ):
+                            sr.pop(k, None)
+                    exp = str(sr.get("enhancement_fight_first_expires_phase", "") or "").strip().upper()
+                    if exp and exp == pname:
+                        for k in (
+                            "enhancement_fight_first_active",
+                            "enhancement_fight_first_expires_phase",
+                            "enhancement_fight_first_source",
                         ):
                             sr.pop(k, None)
                     exp = str(sr.get("seductive_gambit_expires_phase", "") or "").strip().upper()

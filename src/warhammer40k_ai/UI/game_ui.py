@@ -1831,6 +1831,7 @@ class GameView:
         UI-driven optional ability prompts.
 
         - Possessed Lord: once per battle, start of Fight phase, prompt to activate.
+        - Enhancement: once per battle, start of Fight phase -> Fight First for bearer's unit.
         - Bodyguard return: Command phase, prompt to return destroyed Bodyguard models.
         """
         try:
@@ -1857,7 +1858,7 @@ class GameView:
             if army is None:
                 return
 
-            # Build queue of (unit, model) that can activate Possessed Lord
+            # Build queue of optional activations at the start of the Fight phase.
             queue = []
             for unit in list(getattr(army, "units", []) or []):
                 try:
@@ -1884,8 +1885,30 @@ class GameView:
                             continue
                     except Exception:
                         pass
-                    queue.append((unit, m))
+                    queue.append({"kind": "possessed_lord", "unit": unit, "model": m})
                     break  # typical character: prompt once per unit
+
+            # Enhancement: once per battle, start of Fight phase -> Fight First for bearer's unit.
+            for unit in list(getattr(army, "units", []) or []):
+                try:
+                    if not unit.is_alive():
+                        continue
+                except Exception:
+                    pass
+                try:
+                    if not unit.has_enhancement_fight_first_once_per_battle():
+                        continue
+                    if not unit.can_use_enhancement_fight_first():
+                        continue
+                except Exception:
+                    continue
+                try:
+                    model = unit._get_enhancement_bearer_model()
+                except Exception:
+                    model = None
+                if model is None:
+                    continue
+                queue.append({"kind": "enhancement_fight_first", "unit": unit, "model": model})
 
             if not queue:
                 return
@@ -1991,18 +2014,58 @@ class GameView:
         if not q:
             self._pending_optional_ability_queue = []
             return
-        unit, model = q.pop(0)
+        item = q.pop(0)
         self._pending_optional_ability_queue = q
 
+        kind = "possessed_lord"
+        unit = None
+        model = None
+        if isinstance(item, dict):
+            kind = str(item.get("kind", "possessed_lord") or "possessed_lord")
+            unit = item.get("unit")
+            model = item.get("model")
+        else:
+            try:
+                unit, model = item
+            except Exception:
+                unit = None
+                model = None
+
+        if unit is None or model is None:
+            self._process_next_optional_ability_prompt(player)
+            return
+
         title = "Optional Ability"
-        msg = f"Use Possessed Lord for {getattr(model, 'name', 'Model')} ({getattr(unit, 'name', 'Unit')})?\n\nOnce per battle: +3A (melee) and Devastating Wounds until end of Fight phase."
+        if kind == "enhancement_fight_first":
+            try:
+                enh_name = str(getattr(getattr(unit, "enhancement", None), "name", "") or "").strip()
+            except Exception:
+                enh_name = ""
+            label = enh_name or "Enhancement"
+            msg = (
+                f"Use {label} for {getattr(model, 'name', 'Model')} "
+                f"({getattr(unit, 'name', 'Unit')})?\n\n"
+                "Once per battle: bearer unit gains Fights First until end of Fight phase."
+            )
+        else:
+            msg = (
+                f"Use Possessed Lord for {getattr(model, 'name', 'Model')} "
+                f"({getattr(unit, 'name', 'Unit')})?\n\n"
+                "Once per battle: +3A (melee) and Devastating Wounds until end of Fight phase."
+            )
 
         def _done(chosen: bool):
             if chosen:
-                try:
-                    model.activate_possessed_lord()
-                except Exception:
-                    pass
+                if kind == "enhancement_fight_first":
+                    try:
+                        unit.activate_enhancement_fight_first()
+                    except Exception:
+                        pass
+                else:
+                    try:
+                        model.activate_possessed_lord()
+                    except Exception:
+                        pass
             # Continue queue
             self._process_next_optional_ability_prompt(player)
 

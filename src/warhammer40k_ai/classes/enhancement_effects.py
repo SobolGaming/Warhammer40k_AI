@@ -216,6 +216,22 @@ def parse_enhancement_effects(description: str) -> List[EnhancementEffectSpec]:
             )
         )
 
+    # Once per battle, start of Fight phase: bearer unit gains Fights First until end of phase.
+    if re.search(
+        r"once\s+per\s+battle,\s+at\s+the\s+start\s+of\s+the\s+fight\s+phase,.*?"
+        r"bearer\s+can\s+use\s+this\s+enhancement.*?"
+        r"until\s+the\s+end\s+of\s+the\s+phase,\s+(?:models\s+in\s+)?the\s+bearer'?s\s+unit\s+(?:has|have)\s+the\s+fights\s+first\s+ability",
+        r,
+        flags=re.IGNORECASE,
+    ):
+        out.append(
+            EnhancementEffectSpec(
+                kind="fight_first_once_per_battle_fight_phase",
+                value=1,
+                notes="Once per battle: start of Fight phase, bearer unit can gain Fights First until end of phase.",
+            )
+        )
+
     return out
 
 
@@ -292,6 +308,10 @@ def apply_enhancement_effects(unit, effects: List[EnhancementEffectSpec]) -> Non
 
         if eff.kind == "reroll_charge_objective_target" and eff.supported:
             unit.special_rules["enhancement_charge_reroll_if_target_on_objective"] = True
+            continue
+
+        if eff.kind == "fight_first_once_per_battle_fight_phase" and eff.supported:
+            unit.special_rules["enhancement_fight_first_once_per_battle"] = True
             continue
 
 

@@ -15649,6 +15649,14 @@ class Unit:
         Returns:
             bool: True if the unit has any Fight First ability
         """
+        # Enhancement temporary effects (fight phase) on the attached unit root.
+        try:
+            root = self.get_attached_unit_root()
+            sr = getattr(root, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("enhancement_fight_first_active"):
+                return True
+        except Exception:
+            pass
         # Use cached result if available
         if 'fight_first' in getattr(self, '_ability_cache', {}):
             return self._ability_cache['fight_first']
@@ -15675,6 +15683,78 @@ class Unit:
         self._ability_cache['fight_first'] = found
         
         return found
+
+    def has_enhancement_fight_first_once_per_battle(self) -> bool:
+        """Return True if this unit has a once-per-battle enhancement that grants Fight First."""
+        sr = getattr(self, "special_rules", None)
+        return bool(isinstance(sr, dict) and sr.get("enhancement_fight_first_once_per_battle"))
+
+    def _enhancement_fight_first_once_key(self) -> str:
+        enh = getattr(self, "enhancement", None)
+        base = str(getattr(enh, "id", "") or "").strip()
+        if not base:
+            base = str(getattr(enh, "name", "") or "").strip()
+        if not base:
+            base = "fight_first"
+        return f"enhancement_fight_first:{base}".lower()
+
+    def _get_enhancement_bearer_model(self):
+        for m in list(getattr(self, "models", []) or []):
+            try:
+                if not getattr(m, "is_alive", True):
+                    continue
+            except Exception:
+                continue
+            return m
+        return None
+
+    def can_use_enhancement_fight_first(self) -> bool:
+        if not self.has_enhancement_fight_first_once_per_battle():
+            return False
+        model = self._get_enhancement_bearer_model()
+        if model is None:
+            return False
+        try:
+            if getattr(model, "has_used_once_per_battle", lambda _k: False)(self._enhancement_fight_first_once_key()):
+                return False
+        except Exception:
+            return False
+        return True
+
+    def activate_enhancement_fight_first(self) -> bool:
+        """Activate a once-per-battle enhancement to grant Fight First to the bearer's unit."""
+        if not self.has_enhancement_fight_first_once_per_battle():
+            return False
+        model = self._get_enhancement_bearer_model()
+        if model is None:
+            return False
+        key = self._enhancement_fight_first_once_key()
+        try:
+            if getattr(model, "has_used_once_per_battle", lambda _k: False)(key):
+                return False
+        except Exception:
+            return False
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if getattr(root, "special_rules", None) is None:
+            root.special_rules = {}
+        sr = root.special_rules
+        sr["enhancement_fight_first_active"] = True
+        sr["enhancement_fight_first_expires_phase"] = "FIGHT_PHASE"
+        try:
+            source = str(getattr(getattr(self, "enhancement", None), "name", "") or "").strip()
+            if source:
+                sr["enhancement_fight_first_source"] = source
+        except Exception:
+            pass
+        try:
+            getattr(model, "mark_used_once_per_battle", lambda _k: None)(key)
+        except Exception:
+            pass
+        root.special_rules = sr
+        return True
 
     def _seductive_gambit_active(self) -> bool:
         try:
