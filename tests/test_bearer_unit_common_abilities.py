@@ -206,6 +206,38 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
         self.assertEqual(destroyed, 0)
         self.assertEqual(len(bodyguard.models), models_before)
 
+    def test_leading_unit_phase_move_terrain_only_applies(self):
+        from warhammer40k_ai.utility.calcs import get_validation_rules, MovementType
+
+        ability = {
+            "name": "Trailblazing",
+            "description": (
+                "While this model is leading a unit, models in that unit have a Move characteristic of 10\" and each "
+                "time a model in that unit makes a Normal, Advance, Fall Back or Charge move, it can move "
+                "horizontally through terrain features."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        leader = _make_unit("Leader", abilities=[ability])
+        bodyguard = _make_unit("Bodyguard")
+        bodyguard.attached_leaders = [leader]
+        leader.attached_to = bodyguard
+        leader.can_be_attached_to = ["Bodyguard"]
+
+        bodyguard._refresh_bearer_unit_common_modifiers()
+
+        self.assertEqual(bodyguard.models[0].movement, 10)
+
+        move_rules = get_validation_rules(MovementType.MOVE, moving_unit=bodyguard)
+        self.assertTrue(move_rules.get("can_move_through_terrain"))
+        self.assertFalse(move_rules.get("can_move_through_enemy_models"))
+        self.assertFalse(move_rules.get("can_move_through_friendly_models"))
+
+        charge_rules = get_validation_rules(MovementType.CHARGE, moving_unit=bodyguard)
+        self.assertTrue(charge_rules.get("can_move_through_terrain"))
+        self.assertFalse(charge_rules.get("can_move_through_enemy_models"))
+
     def test_bearer_unit_sustained_hits_applies(self):
         from warhammer40k_ai.classes.wargear import WargearProfile
 

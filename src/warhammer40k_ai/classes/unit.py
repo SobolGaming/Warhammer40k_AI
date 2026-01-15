@@ -798,6 +798,10 @@ class Unit:
         r"models\s+in\s+the\s+bearer'?s\s+unit\s+have\s+a\s+leadership\s+characteristic\s+of\s+(\d+)\+?",
         re.IGNORECASE,
     )
+    _BEARER_UNIT_MOVEMENT_SET_RE = re.compile(
+        r"models\s+in\s+the\s+bearer'?s\s+unit\s+have\s+a\s+move\s+characteristic\s+of\s+(\d+)",
+        re.IGNORECASE,
+    )
     _BEARER_UNIT_OC_BONUS_RE = re.compile(
         r"add\s+(\d+)\s+to\s+the\s+objective\s+control\s+characteristic\s+of\s+(?:models\s+in\s+)?the\s+bearer'?s\s+unit",
         re.IGNORECASE,
@@ -833,6 +837,10 @@ class Unit:
     )
     _BEARER_UNIT_PHASE_MOVE_RE = re.compile(
         r"each\s+time\s+a\s+model\s+in\s+(?:the\s+bearer'?s|that)\s+unit\s+makes\s+a\s+.*?\bmove\b.*?move\s+horizontally\s+through\s+models\s+and\s+terrain\s+features",
+        re.IGNORECASE,
+    )
+    _BEARER_UNIT_PHASE_TERRAIN_ONLY_RE = re.compile(
+        r"each\s+time\s+a\s+model\s+in\s+(?:the\s+bearer'?s|that)\s+unit\s+makes\s+a\s+.*?\bmove\b.*?move\s+horizontally\s+through\s+terrain\s+features",
         re.IGNORECASE,
     )
     _BEARER_UNIT_PHASE_ENGAGEMENT_RE = re.compile(
@@ -1491,6 +1499,10 @@ class Unit:
             except Exception:
                 pass
             try:
+                u.remove_characteristic_modifiers_by_source("ability:bearer_unit_movement_set")
+            except Exception:
+                pass
+            try:
                 u.remove_characteristic_modifiers_by_source("ability:bearer_unit_objective_control")
             except Exception:
                 pass
@@ -1534,6 +1546,7 @@ class Unit:
                     "bearer_unit_target_hit_penalties",
                     "bearer_unit_deep_strike",
                     "bearer_unit_phase_move_types",
+                    "bearer_unit_phase_move_terrain_only_types",
                     "bearer_unit_phase_move_engagement_types",
                     "bearer_unit_auto_pass_desperate_escape",
                 ):
@@ -1555,6 +1568,7 @@ class Unit:
         charge_mods: list[tuple[int, str]] = []
         advance_mods: list[tuple[int, str]] = []
         leadership_sets: list[tuple[int, str]] = []
+        movement_sets: list[tuple[int, str]] = []
         oc_mods: list[tuple[int, str]] = []
         contains_oc_mods: list[tuple[int, str]] = []
         fnp_entries: list[dict] = []
@@ -1565,6 +1579,7 @@ class Unit:
         ignores_cover_sources: set[str] = set()
         hit_penalties: list[dict] = []
         phase_move_types: set[str] = set()
+        phase_move_terrain_only_types: set[str] = set()
         phase_engagement_types: set[str] = set()
         auto_pass_desperate_escape = False
         grant_deep_strike = False
@@ -1649,6 +1664,16 @@ class Unit:
                         if val:
                             source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
                             leadership_sets.append((val, source))
+
+                    m = self._BEARER_UNIT_MOVEMENT_SET_RE.search(sentence)
+                    if m:
+                        try:
+                            val = int(m.group(1))
+                        except Exception:
+                            val = None
+                        if val:
+                            source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
+                            movement_sets.append((val, source))
 
                     m = self._BEARER_UNIT_OC_BONUS_RE.search(sentence)
                     if m:
@@ -1742,6 +1767,10 @@ class Unit:
                         move_types = _parse_move_types(sentence_lower)
                         if move_types:
                             phase_move_types.update(move_types)
+                    elif self._BEARER_UNIT_PHASE_TERRAIN_ONLY_RE.search(sentence_lower):
+                        move_types = _parse_move_types(sentence_lower)
+                        if move_types:
+                            phase_move_terrain_only_types.update(move_types)
 
                     if self._BEARER_UNIT_PHASE_ENGAGEMENT_RE.search(sentence_lower):
                         move_types = _parse_move_types(sentence_lower)
@@ -1788,6 +1817,16 @@ class Unit:
                     u.add_characteristic_modifier(
                         "leadership",
                         Modifier(ModifierOp.SET, int(val), source=f"ability:bearer_unit_leadership:{source}"),
+                    )
+
+        if movement_sets:
+            from ..utility.modifiers import Modifier, ModifierOp
+
+            for u in members:
+                for val, source in movement_sets:
+                    u.add_characteristic_modifier(
+                        "movement",
+                        Modifier(ModifierOp.SET, int(val), source=f"ability:bearer_unit_movement_set:{source}"),
                     )
 
         if oc_mods:
@@ -1892,6 +1931,15 @@ class Unit:
                 if not isinstance(sr, dict):
                     sr = {}
                 sr["bearer_unit_phase_move_types"] = list(move_types_sorted)
+                u.special_rules = sr
+
+        if phase_move_terrain_only_types:
+            move_types_sorted = sorted(phase_move_terrain_only_types)
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["bearer_unit_phase_move_terrain_only_types"] = list(move_types_sorted)
                 u.special_rules = sr
 
         if phase_engagement_types:

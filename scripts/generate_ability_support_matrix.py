@@ -1284,6 +1284,7 @@ def _classify_ability(
     fall_back_shoot_support = _fall_back_shoot_support(description)
     charge_move_devastating_support = _charge_move_devastating_wounds_support(description)
     phase_move_support = _leading_unit_phase_move_support(description)
+    phase_terrain_support = _leading_unit_move_and_phase_terrain_support(description)
     common_support = _bearer_unit_common_support(description)
     leading_support = _leading_unit_common_support(description)
     bearer_invuln_support = _bearer_invulnerable_save_support(description)
@@ -1349,6 +1350,8 @@ def _classify_ability(
         return charge_move_devastating_support
     if phase_move_support:
         return phase_move_support
+    if phase_terrain_support:
+        return phase_terrain_support
     if common_support and leading_support:
         if common_support[0] == "Supported" and leading_support[0] == "Supported":
             notes = " ".join([common_support[1], leading_support[1]]).strip()
@@ -2694,6 +2697,26 @@ def _leading_unit_phase_move_support(description: str) -> Optional[Tuple[str, st
     return (
         "Supported",
         "Leading: unit gains Deep Strike and phase-through movement (Normal/Advance/Fall Back/Charge); auto-pass Desperate Escape tests.",
+    )
+
+
+def _leading_unit_move_and_phase_terrain_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"while this model is leading a unit models in that unit have a move characteristic of (?P<move>\d+) "
+        r"and each time a model in that unit makes a normal advance fall back or charge move "
+        r"it can move horizontally through terrain features"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    return (
+        "Supported",
+        f"Leading: unit Move set to {m.group('move')}\" and can move horizontally through terrain (Normal/Advance/Fall Back/Charge).",
     )
 
 
