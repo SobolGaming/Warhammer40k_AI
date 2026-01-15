@@ -827,6 +827,19 @@ class Unit:
         r"each\s+time\s+(?:a|an)\s+(?:(?P<atype>melee|ranged)\s+)?attack\s+targets\s+the\s+bearer'?s\s+unit,\s+subtract\s+1\s+from\s+the\s+hit\s+roll",
         re.IGNORECASE,
     )
+    _BEARER_UNIT_DEEP_STRIKE_RE = re.compile(
+        r"models\s+in\s+(?:the\s+bearer'?s|that)\s+unit\s+have\s+the\s+deep\s+strike\s+ability",
+        re.IGNORECASE,
+    )
+    _BEARER_UNIT_PHASE_MOVE_RE = re.compile(
+        r"each\s+time\s+a\s+model\s+in\s+(?:the\s+bearer'?s|that)\s+unit\s+makes\s+a\s+.*?\bmove\b.*?move\s+horizontally\s+through\s+models\s+and\s+terrain\s+features",
+        re.IGNORECASE,
+    )
+    _BEARER_UNIT_PHASE_ENGAGEMENT_RE = re.compile(
+        r"models\s+in\s+(?:the\s+bearer'?s|that)\s+unit\s+can\s+move\s+within\s+engagement\s+range\s+of\s+enemy\s+models.*?"
+        r"cannot\s+end\s+that\s+move\s+within\s+engagement\s+range\s+of\s+them",
+        re.IGNORECASE,
+    )
     _BEARER_SMOKE_KEYWORD_TOKENS = "bearer has the smoke keyword"
     _COMMAND_PHASE_BONUS_CP_RE = re.compile(
         r"(?:at\s+the\s+)?start\s+of\s+(?:each\s+of\s+)?your\s+command\s+phase[s]?\b.*?\bgain\s+(\d+)\s*(?:cp|command point(?:s)?)",
@@ -1519,6 +1532,10 @@ class Unit:
                     "bearer_unit_sustained_hits_value_ranged",
                     "bearer_unit_ignores_cover",
                     "bearer_unit_target_hit_penalties",
+                    "bearer_unit_deep_strike",
+                    "bearer_unit_phase_move_types",
+                    "bearer_unit_phase_move_engagement_types",
+                    "bearer_unit_auto_pass_desperate_escape",
                 ):
                     if key in sr:
                         del sr[key]
@@ -1529,7 +1546,7 @@ class Unit:
                 cache = getattr(u, "_ability_cache", None)
                 if isinstance(cache, dict):
                     for k in list(cache.keys()):
-                        if k == "feel_no_pain" or k.startswith("target_hit_penalty:") or k.startswith("model_invulnerable_save:"):
+                        if k == "feel_no_pain" or k == "deep_strike" or k.startswith("target_hit_penalty:") or k.startswith("model_invulnerable_save:"):
                             del cache[k]
             except Exception:
                 pass
@@ -1547,12 +1564,29 @@ class Unit:
         sustained_hits_value_ranged = 0
         ignores_cover_sources: set[str] = set()
         hit_penalties: list[dict] = []
+        phase_move_types: set[str] = set()
+        phase_engagement_types: set[str] = set()
+        auto_pass_desperate_escape = False
+        grant_deep_strike = False
 
         def _iter_sentences(text: str) -> list[str]:
             if not text:
                 return []
             cleaned = re.sub(r";\s*", ". ", text)
             return [part.strip() for part in re.split(r"\.\s*", cleaned) if part.strip()]
+
+        def _parse_move_types(value: str) -> set[str]:
+            types: set[str] = set()
+            low = value.lower()
+            if "normal" in low:
+                types.add("move")
+            if "advance" in low:
+                types.add("advance")
+            if "fall back" in low or "fallback" in low:
+                types.add("fall_back")
+            if "charge" in low:
+                types.add("charge")
+            return types
 
         for u in members:
             for name, desc in u._iter_ability_entries_for_rules(model=None):
@@ -1700,6 +1734,22 @@ class Unit:
                         source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
                         hit_penalties.append({"value": 1, "attack_type": atype, "source": source})
 
+                    sentence_lower = sentence.lower()
+                    if self._BEARER_UNIT_DEEP_STRIKE_RE.search(sentence_lower):
+                        grant_deep_strike = True
+
+                    if self._BEARER_UNIT_PHASE_MOVE_RE.search(sentence_lower):
+                        move_types = _parse_move_types(sentence_lower)
+                        if move_types:
+                            phase_move_types.update(move_types)
+
+                    if self._BEARER_UNIT_PHASE_ENGAGEMENT_RE.search(sentence_lower):
+                        move_types = _parse_move_types(sentence_lower)
+                        if move_types:
+                            phase_engagement_types.update(move_types)
+                        if "desperate escape" in sentence_lower and "automatic" in sentence_lower and "pass" in sentence_lower:
+                            auto_pass_desperate_escape = True
+
         if charge_mods:
             for u in members:
                 sr = getattr(u, "special_rules", None)
@@ -1825,6 +1875,40 @@ class Unit:
                 if not isinstance(sr, dict):
                     sr = {}
                 sr["bearer_unit_target_hit_penalties"] = list(hit_penalties)
+                u.special_rules = sr
+
+        if grant_deep_strike:
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["bearer_unit_deep_strike"] = True
+                u.special_rules = sr
+
+        if phase_move_types:
+            move_types_sorted = sorted(phase_move_types)
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["bearer_unit_phase_move_types"] = list(move_types_sorted)
+                u.special_rules = sr
+
+        if phase_engagement_types:
+            move_types_sorted = sorted(phase_engagement_types)
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["bearer_unit_phase_move_engagement_types"] = list(move_types_sorted)
+                u.special_rules = sr
+
+        if auto_pass_desperate_escape:
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["bearer_unit_auto_pass_desperate_escape"] = True
                 u.special_rules = sr
 
     def _refresh_bearer_keyword_flags(self) -> None:
@@ -14023,10 +14107,17 @@ class Unit:
 
         found = False
         try:
-            if self._disciple_of_khorne_active():
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("bearer_unit_deep_strike"):
                 found = True
         except Exception:
-            found = False
+            pass
+        if not found:
+            try:
+                if self._disciple_of_khorne_active():
+                    found = True
+            except Exception:
+                found = False
         if not found:
             if (
                 self._first_prince_of_chaos_active()
@@ -16193,6 +16284,13 @@ class Unit:
         Returns:
             int: Number of models destroyed during the test
         """
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("bearer_unit_auto_pass_desperate_escape"):
+                print(f"✅ {self.name} automatically passes Desperate Escape tests.")
+                return 0
+        except Exception:
+            pass
         note = str(reason or "").strip()
         if note:
             print(f"💀 {self.name} {note} - taking Desperate Escape Test!")

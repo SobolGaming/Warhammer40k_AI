@@ -1146,7 +1146,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("WE", "Driven by Ultimate Rage (Aura)"): ("Supported", "Friendly WORLD EATERS within 6\" ignore negative Move, Advance/Charge, and melee Hit modifiers."),
         ("WE", "Lord of Murder"): ("Supported", "Conditional Lone Operative within 3\" of friendly WORLD EATERS INFANTRY."),
         ("WE", "Beacons of Rage (Aura)"): ("Supported", "+1 hit (melee) and +1 wound vs Below Half-strength; excludes Monster/Vehicle."),
-        ("WE", "Fire Riders"): ("Partial", "Deep Strike detected; movement/leading-only clauses not enforced."),
+        ("WE", "Fire Riders"): (
+            "Supported",
+            "Leading: unit gains Deep Strike and phase-through movement (Normal/Advance/Fall Back/Charge); auto-pass Desperate Escape tests.",
+        ),
         ("WE", "Forwards, for Blood!"): ("Supported", "Leading: re-roll Advance rolls and the Blood Surge D6."),
         ("WE", "Bloody Fury"): (
             "Supported",
@@ -1280,6 +1283,7 @@ def _classify_ability(
     aura_adv_charge_support = _aura_advance_charge_roll_support(description)
     fall_back_shoot_support = _fall_back_shoot_support(description)
     charge_move_devastating_support = _charge_move_devastating_wounds_support(description)
+    phase_move_support = _leading_unit_phase_move_support(description)
     common_support = _bearer_unit_common_support(description)
     leading_support = _leading_unit_common_support(description)
     bearer_invuln_support = _bearer_invulnerable_save_support(description)
@@ -1343,6 +1347,8 @@ def _classify_ability(
         return fall_back_shoot_support
     if charge_move_devastating_support:
         return charge_move_devastating_support
+    if phase_move_support:
+        return phase_move_support
     if common_support and leading_support:
         if common_support[0] == "Supported" and leading_support[0] == "Supported":
             notes = " ".join([common_support[1], leading_support[1]]).strip()
@@ -2667,6 +2673,28 @@ def _charge_move_devastating_wounds_support(description: str) -> Optional[Tuple[
         if re.fullmatch(pattern, norm):
             return ("Supported", "On charge: unit melee weapons gain Devastating Wounds until end of turn.")
     return None
+
+
+def _leading_unit_phase_move_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"while this model is leading a unit models in that unit have the deep strike ability "
+        r"and each time a model in that unit makes a normal advance fall back or charge move "
+        r"it can move horizontally through models and terrain features "
+        r"when making a normal advance or fall back move models in that unit can move within engagement range "
+        r"of enemy models but cannot end that move within engagement range of them and any desperate escape test"
+        r"(?:s)? (?:is|are) automatically passed"
+    )
+    if not re.fullmatch(pattern, norm):
+        return None
+    return (
+        "Supported",
+        "Leading: unit gains Deep Strike and phase-through movement (Normal/Advance/Fall Back/Charge); auto-pass Desperate Escape tests.",
+    )
 
 
 def _battlesuit_support_system_support(name: str, description: str) -> Optional[Tuple[str, str]]:

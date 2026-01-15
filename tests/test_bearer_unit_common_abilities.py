@@ -166,6 +166,46 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
         inv_val, _source = bodyguard.get_model_invulnerable_save_override(bodyguard.models[0])
         self.assertEqual(inv_val, 4)
 
+    def test_leading_unit_phase_move_and_deep_strike_applies(self):
+        from warhammer40k_ai.utility.calcs import get_validation_rules, MovementType
+
+        ability = {
+            "name": "Phasebound",
+            "description": (
+                "While this model is leading a unit, models in that unit have the Deep Strike ability and each time a "
+                "model in that unit makes a Normal, Advance, Fall Back or Charge move, it can move horizontally "
+                "through models and terrain features. When making a Normal, Advance or Fall Back move, models in "
+                "that unit can move within Engagement Range of enemy models, but cannot end that move within "
+                "Engagement Range of them and any Desperate Escape test is automatically passed."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        leader = _make_unit("Leader", abilities=[ability])
+        bodyguard = _make_unit("Bodyguard")
+        bodyguard.attached_leaders = [leader]
+        leader.attached_to = bodyguard
+        leader.can_be_attached_to = ["Bodyguard"]
+
+        bodyguard._refresh_bearer_unit_common_modifiers()
+
+        self.assertTrue(bodyguard.has_deep_strike())
+
+        move_rules = get_validation_rules(MovementType.MOVE, moving_unit=bodyguard)
+        self.assertTrue(move_rules.get("can_move_through_enemy_models"))
+        self.assertTrue(move_rules.get("can_move_through_friendly_models"))
+        self.assertTrue(move_rules.get("can_move_through_terrain"))
+        self.assertFalse(move_rules.get("cannot_move_within_engagement_range"))
+        self.assertTrue(move_rules.get("cannot_end_in_engagement_range"))
+
+        fall_back_rules = get_validation_rules(MovementType.FALL_BACK, moving_unit=bodyguard)
+        self.assertFalse(fall_back_rules.get("check_desperate_escape", True))
+
+        models_before = len(bodyguard.models)
+        destroyed = bodyguard.take_desperate_escape_test()
+        self.assertEqual(destroyed, 0)
+        self.assertEqual(len(bodyguard.models), models_before)
+
     def test_bearer_unit_sustained_hits_applies(self):
         from warhammer40k_ai.classes.wargear import WargearProfile
 

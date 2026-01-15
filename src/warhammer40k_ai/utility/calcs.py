@@ -1111,6 +1111,7 @@ def get_validation_rules(movement_type: MovementType, target_unit: 'Unit' = None
         'check_terrain_traversal': True,    # Always check if unit can traverse terrain
         'can_move_through_enemy_models': False,
         'can_move_through_friendly_models': False,
+        'can_move_through_terrain': False,
         # Aircraft rule: cannot end any move within Engagement Range of enemy AIRCRAFT (charge exception handled below).
         'cannot_end_within_engagement_range_of_aircraft': True,
     }
@@ -1233,6 +1234,43 @@ def get_validation_rules(movement_type: MovementType, target_unit: 'Unit' = None
         if movement_type in [MovementType.MOVE, MovementType.ADVANCE]:
             base_rules['cannot_move_within_engagement_range'] = False
             base_rules['cannot_end_in_engagement_range'] = True
+
+    def _coerce_move_types(value) -> set[str]:
+        types: set[str] = set()
+        if isinstance(value, str) and value:
+            types.add(str(value))
+        elif isinstance(value, (list, tuple, set)):
+            for item in value:
+                if item:
+                    types.add(str(item))
+        return types
+
+    phase_move_types: set[str] = set()
+    phase_engagement_types: set[str] = set()
+    auto_pass_desperate_escape = False
+    try:
+        sr = getattr(moving_unit, "special_rules", None)
+        if isinstance(sr, dict):
+            phase_move_types = _coerce_move_types(sr.get("bearer_unit_phase_move_types"))
+            phase_engagement_types = _coerce_move_types(sr.get("bearer_unit_phase_move_engagement_types"))
+            auto_pass_desperate_escape = bool(sr.get("bearer_unit_auto_pass_desperate_escape"))
+    except Exception:
+        pass
+
+    move_tag = _movement_type_tag(movement_type)
+    if move_tag and move_tag in phase_move_types:
+        base_rules['can_move_through_enemy_models'] = True
+        base_rules['can_move_through_friendly_models'] = True
+        base_rules['can_move_through_terrain'] = True
+        if base_rules.get('block_titanic_models', False):
+            base_rules['block_titanic_models'] = False
+
+    if move_tag and move_tag in phase_engagement_types:
+        base_rules['cannot_move_within_engagement_range'] = False
+        base_rules['cannot_end_in_engagement_range'] = True
+
+    if auto_pass_desperate_escape and move_tag == "fall_back":
+        base_rules['check_desperate_escape'] = False
 
     if base_rules.get('can_move_through_enemy_models') or base_rules.get('can_move_through_friendly_models'):
         base_rules['can_move_through_models'] = True
@@ -1732,7 +1770,8 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
             return {'valid': False, 'reason': 'Position outside battlefield boundaries'}
 
     # Check terrain collisions using shape intersection
-    if collision_trees.get('terrain'):
+    allow_through_terrain = bool(validation_rules.get('can_move_through_terrain', False))
+    if collision_trees.get('terrain') and not (allow_through_terrain and not is_final_position):
         potential_hits = query_spatial_index(collision_trees['terrain'], test_shape)
         actual_hits = []
 
@@ -1831,7 +1870,7 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
                 return {'valid': False, 'reason': 'Position blocked by friendly models'}
 
     # For FLY non-MONSTER/VEHICLE: still block enemy MONSTER/VEHICLE models during movement.
-    if collision_trees.get('enemy_models_blocking') and not is_final_position:
+    if collision_trees.get('enemy_models_blocking') and not is_final_position and not allow_through_enemy:
         potential_hits = query_spatial_index(collision_trees['enemy_models_blocking'], test_shape)
         for hit_shape in potential_hits:
             try:
