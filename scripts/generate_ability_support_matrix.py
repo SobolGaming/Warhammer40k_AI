@@ -2024,7 +2024,7 @@ def _targeted_stratagem_cp_discount_support(description: str) -> Optional[Tuple[
         return None
     pattern = (
         r"once per battle round one (?:unit|model) from your army with this ability can use it when "
-        r"(?:its unit|this models unit|that models unit) is targeted with a stratagem reduce the cp cost of that "
+        r"(?:its unit|this models unit|that models unit) is targeted with a stratagem(?: if it does)? reduce the cp cost of that "
         r"(?:use|usage) of that stratagem by 1cp"
     )
     if not re.fullmatch(pattern, norm):
@@ -2836,15 +2836,31 @@ def _move_over_friendly_monster_vehicle_support(description: str) -> Optional[Tu
     if not norm:
         return None
     pattern = (
-        r"each time (?:this model|this unit) makes a normal or advance move "
-        r"it can move over friendly monster (?:and|or) vehicle models? and terrain features "
-        r"that are (?P<height>\d+) or less in height as if they were not there"
+        r"each time (?:this model|this unit) makes a (?P<moves>.+?) move "
+        r"it can move (?:over|through) friendly monster (?:and|or) vehicle models? and "
+        r"(?:sections of )?terrain features that are (?P<height>\d+) or less in height"
+        r"(?: as if they were not there)?"
     )
     m = re.fullmatch(pattern, norm)
     if not m:
         return None
+    moves_text = (m.group("moves") or "").strip()
+    tokens = [t for t in moves_text.split() if t]
+    allowed = {"normal", "advance", "fall", "back", "fallback", "or", "and"}
+    if not tokens or any(t not in allowed for t in tokens):
+        return None
+    if "normal" not in tokens:
+        return None
+    move_types = ["Normal"]
+    if "advance" in tokens:
+        move_types.append("Advance")
+    if "fallback" in tokens or "fall back" in moves_text:
+        move_types.append("Fall Back")
+    if not move_types:
+        return None
     height = m.group("height")
-    return ("Supported", f"Normal/Advance: move over friendly MONSTER/VEHICLE models and terrain <= {height}\".")
+    type_label = "/".join(move_types)
+    return ("Supported", f"{type_label}: move through friendly MONSTER/VEHICLE models and terrain <= {height}\".")
 
 
 def _battlesuit_support_system_support(name: str, description: str) -> Optional[Tuple[str, str]]:

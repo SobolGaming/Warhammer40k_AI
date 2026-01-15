@@ -2276,9 +2276,10 @@ class Unit:
                 del sr[key]
 
         pattern = (
-            r"each time (?:this model|this unit) makes a normal or advance move "
-            r"it can move over friendly monster (?:and|or) vehicle models? and terrain features "
-            r"that are (?P<height>\d+) or less in height as if they were not there"
+            r"each time (?:this model|this unit) makes a (?P<moves>.+?) move "
+            r"it can move (?:over|through) friendly monster (?:and|or) vehicle models? and "
+            r"(?:sections of )?terrain features that are (?P<height>\d+) or less in height"
+            r"(?: as if they were not there)?"
         )
         move_types: set[str] = set()
         height_value: Optional[int] = None
@@ -2300,7 +2301,18 @@ class Unit:
             m = re.fullmatch(pattern, norm)
             if not m:
                 continue
-            move_types.update({"move", "advance"})
+            moves_text = (m.group("moves") or "").strip()
+            tokens = [t for t in moves_text.split() if t]
+            allowed = {"normal", "advance", "fall", "back", "fallback", "or", "and"}
+            if not tokens or any(t not in allowed for t in tokens):
+                continue
+            if "normal" not in tokens:
+                continue
+            move_types.add("move")
+            if "advance" in tokens:
+                move_types.add("advance")
+            if "fallback" in tokens or "fall back" in moves_text:
+                move_types.add("fall_back")
             try:
                 height = int(m.group("height"))
             except Exception:
