@@ -1289,6 +1289,7 @@ def _classify_ability(
     common_support = _bearer_unit_common_support(description)
     leading_support = _leading_unit_common_support(description)
     bearer_invuln_support = _bearer_invulnerable_save_support(description)
+    model_fnp_support = _model_fnp_support(description)
     bearer_smoke_support = _bearer_smoke_keyword_support(description)
     unit_hit_reroll_support = _unit_hit_reroll_ones_support(description)
     unit_wound_reroll_support = _unit_wound_reroll_ones_support(description)
@@ -1368,6 +1369,8 @@ def _classify_ability(
         return leading_support
     if bearer_invuln_support:
         return bearer_invuln_support
+    if model_fnp_support:
+        return model_fnp_support
     if bearer_smoke_support:
         return bearer_smoke_support
     if unit_hit_reroll_support:
@@ -1590,21 +1593,19 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
             notes.append(f"{leading_prefix}Objective Control for the unit +{m.group(1)}.")
 
     m = re.search(
-        r"models?\s+in\s+the\s+bearer'?s\s+unit\s+have\s+(?:a\s+|the\s+)?feel\s+no\s+pain\s*([1-6])\+?(?:\s+ability)?",
+        r"(?:models?\s+in\s+)?(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+unit)\s+"
+        r"(?:have|has)\s+(?:a\s+|the\s+)?feel\s+no\s+pain\s*([1-6])\+?(?:\s+ability)?",
         low,
         flags=re.IGNORECASE,
     )
-    if not m and leading_prefix:
-        m = re.search(
-            r"models?\s+in\s+that\s+unit\s+have\s+(?:a\s+|the\s+)?feel\s+no\s+pain\s*([1-6])\+?(?:\s+ability)?",
-            low,
-            flags=re.IGNORECASE,
-        )
     if m:
+        match_text = m.group(0)
         if leading_prefix:
             notes.append(f"{leading_prefix}Feel No Pain {m.group(1)}+.")
-        else:
+        elif "bearer" in match_text:
             notes.append(f"Bearer's unit gains Feel No Pain {m.group(1)}+.")
+        else:
+            notes.append(f"Unit gains Feel No Pain {m.group(1)}+.")
 
     m = re.search(
         r"(?:(melee|ranged)\s+)?weapons?\s+equipped\s+by\s+models\s+in\s+(?:the\s+bearer'?s\s+unit|that\s+unit).*?"
@@ -1682,6 +1683,11 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         rf"{lead_prefix}models? in {unit_ref} have (?:a|the)? feel no pain [1-6](?: ability)? against psychic attacks and mortal wounds?",
         rf"{lead_prefix}models? in {unit_ref} have (?:a|the)? feel no pain [1-6](?: ability)? against mortal wounds?",
         rf"{lead_prefix}models? in {unit_ref} have (?:a|the)? feel no pain [1-6](?: ability)? against mortal wounds? and psychic attacks",
+        rf"{lead_prefix}{unit_ref} has (?:a|the)? feel no pain [1-6](?: ability)?",
+        rf"{lead_prefix}{unit_ref} has (?:a|the)? feel no pain [1-6](?: ability)? against psychic attacks",
+        rf"{lead_prefix}{unit_ref} has (?:a|the)? feel no pain [1-6](?: ability)? against psychic attacks and mortal wounds?",
+        rf"{lead_prefix}{unit_ref} has (?:a|the)? feel no pain [1-6](?: ability)? against mortal wounds?",
+        rf"{lead_prefix}{unit_ref} has (?:a|the)? feel no pain [1-6](?: ability)? against mortal wounds? and psychic attacks",
         rf"{lead_prefix}(?:melee |ranged )?weapons equipped by models in {unit_ref} have the sustained hits \d+ ability",
         rf"{lead_prefix}(?:melee |ranged )?(?:weapons equipped by models in|attacks made by models in) {unit_ref} .* ignores cover(?: ability)?",
         rf"{lead_prefix}each time (?:a|an) (?:melee |ranged )?attack targets {unit_ref} subtract 1 from the hit roll",
@@ -1795,6 +1801,23 @@ def _bearer_invulnerable_save_support(description: str) -> Optional[Tuple[str, s
     if not m:
         return None
     return ("Supported", f"Bearer has a {m.group(1)}+ invulnerable save.")
+
+
+def _model_fnp_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"(?:this model|the bearer) has (?:a|the)? feel no pain (?P<val>[1-6])(?: ability)?"
+        r"(?: against psychic attacks(?: and mortal wounds?)?| against mortal wounds?(?: and psychic attacks)?)?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    val = m.group("val")
+    return ("Supported", f"Model has Feel No Pain {val}+.")
 
 
 def _bearer_smoke_keyword_support(description: str) -> Optional[Tuple[str, str]]:
