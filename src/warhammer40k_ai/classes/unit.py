@@ -230,6 +230,11 @@ class Unit:
             self._refresh_bearer_keyword_flags()
         except Exception:
             pass
+        # Parse move-over friendly MONSTER/VEHICLE + low-terrain traversal rules.
+        try:
+            self._refresh_move_over_friendly_monster_vehicle_flags()
+        except Exception:
+            pass
 
     def _add_stat_additive(self, key: str, delta: int) -> None:
         """Apply an additive stat delta, tracking it for later removal (damaged profiles)."""
@@ -2257,6 +2262,60 @@ class Unit:
                     sr["ability_added_keywords"] = unique
                 u.special_rules = sr
 
+    def _refresh_move_over_friendly_monster_vehicle_flags(self) -> None:
+        """Parse move-over friendly MONSTER/VEHICLE + low-terrain traversal rules into special_rules."""
+        if getattr(self, "special_rules", None) is None:
+            self.special_rules = {}
+        sr = self.special_rules
+        for key in (
+            "move_over_friendly_monster_vehicle_types",
+            "move_over_low_terrain_height_types",
+            "move_over_low_terrain_height_value",
+        ):
+            if key in sr:
+                del sr[key]
+
+        pattern = (
+            r"each time (?:this model|this unit) makes a normal or advance move "
+            r"it can move over friendly monster (?:and|or) vehicle models? and terrain features "
+            r"that are (?P<height>\d+) or less in height as if they were not there"
+        )
+        move_types: set[str] = set()
+        height_value: Optional[int] = None
+        seen: set[str] = set()
+
+        for name, desc in self._iter_ability_entries_for_rules(model=None):
+            text = str(desc or name or "")
+            text = self._strip_eligibility_prefix(text)
+            norm = self._normalize_rules_text(text)
+            if not norm:
+                continue
+            norm = norm.replace("\u2019", "'").replace("\u0192?T", "'")
+            norm = re.sub(r"'s\b", "s", norm, flags=re.IGNORECASE)
+            norm = re.sub(r"[^a-z0-9]+", " ", norm.lower())
+            norm = re.sub(r"\s+", " ", norm).strip()
+            if not norm or norm in seen:
+                continue
+            seen.add(norm)
+            m = re.fullmatch(pattern, norm)
+            if not m:
+                continue
+            move_types.update({"move", "advance"})
+            try:
+                height = int(m.group("height"))
+            except Exception:
+                height = None
+            if height is not None:
+                if height_value is None or height > height_value:
+                    height_value = height
+
+        if move_types:
+            sr["move_over_friendly_monster_vehicle_types"] = sorted(move_types)
+        if height_value is not None:
+            sr["move_over_low_terrain_height_value"] = float(height_value)
+            sr["move_over_low_terrain_height_types"] = sorted(move_types or {"move", "advance"})
+        self.special_rules = sr
+
     def _unit_contains_model_named(self, target: str) -> bool:
         norm_target = self._normalize_attached_unit_name(target)
         if not norm_target:
@@ -3353,6 +3412,10 @@ class Unit:
         except Exception:
             pass
         try:
+            self._refresh_move_over_friendly_monster_vehicle_flags()
+        except Exception:
+            pass
+        try:
             self._refresh_command_phase_flags()
         except Exception:
             pass
@@ -3748,6 +3811,10 @@ class Unit:
             pass
         try:
             self._refresh_bearer_keyword_flags()
+        except Exception:
+            pass
+        try:
+            self._refresh_move_over_friendly_monster_vehicle_flags()
         except Exception:
             pass
 
@@ -5290,6 +5357,14 @@ class Unit:
         except Exception:
             pass
         try:
+            self._refresh_move_over_friendly_monster_vehicle_flags()
+        except Exception:
+            pass
+        try:
+            bodyguard._refresh_move_over_friendly_monster_vehicle_flags()
+        except Exception:
+            pass
+        try:
             self._refresh_command_phase_flags()
         except Exception:
             pass
@@ -5380,6 +5455,15 @@ class Unit:
         try:
             if bodyguard is not None:
                 bodyguard._refresh_bearer_keyword_flags()
+        except Exception:
+            pass
+        try:
+            self._refresh_move_over_friendly_monster_vehicle_flags()
+        except Exception:
+            pass
+        try:
+            if bodyguard is not None:
+                bodyguard._refresh_move_over_friendly_monster_vehicle_flags()
         except Exception:
             pass
         try:

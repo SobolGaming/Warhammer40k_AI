@@ -126,15 +126,21 @@ def angle_difference(angle1: float, angle2: float) -> float:
     diff = (angle2 - angle1 + pi) % (2 * pi) - pi
     return diff
 
-def get_freely_climbable_range(unit: 'Unit') -> float:
+def get_freely_climbable_range(unit: 'Unit', movement_type=None) -> float:
     """Return the height threshold that can be traversed without vertical cost."""
+    threshold = float(FREELY_CLIMBABLE_RANGE)
     try:
-        if unit is not None and hasattr(unit, "has_super_heavy_walker"):
-            if bool(unit.has_super_heavy_walker()):
-                return 4.0
+        if _super_heavy_walker_active_for_move(unit, movement_type):
+            threshold = max(threshold, 4.0)
     except Exception:
         pass
-    return float(FREELY_CLIMBABLE_RANGE)
+    try:
+        height = _unit_move_over_low_terrain_height(unit, movement_type)
+        if height is not None:
+            threshold = max(threshold, float(height))
+    except Exception:
+        pass
+    return float(threshold)
 
 def counts_as_infantry_for_terrain(unit: 'Unit') -> bool:
     """Resolve Infantry-equivalent terrain interaction (Kill Team counts as Infantry)."""
@@ -191,6 +197,45 @@ def _movement_type_tag(movement_type) -> Optional[str]:
         return str(movement_type)
     except Exception:
         return None
+
+def _move_type_matches(value, movement_type) -> bool:
+    mt = _movement_type_tag(movement_type)
+    if not mt or value is None:
+        return False
+    if isinstance(value, str):
+        return mt == value
+    if isinstance(value, (list, tuple, set)):
+        for item in value:
+            if not item:
+                continue
+            if mt == str(item):
+                return True
+    return False
+
+def _unit_move_over_low_terrain_height(unit: 'Unit', movement_type) -> Optional[float]:
+    try:
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return None
+        height = sr.get("move_over_low_terrain_height_value")
+        if height is None:
+            return None
+        types = sr.get("move_over_low_terrain_height_types")
+        if not _move_type_matches(types, movement_type):
+            return None
+        return float(height)
+    except Exception:
+        return None
+
+def _unit_can_move_over_friendly_monster_vehicle(unit: 'Unit', movement_type) -> bool:
+    try:
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        types = sr.get("move_over_friendly_monster_vehicle_types")
+        return _move_type_matches(types, movement_type)
+    except Exception:
+        return False
 
 def _super_heavy_walker_active_for_move(unit: 'Unit', movement_type) -> bool:
     mt = _movement_type_tag(movement_type)
@@ -295,7 +340,7 @@ def movement_segment_cost(start: Tuple[float, float, float], end: Tuple[float, f
         dz = abs(float(end[2]) - float(start[2]))
     except Exception:
         dz = 0.0
-    threshold = get_freely_climbable_range(unit)
+    threshold = get_freely_climbable_range(unit, movement_type)
     vertical = dz if dz > threshold else 0.0
     return horiz + vertical
 
@@ -327,7 +372,7 @@ def measure_path_distance(path: List[Tuple[float, float, float]], unit: 'Unit',
             return sqrt(horiz_total * horiz_total + dz_total * dz_total)
         return horiz_total
 
-    threshold = get_freely_climbable_range(unit)
+    threshold = get_freely_climbable_range(unit, movement_type)
     vertical_total = 0.0
     for i in range(1, len(positions)):
         dz = abs(positions[i][2] - positions[i - 1][2])
@@ -390,11 +435,12 @@ def is_terrain_impassable(unit: 'Unit', terrain_feature: 'TerrainFeature',
         if not can_traverse_walls:
             # Core movement rule: terrain features ≤ 2" tall can be moved over "as if not there".
             # Apply this to RUINS wall segments as well (e.g., rubble/low walls).
+            threshold = get_freely_climbable_range(unit, movement_type)
             for wall in list(getattr(terrain_feature, "walls", []) or []):
                 try:
                     z0 = float(wall.get("z_bottom", 0.0) or 0.0)
                     z1 = float(wall.get("z_top", 0.0) or 0.0)
-                    if (z1 - z0) > float(FREELY_CLIMBABLE_RANGE):
+                    if (z1 - z0) > float(threshold):
                         return True
                 except Exception:
                     # If wall metadata is missing, err on the side of blocking (legacy behavior)
@@ -441,12 +487,13 @@ def get_terrain_blocking_polygons(unit: 'Unit', terrain_feature: 'TerrainFeature
         can_traverse_walls = _ruins_wall_traversal_allowed(unit, movement_type)
 
         if not can_traverse_walls:
-            # Add wall polygons as blocking ONLY if wall segment height > 2".
+            # Add wall polygons as blocking ONLY if wall segment height exceeds the climbable threshold.
+            threshold = get_freely_climbable_range(unit, movement_type)
             for wall in list(getattr(terrain_feature, "walls", []) or []):
                 try:
                     z0 = float(wall.get("z_bottom", 0.0) or 0.0)
                     z1 = float(wall.get("z_top", 0.0) or 0.0)
-                    if (z1 - z0) <= float(FREELY_CLIMBABLE_RANGE):
+                    if (z1 - z0) <= float(threshold):
                         continue
                     poly = wall.get("polygon", None)
                     if poly is not None:
@@ -909,6 +956,8 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
     else:
         search_radius = max_distance + safety_buffer
 
+    allow_move_over_friendly_big = _unit_can_move_over_friendly_monster_vehicle(moving_unit, movement_type)
+
     def is_within_search_area(shape_or_pos):
         """Check if a shape or position is within the search area (2D distance only)."""
         try:
@@ -932,13 +981,8 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
 
     # Get terrain blocking polygons with caching and spatial filtering
     unit_keywords = tuple(sorted(moving_unit.keywords)) if hasattr(moving_unit, 'keywords') else ()
-    super_heavy = False
-    try:
-        if hasattr(moving_unit, "has_super_heavy_walker"):
-            super_heavy = bool(moving_unit.has_super_heavy_walker())
-    except Exception:
-        super_heavy = False
-    terrain_cache_key = (id(game_map), unit_keywords, super_heavy, movement_type)
+    climbable_range = get_freely_climbable_range(moving_unit, movement_type)
+    terrain_cache_key = (id(game_map), unit_keywords, climbable_range, movement_type)
     if terrain_cache_key in _terrain_cache:
         all_blocking_terrain = _terrain_cache[terrain_cache_key]
     else:
@@ -1000,11 +1044,18 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
     # Get friendly models (cannot be cached as they change during individual model movement)
     # Apply spatial filtering to friendly models
     friendly_models = []
+    friendly_models_passable = []
     friendly_models_total = 0
     for unit in game_map.units:
         if not unit.is_alive() or not unit.deployed:
             continue
         if unit.faction == moving_unit.faction:  # Friendly unit
+            unit_is_big = False
+            if allow_move_over_friendly_big:
+                try:
+                    unit_is_big = bool(getattr(unit, "is_monster", False) or getattr(unit, "is_vehicle", False))
+                except Exception:
+                    unit_is_big = False
             for model_index, model in enumerate(_unit_models_for_collision(unit)):
                 if not model.is_alive:
                     continue
@@ -1025,16 +1076,23 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
                 if unit == moving_unit:
                     # For the moving unit, only include models that have already been moved
                     if _is_moved(model_index, model):
-                        friendly_models.append(model_shape)
+                        if unit_is_big:
+                            friendly_models_passable.append(model_shape)
+                        else:
+                            friendly_models.append(model_shape)
                     # Skip models that haven't been moved yet (they shouldn't block)
                 else:
                     # Include all models from other friendly units
-                    friendly_models.append(model_shape)
+                    if unit_is_big:
+                        friendly_models_passable.append(model_shape)
+                    else:
+                        friendly_models.append(model_shape)
 
     # Build trees based on movement type
     trees = {
         'terrain': STRtree(blocking_terrain) if blocking_terrain else None,
         'friendly_models': STRtree(friendly_models) if friendly_models else None,
+        'friendly_models_passable': STRtree(friendly_models_passable) if friendly_models_passable else None,
         'enemy_models': STRtree(enemy_models) if enemy_models else None,
         'enemy_aircraft_models': STRtree(enemy_aircraft_models) if enemy_aircraft_models else None,
     }
@@ -1459,7 +1517,7 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
         if ignore_vertical or fly_move:
             return horiz
         dz = abs(float(goal[2]) - float(node[2]))
-        threshold = get_freely_climbable_range(unit)
+        threshold = get_freely_climbable_range(unit, movement_type)
         vertical = dz if dz > threshold else 0.0
         return horiz + vertical
 
@@ -1483,7 +1541,7 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
     if (not ignore_vertical) and (not fly_move) and game_map is not None:
         try:
             line = LineString([(start[0], start[1]), (goal[0], goal[1])])
-            threshold = get_freely_climbable_range(unit)
+            threshold = get_freely_climbable_range(unit, movement_type)
             for terrain in list(getattr(game_map, "terrain_features", []) or []):
                 try:
                     if getattr(terrain, "terrain_type", None) == TerrainType.RUINS:
@@ -1799,6 +1857,46 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
         validation_rules.get('can_move_through_models', False)
     )
 
+    def _friendly_overlap_blocked(tree) -> bool:
+        if not tree:
+            return False
+        potential_hits = query_spatial_index(tree, test_shape)
+        for hit_shape in potential_hits:
+            try:
+                if not test_shape.intersects(hit_shape):
+                    continue
+            except Exception:
+                continue
+
+            allow_due_to_vertical_separation = False
+            if game_map:
+                for unit in game_map.units:
+                    if unit.faction != model.parent_unit.faction:
+                        continue
+                    for other_model in unit.models:
+                        if other_model is model or not other_model.is_alive:
+                            continue
+                        try:
+                            other_shape = other_model.model_base.get_base_shape()
+                            if test_shape.intersects(other_shape):
+                                # Use exact model heights via Base.vertical_distance to determine separation sufficiency
+                                from ..utility.model_base import Base as _Base
+                                temp_base = _Base(model.model_base.base_type, model.model_base.radius)
+                                temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
+                                temp_base.set_facing(getattr(model.model_base, 'facing', 0.0))
+                                temp_base.set_model_height(getattr(model.model_base, 'model_height', 2.0))
+                                if temp_base.vertical_distance(other_model.model_base) > 0.0:
+                                    allow_due_to_vertical_separation = True
+                                break
+                        except Exception:
+                            continue
+                    if allow_due_to_vertical_separation:
+                        break
+            if allow_due_to_vertical_separation:
+                continue
+            return True
+        return False
+
     # Super-heavy Walker: cannot move through TITANIC models.
     if validation_rules.get('block_titanic_models', False) and game_map is not None:
         for unit in list(getattr(game_map, "units", []) or []):
@@ -1830,48 +1928,12 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
     # Check friendly model collisions using shape intersection with 3D consideration
     if collision_trees.get('friendly_models') and validation_rules.get('prevent_friendly_overlap', True):
         if (not allow_through_friendly) or is_final_position:
-            potential_hits = query_spatial_index(collision_trees['friendly_models'], test_shape)
-            actual_hits = []
+            if _friendly_overlap_blocked(collision_trees['friendly_models']):
+                return {'valid': False, 'reason': 'Position blocked by friendly models'}
 
-            for hit_shape in potential_hits:
-                try:
-                    if test_shape.intersects(hit_shape):
-                        # For 3D positioning, check if there's sufficient vertical separation.
-                        # Find the friendly model whose base intersects our test shape (do not rely on .equals identity).
-                        allow_due_to_vertical_separation = False
-                        if game_map:
-                            for unit in game_map.units:
-                                if unit.faction != model.parent_unit.faction:
-                                    continue
-                                for other_model in unit.models:
-                                    if other_model is model or not other_model.is_alive:
-                                        continue
-                                    try:
-                                        other_shape = other_model.model_base.get_base_shape()
-                                        if test_shape.intersects(other_shape):
-                                            # Use exact model heights via Base.vertical_distance to determine separation sufficiency
-                                            from ..utility.model_base import Base as _Base
-                                            temp_base = _Base(model.model_base.base_type, model.model_base.radius)
-                                            temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
-                                            temp_base.set_facing(getattr(model.model_base, 'facing', 0.0))
-                                            temp_base.set_model_height(getattr(model.model_base, 'model_height', 2.0))
-                                            # vertical_distance > 0 implies sufficient gap between model volumes
-                                            if temp_base.vertical_distance(other_model.model_base) > 0.0:
-                                                allow_due_to_vertical_separation = True
-                                            break
-                                    except Exception:
-                                        continue
-                                if allow_due_to_vertical_separation:
-                                    break
-
-                        if allow_due_to_vertical_separation:
-                            continue  # Do not count this as a blocking hit
-
-                        actual_hits.append(hit_shape)
-                except Exception:
-                    continue
-
-            if actual_hits:
+    if collision_trees.get('friendly_models_passable') and validation_rules.get('prevent_friendly_overlap', True):
+        if is_final_position:
+            if _friendly_overlap_blocked(collision_trees['friendly_models_passable']):
                 return {'valid': False, 'reason': 'Position blocked by friendly models'}
 
     # For FLY non-MONSTER/VEHICLE: still block enemy MONSTER/VEHICLE models during movement.

@@ -1285,6 +1285,7 @@ def _classify_ability(
     charge_move_devastating_support = _charge_move_devastating_wounds_support(description)
     phase_move_support = _leading_unit_phase_move_support(description)
     phase_terrain_support = _leading_unit_move_and_phase_terrain_support(description)
+    move_over_friendly_support = _move_over_friendly_monster_vehicle_support(description)
     common_support = _bearer_unit_common_support(description)
     leading_support = _leading_unit_common_support(description)
     bearer_invuln_support = _bearer_invulnerable_save_support(description)
@@ -1321,6 +1322,8 @@ def _classify_ability(
 
     if battlesuit_support_system_support:
         return battlesuit_support_system_support
+    if move_over_friendly_support:
+        return move_over_friendly_support
 
     fid = str(faction_id or "").strip().upper()
     name_norm = _norm(name)
@@ -2824,6 +2827,24 @@ def _leading_unit_move_and_phase_terrain_support(description: str) -> Optional[T
         "Supported",
         f"Leading: unit Move set to {m.group('move')}\" and can move horizontally through terrain (Normal/Advance/Fall Back/Charge).",
     )
+
+
+def _move_over_friendly_monster_vehicle_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time (?:this model|this unit) makes a normal or advance move "
+        r"it can move over friendly monster (?:and|or) vehicle models? and terrain features "
+        r"that are (?P<height>\d+) or less in height as if they were not there"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    height = m.group("height")
+    return ("Supported", f"Normal/Advance: move over friendly MONSTER/VEHICLE models and terrain <= {height}\".")
 
 
 def _battlesuit_support_system_support(name: str, description: str) -> Optional[Tuple[str, str]]:
