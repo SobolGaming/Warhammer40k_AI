@@ -1305,6 +1305,9 @@ def _classify_ability(
     enemy_fall_back_desperate_escape_support = _enemy_fall_back_desperate_escape_support(description)
     command_phase_bonus_cp_support = _command_phase_bonus_cp_support(description)
     command_phase_regain_wound_support = _command_phase_regain_wound_support(description)
+    post_shoot_battleshock_support = _post_shoot_battleshock_support(description)
+    post_shoot_suppression_support = _post_shoot_suppression_support(description)
+    fight_phase_engagement_battleshock_support = _fight_phase_engagement_battleshock_support(description)
     daemonic_allegiance_support = _daemonic_allegiance_wargear_support(description)
     reinforcements_denial_support = _reinforcements_denial_support(description)
     cp_on_destroy_support = _gain_cp_on_destroy_support(description)
@@ -1401,6 +1404,12 @@ def _classify_ability(
         return command_phase_bonus_cp_support
     if command_phase_regain_wound_support:
         return command_phase_regain_wound_support
+    if post_shoot_battleshock_support:
+        return post_shoot_battleshock_support
+    if post_shoot_suppression_support:
+        return post_shoot_suppression_support
+    if fight_phase_engagement_battleshock_support:
+        return fight_phase_engagement_battleshock_support
     if daemonic_allegiance_support:
         return daemonic_allegiance_support
     if reinforcements_denial_support:
@@ -2610,6 +2619,65 @@ def _command_phase_regain_wound_support(description: str) -> Optional[Tuple[str,
     if not m:
         return None
     return ("Supported", f"Start of Command phase: this model regains {m.group('amt')} lost wound(s).")
+
+
+def _post_shoot_battleshock_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"in your shooting phase after this model has shot select one enemy "
+        r"(?:(?P<infantry>infantry) )?unit (?:that was )?hit by one or more of those attacks "
+        r"that unit must take a battle shock test"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    if m.group("infantry"):
+        return ("Supported", "After shooting, pick a hit enemy INFANTRY unit to take a Battle-shock test.")
+    return ("Supported", "After shooting, pick a hit enemy unit to take a Battle-shock test.")
+
+
+def _post_shoot_suppression_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"in your shooting phase after this model has shot select one enemy unit hit by one or more of those attacks "
+        r"(?:excluding monsters and vehicles )?until the start of your next turn that enemy unit is suppressed "
+        r"while a unit is suppressed each time a model in that unit makes an attack subtract 1 from the hit roll"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    if "excluding monsters and vehicles" in norm:
+        return ("Supported", "After shooting, suppress a hit enemy unit (not MONSTER/VEHICLE) for -1 to hit until your next turn.")
+    return ("Supported", "After shooting, suppress a hit enemy unit for -1 to hit until your next turn.")
+
+
+def _fight_phase_engagement_battleshock_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"(?:at the )?start of the fight phase each enemy unit within engagement range of this model must take a battle shock test"
+        r"(?: subtracting (?P<penalty>\d+) from that test if that enemy unit is below half strength)?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    if m.group("penalty"):
+        return (
+            "Supported",
+            f"Start of Fight phase: each enemy unit in Engagement Range takes a Battle-shock test; Below Half-strength suffers -{m.group('penalty')}.",
+        )
+    return ("Supported", "Start of Fight phase: each enemy unit in Engagement Range takes a Battle-shock test.")
 
 
 def _daemonic_allegiance_wargear_support(description: str) -> Optional[Tuple[str, str]]:

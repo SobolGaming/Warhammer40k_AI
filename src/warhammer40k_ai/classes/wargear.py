@@ -1839,11 +1839,14 @@ class WargearProfile:
                 _add_hit_mod(-1, "-1 from First Prince of Chaos (Tzeentch)")
         except Exception:
             pass
-        # Drukhari: Agonising Suppression (Pain) applies -1 to hit for suppressed units.
+        # Suppressed units take -1 to hit (e.g. Agonising Suppression, post-shoot suppression).
         try:
             sr = getattr(attacker.parent_unit, "special_rules", None)
-            if isinstance(sr, dict) and sr.get("pain_suppressed_active"):
-                _add_hit_mod(-1, "-1 from Agonising Suppression (suppressed)")
+            if isinstance(sr, dict):
+                if sr.get("pain_suppressed_active"):
+                    _add_hit_mod(-1, "-1 from Agonising Suppression (suppressed)")
+                if sr.get("post_shoot_suppressed_active"):
+                    _add_hit_mod(-1, "-1 from Suppressed")
         except Exception:
             pass
         try:

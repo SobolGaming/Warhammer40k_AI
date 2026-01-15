@@ -1562,6 +1562,12 @@ class GameView:
         # Charge-end mortal wound prompts
         self._pending_charge_mortal_wounds_queue = []
         self._charge_mortal_wounds_flow_active = False
+        # Post-shoot Battle-shock prompts
+        self._pending_post_shoot_battleshock_queue = []
+        self._post_shoot_battleshock_flow_active = False
+        # Post-shoot suppression prompts
+        self._pending_post_shoot_suppress_queue = []
+        self._post_shoot_suppress_flow_active = False
         # Transport reactive disembark prompts
         self._pending_transport_reactive_disembark_queue = []
         self._transport_reactive_disembark_flow_active = False
@@ -1613,6 +1619,10 @@ class GameView:
                 self.game.event_system.subscribe("frenzy_prompt", self._on_frenzy_prompt)
                 # Charge-end mortal wound target selection
                 self.game.event_system.subscribe("charge_mortal_wounds_prompt", self._on_charge_mortal_wounds_prompt)
+                # Post-shoot Battle-shock target selection
+                self.game.event_system.subscribe("post_shoot_battleshock_prompt", self._on_post_shoot_battleshock_prompt)
+                # Post-shoot suppression target selection
+                self.game.event_system.subscribe("post_shoot_suppress_prompt", self._on_post_shoot_suppress_prompt)
                 # Transport reactive disembark prompt
                 self.game.event_system.subscribe("transport_reactive_disembark_prompt", self._on_transport_reactive_disembark_prompt)
                 # Quarry re-pick when quarry is destroyed
@@ -3777,6 +3787,178 @@ class GameView:
         except Exception:
             self._charge_mortal_wounds_flow_active = False
             self._open_next_charge_mortal_wounds_prompt(game)
+
+    # ---------------- Post-shoot battle-shock prompts ----------------
+
+    def _on_post_shoot_battleshock_prompt(
+        self,
+        player=None,
+        attacker_unit=None,
+        model=None,
+        candidates=None,
+        ability=None,
+        on_select=None,
+        **_kwargs,
+    ):
+        if player is None or attacker_unit is None:
+            return
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return
+        except Exception:
+            return
+
+        cand = list(candidates or [])
+        if not cand:
+            return
+
+        if self._post_shoot_battleshock_flow_active:
+            self._pending_post_shoot_battleshock_queue.append((player, attacker_unit, model, cand, ability, on_select))
+            return
+        self._pending_post_shoot_battleshock_queue.append((player, attacker_unit, model, cand, ability, on_select))
+        self._open_next_post_shoot_battleshock_prompt(self.game)
+
+    def _open_next_post_shoot_battleshock_prompt(self, game):
+        q = list(getattr(self, "_pending_post_shoot_battleshock_queue", []) or [])
+        if not q:
+            self._pending_post_shoot_battleshock_queue = []
+            self._post_shoot_battleshock_flow_active = False
+            return
+        player, attacker_unit, model, candidates, ability, on_select = q.pop(0)
+        self._pending_post_shoot_battleshock_queue = q
+
+        if player is None or attacker_unit is None:
+            self._open_next_post_shoot_battleshock_prompt(game)
+            return
+        cand = list(candidates or [])
+        if not cand:
+            self._open_next_post_shoot_battleshock_prompt(game)
+            return
+
+        ability_name = str((ability or {}).get("name", "") or "Post-shoot Battle-shock")
+        model_name = getattr(model, "name", None) or getattr(attacker_unit, "name", "Model")
+        title = ability_name
+        subtitle = f"{model_name} shot. Select a unit to take a Battle-shock test."
+
+        def _finish(chosen):
+            try:
+                self.overwatch_shooter_dialog.hide()
+            except Exception:
+                pass
+            if chosen is None and cand:
+                chosen = cand[0]
+            if callable(on_select) and chosen is not None:
+                try:
+                    on_select(chosen)
+                except Exception:
+                    pass
+            self._post_shoot_battleshock_flow_active = False
+            self._open_next_post_shoot_battleshock_prompt(game)
+
+        def _on_cancel():
+            _finish(cand[0] if cand else None)
+
+        self._post_shoot_battleshock_flow_active = True
+        try:
+            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
+                self.overwatch_shooter_dialog.show(
+                    cand,
+                    attacker_unit,
+                    _finish,
+                    title=title,
+                    subtitle=subtitle,
+                    on_cancel=_on_cancel,
+                )
+                self.dialog_manager.open(self.overwatch_shooter_dialog, modal=True)
+        except Exception:
+            self._post_shoot_battleshock_flow_active = False
+            self._open_next_post_shoot_battleshock_prompt(game)
+
+    # ---------------- Post-shoot suppression prompts ----------------
+
+    def _on_post_shoot_suppress_prompt(
+        self,
+        player=None,
+        attacker_unit=None,
+        model=None,
+        candidates=None,
+        ability=None,
+        on_select=None,
+        **_kwargs,
+    ):
+        if player is None or attacker_unit is None:
+            return
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return
+        except Exception:
+            return
+
+        cand = list(candidates or [])
+        if not cand:
+            return
+
+        if self._post_shoot_suppress_flow_active:
+            self._pending_post_shoot_suppress_queue.append((player, attacker_unit, model, cand, ability, on_select))
+            return
+        self._pending_post_shoot_suppress_queue.append((player, attacker_unit, model, cand, ability, on_select))
+        self._open_next_post_shoot_suppress_prompt(self.game)
+
+    def _open_next_post_shoot_suppress_prompt(self, game):
+        q = list(getattr(self, "_pending_post_shoot_suppress_queue", []) or [])
+        if not q:
+            self._pending_post_shoot_suppress_queue = []
+            self._post_shoot_suppress_flow_active = False
+            return
+        player, attacker_unit, model, candidates, ability, on_select = q.pop(0)
+        self._pending_post_shoot_suppress_queue = q
+
+        if player is None or attacker_unit is None:
+            self._open_next_post_shoot_suppress_prompt(game)
+            return
+        cand = list(candidates or [])
+        if not cand:
+            self._open_next_post_shoot_suppress_prompt(game)
+            return
+
+        ability_name = str((ability or {}).get("name", "") or "Suppression")
+        model_name = getattr(model, "name", None) or getattr(attacker_unit, "name", "Model")
+        title = ability_name
+        subtitle = f"{model_name} shot. Select a unit to suppress."
+
+        def _finish(chosen):
+            try:
+                self.overwatch_shooter_dialog.hide()
+            except Exception:
+                pass
+            if chosen is None and cand:
+                chosen = cand[0]
+            if callable(on_select) and chosen is not None:
+                try:
+                    on_select(chosen)
+                except Exception:
+                    pass
+            self._post_shoot_suppress_flow_active = False
+            self._open_next_post_shoot_suppress_prompt(game)
+
+        def _on_cancel():
+            _finish(cand[0] if cand else None)
+
+        self._post_shoot_suppress_flow_active = True
+        try:
+            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
+                self.overwatch_shooter_dialog.show(
+                    cand,
+                    attacker_unit,
+                    _finish,
+                    title=title,
+                    subtitle=subtitle,
+                    on_cancel=_on_cancel,
+                )
+                self.dialog_manager.open(self.overwatch_shooter_dialog, modal=True)
+        except Exception:
+            self._post_shoot_suppress_flow_active = False
+            self._open_next_post_shoot_suppress_prompt(game)
 
     # ---------------- Transport reactive disembark prompts ----------------
 

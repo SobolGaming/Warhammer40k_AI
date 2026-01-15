@@ -195,6 +195,10 @@ class Game:
         self.event_system.subscribe("unit_move_ended", self._on_unit_move_ended_battle_focus)
         self.event_system.subscribe("fight_unit_selected", self._on_fight_unit_selected_battle_focus)
         self.event_system.subscribe("unit_shooting_resolved", self._on_unit_shooting_resolved_battle_focus)
+        # Datasheet abilities: post-shooting Battle-shock tests on hit
+        self.event_system.subscribe("unit_shooting_resolved", self._on_unit_shooting_resolved_post_shoot_battleshock)
+        # Datasheet abilities: post-shooting suppression on hit
+        self.event_system.subscribe("unit_shooting_resolved", self._on_unit_shooting_resolved_post_shoot_suppression)
         # Aeldari: Aspect Shrine Token prompt suppression resets after activation
         self.event_system.subscribe("unit_shooting_resolved", self._on_unit_shooting_resolved_aspect_shrine)
         self.event_system.subscribe("fight_sequence_complete", self._on_fight_sequence_complete_aspect_shrine)
@@ -202,6 +206,8 @@ class Game:
         self.event_system.subscribe("phase_start", self._on_phase_start_target_tracking)
         self.event_system.subscribe("shooting_targets_selected", self._on_shooting_targets_selected_tracking)
         self.event_system.subscribe("charge_declared", self._on_charge_declared_tracking)
+        # Fight phase: engagement-range Battle-shock tests
+        self.event_system.subscribe("phase_start", self._on_phase_start_engagement_battleshock)
         # Dark Pacts trigger windows
         self.event_system.subscribe("shooting_targets_selected", self._on_shooting_targets_selected_dark_pacts)
         self.event_system.subscribe("fight_unit_selected", self._on_fight_unit_selected_dark_pacts)
@@ -2292,6 +2298,15 @@ class Game:
                                 for k in ("pain_suppressed_active", "pain_suppressed_owner", "pain_suppressed_turn"):
                                     sr.pop(k, None)
                                 u.special_rules = sr
+                        if str(sr.get("post_shoot_suppressed_owner", "") or "") == owner_name:
+                            try:
+                                sup_turn = int(sr.get("post_shoot_suppressed_turn", 0) or 0)
+                            except Exception:
+                                sup_turn = 0
+                            if current_turn > sup_turn:
+                                for k in ("post_shoot_suppressed_active", "post_shoot_suppressed_owner", "post_shoot_suppressed_turn"):
+                                    sr.pop(k, None)
+                                u.special_rules = sr
 
         def _maybe_trigger_for_player(owner_player, trigger: str) -> None:
             if owner_player is None:
@@ -2801,6 +2816,156 @@ class Game:
                         append_action(pname, f"{ability_name}: no model returned to {getattr(bodyguard, 'name', 'Unit')}.")
             except Exception:
                 pass
+
+    def _on_phase_start_engagement_battleshock(self, player=None, phase=None, **_kwargs) -> None:
+        """Fight phase: enemy units within Engagement Range of a model must take Battle-shock tests."""
+        try:
+            pname = str(getattr(phase, "name", "") or "").strip().upper()
+        except Exception:
+            pname = ""
+        if pname != "FIGHT_PHASE":
+            return
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+
+        try:
+            from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
+        except Exception:
+            return
+
+        def _model_in_engagement_with_unit(model, target_unit) -> bool:
+            try:
+                if not getattr(model, "is_alive", False):
+                    return False
+            except Exception:
+                return False
+            try:
+                t_models = list(target_unit.get_models_for_collision() or [])
+            except Exception:
+                t_models = list(getattr(target_unit, "models", []) or [])
+            for t_model in t_models:
+                try:
+                    if not getattr(t_model, "is_alive", False):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    horizontal = float(horizontal_distance_between_bases_2d(model.model_base, t_model.model_base))
+                    vertical = float(vertical_distance_between_bases(model.model_base, t_model.model_base))
+                except Exception:
+                    continue
+                if horizontal <= ENGAGEMENT_RANGE_HORIZONTAL and vertical <= ENGAGEMENT_RANGE_VERTICAL:
+                    return True
+            return False
+
+        def _apply_battleshock(target_unit, *, modifier: int = 0, reason: str = "") -> None:
+            if target_unit is None:
+                return
+            sr = getattr(target_unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            if modifier:
+                current = int(sr.get("battle_shock_test_modifier", 0) or 0)
+                sr["battle_shock_test_modifier"] = current + int(modifier)
+                if reason:
+                    reasons = list(sr.get("battle_shock_test_modifier_reasons", []) or [])
+                    reasons.append(reason)
+                    sr["battle_shock_test_modifier_reasons"] = reasons
+            target_unit.special_rules = sr
+            try:
+                target_unit.take_battle_shock_test(int(getattr(self, "turn", 0) or 1))
+            except Exception:
+                pass
+
+        for p in list(getattr(self, "players", []) or []):
+            army = getattr(p, "army", None)
+            if army is None:
+                continue
+            for unit in list(getattr(army, "units", []) or []):
+                if unit is None:
+                    continue
+                try:
+                    if not unit.is_alive() or not getattr(unit, "deployed", True):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    if hasattr(unit, "is_in_reserves") and unit.is_in_reserves():
+                        continue
+                    if bool(getattr(unit, "is_embarked", False)):
+                        continue
+                except Exception:
+                    pass
+
+                enemy_roots = []
+                seen_enemy = set()
+                for enemy in game_map.get_enemy_units(unit):
+                    if enemy is None:
+                        continue
+                    try:
+                        root = enemy.get_attached_unit_root()
+                    except Exception:
+                        root = enemy
+                    try:
+                        key = str(getattr(root, "_id", None) or id(root))
+                    except Exception:
+                        key = str(id(root))
+                    if key in seen_enemy:
+                        continue
+                    seen_enemy.add(key)
+                    try:
+                        if not root.is_alive() or not getattr(root, "deployed", True):
+                            continue
+                    except Exception:
+                        continue
+                    try:
+                        if hasattr(root, "is_in_reserves") and root.is_in_reserves():
+                            continue
+                        if bool(getattr(root, "is_embarked", False)):
+                            continue
+                    except Exception:
+                        pass
+                    enemy_roots.append(root)
+
+                if not enemy_roots:
+                    continue
+
+                for model in list(getattr(unit, "models", []) or []):
+                    try:
+                        if not getattr(model, "is_alive", False):
+                            continue
+                    except Exception:
+                        continue
+                    try:
+                        specs = unit.model_start_fight_phase_engagement_battleshock_specs(model)
+                    except Exception:
+                        specs = []
+                    if not specs:
+                        continue
+                    for spec in specs:
+                        source = str(spec.get("source", "") or "Fight phase Battle-shock").strip()
+                        for enemy_root in enemy_roots:
+                            if not _model_in_engagement_with_unit(model, enemy_root):
+                                continue
+                            mod = 0
+                            reason = ""
+                            try:
+                                if enemy_root.is_below_half_strength():
+                                    mod = -1
+                                    reason = "Below Half-strength"
+                            except Exception:
+                                mod = 0
+                                reason = ""
+                            _apply_battleshock(enemy_root, modifier=mod, reason=reason)
+                            try:
+                                from ..utility.event_bus import append_action
+                                pname = str(getattr(p, "name", "") or "")
+                                if pname:
+                                    label = f"{getattr(model, 'name', 'Model')} {source}".strip()
+                                    append_action(pname, f"{label}: {getattr(enemy_root, 'name', 'Unit')} takes a Battle-shock test.")
+                            except Exception:
+                                pass
 
     def _on_phase_start_cabal_of_sorcerers(self, player=None, phase=None, **_kwargs) -> None:
         """Reset Cabal of Sorcerers usage at the start of the active player's Shooting phase."""
@@ -3577,6 +3742,338 @@ class Game:
             else:
                 for target_unit, hits in hits_map.items():
                     mgr.maybe_trigger_fade_back(attacker_unit, target_unit, hits, self)
+
+    def _on_unit_shooting_resolved_post_shoot_battleshock(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        hit_models_by_target=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None or not hits_by_target:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            attacker_player = attacker_unit.get_parent_army().player
+        except Exception:
+            return
+        try:
+            if attacker_player is not self.get_current_player():
+                return
+        except Exception:
+            pass
+
+        def _is_enemy_unit(unit) -> bool:
+            if unit is None:
+                return False
+            try:
+                if unit.get_parent_army() == attacker_unit.get_parent_army():
+                    return False
+            except Exception:
+                return False
+            try:
+                if hasattr(unit, "is_alive") and callable(unit.is_alive) and not unit.is_alive():
+                    return False
+            except Exception:
+                return False
+            return True
+
+        def _model_hit_target(model, target) -> bool:
+            if not isinstance(hit_models_by_target, dict):
+                return True
+            hit_models = hit_models_by_target.get(target)
+            if not hit_models:
+                return False
+            try:
+                return model in hit_models
+            except Exception:
+                return False
+
+        triggers: list[tuple[Any, dict, list[Any]]] = []
+        for model in list(getattr(attacker_unit, "models", []) or []):
+            try:
+                if not getattr(model, "is_alive", False):
+                    continue
+            except Exception:
+                continue
+            try:
+                specs = attacker_unit.model_post_shoot_battleshock_specs(model)
+            except Exception:
+                specs = []
+            if not specs:
+                continue
+            for spec in specs:
+                infantry_only = bool(spec.get("infantry_only", False))
+                candidates: list[Any] = []
+                for target_unit, hits in (hits_by_target or {}).items():
+                    if target_unit is None:
+                        continue
+                    try:
+                        if int(hits or 0) <= 0:
+                            continue
+                    except Exception:
+                        continue
+                    if not _is_enemy_unit(target_unit):
+                        continue
+                    if infantry_only:
+                        try:
+                            if callable(getattr(target_unit, "is_infantry", None)):
+                                is_infantry = bool(target_unit.is_infantry())
+                            else:
+                                is_infantry = bool(getattr(target_unit, "is_infantry", False))
+                            if not is_infantry:
+                                continue
+                        except Exception:
+                            continue
+                    if not _model_hit_target(model, target_unit):
+                        continue
+                    candidates.append(target_unit)
+                if candidates:
+                    triggers.append((model, spec, candidates))
+
+        if not triggers:
+            return
+
+        def _apply_battleshock(target_unit, model, spec) -> None:
+            if target_unit is None:
+                return
+            try:
+                target_unit.take_battle_shock_test(self.turn)
+            except Exception:
+                pass
+            try:
+                from ..utility.event_bus import append_action
+                pn = attacker_player.name
+                ability_name = str(spec.get("source", "") or "Post-shoot Battle-shock").strip()
+                append_action(pn, f"{getattr(model, 'name', 'Model')} used {ability_name} on {target_unit.name}")
+            except Exception:
+                pass
+
+        try:
+            is_human = bool(getattr(getattr(attacker_player, "type", None), "name", "") == "HUMAN")
+        except Exception:
+            is_human = False
+        es = getattr(self, "event_system", None)
+        if is_human and es is not None:
+            try:
+                subs = getattr(es, "subscribers", {})
+                if isinstance(subs, dict) and subs.get("post_shoot_battleshock_prompt"):
+                    for model, spec, candidates in triggers:
+                        ability = {"name": spec.get("source", "Post-shoot Battle-shock")}
+                        es.publish(
+                            "post_shoot_battleshock_prompt",
+                            player=attacker_player,
+                            attacker_unit=attacker_unit,
+                            model=model,
+                            candidates=list(candidates),
+                            ability=ability,
+                            on_select=lambda chosen, _m=model, _s=spec: _apply_battleshock(chosen, _m, _s),
+                            game=self,
+                        )
+                    return
+            except Exception:
+                pass
+
+        def _pick_best_target(candidates: list[Any]) -> Any:
+            best = None
+            best_hits = -1
+            for tgt in candidates:
+                try:
+                    h = int((hits_by_target or {}).get(tgt, 0) or 0)
+                except Exception:
+                    h = 0
+                if h > best_hits:
+                    best_hits = h
+                    best = tgt
+            if best is None and candidates:
+                best = candidates[0]
+            return best
+
+        for model, spec, candidates in triggers:
+            chosen = _pick_best_target(candidates)
+            _apply_battleshock(chosen, model, spec)
+
+    def _on_unit_shooting_resolved_post_shoot_suppression(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        hit_models_by_target=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None or not hits_by_target:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            attacker_player = attacker_unit.get_parent_army().player
+        except Exception:
+            return
+        try:
+            if attacker_player is not self.get_current_player():
+                return
+        except Exception:
+            pass
+
+        def _is_enemy_unit(unit) -> bool:
+            if unit is None:
+                return False
+            try:
+                if unit.get_parent_army() == attacker_unit.get_parent_army():
+                    return False
+            except Exception:
+                return False
+            try:
+                if hasattr(unit, "is_alive") and callable(unit.is_alive) and not unit.is_alive():
+                    return False
+            except Exception:
+                return False
+            return True
+
+        def _is_monster_or_vehicle(unit) -> bool:
+            try:
+                if bool(getattr(unit, "is_monster", False)) or bool(getattr(unit, "is_vehicle", False)):
+                    return True
+            except Exception:
+                pass
+            try:
+                return bool(unit.has_keyword("Monster") or unit.has_keyword("Vehicle"))
+            except Exception:
+                return False
+
+        def _model_hit_target(model, target) -> bool:
+            if not isinstance(hit_models_by_target, dict):
+                return True
+            hit_models = hit_models_by_target.get(target)
+            if not hit_models:
+                return False
+            try:
+                return model in hit_models
+            except Exception:
+                return False
+
+        triggers: list[tuple[Any, dict, list[Any]]] = []
+        for model in list(getattr(attacker_unit, "models", []) or []):
+            try:
+                if not getattr(model, "is_alive", False):
+                    continue
+            except Exception:
+                continue
+            try:
+                specs = attacker_unit.model_post_shoot_suppression_specs(model)
+            except Exception:
+                specs = []
+            if not specs:
+                continue
+            for spec in specs:
+                exclude_mv = bool(spec.get("exclude_monster_vehicle", False))
+                candidates: list[Any] = []
+                for target_unit, hits in (hits_by_target or {}).items():
+                    if target_unit is None:
+                        continue
+                    try:
+                        if int(hits or 0) <= 0:
+                            continue
+                    except Exception:
+                        continue
+                    if not _is_enemy_unit(target_unit):
+                        continue
+                    if exclude_mv and _is_monster_or_vehicle(target_unit):
+                        continue
+                    if not _model_hit_target(model, target_unit):
+                        continue
+                    candidates.append(target_unit)
+                if candidates:
+                    triggers.append((model, spec, candidates))
+
+        if not triggers:
+            return
+
+        try:
+            owner_name = attacker_player.name
+        except Exception:
+            owner_name = ""
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+
+        def _apply_suppression(target_unit, model, spec) -> None:
+            if target_unit is None:
+                return
+            try:
+                root = target_unit.get_attached_unit_root()
+            except Exception:
+                root = target_unit
+            members = []
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = [root]
+            for unit in members:
+                if unit is None:
+                    continue
+                try:
+                    sr = getattr(unit, "special_rules", None)
+                    if not isinstance(sr, dict):
+                        sr = {}
+                    sr["post_shoot_suppressed_active"] = True
+                    sr["post_shoot_suppressed_owner"] = owner_name
+                    sr["post_shoot_suppressed_turn"] = int(current_turn)
+                    unit.special_rules = sr
+                except Exception:
+                    continue
+            try:
+                from ..utility.event_bus import append_action
+                pn = attacker_player.name
+                ability_name = str(spec.get("source", "") or "Suppressed").strip()
+                append_action(pn, f"{getattr(model, 'name', 'Model')} suppressed {target_unit.name} ({ability_name})")
+            except Exception:
+                pass
+
+        try:
+            is_human = bool(getattr(getattr(attacker_player, "type", None), "name", "") == "HUMAN")
+        except Exception:
+            is_human = False
+        es = getattr(self, "event_system", None)
+        if is_human and es is not None:
+            try:
+                subs = getattr(es, "subscribers", {})
+                if isinstance(subs, dict) and subs.get("post_shoot_suppress_prompt"):
+                    for model, spec, candidates in triggers:
+                        ability = {"name": spec.get("source", "Suppressed")}
+                        es.publish(
+                            "post_shoot_suppress_prompt",
+                            player=attacker_player,
+                            attacker_unit=attacker_unit,
+                            model=model,
+                            candidates=list(candidates),
+                            ability=ability,
+                            on_select=lambda chosen, _m=model, _s=spec: _apply_suppression(chosen, _m, _s),
+                            game=self,
+                        )
+                    return
+            except Exception:
+                pass
+
+        def _pick_best_target(candidates: list[Any]) -> Any:
+            best = None
+            best_hits = -1
+            for tgt in candidates:
+                try:
+                    h = int((hits_by_target or {}).get(tgt, 0) or 0)
+                except Exception:
+                    h = 0
+                if h > best_hits:
+                    best_hits = h
+                    best = tgt
+            if best is None and candidates:
+                best = candidates[0]
+            return best
+
+        for model, spec, candidates in triggers:
+            chosen = _pick_best_target(candidates)
+            _apply_suppression(chosen, model, spec)
 
     def _on_unit_shooting_resolved_aspect_shrine(self, attacker_unit=None, **_kwargs) -> None:
         if attacker_unit is None:

@@ -899,6 +899,22 @@ class Unit:
         r"reduce\s+the\s+cp\s+cost\s+of\s+that\s+(?:use|usage)\s+of\s+that\s+stratagem\s+by\s+1cp",
         re.IGNORECASE,
     )
+    _POST_SHOOT_BATTLESHOCK_RE = re.compile(
+        r"in your shooting phase after this model has shot select one enemy (?:(?P<infantry>infantry) )?unit "
+        r"(?:that was )?hit by one or more of those attacks that unit must take a battle shock test",
+        re.IGNORECASE,
+    )
+    _POST_SHOOT_SUPPRESSION_RE = re.compile(
+        r"in your shooting phase after this model has shot select one enemy unit hit by one or more of those attacks "
+        r"(?:(?P<exclude>excluding monsters and vehicles) )?until the start of your next turn that enemy unit is suppressed "
+        r"while a unit is suppressed each time a model in that unit makes an attack subtract 1 from the hit roll",
+        re.IGNORECASE,
+    )
+    _FIGHT_PHASE_ENGAGEMENT_BATTLESHOCK_RE = re.compile(
+        r"at the start of the fight phase each enemy unit within engagement range of this model must take a battle shock test "
+        r"subtracting 1 from that test if that enemy unit is below half strength",
+        re.IGNORECASE,
+    )
     _FIGHT_WITHIN_3_RE = re.compile(
         r"selected\s+to\s+fight.*?eligible\s+to\s+fight.*?within\s+3\"?.*?engagement\s+range",
         re.IGNORECASE,
@@ -10551,6 +10567,7 @@ class Unit:
         
         successful_attacks = 0
         hit_tracker = {}
+        hit_models_by_target = {}
         
         # Begin attack resolution window(s) for targets (so attached leaders don't separate mid-sequence)
         # Publish a reaction window for defensive stratagems (e.g. GO TO GROUND) right after targets are selected.
@@ -10605,6 +10622,7 @@ class Unit:
                 game_map,
                 weapon_instance,
                 hit_tracker=hit_tracker,
+                hit_models_by_target=hit_models_by_target,
             )
             successful_attacks += weapon_attacks
 
@@ -10615,6 +10633,7 @@ class Unit:
                     "unit_shooting_resolved",
                     attacker_unit=self,
                     hits_by_target=dict(hit_tracker),
+                    hit_models_by_target=dict(hit_models_by_target),
                 )
         except Exception:
             pass
@@ -11205,7 +11224,7 @@ class Unit:
         # If target is different from engaged unit, only vehicles can shoot
         return False
     
-    def _execute_weapon_attacks(self, weapon_profile, target_unit, models_with_weapon, game_map, weapon_instance=None, hit_tracker=None) -> int:
+    def _execute_weapon_attacks(self, weapon_profile, target_unit, models_with_weapon, game_map, weapon_instance=None, hit_tracker=None, hit_models_by_target=None) -> int:
         """Execute attacks with a specific weapon profile"""
         successful_attacks = 0
         
@@ -11256,6 +11275,11 @@ class Unit:
                         hits = 0
                     if hits > 0:
                         hit_tracker[target_unit] = int(hit_tracker.get(target_unit, 0) or 0) + hits
+                        if hit_models_by_target is not None:
+                            try:
+                                hit_models_by_target.setdefault(target_unit, set()).add(model)
+                            except Exception:
+                                pass
                 # Count successful execution of the attack (not damage dealt)
                 successful_attacks += 1
 
@@ -15724,6 +15748,132 @@ class Unit:
             self._ability_cache = {}
         self._ability_cache[cache_key] = (bonus, reason)
         return bonus, reason
+
+    def model_post_shoot_battleshock_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: after this model has shot, select a hit enemy unit to take a Battle-shock test.
+
+        Returns a list of specs with keys:
+            - infantry_only: bool
+            - source: ability name
+        """
+        if model is None:
+            return []
+        cache_key = f"model_post_shoot_battleshock:{getattr(model, '_id', id(model))}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, bool]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._POST_SHOOT_BATTLESHOCK_RE.fullmatch(normalized)
+            if not m:
+                continue
+            infantry_only = bool(m.group("infantry"))
+            source = str(name or "Post-shoot Battle-shock").strip() or "Post-shoot Battle-shock"
+            key = (source.lower(), infantry_only)
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append({"infantry_only": infantry_only, "source": source})
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_post_shoot_suppression_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: after this model has shot, select a hit enemy unit to become suppressed.
+
+        Returns a list of specs with keys:
+            - exclude_monster_vehicle: bool
+            - source: ability name
+        """
+        if model is None:
+            return []
+        cache_key = f"model_post_shoot_suppression:{getattr(model, '_id', id(model))}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, bool]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._POST_SHOOT_SUPPRESSION_RE.fullmatch(normalized)
+            if not m:
+                continue
+            exclude_mv = bool(m.group("exclude")) or ("excluding monsters and vehicles" in normalized)
+            source = str(name or "Post-shoot Suppression").strip() or "Post-shoot Suppression"
+            key = (source.lower(), exclude_mv)
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append({"exclude_monster_vehicle": exclude_mv, "source": source})
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_start_fight_phase_engagement_battleshock_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: at the start of the Fight phase, enemies in engagement range test Battle-shock.
+
+        Returns a list of specs with keys:
+            - source: ability name
+        """
+        if model is None:
+            return []
+        cache_key = f"model_fight_phase_engagement_battleshock:{getattr(model, '_id', id(model))}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[str] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            if not self._FIGHT_PHASE_ENGAGEMENT_BATTLESHOCK_RE.fullmatch(normalized):
+                continue
+            source = str(name or "Fight phase Battle-shock").strip() or "Fight phase Battle-shock"
+            key = source.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append({"source": source})
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
 
     def get_target_hit_roll_penalty(
         self,
