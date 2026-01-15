@@ -893,6 +893,12 @@ class Unit:
         r"bearer'?s\s+unit\s+declares\s+a\s+charge.*?targets?\s+of\s+that\s+charge.*?within\s+range\s+of\s+an?\s+objective\s+marker.*?re-?roll\s+the\s+charge\s+roll",
         re.IGNORECASE,
     )
+    _CHARGE_ROLL_TARGET_STRENGTH_BONUS_RE = re.compile(
+        r"each\s+time\s+this\s+(?:model|unit)\s+declares\s+a\s+charge\s+that\s+targets?\s+one\s+or\s+more\s+units?\s+(?:that\s+are\s+)?"
+        r"below\s+starting\s+strength\s+add\s+(?P<base>\d+)\s+to\s+the\s+charge\s+roll\s+if\s+one\s+or\s+more\s+of\s+"
+        r"the\s+targets?\s+of\s+that\s+charge\s+are\s+below\s+half\s+strength\s+add\s+(?P<half>\d+)\s+to\s+the\s+charge\s+roll\s+instead",
+        re.IGNORECASE,
+    )
     _TARGETED_STRATAGEM_CP_DISCOUNT_RE = re.compile(
         r"once\s+per\s+battle\s+round.*?\bone\s+(?:unit|model)\s+from\s+your\s+army\s+with\s+this\s+ability\s+can\s+use\s+it\s+when\s+"
         r"(?:its\s+unit|this\s+model'?s\s+unit|that\s+model'?s\s+unit)\s+is\s+targeted\s+with\s+a\s+stratagem.*?"
@@ -7926,6 +7932,99 @@ class Unit:
             if ("re-roll" in s or "reroll" in s) and "charge" in s:
                 return True
         return False
+
+    def _charge_roll_target_strength_specs(self) -> list[dict]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "charge_roll_target_strength_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, int]] = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+
+        for u in members:
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text_src = self._strip_eligibility_prefix(text_src)
+                normalized = self._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                m = self._CHARGE_ROLL_TARGET_STRENGTH_BONUS_RE.fullmatch(normalized)
+                if not m:
+                    continue
+                try:
+                    base_bonus = int(m.group("base") or 0)
+                except Exception:
+                    base_bonus = 0
+                try:
+                    half_bonus = int(m.group("half") or 0)
+                except Exception:
+                    half_bonus = 0
+                source = str(name or "Charge roll bonus").strip() or "Charge roll bonus"
+                key = (source.lower(), base_bonus, half_bonus)
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append({"base_bonus": base_bonus, "half_bonus": half_bonus, "source": source})
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def get_charge_roll_target_strength_modifiers(self, target_units=None) -> list[tuple[int, str]]:
+        specs = self._charge_roll_target_strength_specs()
+        if not specs:
+            return []
+        if target_units is None:
+            return []
+        targets = list(target_units) if isinstance(target_units, (list, tuple, set)) else [target_units]
+        if not targets:
+            return []
+
+        has_below_start = False
+        has_below_half = False
+        for target in targets:
+            if target is None:
+                continue
+            try:
+                root = target.get_attached_unit_root()
+            except Exception:
+                root = target
+            if root is None:
+                continue
+            try:
+                if root.is_below_half_strength():
+                    has_below_half = True
+            except Exception:
+                pass
+            try:
+                if root.is_below_starting_strength():
+                    has_below_start = True
+            except Exception:
+                pass
+
+        if not has_below_half and not has_below_start:
+            return []
+
+        modifiers: list[tuple[int, str]] = []
+        for spec in specs:
+            if has_below_half and int(spec.get("half_bonus", 0) or 0):
+                modifiers.append((int(spec.get("half_bonus", 0) or 0), spec.get("source", "Charge roll bonus")))
+            elif has_below_start and int(spec.get("base_bonus", 0) or 0):
+                modifiers.append((int(spec.get("base_bonus", 0) or 0), spec.get("source", "Charge roll bonus")))
+        return modifiers
 
     def has_thrill_seekers(self) -> bool:
         for ab in self._iter_active_abilities():
@@ -15748,6 +15847,137 @@ class Unit:
             self._ability_cache = {}
         self._ability_cache[cache_key] = (bonus, reason)
         return bonus, reason
+
+    def _get_model_attack_roll_rules(self, model: Optional['Model'] = None) -> list[tuple['AttackRollRule', str]]:
+        if model is None:
+            return []
+        cache_key = f"model_attack_roll_rules:{getattr(model, '_id', id(model))}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        rules: list[tuple[AttackRollRule, str]] = []
+        seen_names: set[str] = set()
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            try:
+                ability_name = str(name or "").replace("’", "'").strip()
+            except Exception:
+                ability_name = ""
+            name_key = ability_name.lower().strip()
+            if name_key and name_key in seen_names:
+                continue
+            if name_key:
+                seen_names.add(name_key)
+            text_src = desc or name or ""
+            for rule in self._parse_attack_roll_rules_from_text(text_src):
+                if rule.subject != "this_model":
+                    continue
+                rules.append((rule, ability_name or "Model ability"))
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(rules)
+        return list(rules)
+
+    def model_attack_roll_modifiers_vs_weakened_target(
+        self,
+        model: Optional['Model'] = None,
+        *,
+        attack_type: str = "any",
+        target: Optional['Unit'] = None,
+    ) -> dict:
+        """
+        Model-specific rule: add to Hit/Wound rolls vs targets below Starting Strength/Half-strength.
+        """
+        mods = {
+            "hit": 0,
+            "wound": 0,
+            "hit_reasons": (),
+            "wound_reasons": (),
+        }
+        if model is None:
+            return mods
+        atype = str(attack_type or "").strip().lower()
+        if atype not in ("melee", "ranged"):
+            atype = "any"
+
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        rules = self._get_model_attack_roll_rules(model)
+        if not rules:
+            return mods
+
+        hit_reasons: list[str] = []
+        wound_reasons: list[str] = []
+
+        def _cond_suffix(cond: Optional[AttackRollCondition]) -> str:
+            if not cond:
+                return ""
+            parts = []
+            if cond.target_battleshocked:
+                parts.append("vs Battle-shocked targets")
+            if cond.attacker_below_starting_strength:
+                parts.append("while below Starting Strength")
+            if cond.attacker_below_half_strength:
+                parts.append("while below Half-strength")
+            if cond.target_within_objective:
+                parts.append("vs targets within objective range")
+            if cond.target_within_range is not None:
+                parts.append(f"vs targets within {cond.target_within_range}\"")
+            if cond.target_can_fly is True:
+                parts.append("vs FLY targets")
+            if cond.target_can_fly is False:
+                parts.append("vs non-FLY targets")
+            if cond.target_keywords_any:
+                if set(cond.target_keywords_any) == {"character"}:
+                    parts.append("vs CHARACTER targets")
+                elif set(cond.target_keywords_any) == {"monster", "vehicle"}:
+                    parts.append("vs MONSTER/VEHICLE targets")
+            if cond.target_below_starting_strength:
+                parts.append("vs targets below Starting Strength")
+            if cond.target_below_half_strength:
+                parts.append("vs targets below Half-strength")
+            if cond.target_exclude_keywords_any:
+                parts.append("excluding " + ", ".join(cond.target_exclude_keywords_any))
+            if not parts:
+                return ""
+            return " (" + "; ".join(parts) + ")"
+
+        for rule, name in list(rules or []):
+            if atype != "any" and rule.attack_type not in ("any", atype):
+                continue
+            if rule.scope == "leading" and not bool(getattr(self, "is_attached_leader", False)):
+                continue
+            for eff in rule.effects:
+                if eff.roll not in ("hit", "wound"):
+                    continue
+                if eff.kind not in ("add", "sub"):
+                    continue
+                cond = eff.condition
+                if not cond or not (cond.target_below_starting_strength or cond.target_below_half_strength):
+                    continue
+                if not self._attack_condition_met(cond, target=target, source_unit=root):
+                    continue
+                try:
+                    val = int(eff.value or 0)
+                except Exception:
+                    val = 0
+                if eff.kind == "sub":
+                    val = -val
+                if not val:
+                    continue
+                label = name or "Model ability"
+                if eff.roll == "hit":
+                    mods["hit"] += val
+                    hit_reasons.append(f"{val:+d} to hit from {label}{_cond_suffix(cond)}")
+                else:
+                    mods["wound"] += val
+                    wound_reasons.append(f"{val:+d} to wound from {label}{_cond_suffix(cond)}")
+
+        mods["hit_reasons"] = tuple(hit_reasons)
+        mods["wound_reasons"] = tuple(wound_reasons)
+        return mods
 
     def model_post_shoot_battleshock_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """

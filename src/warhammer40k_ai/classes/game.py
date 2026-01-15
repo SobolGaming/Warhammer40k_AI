@@ -8286,7 +8286,7 @@ class Game:
 
         base_charge_roll = int(declared.get("base_roll", 0) or 0)
         individual_dice = list(declared.get("dice", []) or [])
-        charge_roll = self._apply_charge_modifiers(charging_unit, base_charge_roll)
+        charge_roll = self._apply_charge_modifiers(charging_unit, base_charge_roll, target_unit=target_unit)
         
         print(f"⚔️ {charging_unit.name} charging {target_unit.name}")
         print(f"⚔️ Current edge-to-edge distance: {current_distance:.1f}\"")
@@ -8396,7 +8396,7 @@ class Game:
             
             return False
     
-    def _apply_charge_modifiers(self, charging_unit: 'Unit', base_roll: int) -> int:
+    def _apply_charge_modifiers(self, charging_unit: 'Unit', base_roll: int, *, target_unit: Optional['Unit'] = None) -> int:
         """Apply charge roll modifiers based on unit abilities, stratagems, etc."""
         modified_roll = base_roll
         modifiers: list[tuple[int, str]] = []
@@ -8455,6 +8455,12 @@ class Game:
             from ..utility.aura_effects import get_aura_advance_charge_roll_modifiers
             _adv_mods, aura_charge_mods = get_aura_advance_charge_roll_modifiers(charging_unit, game_map=self.map)
             for val, source in list(aura_charge_mods or []):
+                if val:
+                    modifiers.append((int(val), source))
+        except Exception:
+            pass
+        try:
+            for val, source in charging_unit.get_charge_roll_target_strength_modifiers(target_unit):
                 if val:
                     modifiers.append((int(val), source))
         except Exception:

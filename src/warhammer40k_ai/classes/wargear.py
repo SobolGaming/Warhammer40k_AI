@@ -1989,6 +1989,23 @@ class WargearProfile:
         except Exception:
             unit_hit_mods = None
 
+        # Model-specific: bonuses vs weakened targets (below Starting Strength / Half-strength).
+        try:
+            unit = attacker.parent_unit
+            model_strength_mods = attack_instance.get("_model_strength_attack_mods")
+            if model_strength_mods is None:
+                model_strength_mods = unit.model_attack_roll_modifiers_vs_weakened_target(
+                    attacker,
+                    attack_type=attack_type,
+                    target=target,
+                )
+                attack_instance["_model_strength_attack_mods"] = model_strength_mods
+            if isinstance(model_strength_mods, dict) and int(model_strength_mods.get("hit", 0) or 0):
+                bonus = int(model_strength_mods.get("hit", 0) or 0)
+                _add_hit_mod(bonus, list(model_strength_mods.get("hit_reasons", ()) or ()))
+        except Exception:
+            pass
+
         # Model-specific: +hit vs FLY targets.
         try:
             target_can_fly = False
@@ -3759,6 +3776,26 @@ class WargearProfile:
         except Exception:
             lead_mods = None
             unit_wound_mods = None
+
+        # Model-specific: bonuses vs weakened targets (below Starting Strength / Half-strength).
+        try:
+            model_strength_mods = attack_instance.get("_model_strength_attack_mods")
+            if model_strength_mods is None:
+                unit = attacker.parent_unit
+                is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+                attack_type = "melee" if is_melee else "ranged"
+                model_strength_mods = unit.model_attack_roll_modifiers_vs_weakened_target(
+                    attacker,
+                    attack_type=attack_type,
+                    target=target,
+                )
+                attack_instance["_model_strength_attack_mods"] = model_strength_mods
+            if isinstance(model_strength_mods, dict) and int(model_strength_mods.get("wound", 0) or 0):
+                bonus = int(model_strength_mods.get("wound", 0) or 0)
+                dice_modifier += bonus
+                wound_result['modifiers'].extend(list(model_strength_mods.get("wound_reasons", ()) or ()))
+        except Exception:
+            pass
 
         crit_wound_threshold = None
         crit_wound_reasons: list[str] = []

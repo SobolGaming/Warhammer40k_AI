@@ -1308,6 +1308,7 @@ def _classify_ability(
     post_shoot_battleshock_support = _post_shoot_battleshock_support(description)
     post_shoot_suppression_support = _post_shoot_suppression_support(description)
     fight_phase_engagement_battleshock_support = _fight_phase_engagement_battleshock_support(description)
+    charge_target_strength_bonus_support = _charge_target_strength_bonus_support(description)
     daemonic_allegiance_support = _daemonic_allegiance_wargear_support(description)
     reinforcements_denial_support = _reinforcements_denial_support(description)
     cp_on_destroy_support = _gain_cp_on_destroy_support(description)
@@ -1319,6 +1320,7 @@ def _classify_ability(
     model_reroll_support = _model_reroll_wound_vs_character_support(description)
     attack_roll_cp_support = _attack_roll_plus_cp_on_destroy_support(description)
     model_hit_vs_fly_support = _model_hit_bonus_vs_fly_support(description)
+    model_target_strength_support = _model_target_strength_hit_wound_support(description)
     targeted_stratagem_discount_support = _targeted_stratagem_cp_discount_support(description)
     charge_end_mortal_support = _charge_end_mortal_wounds_support(description)
     fight_within_3_support = _fight_within_3_support(description)
@@ -1410,6 +1412,8 @@ def _classify_ability(
         return post_shoot_suppression_support
     if fight_phase_engagement_battleshock_support:
         return fight_phase_engagement_battleshock_support
+    if charge_target_strength_bonus_support:
+        return charge_target_strength_bonus_support
     if daemonic_allegiance_support:
         return daemonic_allegiance_support
     if reinforcements_denial_support:
@@ -1430,6 +1434,8 @@ def _classify_ability(
         return attack_roll_cp_support
     if model_hit_vs_fly_support:
         return model_hit_vs_fly_support
+    if model_target_strength_support:
+        return model_target_strength_support
     if targeted_stratagem_discount_support:
         return targeted_stratagem_discount_support
     if charge_end_mortal_support:
@@ -1966,6 +1972,40 @@ def _model_hit_bonus_vs_fly_support(description: str) -> Optional[Tuple[str, str
     if not m:
         return None
     return ("Supported", f"Model attacks vs FLY targets gain +{m.group('amt')} to hit.")
+
+
+def _model_target_strength_hit_wound_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    rule = parse_attack_roll_text(description)
+    if rule is None:
+        return None
+    if rule.subject != "this_model":
+        return None
+    if rule.attack_type not in ("melee", "any"):
+        return None
+    if rule.scope not in ("unit", "leading"):
+        return None
+    hit_ok = False
+    wound_ok = False
+    for eff in rule.effects:
+        if eff.roll not in ("hit", "wound"):
+            continue
+        if eff.kind not in ("add", "sub"):
+            continue
+        cond = eff.condition
+        if not cond:
+            continue
+        if eff.roll == "hit" and cond.target_below_starting_strength:
+            hit_ok = True
+        if eff.roll == "wound" and cond.target_below_half_strength:
+            wound_ok = True
+    if not (hit_ok and wound_ok):
+        return None
+    return (
+        "Supported",
+        "Model melee attacks vs weakened targets: +hit below Starting Strength, +wound below Half-strength.",
+    )
 
 
 def _charge_end_mortal_wounds_support(description: str) -> Optional[Tuple[str, str]]:
@@ -2678,6 +2718,27 @@ def _fight_phase_engagement_battleshock_support(description: str) -> Optional[Tu
             f"Start of Fight phase: each enemy unit in Engagement Range takes a Battle-shock test; Below Half-strength suffers -{m.group('penalty')}.",
         )
     return ("Supported", "Start of Fight phase: each enemy unit in Engagement Range takes a Battle-shock test.")
+
+
+def _charge_target_strength_bonus_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time this (?:model|unit) declares a charge that targets? one or more units? (?:that are )?below starting strength "
+        r"add (?P<base>\d+) to the charge roll if one or more of the targets? of that charge are below half strength "
+        r"add (?P<half>\d+) to the charge roll instead"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    return (
+        "Supported",
+        f"Charge roll bonus vs reduced strength targets: +{m.group('base')} if any target is Below Starting Strength; "
+        f"+{m.group('half')} instead if any target is Below Half-strength.",
+    )
 
 
 def _daemonic_allegiance_wargear_support(description: str) -> Optional[Tuple[str, str]]:
