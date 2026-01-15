@@ -190,6 +190,8 @@ class Game:
         # Transport abilities that trigger on enemy movement/setup
         self.event_system.subscribe("unit_move_ended", self._on_unit_move_ended_transport_reactive_disembark)
         self.event_system.subscribe("unit_set_up", self._on_unit_set_up_transport_reactive_disembark)
+        # Datasheet abilities: reactive normal moves on enemy movement end
+        self.event_system.subscribe("unit_move_ended", self._on_unit_move_ended_loping_speed)
         # Battle Focus triggers (fall back reactions, fight selection, shooting reactions)
         self.event_system.subscribe("unit_move_started", self._on_unit_move_started_battle_focus)
         self.event_system.subscribe("unit_move_ended", self._on_unit_move_ended_battle_focus)
@@ -3737,6 +3739,87 @@ class Game:
                     pass
             else:
                 mgr.maybe_trigger_opportunity_seized(unit, self)
+
+    def _on_unit_move_ended_loping_speed(self, unit=None, action: str | None = None, **_kwargs) -> None:
+        if unit is None:
+            return
+        action_key = str(action or "").strip().lower()
+        if action_key not in ("move", "advance", "fall_back"):
+            return
+        if self.map is None:
+            return
+        try:
+            moving_owner = unit.get_parent_army().player
+        except Exception:
+            moving_owner = None
+        try:
+            moving_root = unit.get_attached_unit_root()
+        except Exception:
+            moving_root = unit
+        if moving_root is None:
+            return
+
+        for p in list(getattr(self, "players", []) or []):
+            if p is None or p is moving_owner:
+                continue
+            army = getattr(p, "army", None)
+            if army is None:
+                continue
+            try:
+                is_human = bool(getattr(getattr(p, "type", None), "name", "") == "HUMAN")
+            except Exception:
+                is_human = False
+            seen = set()
+            for candidate in list(getattr(army, "units", []) or []):
+                if candidate is None:
+                    continue
+                try:
+                    root = candidate.get_attached_unit_root()
+                except Exception:
+                    root = candidate
+                if root is None:
+                    continue
+                try:
+                    rid = getattr(root, "_id", None) or id(root)
+                except Exception:
+                    rid = id(root)
+                if rid in seen:
+                    continue
+                seen.add(rid)
+
+                try:
+                    rule = root.get_loping_speed_rule()
+                except Exception:
+                    rule = None
+                if not rule:
+                    continue
+                try:
+                    rng = int(rule.get("range", 9) or 9)
+                except Exception:
+                    rng = 9
+                try:
+                    if not root.can_loping_speed(game=self, game_map=self.map, moving_unit=moving_root, range_override=rng):
+                        continue
+                except Exception:
+                    continue
+
+                es = getattr(self, "event_system", None)
+                if is_human and es is not None:
+                    try:
+                        subs = getattr(es, "subscribers", {})
+                        if isinstance(subs, dict) and subs.get("loping_speed_prompt"):
+                            es.publish(
+                                "loping_speed_prompt",
+                                player=p,
+                                unit=root,
+                                moving_unit=moving_root,
+                                rule=rule,
+                                game=self,
+                            )
+                            continue
+                    except Exception:
+                        pass
+                # Non-human players: no auto movement wired (skip).
 
     def _on_fight_unit_selected_battle_focus(self, unit=None, selecting_player=None, **_kwargs) -> None:
         if unit is None or selecting_player is None:
@@ -8777,6 +8860,23 @@ class Game:
             pass
 
         return int(max_distance)
+
+    def roll_loping_speed_distance(self, unit: 'Unit') -> int:
+        """Roll distance for a reactive Normal move (D6)."""
+        if unit is None:
+            return 0
+        try:
+            base_roll = int(get_roll("D6") or 0)
+        except Exception:
+            base_roll = 1
+        try:
+            from ..utility.event_bus import append_dice
+            player = getattr(unit.get_parent_army(), "player", None)
+            if player is not None:
+                append_dice(player.name, f"Loping Speed roll: {int(base_roll)}\" for {unit.name}")
+        except Exception:
+            pass
+        return int(base_roll)
 
     def attempt_charge(
         self,

@@ -1559,6 +1559,9 @@ class GameView:
         # World Eaters: Blood Surge prompt queue
         self._pending_blood_surge_queue = []
         self._blood_surge_flow_active = False
+        # Reactive enemy-move prompt queue (e.g. Loping Speed)
+        self._pending_loping_speed_queue = []
+        self._loping_speed_flow_active = False
         # Charge-end mortal wound prompts
         self._pending_charge_mortal_wounds_queue = []
         self._charge_mortal_wounds_flow_active = False
@@ -1621,6 +1624,8 @@ class GameView:
                 self.game.event_system.subscribe("blood_tithe_updated", self._on_blood_tithe_updated)
                 # World Eaters: Blood Surge prompt on opponent shooting casualties
                 self.game.event_system.subscribe("blood_surge_prompt", self._on_blood_surge_prompt)
+                # Reactive normal move prompt (enemy unit ends move within range)
+                self.game.event_system.subscribe("loping_speed_prompt", self._on_loping_speed_prompt)
                 # World Eaters: Frenzy prompt (Helbrute reactive shoot/fight)
                 self.game.event_system.subscribe("frenzy_prompt", self._on_frenzy_prompt)
                 # Charge-end mortal wound target selection
@@ -3513,6 +3518,104 @@ class GameView:
             return
         try:
             self.yes_no_dialog.show(title, msg, _done, yes_label="Surge", no_label="Skip")
+            self.dialog_manager.open(self.yes_no_dialog, modal=True)
+        except Exception:
+            _finish_and_next()
+
+    # ---------------- Reactive enemy-move prompts (Loping Speed) ----------------
+
+    def _on_loping_speed_prompt(self, player=None, unit=None, moving_unit=None, rule=None, game=None, **_kwargs):
+        if player is None or unit is None:
+            return
+        try:
+            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                return
+        except Exception:
+            return
+
+        if self._loping_speed_flow_active:
+            self._pending_loping_speed_queue.append((player, unit, moving_unit, rule, game))
+            return
+        self._pending_loping_speed_queue.append((player, unit, moving_unit, rule, game))
+        self._open_next_loping_speed_prompt(game or self.game)
+
+    def _open_next_loping_speed_prompt(self, game):
+        q = list(getattr(self, "_pending_loping_speed_queue", []) or [])
+        if not q:
+            self._pending_loping_speed_queue = []
+            self._loping_speed_flow_active = False
+            return
+        player, unit, moving_unit, rule, game_ctx = q.pop(0)
+        self._pending_loping_speed_queue = q
+
+        game_ctx = game_ctx or game or self.game
+        if player is None or unit is None or game_ctx is None:
+            self._open_next_loping_speed_prompt(game_ctx)
+            return
+
+        try:
+            rng = int((rule or {}).get("range", 9) or 9)
+        except Exception:
+            rng = 9
+        try:
+            if not unit.can_loping_speed(
+                game=game_ctx,
+                game_map=getattr(game_ctx, "map", None),
+                moving_unit=moving_unit,
+                range_override=rng,
+            ):
+                self._open_next_loping_speed_prompt(game_ctx)
+                return
+        except Exception:
+            self._open_next_loping_speed_prompt(game_ctx)
+            return
+
+        source = str((rule or {}).get("source", "") or "Reactive Move").strip() or "Reactive Move"
+        enemy_name = getattr(moving_unit, "name", "Enemy unit")
+        title = source
+        msg = (
+            f"{enemy_name} ended a move within {int(rng)}\" of {getattr(unit, 'name', 'unit')}.\n\n"
+            f"{source}: Make a Normal move of up to D6\"?"
+        )
+
+        def _finish_and_next():
+            self._loping_speed_flow_active = False
+            self._open_next_loping_speed_prompt(game_ctx)
+
+        def _start_loping_speed_move():
+            try:
+                max_distance = int(game_ctx.roll_loping_speed_distance(unit) or 0)
+            except Exception:
+                max_distance = 0
+            if max_distance <= 0:
+                _finish_and_next()
+                return
+
+            def _move_done(completed: bool):
+                try:
+                    if completed:
+                        unit.mark_loping_speed_used(game_ctx)
+                except Exception:
+                    pass
+                _finish_and_next()
+
+            try:
+                self.individual_model_movement_dialog.show(
+                    unit, "loping_speed", _move_done, game_ctx.map, max_distance
+                )
+                self.dialog_manager.open(self.individual_model_movement_dialog, modal=True)
+            except Exception:
+                _finish_and_next()
+
+        def _done(choice: bool):
+            if not choice:
+                _finish_and_next()
+                return
+            _start_loping_speed_move()
+
+        self._loping_speed_flow_active = True
+        try:
+            self.yes_no_dialog.show(title, msg, _done, yes_label="Move", no_label="Skip")
             self.dialog_manager.open(self.yes_no_dialog, modal=True)
         except Exception:
             _finish_and_next()

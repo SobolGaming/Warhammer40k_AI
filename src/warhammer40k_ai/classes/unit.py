@@ -878,6 +878,12 @@ class Unit:
         r"advance or fall back move within (\d+) of this (?:model|unit) any units embarked within it can disembark",
         re.IGNORECASE,
     )
+    _ENEMY_MOVE_REACTIVE_D6_RE = re.compile(
+        r"once\s+per\s+turn,?\s+when\s+an\s+enemy\s+unit\s+ends\s+a\s+normal(?:,)?\s+advance\s+or\s+fall\s+back\s+move\s+"
+        r"within\s+(?P<range>\d+)\s*\"?\s+of\s+this\s+(?:model|unit).*?"
+        r"not\s+within\s+engagement\s+range.*?make\s+a\s+normal\s+move\s+of\s+up\s+to\s+d6",
+        re.IGNORECASE,
+    )
     _REROLL_ADVANCE_CHARGE_RE = re.compile(
         r"re-?roll\s+advance\s+and\s+charge\s+rolls?\s+made\s+for\s+(?:this\s+model|the\s+bearer'?s\s+unit|that\s+unit)",
         re.IGNORECASE,
@@ -15746,6 +15752,148 @@ class Unit:
             self._ability_cache = {}
         self._ability_cache['blood_surge'] = found
         return found
+
+    def get_loping_speed_rule(self) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "Once per turn, when an enemy unit ends a Normal, Advance or Fall Back move within 9\" of this unit,
+        if this unit is not within Engagement Range of one or more enemy units, it can make a Normal move of up to D6\"."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "loping_speed_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+
+        for u in members:
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                key = (str(name or "").strip().lower(), u._normalize_rules_text(text_src).lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                text = u._normalize_rules_text(self._strip_eligibility_prefix(text_src))
+                if not text:
+                    continue
+                text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+                m = self._ENEMY_MOVE_REACTIVE_D6_RE.search(text)
+                if not m:
+                    continue
+                try:
+                    rng = int(m.group("range") or 0)
+                except Exception:
+                    rng = 0
+                if rng <= 0:
+                    rng = 9
+                source = str(name or "Loping Speed").strip() or "Loping Speed"
+                rule = {"range": int(rng), "source": source}
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def _loping_speed_turn_key(self, game=None) -> str:
+        if game is None:
+            try:
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+            except Exception:
+                game = None
+        try:
+            br = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            br = 0
+        try:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+        except Exception:
+            current_player = None
+        owner = str(getattr(current_player, "name", "") or "")
+        return f"{br}:{owner}"
+
+    def loping_speed_used_this_turn(self, game=None) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        key = self._loping_speed_turn_key(game)
+        return str(sr.get("loping_speed_used_turn_key", "")) == key
+
+    def mark_loping_speed_used(self, game=None) -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["loping_speed_used_turn_key"] = self._loping_speed_turn_key(game)
+        root.special_rules = sr
+
+    def can_loping_speed(self, game=None, game_map=None, *, moving_unit=None, range_override: Optional[int] = None) -> bool:
+        rule = self.get_loping_speed_rule()
+        if not rule:
+            return False
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        if not root.is_alive() or not getattr(root, "deployed", False):
+            return False
+        try:
+            if root.is_in_reserves():
+                return False
+        except Exception:
+            pass
+        try:
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
+        if root.loping_speed_used_this_turn(game):
+            return False
+        if game_map is None:
+            try:
+                game_map = getattr(game, "map", None)
+            except Exception:
+                game_map = None
+        if game_map is not None:
+            try:
+                for enemy in game_map.get_enemy_units(root):
+                    if game_map.is_within_engagement_range(root, enemy):
+                        return False
+            except Exception:
+                pass
+        if moving_unit is not None and game_map is not None:
+            try:
+                rng = int(range_override or rule.get("range", 9) or 9)
+            except Exception:
+                rng = 9
+            try:
+                dist = float(game_map.get_distance_between_units(root, moving_unit))
+            except Exception:
+                dist = None
+            if dist is None or dist > float(rng) + 1e-6:
+                return False
+        return True
 
     def has_frenzy(self) -> bool:
         """True if this unit has the Helbrute-style Frenzy ability (shoot or fight vs the triggering unit)."""

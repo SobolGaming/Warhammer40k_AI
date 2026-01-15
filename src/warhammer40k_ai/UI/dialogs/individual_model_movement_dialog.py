@@ -18,7 +18,7 @@ class IndividualModelMovementDialog(BaseDialog):
         
         # Dialog-specific state
         self.unit = None
-        self.movement_type = None  # 'move', 'advance', 'fall_back', 'scout', 'pile_in', 'consolidate', 'charge', 'reactive'
+        self.movement_type = None  # 'move', 'advance', 'fall_back', 'scout', 'pile_in', 'consolidate', 'charge', 'reactive', 'loping_speed'
         self.game_map = None
         self.max_distance = 0.0
         self.target_unit = None  # Target unit for charge movement
@@ -88,7 +88,7 @@ class IndividualModelMovementDialog(BaseDialog):
 
         # Publish unit move started (for Stratagem reactions like Overwatch)
         # NOTE: Do NOT publish for deployment placement.
-        if self.movement_type not in ('deploy', 'reactive', 'blood_surge'):
+        if self.movement_type not in ('deploy', 'reactive', 'blood_surge', 'loping_speed'):
             try:
                 _player = getattr(self.unit.get_parent_army(), 'player', None)
                 _game = getattr(_player, 'game', None) if _player else None
@@ -130,6 +130,8 @@ class IndividualModelMovementDialog(BaseDialog):
             # Scout moves happen before the game starts, different tracking needed
             return False  # For now, allow scout moves
         elif movement_type == 'reactive':
+            return False
+        elif movement_type == 'loping_speed':
             return False
         elif movement_type == 'deploy':
             return False
@@ -1154,7 +1156,8 @@ class IndividualModelMovementDialog(BaseDialog):
             'scout': MovementType.SCOUT,
             'pile_in': MovementType.PILE_IN,
             'consolidate': MovementType.CONSOLIDATE,
-            'reactive': MovementType.MOVE
+            'reactive': MovementType.MOVE,
+            'loping_speed': MovementType.MOVE
         }
 
         pathfinding_movement_type = movement_type_map.get(self.movement_type, MovementType.MOVE)
@@ -1354,7 +1357,7 @@ class IndividualModelMovementDialog(BaseDialog):
 
         # Publish unit move ended (for Stratagem reactions like Overwatch)
         # NOTE: Do NOT publish for deployment placement.
-        if self.movement_type not in ('deploy', 'reactive', 'blood_surge'):
+        if self.movement_type not in ('deploy', 'reactive', 'blood_surge', 'loping_speed'):
             try:
                 _player = getattr(self.unit.get_parent_army(), 'player', None)
                 _game = getattr(_player, 'game', None) if _player else None
