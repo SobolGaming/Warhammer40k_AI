@@ -2144,6 +2144,7 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         rf"{lead_prefix}melee weapons equipped by models in that unit have the lethal hits ability",
         rf"{lead_prefix}ranged weapons equipped by models in that unit have the lethal hits ability",
         rf"{lead_prefix}weapons equipped by models in that unit have the lethal hits ability",
+        rf"{lead_prefix}each time a model in that unit makes (?:a|an)?(?: melee| ranged)? attack(?:s)? add \d+ to the hit roll if that unit is below (?:its )?starting strength and add \d+ to the wound roll(?: as well)? if that unit is below (?:its )?half strength",
         rf"{lead_prefix}each time a model in that unit makes (?:a|an)?(?: melee| ranged)? attack add \d+ to the hit roll",
         rf"{lead_prefix}each time a model in that unit makes (?:a|an)?(?: melee| ranged)? attack add \d+ to the wound roll",
         rf"{lead_prefix}add \d+ to the hit roll if that unit is below (?:its )?starting strength",
