@@ -1309,6 +1309,7 @@ def _classify_ability(
     post_shoot_suppression_support = _post_shoot_suppression_support(description)
     fight_phase_engagement_battleshock_support = _fight_phase_engagement_battleshock_support(description)
     fight_phase_end_mortal_support = _fight_phase_end_mortal_wounds_support(description)
+    return_on_death_support = _return_on_death_support(description)
     charge_target_strength_bonus_support = _charge_target_strength_bonus_support(description)
     daemonic_allegiance_support = _daemonic_allegiance_wargear_support(description)
     reinforcements_denial_support = _reinforcements_denial_support(description)
@@ -1415,6 +1416,8 @@ def _classify_ability(
         return fight_phase_engagement_battleshock_support
     if fight_phase_end_mortal_support:
         return fight_phase_end_mortal_support
+    if return_on_death_support:
+        return return_on_death_support
     if charge_target_strength_bonus_support:
         return charge_target_strength_bonus_support
     if daemonic_allegiance_support:
@@ -2758,6 +2761,41 @@ def _fight_phase_end_mortal_wounds_support(description: str) -> Optional[Tuple[s
     if not re.fullmatch(pattern, norm):
         return None
     return ("Supported", "End of Fight phase: pick an engaged enemy; roll 8D6, each 4+ inflicts 1 mortal wound.")
+
+
+def _return_on_death_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"the first time (?:this model|the bearer) is destroyed(?: remove it from play without resolving its deadly demise ability)?(?: then)? "
+        r"(?:at the end of the phase roll one d6|roll one d6 at the end of the phase) on a (?P<roll>\d+) "
+        r"set (?:this model|the bearer) back up on the battlefield(?: as close as possible to where it was destroyed)? "
+        r"and not within engagement range of (?:one or more|any) enemy (?:units|models) with "
+        r"(?P<wounds>its full wounds remaining|(?:d3|d6|\d+) wounds? remaining)"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    roll = m.group("roll") or "2"
+    wounds_raw = m.group("wounds") or ""
+    wounds_desc = "full wounds"
+    if "full wounds" in wounds_raw:
+        wounds_desc = "full wounds"
+    elif wounds_raw.startswith("d3"):
+        wounds_desc = "D3 wounds"
+    elif wounds_raw.startswith("d6"):
+        wounds_desc = "D6 wounds"
+    else:
+        m2 = re.search(r"\d+", wounds_raw)
+        if m2:
+            wounds_desc = f"{m2.group(0)} wounds"
+    return (
+        "Supported",
+        f"First time destroyed: roll D6 at end of phase; on {roll}+ return with {wounds_desc} (not within Engagement Range).",
+    )
 
 
 def _charge_target_strength_bonus_support(description: str) -> Optional[Tuple[str, str]]:

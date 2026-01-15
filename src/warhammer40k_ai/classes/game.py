@@ -160,7 +160,7 @@ class Game:
         # Track attack targets separately from charge targets so abilities can opt in to either.
         self.phase_targeted_units: Dict[str, set[str]] = {}
         self.phase_charge_targets: Dict[str, set[str]] = {}
-        # Aeldari: Phoenix Gem pending returns (processed at end of the phase they were destroyed in)
+        # Return-on-death pending returns (processed at end of the phase they were destroyed in)
         self._phoenix_gem_pending: List[Dict[str, Any]] = []
         # World Eaters: Blood Surge shooting snapshots (attacker -> {target: model_count})
         self._blood_surge_shooting_snapshot: Dict['Unit', Dict['Unit', int]] = {}
@@ -781,6 +781,7 @@ class Game:
         position=None,
         phase_name: str | None = None,
         game_map=None,
+        spec: dict | None = None,
     ) -> None:
         if unit is None or model is None:
             return
@@ -790,8 +791,29 @@ class Game:
             "position": position,
             "phase_name": str(phase_name or "").strip().upper(),
             "game_map": game_map,
+            "spec": spec or {},
         }
         self._phoenix_gem_pending.append(payload)
+
+    def queue_return_on_death(
+        self,
+        *,
+        unit=None,
+        model=None,
+        position=None,
+        phase_name: str | None = None,
+        game_map=None,
+        spec: dict | None = None,
+    ) -> None:
+        """Alias for queueing return-on-death abilities (Phoenix Gem and similar)."""
+        self.queue_phoenix_gem_return(
+            unit=unit,
+            model=model,
+            position=position,
+            phase_name=phase_name,
+            game_map=game_map,
+            spec=spec,
+        )
 
     def _phoenix_gem_in_engagement_range(self, unit, candidate_base, game_map) -> bool:
         if unit is None or candidate_base is None or game_map is None:
@@ -879,17 +901,26 @@ class Game:
         model = payload.get("model")
         if unit is None or model is None:
             return
+        spec = payload.get("spec") or {}
+        try:
+            label = str(spec.get("name") or "Phoenix Gem")
+        except Exception:
+            label = "Phoenix Gem"
+        try:
+            roll_min = int(spec.get("roll_min", spec.get("roll", 2)) or 2)
+        except Exception:
+            roll_min = 2
         try:
             roll = int(get_roll("D6"))
         except Exception:
             roll = 1
         try:
-            print(f"✨ Phoenix Gem: rolled {roll} to return {getattr(model, 'name', 'bearer')}")
+            print(f"✨ {label}: rolled {roll} to return {getattr(model, 'name', 'bearer')}")
         except Exception:
             pass
-        if roll < 2:
+        if roll < roll_min:
             try:
-                print("❌ Phoenix Gem failed; bearer remains destroyed.")
+                print(f"❌ {label} failed; bearer remains destroyed.")
             except Exception:
                 pass
             return
@@ -901,7 +932,7 @@ class Game:
         placement = self._find_phoenix_gem_position(unit, model, payload.get("position"), game_map)
         if placement is None:
             try:
-                print("❌ Phoenix Gem: no valid placement found; bearer remains destroyed.")
+                print(f"❌ {label}: no valid placement found; bearer remains destroyed.")
             except Exception:
                 pass
             try:
@@ -930,7 +961,37 @@ class Game:
         except Exception:
             pass
         try:
-            model._wounds = int(getattr(model, "_base_wounds", getattr(model, "wounds", 0)))
+            base_wounds = int(getattr(model, "_base_wounds", getattr(model, "wounds", 0)) or 0)
+        except Exception:
+            base_wounds = 0
+        try:
+            wounds_spec = spec.get("wounds", "full")
+        except Exception:
+            wounds_spec = "full"
+        wounds_to_set = base_wounds
+        if isinstance(wounds_spec, int):
+            wounds_to_set = int(wounds_spec)
+        else:
+            try:
+                ws = str(wounds_spec or "").strip().lower()
+            except Exception:
+                ws = ""
+            if ws == "full" or ws == "":
+                wounds_to_set = base_wounds
+            elif ws in ("d3", "d6"):
+                try:
+                    wounds_to_set = int(get_roll(ws.upper()) or 0)
+                except Exception:
+                    wounds_to_set = base_wounds
+            else:
+                try:
+                    wounds_to_set = int(ws)
+                except Exception:
+                    wounds_to_set = base_wounds
+        if base_wounds > 0:
+            wounds_to_set = min(base_wounds, max(1, int(wounds_to_set)))
+        try:
+            model.wounds = int(wounds_to_set)
         except Exception:
             pass
         try:
@@ -953,7 +1014,7 @@ class Game:
         except Exception:
             pass
         try:
-            print(f"✅ Phoenix Gem: {getattr(unit, 'name', 'bearer')} returns to the battlefield.")
+            print(f"✅ {label}: {getattr(unit, 'name', 'bearer')} returns to the battlefield.")
         except Exception:
             pass
 

@@ -209,6 +209,11 @@ class Unit:
             self._refresh_targeted_stratagem_cp_discount_flags()
         except Exception:
             pass
+        # Parse "first time destroyed" return-to-battlefield abilities.
+        try:
+            self._refresh_return_on_death_flags()
+        except Exception:
+            pass
         # Parse charge-end mortal wound triggers.
         try:
             self._refresh_charge_end_mortal_wounds_flags()
@@ -942,6 +947,14 @@ class Unit:
     _FIGHT_PHASE_END_ENGAGEMENT_MORTAL_EIGHT_D6_RE = re.compile(
         r"at the end of the fight phase you can select one enemy unit within engagement range of this model "
         r"and roll (?:eight|8) d6 for each 4 that enemy unit suffers 1 mortal wounds?",
+        re.IGNORECASE,
+    )
+    _RETURN_ON_DEATH_RE = re.compile(
+        r"the first time (?:this model|the bearer) is destroyed(?: remove it from play without resolving its deadly demise ability)?(?: then)? "
+        r"(?:at the end of the phase roll one d6|roll one d6 at the end of the phase) on a (?P<roll>\d+) "
+        r"set (?:this model|the bearer) back up on the battlefield(?: as close as possible to where it was destroyed)? "
+        r"and not within engagement range of (?:one or more|any) enemy (?:units|models) with "
+        r"(?P<wounds>its full wounds remaining|(?:d3|d6|\d+) wounds? remaining)",
         re.IGNORECASE,
     )
     _FIGHT_WITHIN_3_RE = re.compile(
@@ -1699,6 +1712,140 @@ class Unit:
                 sr["stratagem_target_cp_discount_aura"] = deduped_specs
 
         self.special_rules = sr
+
+    @staticmethod
+    def _parse_return_on_death_wounds(text: str):
+        t = str(text or "").strip().lower()
+        if not t:
+            return "full"
+        if "full wounds" in t:
+            return "full"
+        if "d3" in t:
+            return "d3"
+        if "d6" in t:
+            return "d6"
+        m = re.search(r"\d+", t)
+        if m:
+            try:
+                return int(m.group(0))
+            except Exception:
+                return "full"
+        return "full"
+
+    def _refresh_return_on_death_flags(self) -> None:
+        """Parse 'first time destroyed' return-to-battlefield abilities into special_rules."""
+        if getattr(self, "special_rules", None) is None:
+            self.special_rules = {}
+        sr = self.special_rules
+        try:
+            if "return_on_death_specs" in sr:
+                del sr["return_on_death_specs"]
+        except Exception:
+            pass
+
+        specs: list[dict] = []
+        for ab in self._iter_active_abilities():
+            try:
+                if isinstance(ab, str):
+                    name = ab
+                    desc = ab
+                else:
+                    name = str(getattr(ab, "name", "") or "")
+                    desc = str(getattr(ab, "description", "") or "") or name
+            except Exception:
+                continue
+            text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or ""))
+            if not text:
+                continue
+            norm = text.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+            norm = re.sub(r"'s\b", "s", norm)
+            norm = re.sub(r"[^a-z0-9]+", " ", norm)
+            norm = re.sub(r"\s+", " ", norm).strip()
+            if not norm:
+                continue
+            m = self._RETURN_ON_DEATH_RE.fullmatch(norm)
+            if not m:
+                continue
+            try:
+                roll_min = int(m.group("roll") or 2)
+            except Exception:
+                roll_min = 2
+            wounds_raw = m.group("wounds") or ""
+            wounds = self._parse_return_on_death_wounds(wounds_raw)
+            skip_deadly = "without resolving its deadly demise ability" in norm
+            key = re.sub(r"[^a-z0-9]+", "_", str(name or "return_on_death").lower()).strip("_")
+            if not key:
+                key = "return_on_death"
+            specs.append(
+                {
+                    "name": name or "Return on Death",
+                    "roll_min": roll_min,
+                    "wounds": wounds,
+                    "skip_deadly_demise": bool(skip_deadly),
+                    "key": key,
+                }
+            )
+
+        if specs:
+            seen: set[tuple] = set()
+            deduped: list[dict] = []
+            for spec in specs:
+                key = (
+                    str(spec.get("key", "") or "").strip().lower(),
+                    int(spec.get("roll_min", 0) or 0),
+                    str(spec.get("wounds", "") or "").strip().lower(),
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                deduped.append(spec)
+            if deduped:
+                sr["return_on_death_specs"] = deduped
+
+        try:
+            if hasattr(self, "_ability_cache"):
+                self._ability_cache.pop("return_on_death_specs", None)
+        except Exception:
+            pass
+
+        self.special_rules = sr
+
+    def _get_return_on_death_specs(self) -> list[dict]:
+        cache_key = "return_on_death_specs"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache.get(cache_key) or [])
+
+        sr = getattr(self, "special_rules", None)
+        specs = list(sr.get("return_on_death_specs", []) or []) if isinstance(sr, dict) else []
+
+        if isinstance(sr, dict) and sr.get("enhancement_phoenix_gem"):
+            specs.append(
+                {
+                    "name": "Phoenix Gem",
+                    "roll_min": 2,
+                    "wounds": "full",
+                    "skip_deadly_demise": False,
+                    "key": "phoenix_gem",
+                }
+            )
+
+        seen: set[tuple] = set()
+        deduped: list[dict] = []
+        for spec in specs:
+            key = (
+                str(spec.get("key", "") or "").strip().lower(),
+                int(spec.get("roll_min", 0) or 0),
+                str(spec.get("wounds", "") or "").strip().lower(),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(spec)
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(deduped)
+        return list(deduped)
 
     def _refresh_charge_end_mortal_wounds_flags(self) -> None:
         """Parse charge-move mortal wound triggers into special_rules."""
@@ -3900,7 +4047,17 @@ class Unit:
             pass
 
         # Check for Deadly Demise ability before removing the model
-        if not fleed and game_map is not None:
+        skip_deadly = False
+        try:
+            skip_deadly = bool(getattr(model, "_skip_deadly_demise_once", False))
+        except Exception:
+            skip_deadly = False
+        if skip_deadly:
+            try:
+                setattr(model, "_skip_deadly_demise_once", False)
+            except Exception:
+                pass
+        if not fleed and game_map is not None and not skip_deadly:
             self._trigger_deadly_demise(model, game_map)
 
         # Remove model itself
@@ -3989,48 +4146,67 @@ class Unit:
         except Exception:
             pass
 
-        # AELDARI (Warhost): Phoenix Gem - first time bearer is destroyed, attempt to return at end of phase.
+        # Return-on-death abilities (e.g., Phoenix Gem / "first time destroyed" rules).
         try:
-            sr = getattr(self, "special_rules", None)
-            if isinstance(sr, dict) and sr.get("enhancement_phoenix_gem", False):
+            specs = list(self._get_return_on_death_specs() or [])
+        except Exception:
+            specs = []
+        if specs:
+            for spec in specs:
                 try:
-                    army = self.get_parent_army()
+                    key = str(spec.get("key") or spec.get("name") or "return_on_death").strip().lower()
                 except Exception:
-                    army = None
-                mgr = getattr(army, "aeldari_detachments", None) if army is not None else None
-                if mgr is None or not getattr(mgr, "is_warhost_detachment", lambda: False)():
-                    return
-                if not getattr(model, "has_used_once_per_battle", lambda _k: False)("phoenix_gem"):
+                    key = "return_on_death"
+                if not key:
+                    key = "return_on_death"
+                once_key = f"return_on_death:{key}"
+                try:
+                    already = bool(getattr(model, "has_used_once_per_battle", lambda _k: False)(once_key))
+                except Exception:
+                    already = False
+                if already:
+                    continue
+                try:
                     game = self.get_parent_army().player.game
-                    phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                except Exception:
+                    game = None
+                if game is None:
+                    continue
+                phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                pos = None
+                try:
+                    pos = model.get_location()
+                except Exception:
                     pos = None
+                if pos is None:
                     try:
-                        pos = model.get_location()
+                        pos = getattr(self, "position", None)
                     except Exception:
                         pos = None
-                    if pos is None:
-                        try:
-                            pos = getattr(self, "position", None)
-                        except Exception:
-                            pos = None
-                    if hasattr(game, "queue_phoenix_gem_return"):
-                        game.queue_phoenix_gem_return(
-                            unit=self,
-                            model=model,
-                            position=pos,
-                            phase_name=phase_name,
-                            game_map=game_map,
-                        )
-                        try:
-                            print(f"✨ Phoenix Gem: {model.name} will attempt to return at end of phase.")
-                        except Exception:
-                            pass
+                if spec.get("skip_deadly_demise"):
                     try:
-                        model.mark_used_once_per_battle("phoenix_gem")
+                        setattr(model, "_skip_deadly_demise_once", True)
                     except Exception:
-                        setattr(model, "_phoenix_gem_used", True)
-        except Exception:
-            pass
+                        pass
+                if hasattr(game, "queue_phoenix_gem_return"):
+                    game.queue_phoenix_gem_return(
+                        unit=self,
+                        model=model,
+                        position=pos,
+                        phase_name=phase_name,
+                        game_map=game_map,
+                        spec=spec,
+                    )
+                    try:
+                        label = str(spec.get("name") or "Return on Death")
+                        print(f"✨ {label}: {model.name} will attempt to return at end of phase.")
+                    except Exception:
+                        pass
+                try:
+                    model.mark_used_once_per_battle(once_key)
+                except Exception:
+                    pass
+                break
 
         # WORLD EATERS: Total Carnage (Blessings of Khorne) - deferred "fight on death" after attacker finishes attacks.
         # Trigger: a model is destroyed by a MELEE attack, model's unit benefits from Total Carnage, and unit has not fought this phase.
