@@ -105,6 +105,30 @@ def parse_enhancement_effects(description: str) -> List[EnhancementEffectSpec]:
             )
         )
 
+    # Add/Improve X to the Attacks and Damage characteristics of the bearer's melee weapons.
+    if "excluding extra attacks" not in low:
+        m = re.search(
+            r"add\s+(\d+)\s+to\s+the\s+attacks\s+and\s+damage\s+characteristics\s+of\s+"
+            r"(?:the\s+bearer'?s\s+melee\s+weapons|melee\s+weapons\s+equipped\s+by\s+the\s+bearer)\b",
+            r,
+            flags=re.IGNORECASE,
+        )
+        if not m:
+            m = re.search(
+                r"improve\s+the\s+attacks\s+and\s+damage\s+characteristics\s+of\s+"
+                r"(?:the\s+bearer'?s\s+melee\s+weapons|melee\s+weapons\s+equipped\s+by\s+the\s+bearer)\s+by\s+(\d+)\b",
+                r,
+                flags=re.IGNORECASE,
+            )
+        if m:
+            out.append(
+                EnhancementEffectSpec(
+                    kind="melee_ad_add",
+                    value=int(m.group(1)),
+                    notes=f"Improve melee weapons' A/D by {m.group(1)}.",
+                )
+            )
+
     # The bearer has a Save characteristic of X+.
     m = re.search(
         r"(?:the\s+)?bearer\s+has\s+a\s+save\s+characteristic\s+of\s+(\d+)\+\.",
@@ -277,6 +301,11 @@ def apply_enhancement_effects(unit, effects: List[EnhancementEffectSpec]) -> Non
         if eff.kind == "melee_asd_add" and eff.supported:
             unit.special_rules["enhancement_melee_attacks_bonus"] = int(unit.special_rules.get("enhancement_melee_attacks_bonus", 0)) + eff.value
             unit.special_rules["enhancement_melee_strength_bonus"] = int(unit.special_rules.get("enhancement_melee_strength_bonus", 0)) + eff.value
+            unit.special_rules["enhancement_melee_damage_bonus"] = int(unit.special_rules.get("enhancement_melee_damage_bonus", 0)) + eff.value
+            continue
+
+        if eff.kind == "melee_ad_add" and eff.supported:
+            unit.special_rules["enhancement_melee_attacks_bonus"] = int(unit.special_rules.get("enhancement_melee_attacks_bonus", 0)) + eff.value
             unit.special_rules["enhancement_melee_damage_bonus"] = int(unit.special_rules.get("enhancement_melee_damage_bonus", 0)) + eff.value
             continue
 
