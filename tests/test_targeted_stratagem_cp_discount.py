@@ -3,11 +3,11 @@ from types import SimpleNamespace
 
 
 class _MockDatasheet:
-    def __init__(self, name, *, abilities=None):
+    def __init__(self, name, *, abilities=None, keywords=None, faction_keywords=None):
         self.name = name
         self.faction_data = {"name": "Test Faction"}
-        self.keywords = []
-        self.faction_keywords = []
+        self.keywords = list(keywords or [])
+        self.faction_keywords = list(faction_keywords or [])
         self.datasheets_unit_composition = [{"description": "1 Test Model"}]
         self.datasheets_models_cost = [{"description": "1 model", "cost": 100}]
         self.datasheets_models = [
@@ -30,20 +30,27 @@ class _MockDatasheet:
         self.transport = ""
 
 
-def _make_unit(name, *, abilities=None):
+def _make_unit(name, *, abilities=None, keywords=None, faction_keywords=None):
     from warhammer40k_ai.classes.unit import Unit
 
-    datasheet = _MockDatasheet(name, abilities=abilities)
+    datasheet = _MockDatasheet(name, abilities=abilities, keywords=keywords, faction_keywords=faction_keywords)
     return Unit(datasheet)
 
 
 class TestTargetedStratagemCpDiscount(unittest.TestCase):
-    def _make_player(self, unit, *, battle_round=1):
+    def _make_player(self, units, *, battle_round=1):
         from warhammer40k_ai.classes.army import Army
         from warhammer40k_ai.classes.player import Player, PlayerType
 
         army = Army("Test", "Test")
-        army.units = [unit]
+        if not isinstance(units, (list, tuple)):
+            units = [units]
+        army.units = list(units)
+        for unit in army.units:
+            try:
+                unit.set_parent_army(army)
+            except Exception:
+                pass
         player = Player("P1", player_type=PlayerType.HUMAN, army=army)
         player.command_points = 1
         player.set_game(SimpleNamespace(turn=battle_round))
@@ -53,6 +60,13 @@ class TestTargetedStratagemCpDiscount(unittest.TestCase):
         return (
             "Once per battle round, one unit from your army with this ability can use it when its unit is targeted "
             "with a Stratagem. If it does, reduce the CP cost of that use of that Stratagem by 1CP."
+        )
+
+    def _aura_ability_text(self):
+        return (
+            "Once per battle round, one model from your army with this ability can use it when a friendly World Eaters "
+            "unit within 12\" of that model is targeted with a Stratagem. If it does, reduce the CP cost of that usage "
+            "of that Stratagem by 1CP."
         )
 
     def test_parses_targeted_stratagem_cp_discount(self):
@@ -124,6 +138,62 @@ class TestTargetedStratagemCpDiscount(unittest.TestCase):
 
         used = strat.use(player, player.game, target_unit=unit)
         self.assertTrue(used)
+
+    def test_parses_targeted_stratagem_cp_discount_aura(self):
+        ability = {
+            "name": "Battlefield Tactician",
+            "description": self._aura_ability_text(),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        unit = _make_unit("Herald", abilities=[ability])
+        specs = list(unit.special_rules.get("stratagem_target_cp_discount_aura", []) or [])
+        self.assertTrue(specs)
+        self.assertEqual(int(specs[0].get("range", 0)), 12)
+        self.assertEqual(specs[0].get("keyword"), "WORLD EATERS")
+
+    def test_discount_applies_within_range_for_friendly_world_eaters(self):
+        from warhammer40k_ai.classes.stratagems import Stratagem
+
+        ability = {
+            "name": "Battlefield Tactician",
+            "description": self._aura_ability_text(),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        source = _make_unit("Herald", abilities=[ability])
+        target = _make_unit("Berserkers", keywords=["WORLD EATERS"])
+        source.models[0].model_base.set_position(0.0, 0.0, 0.0)
+        target.models[0].model_base.set_position(10.0, 0.0, 0.0)
+        player = self._make_player([source, target], battle_round=1)
+        player.decision_hook = lambda _p, key, _ctx: key == "TARGETED_STRATAGEM_DISCOUNT"
+        strat = Stratagem(id="x", name="Test", type="Core", description="", cp_cost=2, turn="Either", phase="Any phase", detachment="", faction_id="")
+
+        ok = strat.can_use(player, player.game, target_unit=target)
+        self.assertTrue(ok)
+        used = strat.use(player, player.game, target_unit=target)
+        self.assertTrue(used)
+        self.assertEqual(int(player.command_points), 0)
+
+    def test_discount_requires_range_for_aura(self):
+        from warhammer40k_ai.classes.stratagems import Stratagem
+
+        ability = {
+            "name": "Battlefield Tactician",
+            "description": self._aura_ability_text(),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        source = _make_unit("Herald", abilities=[ability])
+        target = _make_unit("Berserkers", keywords=["WORLD EATERS"])
+        source.models[0].model_base.set_position(0.0, 0.0, 0.0)
+        target.models[0].model_base.set_position(20.0, 0.0, 0.0)
+        player = self._make_player([source, target], battle_round=1)
+        player.decision_hook = lambda _p, key, _ctx: key == "TARGETED_STRATAGEM_DISCOUNT"
+        strat = Stratagem(id="x", name="Test", type="Core", description="", cp_cost=2, turn="Either", phase="Any phase", detachment="", faction_id="")
+
+        ok = strat.can_use(player, player.game, target_unit=target)
+        self.assertFalse(ok)
 
 
 if __name__ == "__main__":

@@ -19,7 +19,7 @@ from ..utility.calcs import (
     movement_segment_cost,
 )
 from ..utility.dice import get_roll, DiceCollection
-from ..utility.attack_roll_parser import AttackRollCondition, parse_attack_roll_text
+from ..utility.attack_roll_parser import AttackRollCondition, AttackRollRule, parse_attack_roll_text
 from .status_effects import StatusEffect, BattleShockEffect
 import uuid
 import copy
@@ -130,7 +130,7 @@ class Unit:
         self.is_warlord = False
         self.parent_army = None
         self.spawned_in_battle = False  # Spawn-only units should not be mustered.
-        self.daemonic_allegiance = None
+        self.daemonic_allegiance = "UNSET"
 
         # Game State specific attributes
         self.models_lost = []
@@ -900,9 +900,27 @@ class Unit:
         re.IGNORECASE,
     )
     _TARGETED_STRATAGEM_CP_DISCOUNT_RE = re.compile(
-        r"once\s+per\s+battle\s+round.*?\bone\s+(?:unit|model)\s+from\s+your\s+army\s+with\s+this\s+ability\s+can\s+use\s+it\s+when\s+"
-        r"(?:its\s+unit|this\s+model'?s\s+unit|that\s+model'?s\s+unit)\s+is\s+targeted\s+with\s+a\s+stratagem.*?"
-        r"reduce\s+the\s+cp\s+cost\s+of\s+that\s+(?:use|usage)\s+of\s+that\s+stratagem\s+by\s+1cp",
+        r"once\s+per\s+battle\s+round\s+one\s+(?:unit|model)\s+from\s+your\s+army\s+with\s+this\s+ability\s+can\s+use\s+it\s+when\s+"
+        r"(?:its\s+unit|this\s+models\s+unit|that\s+models\s+unit)\s+is\s+targeted\s+with\s+a\s+stratagem\s+"
+        r"(?:if\s+it\s+does\s+)?reduce\s+the\s+cp\s+cost\s+of\s+that\s+(?:use|usage)\s+of\s+that\s+stratagem\s+by\s+1\s*cp",
+        re.IGNORECASE,
+    )
+    _TARGETED_STRATAGEM_CP_DISCOUNT_AURA_RE = re.compile(
+        r"once\s+per\s+battle\s+round\s+one\s+(?:unit|model)\s+from\s+your\s+army\s+with\s+this\s+ability\s+can\s+use\s+it\s+when\s+a\s+friendly\s+"
+        r"(?P<keyword>[a-z0-9 ]+?)\s+unit\s+within\s+(?P<range>\d+)\s+of\s+(?:that|this)\s+model\s+is\s+targeted\s+with\s+a\s+stratagem\s+"
+        r"(?:if\s+it\s+does\s+)?reduce\s+the\s+cp\s+cost\s+of\s+that\s+(?:use|usage)\s+of\s+that\s+stratagem\s+by\s+1\s*cp",
+        re.IGNORECASE,
+    )
+    _TARGETED_STRATAGEM_CP_DISCOUNT_AURA_ALT_RE = re.compile(
+        r"once\s+per\s+battle\s+round\s+when\s+a\s+friendly\s+(?P<keyword>[a-z0-9 ]+?)\s+unit\s+within\s+(?P<range>\d+)\s+of\s+this\s+model\s+"
+        r"is\s+targeted\s+with\s+a\s+stratagem\s+this\s+model\s+can\s+use\s+this\s+ability\s+(?:if\s+it\s+does\s+)?"
+        r"reduce\s+the\s+cp\s+cost\s+of\s+that\s+(?:use|usage)\s+of\s+that\s+stratagem\s+by\s+1\s*cp",
+        re.IGNORECASE,
+    )
+    _TARGETED_STRATAGEM_CP_DISCOUNT_AURA_ALT2_RE = re.compile(
+        r"once\s+per\s+battle\s+round\s+one\s+friendly\s+(?P<keyword>[a-z0-9 ]+?)\s+unit\s+within\s+(?P<range>\d+)\s+of\s+this\s+model\s+"
+        r"can\s+be\s+targeted\s+with\s+a\s+stratagem\s+(?:if\s+it\s+does\s+)?reduce\s+the\s+cp\s+cost\s+of\s+that\s+(?:use|usage)\s+"
+        r"of\s+that\s+stratagem\s+by\s+1\s*cp",
         re.IGNORECASE,
     )
     _POST_SHOOT_BATTLESHOCK_RE = re.compile(
@@ -1162,6 +1180,12 @@ class Unit:
     def get_daemonic_allegiance_selection(self) -> Optional[str]:
         choice = getattr(self, "daemonic_allegiance", None)
         if choice:
+            token = str(choice).strip()
+            if token.lower() in ("unset", "none"):
+                choice = None
+            else:
+                choice = token
+        if choice:
             return str(choice).strip()
         try:
             sr = getattr(self, "special_rules", None)
@@ -1169,6 +1193,12 @@ class Unit:
             sr = None
         if isinstance(sr, dict):
             choice = sr.get("daemonic_allegiance")
+            if choice:
+                token = str(choice).strip()
+                if token.lower() in ("unset", "none"):
+                    choice = None
+                else:
+                    choice = token
         return str(choice).strip() if choice else None
 
     def apply_daemonic_allegiance_selection(self, selection: Optional[str] = None) -> bool:
@@ -1579,10 +1609,13 @@ class Unit:
                 del sr["stratagem_target_cp_discount"]
             if "stratagem_target_cp_discount_sources" in sr:
                 del sr["stratagem_target_cp_discount_sources"]
+            if "stratagem_target_cp_discount_aura" in sr:
+                del sr["stratagem_target_cp_discount_aura"]
         except Exception:
             pass
 
         names: list[str] = []
+        aura_specs: list[dict] = []
         for ab in self._iter_active_abilities():
             try:
                 if isinstance(ab, str):
@@ -1596,21 +1629,45 @@ class Unit:
             text = self._normalize_rules_text(desc or "")
             if not text:
                 continue
-            low = text.lower().replace("\u2019", "'").replace("\u0192?T", "'")
-            if "once per battle round" not in low:
+            norm = text.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+            norm = re.sub(r"'s\b", "s", norm)
+            norm = re.sub(r"[^a-z0-9]+", " ", norm)
+            norm = re.sub(r"\s+", " ", norm).strip()
+            if not norm:
                 continue
-            if "stratagem" not in low:
+
+            if self._TARGETED_STRATAGEM_CP_DISCOUNT_RE.fullmatch(norm):
+                if name:
+                    names.append(name)
+                else:
+                    names.append("Stratagem CP Discount")
                 continue
-            if "reduce the cp cost" not in low:
-                continue
-            if "within" in low:
-                continue
-            if not self._TARGETED_STRATAGEM_CP_DISCOUNT_RE.search(low):
-                continue
-            if name:
-                names.append(name)
-            else:
-                names.append("Stratagem CP Discount")
+
+            for pat in (
+                self._TARGETED_STRATAGEM_CP_DISCOUNT_AURA_RE,
+                self._TARGETED_STRATAGEM_CP_DISCOUNT_AURA_ALT_RE,
+                self._TARGETED_STRATAGEM_CP_DISCOUNT_AURA_ALT2_RE,
+            ):
+                m = pat.fullmatch(norm)
+                if not m:
+                    continue
+                try:
+                    rng = int(m.group("range"))
+                except Exception:
+                    rng = 0
+                if rng <= 0:
+                    continue
+                kw = str(m.group("keyword") or "").strip()
+                if kw:
+                    kw = re.sub(r"\s+", " ", kw).strip().upper()
+                spec = {
+                    "range": rng,
+                    "keyword": kw,
+                    "name": name or "Stratagem CP Discount",
+                    "description": desc or "",
+                }
+                aura_specs.append(spec)
+                break
 
         if names:
             sr["stratagem_target_cp_discount"] = True
@@ -1624,6 +1681,22 @@ class Unit:
                 deduped.append(str(n))
             if deduped:
                 sr["stratagem_target_cp_discount_sources"] = deduped
+
+        if aura_specs:
+            seen_specs: set[tuple] = set()
+            deduped_specs: list[dict] = []
+            for spec in aura_specs:
+                key = (
+                    int(spec.get("range", 0) or 0),
+                    str(spec.get("keyword", "") or "").strip().lower(),
+                    str(spec.get("name", "") or "").strip().lower(),
+                )
+                if key in seen_specs:
+                    continue
+                seen_specs.add(key)
+                deduped_specs.append(spec)
+            if deduped_specs:
+                sr["stratagem_target_cp_discount_aura"] = deduped_specs
 
         self.special_rules = sr
 

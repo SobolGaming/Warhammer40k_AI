@@ -2095,19 +2095,41 @@ def _targeted_stratagem_cp_discount_support(description: str) -> Optional[Tuple[
     norm = _norm_rules_text(description)
     if not norm:
         return None
-    if "within" in norm:
-        return None
-    pattern = (
+    direct_pattern = (
         r"once per battle round one (?:unit|model) from your army with this ability can use it when "
         r"(?:its unit|this models unit|that models unit) is targeted with a stratagem(?: if it does)? reduce the cp cost of that "
-        r"(?:use|usage) of that stratagem by 1cp"
+        r"(?:use|usage) of that stratagem by 1 ?cp"
     )
-    if not re.fullmatch(pattern, norm):
-        return None
-    return (
-        "Supported",
-        "Once per battle round, when this unit is targeted with a Stratagem, you can reduce its CP cost by 1.",
+    aura_pattern = (
+        r"once per battle round one (?:unit|model) from your army with this ability can use it when a friendly "
+        r"(?P<keyword>[a-z0-9 ]+?) unit within (?P<range>\d+) of (?:that|this) model is targeted with a stratagem(?: if it does)? "
+        r"reduce the cp cost of that (?:use|usage) of that stratagem by 1 ?cp"
     )
+    aura_alt_pattern = (
+        r"once per battle round when a friendly (?P<keyword>[a-z0-9 ]+?) unit within (?P<range>\d+) of this model is targeted with a "
+        r"stratagem this model can use this ability(?: if it does)? reduce the cp cost of that (?:use|usage) of that stratagem by 1 ?cp"
+    )
+    aura_alt2_pattern = (
+        r"once per battle round one friendly (?P<keyword>[a-z0-9 ]+?) unit within (?P<range>\d+) of this model can be targeted with a "
+        r"stratagem(?: if it does)? reduce the cp cost of that (?:use|usage) of that stratagem by 1 ?cp"
+    )
+    for pattern in (direct_pattern, aura_pattern, aura_alt_pattern, aura_alt2_pattern):
+        m = re.fullmatch(pattern, norm)
+        if not m:
+            continue
+        if "keyword" in m.groupdict():
+            kw = re.sub(r"\s+", " ", (m.group("keyword") or "").strip())
+            rng = m.group("range") or "0"
+            kw_label = kw.upper() if kw else "friendly"
+            return (
+                "Supported",
+                f"Once per battle round, when a friendly {kw_label} unit within {rng}\" is targeted with a Stratagem, reduce its CP cost by 1.",
+            )
+        return (
+            "Supported",
+            "Once per battle round, when this unit is targeted with a Stratagem, you can reduce its CP cost by 1.",
+        )
+    return None
 
 
 def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:

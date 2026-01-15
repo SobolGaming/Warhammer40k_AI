@@ -441,9 +441,14 @@ class Army:
         #    raise ArmyValidationError(f"Unit {unit.name} does not match army faction {self.faction}.")
         unit.set_parent_army(self)
         try:
-            unit.apply_daemonic_allegiance_selection()
-        except ValueError as exc:
-            raise ArmyValidationError(str(exc))
+            apply_fn = getattr(unit, "apply_daemonic_allegiance_selection", None)
+        except Exception:
+            apply_fn = None
+        if callable(apply_fn):
+            try:
+                apply_fn()
+            except ValueError as exc:
+                raise ArmyValidationError(str(exc))
         self.units.append(unit)
         return True
 

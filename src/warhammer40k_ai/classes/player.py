@@ -379,6 +379,112 @@ class Player:
             deduped.append(str(n))
         return bool(found), deduped
 
+    def _target_unit_has_stratagem_target_cp_discount_aura(self, target_unit) -> tuple[bool, list[str]]:
+        if target_unit is None:
+            return False, []
+        try:
+            if target_unit.get_parent_army() is not self.get_army():
+                return False, []
+        except Exception:
+            pass
+        try:
+            army = self.get_army()
+        except Exception:
+            army = None
+        if army is None:
+            return False, []
+        try:
+            from warhammer40k_ai.utility.aura_utils import unit_within_range_of_unit
+        except Exception:
+            unit_within_range_of_unit = None
+
+        def _model_has_ability_name(model, ability_name: str) -> bool:
+            if model is None:
+                return False
+            key = str(ability_name or "").strip().lower()
+            if not key:
+                return False
+            try:
+                abilities = getattr(model, "abilities", {}) or {}
+            except Exception:
+                return False
+            for nm in list(abilities.keys()):
+                if str(nm or "").strip().lower() == key:
+                    return True
+            return False
+
+        def _source_model_within_range(source_unit, target, rng: float, ability_name: str) -> bool:
+            try:
+                models = list(source_unit.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(source_unit, "models", []) or [])
+            has_named_model = False
+            for m in models:
+                try:
+                    if not getattr(m, "is_alive", True):
+                        continue
+                except Exception:
+                    continue
+                if ability_name and _model_has_ability_name(m, ability_name):
+                    has_named_model = True
+                    try:
+                        if source_unit._model_within_range_of_unit(m, target, rng):
+                            return True
+                    except Exception:
+                        continue
+            if has_named_model:
+                return False
+            if unit_within_range_of_unit is None:
+                return False
+            try:
+                return bool(unit_within_range_of_unit(source_unit, target, rng, use_attached_aggregate=True))
+            except Exception:
+                return False
+
+        names: list[str] = []
+        for u in list(getattr(army, "units", []) or []):
+            try:
+                if not u.is_alive():
+                    continue
+            except Exception:
+                continue
+            sr = getattr(u, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            specs = list(sr.get("stratagem_target_cp_discount_aura", []) or [])
+            if not specs:
+                continue
+            for spec in specs:
+                try:
+                    rng = float(spec.get("range", 0) or 0)
+                except Exception:
+                    rng = 0.0
+                if rng <= 0:
+                    continue
+                kw = str(spec.get("keyword", "") or "").strip()
+                if kw:
+                    try:
+                        if not target_unit.has_any_keyword(kw):
+                            continue
+                    except Exception:
+                        continue
+                name = str(spec.get("name", "") or "Stratagem CP Discount").strip()
+                if _source_model_within_range(u, target_unit, rng, name):
+                    names.append(name or "Stratagem CP Discount")
+
+        if not names:
+            return False, []
+        # Deduplicate while preserving order.
+        seen = set()
+        deduped: list[str] = []
+        for n in names:
+            key = str(n).strip().lower()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            deduped.append(str(n))
+        return True, deduped
+
     def _preview_targeted_stratagem_cp_discount(self, *, target_unit=None) -> tuple[int, list[str]]:
         """
         Generic targeted stratagem CP discount:
@@ -393,9 +499,21 @@ class Player:
         if int(self._ability_used_battle_round.get("TARGETED_STRATAGEM_DISCOUNT", 0) or 0) == br:
             return 0, []
         found, names = self._target_unit_has_stratagem_target_cp_discount(target_unit)
-        if not found:
+        aura_found, aura_names = self._target_unit_has_stratagem_target_cp_discount_aura(target_unit)
+        if not found and not aura_found:
             return 0, []
-        return 1, names
+        combined = list(names or [])
+        combined.extend(aura_names or [])
+        # Deduplicate while preserving order.
+        seen = set()
+        deduped: list[str] = []
+        for n in combined:
+            key = str(n).strip().lower()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            deduped.append(str(n))
+        return 1, deduped
 
     def _target_unit_has_gift_of_foresight(self, target_unit) -> bool:
         if target_unit is None:
