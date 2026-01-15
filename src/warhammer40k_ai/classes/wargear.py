@@ -3162,7 +3162,8 @@ class WargearProfile:
             unit = getattr(attacker, "parent_unit", None)
             root = unit.get_attached_unit_root() if unit is not None else None
             if root is not None and hasattr(root, "leading_unit_weapons_have_lethal_hits"):
-                leading_lethal = bool(root.leading_unit_weapons_have_lethal_hits())
+                attack_type = "melee" if is_melee else "ranged" if is_ranged else None
+                leading_lethal = bool(root.leading_unit_weapons_have_lethal_hits(attack_type=attack_type))
         except Exception:
             leading_lethal = False
 

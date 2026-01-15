@@ -1278,6 +1278,7 @@ def _classify_ability(
     unit_contains_oc_support = _unit_contains_oc_support(description)
     aura_oc_support = _aura_objective_control_support(description)
     aura_adv_charge_support = _aura_advance_charge_roll_support(description)
+    fall_back_shoot_support = _fall_back_shoot_support(description)
     common_support = _bearer_unit_common_support(description)
     leading_support = _leading_unit_common_support(description)
     bearer_invuln_support = _bearer_invulnerable_save_support(description)
@@ -1297,7 +1298,6 @@ def _classify_ability(
     command_phase_regain_wound_support = _command_phase_regain_wound_support(description)
     reinforcements_denial_support = _reinforcements_denial_support(description)
     cp_on_destroy_support = _gain_cp_on_destroy_support(description)
-    fall_back_shoot_support = _fall_back_shoot_support(description)
     battlesuit_support_system_support = _battlesuit_support_system_support(name, description)
     attack_roll_rule_support = _attack_roll_rule_support(description)
     closest_enemy_hit_charge_support = _closest_enemy_hit_and_charge_reroll_support(description)
@@ -1338,6 +1338,8 @@ def _classify_ability(
         return aura_oc_support
     if aura_adv_charge_support:
         return aura_adv_charge_support
+    if fall_back_shoot_support:
+        return fall_back_shoot_support
     if common_support and leading_support:
         if common_support[0] == "Supported" and leading_support[0] == "Supported":
             notes = " ".join([common_support[1], leading_support[1]]).strip()
@@ -1381,8 +1383,6 @@ def _classify_ability(
         return reinforcements_denial_support
     if cp_on_destroy_support:
         return cp_on_destroy_support
-    if fall_back_shoot_support:
-        return fall_back_shoot_support
     if attack_roll_rule_support:
         return attack_roll_rule_support
     if closest_enemy_hit_charge_support:
@@ -1650,8 +1650,8 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         rf"{lead_prefix}add \d+ to charge rolls made for {unit_ref}",
         rf"{lead_prefix}add \d+ to advance and charge rolls made for {unit_ref}",
         rf"{lead_prefix}add \d+ to advance rolls made for {unit_ref}",
-        rf"{lead_prefix}reroll advance and charge rolls made for (?:this model|{unit_ref})",
-        rf"{lead_prefix}reroll charge rolls made for (?:this model|{unit_ref})",
+        rf"{lead_prefix}(?:you can |can )?reroll advance and charge rolls made for (?:this model|{unit_ref})",
+        rf"{lead_prefix}(?:you can |can )?reroll charge rolls made for (?:this model|{unit_ref})",
         rf"{lead_prefix}bearers unit declares a charge .* objective marker .* reroll the charge roll",
         rf"{lead_prefix}reroll charge rolls .* set up on the battlefield",
         rf"{lead_prefix}models in {unit_ref} have a leadership characteristic of \d+",
@@ -2024,12 +2024,26 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
     if "model in that unit" not in low and "models in that unit" not in low:
         return None
     notes: List[str] = []
-    lethal_re = re.search(
+    lethal_melee = re.search(
+        r"melee weapons equipped by models in that unit have the \[?lethal hits\]? ability",
+        low,
+        flags=re.IGNORECASE,
+    )
+    lethal_ranged = re.search(
+        r"ranged weapons equipped by models in that unit have the \[?lethal hits\]? ability",
+        low,
+        flags=re.IGNORECASE,
+    )
+    lethal_any = re.search(
         r"weapons equipped by models in that unit have the \[?lethal hits\]? ability",
         low,
         flags=re.IGNORECASE,
     )
-    if lethal_re:
+    if lethal_melee:
+        notes.append("Leading: unit melee weapons gain Lethal Hits.")
+    elif lethal_ranged:
+        notes.append("Leading: unit ranged weapons gain Lethal Hits.")
+    elif lethal_any:
         notes.append("Leading: unit weapons gain Lethal Hits.")
 
     invuln_match = re.search(
@@ -2111,6 +2125,8 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
 
     lead_prefix = r"(?:while this model is leading a unit )?"
     patterns = [
+        rf"{lead_prefix}melee weapons equipped by models in that unit have the lethal hits ability",
+        rf"{lead_prefix}ranged weapons equipped by models in that unit have the lethal hits ability",
         rf"{lead_prefix}weapons equipped by models in that unit have the lethal hits ability",
         rf"{lead_prefix}each time a model in that unit makes (?:a|an)?(?: melee| ranged)? attack add \d+ to the hit roll",
         rf"{lead_prefix}each time a model in that unit makes (?:a|an)?(?: melee| ranged)? attack add \d+ to the wound roll",

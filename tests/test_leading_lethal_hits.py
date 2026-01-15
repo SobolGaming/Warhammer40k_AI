@@ -114,6 +114,41 @@ class TestLeadingLethalHits(unittest.TestCase):
         self.assertTrue(res["hit"])
         self.assertTrue(attack_instance.get("lethal_hit", False))
 
+    def test_leading_lethal_hits_melee_only(self):
+        ability = {
+            "name": "Blades of Precision",
+            "description": (
+                "While this model is leading a unit, melee weapons equipped by models in that unit have the "
+                "[LETHAL HITS] ability."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        leader = _make_unit("Leader", abilities=[ability])
+        bodyguard = _make_unit("Bodyguard")
+        self._attach_leader(leader, bodyguard)
+
+        melee_profile = _make_profile(weapon_type="Melee", range_val="Melee")
+        ranged_profile = _make_profile(weapon_type="Ranged", range_val="24")
+        attacker = SimpleNamespace(name="Attacker", parent_unit=bodyguard)
+        target = SimpleNamespace(
+            toughness=4,
+            models=[SimpleNamespace(is_alive=True)],
+            has_keyword=lambda k: False,
+        )
+
+        attack_instance = {}
+        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=6):
+            res = melee_profile._hit_target_with_tracking(target, attacker, attack_instance)
+        self.assertTrue(res["hit"])
+        self.assertTrue(attack_instance.get("lethal_hit", False))
+
+        attack_instance = {}
+        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=6):
+            res = ranged_profile._hit_target_with_tracking(target, attacker, attack_instance)
+        self.assertTrue(res["hit"])
+        self.assertFalse(attack_instance.get("lethal_hit", False))
+
 
 if __name__ == "__main__":
     unittest.main()

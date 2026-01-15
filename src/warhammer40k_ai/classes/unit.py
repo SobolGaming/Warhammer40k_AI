@@ -12860,21 +12860,44 @@ class Unit:
                 continue
         return False
 
-    def leading_unit_weapons_have_lethal_hits(self) -> bool:
+    def leading_unit_weapons_have_lethal_hits(self, attack_type: Optional[str] = None) -> bool:
         """
         Leading-only ability: while a leader is attached, weapons in that unit gain [LETHAL HITS].
+
+        attack_type: "melee", "ranged", or None to check any weapon type.
         """
         try:
             root = self.get_attached_unit_root()
         except Exception:
             root = self
-        cache_key = "leading_unit_lethal_hits"
-        if cache_key in getattr(root, "_ability_cache", {}):
-            return bool(root._ability_cache[cache_key])
 
-        found = False
-        lethal_re = re.compile(
+        def _resolve(flags: dict, attack_kind: Optional[str]) -> bool:
+            kind = str(attack_kind or "").strip().lower()
+            if kind == "melee":
+                return bool(flags.get("any")) or bool(flags.get("melee"))
+            if kind == "ranged":
+                return bool(flags.get("any")) or bool(flags.get("ranged"))
+            return bool(flags.get("any")) or bool(flags.get("melee")) or bool(flags.get("ranged"))
+
+        cache_key = "leading_unit_lethal_hits"
+        cache = getattr(root, "_ability_cache", {})
+        if cache_key in cache:
+            cached = cache.get(cache_key)
+            if isinstance(cached, dict):
+                return _resolve(cached, attack_type)
+            return bool(cached)
+
+        flags = {"any": False, "melee": False, "ranged": False}
+        lethal_any_re = re.compile(
             r"weapons equipped by models in that unit have the \[?lethal hits\]? ability",
+            re.IGNORECASE,
+        )
+        lethal_melee_re = re.compile(
+            r"melee weapons equipped by models in that unit have the \[?lethal hits\]? ability",
+            re.IGNORECASE,
+        )
+        lethal_ranged_re = re.compile(
+            r"ranged weapons equipped by models in that unit have the \[?lethal hits\]? ability",
             re.IGNORECASE,
         )
         for ab, _leader in root._iter_attached_leader_leading_abilities():
@@ -12890,14 +12913,19 @@ class Unit:
                 rest = self._LEADING_ABILITY_PREFIX_RE.sub("", text, count=1).strip(" ,:;-")
             except Exception:
                 rest = text
-            if lethal_re.search(rest):
-                found = True
+            if lethal_melee_re.search(rest):
+                flags["melee"] = True
+            elif lethal_ranged_re.search(rest):
+                flags["ranged"] = True
+            elif lethal_any_re.search(rest):
+                flags["any"] = True
+            if flags["any"]:
                 break
 
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}
-        root._ability_cache[cache_key] = bool(found)
-        return bool(found)
+        root._ability_cache[cache_key] = flags
+        return _resolve(flags, attack_type)
 
     def set_martial_katah_choice(self, choice: str) -> None:
         root = self.get_attached_unit_root()
