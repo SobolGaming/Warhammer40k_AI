@@ -7204,12 +7204,6 @@ class Game:
         except Exception:
             pass
 
-        # Publish end of Command phase for Stratagems like NEW ORDERS
-        try:
-            self.event_system.publish("phase_end", player=self.get_current_player(), phase=self.phase)
-        except Exception:
-            pass
-
     def is_movement_phase(self) -> bool:
         return self.phase == BattleRoundPhases.MOVEMENT_PHASE
 

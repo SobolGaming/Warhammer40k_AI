@@ -1125,7 +1125,7 @@ class IndividualModelMovementDialog(BaseDialog):
         model = self.unit.models[model_index]
         
         # Use unified pathfinding for ALL movement types
-        print(f"🔍 DEBUG: Using unified pathfinding for {model.name} with movement type {self.movement_type}")
+        #print(f"🔍 DEBUG: Using unified pathfinding for {model.name} with movement type {self.movement_type}")
         from ...utility.calcs import unified_pathfinding, MovementType
 
         # Get set of already-moved models (by object identity).
@@ -1161,7 +1161,7 @@ class IndividualModelMovementDialog(BaseDialog):
         }
 
         pathfinding_movement_type = movement_type_map.get(self.movement_type, MovementType.MOVE)
-        print(f"🔍 DEBUG: Mapped {self.movement_type} to {pathfinding_movement_type}")
+        #print(f"🔍 DEBUG: Mapped {self.movement_type} to {pathfinding_movement_type}")
 
         path_result = unified_pathfinding(
             model=model,
@@ -1173,11 +1173,11 @@ class IndividualModelMovementDialog(BaseDialog):
             moved_models_in_unit=moved_models_in_unit
         )
 
-        print(f"🔍 DEBUG: Pathfinding result for {model.name} to {destination}")
-        print(f"🔍 DEBUG: Path valid: {path_result['valid']}, movement_type: {pathfinding_movement_type}")
-        print(f"🔍 DEBUG: Reason: {path_result['reason']}")
-        if path_result['path']:
-            print(f"🔍 DEBUG: Path length: {len(path_result['path'])}")
+        #print(f"🔍 DEBUG: Pathfinding result for {model.name} to {destination}")
+        #print(f"🔍 DEBUG: Path valid: {path_result['valid']}, movement_type: {pathfinding_movement_type}")
+        #print(f"🔍 DEBUG: Reason: {path_result['reason']}")
+        #if path_result['path']:
+        #    print(f"🔍 DEBUG: Path length: {len(path_result['path'])}")
 
         if not path_result['valid'] or not path_result['path']:
             print(f"❌ No valid path found for {model.name} (Model #{model_index + 1})")
@@ -1193,27 +1193,27 @@ class IndividualModelMovementDialog(BaseDialog):
         
         # Debug: Log current and target positions
         current_pos = model.get_location()
-        print(f"🔍 DEBUG: Model {model.name} current position: ({current_pos[0]:.2f}, {current_pos[1]:.2f}, {current_pos[2]:.2f})")
-        print(f"🔍 DEBUG: Target final position: ({final_position[0]:.2f}, {final_position[1]:.2f}, {final_position[2]:.2f})")
+        #print(f"🔍 DEBUG: Model {model.name} current position: ({current_pos[0]:.2f}, {current_pos[1]:.2f}, {current_pos[2]:.2f})")
+        #print(f"🔍 DEBUG: Target final position: ({final_position[0]:.2f}, {final_position[1]:.2f}, {final_position[2]:.2f})")
         
         # Update model position (preserve current facing)
         current_facing = model.model_base.facing if hasattr(model.model_base, 'facing') else 0.0
         model.set_location(final_position[0], final_position[1], final_position[2], current_facing)
         
         # Debug: Verify position was actually updated
-        new_pos = model.get_location()
-        print(f"🔍 DEBUG: Model {model.name} position after set_location: ({new_pos[0]:.2f}, {new_pos[1]:.2f}, {new_pos[2]:.2f})")
+        #new_pos = model.get_location()
+        #print(f"🔍 DEBUG: Model {model.name} position after set_location: ({new_pos[0]:.2f}, {new_pos[1]:.2f}, {new_pos[2]:.2f})")
         
         # Store the movement path
         model.last_move_path = path_3d
         
         # Unit position is now determined by model positions
         
-        print(f"✅ {model.name} (Model #{model_index + 1}) moved to ({final_position[0]:.1f}, {final_position[1]:.1f})")
+        print(f"✅ {model.name} (Model #{model_index + 1}) moved from ({current_pos[0]:.1f}, {current_pos[1]:.1f}, {current_pos[2]:.1f}) to ({final_position[0]:.1f}, {final_position[1]:.1f}, {final_position[2]:.1f})")
         try:
             from ...utility.event_bus import append_action
             pn = model.parent_unit.get_parent_army().player.name
-            append_action(pn, f"{model.name} moved to ({final_position[0]:.1f}, {final_position[1]:.1f})")
+            append_action(pn, f"{model.name} moved to ({final_position[0]:.1f}, {final_position[1]:.1f}), {final_position[2]:.1f}")
         except Exception:
             pass
         return True
@@ -1299,16 +1299,6 @@ class IndividualModelMovementDialog(BaseDialog):
         if self.visible:
             existing_dialogs.append(self)
 
-        # Check for other potentially visible dialogs in the game UI
-        # This helps avoid overlap with scout dialogs, movement dialogs, etc.
-        try:
-            # Try to access the game UI to check for other visible dialogs
-            from ...UI.game_ui import HumanUIInterface
-            # Note: This is a best-effort approach - we'll collect what we can
-            print(f"🔍 DEBUG: Collecting existing dialogs to avoid overlap with coherency dialog")
-        except:
-            pass  # If we can't access other dialogs, just use what we have
-
         coherency_dialog.show(self.unit, non_coherent_models, self._on_coherency_resolution, existing_dialogs)
 
         # Store reference to the dialog so it can be drawn and handled
@@ -1330,7 +1320,7 @@ class IndividualModelMovementDialog(BaseDialog):
 
     def _finalize_movement_completion(self):
         """Finalize the movement completion"""
-        print(f"✅ {self.unit.name} {self.movement_type} movement completed")
+        print(f"✅ {self.unit.name} {self.movement_type.upper()} movement completed")
 
         # Set unit round state based on movement type
         # NOTE: Scout movement happens before battle rounds, so it should NOT set round state flags

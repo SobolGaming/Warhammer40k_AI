@@ -143,7 +143,7 @@ class RosterPane(pygame.sprite.Sprite):
 
     def on_mouse_press(self, x, y, button):
         """Handle mouse press events in the roster pane."""
-        print(f"🔍 DEBUG: RosterPane.on_mouse_press called at ({x}, {y}) button={button} for {self.player_name}")
+        #print(f"🔍 DEBUG: RosterPane.on_mouse_press called at ({x}, {y}) button={button} for {self.player_name}")
 
         if button == 1:  # Left mouse button
             for button_rect, unit in self.buttons:

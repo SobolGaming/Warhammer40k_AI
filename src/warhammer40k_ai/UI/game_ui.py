@@ -10345,7 +10345,7 @@ class GameView:
             self.individual_model_movement_dialog.selected_model_index is not None and
             getattr(self.individual_model_movement_dialog, 'movement_type', '') != 'deploy'):
 
-            print(f"🔍 DEBUG: Drawing individual model movement visualization")
+            #print(f"🔍 DEBUG: Drawing individual model movement visualization")
             unit = self.individual_model_movement_dialog.unit
             model_index = self.individual_model_movement_dialog.selected_model_index
 
@@ -10355,7 +10355,7 @@ class GameView:
                 max_distance = self.individual_model_movement_dialog.max_distance
                 game_map = self.individual_model_movement_dialog.game_map
 
-                print(f"🔍 DEBUG: Drawing range circle for {selected_model.name} (type: {movement_type}, distance: {max_distance})")
+                #print(f"🔍 DEBUG: Drawing range circle for {selected_model.name} (type: {movement_type}, distance: {max_distance})")
                 # Draw range circle for the selected model
                 draw_individual_model_movement_range(
                     battlefield_surface,
@@ -10369,12 +10369,12 @@ class GameView:
                 )
 
                 # Draw real-time path preview if mouse is hovering over battlefield
-                print(f"🔍 DEBUG: Checking for path preview - has target: {hasattr(self, 'individual_model_preview_target')}")
-                if hasattr(self, 'individual_model_preview_target'):
-                    print(f"🔍 DEBUG: Preview target value: {self.individual_model_preview_target}")
+                #print(f"🔍 DEBUG: Checking for path preview - has target: {hasattr(self, 'individual_model_preview_target')}")
+                #if hasattr(self, 'individual_model_preview_target'):
+                    #print(f"🔍 DEBUG: Preview target value: {self.individual_model_preview_target}")
 
                 if hasattr(self, 'individual_model_preview_target') and self.individual_model_preview_target:
-                    print(f"🔍 DEBUG: Drawing path preview for model {model_index} to {self.individual_model_preview_target}")
+                    #print(f"🔍 DEBUG: Drawing path preview for model {model_index} to {self.individual_model_preview_target}")
                     # Use unified pathfinding that accounts for already-moved models
                     from ..utility.calcs import unified_pathfinding, MovementType
 
@@ -10399,7 +10399,7 @@ class GameView:
                             'consolidate': MovementType.CONSOLIDATE
                         }
                         preview_movement_type = movement_type_map.get(dialog_movement_type, MovementType.MOVE)
-                        print(f"🔍 DEBUG: Using movement type {preview_movement_type} for path preview (dialog type: {dialog_movement_type})")
+                        #print(f"🔍 DEBUG: Using movement type {preview_movement_type} for path preview (dialog type: {dialog_movement_type})")
 
                     # Convert 2D target to 3D if needed
                     if len(self.individual_model_preview_target) == 2:
@@ -10422,13 +10422,13 @@ class GameView:
                         moved_models_in_unit=moved_models_in_unit
                     )
 
-                    print(f"🔍 DEBUG: Path result - valid: {path_result['valid']}, path length: {len(path_result['path']) if path_result['path'] else 0}")
+                    #print(f"🔍 DEBUG: Path result - valid: {path_result['valid']}, path length: {len(path_result['path']) if path_result['path'] else 0}")
 
                     # Draw the path and model base preview similar to scout movement
                     self._draw_individual_model_path_preview(battlefield_surface, selected_model,
                                                            path_result, self.individual_model_preview_target)
-                else:
-                    print(f"🔍 DEBUG: No preview target set for individual model movement")
+                #else:
+                #    print(f"🔍 DEBUG: No preview target set for individual model movement")
 
         # Deployment placement: draw hover silhouette (base + facing arrow) while mouse moves over battlefield
         if (hasattr(self, 'individual_model_movement_dialog') and
