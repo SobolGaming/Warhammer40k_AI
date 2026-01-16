@@ -3298,6 +3298,22 @@ class StratagemManager:
                 return
         except Exception:
             pass
+        # Ork keywords (Hooked, Snagged): prevent Overwatch if this unit hit the target with those weapons
+        # Check if any of the player's units have been hit by Hooked/Snagged from the moving unit
+        if action == "charge":
+            try:
+                ork_bonuses = getattr(moving_unit, "_ork_charge_bonuses", {})
+                # Check if any of the bonuses prevent Overwatch
+                for target_id, bonus_info in ork_bonuses.items():
+                    if bonus_info.get("no_overwatch", False):
+                        # Find if this target belongs to the current player
+                        for unit in getattr(self.player.get_army(), 'units', []) or []:
+                            unit_id = getattr(unit, "_id", id(unit))
+                            if unit_id == target_id:
+                                # This unit was hit by Hooked/Snagged, cannot Overwatch
+                                return
+            except Exception:
+                pass
         s = self.get_by_name('FIRE OVERWATCH') or self.get_by_name('Overwatch')
         if not s:
             return

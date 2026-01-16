@@ -6313,6 +6313,16 @@ class Game:
         self.completed_actions_this_turn = []
         self.models_destroyed_this_turn = []
 
+        # Clear Ork charge bonuses (Harpooned, Hooked, Impaled, Snagged) at end of turn
+        try:
+            for p in list(getattr(self, "players", []) or []):
+                army = getattr(p, "army", None)
+                for u in list(getattr(army, "units", []) or []):
+                    if hasattr(u, "_ork_charge_bonuses"):
+                        delattr(u, "_ork_charge_bonuses")
+        except Exception:
+            pass
+
     def end_of_battle_round_scoring(self) -> None:
         """Apply end-of-battle-round scoring for primaries that need it (e.g., Purge the Foe)."""
         # Build destroyed counts if not present
@@ -7534,7 +7544,7 @@ class Game:
 
         base_charge_roll = int(declared.get("base_roll", 0) or 0)
         individual_dice = list(declared.get("dice", []) or [])
-        charge_roll = self._apply_charge_modifiers(charging_unit, base_charge_roll)
+        charge_roll = self._apply_charge_modifiers(charging_unit, base_charge_roll, target_unit)
         
         print(f"⚔️ {charging_unit.name} charging {target_unit.name}")
         print(f"⚔️ Current edge-to-edge distance: {current_distance:.1f}\"")
@@ -7640,17 +7650,36 @@ class Game:
             
             return False
     
-    def _apply_charge_modifiers(self, charging_unit: 'Unit', base_roll: int) -> int:
-        """Apply charge roll modifiers based on unit abilities, stratagems, etc."""
+    def _apply_charge_modifiers(self, charging_unit: 'Unit', base_roll: int, target_unit: 'Unit' = None) -> int:
+        """Apply charge roll modifiers based on unit abilities, stratagems, etc.
+
+        Args:
+            charging_unit: The unit making the charge
+            base_roll: The base 2D6 charge roll
+            target_unit: Optional target unit for charge-specific bonuses (e.g., Ork keywords)
+
+        Returns:
+            Modified charge roll distance
+        """
         modified_roll = base_roll
         modifiers: list[tuple[int, str]] = []
 
+        # Ork charge-related keywords: Harpooned, Hooked, Impaled, Snagged
+        # These grant +2 to charge rolls against specific targets
+        if target_unit is not None:
+            try:
+                ork_bonuses = getattr(charging_unit, "_ork_charge_bonuses", {})
+                target_id = getattr(target_unit, "_id", id(target_unit))
+                if target_id in ork_bonuses:
+                    bonus_info = ork_bonuses[target_id]
+                    bonus_val = int(bonus_info.get("bonus", 0))
+                    bonus_src = str(bonus_info.get("source", "Ork weapon"))
+                    if bonus_val:
+                        modifiers.append((bonus_val, bonus_src))
+            except Exception:
+                pass
+
         # Check for charge modifiers from abilities/enhancements
-        # TODO: Implement ability-based charge modifiers
-        # Examples:
-        # - Shock Assault Stratagem: +1" to charge roll
-        # - Swift and Deadly ability: re-roll one dice
-        # - Relentless Advance trait: roll 3 dice and drop the lowest
         try:
             sr = getattr(charging_unit, "special_rules", None)
             battle_lust_bonus = int(sr.get("enhancement_battle_lust_bonus_if_unbridled", 0) or 0) if isinstance(sr, dict) else 0

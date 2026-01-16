@@ -3386,11 +3386,13 @@ class WargearProfile:
                         hit_result['special_effects'].append(label)
                         attack_instance['sustained_hit'] = max(bearer_unit_sustained_value, pain_sustained_value) if (bearer_unit_sustained or pain_sustained) else 1
 
-        # Normal hit resolution
-        hit_result['hit'] = self.skill > 0 and dice_roll >= final_needed
+        # Normal hit resolution (if not already determined by baseline critical)
+        if not baseline_critical:
+            hit_result['hit'] = self.skill > 0 and dice_roll >= final_needed
 
         # Ork charge-related keywords: track hits against MONSTER/VEHICLE units
         # These keywords grant +2 to charge rolls and some prevent Overwatch
+        # Store the effect on the attacker's unit keyed by target unit ID
         if hit_result['hit']:
             try:
                 # Check if target is MONSTER or VEHICLE
@@ -3401,24 +3403,47 @@ class WargearProfile:
                     is_monster_or_vehicle = False
 
                 if is_monster_or_vehicle:
+                    attacker_unit = attacker.parent_unit
+                    target_id = getattr(target, "_id", id(target))
+
+                    # Initialize charge bonuses dict if needed
+                    if not hasattr(attacker_unit, "_ork_charge_bonuses"):
+                        attacker_unit._ork_charge_bonuses = {}
+
                     # Harpooned: +2 to charge rolls against hit MONSTER/VEHICLE
                     if self.is_harpooned():
-                        attack_instance['harpooned_target'] = True
+                        attacker_unit._ork_charge_bonuses[target_id] = {
+                            "bonus": 2,
+                            "source": "Harpooned",
+                            "no_overwatch": False
+                        }
                         hit_result['special_effects'].append("Harpooned (charge bonus)")
 
                     # Hooked: +2 to charge rolls and prevents Overwatch
                     if self.is_hooked():
-                        attack_instance['hooked_target'] = True
+                        attacker_unit._ork_charge_bonuses[target_id] = {
+                            "bonus": 2,
+                            "source": "Hooked",
+                            "no_overwatch": True
+                        }
                         hit_result['special_effects'].append("Hooked (charge bonus + no Overwatch)")
 
                     # Impaled: +2 to charge rolls against hit MONSTER/VEHICLE
                     if self.is_impaled():
-                        attack_instance['impaled_target'] = True
+                        attacker_unit._ork_charge_bonuses[target_id] = {
+                            "bonus": 2,
+                            "source": "Impaled",
+                            "no_overwatch": False
+                        }
                         hit_result['special_effects'].append("Impaled (charge bonus)")
 
                     # Snagged: +2 to charge rolls and prevents Overwatch
                     if self.is_snagged():
-                        attack_instance['snagged_target'] = True
+                        attacker_unit._ork_charge_bonuses[target_id] = {
+                            "bonus": 2,
+                            "source": "Snagged",
+                            "no_overwatch": True
+                        }
                         hit_result['special_effects'].append("Snagged (charge bonus + no Overwatch)")
             except Exception:
                 pass
