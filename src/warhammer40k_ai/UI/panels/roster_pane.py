@@ -148,10 +148,10 @@ class RosterPane(pygame.sprite.Sprite):
         if button == 1:  # Left mouse button
             for button_rect, unit in self.buttons:
                 if button_rect.collidepoint(x, y):
-                    print(f"🔍 DEBUG: Clicked on unit {unit.name}")
-                    print(f"🔍 DEBUG: unit.deployed = {unit.deployed}")
-                    print(f"🔍 DEBUG: game_view exists = {self.game_view is not None}")
-                    print(f"🔍 DEBUG: ui_interface exists = {self.game_view.ui_interface is not None if self.game_view else False}")
+                    #print(f"🔍 DEBUG: Clicked on unit {unit.name}")
+                    #print(f"🔍 DEBUG: unit.deployed = {unit.deployed}")
+                    #print(f"🔍 DEBUG: game_view exists = {self.game_view is not None}")
+                    #print(f"🔍 DEBUG: ui_interface exists = {self.game_view.ui_interface is not None if self.game_view else False}")
 
                     # Check if this is during deployment phase and unit is not deployed
                     if not unit.deployed and self.game_view and self.game_view.ui_interface:
